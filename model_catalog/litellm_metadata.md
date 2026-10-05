@@ -39,30 +39,56 @@ router serialization uses `exclude_none=True`; the single-deployment metadata
 endpoint removes nulls before filling missing keys. The final response merge alone
 is therefore insufficient evidence that null suppression works.
 
-## Response-only publication policy
+## Publication ownership
 
-The proxy image and package-local test runtime apply
-[`litellm_token_limit_publication.patch`](../third_party/patches/litellm_token_limit_publication.patch)
-to the pinned 1.100.1 source. The generated config explicitly sets
-`model_info.publish_token_limits` on chat/Responses deployments:
+**Agreed direction:** legacy and current fields may coexist. The requirement is that
+related token values come from one consistent source, not that legacy keys disappear.
+**Every served route's token metadata will be declared by Ducktape.** It is acceptable
+to copy values from a specific LiteLLM catalogue entry, with revision/source comments
+beside the declaration; the catalogue is a reference input, not an implicit runtime
+second authority. We do not need independent live capacity probes for every model.
 
-- `true`: publish the configured positive integer input/output pair, never complete
-  a partial pair from the catalogue.
-- `false`: omit both fields, even when the catalogue or a prior registration has values.
-- Unset: retain upstream behavior, including embedding/audio metadata.
+The first implementation slice covers routes already marked `publish_limits`; the
+ordinary cdk8s projection emits:
 
-Opted-in responses omit legacy `max_tokens` and custom `context_window`; the policy
-marker itself is not public metadata. Model groups publish a pair only when every
-backing deployment opts in with the same pair. The projection runs after enrichment
-for `/model/info` (including single-deployment lookup), `/v1/model/info`, the shared
-`/v2/model/info` enrichment, `/model_group/info` and OpenAI model discovery.
-DB-backed v2 authorization/query behavior still needs its own integration coverage;
-sharing the projection is not evidence of that coverage.
+- `max_input_tokens` from the existing input override (currently misnamed
+  `Model.context_window`; correcting that shared shape remains a follow-up).
+- `max_output_tokens` and legacy `max_tokens` from the **same** output declaration.
 
-This is **response projection only**: internal catalogue registration, reload replay,
-request heuristics, prices and accounting retain upstream behavior. Existing configured
-numbers are preserved, not newly validated. Removing their misleading shared semantic
-representation remains a separate change. Image deployment is not implied by a merge.
+In pinned 1.100.1, [`get_max_tokens()`](https://github.com/BerriAI/litellm/blob/v1.100.1/litellm/utils.py#L5149-L5215)
+is documented as an output limit lookup and falls back from `max_output_tokens` to
+`max_tokens`. This justifies that compatibility mapping for our generative overrides;
+it is not a universal interpretation of every provider's `maxTokens` or of embedding
+metadata. The source-to-LiteLLM mapping carries a short comment with this rationale.
+No third independent limit belongs in the neutral roster; do not restore the unused
+custom `context_window` metadata or change request-body generation caps.
+
+The reworked #9273 uses **unmodified LiteLLM and ordinary config**. The earlier draft's
+downstream patch, publication marker, response projection and image overlay are dropped.
+Current input/output numbers and which routes publish them are unchanged. Consistency
+is not evidence that those numbers are correct provider limits. Prices and capability
+metadata retain their existing ownership; this change concerns token-limit metadata.
+
+The config-loader/ASGI regression reads every currently published route from the
+committed generated ConfigMap, plus deliberately conflicting synthetic catalogue
+controls. It exercises OpenAI- and Anthropic-shaped upstreams, list/single `/model/info`, `/v1/model/info`, `/model_group/info` and `/v1/models`, across
+catalogue installation/replay and config reload. It uses synthetic admin auth and local
+catalogue fixtures, not DB-backed v2, inference, end-to-end spending, or live deployment.
+It also checks that selected pricing and request-policy switches remain unchanged.
+
+**Incomplete migration, not an unresolved ownership policy:** routes without overrides
+still use LiteLLM's catalogue/adapter fallback today. That is not an accepted end state.
+The [remaining-route inventory](migration_inventory.md#token-metadata-ownership-migration)
+records the outstanding source/semantics decisions. Complete the declarations, then
+remove `publish_limits` as a choice of authority. Unsupported routes need an explicit
+value or pause/retirement decision; this PR makes none of those pauses automatically.
+Do not create fake output limits for embedding/audio models. The no-override regression
+control demonstrates the current fallback; it does not bless that behavior permanently.
+
+Unlike response filtering, ordinary overrides also register these values in LiteLLM's
+internal cost map. Aligning legacy `max_tokens` with the existing output override is
+intentional; any internal reader of that alias now sees our value too. We do not enable
+new prechecks, alter `modify_params`, or claim that all internal readers are inert.
 
 ## Isolated config/API experiment, 2026-10-05
 
@@ -91,7 +117,8 @@ The controlled values are deliberately synthetic, **not model capacity claims**.
 | Controlled / P, with legacy omitted or null | P / 900003         | P / 800003             | P / 800003                                 |
 | Controlled / all three zero                 | 0 / 0 / 0          | 0 / 0 / 0              | 0 / 0 / 0                                  |
 
-Thus neither omission nor null implements unknown limits or legacy-field removal.
+This historical experiment shows that neither omission nor null suppresses catalogue
+limits. Legacy-field removal is no longer a goal; a consistent explicit alias is acceptable.
 A pair survives catalogue replacement while the legacy field continues following
 that catalogue. Removing the pair from the file and calling
 `ProxyConfig.load_config(previous_router, ...)` with stable deployment IDs did
@@ -118,8 +145,8 @@ Scope limits: auth was replaced with a synthetic admin; no ASGI lifespan, databa
 paid requests or production changes were involved. `/v2/model/info` returned 500
 because no database was connected, so its publication behavior remains untested.
 Reload exercised `refetch_model_cost_map()` plus `_swap_in_model_cost_map()`, not
-the admin endpoint's authorization or cross-pod signaling. A chosen implementation
-still needs acceptance coverage for its supported deployment/endpoint paths.
+the admin endpoint's authorization or cross-pod signaling. The current ordinary-override regression is described under [publication ownership](#publication-ownership);
+DB-backed behavior remains outside that test's scope.
 
 ## Token KVPs in the remote catalogue
 

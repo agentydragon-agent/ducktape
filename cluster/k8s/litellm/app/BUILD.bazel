@@ -14,9 +14,12 @@ filegroup(
     ],
 )
 
-# Diagnostics read the deployed configuration format, not the cdk8s implementation.
+# Diagnostics and proxy acceptance read the serialized deployment, not cdk8s code.
 filegroup(
     name = "proxy_manifest",
     srcs = ["app.k8s.yaml"],
-    visibility = ["//cluster/debug/litellm_probe:__pkg__"],
+    visibility = [
+        "//cluster/debug/litellm_probe:__pkg__",
+        "//tana/litellm_proxy:__pkg__",
+    ],
 )
