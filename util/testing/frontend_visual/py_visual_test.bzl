@@ -41,8 +41,9 @@ def py_visual_test(
       assets: everything else the harness page pulls over `file://`: its `index.html`, any
         stylesheet, the bundle rule itself.
       fonts: optional app-owned font filegroup the harness serves alongside its assets.
-      font_family: optional named family asserted against what actually rendered. Required with
-        `fonts`, so a custom font asset cannot be staged without declaring its purpose.
+      font_family: optional named family, which the harness's stylesheet must declare with an
+        `@font-face` and which must have loaded. Required with `fonts`, so a custom font asset
+        cannot be staged without declaring its purpose.
       output_suffix: what follows a scenario's output name in its PNG's file name; `-actual` if
         unset. A lane migrating from a runner that wrote bare `<name>.png` sets `""`, so its images
         keep their names in PR visual review.
