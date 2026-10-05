@@ -261,42 +261,12 @@ _CHATGPT_LIMITS = TokenLimits(max_input_tokens=372_000, max_output_tokens=128_00
 _ASTRA_LIMITS = TokenLimits(max_input_tokens=872_000, max_output_tokens=128_000)
 
 
-GPT_6_ASTRA = Model(
-    id="gpt-6-astra",
-    display_name="GPT-6 Astra",
-    limits=_ASTRA_LIMITS,
-    reasoning=True,
-)
-GPT_6_LUNA = Model(
-    id="gpt-6-luna",
-    display_name="GPT-6 Luna",
-    limits=_CHATGPT_LIMITS,
-    reasoning=True,
-)
-GPT_6_SOL = Model(
-    id="gpt-6-sol",
-    display_name="GPT-6 Sol",
-    limits=_CHATGPT_LIMITS,
-    reasoning=True,
-)
-GPT_5_6_LUNA = Model(
-    id="gpt-5.6-luna",
-    display_name="GPT-5.6 Luna",
-    limits=_CHATGPT_LIMITS,
-    reasoning=True,
-)
-GPT_5_6_TERRA = Model(
-    id="gpt-5.6-terra",
-    display_name="GPT-5.6 Terra",
-    limits=_CHATGPT_LIMITS,
-    reasoning=True,
-)
-GPT_5_6_SOL = Model(
-    id="gpt-5.6-sol",
-    display_name="GPT-5.6 Sol",
-    limits=_CHATGPT_LIMITS,
-    reasoning=True,
-)
+GPT_6_ASTRA = Model(id="gpt-6-astra", display_name="GPT-6 Astra", limits=_ASTRA_LIMITS, reasoning=True)
+GPT_6_LUNA = Model(id="gpt-6-luna", display_name="GPT-6 Luna", limits=_CHATGPT_LIMITS, reasoning=True)
+GPT_6_SOL = Model(id="gpt-6-sol", display_name="GPT-6 Sol", limits=_CHATGPT_LIMITS, reasoning=True)
+GPT_5_6_LUNA = Model(id="gpt-5.6-luna", display_name="GPT-5.6 Luna", limits=_CHATGPT_LIMITS, reasoning=True)
+GPT_5_6_TERRA = Model(id="gpt-5.6-terra", display_name="GPT-5.6 Terra", limits=_CHATGPT_LIMITS, reasoning=True)
+GPT_5_6_SOL = Model(id="gpt-5.6-sol", display_name="GPT-5.6 Sol", limits=_CHATGPT_LIMITS, reasoning=True)
 GPT_5_4 = Model("gpt-5.4", "GPT-5.4")
 GPT_5_5 = Model("gpt-5.5", "GPT-5.5")
 
@@ -401,11 +371,7 @@ _ANTIGRAVITY_FLASH_LITE_31 = Model(
     reasoning=False,
     limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_535),
 )
-_ANTIGRAVITY_FLASH_LITE_35 = Model(
-    id="gemini-3.5-flash-lite",
-    display_name="Gemini 3.5 Flash Lite",
-    reasoning=False,
-)
+_ANTIGRAVITY_FLASH_LITE_35 = Model(id="gemini-3.5-flash-lite", display_name="Gemini 3.5 Flash Lite", reasoning=False)
 
 _ANTIGRAVITY_PRO = Model(
     id="gemini-pro-agent",
@@ -439,17 +405,9 @@ _ANTIGRAVITY_PRO = Model(
 # published figures, not a serving-path probe. OpenClaw keeps its own budgets.
 _GEMINI_LIMITS = TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536)
 
-_GEMINI_FLASH = Model(
-    id="gemini-3.7-flash",
-    display_name="Gemini 3.7 Flash",
-    reasoning=True,
-    limits=_GEMINI_LIMITS,
-)
+_GEMINI_FLASH = Model(id="gemini-3.7-flash", display_name="Gemini 3.7 Flash", reasoning=True, limits=_GEMINI_LIMITS)
 _GEMINI_FLASH_LITE = Model(
-    id="gemini-3.5-flash-lite",
-    display_name="Gemini 3.5 Flash-Lite",
-    reasoning=False,
-    limits=_GEMINI_LIMITS,
+    id="gemini-3.5-flash-lite", display_name="Gemini 3.5 Flash-Lite", reasoning=False, limits=_GEMINI_LIMITS
 )
 
 # Mistral chat models that accepted a minimal completion with the cluster's API
@@ -645,12 +603,7 @@ ANTIGRAVITY_FLASH_3 = Route(
     ANTIGRAVITY_MESSAGES,
 )
 ANTIGRAVITY_FLASH_IMAGE = Route(
-    Model(
-        id="gemini-3.1-flash-image",
-        display_name="Gemini 3.1 Flash Image",
-        reasoning=False,
-    ),
-    ANTIGRAVITY_MESSAGES,
+    Model(id="gemini-3.1-flash-image", display_name="Gemini 3.1 Flash Image", reasoning=False), ANTIGRAVITY_MESSAGES
 )
 ANTIGRAVITY_PRO_LOW = Route(
     Model(
