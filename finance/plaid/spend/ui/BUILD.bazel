@@ -29,9 +29,9 @@ py_test(
     srcs = ["visual_test.py"],
     data = [
         ":bundle",
-        "@playwright_browsers//:chromium-headless-shell",
+        "@chrome_headless_shell//:executable",
     ],
-    env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)"},
+    env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)"},
     tags = ["visual"],
     deps = [
         "//:conftest",
