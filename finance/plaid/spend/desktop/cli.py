@@ -154,11 +154,7 @@ def _print_view(view: SpendView, status: str, last_error: str) -> None:
             print("  Statement cycle: unavailable")
 
         spend = _format_money(card.spend_minor_units, currency)
-        limit = (
-            "no limit set"
-            if card.limit_minor_units is None
-            else _format_money(card.limit_minor_units, currency)
-        )
+        limit = "no limit set" if card.limit_minor_units is None else _format_money(card.limit_minor_units, currency)
         percent = card.spend_percent
         percent_text = f" · {percent:.1f}%" if isinstance(percent, int | float) else ""
         print(f"  Spend: {spend} / {limit}{percent_text}")
