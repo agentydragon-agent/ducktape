@@ -230,7 +230,8 @@ until a rule needs one.
 ## Inference experiments
 
 The shared `basic` policy in staging and testing includes direct Ollama inference
-and LiteLLM's existing `cheap-experiments` key. Read `/v1/rules` for the active
+and LiteLLM's existing `cheap-experiments` key. Static OpenClaw receives the same
+inference rules through its gateway policy. Read `/v1/rules` for the active
 hosts, methods, paths, and credential placeholders; send the returned placeholder
 as `Authorization: Bearer ...` through the configured proxy. The real tokens stay
 in the isolated egress-credentials namespaces, not in agent sandboxes.

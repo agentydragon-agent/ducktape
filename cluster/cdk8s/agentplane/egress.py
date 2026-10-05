@@ -258,9 +258,61 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
     )
 
 
-def _egress_policies(scope: Construct, *, namespace: str) -> None:
+def inference_rules() -> list[EgressPolicySpecRules]:
+    """Inference/metadata for every agent; no model management or key/admin APIs."""
     (litellm_spec,) = litellm_proxy.proxy_specs()
     litellm_service = litellm_proxy.service(litellm_spec)
+    return [
+        EgressPolicySpecRules(
+            hosts=[ollama.AUTH_PROXY.fqdn],
+            cluster_internal=True,
+            methods=[EgressPolicySpecRulesMethods.GET],
+            paths=["/api/tags", "/api/ps", "/api/version", "/v1/models"],
+            credential_ref=EgressPolicySpecRulesCredentialRef(name="ollama"),
+        ),
+        EgressPolicySpecRules(
+            hosts=[ollama.AUTH_PROXY.fqdn],
+            cluster_internal=True,
+            methods=[EgressPolicySpecRulesMethods.POST],
+            paths=[
+                "/api/show",
+                "/api/chat",
+                "/api/generate",
+                "/api/embed",
+                "/api/embeddings",
+                "/v1/chat/completions",
+                "/v1/completions",
+                "/v1/responses",
+                "/v1/embeddings",
+            ],
+            credential_ref=EgressPolicySpecRulesCredentialRef(name="ollama"),
+        ),
+        EgressPolicySpecRules(
+            hosts=[litellm_service.fqdn],
+            cluster_internal=True,
+            methods=[EgressPolicySpecRulesMethods.GET],
+            paths=["/v1/models", "/models", "/model/info"],
+            credential_ref=EgressPolicySpecRulesCredentialRef(name="litellm-cheap-experiments"),
+        ),
+        EgressPolicySpecRules(
+            hosts=[litellm_service.fqdn],
+            cluster_internal=True,
+            methods=[EgressPolicySpecRulesMethods.POST],
+            paths=[
+                "/v1/chat/completions",
+                "/v1/completions",
+                "/v1/responses",
+                "/v1/messages",
+                "/v1/messages/count_tokens",
+                "/v1/embeddings",
+                "/v1/audio/transcriptions",
+            ],
+            credential_ref=EgressPolicySpecRulesCredentialRef(name="litellm-cheap-experiments"),
+        ),
+    ]
+
+
+def _egress_policies(scope: Construct, *, namespace: str) -> None:
     # Available for explicit grants only: no defaults, presets or standing bindings opt in.
     EgressPolicy(
         scope,
@@ -323,54 +375,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 paths=["/openapi.json", "/v1/rules"],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
             ),
-            # Shared by every agent, including existing sandboxes holding basic. Only
-            # inference/metadata: no Ollama model management or LiteLLM key/admin APIs.
-            EgressPolicySpecRules(
-                hosts=[ollama.AUTH_PROXY.fqdn],
-                cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.GET],
-                paths=["/api/tags", "/api/ps", "/api/version", "/v1/models"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="ollama"),
-            ),
-            EgressPolicySpecRules(
-                hosts=[ollama.AUTH_PROXY.fqdn],
-                cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.POST],
-                paths=[
-                    "/api/show",
-                    "/api/chat",
-                    "/api/generate",
-                    "/api/embed",
-                    "/api/embeddings",
-                    "/v1/chat/completions",
-                    "/v1/completions",
-                    "/v1/responses",
-                    "/v1/embeddings",
-                ],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="ollama"),
-            ),
-            EgressPolicySpecRules(
-                hosts=[litellm_service.fqdn],
-                cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.GET],
-                paths=["/v1/models", "/models", "/model/info"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="litellm-cheap-experiments"),
-            ),
-            EgressPolicySpecRules(
-                hosts=[litellm_service.fqdn],
-                cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.POST],
-                paths=[
-                    "/v1/chat/completions",
-                    "/v1/completions",
-                    "/v1/responses",
-                    "/v1/messages",
-                    "/v1/messages/count_tokens",
-                    "/v1/embeddings",
-                    "/v1/audio/transcriptions",
-                ],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="litellm-cheap-experiments"),
-            ),
+            *inference_rules(),
             # The API server, inside `basic` rather than behind a policy a launch opts into: every
             # agent talks to Kubernetes, so what decides it is RBAC and not whether a preset or a
             # caller happened to name a policy. Every SandboxTemplate already mounts the kubeconfig

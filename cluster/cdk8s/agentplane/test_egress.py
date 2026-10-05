@@ -285,17 +285,20 @@ def test_environments_do_not_share_cluster_scoped_bundles(
             owners[name] = namespace
 
 
-@pytest.mark.parametrize("namespace", NAMESPACES)
+@pytest.mark.parametrize(
+    ("namespace", "policy"),
+    [(namespace, BASIC_POLICY) for namespace in NAMESPACES] + [("agentplane-staging", "public-coder-openclaw")],
+)
 def test_inference_credentials_are_default_and_do_not_grant_management(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+    namespace: str, policy: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     docs = agentplane_manifests[namespace]
-    basic = _by_name(docs, "EgressPolicy", BASIC_POLICY)
+    granted = _by_name(docs, "EgressPolicy", policy)
     for name, denied_paths in (
         ("ollama", {"/api/pull", "/api/push", "/api/create", "/api/delete", "/api/copy", "/api/blobs/*"}),
         ("litellm-cheap-experiments", {"/key/generate", "/key/info", "/user/new", "/config/update"}),
     ):
-        rules = [rule for rule in basic["spec"]["rules"] if rule.get("credentialRef") == {"name": name}]
+        rules = [rule for rule in granted["spec"]["rules"] if rule.get("credentialRef") == {"name": name}]
         assert rules
         assert all(rule["clusterInternal"] and rule["paths"] for rule in rules)
         assert all("*" not in path for rule in rules for path in rule["paths"])

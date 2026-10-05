@@ -167,6 +167,7 @@ def add_gateway_resources(
         "policy",
         metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
         rules=[
+            *egress.inference_rules(),
             EgressPolicySpecRules(
                 hosts=["github.com", "api.github.com", "codeload.github.com"],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name=GITHUB_CREDENTIAL),
