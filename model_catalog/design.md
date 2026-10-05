@@ -512,8 +512,9 @@ Item 4 is the desired contract, **not a solved implementation**. Appendix B's
 pinned-runtime experiment rules out omission, null and zero as the publication
 policy: omission/null allow catalogue fallback, and zero declares a numeric limit.
 Next compare a small upstream suppression mechanism or targeted response projection
-against leaving LiteLLM's endpoint explicitly non-authoritative. The latter does **not** satisfy the requested public pair-or-none
-contract and requires an explicit decision, not silent acceptance. Avoid global
+against leaving LiteLLM's endpoint explicitly non-authoritative. The latter does
+**not** satisfy the requested public pair-or-none contract and requires an explicit
+decision, not silent acceptance. Avoid global
 model-cost mutation or a broad wrapper service as a premature solution.
 
 Internal catalogue use also needs an explicit decision: suppressing fields in an
@@ -707,13 +708,13 @@ triple **900001 / 900002 / 900003**; `R` is the fetched replacement triple
 **800001 / 800002 / 800003**; `P` is our explicit pair **111111 / 22222**.
 The controlled values are deliberately synthetic, **not model capacity claims**.
 
-| Initial catalogue / configured limits | Initial API triple | After catalogue reload | After withdrawing overrides on same router |
-| --- | --- | --- | --- |
-| Bundled / omitted or all null | B | R | R |
-| Bundled / P | P / 16384 | P / 800003 | P / 800003 |
-| Controlled / omitted or all null | C | R | R |
-| Controlled / P, with legacy omitted or null | P / 900003 | P / 800003 | P / 800003 |
-| Controlled / all three zero | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+| Initial catalogue / configured limits       | Initial API triple | After catalogue reload | After withdrawing overrides on same router |
+| ------------------------------------------- | ------------------ | ---------------------- | ------------------------------------------ |
+| Bundled / omitted or all null               | B                  | R                      | R                                          |
+| Bundled / P                                 | P / 16384          | P / 800003             | P / 800003                                 |
+| Controlled / omitted or all null            | C                  | R                      | R                                          |
+| Controlled / P, with legacy omitted or null | P / 900003         | P / 800003             | P / 800003                                 |
+| Controlled / all three zero                 | 0 / 0 / 0          | 0 / 0 / 0              | 0 / 0 / 0                                  |
 
 Thus neither omission nor null implements unknown limits or legacy-field removal.
 A pair survives catalogue replacement while the legacy field continues following
@@ -813,6 +814,7 @@ lookups, and the restricted key does not establish the state of every deployment
   pre-call checks. No deployment I/O limits were found in the inspected generated
   config/key declarations; that is not an audit of every live DB/key setting.
   These guards do not establish that no other adapter or callback reads the map.
+
 - OpenClaw's audited discovery reads `/v1/models` or `/models`, not `/model/info`.
   Its configured budgets come from our OpenClaw projection.
 - Our Agentplane launch adapters do not obtain their context overrides from
