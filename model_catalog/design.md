@@ -34,6 +34,7 @@ in force; listing a file does not authorize modifying, deleting or re-enabling i
 - [Scope and priorities](#1-scope-and-priorities)
 - [Ownership and data flow](#2-ownership-and-data-flow)
   - [Consumer-local settings pattern](#consumer-local-settings-pattern-tentative-agreement)
+  - [Ollama serving-variant pattern](#ollama-serving-variant-pattern-tentative-agreement)
 - [Consumer inventory and side effects](#3-consumer-inventory-and-side-effects)
   - [Files requiring disposition decisions](#files-requiring-disposition-decisions)
 - [Proposed shape and rollout](#4-proposed-shape-and-rollout)
@@ -244,6 +245,67 @@ Unknown provider facts remain unknown rather than being filled from client setti
 Prefer a small projection per consumer over a universal client-budget object or a
 framework abstracting the superficial similarity of these helpers. This is a pattern
 for separating shared facts from genuine consumer policy, not another model registry.
+
+### Ollama serving-variant pattern (tentative agreement)
+
+The operator is also **tentatively comfortable with one Ollama serving-variant
+definition feeding both provisioning and routing**, separate from provider facts and
+consumer budgets. Neutral means independent of cdk8s/deployment, not ignorant of provider
+protocols. Exact records, file locations and how provisioning consumes them remain
+undecided; existing records may suffice instead of adding the illustrative class below.
+
+```python
+QWEN_256K = OllamaServingVariant(
+    model=QWEN_IQ4XS,  # Shared model identity/name/capabilities.
+    base_tag="qwen3.8-flash-next-iq4xs",
+    tag="qwen3.8-flash-next-iq4xs-256k",
+    num_ctx=262_144,
+)
+
+QWEN_256K_OPENAI = Route(
+    upstream=OLLAMA_OPENAI,
+    serving_variant=QWEN_256K,
+)
+QWEN_256K_NATIVE = Route(
+    upstream=OLLAMA_NATIVE,
+    serving_variant=QWEN_256K,
+)
+```
+
+This is a sketch, not an implemented API. The serving definition describes a requested
+allocation, not a measured capacity. The intended boundaries are:
+
+```text
+shared model facts ─────────────────────→ route identity/name/capabilities
+Ollama serving variant ─┬─→ provisioning: base model → tag + parameters
+                       └─→ canonical routes → LiteLLM adapter + upstream tag
+                                                  ↑
+                                      deployment endpoint/auth bindings
+consumer selection ──→ chosen route + consumer-owned settings
+```
+
+- **Provisioning:** obtain the base/tag/parameters from the serving definition rather
+  than independently maintaining copies in shell literals. The setup script may remain
+  the execution mechanism; its fate is open. Credentials, scheduling, storage/GPU
+  placement and readiness remain deployment concerns.
+- **Routing:** both routes reference the same variant; LiteLLM combines its tag with
+  the selected adapter and deployment URL/auth bindings. Prefer using the baked-in
+  variant on both wires **if verified**, rather than two competing ways to set context.
+  Ollama's OpenAI-compatible path does not apply native `options.num_ctx` the same way;
+  identical extra request bodies across wires do not establish equivalent behavior.
+- **Server defaults:** a global `OLLAMA_CONTEXT_LENGTH` may still be useful, but it
+  must not silently determine the meaning of an explicitly named 256K variant.
+- **Publication:** neither projection assigns `max_input_tokens` or `max_output_tokens`
+  from `num_ctx`. Known provider limits follow the independently justified pair-or-none
+  policy; LiteLLM/Ollama discovery must not silently reintroduce unjustified limits.
+- **Clients:** Agentplane, OpenClaw or another consumer selects the route and owns its
+  budget. A derivation from serving configuration needs explicit justification, not an
+  automatic rule that every `num_ctx` becomes the harness's window.
+
+Acceptance must check that provisioning and both selected wire paths resolve to the
+intended tag/settings, not just that their generated strings agree. No capacity claim,
+variant activation/retirement, client-budget change or provisioning change is approved
+by recording this pattern; the corresponding file decisions in §3 remain open.
 
 ## 3. Consumer inventory and side effects
 
