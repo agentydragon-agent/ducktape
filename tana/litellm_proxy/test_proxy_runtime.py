@@ -127,7 +127,7 @@ def test_publication_research_probe(tmp_path: Path) -> None:
     """Temporary observation collector; removed from the final docs-only PR."""
     worker = tmp_path / "worker.py"
     worker.write_text(
-        r'''\
+        r"""\
 import asyncio
 import copy
 import importlib.metadata
@@ -271,7 +271,7 @@ async def main():
 
 asyncio.run(main())
 server.shutdown()
-'''
+"""
     )
     observations = []
     for case in (

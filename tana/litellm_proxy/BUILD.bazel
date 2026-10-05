@@ -158,6 +158,7 @@ py_test(
         ":provider",
         "//:conftest",
         "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
         "@pypi//pytest_bazel",
         "@pypi_tana_litellm_proxy//litellm",
     ],
