@@ -16,11 +16,11 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
     newTag: devel-20260924234050-4819c98 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
-    newTag: devel-20261005032547-5e07a9d # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
+    newTag: devel-20261005050258-23ec961 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate
-    newTag: devel-20261005021434-59b37e2 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
+    newTag: devel-20261005050136-23ec961 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture
-    newTag: devel-20260924010350-5ce04fd # {"$imagepolicy": "flux-system:agentplane-oauth-fixture:tag"}
+    newTag: devel-20261005050100-23ec961 # {"$imagepolicy": "flux-system:agentplane-oauth-fixture:tag"}
   # Bootstrap only: keep rollout suspended until CI publishes and automation pins a real tag.
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-service
     newTag: devel-20261005032617-5e07a9d # {"$imagepolicy": "flux-system:agentplane-sandbox-service:tag"}
