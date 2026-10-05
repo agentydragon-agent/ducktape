@@ -63,7 +63,7 @@ HTTP Basic username `finance_agent_aiquota` and password placeholder
 `agentplane-credential-clickhouse-finance-agent-credentials`. This role is restricted
 to SELECT on `aiquota.aiquota_windows`; it cannot read raw provider bodies or other
 tenants. Check current egress rules before either request; no auth token or raw
-provider payload belongs in a public repo. The finance sandbox's *launch* does not
+provider payload belongs in a public repo. The finance sandbox's _launch_ does not
 necessarily bind `finance-aiquota-history`: if it is absent from `/v1/rules`, ask the
 operator for an `EgressBinding` in `agentplane-staging` naming only this policy and
 the current sandbox ServiceAccount (`kubectl auth whoami`), optionally with an owner
