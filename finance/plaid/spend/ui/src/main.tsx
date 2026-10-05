@@ -52,6 +52,8 @@ type CardView = {
   alert_state: string;
   spend_minor_units: number | null;
   limit_minor_units: number | null;
+  statement_available: boolean;
+  cycle_start: string | null;
   pending_minor_units: number | null;
   last_synced_at: string | null;
 };
@@ -126,7 +128,7 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
             Can I afford this?
           </Title>
           <Text c="dimmed" size="sm" mt={6}>
-            Try a DoorDash order, dinner, or extra AI usage before buying.
+            Try a meal, a subscription, or another flexible purchase before buying.
           </Text>
         </div>
         <NumberInput
@@ -326,9 +328,11 @@ function SpendCard({ card }: { card: CardView }) {
       ? "Limit exceeded"
       : card.alert_state === "warning"
         ? "Near limit"
-        : card.alert_state === "unavailable"
-          ? "Unavailable"
-          : "Within limit";
+        : !card.statement_available && card.cycle_start
+          ? "First statement pending"
+          : card.alert_state === "unavailable"
+            ? "Unavailable"
+            : "Within limit";
   return (
     <Card component="article" withBorder radius="md" padding="lg" className="statement-card">
       <Group justify="space-between" align="flex-start">
@@ -350,8 +354,11 @@ function SpendCard({ card }: { card: CardView }) {
           {money(card.spend_minor_units, card.currency)}
         </Text>
         <Text size="sm" c="dimmed">
-          this statement{" "}
-          {card.limit_minor_units == null ? "" : ` / ${money(card.limit_minor_units, card.currency)} limit`}
+          {card.statement_available
+            ? `this statement${card.limit_minor_units == null ? "" : ` / ${money(card.limit_minor_units, card.currency)} limit`}`
+            : card.cycle_start
+              ? `since first recorded transaction (${card.cycle_start}); statement date not yet reported`
+              : "statement data unavailable"}
         </Text>
       </Group>
       <Text size="xs" c="dimmed" mt="sm">
@@ -477,8 +484,7 @@ function App() {
                 </Text>
               </Group>
               <Text size="sm" c="dimmed" mt="xs" mb="md">
-                Statement cycles and card limits are not the flexible allowance. Cards are not yet split by spending
-                type.
+                Statement cycles and card limits are not a flexible spending budget.
               </Text>
               <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                 {cards.map((card, index) => (

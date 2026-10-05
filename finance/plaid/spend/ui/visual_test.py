@@ -81,7 +81,22 @@ def dashboard_url() -> Iterator[str]:
                     "pending_minor_units": 1000,
                     "last_synced_at": "2026-10-15T11:00:00Z",
                     "cycle_start": "2026-10-01",
-                }
+                    "statement_available": True,
+                },
+                {
+                    "label": "New example card",
+                    "account_name": "New example card",
+                    "mask": "1111",
+                    "institution_name": "Sample Credit Union",
+                    "currency": "USD",
+                    "alert_state": "unavailable",
+                    "spend_minor_units": 3900,
+                    "limit_minor_units": 100000,
+                    "pending_minor_units": 0,
+                    "last_synced_at": "2026-10-15T11:00:00Z",
+                    "cycle_start": "2026-10-10",
+                    "statement_available": False,
+                },
             ],
         }
 
@@ -110,6 +125,7 @@ async def test_spending_decision_render(page: Page, dashboard_url: str, width: i
     await page.get_by_text("$200.00", exact=True).wait_for()
     assert await page.get_by_role("heading", name="Can I afford this?").count() == 1
     assert await page.get_by_text("$75.00", exact=True).count() == 1
+    assert await page.get_by_text("since first recorded transaction", exact=False).count() == 1
     assert not errors
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     out = undeclared_outputs_dir()
