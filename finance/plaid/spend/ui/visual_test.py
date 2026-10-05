@@ -67,6 +67,8 @@ def dashboard_url() -> Iterator[str]:
                 "trailing_7_daily_minor_units": 1250,
                 "trailing_7_observed_daily_minor_units": 1250,
                 "trailing_30_observed_daily_minor_units": 1000,
+                "trailing_7_unmatched_count": 2,
+                "trailing_7_unmatched_minor_units": 300,
                 "projected_cycle_end_minor_units": 7500,
                 "next_credit_at": "2026-10-25T00:00:00Z",
                 "estimated_exhaustion_at": "2026-10-31T00:00:00Z",
@@ -119,6 +121,8 @@ def dashboard_url() -> Iterator[str]:
                 trailing_7_daily_minor_units=None,
                 trailing_7_observed_daily_minor_units=None,
                 trailing_30_observed_daily_minor_units=None,
+                trailing_7_unmatched_count=None,
+                trailing_7_unmatched_minor_units=None,
                 projected_cycle_end_minor_units=None,
                 estimated_exhaustion_at=None,
             )
@@ -162,6 +166,7 @@ async def test_spending_decision_render(
     assert await page.get_by_text("$12.50 / day", exact=True).count() == 2
     assert await page.get_by_text("$10.00 / day", exact=True).count() == 1
     assert await page.get_by_text("Below provisional leash", exact=True).count() == 1
+    assert await page.get_by_text("7d unmatched 2 ($3.00)", exact=False).count() == 1
     assert await page.get_by_text("$75.00", exact=True).count() == 1
     assert await page.get_by_text("Provisional card total since", exact=False).count() == 1
     assert await page.get_by_text("Includes purchases outside the allowance", exact=False).count() == 1

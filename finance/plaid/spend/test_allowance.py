@@ -254,6 +254,18 @@ def test_private_rule_and_uncertain_purchases():
     assert uncertain.available_minor_units == 8_800
     assert uncertain.review_minor_units == 1_200
     assert uncertain.review_transaction_count == 1
+    assert uncertain.trailing_7_unmatched_count == 1
+    assert uncertain.trailing_7_unmatched_minor_units == 1_200
+    prior = calculate(
+        policy(activation_at=START_DATE, rules=[name_rule("name", "EXAMPLE", Kind.FIXED)]),
+        [row("2026-01-30", 12)],
+        now=START,
+        last_synced_at=START,
+    )
+    assert prior.available_minor_units == 10_000
+    assert prior.review_transaction_count == 0
+    assert prior.trailing_7_unmatched_count == 1
+    assert prior.trailing_7_unmatched_minor_units == 1_200
     two_uncertain = view(
         [
             row("2026-01-31", 12, pfc_primary=None, pfc_detailed=None),
@@ -262,6 +274,7 @@ def test_private_rule_and_uncertain_purchases():
     )
     assert two_uncertain.review_minor_units == 1_500
     assert two_uncertain.review_transaction_count == 2
+    assert two_uncertain.trailing_7_unmatched_count == 2
     with pytest.raises(ValidationError):
         Rule.model_validate(
             {"condition": {"type": "name_prefix", "field": "pfc_primary", "prefix": "SHOPPING"}, "kind": "excluded"}

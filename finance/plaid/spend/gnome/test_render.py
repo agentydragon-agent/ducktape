@@ -309,14 +309,17 @@ def test_render(
         assert "Synthetic card" not in menu_text
         assert "Check a purchase / dashboard" in menu_text
         if fixture_name == "allowance_paced":
-            assert "7 days" in menu_text
-            assert "30 days" in menu_text
-            assert "Provisional leash" in menu_text
-            assert "Oldest account sync" in menu_text
+            assert "7d $28.00/day" in menu_text
+            assert "30d $18.00/day" in menu_text
+            assert "Leash ~$23.00/day" in menu_text
+            assert "7d unmatched 3 ($12.00)" in menu_text
+            assert "Sync " in menu_text
+            assert "sustainability target" not in menu_text
+            assert "past pace is not opening debt" not in menu_text
         if fixture_name == "allowance_warming":
             assert "Warming up" in menu_text
         if fixture_name == "allowance_exhausted":
-            assert "Allowance exhausted" in menu_text
+            assert "Exhausted" in menu_text
     _screenshot(container, output_path)
     _close_menu(container)
 

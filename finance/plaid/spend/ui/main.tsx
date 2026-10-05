@@ -44,6 +44,8 @@ type Allowance = {
   trailing_7_daily_minor_units: number | null;
   trailing_7_observed_daily_minor_units: number | null;
   trailing_30_observed_daily_minor_units: number | null;
+  trailing_7_unmatched_count: number | null;
+  trailing_7_unmatched_minor_units: number | null;
   spending_signal: string;
   projected_cycle_end_minor_units: number | null;
   estimated_exhaustion_at: string | null;
@@ -303,6 +305,12 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
               Positive recorded purchases, including history before activation; unmatched purchases count as flexible.
               Earlier purchases inform pace but do not reduce available allowance. Plaid data may lag.
             </Text>
+            {allowance.trailing_7_unmatched_count != null && allowance.trailing_7_unmatched_count > 0 && (
+              <Text size="xs" c="dimmed">
+                7d unmatched {allowance.trailing_7_unmatched_count} ({m(allowance.trailing_7_unmatched_minor_units)})
+                · counted as flexible.
+              </Text>
+            )}
             <Divider />
             <Group justify="space-between" gap="sm">
               <Text size="sm">Pace used for estimate</Text>

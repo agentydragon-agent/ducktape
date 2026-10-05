@@ -304,6 +304,8 @@ class SpendService:
                     trailing_7_daily_minor_units=None,
                     trailing_7_observed_daily_minor_units=None,
                     trailing_30_observed_daily_minor_units=None,
+                    trailing_7_unmatched_count=None,
+                    trailing_7_unmatched_minor_units=None,
                     estimated_exhaustion_at=None,
                     alert_state=PaceAlert.UNAVAILABLE,
                     spending_signal=PaceAlert.UNAVAILABLE,

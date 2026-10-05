@@ -54,7 +54,10 @@ present it as the literal seven-day average. Web, GNOME and CLI show both observ
 rates against the same approximate monthly-credit-equivalent daily reference;
 `spending_signal` compares those rates and the existing forecast against that
 **provisional allowance**, not a sustainability guarantee.
-Plaid's transaction date (not an exact swipe timestamp) defines membership in each
+`trailing_7_unmatched_count` and `trailing_7_unmatched_minor_units` count
+positive, default-flexible purchases in the pace lookback, including before
+activation; this is separate from the postactivation review tally. Plaid's
+transaction date (not an exact swipe timestamp) defines membership in each
 window. A newly linked account with a short historical backfill can understate
 observed pace; show sync freshness, not a promise of comprehensive coverage.
 

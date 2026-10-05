@@ -127,6 +127,8 @@ class AllowanceView(BaseModel):
     # Separate from the short-window burst-sensitive pace used for forecasting.
     trailing_7_observed_daily_minor_units: int | None
     trailing_30_observed_daily_minor_units: int | None
+    trailing_7_unmatched_count: int | None
+    trailing_7_unmatched_minor_units: int | None
     estimated_exhaustion_at: datetime | None = Field(
         description="Projected at trailing seven-day positive purchase pace, ignoring future credits; null if no recent spend."
     )
@@ -185,6 +187,8 @@ def calculate(
     included: list[Purchase] = []
     recent_positive = 0
     monthly_positive = 0
+    weekly_unmatched_count = 0
+    weekly_unmatched_minor_units = 0
     unmatched = 0
     pace_start = (now - timedelta(days=6)).date()
     monthly_pace_start = (now - timedelta(days=29)).date()
@@ -206,6 +210,9 @@ def calculate(
             continue
         if transaction.date >= pace_start:
             recent_positive += max(0, amount)
+            if rule is None and amount > 0:
+                weekly_unmatched_count += 1
+                weekly_unmatched_minor_units += amount
         if transaction.date >= monthly_pace_start:
             monthly_positive += max(0, amount)
         if transaction.date >= start.date():
@@ -278,6 +285,8 @@ def calculate(
         trailing_7_daily_minor_units=daily,
         trailing_7_observed_daily_minor_units=observed_weekly,
         trailing_30_observed_daily_minor_units=observed_monthly,
+        trailing_7_unmatched_count=weekly_unmatched_count,
+        trailing_7_unmatched_minor_units=weekly_unmatched_minor_units,
         estimated_exhaustion_at=now + timedelta(days=max(0, available) / daily) if daily else None,
         alert_state=alert,
         spending_signal=signal,

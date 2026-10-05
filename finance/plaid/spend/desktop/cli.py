@@ -123,6 +123,11 @@ def _print_allowance(allowance: AllowanceView) -> None:
     )
     daily_reference = round(allowance.monthly_minor_units * 12 / 365.2425)
     print(f"  Provisional leash rate: ~{_format_money(daily_reference, currency)}/day")
+    if allowance.trailing_7_unmatched_count:
+        print(
+            f"  7d unmatched: {allowance.trailing_7_unmatched_count} "
+            f"({_format_money(allowance.trailing_7_unmatched_minor_units, currency)})"
+        )
     print("  Leash capacity is not a sustainability target; unmatched purchases count as flexible.")
     print("  History before activation informs pace but not the available balance.")
     print(f"  Forecast signal: {allowance.alert_state.replace('_', ' ')}")

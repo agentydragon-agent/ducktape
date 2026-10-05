@@ -24,6 +24,8 @@
       "alert_state": "normal",
       "trailing_7_observed_daily_minor_units": 2800,
       "trailing_30_observed_daily_minor_units": 1800,
+      "trailing_7_unmatched_count": 3,
+      "trailing_7_unmatched_minor_units": 1200,
       "last_synced_at": "2026-10-15T11:00:00Z",
       "spending_signal": "warning"
     }

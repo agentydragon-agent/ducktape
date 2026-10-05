@@ -98,17 +98,25 @@ function totalLabel(view) {
 
 function allowanceSignal(allowance) {
   if (allowance.status !== "active" || allowance.available_minor_units == null)
-    return { level: "unknown", label: "Allowance unavailable", marker: "" };
+    return { level: "unknown", label: "Unavailable", marker: "" };
   if (allowance.available_minor_units <= 0)
-    return { level: "danger", label: "Allowance exhausted · advisory only", marker: "!!" };
+    return { level: "danger", label: "Exhausted", marker: "!!" };
   if (allowance.spending_signal === "warning")
-    return { level: "caution", label: "Recent pace or projection above provisional leash", marker: "!" };
+    return { level: "caution", label: "Pace high", marker: "!" };
   if (allowance.spending_signal === "unavailable") return { level: "unknown", label: "Pace warming up", marker: "" };
-  return { level: "good", label: "Below provisional leash pace", marker: "" };
+  return { level: "good", label: "Below leash", marker: "" };
 }
 
 function formatDaily(minorUnits, currency) {
-  return minorUnits == null ? "Warming up" : `${formatMoney(minorUnits, currency)}/day`;
+  return minorUnits == null ? "—" : `${formatMoney(minorUnits, currency)}/day`;
+}
+
+function formatSyncAge(timestamp) {
+  const elapsed = (Date.now() - new Date(timestamp).getTime()) / 60000;
+  if (!Number.isFinite(elapsed)) return "?";
+  if (elapsed < 60) return `${Math.max(0, Math.floor(elapsed))}m`;
+  if (elapsed < 2880) return `${Math.floor(elapsed / 60)}h`;
+  return `${Math.floor(elapsed / 1440)}d`;
 }
 
 const PlaidSpendIndicator = GObject.registerClass(
@@ -330,7 +338,7 @@ const PlaidSpendIndicator = GObject.registerClass(
           error: "Connection problem · figures may be stale",
           ready: allowance ? "Flexible spending" : "Statement-cycle spend",
         }[this._status] || "Plaid Spend";
-      this._addReadOnly(statusText, "plaid-spend-header");
+      if (!allowance || this._status !== "ready") this._addReadOnly(statusText, "plaid-spend-header");
 
       if (this._status === "authentication-required") {
         const login = new PopupMenu.PopupMenuItem("Sign in with Authentik…");
@@ -339,31 +347,25 @@ const PlaidSpendIndicator = GObject.registerClass(
       }
 
       if (allowance) {
-        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem("Your flex cushion · advisory"));
         if (allowance.status === "active" && this._status === "ready") {
           const signal = allowanceSignal(allowance);
           this._addReadOnly(
-            `${formatMoney(allowance.available_minor_units, allowance.currency)} available`,
-            "plaid-spend-hero"
-          );
-          this._addReadOnly(`${signal.marker} ${signal.label}`.trim(), `plaid-spend-${signal.level}`);
-          this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem("Recorded flexible spending"));
-          this._addReadOnly(
-            `7 days   ${formatDaily(allowance.trailing_7_observed_daily_minor_units, allowance.currency)}`
+            `${formatMoney(allowance.available_minor_units, allowance.currency)} available · ${signal.label}`,
+            `plaid-spend-${signal.level}`
           );
           this._addReadOnly(
-            `30 days  ${formatDaily(allowance.trailing_30_observed_daily_minor_units, allowance.currency)}`
+            `7d ${formatDaily(allowance.trailing_7_observed_daily_minor_units, allowance.currency)} · ` +
+            `30d ${formatDaily(allowance.trailing_30_observed_daily_minor_units, allowance.currency)}`
           );
           const daily = Math.round((Number(allowance.monthly_minor_units) * 12) / 365.2425);
-          this._addReadOnly(`Provisional leash ~${formatDaily(daily, allowance.currency)}`);
-          this._addReadOnly("Positive purchases; past pace is not opening debt.", "plaid-spend-caption");
-          this._addReadOnly("Unmatched purchases count as flexible.", "plaid-spend-caption");
-          this._addReadOnly("Leash capacity is not a sustainability target.", "plaid-spend-caption");
-          if (allowance.last_synced_at)
+          this._addReadOnly(`Leash ~${formatDaily(daily, allowance.currency)}`, "plaid-spend-caption");
+          if (allowance.trailing_7_unmatched_count > 0)
             this._addReadOnly(
-              `Oldest account sync ${formatTimestamp(allowance.last_synced_at)}`,
-              "plaid-spend-caption"
+              `7d unmatched ${allowance.trailing_7_unmatched_count} (${formatMoney(allowance.trailing_7_unmatched_minor_units, allowance.currency)})`,
+              "plaid-spend-caution"
             );
+          if (allowance.last_synced_at)
+            this._addReadOnly(`Sync ${formatSyncAge(allowance.last_synced_at)} ago`, "plaid-spend-caption");
         } else this._addReadOnly(allowance.note || "Allowance unavailable; check connection");
       }
       if (this._view?.dashboard_url?.startsWith("https://")) {
