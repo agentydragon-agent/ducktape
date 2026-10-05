@@ -285,5 +285,29 @@ def test_environments_do_not_share_cluster_scoped_bundles(
             owners[name] = namespace
 
 
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_inference_credentials_are_default_and_do_not_grant_management(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    docs = agentplane_manifests[namespace]
+    basic = _by_name(docs, "EgressPolicy", BASIC_POLICY)
+    for name, denied_paths in (
+        ("ollama", {"/api/pull", "/api/push", "/api/create", "/api/delete", "/api/copy", "/api/blobs/*"}),
+        ("litellm-cheap-experiments", {"/key/generate", "/key/info", "/user/new", "/config/update"}),
+    ):
+        rules = [rule for rule in basic["spec"]["rules"] if rule.get("credentialRef") == {"name": name}]
+        assert rules
+        assert all(rule["clusterInternal"] and rule["paths"] for rule in rules)
+        assert all("*" not in path for rule in rules for path in rule["paths"])
+        assert denied_paths.isdisjoint(path for rule in rules for path in rule["paths"])
+        assert any("POST" in rule["methods"] and "/v1/chat/completions" in rule["paths"] for rule in rules)
+        assert all(set(rule["methods"]) <= {"GET", "POST"} for rule in rules)
+        credential = _by_name(docs, "EgressCredential", name)
+        source = credential["spec"]["source"]["secretRef"]
+        secret = _by_name(docs, "ExternalSecret", source["name"])
+        assert secret["metadata"]["namespace"] == f"{namespace}-egress-credentials"
+        assert source["key"] in {item["secretKey"] for item in secret["spec"]["data"]}
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
