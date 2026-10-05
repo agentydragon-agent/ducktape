@@ -371,6 +371,8 @@ _HAIKU = Model("claude-haiku-4-5-20251001", "Haiku 4.5")
 # is an INPUT allowance, not input+output: the live check crossed that combined
 # total. Do not subtract the output allowance from it. Claude/GPT-OSS were not
 # covered by that check; source/probe evidence is in model_catalog/design.md, Appendix B.
+# The pinned snapshot below is historical; Appendix B also records fresh Google
+# metadata from 2026-10-05. Refreshing provider metadata must not change client budgets.
 #
 # `context_window`/`max_output_tokens`: Google's own declared capability for each model as
 # served through Antigravity, not a public-API figure borrowed from Anthropic/OpenAI/a

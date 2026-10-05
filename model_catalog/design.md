@@ -808,8 +808,9 @@ reads Google's `fetchAvailableModels` response and maps `maxTokens` to
 [shipped snapshot](https://github.com/router-for-me/CLIProxyAPI/blob/7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974/internal/registry/models/models.json)
 records **1048576 / 65535** for Antigravity `gemini-3.1-flash-lite`,
 **200000 / 64000** for its Claude Opus/Sonnet, and **114000 / 32768** for GPT-OSS
-120B Medium. This is a pinned upstream snapshot, not a fresh authenticated fetch.
-The fetcher's renaming alone does not define input versus combined capacity.
+120B Medium. This is the historical pinned snapshot; the fresh authenticated
+response below differs. The fetcher's renaming alone does not define input versus
+combined capacity.
 
 Existing online material helps interpret these fields:
 
@@ -826,8 +827,37 @@ Existing online material helps interpret these fields:
 - [Upstream catalogue PR #59](https://github.com/router-for-me/models/pull/59)
   reports fresh production/sandbox `fetchAvailableModels` values of **250000** for
   Claude Opus/Sonnet and **131072** for GPT-OSS, replacing 200000/114000, with output
-  fields unchanged. It was open when checked. This is evidence that our snapshot
-  may be stale, not our own authenticated fetch or permission to update all routes.
+  fields unchanged. It was open when checked; our own authenticated fetch below
+  now corroborates those reported values.
+
+#### Fresh Google metadata, 2026-10-05 12:01 UTC
+
+Through AIQuota's existing management integration, CLIProxyAPI queried
+`/v1internal:fetchAvailableModels` on `cloudcode-pa.googleapis.com`,
+`daily-cloudcode-pa.googleapis.com` and `daily-cloudcode-pa.sandbox.googleapis.com`.
+All three returned HTTP 200 and identical model IDs/display names/token fields for
+**33 models**. OAuth substitution/refresh stayed inside CLIProxyAPI; only the
+selected metadata fields were returned, not credentials or auth-file contents.
+
+| Model / group in the response | `maxTokens` | `maxOutputTokens` |
+| --- | ---: | ---: |
+| Claude Opus 4.6 Thinking / Sonnet 4.6 | 250000 | 64000 |
+| GPT-OSS 120B Medium | 131072 | 32768 |
+| Gemini 3.1 / 3.5 Flash Lite | 1048576 | 65535 |
+| Gemini Pro agent / 3.1 Pro High / Low | 1048576 | 65535 |
+| Gemini 3 Flash; 3.6 / 3.7 / 3.8 Flash variants | 1048576 | 65536 |
+| Gemini 3.1 Flash Image | absent | absent |
+
+Our snapshot's 200000 and 114000 are therefore stale relative to our account's
+current response; 3.5 Flash Lite now has a declared pair too. The 65535/65536
+output-field distinction is present in Google's response, not just our handwritten
+configuration. These are **raw provider-reported fields**, not a claim that every
+family's `maxTokens` means maximum input or that both maxima are jointly attainable.
+The Flash Lite probe below supplies separate evidence about Gemini semantics.
+Do not change consumer budgets, authorize new models, or expose internal entries
+merely because they appear in this response.
+
+#### Bounded serving-path check
 
 On **2026-10-05**, the cheap-experiments key admitted Antigravity's 3.1/3.5 Flash
 Lite routes, not its Claude or GPT-OSS routes. Bounded live requests through
@@ -969,10 +999,11 @@ The public-coder projection currently preserves:
 | Antigravity Pro / Pro Low / Flash Lite 3.1 |         1048576 |       65535 |
 | Antigravity GPT-OSS 120B Medium            |          114000 |       32768 |
 
-The 65535/65536 difference is preserved history, not an established distinction in
-provider capacity. The 114000 value also appears in the upstream Antigravity
-snapshot (Appendix B) and is preserved here as an OpenClaw budget; that usage does
-**not** establish that it is both a provider input ceiling and a combined window. Public Coder is now paused (§5); do not validate its entire matrix as a prerequisite
+These remain preserved client choices. Google's fresh metadata also distinguishes
+65535/65536 output values, while now reporting 131072 rather than 114000 for GPT-OSS
+(Appendix B). The old 114000 came from the upstream snapshot and is preserved here
+as an OpenClaw budget; neither use establishes both a provider input ceiling and a
+combined window. Refreshing metadata does not silently update this client policy. Public Coder is now paused (§5); do not validate its entire matrix as a prerequisite
 for fixing the active Codex path.
 
 ### Codex and Agentplane
