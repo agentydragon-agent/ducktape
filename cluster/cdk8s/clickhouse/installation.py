@@ -619,7 +619,9 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
 CHARTS = (agent_diagnostics_rbac_chart, keeper_chart, clickhouse_chart, service_chart, networkpolicy_chart)
 
 
-def clickhouse(chart: Chart, directory: RenderedDirectory, clickhouse_operator: Kustomization) -> Kustomization:
+def clickhouse(
+    chart: Chart, directory: RenderedDirectory, clickhouse_operator: Kustomization, external_secrets_operator: Kustomization
+) -> Kustomization:
     name = "clickhouse"
     return flux_kustomization(
         chart,
@@ -642,5 +644,8 @@ def clickhouse(chart: Chart, directory: RenderedDirectory, clickhouse_operator: 
                 in_progress="status.status != 'Completed' && status.status != 'Aborted'",
             ),
         ],
-        depends_on=[flux_kustomization_depends_on(clickhouse_operator)],
+        depends_on=[
+            flux_kustomization_depends_on(clickhouse_operator),
+            flux_kustomization_depends_on(external_secrets_operator),
+        ],
     )
