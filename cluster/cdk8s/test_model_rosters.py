@@ -71,21 +71,21 @@ def test_same_slug_on_different_accounts_keeps_distinct_limits() -> None:
     ]
     assert shared_slugs
     for google, antigravity in shared_slugs:
-        assert google.model.context_window is not None
-        assert antigravity.model.context_window is None
+        assert google.model.limits is not None
+        assert antigravity.model.limits is None
 
 
 def test_unknown_limits_are_not_invented_or_published() -> None:
-    unknown_codex = [route for route in CHATGPT_RESPONSES_ROUTES if route.model.context_window is None]
+    unknown_codex = [route for route in CHATGPT_RESPONSES_ROUTES if route.model.limits is None]
     assert unknown_codex
     for route in unknown_codex:
         assert not route.publish_limits
         assert "max_input_tokens" not in model_entry(route)["model_info"]
-    assert any(route.model.context_window is None for route in ANTIGRAVITY_ROUTES)
+    assert any(route.model.limits is None for route in ANTIGRAVITY_ROUTES)
 
 
 def test_publishing_unknown_limits_fails() -> None:
-    unknown = next(route for route in CHATGPT_RESPONSES_ROUTES if route.model.context_window is None)
+    unknown = next(route for route in CHATGPT_RESPONSES_ROUTES if route.model.limits is None)
     with pytest.raises(ValueError, match="unknown limits"):
         model_entry(replace(unknown, publish_limits=True))
 

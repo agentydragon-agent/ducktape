@@ -18,9 +18,10 @@ Ollama setup-script renderer and the gateway catalogue below; cdk8s retains stor
 workloads and provisioning selections. Requested `num_ctx` is not a capacity fact.
 
 - `Model` describes a model **as served by its account**: upstream identity, known
-  display name, context/output limits, and reasoning capability. Unknown metadata is
-  unset. The declaration's comments retain the evidence and its limitations; a
-  configured Ollama context is not proof of attended capacity.
+  display name, input/output declarations, and reasoning capability. `limits` is a
+  complete `TokenLimits` pair or absent, never a generic context window. See the
+  [limit semantics and remaining provenance gaps](../../model_catalog/design.md#current-token-limit-shape);
+  a configured Ollama context is not proof of attended capacity.
 - `Upstream` associates an account with its adapter, outbound protocol. Cluster endpoints
   and credential references live separately in `litellm/upstreams.py`. The shape comes from the adapter/protocol, not a second
   independently authored value. It is not the client's inbound protocol.

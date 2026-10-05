@@ -361,15 +361,32 @@ GPT-OSS 20B's larger gateway variants still use the base tag, with no baked alia
 only the native wire applies their requested context. Those route names do **not**
 establish equivalent effective allocations across wires. Creating aliases or
 retiring routes needs a separate behavior decision. Requested `num_ctx` is no longer
-projected into `Model.context_window`; Ollama capacity metadata stays unset.
+projected into model token limits; Ollama capacity metadata stays unset.
+
+## Current token-limit shape
+
+`Model.limits` holds both `max_input_tokens` and `max_output_tokens`, or is absent.
+There is no generic model `context_window`: input allowance is not combined context
+capacity, and a pair does not imply simultaneous attainability of both maxima.
+LiteLLM projects this pair; Nix wrappers, OpenClaw, and Agentplane already own their
+client budgets separately and do not read it. Ollama `num_ctx` stays independent.
+
+This structural cleanup preserves existing metadata numbers and publication choices;
+it does **not** finish their source audit. In particular, ChatGPT's retained proxy
+allowances include Astra's inherited Codex window and Sol/Luna's inherited GPT-5.6
+values, not independently established provider maxima. Their declaration comments
+state this limitation. Replacing these provisional declarations, refreshing the stale
+Antigravity snapshot, and filling missing pairs remain migration work; the new type
+is not evidence that the old numbers are correct.
 
 ## Proposed shape and rollout
 
 Apply this to the whole roster and its projections, not just token fields. Keep the
 existing small separation rather than adding a meta-configuration layer:
 
-1. **Shared facts and identities, source-owned composition:** `Model(..., limits=TokenLimits(input, output)
-| None)`, explicit `Upstream`, named `Route`, and aliases referencing routes.
+1. **Shared facts and identities, source-owned composition:** `Model.limits` is
+   `TokenLimits(max_input_tokens, max_output_tokens) | None`, alongside explicit
+   `Upstream`, named `Route`, and aliases referencing routes.
    Provider input/output facts carry evidence in nearby documentation/comments.
    Unknown remains unknown. No generic model `context_window`. Shared types/facts do
    not make LiteLLM the root. Prefer source declarations → gateway declarations
