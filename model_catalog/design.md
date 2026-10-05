@@ -20,7 +20,8 @@ capacity or enabling longer context is not the program's goal or completion crit
 Code owns executable configuration. This document owns the cross-consumer design,
 constraints and rationale; the detailed limits research is supporting evidence below.
 
-**Decision status:** the per-file destinations and changes are not agreed yet. The
+**Decision status:** per-file destinations and changes remain open except where an
+approved decision is explicitly recorded in §3. The
 ownership shapes and consolidation suggestions below are proposals to evaluate, not
 instructions to execute. The file inventory in §3 records what needs a disposition
 decision. Agreed goals, dependency/safety constraints and already-approved pauses remain
@@ -193,7 +194,8 @@ Repository references and operator confirmation are both needed.
 
 ### Files requiring disposition decisions
 
-**All dispositions below are OPEN.** This is a review inventory, not an approved
+**Dispositions are OPEN unless explicitly marked approved below.** This is a review
+inventory, not an approved
 keep/move/merge/delete list or a promise that every file needs a diff. Paths are the
 current locations; grouped paths do not imply that their fates must be the same.
 For each, trace its declarations, inputs, outputs and actual readers; then record the
@@ -267,7 +269,19 @@ finds another consumer or source of independently maintained configuration.
 | Affected `cluster/k8s/…` manifests and Nix JSON artifacts | Which outputs follow from the eventual source changes? Regenerate them from their owners, never make them another authored source. |
 | `cluster/cdk8s/test_model_rosters.py`; `cluster/cdk8s/litellm/test_config.py`, `test_openclaw_models.py`; `model_catalog/test_nix.py`, `test_policies.py`; affected Agentplane/OpenClaw tests | Which tests prove identity, authorization, fallback, serialization or native-client behavior, and which merely restate fields? Decide retention/consolidation based on that distinction. |
 | Affected `BUILD.bazel` files, including `cluster/cdk8s/BUILD.bazel`, `cluster/cdk8s/litellm/BUILD.bazel`, `cluster/cdk8s/agentplane/BUILD.bazel` | Which dependency/visibility edges should change as ownership is decided? Preserve the cdk8s generation/runtime boundary. |
-| `model_catalog/design.md`; `model_catalog/README.md`; `cluster/docs/model_catalog.md`; `agentplane/docs/model_metadata.md` | Decide their eventual content split and lifecycle without competing specifications or lost evidence/restoration instructions. §6 offers one candidate, not an approved per-file outcome. |
+| `model_catalog/design.md`; `model_catalog/README.md`; `cluster/docs/model_catalog.md` | Decide their eventual content split and lifecycle without competing specifications or lost evidence/restoration instructions. §6 offers one candidate, not an approved per-file outcome. |
+
+
+### Approved file disposition: cross-layer harness audit
+
+**Approved by the operator; carried out in this documentation PR:** move
+`agentplane/docs/model_metadata.md` to
+[`model_catalog/debug/harness_model_metadata.md`](debug/harness_model_metadata.md).
+Its LiteLLM naming/authorization, Nix-wrapper and native-client findings span consumers;
+Agentplane supplied the capture machinery but does not own all those findings. Preserve
+the historical versions and evidence, update relative links, and link from Agentplane's
+capture documentation rather than keeping a duplicate or redirect stub. Capture tools
+and runtime code stay in Agentplane. This decision does not settle any other file's fate.
 
 
 ## 4. Proposed shape and rollout
@@ -375,7 +389,7 @@ model-limit semantics in both places.
 | This design | Cross-layer semantics, constraints, decisions and unresolved choices; explicitly dated investigation evidence |
 | `model_catalog/README.md` | Short neutral-package entry point: module responsibilities, generation entry points, links to the design and deployment guide |
 | `cluster/docs/model_catalog.md` | Current cluster bindings and projections, where to change deployment selections, regeneration/check commands, and cluster-specific pause/restoration procedures |
-| `agentplane/docs/model_metadata.md` | Historical version-scoped harness audit, linked as evidence rather than treated as current deployment policy |
+| `model_catalog/debug/harness_model_metadata.md` | **Location approved (§3):** historical version-scoped cross-layer audit, linked as evidence rather than treated as current deployment policy |
 | Tracking issue #9121 | Work/PR status and complete parked-integration inventory, linking to the relevant restoration instructions |
 
 ### Candidate treatment of the existing cluster guide
@@ -703,7 +717,7 @@ corroborates the live fallback warning and telemetry:
 
 See `core/src/tools/mod.rs`, `core/src/client.rs`, and
 `model-provider-info/src/lib.rs` for those non-context effects. The older
-[harness audit](../agentplane/docs/model_metadata.md) remains historical evidence,
+[harness audit](debug/harness_model_metadata.md) remains historical evidence,
 not a substitute for inspecting the launched version.
 
 #### Output limits are not enforced by these metadata fields
