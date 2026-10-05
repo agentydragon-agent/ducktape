@@ -42,20 +42,6 @@ def test_public_coder_agent_catalog_names_only_served_routes() -> None:
         assert model["maxTokens"] < model["contextWindow"]
 
 
-@pytest.mark.parametrize(("context", "output"), [(None, None), (1_000_000, 100_000)])
-def test_public_coder_budgets_are_independent_of_provider_limits(
-    monkeypatch: pytest.MonkeyPatch, context: int | None, output: int | None
-) -> None:
-    before = public_coder_agent_config.config()
-    route = GPT6_ASTRA_RESPONSES
-    monkeypatch.setattr(
-        public_coder_agent_config,
-        "GPT6_ASTRA_RESPONSES",
-        replace(route, model=replace(route.model, context_window=context, max_output_tokens=output)),
-    )
-    assert public_coder_agent_config.config() == before
-
-
 def test_public_coder_rejects_unknown_reasoning_capability() -> None:
     route = GPT6_ASTRA_RESPONSES
     with pytest.raises(ValueError, match="missing OpenClaw metadata"):

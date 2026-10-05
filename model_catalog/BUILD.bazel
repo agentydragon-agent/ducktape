@@ -35,9 +35,7 @@ py_test(
     srcs = ["test_nix.py"],
     data = ["claude-wrappers.json"],
     deps = [
-        ":catalog",
         ":nix",
-        ":policies",
         "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
