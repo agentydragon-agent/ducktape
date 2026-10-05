@@ -40,6 +40,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+
 # Avoid colliding with this module's ollama Flux constructor.
 from model_catalog import ollama as models
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
