@@ -524,8 +524,7 @@ def test_cluster_diagnostics_kustomizations_are_read_only(agent_permissions: tup
 def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict]) -> None:
     rbac, config = agent_permissions
     profiles = {
-        name: rbac.managed(config, name, namespace="agentplane-staging")
-        for name in ("public-coder", "finance-agent")
+        name: rbac.managed(config, name, namespace="agentplane-staging") for name in ("public-coder", "finance-agent")
     }
     profiles.update(
         {
