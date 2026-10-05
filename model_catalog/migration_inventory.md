@@ -128,15 +128,15 @@ Source inventory at #9273's base (`3822ce017a`): **90 public entries, 12 with ex
 input/output overrides**. The first no-patch slice completes those 12 overrides with the
 legacy output alias. The remaining migration is deliberately not claimed complete:
 
-| Routes | Source / next decision |
-| --- | --- |
-| ChatGPT GPT-6 and GPT-5.6, both wires (12 entries) | Existing configured numbers remain; complete schema aliases now. Their mixed historical/client provenance still needs the shared-limit semantic cleanup. |
-| ChatGPT GPT-5.4 / GPT-5.5, both wires | Need subscription-path declarations; do not silently adopt raw OpenAI API capacity. Decide values or whether to retain these routes. |
-| Direct Anthropic, direct Gemini, Mistral, Groq chat | Existing provider declarations or reviewed LiteLLM catalogue entries can supply values; record exact source and reconcile ambiguous input/output terminology. Direct Gemini already has a pair but does not yet publish it. |
-| Anthropic subscription; Tana Claude | Account/gateway paths need an explicit source choice. Same vendor slug alone does not establish equivalence to direct-API metadata. |
-| Antigravity | Adopt the already-recorded fresh Google response deliberately, retaining family-specific semantics. Flash Lite 3.5 now has a pair; image output has no pair in that response. No extra probes are needed just to rediscover this. |
-| Ollama chat variants | `num_ctx` is allocation, not an input/output pair. GPT-OSS 20B 256K/512K/1M OpenAI-wire routes lack corresponding baked aliases. Choose meaningful served metadata or ask which variants to pause; do not turn route-name sizes into capacity claims. |
-| Gemini and Ollama embeddings; Groq transcription | Declare applicable metadata by mode. Gemini input ceilings already have source comments; embedding dimensions and audio constraints are not generative output-token limits. Preserve the durable embedding alias. |
+| Routes                                              | Source / next decision                                                                                                                                                                                                                                |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ChatGPT GPT-6 and GPT-5.6, both wires (12 entries)  | Existing configured numbers remain; complete schema aliases now. Their mixed historical/client provenance still needs the shared-limit semantic cleanup.                                                                                              |
+| ChatGPT GPT-5.4 / GPT-5.5, both wires               | Need subscription-path declarations; do not silently adopt raw OpenAI API capacity. Decide values or whether to retain these routes.                                                                                                                  |
+| Direct Anthropic, direct Gemini, Mistral, Groq chat | Existing provider declarations or reviewed LiteLLM catalogue entries can supply values; record exact source and reconcile ambiguous input/output terminology. Direct Gemini already has a pair but does not yet publish it.                           |
+| Anthropic subscription; Tana Claude                 | Account/gateway paths need an explicit source choice. Same vendor slug alone does not establish equivalence to direct-API metadata.                                                                                                                   |
+| Antigravity                                         | Adopt the already-recorded fresh Google response deliberately, retaining family-specific semantics. Flash Lite 3.5 now has a pair; image output has no pair in that response. No extra probes are needed just to rediscover this.                     |
+| Ollama chat variants                                | `num_ctx` is allocation, not an input/output pair. GPT-OSS 20B 256K/512K/1M OpenAI-wire routes lack corresponding baked aliases. Choose meaningful served metadata or ask which variants to pause; do not turn route-name sizes into capacity claims. |
+| Gemini and Ollama embeddings; Groq transcription    | Declare applicable metadata by mode. Gemini input ceilings already have source comments; embedding dimensions and audio constraints are not generative output-token limits. Preserve the durable embedding alias.                                     |
 
 These are **remaining data/disposition decisions**, not a second runtime registry.
 The `publish_limits` flag is transitional and should disappear once retained declarations

@@ -134,13 +134,21 @@ async def test_complete_token_overrides_survive_catalogue_and_config_reload(
     catalog = json.loads(Path(litellm.__file__).with_name("model_prices_and_context_window_backup.json").read_text())
     for model in ("gpt-4o-mini", "gpt-4o"):
         catalog[model].update(
-            max_input_tokens=900_001, max_output_tokens=900_002, max_tokens=900_003,
-            input_cost_per_token=0.000007, output_cost_per_token=0.000013,
+            max_input_tokens=900_001,
+            max_output_tokens=900_002,
+            max_tokens=900_003,
+            input_cost_per_token=0.000007,
+            output_cost_per_token=0.000013,
             supports_function_calling=True,
         )
     monkeypatch.setattr(litellm, "model_cost", copy.deepcopy(catalog))
-    for name, value in (("prisma_client", None), ("user_model", None), ("llm_router", None),
-                        ("llm_model_list", None), ("general_settings", {})):
+    for name, value in (
+        ("prisma_client", None),
+        ("user_model", None),
+        ("llm_router", None),
+        ("llm_model_list", None),
+        ("general_settings", {}),
+    ):
         monkeypatch.setattr(proxy_server, name, value)
 
     async def admin() -> UserAPIKeyAuth:
@@ -155,29 +163,39 @@ async def test_complete_token_overrides_survive_catalogue_and_config_reload(
     # Exercise every currently published route from the generated deployment artifact,
     # not imports of cdk8s or a second handwritten roster. No real credential/network use.
     entries = [
-        {"model_name": entry["model_name"],
-         "litellm_params": {"model": entry["litellm_params"]["model"], "api_key": "offline-fixture"},
-         "model_info": {**entry["model_info"], "id": entry["model_name"]}}
-        for entry in rendered["model_list"] if "max_input_tokens" in entry["model_info"]
+        {
+            "model_name": entry["model_name"],
+            "litellm_params": {"model": entry["litellm_params"]["model"], "api_key": "offline-fixture"},
+            "model_info": {**entry["model_info"], "id": entry["model_name"]},
+        }
+        for entry in rendered["model_list"]
+        if "max_input_tokens" in entry["model_info"]
     ]
     assert entries
     expected_by_name = {entry["model_name"]: {key: entry["model_info"][key] for key in pair} for entry in entries}
     assert all(info["max_tokens"] == info["max_output_tokens"] for info in expected_by_name.values())
     expected_by_name.update(responses=pair, messages=pair)
-    config_path.write_text(json.dumps({
-        "model_list": entries + [
-            {"model_name": name,
-             "litellm_params": {"model": model, "api_key": "offline-fixture"},
-             "model_info": {"id": name, "mode": mode, **(pair if name != "catalogue-only" else {})}}
-            for name, model, mode in (
-                ("responses", "openai/gpt-4o-mini", "responses"),
-                ("messages", "anthropic/gpt-4o-mini", "chat"),
-                ("catalogue-only", "openai/gpt-4o", "chat"),
-            )
-        ],
-        "litellm_settings": {"drop_params": True},
-        "general_settings": {"store_model_in_db": False},
-    }))
+    config_path.write_text(
+        json.dumps(
+            {
+                "model_list": entries
+                + [
+                    {
+                        "model_name": name,
+                        "litellm_params": {"model": model, "api_key": "offline-fixture"},
+                        "model_info": {"id": name, "mode": mode, **(pair if name != "catalogue-only" else {})},
+                    }
+                    for name, model, mode in (
+                        ("responses", "openai/gpt-4o-mini", "responses"),
+                        ("messages", "anthropic/gpt-4o-mini", "chat"),
+                        ("catalogue-only", "openai/gpt-4o", "chat"),
+                    )
+                ],
+                "litellm_settings": {"drop_params": True},
+                "general_settings": {"store_model_in_db": False},
+            }
+        )
+    )
 
     async def load(router: litellm.Router | None = None) -> litellm.Router:
         loaded, models, settings = await ProxyConfig().load_config(router, str(config_path))
@@ -218,7 +236,9 @@ async def test_complete_token_overrides_survive_catalogue_and_config_reload(
             await check(client)
             for model in ("gpt-4o-mini", "gpt-4o"):
                 catalog[model].update(
-                    max_input_tokens=800_001, max_output_tokens=800_002, max_tokens=800_003,
+                    max_input_tokens=800_001,
+                    max_output_tokens=800_002,
+                    max_tokens=800_003,
                     input_cost_per_token=0.000017,
                 )
             # The real installation/replay kernel of catalogue reload; no remote fetch.

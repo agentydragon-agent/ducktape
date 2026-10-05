@@ -28,7 +28,9 @@ def test_token_override_projection_uses_one_output_value(publish: bool) -> None:
     expected = {"max_input_tokens": 111_111, "max_output_tokens": 22_222, "max_tokens": 22_222} if publish else {}
     for entry in (route, RouteAlias("compatibility-alias", route)):
         info = model_entry(entry)["model_info"]
-        assert {key: value for key, value in info.items() if key in ("max_input_tokens", "max_output_tokens", "max_tokens")} == expected
+        assert {
+            key: value for key, value in info.items() if key in ("max_input_tokens", "max_output_tokens", "max_tokens")
+        } == expected
         assert "context_window" not in info
 
 
