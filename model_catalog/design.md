@@ -858,4 +858,3 @@ Do not auto-project `Route.num_ctx` into provider limits or every harness's budg
 Audit whether each retained variant changes actual serving behavior. In particular,
 other GPT-OSS variants must not be considered validated just because Qwen's 256K
 alias is wired. Pausing unused variants avoids preserving a misleading matrix.
-
