@@ -62,15 +62,9 @@ body {
   color: #317a63;
 }
 .page-title {
-  max-width: 780px;
-  font-size: clamp(2rem, 4vw, 3rem);
-  letter-spacing: -0.045em;
-  line-height: 1.12;
-  margin-top: 12px;
-}
-.page-subtitle {
-  font-size: 1.07rem;
-  margin-top: 10px;
+  font-size: 1.4rem;
+  letter-spacing: -0.035em;
+  line-height: 1.25;
 }
 .sync-status {
   display: inline-flex;
@@ -90,7 +84,7 @@ body {
 }
 .allowance-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
   overflow: hidden;
   background: #123a3b;
   color: #f5fffb;
@@ -114,11 +108,11 @@ body {
   color: #a8d2c5;
 }
 .hero-amount {
-  font-size: clamp(3.25rem, 6vw, 5.4rem);
+  font-size: clamp(2.6rem, 4.2vw, 4.2rem);
   font-weight: 700;
-  letter-spacing: -0.075em;
+  letter-spacing: -0.04em;
   line-height: 1.13;
-  margin-top: 34px;
+  margin-top: 22px;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
@@ -151,15 +145,16 @@ body {
 }
 .hero-forecast {
   background: rgba(255, 255, 255, 0.085);
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
   padding: clamp(26px, 3.4vw, 38px);
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
 .forecast-number {
-  font-size: clamp(2rem, 3.2vw, 2.9rem);
+  font-size: clamp(1.9rem, 2.6vw, 2.6rem);
   font-weight: 700;
-  letter-spacing: -0.06em;
+  letter-spacing: -0.035em;
   margin-top: 22px;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
@@ -311,7 +306,8 @@ body {
     grid-template-columns: 1fr;
   }
   .hero-forecast {
-    border-top: 1px solid rgba(255, 255, 255, 0.16);
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
   }
   .brand-light {
     display: none;

@@ -298,6 +298,7 @@ class SpendService:
                     posted_minor_units=0,
                     pending_minor_units=0,
                     review_minor_units=0,
+                    review_transaction_count=0,
                     unmatched_refunds_minor_units=0,
                     windows_minor_units=None,
                     trailing_7_daily_minor_units=None,

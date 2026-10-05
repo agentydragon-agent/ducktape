@@ -52,6 +52,7 @@ def dashboard_url() -> Iterator[str]:
                 "posted_minor_units": 52500,
                 "pending_minor_units": 2500,
                 "review_minor_units": 1500,
+                "review_transaction_count": 2,
                 "unmatched_refunds_minor_units": 0,
                 "windows_minor_units": {
                     "current_credit_cycle_minor_units": 55000,
@@ -129,6 +130,8 @@ async def test_spending_decision_render(
     await page.screenshot(path=str(normal), full_page=True, animations="disabled")
     retain_review_asset(normal, title="Spend decisions", label=f"{width}px available", name=normal.name)
     await page.get_by_text("$200.00", exact=True).wait_for()
+    assert await page.get_by_role("heading", name="Flexible spending", level=1).count() == 1
+    assert await page.get_by_role("alert").get_by_text("2 charges ($15.00) need review").count() == 1
     assert await page.get_by_role("heading", name="Can I afford this?").count() == 1
     assert await page.get_by_text("$75.00", exact=True).count() == 1
     assert await page.get_by_text("since first recorded transaction", exact=False).count() == 1

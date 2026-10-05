@@ -35,6 +35,7 @@ type Allowance = {
   posted_minor_units: number | null;
   pending_minor_units: number | null;
   review_minor_units: number | null;
+  review_transaction_count: number;
   unmatched_refunds_minor_units: number | null;
   trailing_7_daily_minor_units: number | null;
   projected_cycle_end_minor_units: number | null;
@@ -287,12 +288,16 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
               </Group>
             </div>
             <Text size="sm" c="dimmed">
-              {m(allowance.pending_minor_units)} pending and {m(allowance.review_minor_units)} needing classification
-              review are included in the balance.
+              {m(allowance.pending_minor_units)} pending is included in the balance.
             </Text>
-            {allowance.review_minor_units != null && allowance.review_minor_units > 0 && (
-              <Alert color="yellow" title="Some charges need review" variant="light" className="review-alert">
-                They count as flexible until classified; the cushion could change.
+            {allowance.review_transaction_count > 0 && (
+              <Alert
+                color="yellow"
+                title={`${allowance.review_transaction_count} ${allowance.review_transaction_count === 1 ? "charge" : "charges"} (${m(allowance.review_minor_units)}) need review`}
+                variant="light"
+                className="review-alert"
+              >
+                Counted as flexible until classified; the cushion could change.
               </Alert>
             )}
           </Stack>
@@ -349,18 +354,18 @@ function SpendCard({ card }: { card: CardView }) {
           {alert}
         </Badge>
       </Group>
-      <Group align="baseline" gap={5} mt="lg">
+      <Stack gap={2} mt="lg">
         <Text size="xl" fw={700}>
           {money(card.spend_minor_units, card.currency)}
         </Text>
         <Text size="sm" c="dimmed">
           {card.statement_available
-            ? `this statement${card.limit_minor_units == null ? "" : ` / ${money(card.limit_minor_units, card.currency)} limit`}`
+            ? `This statement${card.limit_minor_units == null ? "" : ` · ${money(card.limit_minor_units, card.currency)} card limit`}`
             : card.cycle_start
-              ? `since first recorded transaction (${card.cycle_start}); statement date not yet reported`
-              : "statement data unavailable"}
+              ? `Since first recorded transaction (${card.cycle_start}); statement date not yet reported`
+              : "Statement data unavailable"}
         </Text>
-      </Group>
+      </Stack>
       <Text size="xs" c="dimmed" mt="sm">
         Pending {money(card.pending_minor_units, card.currency)} · Last synced {time(card.last_synced_at)}
       </Text>
@@ -440,8 +445,10 @@ function App() {
         <Container size="lg" py={{ base: 32, sm: 52 }}>
           <Stack gap="xl">
             <div className="page-intro">
-              <Group justify="space-between" align="center">
-                <Text className="section-kicker">YOUR SPENDING COMPASS</Text>
+              <Group justify="space-between" align="center" gap="md">
+                <Title order={1} className="page-title">
+                  Flexible spending
+                </Title>
                 <Text className="sync-status" aria-live="polite">
                   <span
                     className={state === "Live updates" ? "live-dot" : "live-dot live-dot--waiting"}
@@ -450,12 +457,6 @@ function App() {
                   {state}
                 </Text>
               </Group>
-              <Title order={1} className="page-title">
-                A little more clarity before the next purchase.
-              </Title>
-              <Text c="dimmed" className="page-subtitle">
-                See what’s available, how fast it’s going, and what spending more would mean.
-              </Text>
             </div>
             {error && (
               <Alert color="red" title="Couldn't refresh your view">
