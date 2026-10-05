@@ -68,7 +68,7 @@ function money(value: number | null | undefined, currency: string | null = "USD"
   const code = currency?.length === 3 ? currency.toUpperCase() : "USD";
   try {
     const formatter = new Intl.NumberFormat(undefined, { style: "currency", currency: code });
-    return formatter.format(value / 10 ** formatter.resolvedOptions().maximumFractionDigits);
+    return formatter.format(value / 10 ** (formatter.resolvedOptions().maximumFractionDigits ?? 2));
   } catch {
     return `${code} ${(value / 100).toFixed(2)}`;
   }
