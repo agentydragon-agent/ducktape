@@ -170,7 +170,6 @@ async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
     assert late_card.spend_minor_units == 3_884
 
 
-
 async def test_card_without_statement_reports_observed_spend_not_a_statement_cycle(
     connection: asyncpg.Connection, postgres_url: str
 ) -> None:
@@ -181,13 +180,10 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
         await add_account(connection, account_id, "item-new", type="credit")
     await add_transaction(connection, "card-first", "item-new", "first", start, 10.0)
     await add_transaction(connection, "card-first", "item-new", "pending", today, 15.0, pending=True)
-    await add_transaction(
-        connection, "card-first", "item-new", "posted", today, 17.0, pending_transaction_id="pending"
-    )
+    await add_transaction(connection, "card-first", "item-new", "posted", today, 17.0, pending_transaction_id="pending")
     await add_transaction(connection, "card-first", "item-new", "new", today, 12.0)
     await add_transaction(
-        connection, "card-first", "item-new", "repayment", today, 30.0,
-        category="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
+        connection, "card-first", "item-new", "repayment", today, 30.0, category="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
     )
     service = SpendService(
         postgres_url,
@@ -203,7 +199,8 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
         view = await service.read_view()
     finally:
         await service.close()
-    first, empty = view.cards
+    cards = {card.account_id: card for card in view.cards}
+    first, empty = cards["card-first"], cards["card-empty"]
     assert first.cycle_start == start  # first observed transaction, not a statement boundary
     assert first.statement_available is False
     assert first.posted_minor_units == 3_900

@@ -122,17 +122,17 @@ async def test_spending_decision_render(page: Page, dashboard_url: str, width: i
     page.on("pageerror", lambda exc: errors.append(str(exc)))
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await page.wait_for_timeout(1200)
+    out = undeclared_outputs_dir()
+    normal = out / f"dashboard-{width}.png"
+    await page.screenshot(path=str(normal), full_page=True, animations="disabled")
+    retain_review_asset(normal, title="Spend decisions", label=f"{width}px available", name=normal.name)
     await page.get_by_text("$200.00", exact=True).wait_for()
     assert await page.get_by_role("heading", name="Can I afford this?").count() == 1
     assert await page.get_by_text("$75.00", exact=True).count() == 1
     assert await page.get_by_text("since first recorded transaction", exact=False).count() == 1
     assert not errors
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-    out = undeclared_outputs_dir()
-    normal = out / f"dashboard-{width}.png"
-    await page.screenshot(path=str(normal), full_page=True, animations="disabled")
-    retain_review_asset(normal, title="Spend decisions", label=f"{width}px available", name=normal.name)
-
     await page.get_by_label("Hypothetical flexible purchase").fill("250")
     await page.get_by_text("Over allowance", exact=True).last.wait_for()
     assert await page.get_by_text("-$50.00", exact=True).count() == 1
