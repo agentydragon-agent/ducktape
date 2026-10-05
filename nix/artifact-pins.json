@@ -45,8 +45,8 @@
       "sha256": "QEkhch/PGM7nW1BsP5K8MYMdT0FlzOXLRSiBYeZdZaw="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-9a89ad31d31c/debundle",
-      "sha256": "momtMdMckKi83eRmhIEx3Yo3YiSNYftrOBTsN5Cv7vI="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-09e047580068/debundle",
+      "sha256": "CeBHWABomJFIDeTy3PtMr3nkLsOZEHeIBhvG7+sbvaA="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-dd6165877050/cluster_health.skill",
@@ -243,6 +243,10 @@
     "plaid-spend-desktop-extension": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-4afdbddda4d3/plaid-spend-desktop.zip",
       "sha256": "/DkqG5CIlaiVNVLz13ijGhuGs79+hSkuX1tf2bcc3gc="
+    },
+    "pr-visuals": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-10a1bd57a2b7/pr_visuals-0.1.0-py3-none-any.whl",
+      "sha256": "EKG9V6K3hDjSbjYUI/5J7eMxEcZzj88lGfDTo5hm2IQ="
     }
   }
 }
