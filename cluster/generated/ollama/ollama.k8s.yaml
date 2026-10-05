@@ -145,7 +145,7 @@ spec:
               name: ssd-models
               readOnly: true
         - env:
-            - name: OLLAMADIRECT_TOKEN
+            - name: OLLAMA_DIRECT_TOKEN
               valueFrom:
                 secretKeyRef:
                   key: token

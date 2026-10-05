@@ -217,7 +217,7 @@ def _auth_proxy_container() -> k8s.Container:
         ports=[AUTH_PROXY.port.k8s_container_port()],
         # nginx-auth-proxy.conf.template reads all three.
         env=[
-            DIRECT_TOKEN.env_var("OLLAMADIRECT_TOKEN"),
+            DIRECT_TOKEN.env_var("OLLAMA_DIRECT_TOKEN"),
             k8s.EnvVar(name="AUTH_PROXY_PORT", value=str(AUTH_PROXY.pod_port)),
             k8s.EnvVar(name="OLLAMA_API_PORT", value=str(SERVICE.pod_port)),
         ],
