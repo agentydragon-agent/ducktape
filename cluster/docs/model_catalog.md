@@ -37,7 +37,12 @@ Do not join metadata using a route's trailing string segment.
 Missing names fail when a route is offered in the app, rather than being synthesized
 from slugs. Missing limits remain unknown. `publish_limits` preserves which routes
 currently override LiteLLM's metadata; knowing a limit does not automatically authorize
-changing proxy behavior or applying a harness context override.
+changing proxy behavior or applying a harness context override. For generative routes,
+the renderer also emits `model_info.publish_token_limits`: the pinned proxy's
+[response-only publication policy](../../model_catalog/litellm_metadata.md#response-only-publication-policy)
+publishes the explicit pair or neither, without catalogue-derived legacy fields.
+Embedding/audio entries retain upstream metadata behavior. This projection does not
+change the internal catalogue used for pricing or request-side heuristics.
 
 ## Projections
 

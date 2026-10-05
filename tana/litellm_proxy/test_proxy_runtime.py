@@ -1,5 +1,7 @@
 """Runtime smoke tests for the LiteLLM proxy entrypoint closure."""
 
+import copy
+import json
 import os
 import shutil
 import subprocess
@@ -8,8 +10,13 @@ from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import httpx
 import litellm
+import pytest
 import pytest_bazel
+from litellm.proxy import proxy_server
+from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
+from litellm.proxy.common_utils.token_limit_publication import project_token_limits
 from litellm.proxy.proxy_server import ProxyConfig
 from litellm.types.utils import GenericStreamingChunk
 
@@ -118,6 +125,124 @@ async def test_litellm_proxy_config_registers_custom_provider_before_router_buil
         litellm.provider_list = original_provider_list
         litellm._custom_providers = original_custom_providers
         litellm.model_list_set = original_model_list_set
+
+
+async def test_token_metadata_publication_survives_reload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exercise the real config loader and authenticated ASGI metadata handlers."""
+    catalog = json.loads(Path(litellm.__file__).with_name("model_prices_and_context_window_backup.json").read_text())
+    catalog["gpt-4o-mini"].update(
+        max_input_tokens=900_001,
+        max_output_tokens=900_002,
+        max_tokens=900_003,
+        input_cost_per_token=0.000007,
+        output_cost_per_token=0.000013,
+        supports_function_calling=True,
+    )
+    monkeypatch.setattr(litellm, "model_cost", copy.deepcopy(catalog))
+    monkeypatch.setattr(proxy_server, "prisma_client", None)
+    monkeypatch.setattr(proxy_server, "user_model", None)
+    monkeypatch.setattr(proxy_server, "llm_router", None)
+    monkeypatch.setattr(proxy_server, "llm_model_list", None)
+    monkeypatch.setattr(proxy_server, "general_settings", {})
+
+    async def admin() -> UserAPIKeyAuth:
+        return UserAPIKeyAuth(user_role=LitellmUserRoles.PROXY_ADMIN)
+
+    monkeypatch.setattr(proxy_server.app, "dependency_overrides", {proxy_server.user_api_key_auth: admin})
+    # Metadata may consult built-in data, but must not contact a provider in this test.
+    async_send = httpx.AsyncClient.send
+
+    async def local_send(client: httpx.AsyncClient, request: httpx.Request, **kwargs: Any) -> httpx.Response:
+        assert request.url.host == "publication.test", request.url
+        return await async_send(client, request, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", local_send)
+    config_path = tmp_path / "config.json"
+
+    async def load(publish: bool, router: litellm.Router | None = None) -> litellm.Router:
+        pair = {"max_input_tokens": 111_111, "max_output_tokens": 22_222} if publish else {}
+        entries = []
+        for name, info in {
+            "known": {"publish_token_limits": publish, **pair},
+            "unknown": {"publish_token_limits": False},
+            "partial": {"publish_token_limits": True, "max_input_tokens": 333_333},
+            "unmanaged": {},
+        }.items():
+            entries.append({
+                "model_name": name,
+                "litellm_params": {"model": "openai/gpt-4o-mini", "api_key": "offline-fixture"},
+                "model_info": {"id": name, "mode": "chat", **info},
+            })
+        config_path.write_text(json.dumps({
+            "model_list": entries,
+            "litellm_settings": {"drop_params": True},
+            "general_settings": {"store_model_in_db": False},
+        }))
+        loaded, models, settings = await ProxyConfig().load_config(router, str(config_path))
+        assert loaded is not None
+        proxy_server.llm_router, proxy_server.llm_model_list, proxy_server.general_settings = loaded, models, settings
+        return loaded
+
+    async def check(client: httpx.AsyncClient, publish: bool) -> None:
+        for path in ("/model/info", "/v1/model/info", "/model_group/info", "/v1/models", "/models"):
+            response = await client.get(path)
+            assert response.status_code == 200, response.text
+            for row in response.json()["data"]:
+                name = row.get("model_name", row.get("model_group", row.get("id")))
+                info = row.get("model_info", row)
+                if name == "unmanaged":
+                    continue
+                assert "max_tokens" not in info and "context_window" not in info, (path, row)
+                assert "publish_token_limits" not in info, (path, row)
+                if name == "known" and publish:
+                    assert (info["max_input_tokens"], info["max_output_tokens"]) == (111_111, 22_222), (path, row)
+                else:
+                    assert "max_input_tokens" not in info and "max_output_tokens" not in info, (path, row)
+        for name in ("known", "unknown", "partial"):
+            response = await client.get("/model/info", params={"litellm_model_id": name})
+            assert response.status_code == 200, response.text
+            info = response.json()["data"][0]["model_info"]
+            assert "max_tokens" not in info and "context_window" not in info
+            if name == "known" and publish:
+                assert (info["max_input_tokens"], info["max_output_tokens"]) == (111_111, 22_222)
+            else:
+                assert "max_input_tokens" not in info and "max_output_tokens" not in info
+            assert info["supports_function_calling"] is True
+            assert info["input_cost_per_token"] == catalog["gpt-4o-mini"]["input_cost_per_token"]
+
+    router = await load(True)
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=proxy_server.app), base_url="http://publication.test"
+        ) as client:
+            await check(client, True)
+            catalog["gpt-4o-mini"].update(max_tokens=800_003, input_cost_per_token=0.000017)
+            proxy_server._swap_in_model_cost_map(copy.deepcopy(catalog))
+            await check(client, True)
+            router = await load(False, router)
+            await check(client, False)
+            # Publication does not suppress the internal catalogue, price calculation,
+            # or rewrite request-policy switches. No inference/spend logging is simulated.
+            assert litellm.model_cost["gpt-4o-mini"]["max_tokens"] == 800_003
+            assert litellm.cost_per_token(model="gpt-4o-mini", prompt_tokens=10, completion_tokens=5) == pytest.approx(
+                (0.00017, 0.000065)
+            )
+            assert router.enable_pre_call_checks is False
+            assert litellm.modify_params is False
+    finally:
+        router.reset()
+
+
+def test_token_metadata_policy_preserves_non_generation_and_rejects_ambiguous_groups() -> None:
+    """No fabricated output ceiling for embeddings/audio, or combined group maxima."""
+    raw = {"max_input_tokens": 8192, "max_tokens": 8192, "input_cost_per_token": 0.1}
+    for mode in ("embedding", "audio_transcription"):
+        assert project_token_limits(raw, [{"mode": mode}]) == raw
+    known = {"publish_token_limits": True, "max_input_tokens": 10, "max_output_tokens": 20}
+    assert project_token_limits(raw, [known, known])["max_output_tokens"] == 20
+    for other in ({"publish_token_limits": False}, {}, {**known, "max_output_tokens": 30}):
+        assert project_token_limits(raw, [known, other]) == {"input_cost_per_token": 0.1}
+    assert raw["max_tokens"] == 8192  # Response projection never mutates its input.
 
 
 if __name__ == "__main__":

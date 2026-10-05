@@ -44,6 +44,10 @@ def model_entry(entry: Route | RouteAlias) -> dict:
             tana_ignore_out_of_credits_warning=False,
         )
     info: dict = {"mode": shape_mode(upstream.shape)}
+    if info["mode"] in ("chat", "responses"):
+        # Our pinned proxy patch applies this only to public metadata responses.
+        # It must not erase catalogue pricing or change request-side heuristics.
+        info["publish_token_limits"] = route.publish_limits
     if upstream.supports_function_calling:
         info["supports_function_calling"] = True
     if route.publish_limits:

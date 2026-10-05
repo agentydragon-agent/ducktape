@@ -39,6 +39,31 @@ router serialization uses `exclude_none=True`; the single-deployment metadata
 endpoint removes nulls before filling missing keys. The final response merge alone
 is therefore insufficient evidence that null suppression works.
 
+## Response-only publication policy
+
+The proxy image and package-local test runtime apply
+[`litellm_token_limit_publication.patch`](../third_party/patches/litellm_token_limit_publication.patch)
+to the pinned 1.100.1 source. The generated config explicitly sets
+`model_info.publish_token_limits` on chat/Responses deployments:
+
+- `true`: publish the configured positive integer input/output pair, never complete
+  a partial pair from the catalogue.
+- `false`: omit both fields, even when the catalogue or a prior registration has values.
+- Unset: retain upstream behavior, including embedding/audio metadata.
+
+Opted-in responses omit legacy `max_tokens` and custom `context_window`; the policy
+marker itself is not public metadata. Model groups publish a pair only when every
+backing deployment opts in with the same pair. The projection runs after enrichment
+for `/model/info` (including single-deployment lookup), `/v1/model/info`, the shared
+`/v2/model/info` enrichment, `/model_group/info` and OpenAI model discovery.
+DB-backed v2 authorization/query behavior still needs its own integration coverage;
+sharing the projection is not evidence of that coverage.
+
+This is **response projection only**: internal catalogue registration, reload replay,
+request heuristics, prices and accounting retain upstream behavior. Existing configured
+numbers are preserved, not newly validated. Removing their misleading shared semantic
+representation remains a separate change. Image deployment is not implied by a merge.
+
 ## Isolated config/API experiment, 2026-10-05
 
 The missing runtime check is now complete for `/model/info` listing and

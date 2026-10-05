@@ -143,3 +143,17 @@ streaming parses Tana `data: {"type":"text-delta",...}` and AI SDK-style
 OpenAI-style `delta.tool_calls`; Tana can emit an initial empty `{}` tool
 argument delta before the full JSON arguments, and the demo merges those deltas
 before printing.
+
+## Proxy metadata publication
+
+The shared proxy appliance also carries the narrow
+[token-limit publication patch](../../third_party/patches/litellm_token_limit_publication.patch).
+`MODULE.bazel` patches the pinned Linux wheel for tests; `publication_source_layer`
+puts those same Python sources in the upstream image's Python 3.13 venv. The image
+smoke test checks that its actual interpreter imports the patched handlers. Keep
+both wheel and image pins aligned, and recheck the venv path on upgrades; retire the
+patch when upstream provides this contract.
+
+The [metadata policy](../../model_catalog/litellm_metadata.md#response-only-publication-policy)
+is response-only, not a Tana-provider feature. It does not change inference callbacks,
+internal catalogue pricing, request budgets, or the upstream database/startup entrypoint.

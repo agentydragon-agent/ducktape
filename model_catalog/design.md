@@ -391,13 +391,11 @@ existing small separation rather than adding a meta-configuration layer:
 5. **Native client behavior:** configure and verify the actual harness. A clean
    `/model/info` response cannot fix Codex/Claude's independent recognition tables.
 
-Item 4 is the desired contract, **not a solved implementation**. The [pinned-runtime experiment](litellm_metadata.md#isolated-configapi-experiment-2026-10-05) rules out omission, null and zero as the publication
-policy: omission/null allow catalogue fallback, and zero declares a numeric limit.
-Next compare a small upstream suppression mechanism or targeted response projection
-against leaving LiteLLM's endpoint explicitly non-authoritative. The latter does
-**not** satisfy the requested public pair-or-none contract and requires an explicit
-decision, not silent acceptance. Avoid global
-model-cost mutation or a broad wrapper service as a premature solution.
+The [response-only publication policy](litellm_metadata.md#response-only-publication-policy)
+implements the metadata boundary in our pinned proxy without changing its internal cost
+map. The earlier experiment ruled out omission, null and zero; a small upstream-source
+patch now projects explicit pairs after enrichment. Existing configured values still
+need the source-semantics cleanup; publication consistency does not validate them.
 
 Internal catalogue use also needs an explicit decision: suppressing fields in an
 HTTP response does not suppress LiteLLM's request-side limit heuristics. Determine
@@ -411,10 +409,9 @@ which checks execute on the retained path before changing them; preserve account
    path, direct clients, and retained state; verify activation separately from merge status.
 2. The [active-session audit](client_budgets.md#active-codex-path-audit-2026-10-05) records the real slug, binary and resolved budget.
    Recheck this evidence when changing harness versions or recognition strategy.
-3. Use the completed [config/API experiment](litellm_metadata.md#isolated-configapi-experiment-2026-10-05) to choose the narrow publication
-   mechanism; do not repeat catalogue research or ship omit/null as a fix. Validate
-   the chosen mechanism through load/reload and supported endpoint shapes, including
-   DB-backed paths if retained, without changing pricing or request behavior.
+3. Validate the [publication policy](litellm_metadata.md#response-only-publication-policy)
+   through load/reload and supported endpoint shapes. Cover DB-backed paths if retained;
+   do not repeat catalogue research or change pricing/request behavior incidentally.
 4. Verify retained harness startup arguments/environment and reported window with
    a bounded request. Test model switching where budgets differ. Test Ollama alias
    effectiveness only for variants we decide to keep. No silent live deployment.

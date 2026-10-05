@@ -625,11 +625,37 @@ pip.parse(
     requirements_lock = "//homeassistant:requirements.txt",
 )
 
+# Response-only metadata policy, shared by proxy tests and the existing image.
+# Remove this patch when the pinned upstream supports the same publication contract.
+pip.override(
+    file = "litellm-1.100.1-cp310-abi3-manylinux_2_28_x86_64.whl",
+    patch_strip = 1,
+    patches = ["//third_party/patches:litellm_token_limit_publication.patch"],
+)
+pip.whl_mods(
+    hub_name = "litellm_publication_sources",
+    whl_name = "litellm",
+    additive_build_content = """
+filegroup(
+    name = "publication_sources",
+    srcs = [
+        "site-packages/litellm/proxy/common_utils/token_limit_publication.py",
+        "site-packages/litellm/proxy/proxy_server.py",
+        "site-packages/litellm/proxy/utils.py",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+use_repo(pip, "litellm_publication_sources")
+
 # Separate pip hub for the Tana LiteLLM proxy appliance. LiteLLM's proxy extra
 # pins package versions that conflict with unrelated repo-wide Python deps, so
 # keep the production proxy image in its own resolver universe.
 pip.parse(
     hub_name = "pypi_tana_litellm_proxy",
+    extra_hub_aliases = {"litellm": ["publication_sources"]},
+    whl_modifications = {"@litellm_publication_sources//:litellm.json": "litellm"},
     python_version = "3.14",
     requirements_lock = "//tana/litellm_proxy:requirements.txt",
 )
