@@ -41,6 +41,7 @@ py_library(
     name = "cli",
     srcs = ["cli.py"],
     deps = [
+        "//finance/plaid/spend:allowance",
         "@pypi//babel",
         "@pypi//dbus_next",
     ],
@@ -83,6 +84,7 @@ py_wheel(
         "Babel>=2.15.0",
         "dbus-next>=0.2.3",
         "httpx>=0.27.0",
+        "pydantic>=2.0",
     ],
     strip_path_prefixes = ["finance/plaid/"],
     version = "0.1.0",
@@ -90,6 +92,7 @@ py_wheel(
     deps = [
         ":cli",
         ":credentials",
+        "//finance/plaid/spend:allowance",
         ":daemon",
         ":oauth",
         ":package_init",

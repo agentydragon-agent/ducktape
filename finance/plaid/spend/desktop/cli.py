@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import sys
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -14,6 +15,8 @@ from dbus_next import Message
 from dbus_next.aio import MessageBus
 from dbus_next.constants import MessageType
 from dbus_next.errors import DBusError
+
+from ..allowance import AllowanceView, Status
 
 BUS_NAME = "works.allegedly.PlaidSpend"
 OBJECT_PATH = "/works/allegedly/PlaidSpend"
@@ -91,37 +94,43 @@ def _card_title(card: dict[str, Any]) -> str:
     return title
 
 
-def _print_allowance(allowance: dict[str, Any]) -> None:
+def _format_timestamp(value: datetime | None) -> str:
+    return value.isoformat().replace("+00:00", "Z") if value else "unknown"
+
+
+def _print_allowance(allowance: AllowanceView) -> None:
     print("\nFlexible allowance · advisory, not a bank limit")
-    if allowance.get("status") != "active":
-        print(f"  Status: {allowance.get('status') or 'unavailable'}")
-        if note := allowance.get("note"):
-            print(f"  {note}")
+    if allowance.status != Status.ACTIVE:
+        print(f"  Status: {allowance.status}")
+        if allowance.note:
+            print(f"  {allowance.note}")
         return
 
-    currency = allowance.get("currency")
-    print(f"  Available: {_format_money(allowance.get('available_minor_units'), currency)}")
-    print(f"  Monthly credit: {_format_money(allowance.get('monthly_minor_units'), currency)}")
-    windows = allowance.get("windows_minor_units") or {}
-    print(f"  Spent this credit cycle: {_format_money(windows.get('current_credit_cycle_minor_units'), currency)}")
-    print(f"  Pending (included): {_format_money(allowance.get('pending_minor_units'), currency)}")
-    print(f"  Pace: {str(allowance.get('alert_state') or 'unavailable').replace('_', ' ')}")
+    currency = allowance.currency
+    print(f"  Available: {_format_money(allowance.available_minor_units, currency)}")
+    print(f"  Monthly credit: {_format_money(allowance.monthly_minor_units, currency)}")
+    windows = allowance.windows_minor_units
+    spent = windows.current_credit_cycle_minor_units if windows else None
+    print(f"  Spent this credit cycle: {_format_money(spent, currency)}")
+    print(f"  Pending (included): {_format_money(allowance.pending_minor_units, currency)}")
+    print(f"  Pace: {allowance.alert_state.replace('_', ' ')}")
     print(
-        f"  Estimated balance before next credit: {_format_money(allowance.get('projected_cycle_end_minor_units'), currency)}"
+        f"  Estimated balance before next credit: {_format_money(allowance.projected_cycle_end_minor_units, currency)}"
     )
-    print(f"  Next credit: {allowance.get('next_credit_at') or 'unknown'}")
-    print(
-        f"  Projected exhaustion (no future credits): {allowance.get('estimated_exhaustion_at') or 'no recent spend'}"
+    print(f"  Next credit: {_format_timestamp(allowance.next_credit_at)}")
+    exhaustion = (
+        _format_timestamp(allowance.estimated_exhaustion_at) if allowance.estimated_exhaustion_at else "no recent spend"
     )
-    print(f"  Oldest account sync: {allowance.get('last_synced_at') or 'unknown'}")
-    if note := allowance.get("note"):
-        print(f"  {note}")
+    print(f"  Projected exhaustion (no future credits): {exhaustion}")
+    print(f"  Oldest account sync: {_format_timestamp(allowance.last_synced_at)}")
+    if allowance.note:
+        print(f"  {allowance.note}")
 
 
 def _print_view(view: dict[str, Any], status: str, last_error: str) -> None:
     cards = view["cards"]
-    if isinstance(allowance := view.get("allowance"), dict):
-        _print_allowance(allowance)
+    if allowance := view.get("allowance"):
+        _print_allowance(AllowanceView.model_validate(allowance))
     if not cards:
         print("No card data is available.")
         if status == "authentication-required":
