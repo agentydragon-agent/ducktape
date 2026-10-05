@@ -1064,8 +1064,8 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend/threads:projected_session",
-        "//agentplane/app/frontend/threads:thread_store",
-        "//agentplane/app/frontend/threads:thread_sync",
+        "//agentplane/app/frontend/threads:store",
+        "//agentplane/app/frontend/threads:sync",
     ],
 )
 

@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import { EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
 import { historyRows, rowKey, summarizeLifecycleGroup, summarizeRun, summarizeSetup } from "./history_rows";
-import { testEntity, testItem } from "./thread_entity_fixture";
-import type { ThreadEntity } from "./thread_sync";
+import { testEntity, testItem } from "./entity_fixture";
+import type { ThreadEntity } from "./sync";
 
 /** A lifecycle entity carrying a real, parseable `Event`: grouping a lifecycle observation depends
  * on what it says, not just its kind. */

@@ -20,9 +20,9 @@ import { HistoryRowView, ProjectedSession } from "./projected_session";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
 import { THREAD_STATUS_MARKS } from "../status_mark";
-import { testItem } from "./thread_entity_fixture";
-import { entity, reference, serving, THREAD, threadState, toggle, viewState } from "./thread_state_fixture";
-import { ThreadSyncContext, type ThreadEntity, type ThreadState, type ThreadSync } from "./thread_sync";
+import { testItem } from "./entity_fixture";
+import { entity, reference, serving, THREAD, threadState, toggle, viewState } from "./state_fixture";
+import { ThreadSyncContext, type ThreadEntity, type ThreadState, type ThreadSync } from "./sync";
 import { TopbarContext } from "../topbar";
 
 vi.mock("../client", async (importOriginal) => ({

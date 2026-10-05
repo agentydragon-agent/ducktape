@@ -4,7 +4,7 @@ import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it } from "vitest";
 
-import { revealEvidenceOnTap } from "./thread_evidence";
+import { revealEvidenceOnTap } from "./evidence";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

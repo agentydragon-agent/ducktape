@@ -1,5 +1,5 @@
 import type { ItemKind } from "../../../protocol/event_pb";
-import type { ThreadEntity } from "./thread_sync";
+import type { ThreadEntity } from "./sync";
 
 type ItemState = Extract<ThreadEntity["state"], { kind: number }>;
 

@@ -59,7 +59,7 @@ ts_library(
     srcs = ["history_rows.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":thread_sync",
+        ":sync",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/protocol:event_pb",
     ],
@@ -70,8 +70,8 @@ agentplane_vitest_test(
     srcs = ["history_rows.test.ts"],
     deps = [
         ":history_rows",
-        ":thread_entity_fixture",
-        ":thread_sync",
+        ":entity_fixture",
+        ":sync",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/protocol:event_pb",
@@ -116,11 +116,11 @@ ts_library(
         ":history_trace",
         ":projected_session_css",
         ":retained_disclosures",
-        ":thread_cards",
-        ":thread_commands",
-        ":thread_evidence",
-        ":thread_sync",
-        ":thread_title",
+        ":cards",
+        ":commands",
+        ":evidence",
+        ":sync",
+        ":title",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -157,9 +157,9 @@ agentplane_vitest_test(
         ":local_commands",
         ":projected_session",
         ":retained_disclosures",
-        ":thread_entity_fixture",
-        ":thread_state_fixture",
-        ":thread_sync",
+        ":entity_fixture",
+        ":state_fixture",
+        ":sync",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -233,16 +233,16 @@ ts_library(
 )
 
 ts_library(
-    name = "thread_cards",
-    srcs = ["thread_cards.tsx"],
+    name = "cards",
+    srcs = ["cards.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":command_calls",
         ":history_rows",
         ":retained_disclosures",
         ":step_line",
-        ":thread_evidence",
-        ":thread_sync",
+        ":evidence",
+        ":sync",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -257,14 +257,14 @@ ts_library(
 )
 
 agentplane_vitest_test(
-    name = "thread_cards_test",
-    srcs = ["thread_cards.test.tsx"],
+    name = "cards_test",
+    srcs = ["cards.test.tsx"],
     deps = [
         ":retained_disclosures",
-        ":thread_cards",
-        ":thread_entity_fixture",
-        ":thread_state_fixture",
-        ":thread_sync",
+        ":cards",
+        ":entity_fixture",
+        ":state_fixture",
+        ":sync",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -277,14 +277,14 @@ agentplane_vitest_test(
 )
 
 ts_library(
-    name = "thread_commands",
-    srcs = ["thread_commands.tsx"],
+    name = "commands",
+    srcs = ["commands.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":local_commands",
-        ":thread_cards",
-        ":thread_evidence",
-        ":thread_sync",
+        ":cards",
+        ":evidence",
+        ":sync",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -294,30 +294,30 @@ ts_library(
 )
 
 agentplane_vitest_test(
-    name = "thread_commands_test",
-    srcs = ["thread_commands.test.ts"],
+    name = "commands_test",
+    srcs = ["commands.test.ts"],
     deps = [
-        ":thread_commands",
-        # Run-time only: the @mantine/core that thread_commands imports loads it.
+        ":commands",
+        # Run-time only: the @mantine/core that commands imports loads it.
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
     ],
 )
 
 ts_library(
-    name = "thread_evidence",
+    name = "evidence",
     srcs = [
         # `declare module "*.css"` for the stylesheet import below.
         "css.d.ts",
         "tabler_icons.d.ts",
-        "thread_evidence.tsx",
+        "evidence.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [
         ":chronological_debug",
         ":retained_disclosures",
-        ":thread_evidence_css",
-        ":thread_sync",
+        ":evidence_css",
+        ":sync",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -327,17 +327,17 @@ ts_library(
     ],
 )
 
-# thread_evidence.tsx imports this stylesheet for the bundler.
+# evidence.tsx imports this stylesheet for the bundler.
 js_library(
-    name = "thread_evidence_css",
-    srcs = ["thread_evidence.css"],
+    name = "evidence_css",
+    srcs = ["evidence.css"],
 )
 
 agentplane_vitest_test(
-    name = "thread_evidence_test",
-    srcs = ["thread_evidence.test.tsx"],
+    name = "evidence_test",
+    srcs = ["evidence.test.tsx"],
     deps = [
-        ":thread_evidence",
+        ":evidence",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
@@ -347,23 +347,23 @@ agentplane_vitest_test(
 )
 
 ts_library(
-    name = "thread_entity_fixture",
+    name = "entity_fixture",
     testonly = True,
-    srcs = ["thread_entity_fixture.ts"],
+    srcs = ["entity_fixture.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":thread_sync",
+        ":sync",
         "//agentplane/protocol:event_pb",
     ],
 )
 
 ts_library(
-    name = "thread_state_fixture",
+    name = "state_fixture",
     testonly = True,
-    srcs = ["thread_state_fixture.tsx"],
+    srcs = ["state_fixture.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":thread_sync",
+        ":sync",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
@@ -371,11 +371,11 @@ ts_library(
 )
 
 ts_library(
-    name = "thread_store",
-    srcs = ["thread_store.tsx"],
+    name = "store",
+    srcs = ["store.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":thread_sync",
+        ":sync",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -386,11 +386,11 @@ ts_library(
 )
 
 agentplane_vitest_test(
-    name = "thread_store_test",
-    srcs = ["thread_store.test.tsx"],
+    name = "store_test",
+    srcs = ["store.test.tsx"],
     deps = [
-        ":thread_store",
-        ":thread_sync",
+        ":store",
+        ":sync",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -401,8 +401,8 @@ agentplane_vitest_test(
 )
 
 ts_library(
-    name = "thread_sync",
-    srcs = ["thread_sync.ts"],
+    name = "sync",
+    srcs = ["sync.ts"],
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@types/react",
@@ -413,15 +413,15 @@ ts_library(
 )
 
 ts_library(
-    name = "thread_title",
+    name = "title",
     srcs = [
-        "thread_title.tsx",
+        "title.tsx",
         # `declare module "*.css"` for the stylesheet import above.
         "css.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":thread_title_css",
+        ":title_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -429,17 +429,17 @@ ts_library(
     ],
 )
 
-# thread_title.tsx imports this stylesheet for the bundler.
+# title.tsx imports this stylesheet for the bundler.
 js_library(
-    name = "thread_title_css",
-    srcs = ["thread_title.css"],
+    name = "title_css",
+    srcs = ["title.css"],
 )
 
 agentplane_vitest_test(
-    name = "thread_title_test",
-    srcs = ["thread_title.test.tsx"],
+    name = "title_test",
+    srcs = ["title.test.tsx"],
     deps = [
-        ":thread_title",
+        ":title",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",

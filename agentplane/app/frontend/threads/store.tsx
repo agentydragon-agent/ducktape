@@ -39,7 +39,7 @@ import {
   type ThreadEntity,
   type ThreadState,
   type ThreadSync,
-} from "./thread_sync";
+} from "./sync";
 
 const decimal: z.ZodType<Decimal> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
 type PayloadField = PayloadRef["field"];

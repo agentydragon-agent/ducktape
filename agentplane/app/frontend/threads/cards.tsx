@@ -10,10 +10,10 @@ import { Markdown } from "../markdown";
 import { RawSwitch } from "../raw_switch";
 import { oneLine, parseCommandCall } from "./command_calls";
 import { lifecyclePresentation } from "./history_rows";
-import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
+import { EvidencePanel, EvidenceToggle } from "./evidence";
 import { RetainedDisclosure, useRetainedDisclosure } from "./retained_disclosures";
 import { StepLine, type StepMark } from "./step_line";
-import { useThreadSync, type Payload, type PayloadRef, type ThreadEntity } from "./thread_sync";
+import { useThreadSync, type Payload, type PayloadRef, type ThreadEntity } from "./sync";
 
 type ItemState = Extract<ThreadEntity["state"], { kind: number }>;
 

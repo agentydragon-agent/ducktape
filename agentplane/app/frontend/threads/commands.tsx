@@ -3,10 +3,10 @@ import { type Command } from "../../../protocol/command_pb";
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { command, displayableError } from "../client";
-import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
-import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
+import { Body, UserInputBubble, pendingSentMessage } from "./cards";
+import { EvidencePanel, EvidenceToggle } from "./evidence";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
-import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
+import { decimalBigInt, useThreadSync, type ThreadEntity } from "./sync";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], dismissedCommandIds: [], error: null };
 

@@ -12,8 +12,8 @@ import {
 import { JsonView } from "../json_view";
 import { ChronologicalDebugIcon } from "./chronological_debug";
 import { RetainedDisclosure, useRetainedDisclosure } from "./retained_disclosures";
-import type { ThreadEntity } from "./thread_sync";
-import "./thread_evidence.css";
+import type { ThreadEntity } from "./sync";
+import "./evidence.css";
 
 function EvidenceFramesPage({
   threadId,

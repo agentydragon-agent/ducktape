@@ -1,4 +1,4 @@
-/* The thread title's styling, bundled by esbuild through thread_title.tsx's import of this file.
+/* The thread title's styling, bundled by esbuild through title.tsx's import of this file.
    The classes are attached through Mantine's `classNames`, which names the part each one dresses:
    a bare `className` on an input component does not land on the element these selectors expect. */
 

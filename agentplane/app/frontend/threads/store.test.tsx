@@ -8,8 +8,8 @@ import { act, type JSX, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { createElectricThreadSync, electricThreadSync } from "./thread_store";
-import { type PayloadRef, type ThreadEntity, type ThreadSync, type ThreadWindow } from "./thread_sync";
+import { createElectricThreadSync, electricThreadSync } from "./store";
+import { type PayloadRef, type ThreadEntity, type ThreadSync, type ThreadWindow } from "./sync";
 
 type Json = Record<string, unknown>;
 

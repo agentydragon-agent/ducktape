@@ -2,7 +2,7 @@ import { TextInput } from "@mantine/core";
 import { type JSX, useState } from "react";
 
 import { displayableError, renameThread, type ThreadView } from "../client";
-import "./thread_title.css";
+import "./title.css";
 
 /**
  * The thread's title, edited where it is read: the field is the title, styled as one, and a hover

@@ -8,10 +8,10 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../protocol/event_pb";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
-import { EntityCard } from "./thread_cards";
-import { testItem } from "./thread_entity_fixture";
-import { entity, reference, serving, toggle } from "./thread_state_fixture";
-import { ThreadSyncContext, type ThreadEntity } from "./thread_sync";
+import { EntityCard } from "./cards";
+import { testItem } from "./entity_fixture";
+import { entity, reference, serving, toggle } from "./state_fixture";
+import { ThreadSyncContext, type ThreadEntity } from "./sync";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];

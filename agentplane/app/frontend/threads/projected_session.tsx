@@ -32,7 +32,7 @@ import {
   type ThreadView,
 } from "../client";
 import { ComposerPendingActions } from "../actions/affordance";
-import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
+import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./sync";
 import {
   historyRows,
   rowKey,
@@ -44,18 +44,18 @@ import {
 import { LiveStatus, useRequiredSandboxesLive, useRequiredThreadsLive } from "../live";
 import { StaleNotice, useOptionalStreamStatus, type StreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
-import { CollapsibleCard, EntityCard, ItemStatus, pendingSentMessage } from "./thread_cards";
+import { CollapsibleCard, EntityCard, ItemStatus, pendingSentMessage } from "./cards";
 import {
   PendingInputMessages,
   ProjectedCommandRows,
   SelectedCommandOutcomes,
   useProjectedCommands,
-} from "./thread_commands";
-import { revealEvidenceOnTap } from "./thread_evidence";
+} from "./commands";
+import { revealEvidenceOnTap } from "./evidence";
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { historyTrace, LayoutSettle, type FollowReason } from "./history_trace";
 import { rememberRowHeight, rememberedRowHeight } from "./history_sizes";
-import { ThreadTitle } from "./thread_title";
+import { ThreadTitle } from "./title";
 import { ThreadStatusIndicator } from "../thread_status_indicator";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
 import { sandboxReady, sandboxSummary } from "../sandbox_status";
