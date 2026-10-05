@@ -115,6 +115,7 @@ def dashboard_url() -> Iterator[str]:
                 review_transaction_count=0,
                 prior_carry_minor_units=0,
                 alert_state="unavailable",
+                spending_signal="unavailable",
                 trailing_7_daily_minor_units=None,
                 trailing_7_observed_daily_minor_units=None,
                 trailing_30_observed_daily_minor_units=None,

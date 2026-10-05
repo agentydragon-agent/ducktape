@@ -7,8 +7,7 @@
     "cards": [
       {
         "label": "Synthetic card",
-        "spending_signal": "unavailable",
-      "alert_state": "exceeded",
+        "alert_state": "exceeded",
         "spend_minor_units": 90000,
         "currency": "USD",
         "statement_available": true,
@@ -25,7 +24,8 @@
       "alert_state": "unavailable",
       "trailing_7_observed_daily_minor_units": null,
       "trailing_30_observed_daily_minor_units": null,
-      "last_synced_at": "2026-10-15T11:00:00Z"
+      "last_synced_at": "2026-10-15T11:00:00Z",
+      "spending_signal": "unavailable"
     }
   }
 }

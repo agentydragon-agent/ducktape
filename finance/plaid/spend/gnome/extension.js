@@ -103,8 +103,7 @@ function allowanceSignal(allowance) {
     return { level: "danger", label: "Allowance exhausted · advisory only", marker: "!!" };
   if (allowance.spending_signal === "warning")
     return { level: "caution", label: "Recent pace or projection above provisional leash", marker: "!" };
-  if (allowance.spending_signal === "unavailable")
-    return { level: "unknown", label: "Pace warming up", marker: "" };
+  if (allowance.spending_signal === "unavailable") return { level: "unknown", label: "Pace warming up", marker: "" };
   return { level: "good", label: "Below provisional leash pace", marker: "" };
 }
 

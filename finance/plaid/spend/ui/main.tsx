@@ -276,7 +276,9 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
                   : "Projected balance before your next credit"}
             </Text>
             <Divider />
-            <Text size="sm" fw={700}>Recorded flexible spending pace</Text>
+            <Text size="sm" fw={700}>
+              Recorded flexible spending pace
+            </Text>
             <Group justify="space-between" gap="sm">
               <Text size="sm">7 days</Text>
               <Text size="sm" fw={700}>
@@ -294,8 +296,8 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
               </Text>
             </Group>
             <Text size="sm" c="dimmed">
-              Provisional leash ~{m(Math.round(allowance.monthly_minor_units * 12 / 365.2425))} / day.
-              This is spending capacity, not a sustainability target.
+              Provisional leash ~{m(Math.round((allowance.monthly_minor_units * 12) / 365.2425))} / day. This is
+              spending capacity, not a sustainability target.
             </Text>
             <Text size="xs" c="dimmed">
               Positive recorded purchases, including history before activation; unmatched purchases count as flexible.

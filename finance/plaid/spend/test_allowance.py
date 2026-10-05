@@ -177,12 +177,7 @@ def test_prior_purchases_inform_pace_without_importing_debt():
 
 def test_monthly_observed_pace_warns_without_weekly_forecast_or_opening_debt():
     now = datetime(2026, 3, 2, tzinfo=UTC)
-    result = calculate(
-        policy(activation_at=now.date()),
-        [row("2026-02-10", 200)],
-        now=now,
-        last_synced_at=now,
-    )
+    result = calculate(policy(activation_at=now.date()), [row("2026-02-10", 200)], now=now, last_synced_at=now)
     assert result.available_minor_units == 10_000
     assert result.trailing_7_observed_daily_minor_units is None
     assert result.trailing_30_observed_daily_minor_units == 20_000 // 30
