@@ -1,5 +1,10 @@
 # Served-model catalog
 
+> Migration note: parts of this wiring inventory describe the pre-#9034 shape
+> (`publish_limits`, `PUBLIC_CODER_MODELS`, and shared context metadata). See the
+> [limits and client-budget design](../../model_catalog/token_limits_design.md) for
+> current findings, the proposed contract, and pending scope decisions.
+
 [`model_catalog`](../../model_catalog/README.md) owns shared model facts, named routes,
 client lanes, and Nix wrapper selections. `cluster/cdk8s/model_selections.py` owns
 cluster environment, picker, and harness-override selections. The catalogue has no
