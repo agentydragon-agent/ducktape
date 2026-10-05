@@ -7,7 +7,7 @@ import asyncio
 import json
 import sys
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from babel.numbers import format_currency, get_currency_precision
@@ -81,9 +81,12 @@ def _format_money(minor_units: int | None, currency: str | None) -> str:
     code = currency.upper()
     precision = get_currency_precision(code)
     amount = Decimal(minor_units).scaleb(-precision)
-    fraction = f".{'0' * precision}" if precision else ""
-    currency_format = f"¤¤ #,##0{fraction}"
-    return format_currency(amount, code, currency_format, locale="en_US", currency_digits=False)
+    currency_format = "¤¤ #,##0"
+    if amount and abs(amount) < Decimal("0.5"):
+        whole = format_currency(1, code, currency_format, locale="en_US", currency_digits=False)
+        return f"{'-' if amount < 0 else ''}<{whole}"
+    rounded = amount.quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    return format_currency(rounded, code, currency_format, locale="en_US", currency_digits=False)
 
 
 def _card_title(card: CardView) -> str:
@@ -114,7 +117,23 @@ def _print_allowance(allowance: AllowanceView) -> None:
     spent = windows.current_credit_cycle_minor_units if windows else None
     print(f"  Spent this credit cycle: {_format_money(spent, currency)}")
     print(f"  Pending (included): {_format_money(allowance.pending_minor_units, currency)}")
-    print(f"  Pace: {allowance.alert_state.replace('_', ' ')}")
+    print(f"  Provisional leash signal: {allowance.spending_signal.replace('_', ' ')}")
+    print(
+        f"  7-day recorded flexible pace: {_format_money(allowance.trailing_7_observed_daily_minor_units, currency)}/day"
+    )
+    print(
+        f"  30-day recorded flexible pace: {_format_money(allowance.trailing_30_observed_daily_minor_units, currency)}/day"
+    )
+    daily_reference = round(allowance.monthly_minor_units * 12 / 365.2425)
+    print(f"  Provisional leash rate: ~{_format_money(daily_reference, currency)}/day")
+    if allowance.trailing_7_unmatched_count:
+        print(
+            f"  7d unmatched: {allowance.trailing_7_unmatched_count} "
+            f"({_format_money(allowance.trailing_7_unmatched_minor_units, currency)})"
+        )
+    print("  Leash capacity is not a sustainability target; unmatched purchases count as flexible.")
+    print("  History before activation informs pace but not the available balance.")
+    print(f"  Forecast signal: {allowance.alert_state.replace('_', ' ')}")
     print(
         f"  Estimated balance before next credit: {_format_money(allowance.projected_cycle_end_minor_units, currency)}"
     )
@@ -132,6 +151,8 @@ def _print_view(view: SpendView, status: str, last_error: str) -> None:
     cards = view.cards
     if view.allowance:
         _print_allowance(view.allowance)
+        if view.dashboard_url:
+            print(f"  Check a purchase / dashboard: {view.dashboard_url}")
     if not cards:
         print("No card data is available.")
         if status == "authentication-required":

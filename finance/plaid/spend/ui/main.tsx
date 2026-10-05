@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Accordion,
@@ -33,7 +34,7 @@ type Allowance = {
   currency: string;
   alert_state: string;
   available_minor_units: number | null;
-  monthly_minor_units: number | null;
+  monthly_minor_units: number;
   activation_at: string;
   prior_carry_minor_units: number | null;
   posted_minor_units: number | null;
@@ -42,6 +43,11 @@ type Allowance = {
   review_transaction_count: number;
   unmatched_refunds_minor_units: number | null;
   trailing_7_daily_minor_units: number | null;
+  trailing_7_observed_daily_minor_units: number | null;
+  trailing_30_observed_daily_minor_units: number | null;
+  trailing_7_unmatched_count: number | null;
+  trailing_7_unmatched_minor_units: number | null;
+  spending_signal: string;
   projected_cycle_end_minor_units: number | null;
   estimated_exhaustion_at: string | null;
   next_credit_at: string | null;
@@ -64,15 +70,30 @@ type CardView = {
 };
 type View = { cards: CardView[]; allowance: Allowance | null; generated_at: string | null };
 
-function money(value: number | null | undefined, currency: string | null = "USD"): string {
+function money(value: number | null | undefined, currency: string | null, exact = false): string {
   if (value == null || !Number.isFinite(value)) return "Unavailable";
   const code = currency?.length === 3 ? currency.toUpperCase() : "USD";
   try {
-    const formatter = new Intl.NumberFormat(undefined, { style: "currency", currency: code });
-    return formatter.format(value / 10 ** (formatter.resolvedOptions().maximumFractionDigits ?? 2));
+    const formatter = new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: exact ? undefined : 0,
+      minimumFractionDigits: exact ? undefined : 0,
+    });
+    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
+      .maximumFractionDigits;
+    const amount = value / 10 ** (precision ?? 2);
+    if (!exact && amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${formatter.format(1)}`;
+    return formatter.format(amount);
   } catch {
-    return `${code} ${(value / 100).toFixed(2)}`;
+    const amount = value / 100;
+    if (!exact && amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${code} 1`;
+    return `${code} ${amount.toFixed(exact ? 2 : 0)}`;
   }
+}
+
+function Money({ value, currency }: { value: number | null | undefined; currency: string | null }): ReactNode {
+  return <span title={money(value, currency, true)}>{money(value, currency)}</span>;
 }
 function time(value: string | null | undefined): string {
   if (!value || Number.isNaN(new Date(value).getTime())) return "Unknown";
@@ -90,12 +111,12 @@ function signalFor(available: number, projected: number): Signal {
 function SignalLabel({ signal }: { signal: Signal }) {
   return (
     <Badge color={signal === "exceeded" ? "red" : signal === "warning" ? "yellow" : "teal"} variant="light">
-      {signal === "exceeded" ? "Over allowance" : signal === "warning" ? "Pace warning" : "On track"}
+      {signal === "exceeded" ? "Over allowance" : signal === "warning" ? "Pace warning" : "Below provisional leash"}
     </Badge>
   );
 }
 
-function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
+function Metric({ label, value, detail }: { label: string; value: ReactNode; detail?: string }) {
   return (
     <Stack gap={2}>
       <Text size="xs" c="dimmed" fw={600}>
@@ -122,8 +143,16 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
   const after = valid && available != null ? available - cents : null;
   const projectedAfter = valid && projected != null ? projected - cents : null;
   const signal =
-    after != null ? (after <= 0 ? "exceeded" : projectedAfter != null ? signalFor(after, projectedAfter) : null) : null;
-  const m = (value: number | null) => money(value, allowance.currency);
+    after != null
+      ? after <= 0
+        ? "exceeded"
+        : allowance.spending_signal === "warning" || (projectedAfter != null && projectedAfter < 0)
+          ? "warning"
+          : projectedAfter != null
+            ? signalFor(after, projectedAfter)
+            : null
+      : null;
+  const m = (value: number | null) => <Money value={value} currency={allowance.currency} />;
 
   return (
     <Card component="section" aria-labelledby="purchase-title" withBorder radius="lg" padding="xl">
@@ -165,9 +194,14 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
                 {signal && <SignalLabel signal={signal} />}
               </Group>
               <Text size="sm">
-                {projectedAfter == null
-                  ? "Pace estimate warming up; use the available balance rather than the forecast."
-                  : `At the estimated pace, ${projectedAfter < 0 ? `${m(-projectedAfter)} short before` : `${m(projectedAfter)} left before`} the next credit.`}
+                {projectedAfter == null ? (
+                  "Pace estimate warming up; use the available balance rather than the forecast."
+                ) : (
+                  <>
+                    At the estimated pace, {projectedAfter < 0 ? m(-projectedAfter) : m(projectedAfter)}{" "}
+                    {projectedAfter < 0 ? "short" : "left"} before the next credit.
+                  </>
+                )}
               </Text>
               {signal && signal !== "normal" && (
                 <Text size="sm" fw={600}>
@@ -199,11 +233,11 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
       </Alert>
     );
   }
-  const m = (value: number | null | undefined) => money(value, allowance.currency);
+  const m = (value: number | null | undefined) => <Money value={value} currency={allowance.currency} />;
   const available = allowance.available_minor_units;
   const projected = allowance.projected_cycle_end_minor_units;
-  const signal = ["normal", "warning", "exceeded"].includes(allowance.alert_state)
-    ? (allowance.alert_state as Signal)
+  const signal = ["normal", "warning", "exceeded"].includes(allowance.spending_signal)
+    ? (allowance.spending_signal as Signal)
     : null;
   const windows = allowance.windows_minor_units;
 
@@ -265,12 +299,52 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
                   : "Projected balance before your next credit"}
             </Text>
             <Divider />
+            <Text size="sm" fw={700}>
+              Recorded flexible spending pace
+            </Text>
+            <Group justify="space-between" gap="sm">
+              <Text size="sm">7 days</Text>
+              <Text size="sm" fw={700}>
+                {allowance.trailing_7_observed_daily_minor_units == null ? (
+                  "Warming up"
+                ) : (
+                  <>{m(allowance.trailing_7_observed_daily_minor_units)} / day</>
+                )}
+              </Text>
+            </Group>
+            <Group justify="space-between" gap="sm">
+              <Text size="sm">30 days</Text>
+              <Text size="sm" fw={700}>
+                {allowance.trailing_30_observed_daily_minor_units == null ? (
+                  "Warming up"
+                ) : (
+                  <>{m(allowance.trailing_30_observed_daily_minor_units)} / day</>
+                )}
+              </Text>
+            </Group>
+            <Text size="sm" c="dimmed">
+              Provisional leash ~{m(Math.round((allowance.monthly_minor_units * 12) / 365.2425))} / day. This is
+              spending capacity, not a sustainability target.
+            </Text>
+            <Text size="xs" c="dimmed">
+              Positive recorded purchases, including history before activation; unmatched purchases count as flexible.
+              Earlier purchases inform pace but do not reduce available allowance. Plaid data may lag.
+            </Text>
+            {allowance.trailing_7_unmatched_count != null && allowance.trailing_7_unmatched_count > 0 && (
+              <Text size="xs" c="dimmed">
+                7d unmatched {allowance.trailing_7_unmatched_count} ({m(allowance.trailing_7_unmatched_minor_units)}) ·
+                counted as flexible.
+              </Text>
+            )}
+            <Divider />
             <Group justify="space-between" gap="sm">
               <Text size="sm">Pace used for estimate</Text>
               <Text size="sm" fw={700}>
-                {allowance.trailing_7_daily_minor_units == null
-                  ? "Warming up"
-                  : `${m(allowance.trailing_7_daily_minor_units)} / day`}
+                {allowance.trailing_7_daily_minor_units == null ? (
+                  "Warming up"
+                ) : (
+                  <>{m(allowance.trailing_7_daily_minor_units)} / day</>
+                )}
               </Text>
             </Group>
             <Text size="xs" c="dimmed">
@@ -317,7 +391,7 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
                 <Group justify="space-between" gap="sm">
                   <Text size="sm">Spent this cycle</Text>
                   <Text size="sm" fw={700}>
-                    − {m(windows?.current_credit_cycle_minor_units)}
+                    - {m(windows?.current_credit_cycle_minor_units)}
                   </Text>
                 </Group>
               </Stack>
@@ -328,7 +402,13 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
             {allowance.review_transaction_count > 0 && (
               <Alert
                 color="yellow"
-                title={`${allowance.review_transaction_count} ${allowance.review_transaction_count === 1 ? "charge" : "charges"} (${m(allowance.review_minor_units)}) need review`}
+                title={
+                  <>
+                    {allowance.review_transaction_count}{" "}
+                    {allowance.review_transaction_count === 1 ? "charge" : "charges"} ({m(allowance.review_minor_units)}
+                    ) need review
+                  </>
+                }
                 variant="light"
               >
                 Counted as flexible until classified; the cushion could change.
@@ -405,17 +485,28 @@ function SpendCard({ card }: { card: CardView }) {
           </Badge>
         </Group>
         <Text size="xl" fw={700} mt="sm">
-          {money(card.spend_minor_units, card.currency)}
+          <Money value={card.spend_minor_units} currency={card.currency} />
         </Text>
         <Text size="sm" c="dimmed">
-          {card.statement_available
-            ? `This statement${card.limit_minor_units == null ? "" : ` · ${money(card.limit_minor_units, card.currency)} card limit`}`
-            : card.cycle_start
-              ? `Provisional card total since ${card.cycle_start}; statement date not yet reported. Includes purchases outside the allowance.`
-              : "Statement data unavailable"}
+          {card.statement_available ? (
+            <>
+              This statement
+              {card.limit_minor_units != null && (
+                <>
+                  {" "}
+                  · <Money value={card.limit_minor_units} currency={card.currency} /> card limit
+                </>
+              )}
+            </>
+          ) : card.cycle_start ? (
+            `Provisional card total since ${card.cycle_start}; statement date not yet reported. Includes purchases outside the allowance.`
+          ) : (
+            "Statement data unavailable"
+          )}
         </Text>
         <Text size="xs" c="dimmed">
-          Pending {money(card.pending_minor_units, card.currency)} · Last synced {time(card.last_synced_at)}
+          Pending <Money value={card.pending_minor_units} currency={card.currency} /> · Last synced{" "}
+          {time(card.last_synced_at)}
         </Text>
       </Stack>
     </Card>

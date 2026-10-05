@@ -253,6 +253,7 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
     await add_link(connection, "item-card", synced=now)
     await add_account(connection, "card-1", "item-card", type="credit")
     await add_transaction(connection, "card-1", "item-card", "prior", now.date() - timedelta(days=1), 70.0)
+    await add_transaction(connection, "card-1", "item-card", "older", now.date() - timedelta(days=20), 30.0)
     config = SpendConfiguration(
         cards=[],
         allowance=AllowancePolicy(
@@ -275,6 +276,8 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
         await service.close()
     assert allowance is not None
     assert allowance.available_minor_units == 10_000
+    assert allowance.trailing_7_observed_daily_minor_units == 1_000
+    assert allowance.trailing_30_observed_daily_minor_units == 10_000 // 30
     assert allowance.trailing_7_daily_minor_units == 1_000
     assert allowance.windows_minor_units is not None
     assert allowance.windows_minor_units.trailing_7_days_minor_units == 0
