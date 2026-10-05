@@ -58,7 +58,9 @@ def test_public_internet_is_available_but_never_implicitly_granted(
             if namespace == "agentplane-staging" and doc["metadata"]["name"] == "public-coder-openclaw":
                 assert doc["spec"]["subjects"] == [{"namespace": "public-coder-agent", "name": "openclaw"}]
                 assert doc["spec"]["policies"] == [
-                    "public-coder-openclaw", INFERENCE_EXPERIMENTS_POLICY, PUBLIC_INTERNET_POLICY
+                    "public-coder-openclaw",
+                    INFERENCE_EXPERIMENTS_POLICY,
+                    PUBLIC_INTERNET_POLICY,
                 ]
             else:
                 assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policies"]

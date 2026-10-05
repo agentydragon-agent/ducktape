@@ -1307,6 +1307,69 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
+  name: inference-experiments
+  namespace: agentplane-testing
+spec:
+  rules:
+    - hosts:
+        - ollama.ollama.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /api/tags
+        - /api/ps
+        - /api/version
+        - /v1/models
+      clusterInternal: true
+      credentialRef:
+        name: ollama
+    - hosts:
+        - ollama.ollama.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /api/show
+        - /api/chat
+        - /api/generate
+        - /api/embed
+        - /api/embeddings
+        - /v1/chat/completions
+        - /v1/completions
+        - /v1/responses
+        - /v1/embeddings
+      clusterInternal: true
+      credentialRef:
+        name: ollama
+    - hosts:
+        - litellm.litellm.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /v1/models
+        - /models
+        - /model/info
+      clusterInternal: true
+      credentialRef:
+        name: litellm-cheap-experiments
+    - hosts:
+        - litellm.litellm.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /v1/chat/completions
+        - /v1/completions
+        - /v1/responses
+        - /v1/messages
+        - /v1/messages/count_tokens
+        - /v1/embeddings
+        - /v1/audio/transcriptions
+      clusterInternal: true
+      credentialRef:
+        name: litellm-cheap-experiments
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
   name: public-internet
   namespace: agentplane-testing
 spec:
@@ -1373,61 +1436,6 @@ spec:
       clusterInternal: true
       credentialRef:
         name: agentplane-workload
-    - hosts:
-        - ollama.ollama.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /api/tags
-        - /api/ps
-        - /api/version
-        - /v1/models
-      clusterInternal: true
-      credentialRef:
-        name: ollama
-    - hosts:
-        - ollama.ollama.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /api/show
-        - /api/chat
-        - /api/generate
-        - /api/embed
-        - /api/embeddings
-        - /v1/chat/completions
-        - /v1/completions
-        - /v1/responses
-        - /v1/embeddings
-      clusterInternal: true
-      credentialRef:
-        name: ollama
-    - hosts:
-        - litellm.litellm.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /v1/models
-        - /models
-        - /model/info
-      clusterInternal: true
-      credentialRef:
-        name: litellm-cheap-experiments
-    - hosts:
-        - litellm.litellm.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /v1/chat/completions
-        - /v1/completions
-        - /v1/responses
-        - /v1/messages
-        - /v1/messages/count_tokens
-        - /v1/embeddings
-        - /v1/audio/transcriptions
-      clusterInternal: true
-      credentialRef:
-        name: litellm-cheap-experiments
     - hosts:
         - kubernetes.default.svc.cluster.local
       clusterInternal: true
@@ -1817,6 +1825,7 @@ data:
     lifecycle_timeout_s: 300
     default_policies:
       - basic
+      - inference-experiments
     kubernetes_grants: {}
     kubernetes_binding_cleanup_namespaces: []
     kubernetes_cluster_binding_cleanup: false
@@ -2264,6 +2273,7 @@ data:
     kubernetes_grants: {}
     default_policies:
       - basic
+      - inference-experiments
     egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081
     action_federation:
       mode: direct
