@@ -761,7 +761,7 @@ def generate_manifests(root: Path) -> None:
         user_agentydragon_kustomization,
     )
     authentik_tf_artifact = artifact(authentik_tf.NAME, authentik_tf.OUTPUT_DIR)
-    authentik_tf_kustomization = authentik_tf.authentik_tf(
+    authentik_tf.authentik_tf(
         flux_chart,
         write_directory(
             root,
