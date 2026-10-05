@@ -37,16 +37,16 @@ changing proxy behavior or applying a harness context override.
 
 ## Projections
 
-| Consumer               | Input                                                  | Output                                                     |
-| ---------------------- | ------------------------------------------------------ | ---------------------------------------------------------- |
-| LiteLLM                | `SERVED_ROUTES`, `HIDDEN_ALIASES`, deployment bindings | Proxy config and alias settings                            |
-| Terraform virtual keys | `KEY_MODEL_LANES`                                      | `model_lanes`: allowed IDs and ordered fallback IDs        |
-| Agentplane app         | `HarnessRoutes`                                        | App-owned `ModelCatalog` records and harness ID lists      |
-| Agentplane environment | Same `HarnessRoutes`                                   | Structured source retained for ingress metadata generation |
-| OpenClaw public coder  | `PUBLIC_CODER_MODELS`                                  | OpenClaw IDs, names, limits, and reasoning flags           |
-| Parked Haku OpenClaw   | Selected subscription routes and command aliases       | Native Claude Code model slugs                             |
-| Gatus                  | Selected Ollama route                                  | Probe request model ID                                     |
-| Runner configuration   | `RUNNER_CONTEXT_OVERRIDES`                             | Existing context-window override map                       |
+| Consumer               | Input                                                             | Output                                                     |
+| ---------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------- |
+| LiteLLM                | `SERVED_ROUTES`, `HIDDEN_ALIASES`, deployment bindings            | Proxy config and alias settings                            |
+| Terraform virtual keys | `KEY_MODEL_LANES`                                                 | `model_lanes`: allowed IDs and ordered fallback IDs        |
+| Agentplane app         | `HarnessRoutes`                                                   | App-owned `ModelCatalog` records and harness ID lists      |
+| Agentplane environment | Same `HarnessRoutes`                                              | Structured source retained for ingress metadata generation |
+| OpenClaw public coder  | Explicit selections and budgets in `public_coder_agent_config.py` | OpenClaw IDs, names, limits, and reasoning flags           |
+| Parked Haku OpenClaw   | Selected subscription routes and command aliases                  | Native Claude Code model slugs                             |
+| Gatus                  | Selected Ollama route                                             | Probe request model ID                                     |
+| Runner configuration   | `RUNNER_CONTEXT_OVERRIDES`                                        | Existing context-window override map                       |
 
 For example, a preset chooses `GPT6_LUNA_RESPONSES`; the app renderer emits its ID,
 display name, and reasoning choices. The key renderer emits only its ID. Neither knows
@@ -60,13 +60,17 @@ remain explicit consumer choices referencing existing routes.
 ## Consumer boundaries
 
 Python consumers select route objects. OpenClaw's account labels and parked Haku's
-command aliases remain presentation specific to those consumers. The public-coder
-catalog excludes routes with unknown limits; the renderer rejects missing metadata.
-The runner's override selection remains limited to Qwen IQ4_XS, even though other
-routes have known or configured context windows.
+command aliases remain presentation specific to those consumers. Public Coder's
+retained renderer owns explicit selections and OpenClaw `contextWindow`/`maxTokens`
+settings; provider metadata no longer controls their values or whether a model is
+offered. Required names/reasoning capabilities still come from the selected route.
+The runner's explicit route-to-budget map remains limited to Qwen IQ4_XS. It no longer
+reads the model's context metadata or derives a budget from Ollama `num_ctx`.
 
 `model_catalog/nix.py` projects to `model_catalog/claude-wrappers.json`, read by
-Nix wrappers as gateway options. Regenerate it independently of Kubernetes with
+Nix wrappers as gateway options. It owns explicit Claude context/output settings;
+omission leaves the client default, independently of the provider metadata. Regenerate
+it independently of Kubernetes with
 `bb run //model_catalog:generate_nix`.
 
 Each `KEY_MODEL_LANES` entry is one `ModelLaneRoutes(allowed=..., fallbacks=...)`
@@ -79,7 +83,7 @@ the Terraform CR with `bb run //cluster/cdk8s:generate_manifests`.
 
 Claude's `[1m]` request convention stays in `litellm-claude.nix`, separate from the
 served ID. The Antigravity wrapper explicitly retains its configured 65,536 output
-override, while the account metadata remains 65,535. Changing that policy requires a
+setting, while the account metadata remains 65,535. Changing that policy requires a
 separate behavioral change; do not replace account metadata with a borrowed Google API
 limit.
 

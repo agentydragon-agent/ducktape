@@ -6,9 +6,8 @@ from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named 
 
 from cluster.cdk8s import public_coder_agent_config
 from cluster.cdk8s.litellm.config import main_proxy_config
-from cluster.cdk8s.model_selections import PUBLIC_CODER_MODELS
 from cluster.cdk8s.parked import haku_openclaw_spike_config
-from model_catalog.catalog import ANTHROPIC_API_ROUTES, ANTHROPIC_SUBSCRIPTION_ROUTES, ANTIGRAVITY_ROUTES, Model
+from model_catalog.catalog import ANTHROPIC_API_ROUTES, ANTHROPIC_SUBSCRIPTION_ROUTES, GPT6_ASTRA_RESPONSES
 
 
 def _public_coder_agent_models() -> list[dict]:
@@ -43,25 +42,12 @@ def test_public_coder_agent_catalog_names_only_served_routes() -> None:
         assert model["maxTokens"] < model["contextWindow"]
 
 
-def test_public_coder_omits_unknown_limits() -> None:
-    unknown = [route for route in ANTIGRAVITY_ROUTES if route.model.context_window is None]
-    assert unknown
-    assert not any(route in PUBLIC_CODER_MODELS for route in unknown)
-
-
-@pytest.mark.parametrize(
-    "model",
-    [
-        replace(PUBLIC_CODER_MODELS[0].model, context_window=None),
-        replace(PUBLIC_CODER_MODELS[0].model, max_output_tokens=None),
-        replace(PUBLIC_CODER_MODELS[0].model, reasoning=None),
-    ],
-    ids=["context_window", "max_output_tokens", "reasoning"],
-)
-def test_public_coder_rejects_incomplete_metadata(model: Model) -> None:
-    incomplete = replace(PUBLIC_CODER_MODELS[0], model=model)
+def test_public_coder_rejects_unknown_reasoning_capability() -> None:
+    route = GPT6_ASTRA_RESPONSES
     with pytest.raises(ValueError, match="missing OpenClaw metadata"):
-        public_coder_agent_config._model_entry(incomplete)
+        public_coder_agent_config._model_entry(
+            replace(route, model=replace(route.model, reasoning=None)), context_budget=128_000, output_budget=16_000
+        )
 
 
 def test_current_anthropic_roster_matches_haku_openclaw() -> None:
