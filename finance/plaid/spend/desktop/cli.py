@@ -22,7 +22,7 @@ PROPERTIES_INTERFACE = "org.freedesktop.DBus.Properties"
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Read your current Plaid statement-cycle spend.")
+    parser = argparse.ArgumentParser(description="Read your current Plaid card spend and flexible allowance.")
     parser.add_argument(
         "command",
         nargs="?",
@@ -91,8 +91,33 @@ def _card_title(card: dict[str, Any]) -> str:
     return title
 
 
+def _print_allowance(allowance: dict[str, Any]) -> None:
+    print("\nFlexible allowance · advisory, not a bank limit")
+    if allowance.get("status") != "active":
+        print(f"  Status: {allowance.get('status') or 'unavailable'}")
+        if note := allowance.get("note"):
+            print(f"  {note}")
+        return
+
+    currency = allowance.get("currency")
+    print(f"  Available: {_format_money(allowance.get('available_minor_units'), currency)}")
+    print(f"  Monthly credit: {_format_money(allowance.get('monthly_minor_units'), currency)}")
+    windows = allowance.get("windows_minor_units") or {}
+    print(f"  Spent this credit cycle: {_format_money(windows.get('current_credit_cycle_minor_units'), currency)}")
+    print(f"  Pending (included): {_format_money(allowance.get('pending_minor_units'), currency)}")
+    print(f"  Pace: {str(allowance.get('alert_state') or 'unavailable').replace('_', ' ')}")
+    print(f"  Estimated balance before next credit: {_format_money(allowance.get('projected_cycle_end_minor_units'), currency)}")
+    print(f"  Next credit: {allowance.get('next_credit_at') or 'unknown'}")
+    print(f"  Projected exhaustion (no future credits): {allowance.get('estimated_exhaustion_at') or 'no recent spend'}")
+    print(f"  Oldest account sync: {allowance.get('last_synced_at') or 'unknown'}")
+    if note := allowance.get("note"):
+        print(f"  {note}")
+
+
 def _print_view(view: dict[str, Any], status: str, last_error: str) -> None:
     cards = view["cards"]
+    if isinstance(allowance := view.get("allowance"), dict):
+        _print_allowance(allowance)
     if not cards:
         print("No card data is available.")
         if status == "authentication-required":

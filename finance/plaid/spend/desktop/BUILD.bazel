@@ -46,6 +46,17 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_cli",
+    srcs = ["test_cli.py"],
+    deps = [
+        ":cli",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_binary(
     name = "plaid_spend_cli",
     main_module = "finance.plaid.spend.desktop.cli",

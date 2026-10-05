@@ -36,18 +36,27 @@
         </div>
       </section>
 
-      <section id="allowance-section" hidden aria-label="Flexible allowance">
-        <h2>Flexible allowance · advisory, not a bank limit</h2>
-        <div id="allowance-summary" aria-live="polite"></div>
-        <div id="allowance-details"></div>
-        <label
-          >Considering a flexible purchase ($)
-          <input id="purchase-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Amount" />
-        </label>
-        <p id="purchase-result" aria-live="polite"></p>
-        <p>
-          Estimates use Plaid transaction dates and may lag; review pending and uncategorized charges before spending.
-          No purchase is blocked here.
+      <section id="allowance-section" class="allowance-card" hidden aria-label="Flexible allowance">
+        <div class="allowance-heading">
+          <div>
+            <p class="eyebrow">Your spending room</p>
+            <h2>Flexible allowance</h2>
+          </div>
+          <span class="allowance-advisory">Advisory · not a bank limit</span>
+        </div>
+        <div id="allowance-summary" class="allowance-summary" aria-live="polite"></div>
+        <div id="allowance-details" class="allowance-details"></div>
+        <div class="allowance-purchase">
+          <label for="purchase-amount">Considering a flexible purchase</label>
+          <div class="allowance-input">
+            <span aria-hidden="true">$</span>
+            <input id="purchase-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Amount" />
+          </div>
+          <p id="purchase-result" aria-live="polite"></p>
+        </div>
+        <p class="allowance-footnote">
+          Estimates use Plaid transaction dates and may lag. Review pending and uncategorized charges before spending;
+          no purchase is blocked here.
         </p>
       </section>
 
