@@ -29,7 +29,6 @@ pytest_plugins = ("util.playwright",)
 _UI_DIR = get_required_path("_main/finance/plaid/spend/ui/dist/index.html").parent
 
 
-
 @pytest.fixture(scope="module")
 def dashboard_url() -> Iterator[str]:
     app = FastAPI()
