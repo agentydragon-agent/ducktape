@@ -42,6 +42,7 @@ py_library(
     srcs = ["cli.py"],
     deps = [
         "//finance/plaid/spend:allowance",
+        "//finance/plaid/spend:models",
         "@pypi//babel",
         "@pypi//dbus_next",
     ],
@@ -53,6 +54,8 @@ py_test(
     deps = [
         ":cli",
         "//:conftest",
+        "//finance/plaid/spend:allowance",
+        "//finance/plaid/spend:models",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -75,8 +78,8 @@ py_wheel(
     distribution = "plaid-spend-desktop",
     entry_points = {
         "console_scripts": [
-            "plaid-spend = spend.desktop.cli:main",
-            "plaid-spend-daemon = spend.desktop.daemon:main",
+            "plaid-spend = finance.plaid.spend.desktop.cli:main",
+            "plaid-spend-daemon = finance.plaid.spend.desktop.daemon:main",
         ],
     },
     python_requires = ">=3.14",
@@ -86,7 +89,6 @@ py_wheel(
         "httpx>=0.27.0",
         "pydantic>=2.0",
     ],
-    strip_path_prefixes = ["finance/plaid/"],
     version = "0.1.0",
     visibility = ["//visibility:public"],
     deps = [
@@ -96,5 +98,6 @@ py_wheel(
         ":oauth",
         ":package_init",
         "//finance/plaid/spend:allowance",
+        "//finance/plaid/spend:models",
     ],
 )

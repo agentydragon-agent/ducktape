@@ -21,8 +21,8 @@ python314Packages.buildPythonApplication {
     pydantic
   ];
   pythonImportsCheck = [
-    "spend.desktop.cli"
-    "spend.desktop.daemon"
+    "finance.plaid.spend.desktop.cli"
+    "finance.plaid.spend.desktop.daemon"
   ];
   doCheck = false;
   dontUsePytestCheck = true;

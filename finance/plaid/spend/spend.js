@@ -8,8 +8,7 @@ let currentAllowance = null;
 function renderPurchase() {
   const a = currentAllowance;
   if (a?.status !== "active" || a.available_minor_units == null) {
-    purchaseResult.textContent =
-      "Allowance data is unavailable. Check account sync before relying on a purchase estimate.";
+    purchaseResult.textContent = "Activate the allowance and sync accounts before checking a purchase.";
     return;
   }
   const dollars = Number(purchaseInput.value);
@@ -41,25 +40,13 @@ function renderAllowance(a) {
   allowanceSummary.replaceChildren();
   allowanceDetails.replaceChildren();
   if (a.status !== "active") {
-    allowanceSummary.dataset.state = "unavailable";
     allowanceSummary.textContent = `Unavailable: ${a.note || "Allowance data unavailable"}`;
     purchaseInput.disabled = true;
     renderPurchase();
     return;
   }
   purchaseInput.disabled = false;
-  allowanceSummary.dataset.state = a.alert_state;
-  const alert = element(
-    "span",
-    "alert",
-    a.alert_state === "warning" ? "Pace warning" : a.alert_state === "exceeded" ? "Over allowance" : "On pace"
-  );
-  alert.dataset.state = a.alert_state;
-  allowanceSummary.append(
-    element("span", "allowance-kicker", "Available to spend"),
-    element("strong", "allowance-amount", money(a.available_minor_units)),
-    alert
-  );
+  allowanceSummary.textContent = `${money(a.available_minor_units)} available · ${a.alert_state === "warning" ? "pace warning" : a.alert_state === "exceeded" ? "over allowance" : "on pace"}`;
   const items = [
     ["Monthly credit", money(a.monthly_minor_units)],
     ["Carry from earlier cycles", money(a.prior_carry_minor_units)],
@@ -82,8 +69,8 @@ function renderAllowance(a) {
     ["Oldest account sync", formatTimestamp(a.last_synced_at)],
   ];
   for (const [key, value] of items) {
-    const row = element("div", "allowance-detail");
-    row.append(element("span", "", key), element("span", "", value));
+    const row = document.createElement("p");
+    row.textContent = `${key}: ${value}`;
     allowanceDetails.append(row);
   }
   renderPurchase();

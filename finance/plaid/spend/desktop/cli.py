@@ -16,7 +16,8 @@ from dbus_next.aio import MessageBus
 from dbus_next.constants import MessageType
 from dbus_next.errors import DBusError
 
-from ..allowance import AllowanceView, Status
+from finance.plaid.spend.allowance import AllowanceView, Status
+from finance.plaid.spend.models import CardView, SpendView
 
 BUS_NAME = "works.allegedly.PlaidSpend"
 OBJECT_PATH = "/works/allegedly/PlaidSpend"
@@ -71,8 +72,8 @@ async def _property(bus: MessageBus, name: str) -> str:
     return value
 
 
-def _format_money(minor_units: Any, currency: Any) -> str:
-    if not isinstance(minor_units, int) or isinstance(minor_units, bool):
+def _format_money(minor_units: int | None, currency: str | None) -> str:
+    if minor_units is None:
         return "Unavailable"
     if not isinstance(currency, str) or len(currency) != 3:
         return f"{minor_units} minor units"
@@ -85,11 +86,11 @@ def _format_money(minor_units: Any, currency: Any) -> str:
     return format_currency(amount, code, currency_format, locale="en_US", currency_digits=False)
 
 
-def _card_title(card: dict[str, Any]) -> str:
-    title = card.get("label") or card.get("account_name") or "Card"
-    if mask := card.get("mask"):
+def _card_title(card: CardView) -> str:
+    title = card.label or card.account_name or "Card"
+    if mask := card.mask:
         title += f" ···· {mask}"
-    if institution := card.get("institution_name"):
+    if institution := card.institution_name:
         title += f" ({institution})"
     return title
 
@@ -127,10 +128,10 @@ def _print_allowance(allowance: AllowanceView) -> None:
         print(f"  {allowance.note}")
 
 
-def _print_view(view: dict[str, Any], status: str, last_error: str) -> None:
-    cards = view["cards"]
-    if allowance := view.get("allowance"):
-        _print_allowance(AllowanceView.model_validate(allowance))
+def _print_view(view: SpendView, status: str, last_error: str) -> None:
+    cards = view.cards
+    if view.allowance:
+        _print_allowance(view.allowance)
     if not cards:
         print("No card data is available.")
         if status == "authentication-required":
@@ -142,40 +143,39 @@ def _print_view(view: dict[str, Any], status: str, last_error: str) -> None:
         return
 
     print(f"Plaid Spend · {len(cards)} card{'s' if len(cards) != 1 else ''}")
-    if generated_at := view.get("generated_at"):
-        print(f"View updated: {generated_at}")
+    print(f"View updated: {_format_timestamp(view.generated_at)}")
 
     for card in cards:
-        currency = card.get("currency")
+        currency = card.currency
         print(f"\n{_card_title(card)}")
-        if card.get("cycle_start"):
-            print(f"  Statement cycle starts: {card['cycle_start']}")
+        if card.cycle_start:
+            print(f"  Statement cycle starts: {card.cycle_start.isoformat()}")
         else:
             print("  Statement cycle: unavailable")
 
-        spend = _format_money(card.get("spend_minor_units"), currency)
+        spend = _format_money(card.spend_minor_units, currency)
         limit = (
             "no limit set"
-            if card.get("limit_minor_units") is None
-            else _format_money(card.get("limit_minor_units"), currency)
+            if card.limit_minor_units is None
+            else _format_money(card.limit_minor_units, currency)
         )
-        percent = card.get("spend_percent")
+        percent = card.spend_percent
         percent_text = f" · {percent:.1f}%" if isinstance(percent, int | float) else ""
         print(f"  Spend: {spend} / {limit}{percent_text}")
 
-        posted = card.get("posted_minor_units")
-        pending = card.get("pending_minor_units")
+        posted = card.posted_minor_units
+        pending = card.pending_minor_units
         if posted is not None or pending is not None:
             posted_text = _format_money(posted, currency) if posted is not None else "—"
             pending_text = _format_money(pending, currency) if pending is not None else "—"
             print(f"  Posted: {posted_text} · Pending: {pending_text}")
 
-        alert = str(card.get("alert_state") or "unavailable").replace("_", " ").title()
-        threshold = card.get("alert_threshold_percent")
+        alert = str(card.alert_state or "unavailable").replace("_", " ").title()
+        threshold = card.alert_threshold_percent
         if alert == "Warning" and isinstance(threshold, int):
             alert += f" · {threshold}% threshold"
         print(f"  Alert: {alert}")
-        print(f"  Last synced: {card.get('last_synced_at') or 'unknown'}")
+        print(f"  Last synced: {_format_timestamp(card.last_synced_at)}")
 
     if status != "ready":
         print(f"\nDesktop client: {status}.")
@@ -207,8 +207,13 @@ async def _run(command: str, json_output: bool) -> None:
             raise RuntimeError("Plaid Spend returned an invalid view; expected an object with a cards array")
         if json_output:
             print(json.dumps(view, indent=2, ensure_ascii=False))
+        elif view.get("generated_at") is None:
+            print("No card data is available.")
+            print(f"Desktop client: {status}.")
+            if last_error:
+                print(last_error)
         else:
-            _print_view(view, status, last_error)
+            _print_view(SpendView.model_validate(view), status, last_error)
     finally:
         bus.disconnect()
 
