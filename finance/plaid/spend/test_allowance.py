@@ -79,7 +79,8 @@ def view(rows=(), when=START):
 def test_single_config_parses_cards_and_optional_allowance():
     assert SpendConfiguration.model_validate_json('{"cards":[]}').allowance is None
     config = SpendConfiguration.model_validate_json(
-        '{"cards":[],"allowance":{"monthly_minor_units":10000,"spending_account_ids":["example-card"],'
+        '{"cards":[],"allowance":{"monthly_minor_units":10000,"activation_at":"2026-01-31",'
+        '"spending_account_ids":["example-card"],'
         '"rules":[{"condition":{"type":"name_prefix","field":"name","prefix":"EXAMPLE"},"kind":"flexible"}]}}'
     )
     assert config.allowance is not None
@@ -94,12 +95,16 @@ def test_single_config_parses_cards_and_optional_allowance():
             '"rules":[{"condition":{"type":"name_prefix","field":"name","prefix":"EXAMPLE"},"kind":"flexible"}]}}'
         )
     with pytest.raises(ValidationError):
-        AllowancePolicy.model_validate({
-            "monthly_minor_units": 10_000,
-            "activation_at": None,
-            "spending_account_ids": ["example-card"],
-            "rules": [{"condition": {"type": "name_prefix", "field": "name", "prefix": "EXAMPLE"}, "kind": "flexible"}],
-        })
+        AllowancePolicy.model_validate(
+            {
+                "monthly_minor_units": 10_000,
+                "activation_at": None,
+                "spending_account_ids": ["example-card"],
+                "rules": [
+                    {"condition": {"type": "name_prefix", "field": "name", "prefix": "EXAMPLE"}, "kind": "flexible"}
+                ],
+            }
+        )
 
 
 def test_configured_allowance_is_active_and_no_double_credit():
