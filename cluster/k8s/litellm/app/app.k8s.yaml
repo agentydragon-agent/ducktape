@@ -378,6 +378,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 1000000
+          max_output_tokens: 128000
+          max_tokens: 128000
       - model_name: anthropic-api/ant-messages/claude-sonnet-5
         litellm_params:
           model: anthropic/claude-sonnet-5
@@ -385,6 +388,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 1000000
+          max_output_tokens: 128000
+          max_tokens: 128000
       - model_name: anthropic-api/ant-messages/claude-fable-5
         litellm_params:
           model: anthropic/claude-fable-5
@@ -392,6 +398,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 1000000
+          max_output_tokens: 128000
+          max_tokens: 128000
       - model_name: anthropic-api/ant-messages/claude-haiku-4-5-20251001
         litellm_params:
           model: anthropic/claude-haiku-4-5-20251001
@@ -399,6 +408,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 200000
+          max_output_tokens: 64000
+          max_tokens: 64000
       - model_name: antigravity/ant-messages/claude-opus-4-6-thinking
         litellm_params:
           model: anthropic/claude-opus-4-6-thinking
@@ -502,6 +514,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 131072
+          max_output_tokens: 32768
+          max_tokens: 32768
       - model_name: groq/oai-chat/llama-3.1-8b-instant
         litellm_params:
           model: groq/llama-3.1-8b-instant
@@ -509,6 +524,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 131072
+          max_output_tokens: 131072
+          max_tokens: 131072
       - model_name: whisper-large-v3
         litellm_params:
           model: groq/whisper-large-v3
@@ -528,6 +546,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 1048576
+          max_output_tokens: 65536
+          max_tokens: 65536
       - model_name: google/goog-generate/gemini-3.5-flash-lite
         litellm_params:
           model: gemini/gemini-3.5-flash-lite
@@ -535,6 +556,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 1048576
+          max_output_tokens: 65536
+          max_tokens: 65536
       - model_name: google/goog-embed/gemini-embedding-2
         litellm_params:
           model: gemini/gemini-embedding-2
@@ -560,6 +584,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 128000
+          max_output_tokens: 128000
+          max_tokens: 128000
       - model_name: mistral/oai-chat/codestral-latest
         litellm_params:
           model: mistral/codestral-latest
@@ -567,6 +594,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 128000
+          max_output_tokens: 128000
+          max_tokens: 128000
       - model_name: mistral/oai-chat/magistral-medium-latest
         litellm_params:
           model: mistral/magistral-medium-latest
@@ -574,6 +604,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/magistral-small-latest
         litellm_params:
           model: mistral/magistral-small-latest
@@ -581,6 +614,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/ministral-14b-latest
         litellm_params:
           model: mistral/ministral-14b-latest
@@ -588,6 +624,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/ministral-14b-2512
         litellm_params:
           model: mistral/ministral-14b-2512
@@ -595,6 +634,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/ministral-8b-latest
         litellm_params:
           model: mistral/ministral-8b-latest
@@ -602,6 +644,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/ministral-8b-2512
         litellm_params:
           model: mistral/ministral-8b-2512
@@ -609,6 +654,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/ministral-3b-latest
         litellm_params:
           model: mistral/ministral-3b-latest
@@ -616,6 +664,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 131072
+          max_output_tokens: 131072
+          max_tokens: 131072
       - model_name: mistral/oai-chat/ministral-3b-2512
         litellm_params:
           model: mistral/ministral-3b-2512
@@ -623,6 +674,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 131072
+          max_output_tokens: 131072
+          max_tokens: 131072
       - model_name: mistral/oai-chat/mistral-code-fim-latest
         litellm_params:
           model: mistral/mistral-code-fim-latest
@@ -630,6 +684,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 128000
+          max_output_tokens: 128000
+          max_tokens: 128000
       - model_name: mistral/oai-chat/mistral-code-latest
         litellm_params:
           model: mistral/mistral-code-latest
@@ -637,6 +694,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 128000
+          max_output_tokens: 128000
+          max_tokens: 128000
       - model_name: mistral/oai-chat/mistral-medium
         litellm_params:
           model: mistral/mistral-medium
@@ -644,6 +704,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/mistral-medium-2604
         litellm_params:
           model: mistral/mistral-medium-2604
@@ -651,6 +714,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/mistral-medium-3
         litellm_params:
           model: mistral/mistral-medium-3
@@ -658,6 +724,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/mistral-medium-3-5
         litellm_params:
           model: mistral/mistral-medium-3-5
@@ -665,6 +734,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/mistral-medium-3.5
         litellm_params:
           model: mistral/mistral-medium-3.5
@@ -672,6 +744,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/mistral-medium-latest
         litellm_params:
           model: mistral/mistral-medium-latest
@@ -679,6 +754,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/mistral-small-2603
         litellm_params:
           model: mistral/mistral-small-2603
@@ -686,6 +764,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/mistral-small-latest
         litellm_params:
           model: mistral/mistral-small-latest
@@ -693,6 +774,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/mistral-vibe-cli-fast
         litellm_params:
           model: mistral/mistral-vibe-cli-fast
@@ -700,6 +784,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/mistral-vibe-cli-latest
         litellm_params:
           model: mistral/mistral-vibe-cli-latest
@@ -707,6 +794,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/mistral-vibe-cli-with-tools
         litellm_params:
           model: mistral/mistral-vibe-cli-with-tools
@@ -714,6 +804,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 262144
+          max_output_tokens: 262144
+          max_tokens: 262144
       - model_name: mistral/oai-chat/voxtral-small-2507
         litellm_params:
           model: mistral/voxtral-small-2507
@@ -721,6 +814,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 32768
+          max_output_tokens: 32768
+          max_tokens: 32768
       - model_name: mistral/oai-chat/voxtral-small-latest
         litellm_params:
           model: mistral/voxtral-small-latest
@@ -728,6 +824,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 32768
+          max_output_tokens: 32768
+          max_tokens: 32768
     litellm_settings:
       drop_params: true
       callbacks:
