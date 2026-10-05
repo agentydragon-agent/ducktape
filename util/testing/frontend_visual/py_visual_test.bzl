@@ -22,6 +22,9 @@ def py_visual_test(
         font_family = None,
         devtools_viewport = False,
         output_suffix = None,
+        inline_page = False,
+        stylesheets = [],
+        base_href = None,
         env = {},
         tags = [],
         **kwargs):
@@ -48,6 +51,13 @@ def py_visual_test(
       output_suffix: what follows a scenario's output name in its PNG's file name; `-actual` if
         unset. A lane migrating from a runner that wrote bare `<name>.png` sets `""`, so its images
         keep their names in PR visual review.
+      inline_page: load the harness as a document assembled in memory (`set_content`) from the
+        bundle, `stylesheets` and the scenario's `windowGlobals`, not as the `index.html` beside the
+        bundle. The page then has no origin: the request fence allows nothing, not even `file://`.
+        `harness` may be an esbuild `output_dir`, and `assets` is not needed.
+      stylesheets: with `inline_page`, the CSS files inlined into the document, in order.
+      base_href: with `inline_page`, the document's `<base href>`, for a harness that parses relative
+        URLs its stubbed `fetch` never sends.
       devtools_viewport: emulate and capture each viewport over the DevTools protocol the way the
         Puppeteer sweep did (`DevtoolsViewport`), so a lane ported from it keeps its images
         byte-identical at a device scale factor where Playwright's own viewport differs.
@@ -61,6 +71,8 @@ def py_visual_test(
     if fonts == None and font_family != None:
         fail("py_visual_test(%s) names font_family but does not provide the app-owned fonts; " % name +
              "pass both together.")
+    if (stylesheets or base_href != None) and not inline_page:
+        fail("py_visual_test(%s) sets stylesheets or base_href, which only an inline_page uses." % name)
 
     sweep_env = dict(env)
     sweep_env["HARNESS_PATH"] = "$(rlocationpath %s)" % harness
@@ -72,11 +84,16 @@ def py_visual_test(
         sweep_env["DEVTOOLS_VIEWPORT"] = "1"
     if output_suffix != None:
         sweep_env["OUTPUT_SUFFIX"] = output_suffix
+    if inline_page:
+        sweep_env["INLINE_PAGE"] = "1"
+        sweep_env["STYLESHEET_PATHS"] = " ".join(["$(rlocationpath %s)" % sheet for sheet in stylesheets])
+        if base_href != None:
+            sweep_env["BASE_HREF"] = base_href
 
     py_test(
         name = name,
         main_module = "util.testing.visual_sweep",
-        data = assets + [harness, scenarios] + ([fonts] if fonts != None else []),
+        data = assets + stylesheets + [harness, scenarios] + ([fonts] if fonts != None else []),
         env = sweep_env,
         tags = tags + ["visual"],
         deps = [
