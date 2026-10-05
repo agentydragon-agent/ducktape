@@ -839,14 +839,14 @@ All three returned HTTP 200 and identical model IDs/display names/token fields f
 **33 models**. OAuth substitution/refresh stayed inside CLIProxyAPI; only the
 selected metadata fields were returned, not credentials or auth-file contents.
 
-| Model / group in the response | `maxTokens` | `maxOutputTokens` |
-| --- | ---: | ---: |
-| Claude Opus 4.6 Thinking / Sonnet 4.6 | 250000 | 64000 |
-| GPT-OSS 120B Medium | 131072 | 32768 |
-| Gemini 3.1 / 3.5 Flash Lite | 1048576 | 65535 |
-| Gemini Pro agent / 3.1 Pro High / Low | 1048576 | 65535 |
-| Gemini 3 Flash; 3.6 / 3.7 / 3.8 Flash variants | 1048576 | 65536 |
-| Gemini 3.1 Flash Image | absent | absent |
+| Model / group in the response                  | `maxTokens` | `maxOutputTokens` |
+| ---------------------------------------------- | ----------: | ----------------: |
+| Claude Opus 4.6 Thinking / Sonnet 4.6          |      250000 |             64000 |
+| GPT-OSS 120B Medium                            |      131072 |             32768 |
+| Gemini 3.1 / 3.5 Flash Lite                    |     1048576 |             65535 |
+| Gemini Pro agent / 3.1 Pro High / Low          |     1048576 |             65535 |
+| Gemini 3 Flash; 3.6 / 3.7 / 3.8 Flash variants |     1048576 |             65536 |
+| Gemini 3.1 Flash Image                         |      absent |            absent |
 
 Our snapshot's 200000 and 114000 are therefore stale relative to our account's
 current response; 3.5 Flash Lite now has a declared pair too. The 65535/65536
