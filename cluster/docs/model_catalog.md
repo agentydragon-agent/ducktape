@@ -45,7 +45,9 @@ This uses ordinary config, not a LiteLLM patch; see [publication ownership](../.
 Routes without overrides still have catalogue/adapter fallback **during migration**;
 the target is explicit Ducktape-owned token metadata for every served route, optionally
 copied from a reviewed catalogue entry with provenance. Client budgets and embedding/audio
-metadata remain unchanged in this first slice.
+metadata remain unchanged. Direct Anthropic/Gemini/Mistral/Groq chat routes now publish
+explicit pairs; their [source ledger](../../model_catalog/litellm_metadata.md#direct-provider-sources-2026-10-05)
+distinguishes provider documentation, reviewed catalogue entries, and the Groq backup.
 
 ## Projections
 

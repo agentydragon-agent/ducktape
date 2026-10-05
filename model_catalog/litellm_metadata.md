@@ -48,8 +48,7 @@ to copy values from a specific LiteLLM catalogue entry, with revision/source com
 beside the declaration; the catalogue is a reference input, not an implicit runtime
 second authority. We do not need independent live capacity probes for every model.
 
-The first implementation slice covers routes already marked `publish_limits`; the
-ordinary cdk8s projection emits:
+For routes marked `publish_limits`, the ordinary cdk8s projection emits:
 
 - `max_input_tokens` from `Model.limits.max_input_tokens`.
 - `max_output_tokens` and legacy `max_tokens` from the **same**
@@ -65,8 +64,9 @@ custom `context_window` metadata or change request-body generation caps.
 
 The reworked #9273 uses **unmodified LiteLLM and ordinary config**. The earlier draft's
 downstream patch, publication marker, response projection and image overlay are dropped.
-Current input/output numbers and which routes publish them are unchanged. Consistency
-is not evidence that those numbers are correct provider limits. Prices and capability
+That slice preserved input/output numbers and publication choices. The direct-provider
+expansion below adds sourced declarations; it does not validate the inherited ChatGPT
+allowances merely by making their publication consistent. Prices and capability
 metadata retain their existing ownership; this change concerns token-limit metadata.
 
 **Incomplete migration, not an unresolved ownership policy:** routes without overrides
@@ -81,6 +81,38 @@ Unlike response filtering, ordinary overrides also register these values in Lite
 internal cost map. Aligning legacy `max_tokens` with the existing output override is
 intentional; any internal reader of that alias now sees our value too. We do not enable
 new prechecks, alter `modify_params`, or claim that all internal readers are inert.
+
+## Direct-provider sources, 2026-10-05
+
+The 33 direct chat routes (4 Anthropic, 2 Gemini, 25 Mistral, 2 Groq) now publish
+Ducktape-owned input/output declarations and the derived legacy output alias. Values
+live in `catalog.py`, with source links beside each group; no catalogue is imported at
+generation time. The source choices are:
+
+| Routes | Source | Fields / scope |
+| --- | --- | --- |
+| Direct Anthropic | [LiteLLM catalogue at `02f61c9c420b`](https://github.com/BerriAI/litellm/blob/02f61c9c420b9aa9de10ff673098ad7132b78f5b/model_prices_and_context_window.json) | Exact unprefixed `claude-opus-5`, `claude-sonnet-5`, `claude-fable-5`, `claude-haiku-4-5-20251001` entries: `max_input_tokens` and `max_output_tokens`. Not Claude subscription or Tana limits. |
+| Direct Gemini | Google [3.7 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash) and [3.5 Flash-Lite](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite), checked 2026-10-05 | Explicitly labelled **Input token limit** and **Output token limit**; both pages confirm the existing pair. Not Antigravity metadata. |
+| Mistral chat | [Same pinned LiteLLM catalogue](https://github.com/BerriAI/litellm/blob/02f61c9c420b9aa9de10ff673098ad7132b78f5b/model_prices_and_context_window.json) | Exact `mistral/<model.id>` entries for all 25 declarations, including floating aliases and Voxtral's text-generating chat routes; copy the input/output fields, not just legacy `max_tokens`. |
+| Groq chat | [LiteLLM 1.100.1 bundled backup at `1dba17b10ded`](https://github.com/BerriAI/litellm/blob/1dba17b10ded12ad0021edb453ba2c54e4637928/litellm/model_prices_and_context_window_backup.json) | Exact `groq/llama-3.3-70b-versatile` and `groq/llama-3.1-8b-instant` input/output entries, verified against our pinned wheel's backup. |
+
+Mistral's equal input/output bounds are **not additive**. Its
+[chat API contract](https://docs.mistral.ai/api/endpoint/chat#operation-chat_completion_v1_chat_completions_post_request_max_tokens)
+requires prompt tokens plus requested `max_tokens` to fit the model's context length.
+We copy the catalogue's separate bounds, not a promise of a full-window prompt plus
+full-window generation. No request generation cap or client compaction budget changes.
+The remote snapshot differs from the bundled backup for `magistral-medium-latest`,
+`magistral-small-latest`, and `mistral-medium`; these declarations deliberately adopt
+the pinned remote entries. Floating aliases still require reviewed future refreshes.
+
+The current remote catalogue omits the two Groq Llama entries; their selected source
+is the pinned backup, not a guessed sibling model. Groq's documentation returned 403
+during this audit. These are **last-known metadata declarations, not a fresh availability
+or capacity verification**. No inference probes were run. Anthropic's direct-API pairs
+are attached to separate model values, leaving subscription declarations unknown.
+Embeddings, transcription, Antigravity, Ollama, Tana, and subscription-route source
+choices remain outside this slice. Catalogue pricing/capabilities retain their existing
+ownership, and ordinary token overrides still affect internal LiteLLM readers.
 
 ## Isolated config/API experiment, 2026-10-05
 
