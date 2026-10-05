@@ -127,34 +127,51 @@ ownership direction is that each source owns its serving declarations, and gatew
 and clients compose/select from those sources. A single source of truth means one owner
 per fact or decision, not one gateway-owned registry that determines every backend.
 
+**Preferred direction (operator leaning): layered declarations outside cdk8s.**
+Source ownership does not require putting serving declarations inside the deployment
+generator. Ollama-specific and LiteLLM-specific declarations can both be ordinary shared
+configuration, with the gateway layer depending on source declarations, not vice versa.
+
 ```text
-Ollama-owned model/variant declarations ─┬─→ Ollama provisioning/deployment
-                                        ├─→ direct Ollama consumers
-                                        └─→ LiteLLM cluster roster ← other source declarations
-                                                      │
-                                                      ├─→ proxy config and key policies
-                                                      └─→ gateway-backed client selections
-upstream provider/account declarations ─────→ direct-provider client selections
+Outside cdk8s:
+  Ollama model/variant declarations ─→ LiteLLM declarations ← other source declarations
+                │                              │
+                │                              └─→ gateway-client selections/settings
+                │                                             └─→ Nix wrapper projection
+                └─→ direct-source consumer selections
+
+cdk8s consumers:
+  Ollama declarations  ─→ Ollama provisioning/deployment
+  LiteLLM declarations ─→ LiteLLM configuration/deployment
+  client selections    ─→ Agentplane/OpenClaw configuration
 ```
 
-Shared types and genuinely shared identities/facts can remain neutral. That does not
-require every serving instance, route or assembled roster to live in the neutral
-package. In particular, whether `SERVED_ROUTES` belongs in cluster composition rather
-than `model_catalog/catalog.py` is an open disposition decision, not an invariant of
-this design. Adding/removing a LiteLLM exposure must not implicitly provision or remove
-an Ollama model, and direct clients need not inherit LiteLLM's route naming or policy.
+- **Source declarations** own model/tag identities and serving variants, without
+  knowing about LiteLLM or Kubernetes. Other upstream/account declarations can also
+  serve direct clients without forcing them through the gateway's naming or policy.
+- **LiteLLM declarations** reference those sources and choose adapters/wires, exposed
+  route identities and aliases. They may include gateway-specific policy without
+  becoming the universal definition of every source or consumer.
+- **cdk8s** consumes the appropriate declaration layer and adds deployment endpoints,
+  credential bindings, storage/GPU/workload configuration, provisioning execution and
+  environment-specific selections. Which models Ollama provisions and which LiteLLM
+  exposes remain separate choices; selecting a gateway route is not a provisioning
+  command.
+- **Nix and other non-cdk8s consumers** can consume the relevant declaration layers
+  directly and project their own settings. Nix may still use generated JSON, but does
+  not need a cdk8s-owned export merely to obtain shared gateway route identities.
 
-A dependency from `cluster/cdk8s/litellm/` to small model declarations owned by
-`cluster/cdk8s/ollama/` is a candidate consistent with this direction. It does not imply
-importing or instantiating the whole Ollama deployment construct, parsing its generated
-YAML, or querying a live server during generation. The relevant cdk8s visibility may be
-narrowly granted without exposing those internals to runtime services or Nix.
+This supersedes the earlier candidate of housing Ollama's model declarations inside
+cdk8s and importing them from LiteLLM's cdk8s code. Provider-specific does not mean
+deployment-specific, and outside cdk8s does not mean one provider-agnostic mega-roster.
+Do not create a framework or one new module per conceptual box merely to mirror this
+diagram; existing records may suffice. Exact modules, record APIs and the division
+between reusable declarations and environment-specific roster assembly remain open,
+including the eventual home/scope of `SERVED_ROUTES`.
 
-Do not instead make the neutral package import cdk8s. Runtime services consume their
-own serialized configuration, and Nix's neutral inputs remain independently usable.
-Endpoint/auth bindings and client settings stay with their respective owners. If a
-future non-cluster consumer needs an Ollama declaration, decide a suitable neutral
-input or serialized boundary rather than reverse this dependency.
+No declaration layer imports cdk8s. Runtime services consume their own serialized
+configuration; cdk8s internals remain visibility-restricted. No generated-YAML parsing,
+whole deployment instantiation or live-cluster discovery is implied by composition.
 
 The following current touchpoints identify concerns to place; they do not require all
 model/route instances to remain in `model_catalog/catalog.py`:
@@ -272,13 +289,14 @@ for separating shared facts from genuine consumer policy, not another model regi
 The operator is also **tentatively comfortable with one Ollama serving-variant
 definition feeding both provisioning and routing**, separate from provider facts and
 consumer budgets. The subsequent ownership clarification is that **Ollama owns this
-serving definition; LiteLLM consumes it**, not the reverse. The declaration may live
-with Ollama's cdk8s configuration; it need not be an instance in the neutral catalogue.
-Exact records, file locations and interfaces remain undecided; existing records may
-suffice instead of adding the illustrative class below.
+serving definition; LiteLLM consumes it**, not the reverse. The preferred placement is
+now outside cdk8s: Ollama declarations feed both Ollama's cdk8s generator and the
+LiteLLM declaration layer, which in turn feeds LiteLLM's cdk8s generator. Exact modules,
+records and interfaces remain undecided; existing records may suffice instead of adding
+the illustrative class below.
 
 ```python
-# Ollama-owned serving declarations (exact module/API undecided).
+# Ollama-owned declarations outside cdk8s (exact module/API undecided).
 QWEN_256K = OllamaServingVariant(
     model=QWEN_IQ4XS,  # Shared model identity/name/capabilities.
     base_tag="qwen3.8-flash-next-iq4xs",
@@ -286,7 +304,7 @@ QWEN_256K = OllamaServingVariant(
     num_ctx=262_144,
 )
 
-# LiteLLM composition references the Ollama declaration; it does not own it.
+# LiteLLM declarations, also outside cdk8s, reference the source declaration.
 QWEN_256K_OPENAI = Route(
     upstream=OLLAMA_OPENAI,
     serving_variant=QWEN_256K,
@@ -301,9 +319,9 @@ This is a sketch, not an implemented API. The serving definition describes a req
 allocation, not a measured capacity. The intended boundaries are:
 
 ```text
-Ollama-owned serving variant ─┬─→ provisioning: base model → tag + parameters
-                             └─→ selected LiteLLM routes + endpoint/auth bindings
-shared model facts ─────────────→ route identity/name/capabilities
+Ollama declaration ─┬─→ Ollama cdk8s: provisioning/deployment
+                    └─→ LiteLLM declarations ─→ LiteLLM cdk8s: endpoint/auth bindings
+shared model facts ─────→ source/route identity, name and capabilities
 client selection ──→ direct source or gateway route + consumer-owned settings
 ```
 
@@ -450,8 +468,9 @@ existing small separation rather than adding a meta-configuration layer:
 | None)`, explicit `Upstream`, named `Route`, and aliases referencing routes.
    Provider input/output facts carry evidence in nearby documentation/comments.
    Unknown remains unknown. No generic model `context_window`. Shared types/facts do
-   not make LiteLLM the root; sources own serving declarations, and cluster/gateway
-   rosters compose them without importing cdk8s into the neutral package.
+   not make LiteLLM the root. Prefer source declarations → gateway declarations
+   outside cdk8s, with deployment generators consuming the corresponding layers.
+   Source/gateway-specific records need not pretend to be universal model metadata.
 2. **Serving configuration:** endpoint/auth bindings remain deployment-local;
    self-hosted runtime options are explicit and tied to real model tags. The neutral
    roster must not import cdk8s. No automatic serving-option-to-capacity conversion.
