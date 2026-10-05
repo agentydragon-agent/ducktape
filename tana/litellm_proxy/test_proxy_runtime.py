@@ -199,7 +199,7 @@ async def test_complete_token_overrides_survive_catalogue_and_config_reload(
 
     async def load(router: litellm.Router | None = None) -> litellm.Router:
         loaded, models, settings = await ProxyConfig().load_config(router, str(config_path))
-        assert loaded is not None
+        assert isinstance(loaded, litellm.Router)
         proxy_server.llm_router, proxy_server.llm_model_list, proxy_server.general_settings = loaded, models, settings
         return loaded
 
