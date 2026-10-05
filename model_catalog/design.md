@@ -136,19 +136,19 @@ client-specific settings stay with the consumer. Runtime services read their own
 serialized configuration, never import cdk8s. The neutral package must remain usable
 without Kubernetes, and Bazel visibility must enforce those boundaries.
 
-| Owner | Defines | Consumers / serialization boundary |
-| --- | --- | --- |
-| `model_catalog/catalog.py` | Account/model identities, upstream slugs, shared display names/capabilities, evidenced facts, named routes and aliases | Nix and cluster generators |
-| `model_catalog/policies.py` | Allowed routes plus ordered fallbacks in one lane record | Virtual-key/team configuration; not implicit picker policy |
-| `cluster/cdk8s/litellm/` | Endpoint/auth bindings and LiteLLM projection | Generated proxy config |
-| Ollama deployment and model definitions | Server defaults, model tags/aliases, runtime serving options | Ollama; route must resolve to the intended model definition |
-| `model_catalog/nix.py` and Nix gateway modules | Wrapper route selections and Claude-specific settings | Generated wrapper JSON → process environment |
-| `cluster/cdk8s/public_coder_agent_config.py` | OpenClaw model selections and client budgets | OpenClaw configuration |
-| `cluster/cdk8s/model_selections.py` | Agentplane offers/defaults and explicit runner budget selections | App catalogue, ingress and runner configuration |
-| Key/team renderer and deployment bindings | Bind neutral lane policies to actual keys/teams | Terraform allowances and ordered fallbacks; no second handwritten route list |
-| Gatus, diagnostics and acceptance clients | Explicit probe selection and test scenarios | Route IDs / generated artifacts / deployed APIs, not imports of synthesis internals |
-| Agentplane runner adapters | Applying configuration in each native harness's vocabulary | Claude environment / Codex startup options |
-| Native harness | Reserves, compaction, metadata recognition, reported usage | Actual request construction and native telemetry |
+| Owner                                          | Defines                                                                                                                | Consumers / serialization boundary                                                  |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `model_catalog/catalog.py`                     | Account/model identities, upstream slugs, shared display names/capabilities, evidenced facts, named routes and aliases | Nix and cluster generators                                                          |
+| `model_catalog/policies.py`                    | Allowed routes plus ordered fallbacks in one lane record                                                               | Virtual-key/team configuration; not implicit picker policy                          |
+| `cluster/cdk8s/litellm/`                       | Endpoint/auth bindings and LiteLLM projection                                                                          | Generated proxy config                                                              |
+| Ollama deployment and model definitions        | Server defaults, model tags/aliases, runtime serving options                                                           | Ollama; route must resolve to the intended model definition                         |
+| `model_catalog/nix.py` and Nix gateway modules | Wrapper route selections and Claude-specific settings                                                                  | Generated wrapper JSON → process environment                                        |
+| `cluster/cdk8s/public_coder_agent_config.py`   | OpenClaw model selections and client budgets                                                                           | OpenClaw configuration                                                              |
+| `cluster/cdk8s/model_selections.py`            | Agentplane offers/defaults and explicit runner budget selections                                                       | App catalogue, ingress and runner configuration                                     |
+| Key/team renderer and deployment bindings      | Bind neutral lane policies to actual keys/teams                                                                        | Terraform allowances and ordered fallbacks; no second handwritten route list        |
+| Gatus, diagnostics and acceptance clients      | Explicit probe selection and test scenarios                                                                            | Route IDs / generated artifacts / deployed APIs, not imports of synthesis internals |
+| Agentplane runner adapters                     | Applying configuration in each native harness's vocabulary                                                             | Claude environment / Codex startup options                                          |
+| Native harness                                 | Reserves, compaction, metadata recognition, reported usage                                                             | Actual request construction and native telemetry                                    |
 
 Account is not manufacturer; outbound wire is not the client-facing wire. A Claude
 harness can send Anthropic Messages to LiteLLM while LiteLLM sends Responses upstream.
@@ -206,71 +206,70 @@ finds another consumer or source of independently maintained configuration.
 
 #### Neutral definitions and policy
 
-| Current file | Question to resolve |
-| --- | --- |
-| `model_catalog/catalog.py` | Which declarations are neutral model/account/route facts, which are serving or consumer settings, and what shape eliminates duplicate identities/names without conflating semantics? |
-| `model_catalog/policies.py` | Which lane/allowance/fallback choices are genuinely shared, and which belong to an individual consumer? |
-| `model_catalog/BUILD.bazel` | What dependency and visibility changes follow from the chosen ownership, while keeping Nix and runtime consumers independent of cdk8s internals? |
+| Current file                | Question to resolve                                                                                                                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `model_catalog/catalog.py`  | Which declarations are neutral model/account/route facts, which are serving or consumer settings, and what shape eliminates duplicate identities/names without conflating semantics? |
+| `model_catalog/policies.py` | Which lane/allowance/fallback choices are genuinely shared, and which belong to an individual consumer?                                                                              |
+| `model_catalog/BUILD.bazel` | What dependency and visibility changes follow from the chosen ownership, while keeping Nix and runtime consumers independent of cdk8s internals?                                     |
 
 #### LiteLLM, keys and provider adapter
 
-| Current file(s) | Question to resolve |
-| --- | --- |
-| `cluster/cdk8s/litellm/config.py` | Which logic is necessary LiteLLM serialization, which repeats catalogue facts, and where can the agreed publication contract actually be enforced? |
-| `cluster/cdk8s/litellm/upstreams.py` | What deployment endpoint/auth binding shape is needed without duplicating account/adapter identity? |
-| `cluster/cdk8s/litellm/keys.py`; `tf/gitops/litellm-keys/main.tf` | Where should lane-to-key/team binding and ordered fallback projection live, and are either side's inputs redundant? |
-| `tana/litellm_proxy/` (including `custom_handler.py`, `provider.py`, `BUILD.bazel`, `requirements.in`, `requirements.txt`) | Does the chosen publication/adapter solution require changes here at all? Avoid an unneeded proxy framework or incidental dependency upgrade. |
-| `tana/litellm_proxy/model_registry.py` | Which entries are necessary Tana protocol/discovery mappings versus duplicate definitions of our selected models/routes? Do not assume that another “registry” is redundant without tracing its role. |
+| Current file(s)                                                                                                            | Question to resolve                                                                                                                                                                                   |
+| -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster/cdk8s/litellm/config.py`                                                                                          | Which logic is necessary LiteLLM serialization, which repeats catalogue facts, and where can the agreed publication contract actually be enforced?                                                    |
+| `cluster/cdk8s/litellm/upstreams.py`                                                                                       | What deployment endpoint/auth binding shape is needed without duplicating account/adapter identity?                                                                                                   |
+| `cluster/cdk8s/litellm/keys.py`; `tf/gitops/litellm-keys/main.tf`                                                          | Where should lane-to-key/team binding and ordered fallback projection live, and are either side's inputs redundant?                                                                                   |
+| `tana/litellm_proxy/` (including `custom_handler.py`, `provider.py`, `BUILD.bazel`, `requirements.in`, `requirements.txt`) | Does the chosen publication/adapter solution require changes here at all? Avoid an unneeded proxy framework or incidental dependency upgrade.                                                         |
+| `tana/litellm_proxy/model_registry.py`                                                                                     | Which entries are necessary Tana protocol/discovery mappings versus duplicate definitions of our selected models/routes? Do not assume that another “registry” is redundant without tracing its role. |
 
 #### Agentplane selection, projection and runtime
 
-| Current file(s) | Question to resolve |
-| --- | --- |
-| `cluster/cdk8s/model_selections.py` | Which selections belong together? Decide the homes and shapes of harness offerings, defaults, `PUBLIC_CODER_MODELS` and `RUNNER_CONTEXT_OVERRIDES` rather than preserving or moving them by assumption. |
-| `cluster/cdk8s/agentplane/app_settings.py` | What is the smallest projection into app offerings/presets, and which presentation/default choices are independently owned? |
-| `cluster/cdk8s/agentplane/environment.py`; `staging.py`, `testing.py`, `staging_config.py` in that directory | Which structured selections should flow to each renderer, and where should environment-specific choices live? |
-| `cluster/cdk8s/agentplane/app.py` | How should runner configuration be emitted without treating `route.model.context_window` as a universal client budget? |
-| `agentplane/app/api.py` | Does the runtime-owned offering schema need to change, or can existing records express the chosen design? No generator imports. |
-| `agentplane/runner/config.py`, `main.py`, `guest_config.py`, `session.py` | What runner-owned configuration shape supports launch, switching and resume without duplicate metadata or misleading shared semantics? |
-| `agentplane/runner/codex.py`; `agentplane/runner/claude.py` | Which settings must be applied in each native client's vocabulary, and what logic is unnecessary? Preserve the approved Claude offering-pause boundary. |
-| `agentplane/llm_ingress/app.py`, `settings.py`; `cluster/cdk8s/agentplane/llm_ingress.py` | Is model-ID translation useful enough to introduce, and where would its authorized mapping/configuration belong? Pass-through is not required, but translation is not yet selected. |
+| Current file(s)                                                                                              | Question to resolve                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster/cdk8s/model_selections.py`                                                                          | Which selections belong together? Decide the homes and shapes of harness offerings, defaults, `PUBLIC_CODER_MODELS` and `RUNNER_CONTEXT_OVERRIDES` rather than preserving or moving them by assumption. |
+| `cluster/cdk8s/agentplane/app_settings.py`                                                                   | What is the smallest projection into app offerings/presets, and which presentation/default choices are independently owned?                                                                             |
+| `cluster/cdk8s/agentplane/environment.py`; `staging.py`, `testing.py`, `staging_config.py` in that directory | Which structured selections should flow to each renderer, and where should environment-specific choices live?                                                                                           |
+| `cluster/cdk8s/agentplane/app.py`                                                                            | How should runner configuration be emitted without treating `route.model.context_window` as a universal client budget?                                                                                  |
+| `agentplane/app/api.py`                                                                                      | Does the runtime-owned offering schema need to change, or can existing records express the chosen design? No generator imports.                                                                         |
+| `agentplane/runner/config.py`, `main.py`, `guest_config.py`, `session.py`                                    | What runner-owned configuration shape supports launch, switching and resume without duplicate metadata or misleading shared semantics?                                                                  |
+| `agentplane/runner/codex.py`; `agentplane/runner/claude.py`                                                  | Which settings must be applied in each native client's vocabulary, and what logic is unnecessary? Preserve the approved Claude offering-pause boundary.                                                 |
+| `agentplane/llm_ingress/app.py`, `settings.py`; `cluster/cdk8s/agentplane/llm_ingress.py`                    | Is model-ID translation useful enough to introduce, and where would its authorized mapping/configuration belong? Pass-through is not required, but translation is not yet selected.                     |
 
 #### Nix wrappers and direct local clients
 
-| Current file(s) | Question to resolve |
-| --- | --- |
-| `model_catalog/nix.py` | What wrapper selections/settings should it own, and what should it merely project? Its exact future location/shape is undecided. |
-| `model_catalog/claude-wrappers.json` | Is this generated interface still the simplest boundary, and what fields should it contain if retained? It is not a hand-maintained roster. |
-| `nix/home/claude_code/gateway.nix` | What common wrapper rendering belongs here, and what configuration is duplicated elsewhere? |
+| Current file(s)                                                                                                                          | Question to resolve                                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model_catalog/nix.py`                                                                                                                   | What wrapper selections/settings should it own, and what should it merely project? Its exact future location/shape is undecided.                                                          |
+| `model_catalog/claude-wrappers.json`                                                                                                     | Is this generated interface still the simplest boundary, and what fields should it contain if retained? It is not a hand-maintained roster.                                               |
+| `nix/home/claude_code/gateway.nix`                                                                                                       | What common wrapper rendering belongs here, and what configuration is duplicated elsewhere?                                                                                               |
 | `codex-claude.nix`, `gemini-claude.nix`, `antigravity-claude.nix`, `litellm-claude.nix`, `tana-claude.nix` under `nix/home/claude_code/` | What are the eventual module boundaries and inputs? The already-approved pause and requirement to retain renderers remain; this inventory is not permission to delete or reactivate them. |
-| `nix/home/codex/default.nix`; `nix/home/claude_code/default.nix`; machine activation/import configuration such as `nix/home/hosts/*.nix` | Are changes needed at all? Preserve direct-provider clients and the wrapper pause; central-gateway migration is not implicit. |
+| `nix/home/codex/default.nix`; `nix/home/claude_code/default.nix`; machine activation/import configuration such as `nix/home/hosts/*.nix` | Are changes needed at all? Preserve direct-provider clients and the wrapper pause; central-gateway migration is not implicit.                                                             |
 
 #### Ollama serving variants
 
-| Current file(s) | Question to resolve |
-| --- | --- |
-| `cluster/cdk8s/ollama/app.py` | Where should server defaults and serving-variant configuration be declared, and what should deployment rendering consume? |
-| `cluster/cdk8s/ollama/setup-gpt-oss-v2.sh` | How should model/alias creation obtain tags and parameters without independent hard-coded copies? Decide whether this script/interface remains appropriate. |
+| Current file(s)                                                                                         | Question to resolve                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster/cdk8s/ollama/app.py`                                                                           | Where should server defaults and serving-variant configuration be declared, and what should deployment rendering consume?                                                                                                 |
+| `cluster/cdk8s/ollama/setup-gpt-oss-v2.sh`                                                              | How should model/alias creation obtain tags and parameters without independent hard-coded copies? Decide whether this script/interface remains appropriate.                                                               |
 | Ollama definitions in `model_catalog/catalog.py`; their projection in `cluster/cdk8s/litellm/config.py` | Decide jointly with the two files above: who defines variant identity, upstream tag and requested context, and how each wire actually applies them? Do not infer provider limits or client budgets from serving settings. |
 
 #### Public Coder and smaller consumers
 
-| Current file(s) | Question to resolve |
-| --- | --- |
-| `cluster/cdk8s/public_coder_agent_config.py` | Where should OpenClaw selections, labels and client budgets live? What retained renderer is useful for revival without supporting every paused combination now? |
+| Current file(s)                                                                                                                                                                                                                 | Question to resolve                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster/cdk8s/public_coder_agent_config.py`                                                                                                                                                                                    | Where should OpenClaw selections, labels and client budgets live? What retained renderer is useful for revival without supporting every paused combination now?      |
 | Public Coder workload/storage configuration, including `cluster/cdk8s/public_coder_devbox.py`, `public_coder_proxy.py`, `public_coder_egress.py`, `public_coder_sshpiper.py`, `public_coder_backup.py` and associated manifests | Which files actually depend on roster decisions? No change may incidentally undo the pause, delete retained storage/backups, or change a durable embedding identity. |
-| `cluster/cdk8s/parked/haku_openclaw_spike_config.py` | What dependencies and revival information need to remain documented, and is any source change needed while parked? |
-| `cluster/cdk8s/gatus/config.py` | Is probe selection already a sufficient projection of canonical routes, or does it duplicate naming/selection logic? |
+| `cluster/cdk8s/parked/haku_openclaw_spike_config.py`                                                                                                                                                                            | What dependencies and revival information need to remain documented, and is any source change needed while parked?                                                   |
+| `cluster/cdk8s/gatus/config.py`                                                                                                                                                                                                 | Is probe selection already a sufficient projection of canonical routes, or does it duplicate naming/selection logic?                                                 |
 
 #### Generated outputs, tests, build boundaries and documentation
 
-| Current file(s) | Question to resolve |
-| --- | --- |
-| Affected `cluster/k8s/…` manifests and Nix JSON artifacts | Which outputs follow from the eventual source changes? Regenerate them from their owners, never make them another authored source. |
+| Current file(s)                                                                                                                                                                               | Question to resolve                                                                                                                                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Affected `cluster/k8s/…` manifests and Nix JSON artifacts                                                                                                                                     | Which outputs follow from the eventual source changes? Regenerate them from their owners, never make them another authored source.                                                       |
 | `cluster/cdk8s/test_model_rosters.py`; `cluster/cdk8s/litellm/test_config.py`, `test_openclaw_models.py`; `model_catalog/test_nix.py`, `test_policies.py`; affected Agentplane/OpenClaw tests | Which tests prove identity, authorization, fallback, serialization or native-client behavior, and which merely restate fields? Decide retention/consolidation based on that distinction. |
-| Affected `BUILD.bazel` files, including `cluster/cdk8s/BUILD.bazel`, `cluster/cdk8s/litellm/BUILD.bazel`, `cluster/cdk8s/agentplane/BUILD.bazel` | Which dependency/visibility edges should change as ownership is decided? Preserve the cdk8s generation/runtime boundary. |
-| `model_catalog/design.md`; `model_catalog/README.md`; `cluster/docs/model_catalog.md` | Decide their eventual content split and lifecycle without competing specifications or lost evidence/restoration instructions. §6 offers one candidate, not an approved per-file outcome. |
-
+| Affected `BUILD.bazel` files, including `cluster/cdk8s/BUILD.bazel`, `cluster/cdk8s/litellm/BUILD.bazel`, `cluster/cdk8s/agentplane/BUILD.bazel`                                              | Which dependency/visibility edges should change as ownership is decided? Preserve the cdk8s generation/runtime boundary.                                                                 |
+| `model_catalog/design.md`; `model_catalog/README.md`; `cluster/docs/model_catalog.md`                                                                                                         | Decide their eventual content split and lifecycle without competing specifications or lost evidence/restoration instructions. §6 offers one candidate, not an approved per-file outcome. |
 
 ### Approved file disposition: cross-layer harness audit
 
@@ -283,14 +282,13 @@ the historical versions and evidence, update relative links, and link from Agent
 capture documentation rather than keeping a duplicate or redirect stub. Capture tools
 and runtime code stay in Agentplane. This decision does not settle any other file's fate.
 
-
 ## 4. Proposed shape and rollout
 
 Apply this to the whole roster and its projections, not just token fields. Keep the
 existing small separation rather than adding a meta-configuration layer:
 
 1. **Neutral facts and identities:** `Model(..., limits=TokenLimits(input, output)
-   | None)`, explicit `Upstream`, named `Route`, and aliases referencing routes.
+| None)`, explicit `Upstream`, named `Route`, and aliases referencing routes.
    Provider input/output facts carry evidence in nearby documentation/comments.
    Unknown remains unknown. No generic model `context_window`.
 2. **Serving configuration:** endpoint/auth bindings remain deployment-local;
@@ -353,11 +351,11 @@ Source status checked 2026-10-05. A merge is not proof of machine activation or 
 rollout. The [tracking issue](https://github.com/agentydragon/ducktape/issues/9121)
 maintains deployment status, the full parked inventory, and restoration requirements.
 
-| Integration | Approved scope and source status | Retained for restoration |
-| --- | --- | --- |
-| Five Nix Claude gateway wrappers | **#9112 merged**: remove workstation activation/advertising; direct local clients unchanged | Nix renderers, JSON generator, credential declarations; machine activation not verified here |
-| Public Coder OpenClaw | **#9116 merged**: stop OpenClaw/proxies and halt devbox | Workload definitions, namespace, PVCs and backups; live pause not reverified in this audit |
-| Agentplane Claude | **#9127 merged**, exact-head CI green: empty staging/testing Claude offerings, disabled picker options, omit Haku Claude presets | Native adapter, existing sessions/resume/history, explicit low-level launches, credentials and shared ingress/routes; not a runtime prohibition |
+| Integration                      | Approved scope and source status                                                                                                 | Retained for restoration                                                                                                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Five Nix Claude gateway wrappers | **#9112 merged**: remove workstation activation/advertising; direct local clients unchanged                                      | Nix renderers, JSON generator, credential declarations; machine activation not verified here                                                    |
+| Public Coder OpenClaw            | **#9116 merged**: stop OpenClaw/proxies and halt devbox                                                                          | Workload definitions, namespace, PVCs and backups; live pause not reverified in this audit                                                      |
+| Agentplane Claude                | **#9127 merged**, exact-head CI green: empty staging/testing Claude offerings, disabled picker options, omit Haku Claude presets | Native adapter, existing sessions/resume/history, explicit low-level launches, credentials and shared ingress/routes; not a runtime prohibition |
 
 These are consumer pauses, **not permission to remove shared GPT-through-Messages or
 other served routes**. Haku OpenClaw remains parked. Do not treat its historical
@@ -384,13 +382,13 @@ fate and the content split below remain undecided.** Do not move the neutral
 catalogue's ownership back under `cluster/`, or maintain parallel explanations of
 model-limit semantics in both places.
 
-| Document | Candidate responsibility (not yet agreed) |
-| --- | --- |
-| This design | Cross-layer semantics, constraints, decisions and unresolved choices; explicitly dated investigation evidence |
-| `model_catalog/README.md` | Short neutral-package entry point: module responsibilities, generation entry points, links to the design and deployment guide |
-| `cluster/docs/model_catalog.md` | Current cluster bindings and projections, where to change deployment selections, regeneration/check commands, and cluster-specific pause/restoration procedures |
-| `model_catalog/debug/harness_model_metadata.md` | **Location approved (§3):** historical version-scoped cross-layer audit, linked as evidence rather than treated as current deployment policy |
-| Tracking issue #9121 | Work/PR status and complete parked-integration inventory, linking to the relevant restoration instructions |
+| Document                                        | Candidate responsibility (not yet agreed)                                                                                                                       |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| This design                                     | Cross-layer semantics, constraints, decisions and unresolved choices; explicitly dated investigation evidence                                                   |
+| `model_catalog/README.md`                       | Short neutral-package entry point: module responsibilities, generation entry points, links to the design and deployment guide                                   |
+| `cluster/docs/model_catalog.md`                 | Current cluster bindings and projections, where to change deployment selections, regeneration/check commands, and cluster-specific pause/restoration procedures |
+| `model_catalog/debug/harness_model_metadata.md` | **Location approved (§3):** historical version-scoped cross-layer audit, linked as evidence rather than treated as current deployment policy                    |
+| Tracking issue #9121                            | Work/PR status and complete parked-integration inventory, linking to the relevant restoration instructions                                                      |
 
 ### Candidate treatment of the existing cluster guide
 
@@ -432,16 +430,16 @@ remain recoverable.
 
 ## Appendix A. Token-limit vocabulary
 
-| Concept | Meaning | Does not establish |
-| --- | --- | --- |
-| Provider input ceiling | Input accepted by this account's serving path, under documented conditions | Combined input/output capacity |
-| Provider output ceiling | Output ceiling on that path; treatment of reasoning tokens is provider-specific | How much output remains after a particular prompt |
-| Combined context capacity | Tokens jointly retained/attended, with backend-specific accounting | An independent maximum input and maximum output pair |
-| Client context budget | Client assumption used for accounting, reserves, and compaction | Backend capacity or successful long-context quality |
-| Request output budget | Requested generation limit, if the serving path supports it | Model capability metadata or guaranteed enforcement |
-| Ollama `num_ctx` | Requested runtime context allocation | Proven attended capacity or an output ceiling |
-| Ollama `num_predict` | Generation-length option | Context allocation |
-| Reported harness window | Harness's resolved view of its context budget | Measurement of what the backend actually attended |
+| Concept                   | Meaning                                                                         | Does not establish                                   |
+| ------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Provider input ceiling    | Input accepted by this account's serving path, under documented conditions      | Combined input/output capacity                       |
+| Provider output ceiling   | Output ceiling on that path; treatment of reasoning tokens is provider-specific | How much output remains after a particular prompt    |
+| Combined context capacity | Tokens jointly retained/attended, with backend-specific accounting              | An independent maximum input and maximum output pair |
+| Client context budget     | Client assumption used for accounting, reserves, and compaction                 | Backend capacity or successful long-context quality  |
+| Request output budget     | Requested generation limit, if the serving path supports it                     | Model capability metadata or guaranteed enforcement  |
+| Ollama `num_ctx`          | Requested runtime context allocation                                            | Proven attended capacity or an output ceiling        |
+| Ollama `num_predict`      | Generation-length option                                                        | Context allocation                                   |
+| Reported harness window   | Harness's resolved view of its context budget                                   | Measurement of what the backend actually attended    |
 
 Even a justified input/output pair need not mean that both maxima can be attained
 simultaneously. Record any combined constraint in the evidence; do not invent
@@ -494,20 +492,20 @@ These are catalogue defaults, **not our serving-path facts**. Values are tokens.
 Other catalogue KVPs include mode, pricing, caching rates, and capability flags;
 those need separate treatment, not deletion alongside limits.
 
-| Matching model family / adapter | `max_input_tokens` | `max_output_tokens` | `max_tokens` |
-| --- | ---: | ---: | ---: |
-| OpenAI GPT-6 Astra/Sol/Luna; GPT-5.6 Sol/Terra/Luna | 922000 | 128000 | 128000 |
-| OpenAI GPT-5.4 / GPT-5.5 | 1050000 | 128000 | 128000 |
-| Anthropic Opus/Sonnet/Fable 5; Sonnet 4.6 | 1000000 | 128000 | 128000 |
-| Anthropic Haiku 4.5 | 200000 | 64000 | 64000 |
-| Google Gemini 3.7 Flash / 3.5 Flash Lite | 1048576 | 65536 | 65536 |
-| Google Gemini Embedding 2 | 8192 | absent | 8192 |
-| Google Gemini Embedding 001 | 2048 | absent | 2048 |
-| Mistral Codestral / code / code-FIM | 128000 | 128000 | 128000 |
-| Mistral Magistral, Ministral 8B/14B, medium/small/vibe routes | 262144 | 262144 | 262144 |
-| Mistral Ministral 3B | 131072 | 131072 | 131072 |
-| Mistral Voxtral Small | 32768 | 32768 | 32768 |
-| Groq Whisper | absent | absent | absent |
+| Matching model family / adapter                               | `max_input_tokens` | `max_output_tokens` | `max_tokens` |
+| ------------------------------------------------------------- | -----------------: | ------------------: | -----------: |
+| OpenAI GPT-6 Astra/Sol/Luna; GPT-5.6 Sol/Terra/Luna           |             922000 |              128000 |       128000 |
+| OpenAI GPT-5.4 / GPT-5.5                                      |            1050000 |              128000 |       128000 |
+| Anthropic Opus/Sonnet/Fable 5; Sonnet 4.6                     |            1000000 |              128000 |       128000 |
+| Anthropic Haiku 4.5                                           |             200000 |               64000 |        64000 |
+| Google Gemini 3.7 Flash / 3.5 Flash Lite                      |            1048576 |               65536 |        65536 |
+| Google Gemini Embedding 2                                     |               8192 |              absent |         8192 |
+| Google Gemini Embedding 001                                   |               2048 |              absent |         2048 |
+| Mistral Codestral / code / code-FIM                           |             128000 |              128000 |       128000 |
+| Mistral Magistral, Ministral 8B/14B, medium/small/vibe routes |             262144 |              262144 |       262144 |
+| Mistral Ministral 3B                                          |             131072 |              131072 |       131072 |
+| Mistral Voxtral Small                                         |              32768 |               32768 |        32768 |
+| Groq Whisper                                                  |             absent |              absent |       absent |
 
 The bundled catalogue differs: GPT-6 entries are absent; Magistral has all three
 values at 40000; `mistral-medium` has input 32000, output/legacy 8191. Bundled Groq
@@ -532,9 +530,9 @@ Additional cases:
 
 On 2026-10-05, `/model/info` under the cheap-experiments key returned:
 
-| Luna route | Input | Output | Legacy |
-| --- | ---: | ---: | ---: |
-| `chatgpt/ant-messages/gpt-6-luna` | 372000 | 128000 | null |
+| Luna route                         |  Input | Output | Legacy |
+| ---------------------------------- | -----: | -----: | -----: |
+| `chatgpt/ant-messages/gpt-6-luna`  | 372000 | 128000 |   null |
 | `chatgpt/oai-responses/gpt-6-luna` | 372000 | 128000 | 128000 |
 
 These responses contain existing overrides. They are not pristine catalogue
@@ -580,13 +578,13 @@ unset, not reasons to quietly fall back to raw-API catalogue facts.
 - `maxContextTokens` → `CLAUDE_CODE_MAX_CONTEXT_TOKENS`.
 - `maxOutputTokens` → `CLAUDE_CODE_MAX_OUTPUT_TOKENS`.
 
-| Wrapper | Context setting | Output setting |
-| --- | ---: | ---: |
-| `codex-claude` (Astra primary / Luna small model) | 872000 | 128000 |
-| `gemini-claude` | 1048576 | 65536 |
-| `antigravity-claude` | 1048576 | 65536 |
-| `litellm-claude` | omitted | omitted |
-| `tana-claude` | omitted | omitted |
+| Wrapper                                           | Context setting | Output setting |
+| ------------------------------------------------- | --------------: | -------------: |
+| `codex-claude` (Astra primary / Luna small model) |          872000 |         128000 |
+| `gemini-claude`                                   |         1048576 |          65536 |
+| `antigravity-claude`                              |         1048576 |          65536 |
+| `litellm-claude`                                  |         omitted |        omitted |
+| `tana-claude`                                     |         omitted |        omitted |
 
 In the inspected Nix Claude Code **2.1.283**, the context override is an assumed
 pre-reserve window for custom models; recognized model metadata can take precedence.
@@ -616,15 +614,15 @@ reserve the full `model.maxTokens`. `maxTokens` is separate output/request metad
 
 The public-coder projection currently preserves:
 
-| Selection | `contextWindow` | `maxTokens` |
-| --- | ---: | ---: |
-| GPT-6 Astra | 872000 | 128000 |
-| GPT-6 Sol / Luna | 372000 | 128000 |
-| Direct Google Gemini routes | 1048576 | 65536 |
-| Antigravity Claude Opus / Sonnet | 200000 | 64000 |
-| Antigravity Flash group | 1048576 | 65536 |
-| Antigravity Pro / Pro Low / Flash Lite 3.1 | 1048576 | 65535 |
-| Antigravity GPT-OSS 120B Medium | 114000 | 32768 |
+| Selection                                  | `contextWindow` | `maxTokens` |
+| ------------------------------------------ | --------------: | ----------: |
+| GPT-6 Astra                                |          872000 |      128000 |
+| GPT-6 Sol / Luna                           |          372000 |      128000 |
+| Direct Google Gemini routes                |         1048576 |       65536 |
+| Antigravity Claude Opus / Sonnet           |          200000 |       64000 |
+| Antigravity Flash group                    |         1048576 |       65536 |
+| Antigravity Pro / Pro Low / Flash Lite 3.1 |         1048576 |       65535 |
+| Antigravity GPT-OSS 120B Medium            |          114000 |       32768 |
 
 The 65535/65536 difference is preserved history, not an established distinction in
 provider capacity. The 114000 value is an OpenClaw budget, **not** both a provider
@@ -670,14 +668,14 @@ is an observation, not a required architecture: the operator explicitly permits 
 translation at this boundary when useful for native harness behavior. Neither it nor
 the runner reads LiteLLM `/model/info` to configure Codex.
 
-| Layer | Observed configuration / behavior | What that means |
-| --- | --- | --- |
-| Native process and thread | Codex **0.157.0**, provider `agentplane`, model `chatgpt/oai-responses/gpt-6-astra` | A real launched binary/thread, not the native-test archive |
-| Launch configuration | Responses wire to `http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080/v1`; no context/auto-compaction override | GPT budgets are not wired from the roster to this client |
-| Recognition | Native log explicitly warns that the full Astra route uses fallback metadata | The hidden bare `gpt-6-astra` alias exists in LiteLLM but this session does **not** select it |
-| Native telemetry | Latest sampled `token_count.info.model_context_window`: **258400**; normal tool turns work | Resolved client accounting, not a measured backend limit |
-| Deployed proxy config | Astra: **872000 input / 128000 output**; Sol/Luna: **372000 / 128000** | Current explicit metadata overrides, with the mixed provenance described above |
-| Live Luna `/model/info` | Both wires: **372000 / 128000**; legacy `max_tokens`: Responses **128000**, Messages **null**; custom `context_window` absent | Removing our legacy/custom assignments did not eliminate adapter-dependent fallback |
+| Layer                     | Observed configuration / behavior                                                                                                   | What that means                                                                               |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Native process and thread | Codex **0.157.0**, provider `agentplane`, model `chatgpt/oai-responses/gpt-6-astra`                                                 | A real launched binary/thread, not the native-test archive                                    |
+| Launch configuration      | Responses wire to `http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080/v1`; no context/auto-compaction override | GPT budgets are not wired from the roster to this client                                      |
+| Recognition               | Native log explicitly warns that the full Astra route uses fallback metadata                                                        | The hidden bare `gpt-6-astra` alias exists in LiteLLM but this session does **not** select it |
+| Native telemetry          | Latest sampled `token_count.info.model_context_window`: **258400**; normal tool turns work                                          | Resolved client accounting, not a measured backend limit                                      |
+| Deployed proxy config     | Astra: **872000 input / 128000 output**; Sol/Luna: **372000 / 128000**                                                              | Current explicit metadata overrides, with the mixed provenance described above                |
+| Live Luna `/model/info`   | Both wires: **372000 / 128000**; legacy `max_tokens`: Responses **128000**, Messages **null**; custom `context_window` absent       | Removing our legacy/custom assignments did not eliminate adapter-dependent fallback           |
 
 Live metadata was read with the substituted **cheap-experiments** key; its view includes
 Luna, not Astra/Sol. The latter numbers above are from the deployed ConfigMap, not an
@@ -903,11 +901,11 @@ consumption. It depends on context, reasoning, tools, caching and other factors.
 cannot honestly predict “this probe consumes X% of your plan” from prompt size alone.
 Purchased-credit rates do allow a conditional estimate:
 
-| Model | Credits / 1M uncached input | Credits / 1M cached input | Credits / 1M output | 800K uncached input + 1K output |
-| --- | ---: | ---: | ---: | ---: |
-| GPT-6 Astra | 250 | 25 | 1250 | 201.25 credits |
-| GPT-6 Sol | 50 | 5 | 250 | 40.25 credits |
-| GPT-6 Luna | 2.5 | 0.25 | 12.5 | 2.0125 credits |
+| Model       | Credits / 1M uncached input | Credits / 1M cached input | Credits / 1M output | 800K uncached input + 1K output |
+| ----------- | --------------------------: | ------------------------: | ------------------: | ------------------------------: |
+| GPT-6 Astra |                         250 |                        25 |                1250 |                  201.25 credits |
+| GPT-6 Sol   |                          50 |                         5 |                 250 |                   40.25 credits |
+| GPT-6 Luna  |                         2.5 |                      0.25 |                12.5 |                  2.0125 credits |
 
 These are the published Standard credit rates, not a claim that our account is using
 purchased credits. The page has no separate cache-write charge for Codex credits and
@@ -919,11 +917,11 @@ that served the request, accounting for concurrent activity.
 **As a paid-API comparison only**, the model pages linked above apply 2× input/cache
 rates and 1.5× output rates to the **whole request** above 272K input tokens:
 
-| Model | 300K cold input | 800K cold input | 872K cold input | 800K fully cache-hit input | Additional 1K output |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| GPT-6 Astra | $6.00 | $16.00 | $17.44 | $1.60 | $0.075 |
-| GPT-6 Sol | $1.20 | $3.20 | $3.488 | $0.32 | $0.015 |
-| GPT-6 Luna | $0.06 | $0.16 | $0.1744 | $0.016 | $0.00075 |
+| Model       | 300K cold input | 800K cold input | 872K cold input | 800K fully cache-hit input | Additional 1K output |
+| ----------- | --------------: | --------------: | --------------: | -------------------------: | -------------------: |
+| GPT-6 Astra |           $6.00 |          $16.00 |          $17.44 |                      $1.60 |               $0.075 |
+| GPT-6 Sol   |           $1.20 |           $3.20 |          $3.488 |                      $0.32 |               $0.015 |
+| GPT-6 Luna  |           $0.06 |           $0.16 |         $0.1744 |                     $0.016 |             $0.00075 |
 
 Cold-input examples use ordinary uncached-input prices, excluding any separately
 charged cache writes, tools, images, regional/speed premiums or tax. Fully cache-hit
