@@ -20,6 +20,12 @@ capacity or enabling longer context is not the program's goal or completion crit
 Code owns executable configuration. This document owns the cross-consumer design,
 constraints and rationale; the detailed limits research is supporting evidence below.
 
+**Decision status:** the per-file destinations and changes are not agreed yet. The
+ownership shapes and consolidation suggestions below are proposals to evaluate, not
+instructions to execute. The file inventory in §3 records what needs a disposition
+decision. Agreed goals, dependency/safety constraints and already-approved pauses remain
+in force; listing a file does not authorize modifying, deleting or re-enabling it.
+
 ## Contents
 
 ### Core design
@@ -27,6 +33,7 @@ constraints and rationale; the detailed limits research is supporting evidence b
 - [Scope and priorities](#1-scope-and-priorities)
 - [Ownership and data flow](#2-ownership-and-data-flow)
 - [Consumer inventory and side effects](#3-consumer-inventory-and-side-effects)
+  - [Files requiring disposition decisions](#files-requiring-disposition-decisions)
 - [Proposed shape and rollout](#4-proposed-shape-and-rollout)
 - [Approved pauses and remaining decisions](#5-approved-pauses-and-remaining-decisions)
 - [Documentation consolidation](#6-documentation-consolidation)
@@ -184,6 +191,85 @@ Before deletion or renaming, check these as well as the obvious clients:
 This is a starting inventory, not a claim of exhaustive runtime reachability.
 Repository references and operator confirmation are both needed.
 
+### Files requiring disposition decisions
+
+**All dispositions below are OPEN.** This is a review inventory, not an approved
+keep/move/merge/delete list or a promise that every file needs a diff. Paths are the
+current locations; grouped paths do not imply that their fates must be the same.
+For each, trace its declarations, inputs, outputs and actual readers; then record the
+chosen disposition and rationale when agreed. Unchanged, simplified, moved, consolidated
+or removed are possible outcomes, subject to the existing constraints. The previously
+suggested fates are candidates, not commitments. Extend the inventory if the audit
+finds another consumer or source of independently maintained configuration.
+
+#### Neutral definitions and policy
+
+| Current file | Question to resolve |
+| --- | --- |
+| `model_catalog/catalog.py` | Which declarations are neutral model/account/route facts, which are serving or consumer settings, and what shape eliminates duplicate identities/names without conflating semantics? |
+| `model_catalog/policies.py` | Which lane/allowance/fallback choices are genuinely shared, and which belong to an individual consumer? |
+| `model_catalog/BUILD.bazel` | What dependency and visibility changes follow from the chosen ownership, while keeping Nix and runtime consumers independent of cdk8s internals? |
+
+#### LiteLLM, keys and provider adapter
+
+| Current file(s) | Question to resolve |
+| --- | --- |
+| `cluster/cdk8s/litellm/config.py` | Which logic is necessary LiteLLM serialization, which repeats catalogue facts, and where can the agreed publication contract actually be enforced? |
+| `cluster/cdk8s/litellm/upstreams.py` | What deployment endpoint/auth binding shape is needed without duplicating account/adapter identity? |
+| `cluster/cdk8s/litellm/keys.py`; `tf/gitops/litellm-keys/main.tf` | Where should lane-to-key/team binding and ordered fallback projection live, and are either side's inputs redundant? |
+| `tana/litellm_proxy/` (including `custom_handler.py`, `provider.py`, `BUILD.bazel`, `requirements.in`, `requirements.txt`) | Does the chosen publication/adapter solution require changes here at all? Avoid an unneeded proxy framework or incidental dependency upgrade. |
+| `tana/litellm_proxy/model_registry.py` | Which entries are necessary Tana protocol/discovery mappings versus duplicate definitions of our selected models/routes? Do not assume that another “registry” is redundant without tracing its role. |
+
+#### Agentplane selection, projection and runtime
+
+| Current file(s) | Question to resolve |
+| --- | --- |
+| `cluster/cdk8s/model_selections.py` | Which selections belong together? Decide the homes and shapes of harness offerings, defaults, `PUBLIC_CODER_MODELS` and `RUNNER_CONTEXT_OVERRIDES` rather than preserving or moving them by assumption. |
+| `cluster/cdk8s/agentplane/app_settings.py` | What is the smallest projection into app offerings/presets, and which presentation/default choices are independently owned? |
+| `cluster/cdk8s/agentplane/environment.py`; `staging.py`, `testing.py`, `staging_config.py` in that directory | Which structured selections should flow to each renderer, and where should environment-specific choices live? |
+| `cluster/cdk8s/agentplane/app.py` | How should runner configuration be emitted without treating `route.model.context_window` as a universal client budget? |
+| `agentplane/app/api.py` | Does the runtime-owned offering schema need to change, or can existing records express the chosen design? No generator imports. |
+| `agentplane/runner/config.py`, `main.py`, `guest_config.py`, `session.py` | What runner-owned configuration shape supports launch, switching and resume without duplicate metadata or misleading shared semantics? |
+| `agentplane/runner/codex.py`; `agentplane/runner/claude.py` | Which settings must be applied in each native client's vocabulary, and what logic is unnecessary? Preserve the approved Claude offering-pause boundary. |
+| `agentplane/llm_ingress/app.py`, `settings.py`; `cluster/cdk8s/agentplane/llm_ingress.py` | Is model-ID translation useful enough to introduce, and where would its authorized mapping/configuration belong? Pass-through is not required, but translation is not yet selected. |
+
+#### Nix wrappers and direct local clients
+
+| Current file(s) | Question to resolve |
+| --- | --- |
+| `model_catalog/nix.py` | What wrapper selections/settings should it own, and what should it merely project? Its exact future location/shape is undecided. |
+| `model_catalog/claude-wrappers.json` | Is this generated interface still the simplest boundary, and what fields should it contain if retained? It is not a hand-maintained roster. |
+| `nix/home/claude_code/gateway.nix` | What common wrapper rendering belongs here, and what configuration is duplicated elsewhere? |
+| `codex-claude.nix`, `gemini-claude.nix`, `antigravity-claude.nix`, `litellm-claude.nix`, `tana-claude.nix` under `nix/home/claude_code/` | What are the eventual module boundaries and inputs? The already-approved pause and requirement to retain renderers remain; this inventory is not permission to delete or reactivate them. |
+| `nix/home/codex/default.nix`; `nix/home/claude_code/default.nix`; machine activation/import configuration such as `nix/home/hosts/*.nix` | Are changes needed at all? Preserve direct-provider clients and the wrapper pause; central-gateway migration is not implicit. |
+
+#### Ollama serving variants
+
+| Current file(s) | Question to resolve |
+| --- | --- |
+| `cluster/cdk8s/ollama/app.py` | Where should server defaults and serving-variant configuration be declared, and what should deployment rendering consume? |
+| `cluster/cdk8s/ollama/setup-gpt-oss-v2.sh` | How should model/alias creation obtain tags and parameters without independent hard-coded copies? Decide whether this script/interface remains appropriate. |
+| Ollama definitions in `model_catalog/catalog.py`; their projection in `cluster/cdk8s/litellm/config.py` | Decide jointly with the two files above: who defines variant identity, upstream tag and requested context, and how each wire actually applies them? Do not infer provider limits or client budgets from serving settings. |
+
+#### Public Coder and smaller consumers
+
+| Current file(s) | Question to resolve |
+| --- | --- |
+| `cluster/cdk8s/public_coder_agent_config.py` | Where should OpenClaw selections, labels and client budgets live? What retained renderer is useful for revival without supporting every paused combination now? |
+| Public Coder workload/storage configuration, including `cluster/cdk8s/public_coder_devbox.py`, `public_coder_proxy.py`, `public_coder_egress.py`, `public_coder_sshpiper.py`, `public_coder_backup.py` and associated manifests | Which files actually depend on roster decisions? No change may incidentally undo the pause, delete retained storage/backups, or change a durable embedding identity. |
+| `cluster/cdk8s/parked/haku_openclaw_spike_config.py` | What dependencies and revival information need to remain documented, and is any source change needed while parked? |
+| `cluster/cdk8s/gatus/config.py` | Is probe selection already a sufficient projection of canonical routes, or does it duplicate naming/selection logic? |
+
+#### Generated outputs, tests, build boundaries and documentation
+
+| Current file(s) | Question to resolve |
+| --- | --- |
+| Affected `cluster/k8s/…` manifests and Nix JSON artifacts | Which outputs follow from the eventual source changes? Regenerate them from their owners, never make them another authored source. |
+| `cluster/cdk8s/test_model_rosters.py`; `cluster/cdk8s/litellm/test_config.py`, `test_openclaw_models.py`; `model_catalog/test_nix.py`, `test_policies.py`; affected Agentplane/OpenClaw tests | Which tests prove identity, authorization, fallback, serialization or native-client behavior, and which merely restate fields? Decide retention/consolidation based on that distinction. |
+| Affected `BUILD.bazel` files, including `cluster/cdk8s/BUILD.bazel`, `cluster/cdk8s/litellm/BUILD.bazel`, `cluster/cdk8s/agentplane/BUILD.bazel` | Which dependency/visibility edges should change as ownership is decided? Preserve the cdk8s generation/runtime boundary. |
+| `model_catalog/design.md`; `model_catalog/README.md`; `cluster/docs/model_catalog.md`; `agentplane/docs/model_metadata.md` | Decide their eventual content split and lifecycle without competing specifications or lost evidence/restoration instructions. §6 offers one candidate, not an approved per-file outcome. |
+
+
 ## 4. Proposed shape and rollout
 
 Apply this to the whole roster and its projections, not just token fields. Keep the
@@ -278,12 +364,13 @@ LiteLLM's fallback metadata or establish new provider limits.
 ## 6. Documentation consolidation
 
 [`cluster/docs/model_catalog.md`](../cluster/docs/model_catalog.md) is part of the
-refactor, not a second specification to leave untouched beside this design. **Retain
-it as a smaller cluster wiring and operations guide.** Do not move the neutral
+refactor, not a second specification to leave untouched beside this design. **One
+candidate is to retain it as a smaller cluster wiring and operations guide; its exact
+fate and the content split below remain undecided.** Do not move the neutral
 catalogue's ownership back under `cluster/`, or maintain parallel explanations of
 model-limit semantics in both places.
 
-| Document | Intended responsibility |
+| Document | Candidate responsibility (not yet agreed) |
 | --- | --- |
 | This design | Cross-layer semantics, constraints, decisions and unresolved choices; explicitly dated investigation evidence |
 | `model_catalog/README.md` | Short neutral-package entry point: module responsibilities, generation entry points, links to the design and deployment guide |
@@ -291,7 +378,10 @@ model-limit semantics in both places.
 | `agentplane/docs/model_metadata.md` | Historical version-scoped harness audit, linked as evidence rather than treated as current deployment policy |
 | Tracking issue #9121 | Work/PR status and complete parked-integration inventory, linking to the relevant restoration instructions |
 
-### Disposition of the existing cluster guide
+### Candidate treatment of the existing cluster guide
+
+The following suggestions apply if we choose the smaller-guide option; they are not
+a commitment to retain these sections or this exact document structure.
 
 - **Ownership:** replace the duplicated `Model`/`Upstream`/`Route` definitions and
   generic context-limit explanations with links to the neutral package and this
@@ -322,8 +412,10 @@ another migration note. Remove the temporary proposal notice when no longer usef
 As decisions land, mark them implemented here and remove resolved alternatives and
 completed rollout checklists; retain only useful dated evidence/rationale. Do not copy
 this entire design into the cluster guide, create a third overview, or keep two current
-specifications. Completion means the deployment guide is shorter and accurate, the
-neutral semantics have one home, and paused integrations remain recoverable.
+specifications. Whichever document split is chosen, completion means the documentation
+is accurate and non-duplicated, neutral semantics have one home, and paused integrations
+remain recoverable.
+
 ## Appendix A. Token-limit vocabulary
 
 | Concept | Meaning | Does not establish |

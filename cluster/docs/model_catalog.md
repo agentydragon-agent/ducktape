@@ -3,8 +3,8 @@
 > This guide describes landed source wiring, not verification of live rollout.
 > The [model-roster and consumer-configuration design](../../model_catalog/design.md)
 > proposes changes that are not enabled by merging documentation. Its
-> [documentation consolidation plan](../../model_catalog/design.md#6-documentation-consolidation)
-> narrows this guide to cluster wiring and operations as implementation lands.
+> [documentation consolidation options](../../model_catalog/design.md#6-documentation-consolidation)
+> discuss a smaller cluster wiring/operations guide; the exact fate is not yet decided.
 
 [`model_catalog`](../../model_catalog/README.md) owns shared model facts, named routes,
 client lanes, and Nix wrapper selections. `cluster/cdk8s/model_selections.py` owns
