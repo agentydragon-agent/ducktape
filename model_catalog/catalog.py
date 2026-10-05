@@ -583,15 +583,14 @@ def _ollama_routes(source: OllamaModel, context: int) -> OllamaRoutes:
     )
 
 
-_QWEN_128K = _ollama_routes(OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs:latest"), 128 * 1024)
+OLLAMA_QWEN_IQ4XS_128K = _ollama_routes(OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs:latest"), 128 * 1024)
 # Ollama /v1 ignores native options.num_ctx; bake this size into an alias.
-_QWEN_256K = _ollama_routes(OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs-256k:latest"), 256 * 1024)
+OLLAMA_QWEN_IQ4XS_256K = _ollama_routes(OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs-256k:latest"), 256 * 1024)
 _GPT_OSS_20B_128K = _ollama_routes(_GPT_OSS_20B, 128 * 1024)
 OLLAMA_GPT_OSS_20B_128K = _GPT_OSS_20B_128K.openai
-OLLAMA_QWEN_IQ4XS_ROUTES = (_QWEN_128K.openai, _QWEN_128K.native, _QWEN_256K.openai, _QWEN_256K.native)
 _OLLAMA_ROUTE_GROUPS = (
-    (_QWEN_128K,),
-    (_QWEN_256K,),
+    (OLLAMA_QWEN_IQ4XS_128K,),
+    (OLLAMA_QWEN_IQ4XS_256K,),
     (_GPT_OSS_20B_128K, *(_ollama_routes(_GPT_OSS_20B, context * 1024) for context in (256, 512, 1024))),
     (_ollama_routes(OllamaModel(Model("gpt-oss-120b", "GPT-OSS 120B"), "gpt-oss:120b"), 128 * 1024),),
     (_ollama_routes(OllamaModel(Model("gemma4-31b-it-q8_0", "Gemma 4 31B"), "gemma4:31b-it-q8_0"), 128 * 1024),),
@@ -658,80 +657,87 @@ ANTIGRAVITY_SONNET = Route(_ANTIGRAVITY_SONNET, ANTIGRAVITY_MESSAGES, reasoning_
 ANTIGRAVITY_PRO = Route(_ANTIGRAVITY_PRO, ANTIGRAVITY_MESSAGES)
 ANTIGRAVITY_FLASH_LITE_31 = Route(_ANTIGRAVITY_FLASH_LITE_31, ANTIGRAVITY_MESSAGES)
 ANTIGRAVITY_FLASH_LITE = Route(_ANTIGRAVITY_FLASH_LITE_35, ANTIGRAVITY_MESSAGES)
+ANTIGRAVITY_FLASH_36 = Route(
+    Model(
+        id="gemini-3.6-flash-high",
+        display_name="Gemini 3.6 Flash",
+        reasoning=True,
+        context_window=1_048_576,
+        max_output_tokens=65_536,
+    ),
+    ANTIGRAVITY_MESSAGES,
+)
+ANTIGRAVITY_FLASH_37 = Route(
+    Model(
+        id="gemini-3.7-flash-high",
+        display_name="Gemini 3.7 Flash",
+        reasoning=True,
+        context_window=1_048_576,
+        max_output_tokens=65_536,
+    ),
+    ANTIGRAVITY_MESSAGES,
+)
+ANTIGRAVITY_FLASH_38 = Route(
+    Model(
+        id="gemini-3.8-flash-high",
+        display_name="Gemini 3.8 Flash",
+        reasoning=True,
+        context_window=1_048_576,
+        max_output_tokens=65_536,
+    ),
+    ANTIGRAVITY_MESSAGES,
+)
+ANTIGRAVITY_FLASH_3 = Route(
+    Model(
+        id="gemini-3-flash",
+        display_name="Gemini 3 Flash",
+        reasoning=False,
+        context_window=1_048_576,
+        max_output_tokens=65_536,
+    ),
+    ANTIGRAVITY_MESSAGES,
+)
+ANTIGRAVITY_FLASH_IMAGE = Route(
+    Model(
+        id="gemini-3.1-flash-image",
+        display_name="Gemini 3.1 Flash Image",
+        reasoning=False,
+        context_window=None,
+        max_output_tokens=None,
+    ),
+    ANTIGRAVITY_MESSAGES,
+)
+ANTIGRAVITY_PRO_LOW = Route(
+    Model(
+        id="gemini-3.1-pro-low",
+        display_name="Gemini 3.1 Pro (Low)",
+        reasoning=False,
+        context_window=1_048_576,
+        max_output_tokens=65_535,
+    ),
+    ANTIGRAVITY_MESSAGES,
+)
+ANTIGRAVITY_GPT_OSS_120B_MEDIUM = Route(
+    Model(
+        id="gpt-oss-120b-medium",
+        display_name="GPT-OSS 120B (Medium)",
+        reasoning=True,
+        context_window=114_000,
+        max_output_tokens=32_768,
+    ),
+    ANTIGRAVITY_MESSAGES,
+)
 ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_SONNET,
-    Route(
-        Model(
-            id="gemini-3.6-flash-high",
-            display_name="Gemini 3.6 Flash",
-            reasoning=True,
-            context_window=1_048_576,
-            max_output_tokens=65_536,
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(
-            id="gemini-3.7-flash-high",
-            display_name="Gemini 3.7 Flash",
-            reasoning=True,
-            context_window=1_048_576,
-            max_output_tokens=65_536,
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(
-            id="gemini-3.8-flash-high",
-            display_name="Gemini 3.8 Flash",
-            reasoning=True,
-            context_window=1_048_576,
-            max_output_tokens=65_536,
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(
-            id="gemini-3-flash",
-            display_name="Gemini 3 Flash",
-            reasoning=False,
-            context_window=1_048_576,
-            max_output_tokens=65_536,
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(
-            id="gemini-3.1-flash-image",
-            display_name="Gemini 3.1 Flash Image",
-            reasoning=False,
-            context_window=None,
-            max_output_tokens=None,
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
+    ANTIGRAVITY_FLASH_36,
+    ANTIGRAVITY_FLASH_37,
+    ANTIGRAVITY_FLASH_38,
+    ANTIGRAVITY_FLASH_3,
+    ANTIGRAVITY_FLASH_IMAGE,
     ANTIGRAVITY_PRO,
-    Route(
-        Model(
-            id="gemini-3.1-pro-low",
-            display_name="Gemini 3.1 Pro (Low)",
-            reasoning=False,
-            context_window=1_048_576,
-            max_output_tokens=65_535,
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(
-            id="gpt-oss-120b-medium",
-            display_name="GPT-OSS 120B (Medium)",
-            reasoning=True,
-            context_window=114_000,
-            max_output_tokens=32_768,
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
+    ANTIGRAVITY_PRO_LOW,
+    ANTIGRAVITY_GPT_OSS_120B_MEDIUM,
     ANTIGRAVITY_FLASH_LITE_31,
     ANTIGRAVITY_FLASH_LITE,
 )
