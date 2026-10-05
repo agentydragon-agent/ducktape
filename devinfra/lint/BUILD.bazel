@@ -90,3 +90,9 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "pytest_main_cli",
+    srcs = ["pytest_main_cli.py"],
+    deps = [":pytest_main_check"],
+)
