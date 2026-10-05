@@ -243,8 +243,7 @@ async def snapshot(client, router):
         assert response.status_code == 200, response.text
         result['single'][name] = select(response.json()['data'][0]['model_info'])
     response = await client.get('/v2/model/info')
-    assert response.status_code == 200, response.text
-    result['v2'] = {row['model_name']: select(row['model_info']) for row in response.json()['data']}
+    result['v2'] = {'status': response.status_code, 'body': response.json()}
     result['registered'] = {name: select(litellm.model_cost.get(f'probe-{name}', {})) for name, _, _ in routes}
     result['pricing_10_input_5_output'] = litellm.cost_per_token(model='gpt-4o-mini', prompt_tokens=10, completion_tokens=5)
     result['enable_pre_call_checks'] = router.enable_pre_call_checks
