@@ -8,7 +8,8 @@ let currentAllowance = null;
 function renderPurchase() {
   const a = currentAllowance;
   if (a?.status !== "active" || a.available_minor_units == null) {
-    purchaseResult.textContent = "Allowance data is unavailable. Check account sync before relying on a purchase estimate.";
+    purchaseResult.textContent =
+      "Allowance data is unavailable. Check account sync before relying on a purchase estimate.";
     return;
   }
   const dollars = Number(purchaseInput.value);
@@ -48,7 +49,11 @@ function renderAllowance(a) {
   }
   purchaseInput.disabled = false;
   allowanceSummary.dataset.state = a.alert_state;
-  const alert = element("span", "alert", a.alert_state === "warning" ? "Pace warning" : a.alert_state === "exceeded" ? "Over allowance" : "On pace");
+  const alert = element(
+    "span",
+    "alert",
+    a.alert_state === "warning" ? "Pace warning" : a.alert_state === "exceeded" ? "Over allowance" : "On pace"
+  );
   alert.dataset.state = a.alert_state;
   allowanceSummary.append(
     element("span", "allowance-kicker", "Available to spend"),
