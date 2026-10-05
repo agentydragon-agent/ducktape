@@ -151,6 +151,7 @@ py_test(
 
 py_test(
     name = "test_proxy_runtime",
+    size = "medium",
     srcs = ["test_proxy_runtime.py"],
     data = [":server_bin"],
     deps = [
