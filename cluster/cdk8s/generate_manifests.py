@@ -1116,7 +1116,6 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         authentik_kustomization,
-        authentik_tf_kustomization,
     )
     tana_mcp_artifact = artifact("tana-mcp", tana_mcp.OUTPUT_DIR)
     tana_mcp_kustomization = agents_flux_kustomizations.tana_mcp(
