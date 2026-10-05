@@ -51,9 +51,9 @@ second authority. We do not need independent live capacity probes for every mode
 The first implementation slice covers routes already marked `publish_limits`; the
 ordinary cdk8s projection emits:
 
-- `max_input_tokens` from the existing input override (currently misnamed
-  `Model.context_window`; correcting that shared shape remains a follow-up).
-- `max_output_tokens` and legacy `max_tokens` from the **same** output declaration.
+- `max_input_tokens` from `Model.limits.max_input_tokens`.
+- `max_output_tokens` and legacy `max_tokens` from the **same**
+  `Model.limits.max_output_tokens` declaration.
 
 In pinned 1.100.1, [`get_max_tokens()`](https://github.com/BerriAI/litellm/blob/v1.100.1/litellm/utils.py#L5149-L5215)
 is documented as an output limit lookup and falls back from `max_output_tokens` to

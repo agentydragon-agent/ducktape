@@ -18,7 +18,9 @@ own boundary.
 Account means whose credentials/account serve a model, not its manufacturer. Shape
 means the outbound wire, not the client's endpoint. Unknown facts remain unknown;
 comments retain the provenance of published, measured, or configured limits. A
-configured context or client override is not evidence of model capacity.
+configured context or client override is not evidence of model capacity. Input/output
+metadata is a `TokenLimits` pair or absent; see the
+[semantics and remaining provenance gaps](design.md#current-token-limit-shape).
 
 Cluster endpoints, credential references, and environment-specific selections stay
 in `cluster/cdk8s`. LiteLLM binds the catalogue's `Upstream` values to deployment

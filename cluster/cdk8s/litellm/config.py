@@ -47,16 +47,16 @@ def model_entry(entry: Route | RouteAlias) -> dict:
     if upstream.supports_function_calling:
         info["supports_function_calling"] = True
     if route.publish_limits:
-        model = route.model
-        if model.context_window is None or model.max_output_tokens is None:
+        limits = route.model.limits
+        if limits is None:
             raise ValueError(f"cannot publish unknown limits for {route.id}")
         # LiteLLM 1.100.1 get_max_tokens() uses max_tokens as the legacy fallback
         # for max_output_tokens. Emit both from the same declaration, not a mix
         # of our explicit output limit and the catalogue's legacy value.
         info.update(
-            max_input_tokens=model.context_window,
-            max_output_tokens=model.max_output_tokens,
-            max_tokens=model.max_output_tokens,
+            max_input_tokens=limits.max_input_tokens,
+            max_output_tokens=limits.max_output_tokens,
+            max_tokens=limits.max_output_tokens,
         )
     return {"model_name": entry.id, "litellm_params": params, "model_info": info}
 
