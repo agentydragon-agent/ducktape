@@ -233,7 +233,9 @@ The shared `basic` policy in staging and testing includes direct Ollama inferenc
 and LiteLLM's existing `cheap-experiments` key. Static OpenClaw receives the same
 inference rules through its gateway policy. Read `/v1/rules` for the active
 hosts, methods, paths, and credential placeholders; send the returned placeholder
-as `Authorization: Bearer ...` through the configured proxy. The real tokens stay
+as `Authorization: Bearer ...` through the configured proxy. Override any matching
+`NO_PROXY` entry for these experiment calls (`curl --noproxy ''`), particularly
+Static OpenClaw's direct LiteLLM conversation exception. The real tokens stay
 in the isolated egress-credentials namespaces, not in agent sandboxes.
 
 Ollama uses its authenticated listener at
