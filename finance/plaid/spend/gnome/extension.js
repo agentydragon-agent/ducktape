@@ -99,16 +99,14 @@ function totalLabel(view) {
 function allowanceSignal(allowance) {
   if (allowance.status !== "active" || allowance.available_minor_units == null)
     return { level: "unknown", label: "Unavailable", marker: "" };
-  if (allowance.available_minor_units <= 0)
-    return { level: "danger", label: "Exhausted", marker: "!!" };
-  if (allowance.spending_signal === "warning")
-    return { level: "caution", label: "Pace high", marker: "!" };
+  if (allowance.available_minor_units <= 0) return { level: "danger", label: "Exhausted", marker: "!!" };
+  if (allowance.spending_signal === "warning") return { level: "caution", label: "Pace high", marker: "!" };
   if (allowance.spending_signal === "unavailable") return { level: "unknown", label: "Pace warming up", marker: "" };
   return { level: "good", label: "Below leash", marker: "" };
 }
 
 function formatDaily(minorUnits, currency) {
-  return minorUnits == null ? "—" : `${formatMoney(minorUnits, currency)}/day`;
+  return minorUnits == null ? "n/a" : `${formatMoney(minorUnits, currency)}/day`;
 }
 
 function formatSyncAge(timestamp) {
@@ -355,7 +353,7 @@ const PlaidSpendIndicator = GObject.registerClass(
           );
           this._addReadOnly(
             `7d ${formatDaily(allowance.trailing_7_observed_daily_minor_units, allowance.currency)} · ` +
-            `30d ${formatDaily(allowance.trailing_30_observed_daily_minor_units, allowance.currency)}`
+              `30d ${formatDaily(allowance.trailing_30_observed_daily_minor_units, allowance.currency)}`
           );
           const daily = Math.round((Number(allowance.monthly_minor_units) * 12) / 365.2425);
           this._addReadOnly(`Leash ~${formatDaily(daily, allowance.currency)}`, "plaid-spend-caption");
@@ -400,7 +398,7 @@ const PlaidSpendIndicator = GObject.registerClass(
         }
       }
 
-      if (this._view?.generated_at) {
+      if (this._view?.generated_at && (!allowance || allowance.status !== "active" || this._status !== "ready")) {
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._addReadOnly(`View updated ${formatTimestamp(this._view.generated_at)}`);
       }

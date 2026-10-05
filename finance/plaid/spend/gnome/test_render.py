@@ -314,10 +314,12 @@ def test_render(
             assert "Leash ~$23.00/day" in menu_text
             assert "7d unmatched 3 ($12.00)" in menu_text
             assert "Sync " in menu_text
+            assert "View updated" not in menu_text
             assert "sustainability target" not in menu_text
             assert "past pace is not opening debt" not in menu_text
         if fixture_name == "allowance_warming":
-            assert "Warming up" in menu_text
+            assert "Pace warming up" in menu_text
+            assert "7d n/a" in menu_text
         if fixture_name == "allowance_exhausted":
             assert "Exhausted" in menu_text
     _screenshot(container, output_path)

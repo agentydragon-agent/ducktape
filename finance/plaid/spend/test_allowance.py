@@ -257,7 +257,7 @@ def test_private_rule_and_uncertain_purchases():
     assert uncertain.trailing_7_unmatched_count == 1
     assert uncertain.trailing_7_unmatched_minor_units == 1_200
     prior = calculate(
-        policy(activation_at=START_DATE, rules=[name_rule("name", "EXAMPLE", Kind.FIXED)]),
+        policy(activation_at=START_DATE, rules=[name_rule("name", "RENT ONLY", Kind.FIXED)]),
         [row("2026-01-30", 12)],
         now=START,
         last_synced_at=START,

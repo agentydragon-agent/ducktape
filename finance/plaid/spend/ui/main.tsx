@@ -307,8 +307,8 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
             </Text>
             {allowance.trailing_7_unmatched_count != null && allowance.trailing_7_unmatched_count > 0 && (
               <Text size="xs" c="dimmed">
-                7d unmatched {allowance.trailing_7_unmatched_count} ({m(allowance.trailing_7_unmatched_minor_units)})
-                · counted as flexible.
+                7d unmatched {allowance.trailing_7_unmatched_count} ({m(allowance.trailing_7_unmatched_minor_units)}) ·
+                counted as flexible.
               </Text>
             )}
             <Divider />

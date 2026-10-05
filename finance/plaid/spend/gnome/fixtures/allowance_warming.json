@@ -24,8 +24,8 @@
       "alert_state": "unavailable",
       "trailing_7_observed_daily_minor_units": null,
       "trailing_30_observed_daily_minor_units": null,
-      "trailing_7_unmatched_count": 3,
-      "trailing_7_unmatched_minor_units": 1200,
+      "trailing_7_unmatched_count": 0,
+      "trailing_7_unmatched_minor_units": 0,
       "last_synced_at": "2026-10-15T11:00:00Z",
       "spending_signal": "unavailable"
     }
