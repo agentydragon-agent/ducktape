@@ -75,7 +75,6 @@ manifest:
     colorama: colorama
     comm: comm
     compact_json: compact_json
-    connecpy: connecpy
     constructs: constructs
     contourpy: contourpy
     cryptography: cryptography
@@ -344,7 +343,6 @@ manifest:
     prompt_toolkit: prompt_toolkit
     propcache: propcache
     proto: proto_plus
-    protoc_gen_connecpy: protoc_gen_connecpy
     proxytypes: jsonref
     psutil: psutil
     psycopg: psycopg
@@ -465,4 +463,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 2c59e4e5f29b0d096d3820cf42b0b6f43097d291e0d5350b8c865fa3e659c2aa
+integrity: 7a1dd47d9b97fb475bb352d5288b27b93a1ad404454d559fa3fa867d03b21460
