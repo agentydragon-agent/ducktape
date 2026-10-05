@@ -193,6 +193,7 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
                 for aid in ("card-first", "card-empty")
             ]
         ),
+        dashboard_url="https://spend.example.test",
     )
     await service.start()
     try:
