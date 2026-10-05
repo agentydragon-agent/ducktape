@@ -78,6 +78,7 @@ py_library(
 py_binary(
     name = "pytest_main_checker",
     srcs = ["pytest_main_cli.py"],
+    main = "pytest_main_cli.py",
     deps = [":pytest_main_check"],
 )
 
