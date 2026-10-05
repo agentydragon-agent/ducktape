@@ -63,7 +63,17 @@ HTTP Basic username `finance_agent_aiquota` and password placeholder
 `agentplane-credential-clickhouse-finance-agent-credentials`. This role is restricted
 to SELECT on `aiquota.aiquota_windows`; it cannot read raw provider bodies or other
 tenants. Check current egress rules before either request; no auth token or raw
-provider payload belongs in a public repo.
+provider payload belongs in a public repo. The finance sandbox's *launch* does not
+necessarily bind `finance-aiquota-history`: if it is absent from `/v1/rules`, ask the
+operator for an `EgressBinding` in `agentplane-staging` naming only this policy and
+the current sandbox ServiceAccount (`kubectl auth whoami`), optionally with an owner
+reference to the Sandbox for cleanup. Do not assume a preset or another sandbox's
+binding is this sandbox's grant. Once authorized, a minimal read-only probe is
+`SELECT count() FROM aiquota.aiquota_windows`; use GET with URL-encoded `query=`.
+These typed windows report observed **usage against a Claude cap**, not purchases,
+prepaid-credit wallet balances, or net card charges; reconcile separately with Plaid
+before recommending a spending cap. The private finance-agent repo holds working
+queries and dated findings, not the public prompt.
 
 This is analysis and tooling work only. Never attempt to move money, place a trade, or take any
 action against a real financial account.
