@@ -25,12 +25,11 @@ name:
   maxOutputTokens ? null,
 }:
 let
-  # Gateway model slugs (e.g. `chatgpt/ant-messages/gpt-5.6-luna`) are not names Claude Code
-  # recognizes, so without maxContextTokens it assumes a 200k window and auto-compacts against
-  # it — clipping a larger real window or (for Gemini's ~1M) discarding most of it. Set
-  # maxContextTokens explicitly so compaction math uses the selected route's window.
-  # The wrappers consume generated model settings from model_catalog/claude-wrappers.json;
-  # explicit client overrides remain distinct from the account's published limits.
+  # Budgeting policy is declared with each wrapper in model_catalog/nix.py.
+  # For unrecognized gateway models, maxContextTokens supplies Claude Code's
+  # assumed window before its own output reserve and compaction headroom.
+  # It is not a provider max-input limit or a combined-capacity claim.
+  # Known model metadata can take precedence over this environment override.
   #
   # gatewayDiscovery and the `[1m]` suffix convention (see litellm-claude.nix) don't compose.
   # `[1m]` is stripped from the outbound `model:` field before the request goes out — it

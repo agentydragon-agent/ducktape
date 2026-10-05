@@ -102,12 +102,7 @@ def oidc_secret(namespace: str) -> SecretRef:
 
 
 def _runner_model_context_windows() -> dict[str, int]:
-    windows = {}
-    for route in RUNNER_CONTEXT_OVERRIDES:
-        if route.num_ctx is None:
-            raise ValueError(f"missing runner context override for {route.id}")
-        windows[route.id] = route.num_ctx
-    return windows
+    return {route.id: budget for route, budget in RUNNER_CONTEXT_OVERRIDES.items()}
 
 
 class App(Construct):

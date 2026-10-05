@@ -6,9 +6,8 @@ from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named 
 
 from cluster.cdk8s import public_coder_agent_config
 from cluster.cdk8s.litellm.config import main_proxy_config
-from cluster.cdk8s.model_selections import PUBLIC_CODER_MODELS
 from cluster.cdk8s.parked import haku_openclaw_spike_config
-from model_catalog.catalog import ANTHROPIC_API_ROUTES, ANTHROPIC_SUBSCRIPTION_ROUTES, ANTIGRAVITY_ROUTES, Model
+from model_catalog.catalog import ANTHROPIC_API_ROUTES, ANTHROPIC_SUBSCRIPTION_ROUTES, GPT6_ASTRA_RESPONSES
 
 
 def _public_coder_agent_models() -> list[dict]:
@@ -35,29 +34,17 @@ def _litellm_models() -> dict[str, dict]:
 
 
 def test_public_coder_agent_catalog_names_only_served_routes() -> None:
-    """OpenClaw's bundled LiteLLM provider never queries the proxy's /v1/models, so every
-    catalog id must be a route the proxy serves."""
+    """Every explicitly configured OpenClaw model must name a served route."""
     served = _litellm_models()
     for model in _public_coder_agent_models():
         assert model["id"] in served, f"{model['id']} has no LiteLLM route"
         assert model["maxTokens"] < model["contextWindow"]
 
 
-def test_public_coder_omits_unknown_limits() -> None:
-    unknown = [route for route in ANTIGRAVITY_ROUTES if route.model.limits is None]
-    assert unknown
-    assert not any(route in PUBLIC_CODER_MODELS for route in unknown)
-
-
-@pytest.mark.parametrize(
-    "model",
-    [replace(PUBLIC_CODER_MODELS[0].model, limits=None), replace(PUBLIC_CODER_MODELS[0].model, reasoning=None)],
-    ids=["limits", "reasoning"],
-)
-def test_public_coder_rejects_incomplete_metadata(model: Model) -> None:
-    incomplete = replace(PUBLIC_CODER_MODELS[0], model=model)
+def test_public_coder_rejects_unknown_reasoning_capability() -> None:
+    route = replace(GPT6_ASTRA_RESPONSES, model=replace(GPT6_ASTRA_RESPONSES.model, reasoning=None))
     with pytest.raises(ValueError, match="missing OpenClaw metadata"):
-        public_coder_agent_config._model_entry(incomplete)
+        public_coder_agent_config._model_entry(route, context_window=872_000, max_tokens=128_000)
 
 
 def test_current_anthropic_roster_matches_haku_openclaw() -> None:

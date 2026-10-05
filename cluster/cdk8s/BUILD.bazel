@@ -78,7 +78,6 @@ py_library(
     srcs = ["model_selections.py"],
     visibility = [
         "//cluster/cdk8s/agentplane:__pkg__",
-        "//cluster/cdk8s/litellm:__pkg__",
     ],
     deps = ["//model_catalog:catalog"],
 )
@@ -374,7 +373,6 @@ py_library(
         ":forgejo_images",
         ":generation",
         ":manifest_roots",
-        ":model_selections",
         ":namespaces",
         ":openclaw_gateway",
         ":public_coder_egress",

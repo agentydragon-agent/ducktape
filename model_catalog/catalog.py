@@ -135,14 +135,12 @@ _UPSTREAM_DEFINER: dict[str, str] = {
 
 @dataclass(frozen=True)
 class TokenLimits:
-    """Effective serving-path limits, published together or not at all.
+    """Established input/output ceilings for this account's serving path.
 
-    Input and output maxima are individual ceilings, not additive allowances:
-    the context window bounds their combined use. Configuration such as Ollama
-    num_ctx alone does not establish these limits.
+    A complete pair or no declaration. Neither field is a combined context
+    capacity, a client compaction budget, or Ollama runtime configuration.
     """
 
-    context_window: int
     max_input_tokens: int
     max_output_tokens: int
 
@@ -151,9 +149,9 @@ class TokenLimits:
 class Model:
     """Metadata for a model as served by its account, not a universal vendor claim.
 
-    Unknown facts stay unset. The comments at each declaration record whether limits
-    are published, measured, or a conservative bound. Sharing this value between wires
-    is deliberate; equal upstream slugs on different accounts do not imply equal limits.
+    Unknown facts stay unset. Limits need account-specific evidence; client budgets
+    and bounds borrowed from another account are not capability metadata. Sharing
+    this value between wires is deliberate; equal upstream slugs on different accounts do not imply equal limits.
     """
 
     id: str
@@ -250,42 +248,18 @@ _CODEX_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 # accounting reference only.
 
 
-# Context window + max output tokens for the Codex-subscription models. Measured,
-# not published: litellm's model_cost DB (live-fetched from BerriAI) has exact
-# entries for the real OpenAI models at their raw-API windows -- gpt-5.6-{sol,terra,
-# luna} at 922K, gpt-5.4/5.5 at 1.05M -- and Codex product docs say 272K, but none
-# is what this subscription path (client -> LiteLLM -> CLIProxyAPI -> upstream)
-# actually serves. So the openai/-prefixed routes advertise litellm's raw-API window
-# (it has no entry for the anthropic/-prefixed twins -> null); this measured value is
-# the SSOT the LiteLLM config injects into model_info (cluster/cdk8s/litellm/config.py).
-#
-# openai_utils/probe_context_window.py binary-searches the live path. On 2026-07-29
-# all three 5.6 models behaved identically: 370,629 tokens accepted, 372,194
-# rejected. Re-derive with:
-#
-#     kubectl exec -i -n <ns> <pod> -- python3 - --low 350000 --high 400000 \
-#         chatgpt/ant-messages/gpt-5.6-{luna,sol,terra} < openai_utils/probe_context_window.py
-CODEX_LIMITS = TokenLimits(context_window=372_000, max_input_tokens=372_000, max_output_tokens=128_000)
-
-# Codex 0.153.4's bundled Astra metadata permits model_context_window up to
-# 872k. Advertise that maximum instead of Codex's conservative 272k default;
-# the raw API advertises a 1.05M combined window and 128k maximum output.
-ASTRA_LIMITS = TokenLimits(context_window=872_000, max_input_tokens=872_000, max_output_tokens=128_000)
-
-
-# The Codex models with known serving-path limits: Astra from Codex's bundled metadata,
-# the 5.6 models measured (CODEX_LIMITS above), and GPT-6 Sol/Luna using the
-# same conservative bound until their subscription path is probed. The LiteLLM manifest
-# advertises these limits in model_info; consumer pickers can expose narrower subsets.
-# OpenClaw declares the limits itself because its bundled LiteLLM provider does not query
-# the proxy's authenticated /v1/models endpoint. gpt-5.4/5.5/5.3-codex-spark were never
-# probed and stay out.
-GPT_6_ASTRA = Model(id="gpt-6-astra", display_name="GPT-6 Astra", limits=ASTRA_LIMITS, reasoning=True)
-GPT_6_LUNA = Model(id="gpt-6-luna", display_name="GPT-6 Luna", limits=CODEX_LIMITS, reasoning=True)
-GPT_6_SOL = Model(id="gpt-6-sol", display_name="GPT-6 Sol", limits=CODEX_LIMITS, reasoning=True)
-GPT_5_6_LUNA = Model(id="gpt-5.6-luna", display_name="GPT-5.6 Luna", limits=CODEX_LIMITS, reasoning=True)
-GPT_5_6_TERRA = Model(id="gpt-5.6-terra", display_name="GPT-5.6 Terra", limits=CODEX_LIMITS, reasoning=True)
-GPT_5_6_SOL = Model(id="gpt-5.6-sol", display_name="GPT-5.6 Sol", limits=CODEX_LIMITS, reasoning=True)
+# No complete subscription-path input/output pair is established here. The historical
+# 5.6 input-size probe (openai_utils/probe_context_window.py, 2026-07-29) accepted
+# 370,629 tokens and rejected 372,194; it did not establish an output ceiling.
+# Astra's 872k came from Codex's configurable model_context_window, and Sol/Luna
+# inherited the 5.6 budget without a probe. Preserve those client choices in the
+# Nix/OpenClaw projections, not as provider facts or LiteLLM metadata overrides.
+GPT_6_ASTRA = Model(id="gpt-6-astra", display_name="GPT-6 Astra", reasoning=True)
+GPT_6_LUNA = Model(id="gpt-6-luna", display_name="GPT-6 Luna", reasoning=True)
+GPT_6_SOL = Model(id="gpt-6-sol", display_name="GPT-6 Sol", reasoning=True)
+GPT_5_6_LUNA = Model(id="gpt-5.6-luna", display_name="GPT-5.6 Luna", reasoning=True)
+GPT_5_6_TERRA = Model(id="gpt-5.6-terra", display_name="GPT-5.6 Terra", reasoning=True)
+GPT_5_6_SOL = Model(id="gpt-5.6-sol", display_name="GPT-5.6 Sol", reasoning=True)
 GPT_5_4 = Model("gpt-5.4", "GPT-5.4")
 GPT_5_5 = Model("gpt-5.5", "GPT-5.5")
 
@@ -342,45 +316,27 @@ _HAIKU = Model("claude-haiku-4-5-20251001", "Haiku 4.5")
 # True, -low/-lite/plain/-image as False). OpenClaw consumes this capability flag;
 # the Agentplane projection separately uses the route's declared effort choices.
 #
-# Token limits: Google's own declared capability for each model as
-# served through Antigravity, not a public-API figure borrowed from Anthropic/OpenAI/a
-# third-party host -- and deliberately not the result of a live binary-search probe
-# (openai_utils/probe_context_window.py) run against claude-opus-4-6-thinking on
-# 2026-09-26, which found requests up to ~575k tokens "accepted" with a
-# correctly-echoed input_tokens count. That accept is real but its meaning is NOT
-# settled: it shows the server didn't reject the oversized request, not that the model
-# actually attended to all of it. Silent server-side truncation beyond the declared
-# capacity (still reporting the full sent count for billing) is a plausible
-# explanation and reads identically to a genuine accept, but it is unconfirmed --
-# no experiment here distinguishes "really uses 575k" from "silently drops everything
-# past ~200k." The declared figures below come from `third_party/cli_proxy_api`'s vendored CLIProxyAPI
-# source (github.com/router-for-me/CLIProxyAPI, pinned commit 7fac6b15bcfe), which
-# ships `cmd/fetch_antigravity_models` -- a tool that calls Google's own
-# `/v1internal:fetchAvailableModels` endpoint (the same private Cloud Code API the live
-# executor uses) with a real Antigravity OAuth token and records its `maxTokens`/
-# `maxOutputTokens` fields verbatim into `internal/registry/models/models.json`'s
-# `antigravity` section (checked 2026-09-26). `None` marks a model missing from that
-# file entirely (gemini-3.5-flash-lite) or present with both fields null
-# (gemini-3.1-flash-image, an image-output model) -- left for a follow-up.
+# CLIProxyAPI's fetch_antigravity_models tool at 7fac6b15bcfe records Google's
+# fetchAvailableModels maxTokens/maxOutputTokens as context_length and
+# max_completion_tokens. That does not establish whether maxTokens is an input
+# ceiling or a combined window. Leave limits unknown rather than relabel it.
+# Existing client budgets derived from those fields live with their consumers.
 
 
 _ANTIGRAVITY_OPUS = Model(
     id="claude-opus-4-6-thinking",
     display_name="Claude Opus 4.6 (Thinking)",
     reasoning=True,
-    limits=TokenLimits(context_window=200_000, max_input_tokens=200_000, max_output_tokens=64_000),
 )
 _ANTIGRAVITY_SONNET = Model(
     id="claude-sonnet-4-6",
     display_name="Claude Sonnet 4.6 (Thinking)",
     reasoning=True,
-    limits=TokenLimits(context_window=200_000, max_input_tokens=200_000, max_output_tokens=64_000),
 )
 _ANTIGRAVITY_FLASH_LITE_31 = Model(
     id="gemini-3.1-flash-lite",
     display_name="Gemini 3.1 Flash Lite",
     reasoning=False,
-    limits=TokenLimits(context_window=1_048_576, max_input_tokens=1_048_576, max_output_tokens=65_535),
 )
 _ANTIGRAVITY_FLASH_LITE_35 = Model(id="gemini-3.5-flash-lite", display_name="Gemini 3.5 Flash Lite", reasoning=False)
 
@@ -388,7 +344,6 @@ _ANTIGRAVITY_PRO = Model(
     id="gemini-pro-agent",
     display_name="Gemini 3.1 Pro (High)",
     reasoning=True,
-    limits=TokenLimits(context_window=1_048_576, max_input_tokens=1_048_576, max_output_tokens=65_535),
 )
 
 
@@ -412,10 +367,9 @@ _ANTIGRAVITY_PRO = Model(
 # Published input/output token limits shared across the current Gemini chat
 # generation: ai.google.dev/gemini-api/docs/models/gemini-3.7-flash and
 # .../gemini-3.5-flash-lite (2026-08-23). Unlike
-# Codex's CODEX_LIMITS above, there is no live serving-path probe for
-# a third-party hosted API, so this is Google's published figure rather than
-# a measured one. Used by public-coder-agent's OpenClaw catalog.
-GEMINI_LIMITS = TokenLimits(context_window=1_048_576, max_input_tokens=1_048_576, max_output_tokens=65_536)
+# the subscription routes above, these are documented input/output ceilings,
+# not inferred from a client's configurable context window.
+GEMINI_LIMITS = TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536)
 
 _GEMINI_FLASH = Model(id="gemini-3.7-flash", display_name="Gemini 3.7 Flash", reasoning=True, limits=GEMINI_LIMITS)
 _GEMINI_FLASH_LITE = Model(
@@ -533,15 +487,15 @@ def _ollama_routes(source: OllamaModel, context: int) -> OllamaRoutes:
     )
 
 
-_QWEN_128K = _ollama_routes(OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs:latest"), 128 * 1024)
+OLLAMA_QWEN_IQ4XS_128K = _ollama_routes(OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs:latest"), 128 * 1024)
 # Ollama /v1 ignores native options.num_ctx; bake this size into an alias.
-_QWEN_256K = _ollama_routes(OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs-256k:latest"), 256 * 1024)
+OLLAMA_QWEN_IQ4XS_256K = _ollama_routes(OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs-256k:latest"), 256 * 1024)
 _GPT_OSS_20B_128K = _ollama_routes(_GPT_OSS_20B, 128 * 1024)
 OLLAMA_GPT_OSS_20B_128K = _GPT_OSS_20B_128K.openai
-OLLAMA_QWEN_IQ4XS_ROUTES = (_QWEN_128K.openai, _QWEN_128K.native, _QWEN_256K.openai, _QWEN_256K.native)
+OLLAMA_QWEN_IQ4XS_ROUTES = (OLLAMA_QWEN_IQ4XS_128K.openai, OLLAMA_QWEN_IQ4XS_128K.native, OLLAMA_QWEN_IQ4XS_256K.openai, OLLAMA_QWEN_IQ4XS_256K.native)
 _OLLAMA_ROUTE_GROUPS = (
-    (_QWEN_128K,),
-    (_QWEN_256K,),
+    (OLLAMA_QWEN_IQ4XS_128K,),
+    (OLLAMA_QWEN_IQ4XS_256K,),
     (_GPT_OSS_20B_128K, *(_ollama_routes(_GPT_OSS_20B, context * 1024) for context in (256, 512, 1024))),
     (_ollama_routes(OllamaModel(Model("gpt-oss-120b", "GPT-OSS 120B"), "gpt-oss:120b"), 128 * 1024),),
     (_ollama_routes(OllamaModel(Model("gemma4-31b-it-q8_0", "Gemma 4 31B"), "gemma4:31b-it-q8_0"), 128 * 1024),),
@@ -603,67 +557,36 @@ ANTIGRAVITY_SONNET = Route(_ANTIGRAVITY_SONNET, ANTIGRAVITY_MESSAGES, reasoning_
 ANTIGRAVITY_PRO = Route(_ANTIGRAVITY_PRO, ANTIGRAVITY_MESSAGES)
 ANTIGRAVITY_FLASH_LITE_31 = Route(_ANTIGRAVITY_FLASH_LITE_31, ANTIGRAVITY_MESSAGES)
 ANTIGRAVITY_FLASH_LITE = Route(_ANTIGRAVITY_FLASH_LITE_35, ANTIGRAVITY_MESSAGES)
+ANTIGRAVITY_FLASH_36 = Route(
+    Model("gemini-3.6-flash-high", "Gemini 3.6 Flash", reasoning=True), ANTIGRAVITY_MESSAGES
+)
+ANTIGRAVITY_FLASH_37 = Route(
+    Model("gemini-3.7-flash-high", "Gemini 3.7 Flash", reasoning=True), ANTIGRAVITY_MESSAGES
+)
+ANTIGRAVITY_FLASH_38 = Route(
+    Model("gemini-3.8-flash-high", "Gemini 3.8 Flash", reasoning=True), ANTIGRAVITY_MESSAGES
+)
+ANTIGRAVITY_FLASH_3 = Route(Model("gemini-3-flash", "Gemini 3 Flash", reasoning=False), ANTIGRAVITY_MESSAGES)
+ANTIGRAVITY_FLASH_ROUTES = (
+    ANTIGRAVITY_FLASH_36, ANTIGRAVITY_FLASH_37, ANTIGRAVITY_FLASH_38, ANTIGRAVITY_FLASH_3
+)
+ANTIGRAVITY_FLASH_IMAGE = Route(
+    Model("gemini-3.1-flash-image", "Gemini 3.1 Flash Image", reasoning=False), ANTIGRAVITY_MESSAGES
+)
+ANTIGRAVITY_PRO_LOW = Route(
+    Model("gemini-3.1-pro-low", "Gemini 3.1 Pro (Low)", reasoning=False), ANTIGRAVITY_MESSAGES
+)
+ANTIGRAVITY_GPT_OSS_120B_MEDIUM = Route(
+    Model("gpt-oss-120b-medium", "GPT-OSS 120B (Medium)", reasoning=True), ANTIGRAVITY_MESSAGES
+)
 ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_SONNET,
-    Route(
-        Model(
-            id="gemini-3.6-flash-high",
-            display_name="Gemini 3.6 Flash",
-            reasoning=True,
-            limits=TokenLimits(context_window=1_048_576, max_input_tokens=1_048_576, max_output_tokens=65_536),
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(
-            id="gemini-3.7-flash-high",
-            display_name="Gemini 3.7 Flash",
-            reasoning=True,
-            limits=TokenLimits(context_window=1_048_576, max_input_tokens=1_048_576, max_output_tokens=65_536),
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(
-            id="gemini-3.8-flash-high",
-            display_name="Gemini 3.8 Flash",
-            reasoning=True,
-            limits=TokenLimits(context_window=1_048_576, max_input_tokens=1_048_576, max_output_tokens=65_536),
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(
-            id="gemini-3-flash",
-            display_name="Gemini 3 Flash",
-            reasoning=False,
-            limits=TokenLimits(context_window=1_048_576, max_input_tokens=1_048_576, max_output_tokens=65_536),
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(id="gemini-3.1-flash-image", display_name="Gemini 3.1 Flash Image", reasoning=False), ANTIGRAVITY_MESSAGES
-    ),
+    *ANTIGRAVITY_FLASH_ROUTES,
+    ANTIGRAVITY_FLASH_IMAGE,
     ANTIGRAVITY_PRO,
-    Route(
-        Model(
-            id="gemini-3.1-pro-low",
-            display_name="Gemini 3.1 Pro (Low)",
-            reasoning=False,
-            limits=TokenLimits(context_window=1_048_576, max_input_tokens=1_048_576, max_output_tokens=65_535),
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(
-            id="gpt-oss-120b-medium",
-            display_name="GPT-OSS 120B (Medium)",
-            reasoning=True,
-            limits=TokenLimits(context_window=114_000, max_input_tokens=114_000, max_output_tokens=32_768),
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
+    ANTIGRAVITY_PRO_LOW,
+    ANTIGRAVITY_GPT_OSS_120B_MEDIUM,
     ANTIGRAVITY_FLASH_LITE_31,
     ANTIGRAVITY_FLASH_LITE,
 )

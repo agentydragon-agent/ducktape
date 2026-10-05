@@ -6,12 +6,12 @@ from model_catalog.catalog import (
     ANTHROPIC_SUBSCRIPTION_ROUTES,
     ANTIGRAVITY_FLASH_LITE_ROUTES,
     ANTIGRAVITY_ROUTES,
-    GEMINI_ROUTES,
     GPT6_LUNA_RESPONSES,
     GPT6_RESPONSES_ROUTES,
     HAIKU_API,
     OLLAMA_OPENAI_ROUTES,
-    OLLAMA_QWEN_IQ4XS_ROUTES,
+    OLLAMA_QWEN_IQ4XS_128K,
+    OLLAMA_QWEN_IQ4XS_256K,
     Route,
 )
 
@@ -37,12 +37,11 @@ TESTING_APP_MODELS = HarnessRoutes(
     codex=(GPT6_LUNA_RESPONSES, *OLLAMA_OPENAI_ROUTES),
 )
 
-# OpenClaw reserves maxTokens within contextWindow; omit routes without known limits.
-PUBLIC_CODER_MODELS = (
-    *GPT6_RESPONSES_ROUTES,
-    *GEMINI_ROUTES,
-    *(route for route in ANTIGRAVITY_ROUTES if route.model.limits is not None),
-)
-
-# Explicit configured harness budgets, not claims of known model capacity.
-RUNNER_CONTEXT_OVERRIDES = OLLAMA_QWEN_IQ4XS_ROUTES
+# Existing runner budgets applied to Claude Code and Codex. They are client
+# configuration, not inferred from Ollama num_ctx or proof of serving capacity.
+RUNNER_CONTEXT_OVERRIDES = {
+    OLLAMA_QWEN_IQ4XS_128K.openai: 128 * 1024,
+    OLLAMA_QWEN_IQ4XS_128K.native: 128 * 1024,
+    OLLAMA_QWEN_IQ4XS_256K.openai: 256 * 1024,
+    OLLAMA_QWEN_IQ4XS_256K.native: 256 * 1024,
+}

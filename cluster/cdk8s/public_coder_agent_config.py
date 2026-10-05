@@ -37,7 +37,6 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.model_selections import PUBLIC_CODER_MODELS
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.openclaw_gateway import (
     disabled_commands,
@@ -48,7 +47,22 @@ from cluster.cdk8s.openclaw_gateway import (
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from model_catalog.catalog import GPT6_ASTRA_RESPONSES, GPT6_LUNA_RESPONSES, OLLAMA_EMBEDDING_ROUTE, Provider, Route
+from model_catalog.catalog import (
+    ANTIGRAVITY_FLASH_LITE_31,
+    ANTIGRAVITY_FLASH_ROUTES,
+    ANTIGRAVITY_GPT_OSS_120B_MEDIUM,
+    ANTIGRAVITY_OPUS,
+    ANTIGRAVITY_PRO,
+    ANTIGRAVITY_PRO_LOW,
+    ANTIGRAVITY_SONNET,
+    GEMINI_ROUTES,
+    GPT6_ASTRA_RESPONSES,
+    GPT6_LUNA_RESPONSES,
+    GPT6_SOL_RESPONSES,
+    OLLAMA_EMBEDDING_ROUTE,
+    Provider,
+    Route,
+)
 
 _CONFIG_MAP_NAME = "config"
 _NAME = "public-coder-agent"
@@ -81,9 +95,9 @@ _RBAC_GROUP = "rbac.authorization.k8s.io"
 _READ = ["get", "list", "watch"]
 
 
-def _model_entry(route: Route) -> dict:
+def _model_entry(route: Route, *, context_window: int, max_tokens: int) -> dict:
     model = route.model
-    if model.limits is None or model.reasoning is None:
+    if model.reasoning is None:
         raise ValueError(f"missing OpenClaw metadata for {route.id}")
     account_name = {
         Provider.CHATGPT: "Codex subscription",
@@ -91,10 +105,10 @@ def _model_entry(route: Route) -> dict:
         Provider.ANTIGRAVITY: "Google Antigravity",
     }[route.upstream.provider]
     return {
-        "contextWindow": model.limits.context_window,
+        "contextWindow": context_window,
         "id": route.id,
         "input": ["text", "image"],
-        "maxTokens": model.limits.max_output_tokens,
+        "maxTokens": max_tokens,
         "name": f"{route.display_name} ({account_name} via LiteLLM)",
         "reasoning": model.reasoning,
     }
@@ -196,7 +210,24 @@ def config() -> dict:
                     "api": "openai-responses",
                     "apiKey": "${OPENCLAW_LITELLM_API_KEY}",
                     "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
-                    "models": [_model_entry(route) for route in PUBLIC_CODER_MODELS],
+                    # Preserve OpenClaw's existing client budgets, independently of
+                    # provider limits. Its compaction reserve is not model.maxTokens.
+                    # The image/3.5-flash-lite entries still have no chosen budget.
+                    "models": [
+                        _model_entry(GPT6_ASTRA_RESPONSES, context_window=872_000, max_tokens=128_000),
+                        *(_model_entry(route, context_window=372_000, max_tokens=128_000)
+                          for route in (GPT6_LUNA_RESPONSES, GPT6_SOL_RESPONSES)),
+                        *(_model_entry(route, context_window=1_048_576, max_tokens=65_536)
+                          for route in GEMINI_ROUTES),
+                        *(_model_entry(route, context_window=200_000, max_tokens=64_000)
+                          for route in (ANTIGRAVITY_OPUS, ANTIGRAVITY_SONNET)),
+                        *(_model_entry(route, context_window=1_048_576, max_tokens=65_536)
+                          for route in ANTIGRAVITY_FLASH_ROUTES),
+                        *(_model_entry(route, context_window=1_048_576, max_tokens=65_535)
+                          for route in (ANTIGRAVITY_PRO, ANTIGRAVITY_PRO_LOW)),
+                        _model_entry(ANTIGRAVITY_GPT_OSS_120B_MEDIUM, context_window=114_000, max_tokens=32_768),
+                        _model_entry(ANTIGRAVITY_FLASH_LITE_31, context_window=1_048_576, max_tokens=65_535),
+                    ],
                     "request": {"allowPrivateNetwork": True},
                 }
             }

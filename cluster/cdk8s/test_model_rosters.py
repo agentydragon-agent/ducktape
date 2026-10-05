@@ -76,7 +76,7 @@ def test_same_slug_on_different_accounts_keeps_distinct_limits() -> None:
 
 
 @pytest.mark.parametrize(
-    "limits", [None, TokenLimits(context_window=1000, max_input_tokens=900, max_output_tokens=100)]
+    "limits", [None, TokenLimits(max_input_tokens=900, max_output_tokens=100)]
 )
 def test_litellm_publishes_all_known_limits_or_none(limits: TokenLimits | None) -> None:
     route = replace(GEMINI_ROUTES[0], model=Model("test-model", limits=limits))

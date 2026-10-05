@@ -31,8 +31,7 @@ import ./gateway.nix { inherit pkgs lib; } "gemini-claude" {
     "WebFetch"
     "WebSearch"
   ];
-  # Gemini's published window/output (SSOT: cluster/cdk8s/model_catalog/catalog.py
-  # GEMINI_CONTEXT_WINDOW / GEMINI_MAX_OUTPUT_TOKENS). Without maxContextTokens Claude Code
-  # assumes 200k for this unrecognized slug and compacts away ~80% of Gemini's ~1M window.
+  # Claude Code's explicit budgeting policy lives in model_catalog/nix.py.
+  # These overrides replace its fallback for unrecognized gateway model names.
   inherit (models) maxContextTokens maxOutputTokens;
 }
