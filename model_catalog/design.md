@@ -121,22 +121,43 @@ is the runner context-size endpoint.
 
 ## 2. Ownership and data flow
 
-The intended configuration flow is:
+**LiteLLM is not the root of the model configuration graph.** Earlier roster drafts
+blurred shared model information with a LiteLLM-centered global roster. The corrected
+ownership direction is that each source owns its serving declarations, and gateways
+and clients compose/select from those sources. A single source of truth means one owner
+per fact or decision, not one gateway-owned registry that determines every backend.
 
 ```text
-neutral named models/accounts/routes + explicit shared lane policies
-  ├─ cdk8s deployment bindings + consumer selections
-  │    ├─ LiteLLM served routes and aliases
-  │    ├─ Terraform key allowances and ordered fallbacks
-  │    ├─ Agentplane offerings → ingress/runner configuration → native client
-  │    └─ OpenClaw/probe configuration (paused consumers remain marked as such)
-  └─ Nix wrapper selections → generated JSON → wrapper environment (paused)
+Ollama-owned model/variant declarations ─┬─→ Ollama provisioning/deployment
+                                        ├─→ direct Ollama consumers
+                                        └─→ LiteLLM cluster roster ← other source declarations
+                                                      │
+                                                      ├─→ proxy config and key policies
+                                                      └─→ gateway-backed client selections
+upstream provider/account declarations ─────→ direct-provider client selections
 ```
 
-Only the common facts are shared; deployment endpoints/auth stay in cdk8s, and
-client-specific settings stay with the consumer. Runtime services read their own
-serialized configuration, never import cdk8s. The neutral package must remain usable
-without Kubernetes, and Bazel visibility must enforce those boundaries.
+Shared types and genuinely shared identities/facts can remain neutral. That does not
+require every serving instance, route or assembled roster to live in the neutral
+package. In particular, whether `SERVED_ROUTES` belongs in cluster composition rather
+than `model_catalog/catalog.py` is an open disposition decision, not an invariant of
+this design. Adding/removing a LiteLLM exposure must not implicitly provision or remove
+an Ollama model, and direct clients need not inherit LiteLLM's route naming or policy.
+
+A dependency from `cluster/cdk8s/litellm/` to small model declarations owned by
+`cluster/cdk8s/ollama/` is a candidate consistent with this direction. It does not imply
+importing or instantiating the whole Ollama deployment construct, parsing its generated
+YAML, or querying a live server during generation. The relevant cdk8s visibility may be
+narrowly granted without exposing those internals to runtime services or Nix.
+
+Do not instead make the neutral package import cdk8s. Runtime services consume their
+own serialized configuration, and Nix's neutral inputs remain independently usable.
+Endpoint/auth bindings and client settings stay with their respective owners. If a
+future non-cluster consumer needs an Ollama declaration, decide a suitable neutral
+input or serialized boundary rather than reverse this dependency.
+
+The following current touchpoints identify concerns to place; they do not require all
+model/route instances to remain in `model_catalog/catalog.py`:
 
 | Owner                                          | Defines                                                                                                                | Consumers / serialization boundary                                                  |
 | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
@@ -250,11 +271,14 @@ for separating shared facts from genuine consumer policy, not another model regi
 
 The operator is also **tentatively comfortable with one Ollama serving-variant
 definition feeding both provisioning and routing**, separate from provider facts and
-consumer budgets. Neutral means independent of cdk8s/deployment, not ignorant of provider
-protocols. Exact records, file locations and how provisioning consumes them remain
-undecided; existing records may suffice instead of adding the illustrative class below.
+consumer budgets. The subsequent ownership clarification is that **Ollama owns this
+serving definition; LiteLLM consumes it**, not the reverse. The declaration may live
+with Ollama's cdk8s configuration; it need not be an instance in the neutral catalogue.
+Exact records, file locations and interfaces remain undecided; existing records may
+suffice instead of adding the illustrative class below.
 
 ```python
+# Ollama-owned serving declarations (exact module/API undecided).
 QWEN_256K = OllamaServingVariant(
     model=QWEN_IQ4XS,  # Shared model identity/name/capabilities.
     base_tag="qwen3.8-flash-next-iq4xs",
@@ -262,6 +286,7 @@ QWEN_256K = OllamaServingVariant(
     num_ctx=262_144,
 )
 
+# LiteLLM composition references the Ollama declaration; it does not own it.
 QWEN_256K_OPENAI = Route(
     upstream=OLLAMA_OPENAI,
     serving_variant=QWEN_256K,
@@ -276,19 +301,18 @@ This is a sketch, not an implemented API. The serving definition describes a req
 allocation, not a measured capacity. The intended boundaries are:
 
 ```text
-shared model facts ─────────────────────→ route identity/name/capabilities
-Ollama serving variant ─┬─→ provisioning: base model → tag + parameters
-                       └─→ canonical routes → LiteLLM adapter + upstream tag
-                                                  ↑
-                                      deployment endpoint/auth bindings
-consumer selection ──→ chosen route + consumer-owned settings
+Ollama-owned serving variant ─┬─→ provisioning: base model → tag + parameters
+                             └─→ selected LiteLLM routes + endpoint/auth bindings
+shared model facts ─────────────→ route identity/name/capabilities
+client selection ──→ direct source or gateway route + consumer-owned settings
 ```
 
 - **Provisioning:** obtain the base/tag/parameters from the serving definition rather
   than independently maintaining copies in shell literals. The setup script may remain
   the execution mechanism; its fate is open. Credentials, scheduling, storage/GPU
   placement and readiness remain deployment concerns.
-- **Routing:** both routes reference the same variant; LiteLLM combines its tag with
+- **Routing:** LiteLLM independently selects which Ollama models/wires to expose.
+  Both illustrated routes reference the same variant; LiteLLM combines its tag with
   the selected adapter and deployment URL/auth bindings. Prefer using the baked-in
   variant on both wires **if verified**, rather than two competing ways to set context.
   Ollama's OpenAI-compatible path does not apply native `options.num_ctx` the same way;
@@ -422,10 +446,12 @@ and runtime code stay in Agentplane. This decision does not settle any other fil
 Apply this to the whole roster and its projections, not just token fields. Keep the
 existing small separation rather than adding a meta-configuration layer:
 
-1. **Neutral facts and identities:** `Model(..., limits=TokenLimits(input, output)
+1. **Shared facts and identities, source-owned composition:** `Model(..., limits=TokenLimits(input, output)
 | None)`, explicit `Upstream`, named `Route`, and aliases referencing routes.
    Provider input/output facts carry evidence in nearby documentation/comments.
-   Unknown remains unknown. No generic model `context_window`.
+   Unknown remains unknown. No generic model `context_window`. Shared types/facts do
+   not make LiteLLM the root; sources own serving declarations, and cluster/gateway
+   rosters compose them without importing cdk8s into the neutral package.
 2. **Serving configuration:** endpoint/auth bindings remain deployment-local;
    self-hosted runtime options are explicit and tied to real model tags. The neutral
    roster must not import cdk8s. No automatic serving-option-to-capacity conversion.
