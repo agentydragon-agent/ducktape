@@ -23,39 +23,26 @@ OUTPUT_PATH = "model_catalog/claude-wrappers.json"
 
 
 def _wrapper(
-    primary: Route,
-    haiku: Route,
-    lane: ModelLaneRoutes,
-    *,
-    publish_limits: bool = False,
-    max_output_override: int | None = None,
+    primary: Route, haiku: Route, lane: ModelLaneRoutes, *, max_output_override: int | None = None
 ) -> dict[str, str | int]:
     if primary not in lane.allowed or haiku not in lane.allowed:
         raise ValueError(f"wrapper selects a route outside its key lane: {primary.id}, {haiku.id}")
     config: dict[str, str | int] = {"model": primary.id, "haikuModel": haiku.id}
-    if publish_limits:
-        context = primary.model.context_window
-        output = max_output_override if max_output_override is not None else primary.model.max_output_tokens
-        if context is None or output is None:
-            raise ValueError(f"missing Claude wrapper limits for {primary.id}")
-        config.update(maxContextTokens=context, maxOutputTokens=output)
+    if (limits := primary.model.limits) is not None:
+        output = max_output_override if max_output_override is not None else limits.max_output_tokens
+        config.update(maxContextTokens=limits.context_window, maxOutputTokens=output)
     return config
 
 
 def claude_wrapper_models() -> dict[str, dict[str, str | int]]:
     return {
-        "codex-claude": _wrapper(
-            GPT6_ASTRA_MESSAGES, GPT6_LUNA_MESSAGES, KEY_MODEL_LANES["codex_client_models"], publish_limits=True
-        ),
+        "codex-claude": _wrapper(GPT6_ASTRA_MESSAGES, GPT6_LUNA_MESSAGES, KEY_MODEL_LANES["codex_client_models"]),
         "litellm-claude": _wrapper(SONNET_SUBSCRIPTION, HAIKU_SUBSCRIPTION, KEY_MODEL_LANES["claude_client_models"]),
-        "gemini-claude": _wrapper(
-            GEMINI_FLASH, GEMINI_FLASH_LITE, KEY_MODEL_LANES["gemini_client_models"], publish_limits=True
-        ),
+        "gemini-claude": _wrapper(GEMINI_FLASH, GEMINI_FLASH_LITE, KEY_MODEL_LANES["gemini_client_models"]),
         "antigravity-claude": _wrapper(
             ANTIGRAVITY_PRO,
             ANTIGRAVITY_FLASH_LITE,
             KEY_MODEL_LANES["antigravity_client_models"],
-            publish_limits=True,
             # Client override, distinct from this account's published 65,535 output limit.
             max_output_override=65_536,
         ),

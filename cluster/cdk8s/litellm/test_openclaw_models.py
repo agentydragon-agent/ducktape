@@ -44,19 +44,15 @@ def test_public_coder_agent_catalog_names_only_served_routes() -> None:
 
 
 def test_public_coder_omits_unknown_limits() -> None:
-    unknown = [route for route in ANTIGRAVITY_ROUTES if route.model.context_window is None]
+    unknown = [route for route in ANTIGRAVITY_ROUTES if route.model.limits is None]
     assert unknown
     assert not any(route in PUBLIC_CODER_MODELS for route in unknown)
 
 
 @pytest.mark.parametrize(
     "model",
-    [
-        replace(PUBLIC_CODER_MODELS[0].model, context_window=None),
-        replace(PUBLIC_CODER_MODELS[0].model, max_output_tokens=None),
-        replace(PUBLIC_CODER_MODELS[0].model, reasoning=None),
-    ],
-    ids=["context_window", "max_output_tokens", "reasoning"],
+    [replace(PUBLIC_CODER_MODELS[0].model, limits=None), replace(PUBLIC_CODER_MODELS[0].model, reasoning=None)],
+    ids=["limits", "reasoning"],
 )
 def test_public_coder_rejects_incomplete_metadata(model: Model) -> None:
     incomplete = replace(PUBLIC_CODER_MODELS[0], model=model)

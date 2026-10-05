@@ -11,7 +11,6 @@ from model_catalog.catalog import (
     ANTHROPIC_API_ROUTES,
     ANTHROPIC_SUBSCRIPTION_ROUTES,
     ANTIGRAVITY_ROUTES,
-    CHATGPT_RESPONSES_ROUTES,
     GEMINI_EMBEDDING_ALIAS,
     GEMINI_EMBEDDING_ROUTES,
     GEMINI_ROUTES,
@@ -20,6 +19,7 @@ from model_catalog.catalog import (
     SERVED_ROUTES,
     Model,
     Route,
+    TokenLimits,
 )
 from model_catalog.policies import KEY_MODEL_LANES
 
@@ -71,23 +71,22 @@ def test_same_slug_on_different_accounts_keeps_distinct_limits() -> None:
     ]
     assert shared_slugs
     for google, antigravity in shared_slugs:
-        assert google.model.context_window is not None
-        assert antigravity.model.context_window is None
+        assert google.model.limits is not None
+        assert antigravity.model.limits is None
 
 
-def test_unknown_limits_are_not_invented_or_published() -> None:
-    unknown_codex = [route for route in CHATGPT_RESPONSES_ROUTES if route.model.context_window is None]
-    assert unknown_codex
-    for route in unknown_codex:
-        assert not route.publish_limits
-        assert "max_input_tokens" not in model_entry(route)["model_info"]
-    assert any(route.model.context_window is None for route in ANTIGRAVITY_ROUTES)
-
-
-def test_publishing_unknown_limits_fails() -> None:
-    unknown = next(route for route in CHATGPT_RESPONSES_ROUTES if route.model.context_window is None)
-    with pytest.raises(ValueError, match="unknown limits"):
-        model_entry(replace(unknown, publish_limits=True))
+@pytest.mark.parametrize(
+    "limits", [None, TokenLimits(context_window=1000, max_input_tokens=900, max_output_tokens=100)]
+)
+def test_litellm_publishes_all_known_limits_or_none(limits: TokenLimits | None) -> None:
+    route = replace(GEMINI_ROUTES[0], model=Model("test-model", limits=limits))
+    for entry in (route, replace(GEMINI_EMBEDDING_ALIAS, target=route)):
+        info = model_entry(entry)["model_info"]
+        if limits is None:
+            assert {"max_input_tokens", "max_output_tokens"}.isdisjoint(info)
+        else:
+            assert info["max_input_tokens"] == limits.max_input_tokens
+            assert info["max_output_tokens"] == limits.max_output_tokens
 
 
 def test_missing_display_name_is_not_prettified_from_a_slug() -> None:

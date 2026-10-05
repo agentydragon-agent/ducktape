@@ -83,7 +83,7 @@ _READ = ["get", "list", "watch"]
 
 def _model_entry(route: Route) -> dict:
     model = route.model
-    if model.context_window is None or model.max_output_tokens is None or model.reasoning is None:
+    if model.limits is None or model.reasoning is None:
         raise ValueError(f"missing OpenClaw metadata for {route.id}")
     account_name = {
         Provider.CHATGPT: "Codex subscription",
@@ -91,10 +91,10 @@ def _model_entry(route: Route) -> dict:
         Provider.ANTIGRAVITY: "Google Antigravity",
     }[route.upstream.provider]
     return {
-        "contextWindow": model.context_window,
+        "contextWindow": model.limits.context_window,
         "id": route.id,
         "input": ["text", "image"],
-        "maxTokens": model.max_output_tokens,
+        "maxTokens": model.limits.max_output_tokens,
         "name": f"{route.display_name} ({account_name} via LiteLLM)",
         "reasoning": model.reasoning,
     }

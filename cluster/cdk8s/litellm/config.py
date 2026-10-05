@@ -46,11 +46,8 @@ def model_entry(entry: Route | RouteAlias) -> dict:
     info: dict = {"mode": shape_mode(upstream.shape)}
     if upstream.supports_function_calling:
         info["supports_function_calling"] = True
-    if route.publish_limits:
-        model = route.model
-        if model.context_window is None or model.max_output_tokens is None:
-            raise ValueError(f"cannot publish unknown limits for {route.id}")
-        info.update(max_input_tokens=model.context_window, max_output_tokens=model.max_output_tokens)
+    if (limits := route.model.limits) is not None:
+        info.update(max_input_tokens=limits.max_input_tokens, max_output_tokens=limits.max_output_tokens)
     return {"model_name": entry.id, "litellm_params": params, "model_info": info}
 
 

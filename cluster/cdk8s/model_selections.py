@@ -41,12 +41,8 @@ TESTING_APP_MODELS = HarnessRoutes(
 PUBLIC_CODER_MODELS = (
     *GPT6_RESPONSES_ROUTES,
     *GEMINI_ROUTES,
-    *(
-        route
-        for route in ANTIGRAVITY_ROUTES
-        if route.model.context_window is not None and route.model.max_output_tokens is not None
-    ),
+    *(route for route in ANTIGRAVITY_ROUTES if route.model.limits is not None),
 )
 
-# An explicit harness override policy, not all routes with known context metadata.
+# Explicit configured harness budgets, not claims of known model capacity.
 RUNNER_CONTEXT_OVERRIDES = OLLAMA_QWEN_IQ4XS_ROUTES
