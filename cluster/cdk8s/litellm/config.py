@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from cluster.cdk8s.litellm.upstreams import UPSTREAM_BINDINGS
 from model_catalog.catalog import HIDDEN_ALIASES, SERVED_ROUTES, Provider, Route, RouteAlias, shape_mode
-from model_catalog.ollama import DEFAULT_NUM_CTX
 
 
 @dataclass(frozen=True)
@@ -32,7 +31,7 @@ def model_entry(entry: Route | RouteAlias) -> dict:
         params["api_base"] = binding.api_base
     if binding.api_key is not None:
         params["api_key"] = binding.api_key
-    if route.num_ctx is not None and route.num_ctx != DEFAULT_NUM_CTX:
+    if route.num_ctx is not None:
         params["extra_body"] = {"options": {"num_ctx": route.num_ctx}}
     if upstream.provider == Provider.TANA:
         params.update(

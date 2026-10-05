@@ -358,11 +358,16 @@ source declarations. Storage/shard handling, other generation parameters and the
 choice of models to provision remain local to Ollama cdk8s. This is not a generic
 provisioning system or an adoption of the entire illustrative API above.
 
-The extraction preserves existing requests and generated artifacts. In particular,
-GPT-OSS 20B's larger gateway variants still send native `options.num_ctx` against
-the base tag, with no baked alias. The OpenAI-compatible wire ignores that option;
-those route names do **not** establish equivalent effective allocations across
-wires. Correcting or retiring them needs a separate behavior decision. Likewise,
+Provisioning, route identities and client budgets are unchanged. Native Ollama
+routes now always send their explicitly requested `options.num_ctx`, including
+128K: matching the server default is not a reason to inherit it (or a model's baked
+parameters). OpenAI-compatible routes omit this ignored option and rely on their
+selected tag's baked settings instead.
+
+GPT-OSS 20B's larger gateway variants still use the base tag, with no baked alias;
+only the native wire applies their requested context. Those route names do **not**
+establish equivalent effective allocations across wires. Creating aliases or
+retiring routes needs a separate behavior decision. Likewise,
 the legacy projection from requested `num_ctx` into `Model.context_window` remains
 pending the publication cleanup; the source declarations make no capacity claim.
 

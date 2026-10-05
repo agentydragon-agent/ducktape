@@ -544,7 +544,7 @@ def _ollama_routes(variant: ollama.ChatVariant) -> OllamaRoutes:
         context_window=context,
     )
     return OllamaRoutes(
-        openai=Route(model, OLLAMA_OPENAI, upstream_model=variant.tag, num_ctx=context),
+        openai=Route(model, OLLAMA_OPENAI, upstream_model=variant.tag),
         native=Route(model, OLLAMA_NATIVE, upstream_model=variant.tag, num_ctx=context),
     )
 
