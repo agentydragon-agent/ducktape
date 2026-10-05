@@ -7,9 +7,7 @@ py_library(
     name = "app",
     srcs = ["app.py"],
     data = [
-        "spend.css",
-        "spend.html",
-        "spend.js",
+        "//finance/plaid/spend/ui:bundle",
     ],
     deps = [
         ":models",
@@ -67,6 +65,16 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_ui",
+    srcs = ["test_ui.py"],
+    deps = [
+        ":app",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )

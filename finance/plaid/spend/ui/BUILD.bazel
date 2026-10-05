@@ -1,0 +1,20 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+
+js_library(
+    name = "main",
+    srcs = ["src/main.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+spa_bundle(
+    name = "bundle",
+    entry_point = "src/main.tsx",
+    jsx = "automatic",
+    visibility = ["//finance/plaid/spend:__pkg__"],
+    deps = [":main"],
+)
