@@ -121,7 +121,8 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
   const projected = allowance.projected_cycle_end_minor_units;
   const after = valid && available != null ? available - cents : null;
   const projectedAfter = valid && projected != null ? projected - cents : null;
-  const signal = after != null ? (after <= 0 ? "exceeded" : projectedAfter != null ? signalFor(after, projectedAfter) : null) : null;
+  const signal =
+    after != null ? (after <= 0 ? "exceeded" : projectedAfter != null ? signalFor(after, projectedAfter) : null) : null;
   const m = (value: number | null) => money(value, allowance.currency);
 
   return (
@@ -222,7 +223,13 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
               <Text id="allowance-title" size="sm" fw={700}>
                 Flexible spending available
               </Text>
-              {signal ? <SignalLabel signal={signal} /> : <Badge color="gray" variant="light">Pace warming up</Badge>}
+              {signal ? (
+                <SignalLabel signal={signal} />
+              ) : (
+                <Badge color="gray" variant="light">
+                  Pace warming up
+                </Badge>
+              )}
             </Group>
             <Text fz={{ base: 36, sm: 44 }} fw={700} lh={1.1} style={{ overflowWrap: "anywhere" }}>
               {m(available)}
@@ -234,7 +241,9 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
             <Divider color="teal.6" />
             <Text size="sm">Allowance began: {time(`${allowance.activation_at}T00:00:00Z`)}</Text>
             <Text size="sm">Next credit: {time(allowance.next_credit_at)}</Text>
-            <Text size="xs" c="teal.0">Oldest account sync: {time(allowance.last_synced_at)}. New purchases may appear later.</Text>
+            <Text size="xs" c="teal.0">
+              Oldest account sync: {time(allowance.last_synced_at)}. New purchases may appear later.
+            </Text>
             <Text size="xs" c="teal.0">
               Adds {m(allowance.monthly_minor_units)}; unused allowance carries forward.
             </Text>
@@ -259,7 +268,9 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
             <Group justify="space-between" gap="sm">
               <Text size="sm">Pace used for estimate</Text>
               <Text size="sm" fw={700}>
-                {allowance.trailing_7_daily_minor_units == null ? "Warming up" : `${m(allowance.trailing_7_daily_minor_units)} / day`}
+                {allowance.trailing_7_daily_minor_units == null
+                  ? "Warming up"
+                  : `${m(allowance.trailing_7_daily_minor_units)} / day`}
               </Text>
             </Group>
             <Text size="xs" c="dimmed">
@@ -336,8 +347,16 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
                 all credits since activation, less posted and pending flexible spending.
               </Text>
               <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="lg">
-                <Metric label="LAST 7 DAYS" value={m(windows?.trailing_7_days_minor_units)} detail="Since allowance start" />
-                <Metric label="LAST 30 DAYS" value={m(windows?.trailing_30_days_minor_units)} detail="Since allowance start" />
+                <Metric
+                  label="LAST 7 DAYS"
+                  value={m(windows?.trailing_7_days_minor_units)}
+                  detail="Since allowance start"
+                />
+                <Metric
+                  label="LAST 30 DAYS"
+                  value={m(windows?.trailing_30_days_minor_units)}
+                  detail="Since allowance start"
+                />
                 <Metric
                   label="CALENDAR MONTH"
                   value={m(windows?.calendar_month_minor_units)}

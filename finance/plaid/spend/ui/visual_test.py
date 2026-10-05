@@ -10,6 +10,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -39,7 +40,7 @@ def dashboard_url() -> Iterator[str]:
 
     @app.get("/api/v1/web/view")
     def view(warmup: bool = False) -> dict:
-        payload = {
+        payload: dict[str, Any] = {
             "generated_at": "2026-10-15T12:00:00Z",
             "allowance": {
                 "status": "active",
@@ -167,6 +168,7 @@ async def test_spending_decision_render(
 @pytest.mark.asyncio
 async def test_new_allowance_has_no_fake_zero_pace(page: Page, dashboard_url: str, tmp_path: Path) -> None:
     await page.add_init_script("window.EventSource = class { addEventListener() {} close() {} }")
+
     async def serve_warmup(route: Route) -> None:
         await route.continue_(url=f"{dashboard_url}/api/v1/web/view?warmup=true")
 

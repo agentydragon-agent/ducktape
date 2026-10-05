@@ -268,7 +268,12 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
             monthly_minor_units=10_000,
             activation_at=now.date(),
             spending_account_ids={"card-1"},
-            rules=[Rule(condition=CategoryExact(type="category_exact", field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
+            rules=[
+                Rule(
+                    condition=CategoryExact(type="category_exact", field="pfc_primary", value="SHOPPING"),
+                    kind=Kind.FLEXIBLE,
+                )
+            ],
         ),
     )
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")

@@ -220,9 +220,7 @@ def calculate(
         ),
     )
     elapsed_days = min(7, (now.date() - start.date()).days + 1)
-    since_start_positive = sum(
-        max(0, p.minor_units) for p in included if p.transaction.date >= pace_start
-    )
+    since_start_positive = sum(max(0, p.minor_units) for p in included if p.transaction.date >= pace_start)
     # History can inform the pace without becoming an opening allowance debt.
     # Early post-start bursts should not disappear into the seven-day average.
     daily = max(recent_positive // 7, since_start_positive // elapsed_days) if recent_positive else None
@@ -231,9 +229,13 @@ def calculate(
     available = credits * policy.monthly_minor_units - posted - pending
     projected_end = available - daily * max(1, (next_credit.date() - now.date()).days) if daily is not None else None
     alert = (
-        PaceAlert.EXCEEDED if available <= 0 else
-        PaceAlert.UNAVAILABLE if projected_end is None else
-        PaceAlert.WARNING if projected_end < 0 else PaceAlert.NORMAL
+        PaceAlert.EXCEEDED
+        if available <= 0
+        else PaceAlert.UNAVAILABLE
+        if projected_end is None
+        else PaceAlert.WARNING
+        if projected_end < 0
+        else PaceAlert.NORMAL
     )
     return AllowanceView(
         status=Status.ACTIVE,

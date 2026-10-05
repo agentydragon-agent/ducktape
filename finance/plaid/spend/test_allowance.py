@@ -147,12 +147,14 @@ def test_trailing_windows_include_exactly_seven_and_thirty_calendar_days():
 def test_prior_purchases_inform_pace_without_importing_debt():
     # Fixed purchases and purchases outside the lookback must not affect the pace.
     result = calculate(
-        policy(rules=[
-            category_rule(field="pfc_primary", value="RENT", kind=Kind.FIXED),
-            category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE),
-        ]),
+        policy(
+            rules=[
+                category_rule(field="pfc_primary", value="RENT", kind=Kind.FIXED),
+                category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE),
+            ]
+        ),
         [
-            row("2026-01-25", 50),
+            row("2026-01-24", 50),
             row("2026-01-26", 14),
             row("2026-01-30", 56),
             row("2026-01-30", 300, pfc_primary="RENT", pfc_detailed=None),
@@ -179,7 +181,6 @@ def test_no_pace_until_history_or_a_full_week_of_zero_spend():
     mature = view(when=datetime(2026, 2, 6, tzinfo=UTC))
     assert mature.trailing_7_daily_minor_units == 0
     assert mature.alert_state == PaceAlert.NORMAL
-
 
 
 def test_pending_posted_transfer_and_unmatched_refund():
