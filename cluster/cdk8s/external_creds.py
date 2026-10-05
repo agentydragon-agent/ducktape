@@ -60,10 +60,12 @@ CREDENTIALS = (
     Credential(
         secret_file="aws-route53-dns-automation.sops.yaml",
         secret_name="aws-route53-dns-automation-credentials",
-        consumers=(
-            ApprovedConsumer("flux-system", "aws-route53-dns-automation-credentials-flux-system-reader"),
-            ApprovedConsumer("external-dns", "aws-route53-dns-automation-credentials-external-dns-reader"),
-        ),
+        consumers=(ApprovedConsumer("flux-system", "aws-route53-dns-automation-credentials-flux-system-reader"),),
+    ),
+    Credential(
+        secret_file="aws-route53-external-dns.sops.yaml",
+        secret_name="aws-route53-external-dns-credentials",
+        consumers=(ApprovedConsumer("external-dns", "aws-route53-external-dns-credentials-external-dns-reader"),),
     ),
     Credential(
         secret_file="brave-search-api-key.sops.yaml",
