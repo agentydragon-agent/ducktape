@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -17,7 +18,6 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from playwright.async_api import Page
 
-from finance.plaid.spend.app import _UI_DIR
 from util.testing.asgi import serve_app_sync
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
@@ -25,6 +25,8 @@ from util.testing.visual_review import retain_review_asset
 # pytest_plugins loads util.playwright by name; Gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
 pytest_plugins = ("util.playwright",)
+
+_UI_DIR = Path(__file__).resolve().parent / "dist"
 
 
 @pytest.fixture(scope="module")
@@ -99,7 +101,7 @@ def dashboard_url() -> Iterator[str]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("width,height", [(1280, 960), (390, 844)])
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
 async def test_spending_decision_render(page: Page, dashboard_url: str, width: int, height: int) -> None:
     errors: list[str] = []
     page.on("pageerror", lambda exc: errors.append(str(exc)))

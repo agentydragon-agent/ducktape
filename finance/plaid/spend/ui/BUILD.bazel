@@ -1,9 +1,13 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//devinfra/python:defs.bzl", "py_test")
 
 js_library(
     name = "main",
-    srcs = ["src/main.tsx", "src/styles.css"],
+    srcs = [
+        "src/main.tsx",
+        "src/styles.css",
+    ],
     deps = [
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -19,8 +23,6 @@ spa_bundle(
     deps = [":main"],
 )
 
-load("//devinfra/python:defs.bzl", "py_test")
-
 py_test(
     name = "visual_test",
     size = "large",
@@ -33,7 +35,6 @@ py_test(
     tags = ["visual"],
     deps = [
         "//:conftest",
-        "//finance/plaid/spend:app",
         "//util:playwright",
         "//util/testing:asgi",
         "//util/testing:undeclared_outputs",
