@@ -123,6 +123,10 @@ class AllowanceView(BaseModel):
         description="Spend after the configured start date in each reporting window; null when unavailable."
     )
     trailing_7_daily_minor_units: int | None
+    # Recorded positive purchases, including preactivation history, divided by the full window.
+    # Separate from the short-window burst-sensitive pace used for forecasting.
+    trailing_7_observed_daily_minor_units: int | None
+    trailing_30_observed_daily_minor_units: int | None
     estimated_exhaustion_at: datetime | None = Field(
         description="Projected at trailing seven-day positive purchase pace, ignoring future credits; null if no recent spend."
     )
@@ -179,10 +183,12 @@ def calculate(
     # Keep each included purchase once, with its category and posting state.
     included: list[Purchase] = []
     recent_positive = 0
+    monthly_positive = 0
     unmatched = 0
     pace_start = (now - timedelta(days=6)).date()
+    monthly_pace_start = (now - timedelta(days=29)).date()
     for transaction in transactions:
-        if not min(start.date(), pace_start) <= transaction.date <= now.date():
+        if not min(start.date(), monthly_pace_start) <= transaction.date <= now.date():
             continue
         if transaction.pending and (transaction.account_id, transaction.transaction_id) in superseded:
             continue
@@ -199,6 +205,8 @@ def calculate(
             continue
         if transaction.date >= pace_start:
             recent_positive += max(0, amount)
+        if transaction.date >= monthly_pace_start:
+            monthly_positive += max(0, amount)
         if transaction.date >= start.date():
             included.append(Purchase(transaction=transaction, minor_units=amount, needs_review=rule is None))
 
@@ -221,6 +229,8 @@ def calculate(
     )
     elapsed_days = min(7, (now.date() - start.date()).days + 1)
     since_start_positive = sum(max(0, p.minor_units) for p in included if p.transaction.date >= pace_start)
+    observed_weekly = recent_positive // 7 if recent_positive else (0 if elapsed_days >= 7 else None)
+    observed_monthly = monthly_positive // 30 if monthly_positive else (0 if (now.date() - start.date()).days >= 29 else None)
     # History can inform the pace without becoming an opening allowance debt.
     # Early post-start bursts should not disappear into the seven-day average.
     daily = max(recent_positive // 7, since_start_positive // elapsed_days) if recent_positive else None
@@ -251,6 +261,8 @@ def calculate(
         unmatched_refunds_minor_units=unmatched,
         windows_minor_units=windows,
         trailing_7_daily_minor_units=daily,
+        trailing_7_observed_daily_minor_units=observed_weekly,
+        trailing_30_observed_daily_minor_units=observed_monthly,
         estimated_exhaustion_at=now + timedelta(days=max(0, available) / daily) if daily else None,
         alert_state=alert,
         last_synced_at=last_synced_at,

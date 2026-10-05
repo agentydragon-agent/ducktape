@@ -275,6 +275,8 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
         await service.close()
     assert allowance is not None
     assert allowance.available_minor_units == 10_000
+    assert allowance.trailing_7_observed_daily_minor_units == 1_000
+    assert allowance.trailing_30_observed_daily_minor_units == 7_000 // 30
     assert allowance.trailing_7_daily_minor_units == 1_000
     assert allowance.windows_minor_units is not None
     assert allowance.windows_minor_units.trailing_7_days_minor_units == 0

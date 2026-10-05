@@ -302,6 +302,8 @@ class SpendService:
                     unmatched_refunds_minor_units=0,
                     windows_minor_units=None,
                     trailing_7_daily_minor_units=None,
+                    trailing_7_observed_daily_minor_units=None,
+                    trailing_30_observed_daily_minor_units=None,
                     estimated_exhaustion_at=None,
                     alert_state=PaceAlert.UNAVAILABLE,
                     last_synced_at=last_synced,
@@ -320,7 +322,7 @@ class SpendService:
                        WHERE t.account_id = ANY($1::text[]) AND t.date >= $2 AND t.date <= $3
                          AND t.removed IS FALSE AND l.status = 'active'""",
                     list(policy.spending_account_ids),
-                    min(policy.activation_at, (now - timedelta(days=6)).date()),
+                    min(policy.activation_at, (now - timedelta(days=29)).date()),
                     now.date(),
                 )
         return calculate(

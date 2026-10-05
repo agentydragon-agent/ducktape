@@ -41,12 +41,20 @@ credit arrives immediately on activation, again on each UTC monthly anniversary
 (clamped to month-end, always measured from the original day). Unspent credit carries
 forward; no monthly reset or second credit at the first calendar-month boundary.
 Do not backdate the anchor expecting a clean slate; choose the intended first credit date. Only transactions dated on or after activation reduce the allowance or appear in the
-spending-window totals. For **pace only**, the service also reads the preceding seven
-calendar-day window, applies the same fixed/excluded/flexible rules and pending
+spending-window totals. For **pace only**, the service also reads the preceding 30
+calendar days, applies the same fixed/excluded/flexible rules and pending
 replacement handling, and considers positive flexible purchases from before the
 activation date. This history is **never imported as opening debt**; the current-cycle,
-trailing 7/30-day, calendar and year spend views all start at activation. Plaid's
-transaction date (not an exact swipe timestamp) defines membership in each window.
+trailing 7/30-day, calendar and year *spend totals* still start at activation. The
+separate `trailing_7_observed_daily_minor_units` and `trailing_30_observed_daily_minor_units`
+are positive recorded purchases in the respective full calendar-day windows divided
+by 7 and 30 (null on startup without pace evidence). `trailing_7_daily_minor_units`
+is the existing, potentially higher, early-burst-sensitive projection pace; do not
+present it as the literal seven-day average. The GNOME panel uses the observed
+rates only as **provisional allowance** comparisons, not a sustainability guarantee.
+Plaid's transaction date (not an exact swipe timestamp) defines membership in each
+window. A newly linked account with a short historical backfill can understate
+observed pace; show sync freshness, not a promise of comprehensive coverage.
 
 Configured account IDs should cover **all accounts used for purchases** (credit and
 checking/debit); otherwise this is not a reliable allowance. If an account is missing,

@@ -96,6 +96,25 @@ function totalLabel(view) {
   return `${cards.length} cards`;
 }
 
+function allowanceSignal(allowance) {
+  if (allowance.status !== "active" || allowance.available_minor_units == null)
+    return { level: "unknown", label: "Allowance unavailable", arrow: "" };
+  if (allowance.available_minor_units <= 0)
+    return { level: "danger", label: "Allowance exhausted · advisory only", arrow: "↓" };
+  const rate = (Number(allowance.monthly_minor_units) * 12) / 365.2425;
+  const weekly = allowance.trailing_7_observed_daily_minor_units;
+  const monthly = allowance.trailing_30_observed_daily_minor_units;
+  if (allowance.alert_state === "warning" || (weekly != null && weekly > rate) || (monthly != null && monthly > rate))
+    return { level: "caution", label: "Recent pace or projection above provisional leash", arrow: "↘" };
+  if (weekly == null && monthly == null)
+    return { level: "unknown", label: "Pace warming up", arrow: "" };
+  return { level: "good", label: "Below provisional leash pace", arrow: "↗" };
+}
+
+function formatDaily(minorUnits, currency) {
+  return minorUnits == null ? "Warming up" : `${formatMoney(minorUnits, currency)}/day`;
+}
+
 const PlaidSpendIndicator = GObject.registerClass(
   class PlaidSpendIndicator extends PanelMenu.Button {
     _init() {
@@ -202,13 +221,22 @@ const PlaidSpendIndicator = GObject.registerClass(
       else if (this._status === "authorizing") label = "Signing in…";
       else if (!this._hasView && this._status === "error") label = "Offline";
       else if (!this._hasView && this._status !== "ready") label = "Connecting…";
-      else if (this._view?.allowance?.status === "active") {
+      else if (this._view?.allowance?.status === "active" && this._status === "ready") {
         const a = this._view.allowance;
-        label = formatMoney(a.available_minor_units, a.currency) + (a.alert_state === "normal" ? "" : " !");
-      } else if (cards.length === 0) label = this._status === "error" ? "Offline" : "No cards";
+        const signal = allowanceSignal(a);
+        label = `Flex ${formatMoney(a.available_minor_units, a.currency)} ${signal.arrow}`.trim();
+      } else if (this._view?.allowance) label = "Flex unavailable";
+      else if (cards.length === 0) label = this._status === "error" ? "Offline" : "No cards";
       else label = totalLabel(this._view);
-      if (cards.some((card) => card.alert_state === "warning" || card.alert_state === "exceeded")) {
+      if (!this._view?.allowance && cards.some((card) => card.alert_state === "warning" || card.alert_state === "exceeded")) {
         label = `${label} !`;
+      }
+
+      for (const level of ["good", "caution", "danger", "unknown"])
+        this._label.remove_style_class_name(`plaid-spend-${level}`);
+      if (this._view?.allowance) {
+        const signal = this._status === "ready" ? allowanceSignal(this._view.allowance) : { level: "unknown" };
+        this._label.add_style_class_name(`plaid-spend-${signal.level}`);
       }
 
       this._label.set_text(label);
@@ -240,6 +268,7 @@ const PlaidSpendIndicator = GObject.registerClass(
           '<method name="OpenMenu"/>' +
           '<method name="CloseMenu"/>' +
           '<method name="GetPanelLabel"><arg type="s" direction="out" name="label"/></method>' +
+          '<method name="GetMenuText"><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
           "</interface></node>",
         {
@@ -247,6 +276,7 @@ const PlaidSpendIndicator = GObject.registerClass(
           OpenMenu: () => this.menu.open(false),
           CloseMenu: () => this.menu.close(false),
           GetPanelLabel: () => this._label.get_text(),
+          GetMenuText: () => this.menu._getMenuItems().map((item) => item.label?.get_text() || "").join("\n"),
           GetMenuGeometry: () => {
             const actor = this.menu.actor;
             const [x, y] = actor.get_transformed_position();
@@ -287,14 +317,15 @@ const PlaidSpendIndicator = GObject.registerClass(
     _renderPopup() {
       if (this._destroyed || !this.menu) return;
       this.menu.removeAll();
+      const allowance = this._view?.allowance;
       const statusText =
         {
           starting: "Starting desktop client…",
           connecting: "Connecting to Plaid Spend…",
           authorizing: "Waiting for Authentik sign-in…",
-          "authentication-required": "Sign in to view your card spend",
-          error: "Connection problem",
-          ready: "Statement-cycle spend",
+          "authentication-required": "Sign in to see flexible spending",
+          error: "Connection problem · figures may be stale",
+          ready: allowance ? "Flexible spending" : "Statement-cycle spend",
         }[this._status] || "Plaid Spend";
       this._addReadOnly(statusText, "plaid-spend-header");
 
@@ -304,56 +335,50 @@ const PlaidSpendIndicator = GObject.registerClass(
         this.menu.addMenuItem(login);
       }
 
-      const allowance = this._view?.allowance;
       if (allowance) {
-        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem("Flexible allowance · advisory"));
-        if (allowance.status === "active") {
-          this._addReadOnly(
-            `${formatMoney(allowance.available_minor_units, allowance.currency)} available · ${allowance.alert_state}`
-          );
-          this._addReadOnly(`Next credit ${formatTimestamp(allowance.next_credit_at)}`);
-          this._addReadOnly(
-            `Projected exhaustion (no future credits): ${formatTimestamp(allowance.estimated_exhaustion_at)}`
-          );
-        } else this._addReadOnly(allowance.note || allowance.status);
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem("Your flex cushion · advisory"));
+        if (allowance.status === "active" && this._status === "ready") {
+          const signal = allowanceSignal(allowance);
+          this._addReadOnly(`${formatMoney(allowance.available_minor_units, allowance.currency)} available`, "plaid-spend-hero");
+          this._addReadOnly(`${signal.arrow} ${signal.label}`.trim(), `plaid-spend-${signal.level}`);
+          this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem("Recorded flexible spending"));
+          this._addReadOnly(`7 days   ${formatDaily(allowance.trailing_7_observed_daily_minor_units, allowance.currency)}`);
+          this._addReadOnly(`30 days  ${formatDaily(allowance.trailing_30_observed_daily_minor_units, allowance.currency)}`);
+          const daily = Math.round(Number(allowance.monthly_minor_units) * 12 / 365.2425);
+          this._addReadOnly(`Provisional leash ~${formatDaily(daily, allowance.currency)}`);
+          this._addReadOnly("Positive purchases; past pace is not opening debt.", "plaid-spend-caption");
+          this._addReadOnly("Leash capacity is not a sustainability target.", "plaid-spend-caption");
+          if (allowance.last_synced_at)
+            this._addReadOnly(`Oldest account sync ${formatTimestamp(allowance.last_synced_at)}`, "plaid-spend-caption");
+        } else this._addReadOnly(allowance.note || "Allowance unavailable; check connection");
       }
       if (this._view?.dashboard_url?.startsWith("https://")) {
-        const link = new PopupMenu.PopupMenuItem("Open spending dashboard / purchase check…");
+        const link = new PopupMenu.PopupMenuItem("Check a purchase / dashboard…");
         link.connect("activate", () => Gio.AppInfo.launch_default_for_uri(this._view.dashboard_url, null));
         this.menu.addMenuItem(link);
       }
-      const cards = Array.isArray(this._view?.cards) ? this._view.cards : [];
-      if (cards.length === 0) {
-        this._addReadOnly(
-          this._status === "authentication-required" ? "Your account is not connected." : "No card data is available."
-        );
-      }
-
-      for (const card of cards) {
-        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(cardTitle(card)));
-        if (card.institution_name) this._addReadOnly(`Institution: ${card.institution_name}`);
-        const spend = formatMoney(card.spend_minor_units, card.currency);
-        const limit =
-          card.limit_minor_units == null ? "no limit set" : formatMoney(card.limit_minor_units, card.currency);
-        const percent = card.spend_percent == null ? "" : ` · ${Number(card.spend_percent).toFixed(1)}%`;
-        this._addReadOnly(
-          card.statement_available ? `Spend: ${spend} / ${limit}${percent}` : `Recorded spend: ${spend}`
-        );
-
-        if (card.posted_minor_units != null || card.pending_minor_units != null) {
-          const posted = card.posted_minor_units == null ? "—" : formatMoney(card.posted_minor_units, card.currency);
-          const pending = card.pending_minor_units == null ? "—" : formatMoney(card.pending_minor_units, card.currency);
-          this._addReadOnly(`Posted: ${posted} · Pending: ${pending}`);
+      if (!allowance) {
+        const cards = Array.isArray(this._view?.cards) ? this._view.cards : [];
+        if (cards.length === 0) {
+          this._addReadOnly(
+            this._status === "authentication-required" ? "Your account is not connected." : "No card data is available."
+          );
         }
-
-        const cycle = card.statement_available
-          ? `Cycle starts ${card.cycle_start}`
-          : card.cycle_start
-            ? `Since first recorded transaction ${card.cycle_start} · statement date unavailable`
-            : "Statement cycle unavailable";
-        this._addReadOnly(cycle);
-        this._addReadOnly(cardAlert(card));
-        this._addReadOnly(`Last synced ${formatTimestamp(card.last_synced_at)}`);
+        for (const card of cards) {
+          this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(cardTitle(card)));
+          const spend = formatMoney(card.spend_minor_units, card.currency);
+          const limit = card.limit_minor_units == null ? "no limit set" : formatMoney(card.limit_minor_units, card.currency);
+          const percent = card.spend_percent == null ? "" : ` · ${Number(card.spend_percent).toFixed(1)}%`;
+          this._addReadOnly(card.statement_available ? `Spend: ${spend} / ${limit}${percent}` : `Recorded spend: ${spend}`);
+          const cycle = card.statement_available
+            ? `Cycle starts ${card.cycle_start}`
+            : card.cycle_start
+              ? `Since first recorded transaction ${card.cycle_start} · statement date unavailable`
+              : "Statement cycle unavailable";
+          this._addReadOnly(cycle);
+          this._addReadOnly(cardAlert(card));
+          this._addReadOnly(`Last synced ${formatTimestamp(card.last_synced_at)}`);
+        }
       }
 
       if (this._view?.generated_at) {

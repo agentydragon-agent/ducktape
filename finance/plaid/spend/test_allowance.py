@@ -142,6 +142,8 @@ def test_trailing_windows_include_exactly_seven_and_thirty_calendar_days():
     assert result.windows_minor_units is not None
     assert result.windows_minor_units.trailing_7_days_minor_units == 2_000
     assert result.windows_minor_units.trailing_30_days_minor_units == 7_000
+    assert result.trailing_7_observed_daily_minor_units == 2_000 // 7
+    assert result.trailing_30_observed_daily_minor_units == 7_000 // 30
 
 
 def test_prior_purchases_inform_pace_without_importing_debt():
@@ -167,6 +169,8 @@ def test_prior_purchases_inform_pace_without_importing_debt():
     assert result.windows_minor_units is not None
     assert result.windows_minor_units.trailing_7_days_minor_units == 0
     assert result.trailing_7_daily_minor_units == 1_000
+    assert result.trailing_7_observed_daily_minor_units == 1_000
+    assert result.trailing_30_observed_daily_minor_units == 7_000 // 30
     assert result.alert_state == PaceAlert.WARNING
     assert result.projected_cycle_end_minor_units == -18_000
 
@@ -175,11 +179,14 @@ def test_no_pace_until_history_or_a_full_week_of_zero_spend():
     opening = view()
     assert opening.available_minor_units == 10_000
     assert opening.trailing_7_daily_minor_units is None
+    assert opening.trailing_7_observed_daily_minor_units is None
+    assert opening.trailing_30_observed_daily_minor_units is None
     assert opening.projected_cycle_end_minor_units is None
     assert opening.alert_state == PaceAlert.UNAVAILABLE
     assert view(when=datetime(2026, 2, 5, tzinfo=UTC)).alert_state == PaceAlert.UNAVAILABLE
     mature = view(when=datetime(2026, 2, 6, tzinfo=UTC))
     assert mature.trailing_7_daily_minor_units == 0
+    assert mature.trailing_7_observed_daily_minor_units == 0
     assert mature.alert_state == PaceAlert.NORMAL
 
 

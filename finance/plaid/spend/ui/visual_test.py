@@ -64,6 +64,8 @@ def dashboard_url() -> Iterator[str]:
                     "year_to_date_minor_units": 55000,
                 },
                 "trailing_7_daily_minor_units": 1250,
+                "trailing_7_observed_daily_minor_units": 1250,
+                "trailing_30_observed_daily_minor_units": 1000,
                 "projected_cycle_end_minor_units": 7500,
                 "next_credit_at": "2026-10-25T00:00:00Z",
                 "estimated_exhaustion_at": "2026-10-31T00:00:00Z",
@@ -113,6 +115,8 @@ def dashboard_url() -> Iterator[str]:
                 prior_carry_minor_units=0,
                 alert_state="unavailable",
                 trailing_7_daily_minor_units=None,
+                trailing_7_observed_daily_minor_units=None,
+                trailing_30_observed_daily_minor_units=None,
                 projected_cycle_end_minor_units=None,
                 estimated_exhaustion_at=None,
             )

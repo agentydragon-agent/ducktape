@@ -57,6 +57,8 @@ def sample_allowance(status: Status = Status.ACTIVE) -> AllowanceView:
         if active
         else None,
         trailing_7_daily_minor_units=1200 if active else None,
+        trailing_7_observed_daily_minor_units=1200 if active else None,
+        trailing_30_observed_daily_minor_units=1000 if active else None,
         estimated_exhaustion_at=datetime(2026, 2, 14, tzinfo=UTC) if active else None,
         alert_state=PaceAlert.WARNING if active else PaceAlert.UNAVAILABLE,
         last_synced_at=NOW if active else None,
