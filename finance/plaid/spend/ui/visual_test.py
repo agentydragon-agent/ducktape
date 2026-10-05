@@ -16,7 +16,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from playwright.async_api import Page
+from playwright.async_api import Page, Route
 
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
@@ -38,8 +38,8 @@ def dashboard_url() -> Iterator[str]:
         return FileResponse(_UI_DIR / "index.html")
 
     @app.get("/api/v1/web/view")
-    def view() -> dict:
-        return {
+    def view(warmup: bool = False) -> dict:
+        payload = {
             "generated_at": "2026-10-15T12:00:00Z",
             "allowance": {
                 "status": "active",
@@ -47,6 +47,7 @@ def dashboard_url() -> Iterator[str]:
                 "currency": "USD",
                 "alert_state": "normal",
                 "monthly_minor_units": 70000,
+                "activation_at": "2026-10-01",
                 "available_minor_units": 20000,
                 "prior_carry_minor_units": 5000,
                 "posted_minor_units": 52500,
@@ -100,6 +101,22 @@ def dashboard_url() -> Iterator[str]:
                 },
             ],
         }
+        if warmup:
+            payload["allowance"].update(
+                activation_at="2026-10-15",
+                available_minor_units=70000,
+                posted_minor_units=0,
+                pending_minor_units=0,
+                review_minor_units=0,
+                review_transaction_count=0,
+                prior_carry_minor_units=0,
+                alert_state="unavailable",
+                trailing_7_daily_minor_units=None,
+                projected_cycle_end_minor_units=None,
+                estimated_exhaustion_at=None,
+            )
+            payload["allowance"]["windows_minor_units"] = dict.fromkeys(payload["allowance"]["windows_minor_units"], 0)
+        return payload
 
     @app.get("/api/v1/web/events")
     async def events() -> StreamingResponse:
@@ -145,6 +162,26 @@ async def test_spending_decision_render(
     exceeded = tmp_path / f"dashboard-{width}-purchase.png"
     await page.screenshot(path=str(exceeded), full_page=True, animations="disabled")
     retain_review_asset(exceeded, title="Spend decisions", label=f"{width}px hypothetical purchase", name=exceeded.name)
+
+
+@pytest.mark.asyncio
+async def test_new_allowance_has_no_fake_zero_pace(page: Page, dashboard_url: str, tmp_path: Path) -> None:
+    await page.add_init_script("window.EventSource = class { addEventListener() {} close() {} }")
+    async def serve_warmup(route: Route) -> None:
+        await route.continue_(url=f"{dashboard_url}/api/v1/web/view?warmup=true")
+
+    await page.route("**/api/v1/web/view", serve_warmup)
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await page.get_by_text("Not enough data", exact=True).wait_for()
+    assert await page.get_by_text("Pace warming up", exact=True).count() == 1
+    assert await page.get_by_text("Warming up", exact=True).count() == 1
+    assert await page.get_by_text("$700.00", exact=True).count() >= 1
+    await page.get_by_label("Hypothetical flexible purchase").fill("10")
+    assert await page.get_by_text("$690.00", exact=True).count() == 1
+    assert await page.get_by_text("Pace estimate warming up", exact=False).count() == 1
+    image = tmp_path / "dashboard-warmup.png"
+    await page.screenshot(path=str(image), full_page=True, animations="disabled")
+    retain_review_asset(image, title="Spend decisions", label="New allowance warming up", name=image.name)
 
 
 if __name__ == "__main__":
