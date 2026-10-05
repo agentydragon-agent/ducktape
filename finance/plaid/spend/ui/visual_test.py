@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -17,14 +18,15 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from playwright.async_api import Page
 
-from finance.plaid.spend.app import _UI_DIR
+from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
 
 # pytest_plugins loads util.playwright by name; Gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
 pytest_plugins = ("util.playwright",)
+
+_UI_DIR = get_required_path("_main/finance/plaid/spend/ui/dist/index.html").parent
 
 
 
@@ -116,14 +118,15 @@ def dashboard_url() -> Iterator[str]:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
-async def test_spending_decision_render(page: Page, dashboard_url: str, width: int, height: int) -> None:
+async def test_spending_decision_render(
+    page: Page, dashboard_url: str, width: int, height: int, tmp_path: Path
+) -> None:
     errors: list[str] = []
     page.on("pageerror", lambda exc: errors.append(str(exc)))
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.wait_for_timeout(1200)
-    out = undeclared_outputs_dir()
-    normal = out / f"dashboard-{width}.png"
+    normal = tmp_path / f"dashboard-{width}.png"
     await page.screenshot(path=str(normal), full_page=True, animations="disabled")
     retain_review_asset(normal, title="Spend decisions", label=f"{width}px available", name=normal.name)
     await page.get_by_text("$200.00", exact=True).wait_for()
@@ -137,7 +140,7 @@ async def test_spending_decision_render(page: Page, dashboard_url: str, width: i
     assert await page.get_by_text("-$50.00", exact=True).count() == 1
     assert await page.get_by_text("$175.00 short before", exact=False).count() == 1
     assert not errors
-    exceeded = out / f"dashboard-{width}-purchase.png"
+    exceeded = tmp_path / f"dashboard-{width}-purchase.png"
     await page.screenshot(path=str(exceeded), full_page=True, animations="disabled")
     retain_review_asset(exceeded, title="Spend decisions", label=f"{width}px hypothetical purchase", name=exceeded.name)
 
