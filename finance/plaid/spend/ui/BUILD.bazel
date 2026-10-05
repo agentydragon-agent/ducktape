@@ -3,7 +3,7 @@ load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 
 js_library(
     name = "main",
-    srcs = ["src/main.tsx"],
+    srcs = ["src/main.tsx", "src/styles.css"],
     deps = [
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -17,4 +17,30 @@ spa_bundle(
     jsx = "automatic",
     visibility = ["//finance/plaid/spend:__pkg__"],
     deps = [":main"],
+)
+
+load("//devinfra/python:defs.bzl", "py_test")
+
+py_test(
+    name = "visual_test",
+    size = "large",
+    srcs = ["visual_test.py"],
+    data = [
+        ":bundle",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)"},
+    tags = ["visual"],
+    deps = [
+        "//:conftest",
+        "//finance/plaid/spend:app",
+        "//util:playwright",
+        "//util/testing:asgi",
+        "//util/testing:undeclared_outputs",
+        "//util/testing:visual_review",
+        "@pypi//fastapi",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

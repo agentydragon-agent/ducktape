@@ -2,23 +2,20 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Alert,
-  AppShell,
   Badge,
   Button,
   Card,
   Container,
-  Divider,
   Group,
   MantineProvider,
   NumberInput,
-  Progress,
   SimpleGrid,
   Stack,
-  Table,
   Text,
   Title,
 } from "@mantine/core";
 import "@mantine/core/styles.css";
+import "./styles.css";
 
 type Windows = {
   current_credit_cycle_minor_units: number;
@@ -92,163 +89,191 @@ function combinedSpend(cards: CardView[]): string {
   return `${cards.length} cards`;
 }
 
-function AllowancePanel({ allowance }: { allowance: Allowance }) {
+type Signal = "normal" | "warning" | "exceeded";
+
+function signalFor(available: number, projected: number): Signal {
+  return available <= 0 ? "exceeded" : projected < 0 ? "warning" : "normal";
+}
+
+function SignalLabel({ signal }: { signal: Signal }) {
+  return (
+    <Badge className={`signal signal--${signal}`} size="lg" radius="xl" variant="light">
+      <span className="signal-dot" aria-hidden="true" />
+      {signal === "exceeded" ? "Over allowance" : signal === "warning" ? "Pace warning" : "On track"}
+    </Badge>
+  );
+}
+
+function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return (
+    <div className="metric">
+      <Text className="metric-label">{label}</Text>
+      <Text className="metric-value">{value}</Text>
+      {detail && <Text className="metric-detail">{detail}</Text>}
+    </div>
+  );
+}
+
+function PurchaseCheck({ allowance }: { allowance: Allowance }) {
   const [purchase, setPurchase] = useState<number | string>("");
-  const active = allowance.status === "active";
-  const m = (value: number | null | undefined) => money(value, allowance.currency);
-  const rows: [string, string][] = active
-    ? [
-        ["Monthly credit", m(allowance.monthly_minor_units)],
-        ["Carry from earlier cycles", m(allowance.prior_carry_minor_units)],
-        ["This credit cycle", m(allowance.windows_minor_units?.current_credit_cycle_minor_units)],
-        ["Pending (included)", m(allowance.pending_minor_units)],
-        ["Posted (included)", m(allowance.posted_minor_units)],
-        ["Needs classification review (included)", m(allowance.review_minor_units)],
-        ["Unmatched refunds (excluded)", m(allowance.unmatched_refunds_minor_units)],
-        ["Trailing 7 days", m(allowance.windows_minor_units?.trailing_7_days_minor_units)],
-        ["Trailing 30 days", m(allowance.windows_minor_units?.trailing_30_days_minor_units)],
-        ["Calendar month since activation", m(allowance.windows_minor_units?.calendar_month_minor_units)],
-        ["Year since activation", m(allowance.windows_minor_units?.year_to_date_minor_units)],
-        ["7-day daily pace", m(allowance.trailing_7_daily_minor_units)],
-        [
-          "Projected exhaustion at that pace, ignoring future credits",
-          allowance.estimated_exhaustion_at ? time(allowance.estimated_exhaustion_at) : "No recent spend",
-        ],
-        ["Estimated balance before next credit", m(allowance.projected_cycle_end_minor_units)],
-        ["Next credit", time(allowance.next_credit_at)],
-        ["Oldest account sync", time(allowance.last_synced_at)],
-      ]
-    : [];
   const cents = typeof purchase === "number" ? Math.round(purchase * 100) : NaN;
-  const valid = purchase !== "" && typeof purchase === "number" && purchase >= 0 && Number.isSafeInteger(cents);
-  const left = (allowance.available_minor_units ?? 0) - cents;
-  const result =
-    !active || allowance.available_minor_units == null
-      ? "Activate the allowance and sync accounts before checking a purchase."
-      : !valid
-        ? "Enter a positive purchase amount."
-        : `${m(left)} after purchase. ${left < 0 ? "Over the advisory allowance; make a conscious exception." : (allowance.projected_cycle_end_minor_units ?? 0) - cents < 0 ? "Current pace projects a shortfall before next credit." : "Within the allowance at current estimated pace."}`;
+  const valid = typeof purchase === "number" && purchase >= 0 && Number.isSafeInteger(cents);
+  const available = allowance.available_minor_units;
+  const projected = allowance.projected_cycle_end_minor_units;
+  const after = valid && available != null ? available - cents : null;
+  const projectedAfter = valid && projected != null ? projected - cents : null;
+  const signal = after != null && projectedAfter != null ? signalFor(after, projectedAfter) : null;
+  const m = (value: number | null) => money(value, allowance.currency);
 
   return (
-    <Card withBorder radius="md" padding="lg" component="section" aria-label="Flexible allowance">
-      <Stack gap="md">
-        <Group justify="space-between" align="flex-start">
-          <div>
-            <Title order={2}>Flexible allowance</Title>
-            <Text size="sm" c="dimmed">
-              Advisory, not a bank limit
-            </Text>
-          </div>
-          <Badge
-            color={
-              !active
-                ? "gray"
-                : allowance.alert_state === "exceeded"
-                  ? "red"
-                  : allowance.alert_state === "warning"
-                    ? "yellow"
-                    : "green"
-            }
-            size="lg"
-          >
-            {!active
-              ? allowance.status
-              : allowance.alert_state === "warning"
-                ? "Pace warning"
-                : allowance.alert_state === "exceeded"
-                  ? "Over allowance"
-                  : "On pace"}
-          </Badge>
-        </Group>
-        {active ? (
-          <Text size="xl" fw={700} aria-live="polite">
-            {m(allowance.available_minor_units)} available
-          </Text>
-        ) : (
-          <Alert color="yellow">Unavailable: {allowance.note || "Allowance data unavailable"}</Alert>
-        )}
-        {active && (
-          <Table striped withTableBorder>
-            <Table.Tbody>
-              {rows.map(([label, value]) => (
-                <Table.Tr key={label}>
-                  <Table.Th scope="row">{label}</Table.Th>
-                  <Table.Td>{value}</Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        )}
-        <Divider />
+    <Card component="section" aria-labelledby="purchase-title" withBorder radius="lg" padding="xl" className="purchase-card">
+      <Stack gap="lg">
+        <div>
+          <Text className="section-kicker">MAKE A DECISION</Text>
+          <Title id="purchase-title" order={2} className="panel-title">Can I afford this?</Title>
+          <Text c="dimmed" size="sm" mt={6}>Try a DoorDash order, dinner, or extra AI usage before buying.</Text>
+        </div>
         <NumberInput
-          label="Considering a flexible purchase ($)"
+          label="Hypothetical flexible purchase"
+          prefix="$"
           min={0}
           decimalScale={2}
-          placeholder="Amount"
+          placeholder="Enter an amount"
           value={purchase}
           onChange={setPurchase}
-          disabled={!active}
+          inputMode="decimal"
+          hideControls
+          className="purchase-input"
         />
-        <Text aria-live="polite">{result}</Text>
-        <Text size="sm" c="dimmed">
-          Estimates use Plaid transaction dates and may lag; review pending and uncategorized charges before spending.
-          No purchase is blocked here.
-        </Text>
+        <div className={`purchase-result ${signal ? `purchase-result--${signal}` : ""}`} aria-live="polite">
+          {signal && after != null && projectedAfter != null ? (
+            <Stack gap={8}>
+              <Group justify="space-between" align="flex-start" wrap="nowrap">
+                <div><Text size="sm">You would have</Text><Text className="purchase-amount">{m(after)}</Text></div>
+                <SignalLabel signal={signal} />
+              </Group>
+              <Text size="sm">
+                At your recent pace, {projectedAfter < 0 ? `${m(-projectedAfter)} short before` : `${m(projectedAfter)} left before`} the next credit.
+              </Text>
+              {signal !== "normal" && <Text size="sm" fw={600}>This is a signal to pause, not a declined transaction.</Text>}
+            </Stack>
+          ) : (
+            <Text size="sm" c="dimmed">
+              {purchase === "" ? "See what a purchase would do to your cushion and pace." : "Enter a non-negative amount in dollars and cents."}
+            </Text>
+          )}
+        </div>
+        <Text size="xs" c="dimmed">Advisory only. No bank transaction is blocked by this dashboard.</Text>
       </Stack>
     </Card>
   );
 }
 
-function SpendCard({ card }: { card: CardView }) {
-  const alertColor = card.alert_state === "exceeded" ? "red" : card.alert_state === "warning" ? "yellow" : "gray";
-  const alertLabel =
-    card.alert_state === "exceeded"
-      ? "Limit exceeded"
-      : card.alert_state === "warning"
-        ? `Warning${card.alert_threshold_percent == null ? "" : ` · ${card.alert_threshold_percent}% threshold reached`}`
-        : card.alert_state === "unavailable"
-          ? "Alert state unavailable"
-          : "No alert";
+function AllowancePanel({ allowance }: { allowance: Allowance }) {
+  if (allowance.status !== "active" || allowance.available_minor_units == null) {
+    return (
+      <Alert color="yellow" title="Allowance unavailable">
+        {allowance.note || "The allowance cannot be calculated right now. Check account sync before relying on it."}
+      </Alert>
+    );
+  }
+
+  const m = (value: number | null | undefined) => money(value, allowance.currency);
+  const available = allowance.available_minor_units;
+  const projected = allowance.projected_cycle_end_minor_units;
+  const signal = projected == null ? null : signalFor(available, projected);
+  const nextCredit = allowance.next_credit_at ? time(allowance.next_credit_at) : "Unknown";
+  const windows = allowance.windows_minor_units;
+
   return (
-    <Card withBorder radius="md" padding="lg" component="article">
-      <Stack>
-        <Group justify="space-between" align="flex-start">
-          <div>
-            <Title order={3}>{cardTitle(card)}</Title>
-            <Text c="dimmed" size="sm">
-              {card.institution_name}
-            </Text>
+    <Stack gap="lg">
+      <section className={`allowance-hero allowance-hero--${signal || "unavailable"}`} aria-labelledby="allowance-title">
+        <div className="hero-main">
+          <Group justify="space-between" align="flex-start" gap="md">
+            <Text id="allowance-title" className="hero-kicker">YOUR FLEXIBLE SPENDING CUSHION</Text>
+            {signal && <SignalLabel signal={signal} />}
+          </Group>
+          <Text className="hero-amount">{m(available)}</Text>
+          <Text className="hero-description">
+            {available <= 0 ? "You're past your available allowance." : "Available to spend across flexible purchases."}
+            {" "}Posted and pending charges are included.
+          </Text>
+          <div className="hero-footer">
+            <Metric label="NEXT CREDIT" value={nextCredit} detail={`Adds ${m(allowance.monthly_minor_units)}; unused allowance carries forward.`} />
           </div>
-          <Badge color={alertColor}>{alertLabel}</Badge>
-        </Group>
-        <div>
-          <Text c="dimmed" size="sm">
-            Spend this cycle
-          </Text>
-          <Text size="xl" fw={700}>
-            {money(card.spend_minor_units, card.currency)}{" "}
-            <Text span size="sm" fw={400}>
-              / {card.limit_minor_units == null ? "No limit set" : money(card.limit_minor_units, card.currency)}
-            </Text>
-          </Text>
         </div>
-        {card.limit_minor_units != null && card.spend_percent != null && (
-          <Progress
-            value={Math.max(0, Math.min(100, card.spend_percent))}
-            color={alertColor}
-            aria-label={`${cardTitle(card)} limit used`}
-          />
-        )}
-        {card.spend_percent != null && <Text size="sm">{card.spend_percent.toFixed(1)}% used</Text>}
-        <Group gap="xl">
-          <Text size="sm">Posted: {money(card.posted_minor_units, card.currency)}</Text>
-          <Text size="sm">Pending: {money(card.pending_minor_units, card.currency)}</Text>
-        </Group>
-        <Text size="sm">Statement cycle: {card.cycle_start ? `Starts ${card.cycle_start}` : "Unavailable"}</Text>
-        <Text size="xs" c="dimmed">
-          Last synced {time(card.last_synced_at)}
-        </Text>
-      </Stack>
+        <div className="hero-forecast">
+          <Text className="forecast-kicker">IF YOU KEEP SPENDING AT THIS PACE</Text>
+          <Text className="forecast-number">{projected == null ? "Unavailable" : m(projected)}</Text>
+          <Text className="forecast-context">
+            {projected == null ? "Forecast needs account data." : projected < 0 ? "Projected shortfall before your next credit" : "Projected balance before your next credit"}
+          </Text>
+          <div className="forecast-rule" />
+          <Group justify="space-between" align="baseline">
+            <Text size="sm">Recent daily spend</Text>
+            <Text fw={650}>{m(allowance.trailing_7_daily_minor_units)} / day</Text>
+          </Group>
+          <Text className="forecast-footnote">Based on positive purchases over the last 7 days, projected forward without another credit. An estimate, not a prediction.</Text>
+          {allowance.estimated_exhaustion_at && (
+            <Text size="sm" mt="md">Without future credits, this pace would use up the cushion around <strong>{time(allowance.estimated_exhaustion_at)}</strong>.</Text>
+          )}
+        </div>
+      </section>
+
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
+        <PurchaseCheck allowance={allowance} />
+        <Card component="section" aria-labelledby="cycle-title" withBorder radius="lg" padding="xl" className="cycle-card">
+          <Stack gap="lg">
+            <div>
+              <Text className="section-kicker">THE CURRENT CREDIT CYCLE</Text>
+              <Title id="cycle-title" order={2} className="panel-title">Where you stand</Title>
+              <Text c="dimmed" size="sm" mt={6}>Your allowance rolls forward; it doesn't reset at month-end.</Text>
+            </div>
+            <div className="cycle-ledger">
+              <Group justify="space-between"><Text>Monthly credit</Text><Text fw={650}>{m(allowance.monthly_minor_units)}</Text></Group>
+              <Group justify="space-between"><Text>Carried from earlier</Text><Text fw={650}>{m(allowance.prior_carry_minor_units)}</Text></Group>
+              <Group justify="space-between"><Text>Spent this cycle</Text><Text fw={650}>− {m(windows?.current_credit_cycle_minor_units)}</Text></Group>
+            </div>
+            <Text size="sm" c="dimmed">{m(allowance.pending_minor_units)} pending and {m(allowance.review_minor_units)} needing classification review are included in the balance.</Text>
+            {allowance.review_minor_units != null && allowance.review_minor_units > 0 && (
+              <Alert color="yellow" title="Some charges need review" variant="light" className="review-alert">
+                They count as flexible until classified; the cushion could change.
+              </Alert>
+            )}
+          </Stack>
+        </Card>
+      </SimpleGrid>
+      <details className="details-panel">
+        <summary>Explore spending history &amp; calculation details</summary>
+        <div className="details-content">
+          <Text size="sm" c="dimmed" mb="md">These are overlapping views of the same purchases, not separate budgets. Your available balance includes all credits since activation, less posted and pending flexible spending.</Text>
+          <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="lg">
+            <Metric label="LAST 7 DAYS" value={m(windows?.trailing_7_days_minor_units)} />
+            <Metric label="LAST 30 DAYS" value={m(windows?.trailing_30_days_minor_units)} />
+            <Metric label="CALENDAR MONTH" value={m(windows?.calendar_month_minor_units)} detail="Since activation" />
+            <Metric label="THIS YEAR" value={m(windows?.year_to_date_minor_units)} detail="Since activation" />
+          </SimpleGrid>
+          <Text size="sm" c="dimmed" mt="lg">{m(allowance.unmatched_refunds_minor_units)} of unlinked refunds are excluded from the balance. Oldest account sync: {time(allowance.last_synced_at)}. Plaid data can lag or be misclassified.</Text>
+        </div>
+      </details>
+    </Stack>
+  );
+}
+
+function SpendCard({ card }: { card: CardView }) {
+  const name = cardTitle(card);
+  const alert = card.alert_state === "exceeded" ? "Limit exceeded" : card.alert_state === "warning" ? "Near limit" : card.alert_state === "unavailable" ? "Unavailable" : "Within limit";
+  return (
+    <Card component="article" withBorder radius="md" padding="lg" className="statement-card">
+      <Group justify="space-between" align="flex-start">
+        <div><Text fw={650}>{name}</Text><Text c="dimmed" size="sm">{card.institution_name}</Text></div>
+        <Badge color={card.alert_state === "exceeded" ? "red" : card.alert_state === "warning" ? "yellow" : "gray"} variant="light">{alert}</Badge>
+      </Group>
+      <Group align="baseline" gap={5} mt="lg">
+        <Text size="xl" fw={700}>{money(card.spend_minor_units, card.currency)}</Text>
+        <Text size="sm" c="dimmed">this statement {card.limit_minor_units == null ? "" : ` / ${money(card.limit_minor_units, card.currency)} limit`}</Text>
+      </Group>
+      <Text size="xs" c="dimmed" mt="sm">Pending {money(card.pending_minor_units, card.currency)} · Last synced {time(card.last_synced_at)}</Text>
     </Card>
   );
 }
@@ -256,105 +281,63 @@ function SpendCard({ card }: { card: CardView }) {
 function App() {
   const [view, setView] = useState<View | null>(null);
   const [state, setState] = useState("Connecting");
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let mounted = true;
     const load = async () => {
       try {
         const response = await fetch("/api/v1/web/view", { cache: "no-store", credentials: "same-origin" });
-        if (response.status === 401) {
-          window.location.assign("/auth/login");
-          return;
-        }
+        if (response.status === 401) { window.location.assign("/auth/login"); return; }
         if (!response.ok) throw new Error(`View request returned ${response.status}`);
-        if (mounted) setView(await response.json());
-      } catch {
-        if (mounted) setState("Waiting for card data");
+        const data: View = await response.json();
+        if (mounted) { setView(data); setError(null); }
+      } catch (cause) {
+        if (mounted) { setError(cause instanceof Error ? cause.message : "View request failed"); setState("Unable to refresh"); }
       }
     };
     void load();
     const events = new EventSource("/api/v1/web/events");
     events.addEventListener("view", (event) => {
       try {
-        if (mounted) {
-          setView(JSON.parse(event.data));
-          setState("Live updates on");
-        }
-      } catch {
-        if (mounted) setState("Could not read update");
+        if (mounted) { setView(JSON.parse(event.data)); setError(null); setState("Live updates"); }
+      } catch (cause) {
+        if (mounted) setError(cause instanceof Error ? cause.message : "Could not read live update");
       }
     });
-    events.onerror = () => {
-      if (mounted) {
-        setState("Reconnecting");
-        void load();
-      }
-    };
-    return () => {
-      mounted = false;
-      events.close();
-    };
+    events.onerror = () => { if (mounted) { setState("Reconnecting"); void load(); } };
+    return () => { mounted = false; events.close(); };
   }, []);
   const cards = view?.cards || [];
   return (
-    <AppShell header={{ height: 64 }} padding="md">
-      <AppShell.Header>
-        <Group h="100%" px="md" justify="space-between">
-          <Text fw={700} component="a" href="/" c="inherit" style={{ textDecoration: "none" }}>
-            ↗ Plaid Spend
-          </Text>
-          <form action="/auth/logout" method="post">
-            <Button type="submit" variant="subtle">
-              Sign out
-            </Button>
-          </form>
-        </Group>
-      </AppShell.Header>
-      <AppShell.Main>
-        <Container size="lg">
-          <Stack gap="xl" py="lg">
-            <Group justify="space-between" align="flex-end">
-              <div>
-                <Text size="sm" c="dimmed">
-                  Your shared card view
-                </Text>
-                <Title order={1}>Statement-cycle spend</Title>
-                <Text c="dimmed">Posted and pending purchases across your configured cards.</Text>
-              </div>
-              <div>
-                <Text size="sm">Combined spend</Text>
-                <Title order={2}>{combinedSpend(cards)}</Title>
-                <Badge color={state === "Live updates on" ? "green" : "gray"}>{state}</Badge>
-              </div>
-            </Group>
-            {view?.allowance && <AllowancePanel allowance={view.allowance} />}
-            <section aria-label="Configured cards">
-              <Group justify="space-between">
-                <Title order={2}>Your cards</Title>
-                <Badge>
-                  {cards.length} {cards.length === 1 ? "card" : "cards"}
-                </Badge>
-              </Group>
-              <SimpleGrid cols={{ base: 1, md: 2 }} mt="md">
-                {cards.map((card, index) => (
-                  <SpendCard card={card} key={`${card.account_name}-${index}`} />
-                ))}
-              </SimpleGrid>
-              {cards.length === 0 && (
-                <Text mt="md">{view ? "No card data is configured yet." : "Loading your card view…"}</Text>
-              )}
+    <MantineProvider defaultColorScheme="light">
+      <header className="site-header">
+        <Container size="lg" className="header-inner">
+          <Text component="a" href="/" className="brand"><span className="brand-mark" aria-hidden="true">↗</span>Spend <span className="brand-light">/ a clearer picture</span></Text>
+          <form action="/auth/logout" method="post"><Button type="submit" variant="subtle" color="dark" size="sm">Sign out</Button></form>
+        </Container>
+      </header>
+      <main>
+        <Container size="lg" py={{ base: 32, sm: 52 }}>
+          <Stack gap="xl">
+            <div className="page-intro">
+              <Group justify="space-between" align="center"><Text className="section-kicker">YOUR SPENDING COMPASS</Text><Text className="sync-status" aria-live="polite"><span className={state === "Live updates" ? "live-dot" : "live-dot live-dot--waiting"} aria-hidden="true" />{state}</Text></Group>
+              <Title order={1} className="page-title">A little more clarity before the next purchase.</Title>
+              <Text c="dimmed" className="page-subtitle">See what’s available, how fast it’s going, and what spending more would mean.</Text>
+            </div>
+            {error && <Alert color="red" title="Couldn't refresh your view">{error}. Showing the most recent data we have.</Alert>}
+            {view?.allowance ? <AllowancePanel allowance={view.allowance} /> : <Alert color="yellow" title="No flexible allowance yet">{view ? "No allowance is configured. Card totals below are not a flexible-spend budget." : "Loading your spending picture…"}</Alert>}
+            <section aria-labelledby="cards-title" className="cards-section">
+              <Group justify="space-between" align="baseline"><div><Text className="section-kicker">SECONDARY VIEW</Text><Title order={2} id="cards-title" className="panel-title">Card statements</Title></div><Text size="sm" c="dimmed">{cards.length} {cards.length === 1 ? "card" : "cards"}</Text></Group>
+              <Text size="sm" c="dimmed" mt="xs" mb="md">Statement cycles and card limits are not the flexible allowance. Cards are not yet split by spending type.</Text>
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">{cards.map((card, index) => <SpendCard card={card} key={`${card.account_name}-${index}`} />)}</SimpleGrid>
+              {view && !cards.length && <Text size="sm" c="dimmed">No cards configured.</Text>}
             </section>
-            <Text size="sm" c="dimmed">
-              Updates arrive from Plaid sync notifications. View updated {time(view?.generated_at)}
-            </Text>
+            <footer className="page-footer"><Text size="xs" c="dimmed">Advisory estimates, not bank controls. Review your accounts for decisions that matter.</Text><Text size="xs" c="dimmed">View updated {time(view?.generated_at)}</Text></footer>
           </Stack>
         </Container>
-      </AppShell.Main>
-    </AppShell>
+      </main>
+    </MantineProvider>
   );
 }
 
-createRoot(document.getElementById("root")!).render(
-  <MantineProvider defaultColorScheme="auto">
-    <App />
-  </MantineProvider>
-);
+createRoot(document.getElementById("root")!).render(<App />);
