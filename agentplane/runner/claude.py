@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -28,7 +29,7 @@ from agentplane.native.claude import driver, facade, scenarios, wire
 from agentplane.native.claude.blocks import Block, TextBlock, ThinkingBlock, ToolResultBlock, ToolUseBlock, blocks_of
 from agentplane.protocol import event_pb2
 from agentplane.runner.adapter import HarnessAdapter
-from agentplane.runner.claude_history import read_history
+from agentplane.runner.claude_history import answered_message_ids, read_history
 from agentplane.runner.config import ClaudeLaunch
 from agentplane.runner.recovery import compare_item, observed_items, unknown_item, unknown_report
 
@@ -37,6 +38,8 @@ from agentplane.runner.recovery import compare_item, observed_items, unknown_ite
 
 if TYPE_CHECKING:
     from agentplane.runner.session import Frame, Session
+
+logger = logging.getLogger(__name__)
 
 
 class ClaudeAdapter(HarnessAdapter):
@@ -110,9 +113,14 @@ class ClaudeAdapter(HarnessAdapter):
             except (OSError, ValueError) as error:
                 return unknown_report(turn_id, observed, f"cannot inspect native continuation: {error}")
         else:
-            # The process outlives an ordinary interruption and keeps what it completed. Known gap:
-            # Claude drops a thinking block interrupted before any answer in its message.
-            recovered = {key: item for key, item in observed.items() if item.completed}
+            # The process outlives an ordinary interruption and keeps what it completed, except
+            # thinking whose message has no other surviving block (`answered_message_ids`).
+            answered = await self._answered_messages(turn_id)
+            recovered = {
+                key: item
+                for key, item in observed.items()
+                if item.completed and (item.kind != event_pb2.ITEM_KIND_REASONING or key.rsplit("#", 1)[0] in answered)
+            }
         decisions = []
         for item in observed.values():
             if not resumed and item.kind == event_pb2.ITEM_KIND_TOOL_CALL and not item.completed:
@@ -125,6 +133,25 @@ class ClaudeAdapter(HarnessAdapter):
             else:
                 decisions.append(compare_item(item, recovered.get(item.item_id)))
         return event_pb2.ConversationReconciled(turn_id=turn_id, items=decisions)
+
+    async def _answered_messages(self, turn_id: str) -> set[str | None]:
+        """The turn's messages with a surviving block beyond thinking, from its journaled assistant
+        frames: a tool call's item id carries no message id, so the items alone cannot say."""
+        messages = []
+        async for entry in self.session.journal.turn_events(turn_id):
+            native = entry.event.native
+            if native.direction != event_pb2.DIRECTION_FROM_HARNESS:
+                continue
+            try:
+                frame = wire.parse_frame(json.loads(native.line))
+            except ValueError:
+                # TODO: a frame we cannot read may be the one that answered a thinking block, so this
+                # turn's thinking can wrongly come out absent; report it unknown instead.
+                logger.warning("turn %s: cannot parse a native line: %r", turn_id, native.line[:200], exc_info=True)
+                continue
+            if isinstance(frame, wire.AssistantFrame):
+                messages.append((frame.message.id, frame.message.content))
+        return answered_message_ids(messages)
 
     async def submit(self, command_id: str, text: str) -> None:
         if not self.session.active_turn_id:
