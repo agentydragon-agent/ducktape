@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from playwright.async_api import Page
 
-from util.bazel.runfiles import get_required_path
+from finance.plaid.spend.app import _UI_DIR
 from util.testing.asgi import serve_app_sync
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
@@ -26,7 +26,6 @@ from util.testing.visual_review import retain_review_asset
 # gazelle:include_dep //util:playwright
 pytest_plugins = ("util.playwright",)
 
-_UI_DIR = get_required_path("_main/finance/plaid/spend/ui/dist/index.html").parent
 
 
 @pytest.fixture(scope="module")
