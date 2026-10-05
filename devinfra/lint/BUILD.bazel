@@ -77,8 +77,7 @@ py_library(
 
 py_binary(
     name = "pytest_main_checker",
-    srcs = ["pytest_main_cli.py"],
-    main = "pytest_main_cli.py",
+    main_module = "devinfra.lint.pytest_main_check",
     deps = [":pytest_main_check"],
 )
 
@@ -90,10 +89,4 @@ py_test(
         "//:conftest",
         "@pypi//pytest_bazel",
     ],
-)
-
-py_library(
-    name = "pytest_main_cli",
-    srcs = ["pytest_main_cli.py"],
-    deps = [":pytest_main_check"],
 )
