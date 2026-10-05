@@ -33,6 +33,7 @@ in force; listing a file does not authorize modifying, deleting or re-enabling i
 
 - [Scope and priorities](#1-scope-and-priorities)
 - [Ownership and data flow](#2-ownership-and-data-flow)
+  - [Consumer-local settings pattern](#consumer-local-settings-pattern-tentative-agreement)
 - [Consumer inventory and side effects](#3-consumer-inventory-and-side-effects)
   - [Files requiring disposition decisions](#files-requiring-disposition-decisions)
 - [Proposed shape and rollout](#4-proposed-shape-and-rollout)
@@ -171,6 +172,78 @@ it. Before each wiring change, trace its source declarations, renderer, generate
 and actual reader; name the redundant source/lookup being removed and the independently
 owned policy being preserved. Paused consumers need a recorded boundary and revival path,
 not an exhaustive behavior matrix in the active refactor.
+
+### Consumer-local settings pattern (tentative agreement)
+
+The operator is **tentatively comfortable with this pattern**: a consumer selects a
+canonical route and combines shared roster facts with its own settings downstream.
+This is not approval of the exact helper APIs, example values, field derivations or
+file locations. Per-file dispositions remain open unless separately approved in §3.
+
+For example, an OpenClaw-specific configuration projection could look like:
+
+```python
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, Route
+
+
+def openclaw_model(
+    route: Route,
+    *,
+    context_budget: int,
+    output_budget: int,
+) -> dict[str, object]:
+    return {
+        # Shared identity and presentation:
+        "id": route.id,
+        "name": route.display_name,
+        # OpenClaw-specific policy, expressed in its native schema:
+        "contextWindow": context_budget,
+        "maxTokens": output_budget,
+    }
+
+
+models = [
+    openclaw_model(
+        GPT6_LUNA_RESPONSES,
+        context_budget=128_000,
+        output_budget=16_000,
+    ),
+]
+```
+
+**The numbers are illustrative policy choices, not recommendations, provider-capacity
+claims or verified output-cap enforcement.** The route supplies shared identity/name;
+the consumer supplies its own accounting/request settings. The central roster does
+not need to know OpenClaw exists. The selection and its settings stay together rather
+than in a model list plus parallel override dictionaries. Agent-wide compaction policy
+belongs at the agent level, not forcibly attached to every model entry.
+
+A Claude-wrapper projection could independently accept:
+
+```python
+wrapper = claude_wrapper(
+    primary=GPT6_ASTRA_MESSAGES,
+    haiku=GPT6_LUNA_MESSAGES,
+    max_context_tokens=128_000,
+    max_output_tokens=16_000,
+)
+```
+
+Here `claude_wrapper` is an illustrative consumer-local helper, not a new shared API.
+It would project route IDs and Claude-specific settings into the wrapper's JSON shape;
+the Nix gateway renderer would apply them in Claude's environment/configuration. The
+same numeric values above do not imply equivalent Claude/OpenClaw semantics. Both
+consumers remain paused; illustrating their retained renderers does not re-enable them.
+
+These settings are not necessarily **overrides of central defaults**. They may have
+no corresponding central value at all. Where justified, a known provider constraint
+can validate a consumer choice, or support an explicit derivation with matching
+semantics. It must not silently rewrite an independently chosen compaction budget.
+Unknown provider facts remain unknown rather than being filled from client settings.
+
+Prefer a small projection per consumer over a universal client-budget object or a
+framework abstracting the superficial similarity of these helpers. This is a pattern
+for separating shared facts from genuine consumer policy, not another model registry.
 
 ## 3. Consumer inventory and side effects
 
