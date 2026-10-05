@@ -31,7 +31,7 @@ import ./gateway.nix { inherit pkgs lib; } "antigravity-claude" {
     "WebFetch"
     "WebSearch"
   ];
-  # The generated selection keeps the existing output override (65,536), distinct
-  # from Antigravity's published 65,535. The context comes from this account's route.
+  # Preserve this wrapper's explicit context/output settings from model_catalog/nix.py;
+  # the upstream maxTokens field has not been established as an input ceiling.
   inherit (models) maxContextTokens maxOutputTokens;
 }
