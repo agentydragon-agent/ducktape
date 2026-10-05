@@ -1,9 +1,9 @@
-# Model limits, serving configuration, and client budgets
+# Model rosters and consumer configuration
 
 Status: design proposal and investigation record, updated 2026-10-05. Consumer
-pauses are approved and recorded in §9; no shared route retirement is implied.
-The active Codex path has been audited below. The limits-publication implementation
-and its end-to-end validation remain incomplete.
+pauses are approved and recorded in §5; no shared route retirement is implied.
+The active Codex path has been audited below. The overall consumer-wiring refactor,
+including limits publication and its end-to-end validation, remains incomplete.
 
 Configuration changes remain separately proposed in
 [#9034](https://github.com/agentydragon/ducktape/pull/9034). Merging this document
@@ -12,27 +12,63 @@ experiment.
 
 Tracking and revival inventory: [#9121](https://github.com/agentydragon/ducktape/issues/9121).
 
-This document separates what we know, what we configure, and what clients infer.
-It is the decision record for the roster/limits work, not another runtime source
-of model numbers. Code owns executable configuration; this document explains its
-constraints, provenance, and unresolved choices.
+The program is **non-duplicated model configuration across the neutral catalogue,
+cdk8s, cluster services, Nix, and clients**. Slugs, account provenance, pretty names,
+capabilities, selections and policy need clear owners and straightforward projections.
+Token-limit semantics exposed one difficult part of that program; investigating Codex
+capacity or enabling longer context is not the program's goal or completion criterion.
+Code owns executable configuration. This document owns the cross-consumer design,
+constraints and rationale; the detailed limits research is supporting evidence below.
 
 ## Contents
 
+### Core design
+
 - [Scope and priorities](#1-scope-and-priorities)
-- [Vocabulary](#2-vocabulary-numbers-that-must-not-be-conflated)
-- [Ownership and data flow](#3-ownership-and-data-flow)
-- [LiteLLM catalogue and publication](#4-litellm-catalogue-overrides-and-publication)
-- [Client-specific values](#5-client-specific-values-and-semantics)
+- [Ownership and data flow](#2-ownership-and-data-flow)
+- [Consumer inventory and side effects](#3-consumer-inventory-and-side-effects)
+- [Proposed shape and rollout](#4-proposed-shape-and-rollout)
+- [Approved pauses and remaining decisions](#5-approved-pauses-and-remaining-decisions)
+- [Documentation consolidation](#6-documentation-consolidation)
+
+### Supporting limits research
+
+- [Token-limit vocabulary](#appendix-a-token-limit-vocabulary)
+- [LiteLLM catalogue and publication](#appendix-b-litellm-catalogue-and-publication)
+- [Client-specific budgets and investigations](#appendix-c-client-specific-budgets-and-investigations)
   - [Active Codex audit](#active-codex-path-audit-2026-10-05)
   - [Subscription-path public evidence](#subscription-path-public-evidence-2026-10-05)
-  - [Opt-in long-context experiment and costs](#opt-in-long-context-experiment-and-costs)
-- [Ollama serving configuration](#6-ollama-serving-configuration)
-- [Other projections](#7-additional-projections-and-side-effects-to-inventory)
-- [Proposed shape and rollout](#8-proposed-shape-after-reducing-scope)
-- [Approved pauses and remaining decisions](#9-approved-pauses-and-remaining-decisions)
+  - [Optional long-context experiment and costs](#opt-in-long-context-experiment-and-costs)
+- [Ollama serving configuration](#appendix-d-ollama-serving-configuration)
 
 ## 1. Scope and priorities
+
+### Why we paused consumers
+
+The Nix Claude gateway wrappers (#9112), Public Coder OpenClaw (#9116), and Agentplane
+Claude offerings (#9127) were paused to **reduce the active compatibility obligations
+while simplifying the roster and its consumers**. Their retained code/state and revival
+requirements remain tracked in #9121. These were not prerequisites for a standalone
+long-context feature, permission to delete shared routes, or permanent retirements.
+Keep the requested Nix renderers and Public Coder PVCs; do not spend this refactor
+building compatibility machinery for paused paths before deciding what to revive.
+
+### What success looks like for the whole program
+
+A model/account identity, upstream slug, canonical route ID, shared display name, or
+established capability is declared once, with consumers referencing that declaration.
+A new route does not require reconstructing the same string/name/facts in cdk8s, Nix,
+key configuration and the app. Genuine consumer policy remains explicit: serving a
+route, authorizing it, offering it, selecting it by default and configuring its client
+budget are not interchangeable decisions to deduplicate into one universal roster.
+
+Small projections into existing consumer schemas are expected. Generated JSON/YAML
+repeating a value is not duplicate configuration; separately maintained source values,
+slug parsers, lookups that reconstruct information already in hand, and parallel maps
+are the duplication to remove. The result should be less code and fewer concepts,
+not a central registry followed by a growing collection of adapters and registries.
+
+### Active paths to preserve
 
 The operator's currently used paths are:
 
@@ -73,7 +109,222 @@ framework just to preserve unused routes. Do not remove billing metadata while
 fixing token-limit publication. Keep independent refactors out of #8899, whose scope
 is the runner context-size endpoint.
 
-## 2. Vocabulary: numbers that must not be conflated
+## 2. Ownership and data flow
+
+The intended configuration flow is:
+
+```text
+neutral named models/accounts/routes + explicit shared lane policies
+  ├─ cdk8s deployment bindings + consumer selections
+  │    ├─ LiteLLM served routes and aliases
+  │    ├─ Terraform key allowances and ordered fallbacks
+  │    ├─ Agentplane offerings → ingress/runner configuration → native client
+  │    └─ OpenClaw/probe configuration (paused consumers remain marked as such)
+  └─ Nix wrapper selections → generated JSON → wrapper environment (paused)
+```
+
+Only the common facts are shared; deployment endpoints/auth stay in cdk8s, and
+client-specific settings stay with the consumer. Runtime services read their own
+serialized configuration, never import cdk8s. The neutral package must remain usable
+without Kubernetes, and Bazel visibility must enforce those boundaries.
+
+| Owner | Defines | Consumers / serialization boundary |
+| --- | --- | --- |
+| `model_catalog/catalog.py` | Account/model identities, upstream slugs, shared display names/capabilities, evidenced facts, named routes and aliases | Nix and cluster generators |
+| `model_catalog/policies.py` | Allowed routes plus ordered fallbacks in one lane record | Virtual-key/team configuration; not implicit picker policy |
+| `cluster/cdk8s/litellm/` | Endpoint/auth bindings and LiteLLM projection | Generated proxy config |
+| Ollama deployment and model definitions | Server defaults, model tags/aliases, runtime serving options | Ollama; route must resolve to the intended model definition |
+| `model_catalog/nix.py` and Nix gateway modules | Wrapper route selections and Claude-specific settings | Generated wrapper JSON → process environment |
+| `cluster/cdk8s/public_coder_agent_config.py` | OpenClaw model selections and client budgets | OpenClaw configuration |
+| `cluster/cdk8s/model_selections.py` | Agentplane offers/defaults and explicit runner budget selections | App catalogue, ingress and runner configuration |
+| Key/team renderer and deployment bindings | Bind neutral lane policies to actual keys/teams | Terraform allowances and ordered fallbacks; no second handwritten route list |
+| Gatus, diagnostics and acceptance clients | Explicit probe selection and test scenarios | Route IDs / generated artifacts / deployed APIs, not imports of synthesis internals |
+| Agentplane runner adapters | Applying configuration in each native harness's vocabulary | Claude environment / Codex startup options |
+| Native harness | Reserves, compaction, metadata recognition, reported usage | Actual request construction and native telemetry |
+
+Account is not manufacturer; outbound wire is not the client-facing wire. A Claude
+harness can send Anthropic Messages to LiteLLM while LiteLLM sends Responses upstream.
+Equivalent model-name suffixes do not establish equivalent accounts or capacities.
+
+Use named `Route` references until serialization. Define named routes first and
+assemble rosters from them. Do not recover identity through positional unpacking,
+parallel maps, or parsing the last segment of a slug.
+
+The same route may intentionally appear in several selections: that is distinct policy,
+not several definitions of the route. Default labels reuse the shared display name;
+a label such as “long context (experimental)” belongs to the offering, not the model.
+Provider capabilities and per-request reasoning choices likewise must not be conflated.
+The app and runner may need different serialized shapes; project both from the selected
+route/configuration rather than reverse-engineering one output to produce another.
+Native harness IDs may differ from LiteLLM route IDs through explicit ingress translation.
+
+The table describes ownership, not a claim that every current consumer already follows
+it. Before each wiring change, trace its source declarations, renderer, generated shape,
+and actual reader; name the redundant source/lookup being removed and the independently
+owned policy being preserved. Paused consumers need a recorded boundary and revival path,
+not an exhaustive behavior matrix in the active refactor.
+
+## 3. Consumer inventory and side effects
+
+Before deletion or renaming, check these as well as the obvious clients:
+
+- Terraform virtual-key allowlists, team fallback order, and experiment keys.
+- Agentplane picker/default selections, LLM ingress metadata/auth routing, and
+  runner environment/guest configuration. These are not interchangeable registries.
+- Hidden Codex recognition aliases and the public embedding compatibility alias.
+- OpenClaw durable memory: stored embedding identities can outlive a running agent.
+  Pausing the app is not permission to delete/rebuild its index or change its model.
+- Parked Haku OpenClaw's native CLI model aliases, Gatus's selected Ollama probe,
+  inference/probe scripts, and live harness acceptance cases.
+- Nix wrapper JSON, binaries, imports, and credential provisioning. Moving a source
+  file to `x/` alone does not stop deploying its generated outputs.
+- LiteLLM pricing/budget accounting and telemetry labels. Route cleanup must not
+  accidentally bypass spending limits or relabel unrelated account costs.
+
+This is a starting inventory, not a claim of exhaustive runtime reachability.
+Repository references and operator confirmation are both needed.
+
+## 4. Proposed shape and rollout
+
+Apply this to the whole roster and its projections, not just token fields. Keep the
+existing small separation rather than adding a meta-configuration layer:
+
+1. **Neutral facts and identities:** `Model(..., limits=TokenLimits(input, output)
+   | None)`, explicit `Upstream`, named `Route`, and aliases referencing routes.
+   Provider input/output facts carry evidence in nearby documentation/comments.
+   Unknown remains unknown. No generic model `context_window`.
+2. **Serving configuration:** endpoint/auth bindings remain deployment-local;
+   self-hosted runtime options are explicit and tied to real model tags. The neutral
+   roster must not import cdk8s. No automatic serving-option-to-capacity conversion.
+3. **Consumer configuration:** each retained consumer selects routes and owns its
+   own budget vocabulary. Claude wrapper settings stay with wrappers, OpenClaw
+   settings with OpenClaw, Codex launch policy with its runner adapter/configuration.
+   Values can deliberately differ; sharing a number is not a reason to share semantics.
+4. **LiteLLM publication:** implement one narrow, tested policy at the proxy boundary,
+   only after selecting the supported paths. For generative models, publish our
+   established input/output pair together or neither; do not publish the legacy
+   `max_tokens` or custom `context_window` as independent competing capacity facts.
+   Explicitly separate embedding/transcription metadata rather than inventing an
+   output ceiling to satisfy a generation-only pair rule.
+5. **Native client behavior:** configure and verify the actual harness. A clean
+   `/model/info` response cannot fix Codex/Claude's independent recognition tables.
+
+Item 4 is the desired contract, **not a solved implementation**. First test whether
+an upstream-supported configuration mechanism can satisfy it through registration,
+reload, list and single-deployment endpoints. If not, compare a small upstream fix
+or targeted response projection against leaving LiteLLM's endpoint explicitly
+non-authoritative. The latter does **not** satisfy the requested public pair-or-none
+contract and requires an explicit decision, not silent acceptance. Avoid global
+model-cost mutation or a broad wrapper service as a premature solution.
+
+Internal catalogue use also needs an explicit decision: suppressing fields in an
+HTTP response does not suppress LiteLLM's request-side limit heuristics. Determine
+which checks execute on the retained path before changing them; preserve accounting.
+
+### Rollout and useful validation
+
+1. Trace the retained consumers through §2 and §3; remove duplicate declarations,
+   slug/name reconstruction and redundant lookups at each projection boundary. Keep
+   genuine consumer selections explicit. Approved consumer pauses are recorded in §5. Preserve the active subscription/Responses
+   path, direct clients, and retained state; verify activation separately from merge status.
+2. The active-session audit in Appendix C records the real slug, binary and resolved budget.
+   Recheck this evidence when changing harness versions or recognition strategy.
+3. Finish the narrow LiteLLM publication experiment using the proxy-local pin, both
+   bundled and controlled remote catalogue fixtures. Check load/reload and both
+   metadata endpoint shapes, with a known pair, unknown limits, and legacy fallback.
+4. Verify retained harness startup arguments/environment and reported window with
+   a bounded request. Test model switching where budgets differ. Test Ollama alias
+   effectiveness only for variants we decide to keep. No silent live deployment.
+5. Regenerate artifacts and check route/name propagation, key-versus-picker policy,
+   fallback ordering and unknown-metadata behavior at their real boundaries. Confirm
+   Nix remains independent of cdk8s and runtime code cannot import generator internals.
+   Review net source/plumbing removal, then adapt #8899 separately.
+
+The optional long-context offering is a separate follow-up. Neither enabling it nor
+finding a subscription backend maximum is a prerequisite for this wiring cleanup.
+
+Do not build a test matrix for every retired combination. A real config-loader/API
+contract test pays rent; assertions that merely repeat every roster constant do not.
+Keep the overall refactor net-negative in code/plumbing where possible.
+
+## 5. Approved pauses and remaining decisions
+
+Source status checked 2026-10-05. A merge is not proof of machine activation or Flux
+rollout. The [tracking issue](https://github.com/agentydragon/ducktape/issues/9121)
+maintains deployment status, the full parked inventory, and restoration requirements.
+
+| Integration | Approved scope and source status | Retained for restoration |
+| --- | --- | --- |
+| Five Nix Claude gateway wrappers | **#9112 merged**: remove workstation activation/advertising; direct local clients unchanged | Nix renderers, JSON generator, credential declarations; machine activation not verified here |
+| Public Coder OpenClaw | **#9116 merged**: stop OpenClaw/proxies and halt devbox | Workload definitions, namespace, PVCs and backups; live pause not reverified in this audit |
+| Agentplane Claude | **#9127 merged**, exact-head CI green: empty staging/testing Claude offerings, disabled picker options, omit Haku Claude presets | Native adapter, existing sessions/resume/history, explicit low-level launches, credentials and shared ingress/routes; not a runtime prohibition |
+
+These are consumer pauses, **not permission to remove shared GPT-through-Messages or
+other served routes**. Haku OpenClaw remains parked. Do not treat its historical
+intentionally deleted PVCs as permission to delete Public Coder or Agentplane state.
+Keep the paused Nix rendering code in place as requested, rather than deleting it
+just because Git could restore it.
+
+The remaining simplification question is **which experimental backends must remain
+actively usable now**: Ollama Qwen 128K/256K, other Ollama variants, direct Google,
+Antigravity, Tana, Mistral and Groq. No blanket removal is approved. Identify key lanes,
+fallbacks, aliases, monitoring and embedding dependents before proposing withdrawal.
+An experiment-key grant is not a maintenance commitment for every route it admits.
+
+Publication policy and any Codex recognition/budget change remain separate decisions.
+The approved pauses reduce the immediate compatibility matrix; they do not resolve
+LiteLLM's fallback metadata or establish new provider limits.
+
+## 6. Documentation consolidation
+
+[`cluster/docs/model_catalog.md`](../cluster/docs/model_catalog.md) is part of the
+refactor, not a second specification to leave untouched beside this design. **Retain
+it as a smaller cluster wiring and operations guide.** Do not move the neutral
+catalogue's ownership back under `cluster/`, or maintain parallel explanations of
+model-limit semantics in both places.
+
+| Document | Intended responsibility |
+| --- | --- |
+| This design | Cross-layer semantics, constraints, decisions and unresolved choices; explicitly dated investigation evidence |
+| `model_catalog/README.md` | Short neutral-package entry point: module responsibilities, generation entry points, links to the design and deployment guide |
+| `cluster/docs/model_catalog.md` | Current cluster bindings and projections, where to change deployment selections, regeneration/check commands, and cluster-specific pause/restoration procedures |
+| `agentplane/docs/model_metadata.md` | Historical version-scoped harness audit, linked as evidence rather than treated as current deployment policy |
+| Tracking issue #9121 | Work/PR status and complete parked-integration inventory, linking to the relevant restoration instructions |
+
+### Disposition of the existing cluster guide
+
+- **Ownership:** replace the duplicated `Model`/`Upstream`/`Route` definitions and
+  generic context-limit explanations with links to the neutral package and this
+  design. Keep cluster endpoint/credential binding locations and the visibility and
+  serialized-runtime boundaries.
+- **Projections:** retain a compact cluster-consumer wiring table, grounded in the
+  landed code. Clearly distinguish active consumers from paused renderers. Do not
+  maintain another hand-written roster, token-limit table, or route-construction rule.
+- **Consumer boundaries:** retain cluster authorization versus offering/default policy
+  and the actual runner/ingress configuration flow. Replace Nix-wrapper budget details
+  with links to their owning documentation/code. Replace speculative ingress follow-up
+  prose with actual wiring when that change lands, including any model-ID translation.
+- **Checks and regeneration:** keep the practical manifest/key generation and validation
+  entry points; link to the neutral Nix generator rather than duplicating its contract.
+- **Parked Agentplane Claude:** retain the deployment-specific offering-pause semantics
+  and restoration steps already here. Do not move them into a generic Agentplane
+  service document or lose them while consolidating. Link the tracking issue for the
+  full parked inventory; this guide need not duplicate its PR/rollout history.
+
+### Update discipline
+
+The cluster guide describes **landed source configuration**, not proof of live rollout.
+The docs-only PR does not remove `publish_limits`, `PUBLIC_CODER_MODELS`, or any other
+currently implemented behavior. Each implementation PR must update the affected guide
+sections alongside its code, removing obsolete names and claims rather than appending
+another migration note. Remove the temporary proposal notice when no longer useful.
+
+As decisions land, mark them implemented here and remove resolved alternatives and
+completed rollout checklists; retain only useful dated evidence/rationale. Do not copy
+this entire design into the cluster guide, create a third overview, or keep two current
+specifications. Completion means the deployment guide is shorter and accurate, the
+neutral semantics have one home, and paused integrations remain recoverable.
+## Appendix A. Token-limit vocabulary
 
 | Concept | Meaning | Does not establish |
 | --- | --- | --- |
@@ -94,29 +345,7 @@ If an active path needs a combined constraint enforced, design that explicitly.
 `model_info.max_tokens` is legacy **metadata**. Request-body `max_tokens` is a
 **generation setting**. Removing the former must not remove the latter.
 
-## 3. Ownership and data flow
-
-| Owner | Defines | Consumers / serialization boundary |
-| --- | --- | --- |
-| `model_catalog/catalog.py` | Account/model facts, named routes, outbound adapters, aliases | Nix and cluster generators |
-| `model_catalog/policies.py` | Allowed routes plus ordered fallbacks in one lane record | Virtual-key/team configuration; not implicit picker policy |
-| `cluster/cdk8s/litellm/` | Endpoint/auth bindings and LiteLLM projection | Generated proxy config |
-| Ollama deployment and model definitions | Server defaults, model tags/aliases, runtime serving options | Ollama; route must resolve to the intended model definition |
-| `model_catalog/nix.py` and Nix gateway modules | Wrapper route selections and Claude-specific settings | Generated wrapper JSON → process environment |
-| `cluster/cdk8s/public_coder_agent_config.py` | OpenClaw model selections and client budgets | OpenClaw configuration |
-| `cluster/cdk8s/model_selections.py` | Agentplane offers and explicit runner budget selections | App catalogue and runner configuration |
-| Agentplane runner adapters | Applying configuration in each native harness's vocabulary | Claude environment / Codex startup options |
-| Native harness | Reserves, compaction, metadata recognition, reported usage | Actual request construction and native telemetry |
-
-Account is not manufacturer; outbound wire is not the client-facing wire. A Claude
-harness can send Anthropic Messages to LiteLLM while LiteLLM sends Responses upstream.
-Equivalent model-name suffixes do not establish equivalent accounts or capacities.
-
-Use named `Route` references until serialization. Define named routes first and
-assemble rosters from them. Do not recover identity through positional unpacking,
-parallel maps, or parsing the last segment of a slug.
-
-## 4. LiteLLM: catalogue, overrides, and publication
+## Appendix B. LiteLLM catalogue and publication
 
 ### Evidence scope
 
@@ -223,7 +452,7 @@ lookups, and the restricted key does not establish the state of every deployment
 Therefore response filtering and changing LiteLLM's internal catalogue are different
 changes. Do not solve one by silently changing pricing or request behavior in the other.
 
-## 5. Client-specific values and semantics
+## Appendix C. Client-specific budgets and investigations
 
 Numbers below are preserved configuration choices at draft #9034 head `26862c4395`,
 not newly validated provider limits and not a claim that the draft is deployed.
@@ -293,7 +522,7 @@ The public-coder projection currently preserves:
 
 The 65535/65536 difference is preserved history, not an established distinction in
 provider capacity. The 114000 value is an OpenClaw budget, **not** both a provider
-input ceiling and a combined context window. Public Coder is now paused (§9); do not validate its entire matrix as a prerequisite
+input ceiling and a combined context window. Public Coder is now paused (§5); do not validate its entire matrix as a prerequisite
 for fixing the active Codex path.
 
 ### Codex and Agentplane
@@ -412,7 +641,7 @@ client's 258400 telemetry and LiteLLM's 872000/372000 metadata are separate outp
 changing one does not update the other. Do not promote either, or the historical
 128000 output value, into a justified subscription input/output pair.
 
-Next, run the narrow pinned-LiteLLM unknown/known-pair publication experiment in §8,
+Next, run the narrow pinned-LiteLLM unknown/known-pair publication experiment in §4,
 including internal request-side consumers. If changing Codex recognition is later
 necessary, test the exact ingress-translation, alias or catalogue strategy with native tools, reasoning,
 Responses-lite and compaction before enabling it. Do not build a general harness
@@ -600,14 +829,14 @@ capacity. Ten independent cold 800K Astra requests cost **$160 input alone**; on
 plus nine fully cache-hit requests would instead cost **$30.40 input**, before any
 other charges. One probe and a multi-step session are very different budgets.
 
-Our gateway strips request output caps (§5), so “reply OK” is an instruction, not a
+Our gateway strips request output caps (Appendix C), so “reply OK” is an instruction, not a
 hard cost bound. At the API comparison rates, 128K output would add $9.60/$1.92/$0.096
 respectively; this arithmetic does not verify a subscription output ceiling. The
 practical concern is shared subscription quota and repeated long turns, not that every
 single probe must be prohibitively expensive. No long-context request was sent for
 these estimates, and no experimental option has yet been enabled.
 
-## 6. Ollama serving configuration
+## Appendix D. Ollama serving configuration
 
 The inspected live/source version was **0.34.4**. Our deployment sets
 `OLLAMA_CONTEXT_LENGTH=131072`; the Qwen 256K model alias bakes in `num_ctx=262144`.
@@ -630,104 +859,3 @@ Audit whether each retained variant changes actual serving behavior. In particul
 other GPT-OSS variants must not be considered validated just because Qwen's 256K
 alias is wired. Pausing unused variants avoids preserving a misleading matrix.
 
-## 7. Additional projections and side effects to inventory
-
-Before deletion or renaming, check these as well as the obvious clients:
-
-- Terraform virtual-key allowlists, team fallback order, and experiment keys.
-- Agentplane picker/default selections, LLM ingress metadata/auth routing, and
-  runner environment/guest configuration. These are not interchangeable registries.
-- Hidden Codex recognition aliases and the public embedding compatibility alias.
-- OpenClaw durable memory: stored embedding identities can outlive a running agent.
-  Pausing the app is not permission to delete/rebuild its index or change its model.
-- Parked Haku OpenClaw's native CLI model aliases, Gatus's selected Ollama probe,
-  inference/probe scripts, and live harness acceptance cases.
-- Nix wrapper JSON, binaries, imports, and credential provisioning. Moving a source
-  file to `x/` alone does not stop deploying its generated outputs.
-- LiteLLM pricing/budget accounting and telemetry labels. Route cleanup must not
-  accidentally bypass spending limits or relabel unrelated account costs.
-
-This is a starting inventory, not a claim of exhaustive runtime reachability.
-Repository references and operator confirmation are both needed.
-
-## 8. Proposed shape after reducing scope
-
-Keep the existing small separation, rather than adding a meta-configuration layer:
-
-1. **Neutral facts and identities:** `Model(..., limits=TokenLimits(input, output)
-   | None)`, explicit `Upstream`, named `Route`, and aliases referencing routes.
-   Provider input/output facts carry evidence in nearby documentation/comments.
-   Unknown remains unknown. No generic model `context_window`.
-2. **Serving configuration:** endpoint/auth bindings remain deployment-local;
-   self-hosted runtime options are explicit and tied to real model tags. The neutral
-   roster must not import cdk8s. No automatic serving-option-to-capacity conversion.
-3. **Consumer configuration:** each retained consumer selects routes and owns its
-   own budget vocabulary. Claude wrapper settings stay with wrappers, OpenClaw
-   settings with OpenClaw, Codex launch policy with its runner adapter/configuration.
-   Values can deliberately differ; sharing a number is not a reason to share semantics.
-4. **LiteLLM publication:** implement one narrow, tested policy at the proxy boundary,
-   only after selecting the supported paths. For generative models, publish our
-   established input/output pair together or neither; do not publish the legacy
-   `max_tokens` or custom `context_window` as independent competing capacity facts.
-   Explicitly separate embedding/transcription metadata rather than inventing an
-   output ceiling to satisfy a generation-only pair rule.
-5. **Native client behavior:** configure and verify the actual harness. A clean
-   `/model/info` response cannot fix Codex/Claude's independent recognition tables.
-
-Item 4 is the desired contract, **not a solved implementation**. First test whether
-an upstream-supported configuration mechanism can satisfy it through registration,
-reload, list and single-deployment endpoints. If not, compare a small upstream fix
-or targeted response projection against leaving LiteLLM's endpoint explicitly
-non-authoritative. The latter does **not** satisfy the requested public pair-or-none
-contract and requires an explicit decision, not silent acceptance. Avoid global
-model-cost mutation or a broad wrapper service as a premature solution.
-
-Internal catalogue use also needs an explicit decision: suppressing fields in an
-HTTP response does not suppress LiteLLM's request-side limit heuristics. Determine
-which checks execute on the retained path before changing them; preserve accounting.
-
-### Rollout and useful validation
-
-1. Approved consumer pauses are recorded in §9. Preserve the active subscription/Responses
-   path, direct clients, and retained state; verify activation separately from merge status.
-2. The active-session audit in §5 records the real slug, binary and resolved budget.
-   Recheck this evidence when changing harness versions or recognition strategy.
-3. Finish the narrow LiteLLM publication experiment using the proxy-local pin, both
-   bundled and controlled remote catalogue fixtures. Check load/reload and both
-   metadata endpoint shapes, with a known pair, unknown limits, and legacy fallback.
-4. Verify retained harness startup arguments/environment and reported window with
-   a bounded request. Test model switching where budgets differ. Test Ollama alias
-   effectiveness only for variants we decide to keep. No silent live deployment.
-5. Regenerate artifacts, run exact-head checks, and then adapt #8899 separately.
-
-Do not build a test matrix for every retired combination. A real config-loader/API
-contract test pays rent; assertions that merely repeat every roster constant do not.
-Keep the overall refactor net-negative in code/plumbing where possible.
-
-## 9. Approved pauses and remaining decisions
-
-Source status checked 2026-10-05. A merge is not proof of machine activation or Flux
-rollout. The [tracking issue](https://github.com/agentydragon/ducktape/issues/9121)
-maintains deployment status, the full parked inventory, and restoration requirements.
-
-| Integration | Approved scope and source status | Retained for restoration |
-| --- | --- | --- |
-| Five Nix Claude gateway wrappers | **#9112 merged**: remove workstation activation/advertising; direct local clients unchanged | Nix renderers, JSON generator, credential declarations; machine activation not verified here |
-| Public Coder OpenClaw | **#9116 merged**: stop OpenClaw/proxies and halt devbox | Workload definitions, namespace, PVCs and backups; live pause not reverified in this audit |
-| Agentplane Claude | **#9127 merged**, exact-head CI green: empty staging/testing Claude offerings, disabled picker options, omit Haku Claude presets | Native adapter, existing sessions/resume/history, explicit low-level launches, credentials and shared ingress/routes; not a runtime prohibition |
-
-These are consumer pauses, **not permission to remove shared GPT-through-Messages or
-other served routes**. Haku OpenClaw remains parked. Do not treat its historical
-intentionally deleted PVCs as permission to delete Public Coder or Agentplane state.
-Keep the paused Nix rendering code in place as requested, rather than deleting it
-just because Git could restore it.
-
-The remaining simplification question is **which experimental backends must remain
-actively usable now**: Ollama Qwen 128K/256K, other Ollama variants, direct Google,
-Antigravity, Tana, Mistral and Groq. No blanket removal is approved. Identify key lanes,
-fallbacks, aliases, monitoring and embedding dependents before proposing withdrawal.
-An experiment-key grant is not a maintenance commitment for every route it admits.
-
-Publication policy and any Codex recognition/budget change remain separate decisions.
-The approved pauses reduce the immediate compatibility matrix; they do not resolve
-LiteLLM's fallback metadata or establish new provider limits.

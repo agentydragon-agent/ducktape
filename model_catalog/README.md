@@ -26,6 +26,6 @@ probes and acceptance checks inspect deployed APIs or committed artifacts.
 
 See [consumer wiring](../cluster/docs/model_catalog.md) for projections and checks.
 
-See [limits and client-budget design](token_limits_design.md) for semantics,
+See [model-roster and consumer-configuration design](design.md) for semantics,
 catalogue fallback behavior, ownership, active-path priorities, and proposed
 integration retirements.
