@@ -25,7 +25,3 @@ authorization. Runtime services consume their own serialized config schemas; liv
 probes and acceptance checks inspect deployed APIs or committed artifacts.
 
 See [consumer wiring](../cluster/docs/model_catalog.md) for projections and checks.
-
-See [limits and client-budget design](token_limits_design.md) for semantics,
-catalogue fallback behavior, ownership, active-path priorities, and proposed
-integration retirements.
