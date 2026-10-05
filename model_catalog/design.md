@@ -1,8 +1,8 @@
 # Model rosters and consumer configuration
 
-Status: design proposal and investigation record, updated 2026-10-05. Consumer
-pauses are approved and recorded in §5; no shared route retirement is implied.
-The active Codex path has been audited below. The overall consumer-wiring refactor,
+Status: design proposal, updated 2026-10-05. Consumer
+pauses are approved and recorded under [approved pauses](#approved-pauses-and-remaining-decisions); no shared route retirement is implied.
+The active Codex path has been [audited](client_budgets.md#active-codex-path-audit-2026-10-05). The overall consumer-wiring refactor,
 including limits publication and its end-to-end validation, remains incomplete.
 
 Configuration changes remain separately proposed in
@@ -18,40 +18,33 @@ capabilities, selections and policy need clear owners and straightforward projec
 Token-limit semantics exposed one difficult part of that program; investigating Codex
 capacity or enabling longer context is not the program's goal or completion criterion.
 Code owns executable configuration. This document owns the cross-consumer design,
-constraints and rationale; the detailed limits research is supporting evidence below.
+constraints and rationale; the linked limits investigations provide supporting evidence, not configuration decisions.
 
 **Decision status:** per-file destinations and changes remain open except where an
-approved decision is explicitly recorded in §3. The
+approved decision is explicitly recorded in the [migration inventory](migration_inventory.md). The
 ownership shapes and consolidation suggestions below are proposals to evaluate, not
-instructions to execute. The file inventory in §3 records what needs a disposition
-decision. Agreed goals, dependency/safety constraints and already-approved pauses remain
+instructions to execute. The inventory records what needs a disposition decision. Agreed goals, dependency/safety constraints and already-approved pauses remain
 in force; listing a file does not authorize modifying, deleting or re-enabling it.
 
-## Contents
+## Reading guide
 
-### Core design
+- **This design:** [goals](#scope-and-priorities), [ownership and examples](#ownership-and-data-flow),
+  [rollout](#proposed-shape-and-rollout), [pause constraints](#approved-pauses-and-remaining-decisions),
+  [shared token vocabulary](#token-limit-vocabulary), and [Ollama serving constraints](#ollama-serving-configuration).
+- [Migration inventory](migration_inventory.md): files and consumers requiring disposition
+  decisions, approved moves, and documentation consolidation options. Listing is not approval.
+- [LiteLLM metadata](litellm_metadata.md): catalogue/override behavior, publication experiments,
+  and actual readers of the fields.
+- [Antigravity limits](antigravity_limits.md): provider metadata, translation behavior,
+  dated Google responses and bounded serving-path evidence.
+- [Client budgets](client_budgets.md): Claude/OpenClaw/Codex semantics, Agentplane wiring,
+  subscription-path evidence and the separate, proposed long-context experiment and costs.
 
-- [Scope and priorities](#1-scope-and-priorities)
-- [Ownership and data flow](#2-ownership-and-data-flow)
-  - [Consumer-local settings pattern](#consumer-local-settings-pattern-tentative-agreement)
-  - [Ollama serving-variant pattern](#ollama-serving-variant-pattern-tentative-agreement)
-- [Consumer inventory and side effects](#3-consumer-inventory-and-side-effects)
-  - [Files requiring disposition decisions](#files-requiring-disposition-decisions)
-- [Proposed shape and rollout](#4-proposed-shape-and-rollout)
-- [Approved pauses and remaining decisions](#5-approved-pauses-and-remaining-decisions)
-- [Documentation consolidation](#6-documentation-consolidation)
+The [tracking issue](https://github.com/agentydragon/ducktape/issues/9121) owns changing
+PR/rollout status and the complete parked-integration inventory. Research documents retain
+dated evidence; they do not independently authorize changes to limits, budgets or routes.
 
-### Supporting limits research
-
-- [Token-limit vocabulary](#appendix-a-token-limit-vocabulary)
-- [LiteLLM catalogue and publication](#appendix-b-litellm-catalogue-and-publication)
-- [Client-specific budgets and investigations](#appendix-c-client-specific-budgets-and-investigations)
-  - [Active Codex audit](#active-codex-path-audit-2026-10-05)
-  - [Subscription-path public evidence](#subscription-path-public-evidence-2026-10-05)
-  - [Optional long-context experiment and costs](#opt-in-long-context-experiment-and-costs)
-- [Ollama serving configuration](#appendix-d-ollama-serving-configuration)
-
-## 1. Scope and priorities
+## Scope and priorities
 
 ### Why we paused consumers
 
@@ -119,7 +112,7 @@ framework just to preserve unused routes. Do not remove billing metadata while
 fixing token-limit publication. Keep independent refactors out of #8899, whose scope
 is the runner context-size endpoint.
 
-## 2. Ownership and data flow
+## Ownership and data flow
 
 **LiteLLM is not the root of the model configuration graph.** Earlier roster drafts
 blurred shared model information with a LiteLLM-centered global roster. The corrected
@@ -217,7 +210,7 @@ not an exhaustive behavior matrix in the active refactor.
 The operator is **tentatively comfortable with this pattern**: a consumer selects a
 canonical route and combines shared roster facts with its own settings downstream.
 This is not approval of the exact helper APIs, example values, field derivations or
-file locations. Per-file dispositions remain open unless separately approved in §3.
+file locations. Per-file dispositions remain open unless separately approved in the [migration inventory](migration_inventory.md).
 
 For example, an OpenClaw-specific configuration projection could look like:
 
@@ -347,7 +340,7 @@ client selection ──→ direct source or gateway route + consumer-owned setti
 Acceptance must check that provisioning and both selected wire paths resolve to the
 intended tag/settings, not just that their generated strings agree. No capacity claim,
 variant activation/retirement, client-budget change or provisioning change is approved
-by recording this pattern; the corresponding file decisions in §3 remain open.
+by recording this pattern; the corresponding file decisions in the [migration inventory](migration_inventory.md) remain open.
 
 ### First source-declaration extraction
 
@@ -370,117 +363,7 @@ establish equivalent effective allocations across wires. Creating aliases or
 retiring routes needs a separate behavior decision. Requested `num_ctx` is no longer
 projected into `Model.context_window`; Ollama capacity metadata stays unset.
 
-## 3. Consumer inventory and side effects
-
-Before deletion or renaming, check these as well as the obvious clients:
-
-- Terraform virtual-key allowlists, team fallback order, and experiment keys.
-- Agentplane picker/default selections, LLM ingress metadata/auth routing, and
-  runner environment/guest configuration. These are not interchangeable registries.
-- Hidden Codex recognition aliases and the public embedding compatibility alias.
-- OpenClaw durable memory: stored embedding identities can outlive a running agent.
-  Pausing the app is not permission to delete/rebuild its index or change its model.
-- Parked Haku OpenClaw's native CLI model aliases, Gatus's selected Ollama probe,
-  inference/probe scripts, and live harness acceptance cases.
-- Nix wrapper JSON, binaries, imports, and credential provisioning. Moving a source
-  file to `x/` alone does not stop deploying its generated outputs.
-- LiteLLM pricing/budget accounting and telemetry labels. Route cleanup must not
-  accidentally bypass spending limits or relabel unrelated account costs.
-
-This is a starting inventory, not a claim of exhaustive runtime reachability.
-Repository references and operator confirmation are both needed.
-
-### Files requiring disposition decisions
-
-**Dispositions are OPEN unless explicitly marked approved below.** This is a review
-inventory, not an approved
-keep/move/merge/delete list or a promise that every file needs a diff. Paths are the
-current locations; grouped paths do not imply that their fates must be the same.
-For each, trace its declarations, inputs, outputs and actual readers; then record the
-chosen disposition and rationale when agreed. Unchanged, simplified, moved, consolidated
-or removed are possible outcomes, subject to the existing constraints. The previously
-suggested fates are candidates, not commitments. Extend the inventory if the audit
-finds another consumer or source of independently maintained configuration.
-
-#### Neutral definitions and policy
-
-| Current file                | Question to resolve                                                                                                                                                                  |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `model_catalog/catalog.py`  | Which declarations are neutral model/account/route facts, which are serving or consumer settings, and what shape eliminates duplicate identities/names without conflating semantics? |
-| `model_catalog/policies.py` | Which lane/allowance/fallback choices are genuinely shared, and which belong to an individual consumer?                                                                              |
-| `model_catalog/BUILD.bazel` | What dependency and visibility changes follow from the chosen ownership, while keeping Nix and runtime consumers independent of cdk8s internals?                                     |
-
-#### LiteLLM, keys and provider adapter
-
-| Current file(s)                                                                                                            | Question to resolve                                                                                                                                                                                   |
-| -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster/cdk8s/litellm/config.py`                                                                                          | Which logic is necessary LiteLLM serialization, which repeats catalogue facts, and where can the agreed publication contract actually be enforced?                                                    |
-| `cluster/cdk8s/litellm/upstreams.py`                                                                                       | What deployment endpoint/auth binding shape is needed without duplicating account/adapter identity?                                                                                                   |
-| `cluster/cdk8s/litellm/keys.py`; `tf/gitops/litellm-keys/main.tf`                                                          | Where should lane-to-key/team binding and ordered fallback projection live, and are either side's inputs redundant?                                                                                   |
-| `tana/litellm_proxy/` (including `custom_handler.py`, `provider.py`, `BUILD.bazel`, `requirements.in`, `requirements.txt`) | Does the chosen publication/adapter solution require changes here at all? Avoid an unneeded proxy framework or incidental dependency upgrade.                                                         |
-| `tana/litellm_proxy/model_registry.py`                                                                                     | Which entries are necessary Tana protocol/discovery mappings versus duplicate definitions of our selected models/routes? Do not assume that another “registry” is redundant without tracing its role. |
-
-#### Agentplane selection, projection and runtime
-
-| Current file(s)                                                                                              | Question to resolve                                                                                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster/cdk8s/model_selections.py`                                                                          | Which selections belong together? Decide the homes and shapes of harness offerings, defaults, `PUBLIC_CODER_MODELS` and `RUNNER_CONTEXT_OVERRIDES` rather than preserving or moving them by assumption. |
-| `cluster/cdk8s/agentplane/app_settings.py`                                                                   | What is the smallest projection into app offerings/presets, and which presentation/default choices are independently owned?                                                                             |
-| `cluster/cdk8s/agentplane/environment.py`; `staging.py`, `testing.py`, `staging_config.py` in that directory | Which structured selections should flow to each renderer, and where should environment-specific choices live?                                                                                           |
-| `cluster/cdk8s/agentplane/app.py`                                                                            | How should runner configuration be emitted without treating `route.model.context_window` as a universal client budget?                                                                                  |
-| `agentplane/app/api.py`                                                                                      | Does the runtime-owned offering schema need to change, or can existing records express the chosen design? No generator imports.                                                                         |
-| `agentplane/runner/config.py`, `main.py`, `guest_config.py`, `session.py`                                    | What runner-owned configuration shape supports launch, switching and resume without duplicate metadata or misleading shared semantics?                                                                  |
-| `agentplane/runner/codex.py`; `agentplane/runner/claude.py`                                                  | Which settings must be applied in each native client's vocabulary, and what logic is unnecessary? Preserve the approved Claude offering-pause boundary.                                                 |
-| `agentplane/llm_ingress/app.py`, `settings.py`; `cluster/cdk8s/agentplane/llm_ingress.py`                    | Is model-ID translation useful enough to introduce, and where would its authorized mapping/configuration belong? Pass-through is not required, but translation is not yet selected.                     |
-
-#### Nix wrappers and direct local clients
-
-| Current file(s)                                                                                                                          | Question to resolve                                                                                                                                                                       |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model_catalog/nix.py`                                                                                                                   | What wrapper selections/settings should it own, and what should it merely project? Its exact future location/shape is undecided.                                                          |
-| `model_catalog/claude-wrappers.json`                                                                                                     | Is this generated interface still the simplest boundary, and what fields should it contain if retained? It is not a hand-maintained roster.                                               |
-| `nix/home/claude_code/gateway.nix`                                                                                                       | What common wrapper rendering belongs here, and what configuration is duplicated elsewhere?                                                                                               |
-| `codex-claude.nix`, `gemini-claude.nix`, `antigravity-claude.nix`, `litellm-claude.nix`, `tana-claude.nix` under `nix/home/claude_code/` | What are the eventual module boundaries and inputs? The already-approved pause and requirement to retain renderers remain; this inventory is not permission to delete or reactivate them. |
-| `nix/home/codex/default.nix`; `nix/home/claude_code/default.nix`; machine activation/import configuration such as `nix/home/hosts/*.nix` | Are changes needed at all? Preserve direct-provider clients and the wrapper pause; central-gateway migration is not implicit.                                                             |
-
-#### Ollama serving variants
-
-| Current file(s)                                                                                         | Question to resolve                                                                                                                                                                                                       |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster/cdk8s/ollama/app.py`                                                                           | Where should server defaults and serving-variant configuration be declared, and what should deployment rendering consume?                                                                                                 |
-| `cluster/cdk8s/ollama/setup-gpt-oss-v2.sh.j2`                                                           | Now rendered from Ollama source declarations; shell remains the executor. Further script/interface changes remain open.                                                                                                   |
-| Ollama definitions in `model_catalog/catalog.py`; their projection in `cluster/cdk8s/litellm/config.py` | Decide jointly with the two files above: who defines variant identity, upstream tag and requested context, and how each wire actually applies them? Do not infer provider limits or client budgets from serving settings. |
-
-#### Public Coder and smaller consumers
-
-| Current file(s)                                                                                                                                                                                                                 | Question to resolve                                                                                                                                                  |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster/cdk8s/public_coder_agent_config.py`                                                                                                                                                                                    | Where should OpenClaw selections, labels and client budgets live? What retained renderer is useful for revival without supporting every paused combination now?      |
-| Public Coder workload/storage configuration, including `cluster/cdk8s/public_coder_devbox.py`, `public_coder_proxy.py`, `public_coder_egress.py`, `public_coder_sshpiper.py`, `public_coder_backup.py` and associated manifests | Which files actually depend on roster decisions? No change may incidentally undo the pause, delete retained storage/backups, or change a durable embedding identity. |
-| `cluster/cdk8s/parked/haku_openclaw_spike_config.py`                                                                                                                                                                            | What dependencies and revival information need to remain documented, and is any source change needed while parked?                                                   |
-| `cluster/cdk8s/gatus/config.py`                                                                                                                                                                                                 | Is probe selection already a sufficient projection of canonical routes, or does it duplicate naming/selection logic?                                                 |
-
-#### Generated outputs, tests, build boundaries and documentation
-
-| Current file(s)                                                                                                                                                                               | Question to resolve                                                                                                                                                                      |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Affected `cluster/k8s/…` manifests and Nix JSON artifacts                                                                                                                                     | Which outputs follow from the eventual source changes? Regenerate them from their owners, never make them another authored source.                                                       |
-| `cluster/cdk8s/test_model_rosters.py`; `cluster/cdk8s/litellm/test_config.py`, `test_openclaw_models.py`; `model_catalog/test_nix.py`, `test_policies.py`; affected Agentplane/OpenClaw tests | Which tests prove identity, authorization, fallback, serialization or native-client behavior, and which merely restate fields? Decide retention/consolidation based on that distinction. |
-| Affected `BUILD.bazel` files, including `cluster/cdk8s/BUILD.bazel`, `cluster/cdk8s/litellm/BUILD.bazel`, `cluster/cdk8s/agentplane/BUILD.bazel`                                              | Which dependency/visibility edges should change as ownership is decided? Preserve the cdk8s generation/runtime boundary.                                                                 |
-| `model_catalog/design.md`; `model_catalog/README.md`; `cluster/docs/model_catalog.md`                                                                                                         | Decide their eventual content split and lifecycle without competing specifications or lost evidence/restoration instructions. §6 offers one candidate, not an approved per-file outcome. |
-
-### Approved file disposition: cross-layer harness audit
-
-**Approved by the operator; carried out in this documentation PR:** move
-`agentplane/docs/model_metadata.md` to
-[`model_catalog/debug/harness_model_metadata.md`](debug/harness_model_metadata.md).
-Its LiteLLM naming/authorization, Nix-wrapper and native-client findings span consumers;
-Agentplane supplied the capture machinery but does not own all those findings. Preserve
-the historical versions and evidence, update relative links, and link from Agentplane's
-capture documentation rather than keeping a duplicate or redirect stub. Capture tools
-and runtime code stay in Agentplane. This decision does not settle any other file's fate.
-
-## 4. Proposed shape and rollout
+## Proposed shape and rollout
 
 Apply this to the whole roster and its projections, not just token fields. Keep the
 existing small separation rather than adding a meta-configuration layer:
@@ -508,8 +391,7 @@ existing small separation rather than adding a meta-configuration layer:
 5. **Native client behavior:** configure and verify the actual harness. A clean
    `/model/info` response cannot fix Codex/Claude's independent recognition tables.
 
-Item 4 is the desired contract, **not a solved implementation**. Appendix B's
-pinned-runtime experiment rules out omission, null and zero as the publication
+Item 4 is the desired contract, **not a solved implementation**. The [pinned-runtime experiment](litellm_metadata.md#isolated-configapi-experiment-2026-10-05) rules out omission, null and zero as the publication
 policy: omission/null allow catalogue fallback, and zero declares a numeric limit.
 Next compare a small upstream suppression mechanism or targeted response projection
 against leaving LiteLLM's endpoint explicitly non-authoritative. The latter does
@@ -523,13 +405,13 @@ which checks execute on the retained path before changing them; preserve account
 
 ### Rollout and useful validation
 
-1. Trace the retained consumers through §2 and §3; remove duplicate declarations,
+1. Trace the retained consumers through [ownership and data flow](#ownership-and-data-flow) and the [migration inventory](migration_inventory.md); remove duplicate declarations,
    slug/name reconstruction and redundant lookups at each projection boundary. Keep
-   genuine consumer selections explicit. Approved consumer pauses are recorded in §5. Preserve the active subscription/Responses
+   genuine consumer selections explicit. Approved consumer pauses are recorded in [approved pauses](#approved-pauses-and-remaining-decisions). Preserve the active subscription/Responses
    path, direct clients, and retained state; verify activation separately from merge status.
-2. The active-session audit in Appendix C records the real slug, binary and resolved budget.
+2. The [active-session audit](client_budgets.md#active-codex-path-audit-2026-10-05) records the real slug, binary and resolved budget.
    Recheck this evidence when changing harness versions or recognition strategy.
-3. Use Appendix B's completed config/API experiment to choose the narrow publication
+3. Use the completed [config/API experiment](litellm_metadata.md#isolated-configapi-experiment-2026-10-05) to choose the narrow publication
    mechanism; do not repeat catalogue research or ship omit/null as a fix. Validate
    the chosen mechanism through load/reload and supported endpoint shapes, including
    DB-backed paths if retained, without changing pricing or request behavior.
@@ -548,17 +430,17 @@ Do not build a test matrix for every retired combination. A real config-loader/A
 contract test pays rent; assertions that merely repeat every roster constant do not.
 Keep the overall refactor net-negative in code/plumbing where possible.
 
-## 5. Approved pauses and remaining decisions
+## Approved pauses and remaining decisions
 
-Source status checked 2026-10-05. A merge is not proof of machine activation or Flux
+Approved pause scope as of 2026-10-05. A merge is not proof of machine activation or Flux
 rollout. The [tracking issue](https://github.com/agentydragon/ducktape/issues/9121)
 maintains deployment status, the full parked inventory, and restoration requirements.
 
-| Integration                      | Approved scope and source status                                                                                                 | Retained for restoration                                                                                                                        |
+| Integration                      | Approved scope                                                                                                 | Retained for restoration                                                                                                                        |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Five Nix Claude gateway wrappers | **#9112 merged**: remove workstation activation/advertising; direct local clients unchanged                                      | Nix renderers, JSON generator, credential declarations; machine activation not verified here                                                    |
-| Public Coder OpenClaw            | **#9116 merged**: stop OpenClaw/proxies and halt devbox                                                                          | Workload definitions, namespace, PVCs and backups; live pause not reverified in this audit                                                      |
-| Agentplane Claude                | **#9127 merged**, exact-head CI green: empty staging/testing Claude offerings, disabled picker options, omit Haku Claude presets | Native adapter, existing sessions/resume/history, explicit low-level launches, credentials and shared ingress/routes; not a runtime prohibition |
+| Five Nix Claude gateway wrappers | #9112: remove workstation activation/advertising; direct local clients unchanged                                      | Nix renderers, JSON generator, credential declarations; machine activation not verified here                                                    |
+| Public Coder OpenClaw            | #9116: stop OpenClaw/proxies and halt devbox                                                                          | Workload definitions, namespace, PVCs and backups; live pause not reverified in this audit                                                      |
+| Agentplane Claude                | #9127: empty staging/testing Claude offerings, disabled picker options, omit Haku Claude presets | Native adapter, existing sessions/resume/history, explicit low-level launches, credentials and shared ingress/routes; not a runtime prohibition |
 
 These are consumer pauses, **not permission to remove shared GPT-through-Messages or
 other served routes**. Haku OpenClaw remains parked. Do not treat its historical
@@ -576,62 +458,7 @@ Publication policy and any Codex recognition/budget change remain separate decis
 The approved pauses reduce the immediate compatibility matrix; they do not resolve
 LiteLLM's fallback metadata or establish new provider limits.
 
-## 6. Documentation consolidation
-
-[`cluster/docs/model_catalog.md`](../cluster/docs/model_catalog.md) is part of the
-refactor, not a second specification to leave untouched beside this design. **One
-candidate is to retain it as a smaller cluster wiring and operations guide; its exact
-fate and the content split below remain undecided.** Do not move the neutral
-catalogue's ownership back under `cluster/`, or maintain parallel explanations of
-model-limit semantics in both places.
-
-| Document                                        | Candidate responsibility (not yet agreed)                                                                                                                       |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| This design                                     | Cross-layer semantics, constraints, decisions and unresolved choices; explicitly dated investigation evidence                                                   |
-| `model_catalog/README.md`                       | Short neutral-package entry point: module responsibilities, generation entry points, links to the design and deployment guide                                   |
-| `cluster/docs/model_catalog.md`                 | Current cluster bindings and projections, where to change deployment selections, regeneration/check commands, and cluster-specific pause/restoration procedures |
-| `model_catalog/debug/harness_model_metadata.md` | **Location approved (§3):** historical version-scoped cross-layer audit, linked as evidence rather than treated as current deployment policy                    |
-| Tracking issue #9121                            | Work/PR status and complete parked-integration inventory, linking to the relevant restoration instructions                                                      |
-
-### Candidate treatment of the existing cluster guide
-
-The following suggestions apply if we choose the smaller-guide option; they are not
-a commitment to retain these sections or this exact document structure.
-
-- **Ownership:** replace the duplicated `Model`/`Upstream`/`Route` definitions and
-  generic context-limit explanations with links to the neutral package and this
-  design. Keep cluster endpoint/credential binding locations and the visibility and
-  serialized-runtime boundaries.
-- **Projections:** retain a compact cluster-consumer wiring table, grounded in the
-  landed code. Clearly distinguish active consumers from paused renderers. Do not
-  maintain another hand-written roster, token-limit table, or route-construction rule.
-- **Consumer boundaries:** retain cluster authorization versus offering/default policy
-  and the actual runner/ingress configuration flow. Replace Nix-wrapper budget details
-  with links to their owning documentation/code. Replace speculative ingress follow-up
-  prose with actual wiring when that change lands, including any model-ID translation.
-- **Checks and regeneration:** keep the practical manifest/key generation and validation
-  entry points; link to the neutral Nix generator rather than duplicating its contract.
-- **Parked Agentplane Claude:** retain the deployment-specific offering-pause semantics
-  and restoration steps already here. Do not move them into a generic Agentplane
-  service document or lose them while consolidating. Link the tracking issue for the
-  full parked inventory; this guide need not duplicate its PR/rollout history.
-
-### Update discipline
-
-The cluster guide describes **landed source configuration**, not proof of live rollout.
-The docs-only PR does not remove `publish_limits`, `PUBLIC_CODER_MODELS`, or any other
-currently implemented behavior. Each implementation PR must update the affected guide
-sections alongside its code, removing obsolete names and claims rather than appending
-another migration note. Remove the temporary proposal notice when no longer useful.
-
-As decisions land, mark them implemented here and remove resolved alternatives and
-completed rollout checklists; retain only useful dated evidence/rationale. Do not copy
-this entire design into the cluster guide, create a third overview, or keep two current
-specifications. Whichever document split is chosen, completion means the documentation
-is accurate and non-duplicated, neutral semantics have one home, and paused integrations
-remain recoverable.
-
-## Appendix A. Token-limit vocabulary
+## Token-limit vocabulary
 
 | Concept                   | Meaning                                                                         | Does not establish                                   |
 | ------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------- |
@@ -652,673 +479,7 @@ If an active path needs a combined constraint enforced, design that explicitly.
 `model_info.max_tokens` is legacy **metadata**. Request-body `max_tokens` is a
 **generation setting**. Removing the former must not remove the latter.
 
-## Appendix B. LiteLLM catalogue and publication
-
-### Evidence scope
-
-The proxy's package-local lock and upstream image pin are LiteLLM **1.100.1**.
-The root Python lock is not the proxy runtime. Relevant upstream source files are
-`utils.py`, `router.py`, `proxy/proxy_server.py`,
-`litellm_core_utils/get_model_cost_map.py`, and `llms/ollama/common_utils.py`.
-The wheel's `model_prices_and_context_window_backup.json` and the
-[remote catalogue](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
-were inspected separately. The remote snapshot below was fetched 2026-10-05.
-
-Unless configured otherwise, LiteLLM downloads the remote catalogue; the bundled
-file is a fallback. `LITELLM_LOCAL_MODEL_COST_MAP=True` selects the bundled map.
-Pinning the package alone does **not** pin the catalogue. Neither source is evidence
-for our subscription gateway's limits.
-
-### What happens to metadata
-
-1. LiteLLM resolves `litellm_params.model`, including its adapter prefix, against
-   catalogue candidates with provider-compatibility checks.
-2. Exact misses can use catalogue regex generalizations. Native Ollama may query
-   `/api/show`; there is more than a static JSON lookup involved.
-3. Deployment `model_info` registers/merges overrides into LiteLLM's model-cost map.
-   This map contains both capacity/capability and pricing metadata. Catalogue reload
-   replaces the map, then `reapply_runtime_model_cost_registrations()` replays live
-   router deployments and explicit runtime registrations; it is not a reset to
-   catalogue-only metadata. Router replay serializes `model_info` with `exclude_none=True`.
-4. Router objects and metadata endpoints perform further serialization and merging.
-   List and single-deployment `/model/info` paths are not identical.
-
-Omitting a key permits fallback. Explicit YAML `null` is **not a reliable deletion
-operator**: `register_model()` uses `_update_dictionary()`, which ignores `None`;
-router serialization uses `exclude_none=True`; the single-deployment metadata
-endpoint removes nulls before filling missing keys. The final response merge alone
-is therefore insufficient evidence that null suppression works.
-
-### Isolated config/API experiment, 2026-10-05
-
-The missing runtime check is now complete for `/model/info` listing and
-`?litellm_model_id=...`, using the **1.100.1 proxy-local dependency**. Eight fresh
-processes exercised the real config loader and ASGI endpoint handlers, then the
-catalogue fetch/install/replay path and same-router config reload. The
-[temporary collector](https://github.com/agentydragon/ducktape/blob/cdada7566024793a350eff494597dfe97c4bd559/tana/litellm_proxy/test_proxy_runtime.py)
-ran under `//tana/litellm_proxy:test_proxy_runtime`;
-[CI passed](https://github.com/agentydragon/ducktape/actions/runs/37301188187), and
-[BuildBuddy](https://app.buildbuddy.io/invocation/f504038a-972e-554a-a93c-0a01514077c0)
-retains `publication-probe.json`. The collector is not permanent test plumbing.
-
-The table shows **input / output / legacy** from `openai/gpt-4o-mini`. List and
-single-deployment responses agreed for the selected fields in every case. `B` is
-the bundled triple **128000 / 16384 / 16384**; `C` is a controlled initial catalogue
-triple **900001 / 900002 / 900003**; `R` is the fetched replacement triple
-**800001 / 800002 / 800003**; `P` is our explicit pair **111111 / 22222**.
-The controlled values are deliberately synthetic, **not model capacity claims**.
-
-| Initial catalogue / configured limits       | Initial API triple | After catalogue reload | After withdrawing overrides on same router |
-| ------------------------------------------- | ------------------ | ---------------------- | ------------------------------------------ |
-| Bundled / omitted or all null               | B                  | R                      | R                                          |
-| Bundled / P                                 | P / 16384          | P / 800003             | P / 800003                                 |
-| Controlled / omitted or all null            | C                  | R                      | R                                          |
-| Controlled / P, with legacy omitted or null | P / 900003         | P / 800003             | P / 800003                                 |
-| Controlled / all three zero                 | 0 / 0 / 0          | 0 / 0 / 0              | 0 / 0 / 0                                  |
-
-Thus neither omission nor null implements unknown limits or legacy-field removal.
-A pair survives catalogue replacement while the legacy field continues following
-that catalogue. Removing the pair from the file and calling
-`ProxyConfig.load_config(previous_router, ...)` with stable deployment IDs did
-**not** withdraw the published pair on this route. Do not generalize that result to
-a fresh process or every DB/admin update path. Zero is a real registered value,
-not an unknown sentinel. `context_window` was absent in all observed responses.
-
-Adapter controls matter: `anthropic/gpt-4o-mini` and an unknown
-`openai/publication-fixture:latest` returned null token fields without overrides,
-not the OpenAI catalogue triple. Native Ollama discovery was **not validated**:
-the fixture supplied a route-local `api_base`, but the metadata endpoint's
-`get_litellm_model_info()` calls `get_model_info(model)` without forwarding it.
-The source-traced `/api/show` behavior below must not be replaced with a claim
-that native Ollama reliably leaves unknown limits unset.
-
-Limit overrides left the matching OpenAI catalogue's prices and function-calling
-flag intact. The pricing helper for 10 input / 5 output tokens returned
-$0.0000015 / $0.000003 on the bundled fixture and $0.00017 / $0.000095 after
-reload, independent of the limit overrides. Both `modify_params` and router
-`enable_pre_call_checks` resolved to false. This verifies selected metadata and
-helper behavior, **not end-to-end spend logging, budgets or inference**.
-
-Scope limits: auth was replaced with a synthetic admin; no ASGI lifespan, database,
-paid requests or production changes were involved. `/v2/model/info` returned 500
-because no database was connected, so its publication behavior remains untested.
-Reload exercised `refetch_model_cost_map()` plus `_swap_in_model_cost_map()`, not
-the admin endpoint's authorization or cross-pod signaling. A chosen implementation
-still needs acceptance coverage for its supported deployment/endpoint paths.
-
-### Token KVPs in the remote catalogue
-
-These are catalogue defaults, **not our serving-path facts**. Values are tokens.
-Other catalogue KVPs include mode, pricing, caching rates, and capability flags;
-those need separate treatment, not deletion alongside limits.
-
-| Matching model family / adapter                               | `max_input_tokens` | `max_output_tokens` | `max_tokens` |
-| ------------------------------------------------------------- | -----------------: | ------------------: | -----------: |
-| OpenAI GPT-6 Astra/Sol/Luna; GPT-5.6 Sol/Terra/Luna           |             922000 |              128000 |       128000 |
-| OpenAI GPT-5.4 / GPT-5.5                                      |            1050000 |              128000 |       128000 |
-| Anthropic Opus/Sonnet/Fable 5; Sonnet 4.6                     |            1000000 |              128000 |       128000 |
-| Anthropic Haiku 4.5                                           |             200000 |               64000 |        64000 |
-| Google Gemini 3.7 Flash / 3.5 Flash Lite                      |            1048576 |               65536 |        65536 |
-| Google Gemini Embedding 2                                     |               8192 |              absent |         8192 |
-| Google Gemini Embedding 001                                   |               2048 |              absent |         2048 |
-| Mistral Codestral / code / code-FIM                           |             128000 |              128000 |       128000 |
-| Mistral Magistral, Ministral 8B/14B, medium/small/vibe routes |             262144 |              262144 |       262144 |
-| Mistral Ministral 3B                                          |             131072 |              131072 |       131072 |
-| Mistral Voxtral Small                                         |              32768 |               32768 |        32768 |
-| Groq Whisper                                                  |             absent |              absent |       absent |
-
-The bundled catalogue differs: GPT-6 entries are absent; Magistral has all three
-values at 40000; `mistral-medium` has input 32000, output/legacy 8191. Bundled Groq
-Llama 3.3 70B has 131072/32768/32768, and Llama 3.1 8B has all three at 131072;
-those exact entries are absent from the remote snapshot.
-
-Additional cases:
-
-- `openai/gpt-*` can use OpenAI entries. `anthropic/gpt-*` fails that provider match.
-- Antigravity `anthropic/gemini-*` does not simply inherit Google entries; its
-  `anthropic/claude-sonnet-4-6` can inherit Anthropic's raw-API entry.
-- A Claude-family regex supplies input 200000, output 64000, legacy 64000 even
-  without an exact entry. It matches our Tana Claude names and the Antigravity
-  `claude-opus-4-6-thinking` name.
-- Our exact local Ollama tags lack static entries. Native discovery can read recorded
-  `context_length` from `/api/show` and put it into **all three** token-limit fields.
-  That is not a measured output ceiling or necessarily the effective `num_ctx`.
-- `context_window` is not a standard catalogue field used by this projection. Our
-  former custom field should not be smuggled back in as a generic client budget.
-
-### Observed deployed mixture
-
-On 2026-10-05, `/model/info` under the cheap-experiments key returned:
-
-| Luna route                         |  Input | Output | Legacy |
-| ---------------------------------- | -----: | -----: | -----: |
-| `chatgpt/ant-messages/gpt-6-luna`  | 372000 | 128000 |   null |
-| `chatgpt/oai-responses/gpt-6-luna` | 372000 | 128000 | 128000 |
-
-These responses contain existing overrides. They are not pristine catalogue
-lookups, and the restricted key does not establish the state of every deployment.
-
-### Antigravity `maxTokens`: source and bounded live check
-
-The values in our roster have provenance, not just client guesses. At CLIProxyAPI
-pin `7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974`, the
-[fetcher](https://github.com/router-for-me/CLIProxyAPI/blob/7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974/cmd/fetch_antigravity_models/main.go#L293-L298)
-reads Google's `fetchAvailableModels` response and maps `maxTokens` to
-`ContextLength`, and `maxOutputTokens` to `MaxCompletionTokens`. The
-[shipped snapshot](https://github.com/router-for-me/CLIProxyAPI/blob/7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974/internal/registry/models/models.json)
-records **1048576 / 65535** for Antigravity `gemini-3.1-flash-lite`,
-**200000 / 64000** for its Claude Opus/Sonnet, and **114000 / 32768** for GPT-OSS
-120B Medium. This is the historical pinned snapshot; the fresh authenticated
-response below differs. The fetcher's renaming alone does not define input versus
-combined capacity.
-
-Existing online material helps interpret these fields:
-
-- Google's [Model API reference](https://ai.google.dev/api/models#Model) defines
-  `inputTokenLimit` as maximum input tokens and `outputTokenLimit` as maximum
-  output tokens. This documents Gemini's vocabulary, not the private Antigravity
-  field name by itself.
-- [claude-proxy's Antigravity mapping](https://github.com/aeroxy/claude-proxy/blob/09deb1de3c14e1f9e67b2ec2ba91956a1e098e83/src/gemini/models.rs#L300-L335)
-  maps `maxTokens` to `inputTokenLimit` and `maxOutputTokens` to `outputTokenLimit`.
-  [Jaato's merged #1447](https://github.com/Jaato-framework-and-examples/jaato/pull/1447)
-  explicitly treats Gemini output as a separate budget, while reserving output
-  within the window for Antigravity Claude. These are third-party interpretations;
-  the live check below corroborates the Gemini distinction on our route.
-- [Upstream catalogue PR #59](https://github.com/router-for-me/models/pull/59)
-  reports fresh production/sandbox `fetchAvailableModels` values of **250000** for
-  Claude Opus/Sonnet and **131072** for GPT-OSS, replacing 200000/114000, with output
-  fields unchanged. It was open when checked; our own authenticated fetch below
-  now corroborates those reported values.
-
-#### Fresh Google metadata, 2026-10-05 12:01 UTC
-
-Through AIQuota's existing management integration, CLIProxyAPI queried
-`/v1internal:fetchAvailableModels` on `cloudcode-pa.googleapis.com`,
-`daily-cloudcode-pa.googleapis.com` and `daily-cloudcode-pa.sandbox.googleapis.com`.
-All three returned HTTP 200 and identical model IDs/display names/token fields for
-**33 models**. OAuth substitution/refresh stayed inside CLIProxyAPI; only the
-selected metadata fields were returned, not credentials or auth-file contents.
-
-| Model / group in the response                  | `maxTokens` | `maxOutputTokens` |
-| ---------------------------------------------- | ----------: | ----------------: |
-| Claude Opus 4.6 Thinking / Sonnet 4.6          |      250000 |             64000 |
-| GPT-OSS 120B Medium                            |      131072 |             32768 |
-| Gemini 3.1 / 3.5 Flash Lite                    |     1048576 |             65535 |
-| Gemini Pro agent / 3.1 Pro High / Low          |     1048576 |             65535 |
-| Gemini 3 Flash; 3.6 / 3.7 / 3.8 Flash variants |     1048576 |             65536 |
-| Gemini 3.1 Flash Image                         |      absent |            absent |
-
-Our snapshot's 200000 and 114000 are therefore stale relative to our account's
-current response; 3.5 Flash Lite now has a declared pair too. The 65535/65536
-output-field distinction is present in Google's response, not just our handwritten
-configuration. These are **raw provider-reported fields**, not a claim that every
-family's `maxTokens` means maximum input or that both maxima are jointly attainable.
-The Flash Lite probe below supplies separate evidence about Gemini semantics.
-Do not change consumer budgets, authorize new models, or expose internal entries
-merely because they appear in this response.
-
-#### Bounded serving-path check
-
-On **2026-10-05**, the cheap-experiments key admitted Antigravity's 3.1/3.5 Flash
-Lite routes, not its Claude or GPT-OSS routes. Bounded live requests through
-`/v1/chat/completions` used only
-`antigravity/ant-messages/gemini-3.1-flash-lite`:
-
-| Observation                                           | Result                                                                                              |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Small output-cap control, request `max_tokens=1`      | 13 output tokens, normal stop                                                                       |
-| 10000 filler units, five checkpoints                  | 10105 input / 36 output; all five recovered                                                         |
-| 1020000 filler units, five checkpoints                | 1020106 input / 38 output; all five recovered                                                       |
-| 1048000 filler units, checkpoints plus integers 1–200 | **1048133 input / 727 output / 1048860 total**; all checkpoints and integers recovered, normal stop |
-| 1048450 and 1049000 filler units                      | Both HTTP 400: **“The input token count exceeds the maximum number of tokens allowed 1048576.”**    |
-
-Each filler unit was ` a`. Five independently random eight-hex-digit checkpoints
-were placed before, between and after four near-equal filler blocks; the final
-instruction requested them in order. The last successful request additionally
-asked for integers 1–200 to cross the candidate _combined_ boundary with bounded
-requested output, not a 64K-output stress test. Usage reported no cached input.
-Rejected requests supplied no actual input counts: do not derive an exact
-client-visible token ceiling from filler counts or assume no framing overhead.
-
-**For this route, the evidence supports `maxTokens` as an input allowance, not an
-input-plus-output ceiling:** the successful total exceeds 1048576, and the error
-explicitly calls the limit an input-token limit. Checkpoint recovery is evidence
-against simple prefix/tail truncation, not proof of arbitrary-task fidelity over
-all tokens. The 65535 output value remains an upstream declaration, not a measured
-output maximum; these results do not establish Claude/GPT-OSS semantics or a
-universal combined capacity. Preserve the distinction between sourced metadata,
-client policy and measured behavior.
-
-The output-cap control agrees with the pinned
-[executor](https://github.com/router-for-me/CLIProxyAPI/blob/7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974/internal/runtime/executor/antigravity_executor_request.go#L61-L96):
-it removes `maxOutputTokens` for non-Claude Antigravity requests. Upstream
-[PR #4598](https://github.com/router-for-me/CLIProxyAPI/pull/4598) proposes preserving
-it (open when checked). This is separate from interpreting the model metadata;
-request caps are not a hard cost bound on our current Gemini path.
-
-The investigation stopped after five successful generations (**2078373 input /
-816 output tokens total**) and two rejections, plus one tiny count-token call.
-The key's published zero prices do not establish free upstream usage; shared
-subscription quota and any billing of rejected requests were not measured.
-No configuration, authorization, client budget or paused integration was changed.
-
-### Who consumes these KVPs?
-
-- `/model/info` clients and the LiteLLM dashboard see published metadata.
-- LiteLLM itself can use the model-cost map, not only display it. In 1.100.1:
-  - `get_modified_max_tokens()` is guarded by a supplied request `max_tokens`,
-    `litellm.modify_params=True`, and a completion/acompletion/anthropic_messages
-    call type. Responses is not in that guard.
-  - Router context prechecks require `enable_pre_call_checks=True`.
-  - The separate I/O token-rate limiter can fall back from `max_output_tokens` to
-    `max_tokens` when estimating output reservations without a request cap; its
-    deployment I/O limits must be configured for that path to run.
-
-  Our generated LiteLLM config enables `drop_params`, not `modify_params` or router
-  pre-call checks. No deployment I/O limits were found in the inspected generated
-  config/key declarations; that is not an audit of every live DB/key setting.
-  These guards do not establish that no other adapter or callback reads the map.
-
-- OpenClaw's audited discovery reads `/v1/models` or `/models`, not `/model/info`.
-  Its configured budgets come from our OpenClaw projection.
-- Our Agentplane launch adapters do not obtain their context overrides from
-  `/model/info`. They read runner-owned configuration.
-- Claude and Codex have their own model recognition/catalogues. Removing a LiteLLM
-  metadata key does not remove a harness's built-in assumption.
-
-Therefore response filtering and changing LiteLLM's internal catalogue are different
-changes. Do not solve one by silently changing pricing or request behavior in the other.
-
-## Appendix C. Client-specific budgets and investigations
-
-Numbers below are preserved configuration choices at draft #9034 head `26862c4395`,
-not newly validated provider limits and not a claim that the draft is deployed.
-
-The draft retains a provider limit pair only for the direct Google Gemini models:
-1048576 input / 65536 output, based on provider documentation. Historical GPT-5.6
-subscription probing accepted 370629 input tokens and rejected 372194; it did not
-establish an output ceiling or a combined capacity. The 372000 client budget is
-not that complete contract. Astra's 872000 came from Codex client metadata; Sol/Luna
-inherited earlier budgets rather than independent probes. Antigravity's upstream
-`maxTokens` interpretation was unresolved in that draft; Appendix B now records
-input-limit evidence for its 3.1 Flash Lite route, without extending that finding
-to every Antigravity model. Client choices must not silently become provider facts,
-nor should unsupported facts quietly fall back to raw-API catalogue metadata.
-
-### Claude Code wrappers
-
-`model_catalog/nix.py` → `claude-wrappers.json` →
-`nix/home/claude_code/gateway.nix` maps:
-
-- `maxContextTokens` → `CLAUDE_CODE_MAX_CONTEXT_TOKENS`.
-- `maxOutputTokens` → `CLAUDE_CODE_MAX_OUTPUT_TOKENS`.
-
-| Wrapper                                           | Context setting | Output setting |
-| ------------------------------------------------- | --------------: | -------------: |
-| `codex-claude` (Astra primary / Luna small model) |          872000 |         128000 |
-| `gemini-claude`                                   |         1048576 |          65536 |
-| `antigravity-claude`                              |         1048576 |          65536 |
-| `litellm-claude`                                  |         omitted |        omitted |
-| `tana-claude`                                     |         omitted |        omitted |
-
-In the inspected Nix Claude Code **2.1.283**, the context override is an assumed
-pre-reserve window for custom models; recognized model metadata can take precedence.
-The normal observed compaction calculation subtracts an output reserve capped at
-20000, then 13000 headroom. Other overrides and execution modes can alter this.
-It is neither a plain max-input ceiling nor a universal backend context capacity.
-
-`litellm-claude` also uses a `[1m]` name suffix as a **Claude client convention**.
-The suffix is stripped before sending the model name upstream. Switching models
-through gateway discovery can lose that convention. Do not create duplicate served
-routes merely to encode a client's suffix convention.
-
-Claude Code Web and direct local use must not inherit these gateway overrides just
-because they use the same model family. Also, the Agentplane harness-test archive
-is **2.1.252**, not 2.1.283: recheck the actual launched package before relying on
-version-specific formulas.
-
-### OpenClaw
-
-Audited version: **2026.9.5**, source revision
-`ec9c1a13db8938e5a3eaa51fca2e981cde2395a9`.
-`contextWindow` is the pre-reserve client context budget; runtime `contextTokens`
-can narrow it. Compaction uses `contextWindow - reserveTokens`, with additional
-history/pending-input accounting. The core default reserve is 16384; agent policy
-raises the floor to 20000, subject to a 25% window cap. It does **not** generally
-reserve the full `model.maxTokens`. `maxTokens` is separate output/request metadata.
-
-The public-coder projection currently preserves:
-
-| Selection                                  | `contextWindow` | `maxTokens` |
-| ------------------------------------------ | --------------: | ----------: |
-| GPT-6 Astra                                |          872000 |      128000 |
-| GPT-6 Sol / Luna                           |          372000 |      128000 |
-| Direct Google Gemini routes                |         1048576 |       65536 |
-| Antigravity Claude Opus / Sonnet           |          200000 |       64000 |
-| Antigravity Flash group                    |         1048576 |       65536 |
-| Antigravity Pro / Pro Low / Flash Lite 3.1 |         1048576 |       65535 |
-| Antigravity GPT-OSS 120B Medium            |          114000 |       32768 |
-
-These remain preserved client choices. Google's fresh metadata also distinguishes
-65535/65536 output values, while now reporting 131072 rather than 114000 for GPT-OSS
-(Appendix B). The old 114000 came from the upstream snapshot and is preserved here
-as an OpenClaw budget; neither use establishes both a provider input ceiling and a
-combined window. Refreshing metadata does not silently update this client policy. Public Coder is now paused (§5); do not validate its entire matrix as a prerequisite
-for fixing the active Codex path.
-
-### Codex and Agentplane
-
-Agentplane receives a route-ID-to-budget map through runner configuration
-(`model_context_windows`, including the environment and guest-config inputs).
-The current cluster override selection is only Qwen IQ4_XS 128K/256K, both wires:
-131072 and 262144 respectively. The active GPT subscription routes do **not** receive
-872000 or 372000 from this map merely because a wrapper or OpenClaw uses those values.
-
-- Claude adapter sets `CLAUDE_CODE_MAX_CONTEXT_TOKENS` when an override exists.
-- Codex adapter passes `model_context_window` in its startup configuration. Our
-  launch helper leaves auto-compaction at Codex's derived default; its comment
-  records 90%. Codex also has its own effective-window and metadata rules: do not
-  treat that comment as an end-to-end validated threshold for every current binary.
-- Changing a model to one with a different configured window, including an absent
-  versus present override, requires a new thread. The runner rejects that live switch.
-- Harness telemetry is another output: Codex reports
-  `thread/tokenUsage/updated.tokenUsage.modelContextWindow`; Claude result frames
-  report `modelUsage[*].contextWindow`. Acceptance probes record these as harness
-  observations, not backend capacity measurements.
-
-### Active Codex path audit, 2026-10-05
-
-This is a deployment observation, not a new neutral-roster contract. Read-only checks
-at approximately 05:34–05:40 UTC examined this audit's **running Agentplane session**,
-its native state/usage, deployed LiteLLM configuration, and ready proxy Pods. This
-proves one active session, not every agent's version or model selection.
-
-```text
-Agentplane runner → Codex app-server 0.157.0
-  → central egress → Agentplane LLM ingress /v1/responses
-  → shared LiteLLM → CLIProxyAPI /v1/responses → Codex subscription backend
-```
-
-The ingress authenticates/replaces credentials and streams the request body unchanged;
-it does not currently translate route names or inject context budgets. This pass-through
-is an observation, not a required architecture: the operator explicitly permits model
-translation at this boundary when useful for native harness behavior. Neither it nor
-the runner reads LiteLLM `/model/info` to configure Codex.
-
-| Layer                     | Observed configuration / behavior                                                                                                   | What that means                                                                               |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Native process and thread | Codex **0.157.0**, provider `agentplane`, model `chatgpt/oai-responses/gpt-6-astra`                                                 | A real launched binary/thread, not the native-test archive                                    |
-| Launch configuration      | Responses wire to `http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080/v1`; no context/auto-compaction override | GPT budgets are not wired from the roster to this client                                      |
-| Recognition               | Native log explicitly warns that the full Astra route uses fallback metadata                                                        | The hidden bare `gpt-6-astra` alias exists in LiteLLM but this session does **not** select it |
-| Native telemetry          | Latest sampled `token_count.info.model_context_window`: **258400**; normal tool turns work                                          | Resolved client accounting, not a measured backend limit                                      |
-| Deployed proxy config     | Astra: **872000 input / 128000 output**; Sol/Luna: **372000 / 128000**                                                              | Current explicit metadata overrides, with the mixed provenance described above                |
-| Live Luna `/model/info`   | Both wires: **372000 / 128000**; legacy `max_tokens`: Responses **128000**, Messages **null**; custom `context_window` absent       | Removing our legacy/custom assignments did not eliminate adapter-dependent fallback           |
-
-Live metadata was read with the substituted **cheap-experiments** key; its view includes
-Luna, not Astra/Sol. The latter numbers above are from the deployed ConfigMap, not an
-assertion about their `/model/info` responses. Ready LiteLLM Pods ran
-`tana-litellm-proxy:devel-20261005030920-bde5d31` (that build pins **1.100.1**).
-The deployment does not set `LITELLM_LOCAL_MODEL_COST_MAP`, so its package pin still
-does not pin the downloaded catalogue. The ready CLIProxyAPI Pod ran
-`cli-proxy-api:devel-20260924021629-ce93c9e`, whose source pin is `7fac6b15bcfe`.
-
-#### What Codex 0.157.0 does with these values
-
-The [matching source](https://github.com/openai/codex/tree/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs)
-corroborates the live fallback warning and telemetry:
-
-- `models-manager/src/manager.rs` strips **one** namespace segment for recognition;
-  `chatgpt/oai-responses/gpt-6-astra` has two and does not match the bundled Astra entry.
-- `model-provider/src/models_endpoint.rs` does not enable API-key catalogue discovery
-  for this custom provider without `model_catalog_url`. We do not configure one.
-  LiteLLM's metadata fields therefore cannot repair this recognition failure.
-- `models-manager/src/model_info.rs` gives fallback models context and override maximum
-  **272000**, with **95%** usable: **258400**. `model_context_window` is clamped to the
-  recognized entry's maximum; setting 872000 on the unrecognized route would not work.
-- `protocol/src/openai_models.rs` derives the default automatic-compaction threshold
-  from **90% of the resolved window**: **244800** here, not 90% of 258400. This is a
-  source-derived default, not a newly measured compaction boundary or an output reserve
-  of 128000. The usable-window headroom covers prompts, tools, and output together.
-- Bundled Astra, Sol and Luna entries all default to **272000**, with override maximum
-  **872000**. Merely switching to a recognized alias would **not** raise the default
-  window. The maximum is a client override bound, not a subscription capacity fact.
-- Recognition also changes prompt/reasoning defaults, freeform `apply_patch`,
-  `tool_mode=code_mode_only`, and `use_responses_lite`. The tool mode has precedence over
-  feature flags when code mode is available. Do not treat an alias as a context-only fix.
-- **Version correction to the older audit:** 0.157.0 gates WebSockets on the provider's
-  `supports_websockets` (default false), which our provider does not enable. Its JSON
-  catalogue still contains `prefer_websockets`, but `ModelInfo` no longer consumes that
-  field. Recognition alone does not enable WebSockets in this version.
-
-See `core/src/tools/mod.rs`, `core/src/client.rs`, and
-`model-provider-info/src/lib.rs` for those non-context effects. The older
-[harness audit](debug/harness_model_metadata.md) remains historical evidence,
-not a substitute for inspecting the launched version.
-
-#### Output limits are not enforced by these metadata fields
-
-The current native `ResponsesApiRequest` (`codex-api/src/common.rs`) has no
-`max_output_tokens` member. Our runner does not copy the roster's 128000 output value
-into requests. Shell-tool `max_output_tokens` controls tool-output truncation, not
-model generation length.
-
-More importantly, the deployed gateway's pinned
-[Responses translator](https://github.com/router-for-me/CLIProxyAPI/blob/7fac6b15bcfe/internal/translator/codex/openai/responses/codex_openai-responses_request.go)
-**deletes `max_output_tokens` and `max_completion_tokens`**, documenting that the
-subscription backend rejects those request fields. Its executor defaults to
-`https://chatgpt.com/backend-api/codex/responses`. This is source evidence for the
-pinned gateway, not a capture of upstream request bodies or private configuration.
-
-One tiny live Luna Responses request asking for `OK` succeeded: **307 input / 5 output
-tokens**, status `completed`, response `max_output_tokens: null`. The request supplied
-256, but this path must **not** be treated as enforcing that cap. The probe establishes
-connectivity only, not input/output ceilings, long-context quality, or arbitrary-client
-compatibility. No capacity stress test, alias launch, or live setting change was made.
-
-#### Consequence for the next change
-
-Keep the working Codex launch behavior unchanged while fixing publication. The active
-client's 258400 telemetry and LiteLLM's 872000/372000 metadata are separate outputs;
-changing one does not update the other. Do not promote either, or the historical
-128000 output value, into a justified subscription input/output pair.
-
-Appendix B records the pinned-LiteLLM publication experiment and request-side
-consumer guards. The next step in §4 is selecting and validating a publication
-mechanism, not another capacity audit. If changing Codex recognition is later
-necessary, test the exact ingress-translation, alias or catalogue strategy with native tools, reasoning,
-Responses-lite and compaction before enabling it. Do not build a general harness
-metadata service to preserve paused consumers. Separate Claude/Codex configuration
-vocabularies only when both actually need supported overrides.
-
-### Subscription-path public evidence, 2026-10-05
-
-**A Responses-shaped endpoint does not establish the public API's capacity contract.**
-Public research supports that distinction but does not establish our account's backend
-ceilings. Sources below are ranked by what they actually establish, not combined into
-one supposedly authoritative number.
-
-#### Official API specifications and first-party Codex guidance
-
-The public API model pages for
-[Astra](https://developers.openai.com/api/docs/models/gpt-6-astra.md),
-[Sol](https://developers.openai.com/api/docs/models/gpt-6-sol.md), and
-[Luna](https://developers.openai.com/api/docs/models/gpt-6-luna.md) all list **1050000
-combined context, 922000 maximum input, and 128000 maximum output**. Those are API
-specifications, not an explicit entitlement for the ChatGPT subscription backend.
-The API's 272K long-context pricing threshold is not its capacity ceiling either.
-
-There is also contrary evidence to a blanket claim that subscription Codex cannot use
-1M: [Tibo (Codex & ChatGPT at OpenAI), 2026-08-16](https://x.com/thsottiaux/status/2089082893804896524)
-explicitly recommends `model_context_window=1000000` and
-`model_auto_compact_token_limit=900000` for **GPT-5.6 Sol**, describing the smaller
-default as tuned for performance/cost. This establishes advertised intent for that
-model, not verified acceptance on our GPT-6 routes. Codex's
-[override-bound change](https://github.com/openai/codex/pull/39102) and the inspected
-0.157.0 source instead use **872000** as the relevant maximum client override.
-Do not silently resolve this discrepancy in favor of either advertised number.
-
-#### Gateway-maintainer account of the subscription backend
-
-[CLIProxyAPI collaborator luispater, 2026-09-15](https://github.com/router-for-me/CLIProxyAPI/issues/5835#issuecomment-5672721746)
-says Astra's actual limit is **1M total: 872000 context + 128000 output**, and calls
-the catalogue's `context_length: 272000` OpenAI's recommended display value. This is
-a useful subscription-specific claim, but **not an OpenAI serving contract or our own
-boundary measurement**. Preserve the source's word “context”: do not quietly recast
-it as a proven independently attainable maximum input. “Display only” also cannot
-be generalized to our client: Codex demonstrably uses metadata to constrain budgets.
-
-The current [CLIProxy public registry](https://github.com/router-for-me/models/blob/main/models.json)
-lists GPT-6 Astra/Sol/Luna in applicable subscription groups with `context_length:
-272000` and `max_completion_tokens: 128000`. That mutable snapshot is another metadata
-source, not a capacity measurement or proof of which snapshot our deployed gateway uses.
-
-#### Reproductions and historical reports, not provider guarantees
-
-- **Client clamping:** an [Astra ChatGPT-sign-in reproduction](https://github.com/openai/codex/issues/41325#issuecomment-5746583842)
-  and a [Sol report](https://github.com/openai/codex/issues/47805) show default 272000,
-  override maximum 872000, and 95% usable. Requesting 1000000/1050000 yields **828400**
-  reported usable tokens; requesting 800000 yields 760000 in the Sol report. These
-  corroborate client behavior, **not backend rejection above 872000**.
-- **Catalogue variability:** [#40258](https://github.com/openai/codex/issues/40258)
-  reports different Sol caps for the same account depending on client-identification
-  headers; the reporter says that incident resolved on 2026-09-02.
-  [#39144](https://github.com/openai/codex/issues/39144) reports account differences.
-  Neither proves a current incident, and header spoofing is not our proposed fix.
-- **Historical 372000:** gateway-maintainer explanations in
-  [#4195](https://github.com/router-for-me/CLIProxyAPI/issues/4195#issuecomment-4937617812)
-  and [#4476](https://github.com/router-for-me/CLIProxyAPI/issues/4476#issuecomment-5034688225)
-  concern GPT-5.6 catalogue values and acceptance beyond its smaller advertised
-  budget. They do not establish GPT-6 Sol/Luna input ceilings.
-- **Inference lower bound:** [#43685](https://github.com/openai/codex/issues/43685)
-  reports successful Astra subscription-backed requests with **260307 and 300307
-  prompt tokens**. This is third-party evidence of acceptance, not a measured maximum
-  or proof of long-context attention quality. Its reported short output cap does not
-  establish cap enforcement through our pinned translator.
-
-#### Decision and remaining evidence
-
-There is no justified universal subscription input/output pair to install from these
-sources. In particular, do not copy the API's 922000/128000, promote our historical
-372000/128000, or subtract 128000 from a native client budget to invent a ceiling.
-The Astra maintainer claim is a candidate contract requiring corroboration; it is not
-permission to extend it to Sol/Luna. Keep runtime values unchanged in this research
-update, and treat unjustified provider limits as unknown in the proposed pair-or-none
-publication policy.
-
-A next non-inference check would be a sanitized catalogue for the actual upstream
-account and client path, through an explicitly authorized credential-substitution
-route; that still establishes only advertised metadata. The public-internet grant
-does not grant upstream account credentials. Any backend boundary probes require a
-separate quota/cost budget and authorization: the deployed gateway strips output caps,
-so requesting a tiny output is not a reliable cost bound. No near-limit inference,
-credential-file inspection, or header-spoofing experiment was performed for this research.
-
-### Opt-in long-context experiment and costs
-
-The operator prefers a **separate experimental Agentplane model option**, then a real
-working session allowed to accumulate context, over a synthetic near-limit probe suite.
-Keep the ordinary option/default intact. This is a client launch preset for the same
-backend model, not a new provider model or evidence for different neutral-roster limits.
-Reuse the existing offering/configuration machinery where possible; do not build another
-registry or add a LiteLLM route unless the actual selection/recognition wiring requires it.
-This section records the plan, not an enabled option.
-
-**Model identity need not pass through unchanged.** Agentplane's selected offering,
-the harness-facing native model ID, and the LiteLLM routing ID serve different purposes.
-The operator explicitly permits changing ingress translation rather than contorting
-LiteLLM aliases or requiring native clients to recognize our routing namespace. One
-candidate, subject to a native-client smoke test, is:
-
-```text
-Agentplane option: Astra / Astra — long context (experimental)
-  → Codex model: gpt-6-astra, with the option's client budget
-  → Agentplane ingress translates the model to: chatgpt/oai-responses/gpt-6-astra
-  → existing LiteLLM route and subscription backend
-```
-
-Both options can share that native identity and backend route; only their launch
-budget differs. Keep this mapping with the existing Agentplane offering/launch
-configuration, not in a new registry or a provider-capacity declaration. Route selection
-must remain authorized and unambiguous if multiple offerings use the same native slug;
-a caller-supplied native name must not bypass the selected route's access controls.
-Check response model identifiers, model switching, resume and telemetry as well as
-request rewriting. Native recognition still has the prompt/tool side effects noted
-above; translation is not automatically a context-only change. The same boundary is
-available for future Claude support, without implementing that paused path now.
-
-- Give the option an honest label such as “Astra — long context (experimental)”, not
-  “1M guaranteed”. Start a fresh native thread; do not mutate an existing thread's budget.
-- Resolve model recognition explicitly, including the tool/prompt behavior described
-  above. Merely requesting 1000000 on our current unrecognized route stays clamped.
-  The inspected recognized-model maximum is **872000 configured / 828400 usable**;
-  Tibo's 1000000 recommendation concerns a different model/version context and does not
-  override that clamp. Recheck the exact launch version before choosing the preset.
-- Record the effective budget and compaction threshold at startup. With the inspected
-  default 90% policy, an 872000 window starts automatic compaction at **784800**.
-  Normal use may therefore encounter compaction before a backend limit; that is useful
-  operational evidence, but not a maximum-capacity test. Raising/disabling compaction
-  would be a separate deliberate experiment, not an incidental preset change.
-- During ordinary work, record input/cached-input/output and reasoning usage when
-  available, latency, quota before/after, compaction events, and errors. Distinguish a
-  native-client clamp, context rejection, quota exhaustion, proxy timeout, and degraded
-  recall. Stop on trouble rather than repeatedly retrying a large failing request.
-
-#### How expensive is a long-context probe?
-
-There are **three different ledgers**: upstream included subscription allowance or
-purchased credits, hypothetical direct-API spend, and LiteLLM's local spend accounting.
-None is automatically a conversion formula for the others. These examples use the
-public rates retrieved **2026-10-05**, Standard speed, text-only, and one inference
-request. A user-visible agent turn can contain many requests; retry and compaction
-requests also contribute usage. Increasing the configured window alone sends no tokens.
-
-**On our subscription path**, included usage is not billed as an equivalent raw-API
-request. The [Codex pricing page](https://learn.chatgpt.com/docs/pricing#token-rates)
-explicitly says neither API prices nor credit prices determine included allowance
-consumption. It depends on context, reasoning, tools, caching and other factors. We
-cannot honestly predict “this probe consumes X% of your plan” from prompt size alone.
-Purchased-credit rates do allow a conditional estimate:
-
-| Model       | Credits / 1M uncached input | Credits / 1M cached input | Credits / 1M output | 800K uncached input + 1K output |
-| ----------- | --------------------------: | ------------------------: | ------------------: | ------------------------------: |
-| GPT-6 Astra |                         250 |                        25 |                1250 |                  201.25 credits |
-| GPT-6 Sol   |                          50 |                         5 |                 250 |                   40.25 credits |
-| GPT-6 Luna  |                         2.5 |                      0.25 |                12.5 |                  2.0125 credits |
-
-These are the published Standard credit rates, not a claim that our account is using
-purchased credits. The page has no separate cache-write charge for Codex credits and
-warns about legacy Enterprise rate cards. Do not import the raw API's long-context
-multiplier into this credit calculation. Credit purchase prices depend on the plan or
-agreement; actual included-quota impact needs before/after observations on the account
-that served the request, accounting for concurrent activity.
-
-**As a paid-API comparison only**, the model pages linked above apply 2× input/cache
-rates and 1.5× output rates to the **whole request** above 272K input tokens:
-
-| Model       | 300K cold input | 800K cold input | 872K cold input | 800K fully cache-hit input | Additional 1K output |
-| ----------- | --------------: | --------------: | --------------: | -------------------------: | -------------------: |
-| GPT-6 Astra |           $6.00 |          $16.00 |          $17.44 |                      $1.60 |               $0.075 |
-| GPT-6 Sol   |           $1.20 |           $3.20 |          $3.488 |                      $0.32 |               $0.015 |
-| GPT-6 Luna  |           $0.06 |           $0.16 |         $0.1744 |                     $0.016 |             $0.00075 |
-
-Cold-input examples use ordinary uncached-input prices, excluding any separately
-charged cache writes, tools, images, regional/speed premiums or tax. Fully cache-hit
-figures are an idealized comparison, not a promise of cache eligibility or retention.
-Billable output includes applicable reasoning tokens, not just visible response text.
-For example, 800K cold input plus 1K output is **$16.075 Astra / $3.215 Sol /
-$0.16075 Luna** on that API rate card. A successful Luna test would not prove Astra's
-capacity. Ten independent cold 800K Astra requests cost **$160 input alone**; one cold
-plus nine fully cache-hit requests would instead cost **$30.40 input**, before any
-other charges. One probe and a multi-step session are very different budgets.
-
-Our gateway strips request output caps (Appendix C), so “reply OK” is an instruction, not a
-hard cost bound. At the API comparison rates, 128K output would add $9.60/$1.92/$0.096
-respectively; this arithmetic does not verify a subscription output ceiling. The
-practical concern is shared subscription quota and repeated long turns, not that every
-single probe must be prohibitively expensive. No long-context request was sent for
-these estimates, and no experimental option has yet been enabled.
-
-## Appendix D. Ollama serving configuration
+## Ollama serving configuration
 
 The inspected live/source version was **0.34.4**. Our deployment sets
 `OLLAMA_CONTEXT_LENGTH=131072`; the Qwen 256K model alias bakes in `num_ctx=262144`.

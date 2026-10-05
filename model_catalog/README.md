@@ -29,6 +29,12 @@ probes and acceptance checks inspect deployed APIs or committed artifacts.
 
 See [consumer wiring](../cluster/docs/model_catalog.md) for projections and checks.
 
-See [model-roster and consumer-configuration design](design.md) for semantics,
-catalogue fallback behavior, ownership, active-path priorities, and proposed
-integration retirements.
+## Refactor documentation
+
+- [Design](design.md): goals, ownership, example wiring, rollout and shared vocabulary.
+- [Migration inventory](migration_inventory.md): files requiring disposition decisions;
+  most fates remain open, including the cluster guide's.
+- Supporting research: [LiteLLM metadata](litellm_metadata.md),
+  [Antigravity limits](antigravity_limits.md), and [client budgets](client_budgets.md).
+- [Tracking issue #9121](https://github.com/agentydragon/ducktape/issues/9121): PR/rollout
+  status and parked integrations, including restoration obligations.
