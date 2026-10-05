@@ -17,10 +17,7 @@ def test_wrapper_projection_matches_committed_json() -> None:
 def test_wrapper_can_set_client_budget_without_provider_limits() -> None:
     assert SONNET_SUBSCRIPTION.model.context_window is None
     settings = _wrapper(
-        SONNET_SUBSCRIPTION,
-        HAIKU_SUBSCRIPTION,
-        KEY_MODEL_LANES["claude_client_models"],
-        max_context_tokens=128_000,
+        SONNET_SUBSCRIPTION, HAIKU_SUBSCRIPTION, KEY_MODEL_LANES["claude_client_models"], max_context_tokens=128_000
     )
     assert settings["maxContextTokens"] == 128_000
     assert "maxOutputTokens" not in settings
