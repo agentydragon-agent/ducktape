@@ -20,6 +20,7 @@ constraints, provenance, and unresolved choices.
 - [LiteLLM catalogue and publication](#4-litellm-catalogue-overrides-and-publication)
 - [Client-specific values](#5-client-specific-values-and-semantics)
   - [Active Codex audit](#active-codex-path-audit-2026-10-05)
+  - [Subscription-path public evidence](#subscription-path-public-evidence-2026-10-05)
 - [Ollama serving configuration](#6-ollama-serving-configuration)
 - [Other projections](#7-additional-projections-and-side-effects-to-inventory)
 - [Proposed shape and rollout](#8-proposed-shape-after-reducing-scope)
@@ -409,6 +410,89 @@ necessary, test the exact alias/catalogue strategy with native tools, reasoning,
 Responses-lite and compaction before enabling it. Do not build a general harness
 metadata service to preserve paused consumers. Separate Claude/Codex configuration
 vocabularies only when both actually need supported overrides.
+
+### Subscription-path public evidence, 2026-10-05
+
+**A Responses-shaped endpoint does not establish the public API's capacity contract.**
+Public research supports that distinction but does not establish our account's backend
+ceilings. Sources below are ranked by what they actually establish, not combined into
+one supposedly authoritative number.
+
+#### Official API specifications and first-party Codex guidance
+
+The public API model pages for
+[Astra](https://developers.openai.com/api/docs/models/gpt-6-astra.md),
+[Sol](https://developers.openai.com/api/docs/models/gpt-6-sol.md), and
+[Luna](https://developers.openai.com/api/docs/models/gpt-6-luna.md) all list **1050000
+combined context, 922000 maximum input, and 128000 maximum output**. Those are API
+specifications, not an explicit entitlement for the ChatGPT subscription backend.
+The API's 272K long-context pricing threshold is not its capacity ceiling either.
+
+There is also contrary evidence to a blanket claim that subscription Codex cannot use
+1M: [Tibo (Codex & ChatGPT at OpenAI), 2026-08-16](https://x.com/thsottiaux/status/2089082893804896524)
+explicitly recommends `model_context_window=1000000` and
+`model_auto_compact_token_limit=900000` for **GPT-5.6 Sol**, describing the smaller
+default as tuned for performance/cost. This establishes advertised intent for that
+model, not verified acceptance on our GPT-6 routes. Codex's
+[override-bound change](https://github.com/openai/codex/pull/39102) and the inspected
+0.157.0 source instead use **872000** as the relevant maximum client override.
+Do not silently resolve this discrepancy in favor of either advertised number.
+
+#### Gateway-maintainer account of the subscription backend
+
+[CLIProxyAPI collaborator luispater, 2026-09-15](https://github.com/router-for-me/CLIProxyAPI/issues/5835#issuecomment-5672721746)
+says Astra's actual limit is **1M total: 872000 context + 128000 output**, and calls
+the catalogue's `context_length: 272000` OpenAI's recommended display value. This is
+a useful subscription-specific claim, but **not an OpenAI serving contract or our own
+boundary measurement**. Preserve the source's word “context”: do not quietly recast
+it as a proven independently attainable maximum input. “Display only” also cannot
+be generalized to our client: Codex demonstrably uses metadata to constrain budgets.
+
+The current [CLIProxy public registry](https://github.com/router-for-me/models/blob/main/models.json)
+lists GPT-6 Astra/Sol/Luna in applicable subscription groups with `context_length:
+272000` and `max_completion_tokens: 128000`. That mutable snapshot is another metadata
+source, not a capacity measurement or proof of which snapshot our deployed gateway uses.
+
+#### Reproductions and historical reports, not provider guarantees
+
+- **Client clamping:** an [Astra ChatGPT-sign-in reproduction](https://github.com/openai/codex/issues/41325#issuecomment-5746583842)
+  and a [Sol report](https://github.com/openai/codex/issues/47805) show default 272000,
+  override maximum 872000, and 95% usable. Requesting 1000000/1050000 yields **828400**
+  reported usable tokens; requesting 800000 yields 760000 in the Sol report. These
+  corroborate client behavior, **not backend rejection above 872000**.
+- **Catalogue variability:** [#40258](https://github.com/openai/codex/issues/40258)
+  reports different Sol caps for the same account depending on client-identification
+  headers; the reporter says that incident resolved on 2026-09-02.
+  [#39144](https://github.com/openai/codex/issues/39144) reports account differences.
+  Neither proves a current incident, and header spoofing is not our proposed fix.
+- **Historical 372000:** gateway-maintainer explanations in
+  [#4195](https://github.com/router-for-me/CLIProxyAPI/issues/4195#issuecomment-4937617812)
+  and [#4476](https://github.com/router-for-me/CLIProxyAPI/issues/4476#issuecomment-5034688225)
+  concern GPT-5.6 catalogue values and acceptance beyond its smaller advertised
+  budget. They do not establish GPT-6 Sol/Luna input ceilings.
+- **Inference lower bound:** [#43685](https://github.com/openai/codex/issues/43685)
+  reports successful Astra subscription-backed requests with **260307 and 300307
+  prompt tokens**. This is third-party evidence of acceptance, not a measured maximum
+  or proof of long-context attention quality. Its reported short output cap does not
+  establish cap enforcement through our pinned translator.
+
+#### Decision and remaining evidence
+
+There is no justified universal subscription input/output pair to install from these
+sources. In particular, do not copy the API's 922000/128000, promote our historical
+372000/128000, or subtract 128000 from a native client budget to invent a ceiling.
+The Astra maintainer claim is a candidate contract requiring corroboration; it is not
+permission to extend it to Sol/Luna. Keep runtime values unchanged in this research
+update, and treat unjustified provider limits as unknown in the proposed pair-or-none
+publication policy.
+
+A next non-inference check would be a sanitized catalogue for the actual upstream
+account and client path, through an explicitly authorized credential-substitution
+route; that still establishes only advertised metadata. The public-internet grant
+does not grant upstream account credentials. Any backend boundary probes require a
+separate quota/cost budget and authorization: the deployed gateway strips output caps,
+so requesting a tiny output is not a reliable cost bound. No near-limit inference,
+credential-file inspection, or header-spoofing experiment was performed for this research.
 
 ## 6. Ollama serving configuration
 
