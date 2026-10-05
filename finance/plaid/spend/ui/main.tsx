@@ -33,7 +33,7 @@ type Allowance = {
   currency: string;
   alert_state: string;
   available_minor_units: number | null;
-  monthly_minor_units: number | null;
+  monthly_minor_units: number;
   activation_at: string;
   prior_carry_minor_units: number | null;
   posted_minor_units: number | null;
