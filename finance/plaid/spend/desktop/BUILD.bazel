@@ -92,9 +92,9 @@ py_wheel(
     deps = [
         ":cli",
         ":credentials",
-        "//finance/plaid/spend:allowance",
         ":daemon",
         ":oauth",
         ":package_init",
+        "//finance/plaid/spend:allowance",
     ],
 )
