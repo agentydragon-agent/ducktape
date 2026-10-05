@@ -47,7 +47,7 @@ function formatMoney(minorUnits, currency) {
       maximumFractionDigits: 0,
       minimumFractionDigits: 0,
     });
-    const amount = value / 10 ** precision;
+    const amount = value / 10 ** (precision ?? 2);
     if (amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${formatter.format(1)}`;
     return formatter.format(amount);
   } catch (_error) {

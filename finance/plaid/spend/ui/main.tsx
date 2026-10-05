@@ -82,7 +82,7 @@ function money(value: number | null | undefined, currency: string | null, exact 
     });
     const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
       .maximumFractionDigits;
-    const amount = value / 10 ** precision;
+    const amount = value / 10 ** (precision ?? 2);
     if (!exact && amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${formatter.format(1)}`;
     return formatter.format(amount);
   } catch {
