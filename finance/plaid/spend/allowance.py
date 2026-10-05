@@ -131,6 +131,7 @@ class AllowanceView(BaseModel):
         description="Projected at trailing seven-day positive purchase pace, ignoring future credits; null if no recent spend."
     )
     alert_state: PaceAlert
+    spending_signal: PaceAlert
     last_synced_at: datetime | None
     note: str | None = None
     prior_carry_minor_units: int = 0
@@ -230,7 +231,9 @@ def calculate(
     elapsed_days = min(7, (now.date() - start.date()).days + 1)
     since_start_positive = sum(max(0, p.minor_units) for p in included if p.transaction.date >= pace_start)
     observed_weekly = recent_positive // 7 if recent_positive else (0 if elapsed_days >= 7 else None)
-    observed_monthly = monthly_positive // 30 if monthly_positive else (0 if (now.date() - start.date()).days >= 29 else None)
+    observed_monthly = (
+        monthly_positive // 30 if monthly_positive else (0 if (now.date() - start.date()).days >= 29 else None)
+    )
     # History can inform the pace without becoming an opening allowance debt.
     # Early post-start bursts should not disappear into the seven-day average.
     daily = max(recent_positive // 7, since_start_positive // elapsed_days) if recent_positive else None
@@ -245,6 +248,18 @@ def calculate(
         if projected_end is None
         else PaceAlert.WARNING
         if projected_end < 0
+        else PaceAlert.NORMAL
+    )
+    reference_rate = Decimal(policy.monthly_minor_units) * 12 / Decimal("365.2425")
+    signal = (
+        PaceAlert.EXCEEDED
+        if available <= 0
+        else PaceAlert.WARNING
+        if alert == PaceAlert.WARNING
+        or (observed_weekly is not None and observed_weekly > reference_rate)
+        or (observed_monthly is not None and observed_monthly > reference_rate)
+        else PaceAlert.UNAVAILABLE
+        if observed_weekly is None and observed_monthly is None
         else PaceAlert.NORMAL
     )
     return AllowanceView(
@@ -265,6 +280,7 @@ def calculate(
         trailing_30_observed_daily_minor_units=observed_monthly,
         estimated_exhaustion_at=now + timedelta(days=max(0, available) / daily) if daily else None,
         alert_state=alert,
+        spending_signal=signal,
         last_synced_at=last_synced_at,
         prior_carry_minor_units=(credits - 1) * policy.monthly_minor_units
         - (posted + pending - windows.current_credit_cycle_minor_units),

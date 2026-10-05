@@ -7,7 +7,8 @@
     "cards": [
       {
         "label": "Synthetic card",
-        "alert_state": "exceeded",
+        "spending_signal": "exceeded",
+      "alert_state": "exceeded",
         "spend_minor_units": 90000,
         "currency": "USD",
         "statement_available": true,

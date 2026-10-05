@@ -45,13 +45,15 @@ spending-window totals. For **pace only**, the service also reads the preceding 
 calendar days, applies the same fixed/excluded/flexible rules and pending
 replacement handling, and considers positive flexible purchases from before the
 activation date. This history is **never imported as opening debt**; the current-cycle,
-trailing 7/30-day, calendar and year *spend totals* still start at activation. The
+trailing 7/30-day, calendar and year _spend totals_ still start at activation. The
 separate `trailing_7_observed_daily_minor_units` and `trailing_30_observed_daily_minor_units`
 are positive recorded purchases in the respective full calendar-day windows divided
 by 7 and 30 (null on startup without pace evidence). `trailing_7_daily_minor_units`
 is the existing, potentially higher, early-burst-sensitive projection pace; do not
-present it as the literal seven-day average. The GNOME panel uses the observed
-rates only as **provisional allowance** comparisons, not a sustainability guarantee.
+present it as the literal seven-day average. Web, GNOME and CLI show both observed
+rates against the same approximate monthly-credit-equivalent daily reference;
+`spending_signal` compares those rates and the existing forecast against that
+**provisional allowance**, not a sustainability guarantee.
 Plaid's transaction date (not an exact swipe timestamp) defines membership in each
 window. A newly linked account with a short historical backfill can understate
 observed pace; show sync freshness, not a promise of comprehensive coverage.

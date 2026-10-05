@@ -33,8 +33,12 @@ _GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gn
 _EXTENSION_ZIP = "_main/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
 _EXTENSION_UUID = "plaid-spend@allegedly.works"
 _FIXTURE_NAMES = (
-    "ready_two_cards", "authentication_required", "offline",
-    "allowance_paced", "allowance_warming", "allowance_exhausted",
+    "ready_two_cards",
+    "authentication_required",
+    "offline",
+    "allowance_paced",
+    "allowance_warming",
+    "allowance_exhausted",
 )
 _FIXTURE_DIR = "_main/finance/plaid/spend/gnome/fixtures"
 _SCREEN_WIDTH = 1920
@@ -280,9 +284,9 @@ def _crop_combined(full: Image.Image, menu_geometry: tuple[int, int, int, int]) 
         ("ready_two_cards", "$149.45 !"),
         ("authentication_required", "Sign in"),
         ("offline", "Offline"),
-        ("allowance_paced", "Flex $200.00 ↘"),
+        ("allowance_paced", "Flex $200.00 !"),
         ("allowance_warming", "Flex $700.00"),
-        ("allowance_exhausted", "Flex -$15.00 ↓"),
+        ("allowance_exhausted", "Flex -$15.00 !!"),
     ],
 )
 def test_render(
@@ -305,8 +309,10 @@ def test_render(
         assert "Synthetic card" not in menu_text
         assert "Check a purchase / dashboard" in menu_text
         if fixture_name == "allowance_paced":
-            assert "7 days" in menu_text and "30 days" in menu_text
-            assert "Provisional leash" in menu_text and "Oldest account sync" in menu_text
+            assert "7 days" in menu_text
+            assert "30 days" in menu_text
+            assert "Provisional leash" in menu_text
+            assert "Oldest account sync" in menu_text
         if fixture_name == "allowance_warming":
             assert "Warming up" in menu_text
         if fixture_name == "allowance_exhausted":

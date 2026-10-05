@@ -61,6 +61,7 @@ def sample_allowance(status: Status = Status.ACTIVE) -> AllowanceView:
         trailing_30_observed_daily_minor_units=1000 if active else None,
         estimated_exhaustion_at=datetime(2026, 2, 14, tzinfo=UTC) if active else None,
         alert_state=PaceAlert.WARNING if active else PaceAlert.UNAVAILABLE,
+        spending_signal=PaceAlert.WARNING if active else PaceAlert.UNAVAILABLE,
         last_synced_at=NOW if active else None,
         projected_cycle_end_minor_units=-200 if active else None,
         note=None if active else "Account coverage or sync freshness unavailable; do not rely on the allowance.",
@@ -74,7 +75,10 @@ def test_prints_active_allowance_and_cards(capsys: pytest.CaptureFixture[str]) -
     assert "Monthly credit: USD 100.00" in output
     assert "Spent this credit cycle: USD 12.00" in output
     assert "Pending (included): USD 3.00" in output
-    assert "Pace: warning" in output
+    assert "Provisional leash signal: warning" in output
+    assert "7-day recorded flexible pace: USD 12.00/day" in output
+    assert "30-day recorded flexible pace: USD 10.00/day" in output
+    assert "Provisional leash rate:" in output
     assert "Estimated balance before next credit:" in output
     assert "2.00" in output
     assert "2026-02-28T00:00:00Z" in output

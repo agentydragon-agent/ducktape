@@ -42,6 +42,9 @@ type Allowance = {
   review_transaction_count: number;
   unmatched_refunds_minor_units: number | null;
   trailing_7_daily_minor_units: number | null;
+  trailing_7_observed_daily_minor_units: number | null;
+  trailing_30_observed_daily_minor_units: number | null;
+  spending_signal: string;
   projected_cycle_end_minor_units: number | null;
   estimated_exhaustion_at: string | null;
   next_credit_at: string | null;
@@ -90,7 +93,7 @@ function signalFor(available: number, projected: number): Signal {
 function SignalLabel({ signal }: { signal: Signal }) {
   return (
     <Badge color={signal === "exceeded" ? "red" : signal === "warning" ? "yellow" : "teal"} variant="light">
-      {signal === "exceeded" ? "Over allowance" : signal === "warning" ? "Pace warning" : "On track"}
+      {signal === "exceeded" ? "Over allowance" : signal === "warning" ? "Pace warning" : "Below provisional leash"}
     </Badge>
   );
 }
@@ -122,7 +125,15 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
   const after = valid && available != null ? available - cents : null;
   const projectedAfter = valid && projected != null ? projected - cents : null;
   const signal =
-    after != null ? (after <= 0 ? "exceeded" : projectedAfter != null ? signalFor(after, projectedAfter) : null) : null;
+    after != null
+      ? after <= 0
+        ? "exceeded"
+        : allowance.spending_signal === "warning" || (projectedAfter != null && projectedAfter < 0)
+          ? "warning"
+          : projectedAfter != null
+            ? signalFor(after, projectedAfter)
+            : null
+      : null;
   const m = (value: number | null) => money(value, allowance.currency);
 
   return (
@@ -202,8 +213,8 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
   const m = (value: number | null | undefined) => money(value, allowance.currency);
   const available = allowance.available_minor_units;
   const projected = allowance.projected_cycle_end_minor_units;
-  const signal = ["normal", "warning", "exceeded"].includes(allowance.alert_state)
-    ? (allowance.alert_state as Signal)
+  const signal = ["normal", "warning", "exceeded"].includes(allowance.spending_signal)
+    ? (allowance.spending_signal as Signal)
     : null;
   const windows = allowance.windows_minor_units;
 
@@ -263,6 +274,32 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
                 : projected < 0
                   ? "Projected shortfall before your next credit"
                   : "Projected balance before your next credit"}
+            </Text>
+            <Divider />
+            <Text size="sm" fw={700}>Recorded flexible spending pace</Text>
+            <Group justify="space-between" gap="sm">
+              <Text size="sm">7 days</Text>
+              <Text size="sm" fw={700}>
+                {allowance.trailing_7_observed_daily_minor_units == null
+                  ? "Warming up"
+                  : `${m(allowance.trailing_7_observed_daily_minor_units)} / day`}
+              </Text>
+            </Group>
+            <Group justify="space-between" gap="sm">
+              <Text size="sm">30 days</Text>
+              <Text size="sm" fw={700}>
+                {allowance.trailing_30_observed_daily_minor_units == null
+                  ? "Warming up"
+                  : `${m(allowance.trailing_30_observed_daily_minor_units)} / day`}
+              </Text>
+            </Group>
+            <Text size="sm" c="dimmed">
+              Provisional leash ~{m(Math.round(allowance.monthly_minor_units * 12 / 365.2425))} / day.
+              This is spending capacity, not a sustainability target.
+            </Text>
+            <Text size="xs" c="dimmed">
+              Positive recorded purchases, including history before activation; unmatched purchases count as flexible.
+              Earlier purchases inform pace but do not reduce available allowance. Plaid data may lag.
             </Text>
             <Divider />
             <Group justify="space-between" gap="sm">

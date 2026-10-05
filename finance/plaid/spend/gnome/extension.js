@@ -98,17 +98,14 @@ function totalLabel(view) {
 
 function allowanceSignal(allowance) {
   if (allowance.status !== "active" || allowance.available_minor_units == null)
-    return { level: "unknown", label: "Allowance unavailable", arrow: "" };
+    return { level: "unknown", label: "Allowance unavailable", marker: "" };
   if (allowance.available_minor_units <= 0)
-    return { level: "danger", label: "Allowance exhausted · advisory only", arrow: "↓" };
-  const rate = (Number(allowance.monthly_minor_units) * 12) / 365.2425;
-  const weekly = allowance.trailing_7_observed_daily_minor_units;
-  const monthly = allowance.trailing_30_observed_daily_minor_units;
-  if (allowance.alert_state === "warning" || (weekly != null && weekly > rate) || (monthly != null && monthly > rate))
-    return { level: "caution", label: "Recent pace or projection above provisional leash", arrow: "↘" };
-  if (weekly == null && monthly == null)
-    return { level: "unknown", label: "Pace warming up", arrow: "" };
-  return { level: "good", label: "Below provisional leash pace", arrow: "↗" };
+    return { level: "danger", label: "Allowance exhausted · advisory only", marker: "!!" };
+  if (allowance.spending_signal === "warning")
+    return { level: "caution", label: "Recent pace or projection above provisional leash", marker: "!" };
+  if (allowance.spending_signal === "unavailable")
+    return { level: "unknown", label: "Pace warming up", marker: "" };
+  return { level: "good", label: "Below provisional leash pace", marker: "" };
 }
 
 function formatDaily(minorUnits, currency) {
@@ -224,11 +221,14 @@ const PlaidSpendIndicator = GObject.registerClass(
       else if (this._view?.allowance?.status === "active" && this._status === "ready") {
         const a = this._view.allowance;
         const signal = allowanceSignal(a);
-        label = `Flex ${formatMoney(a.available_minor_units, a.currency)} ${signal.arrow}`.trim();
+        label = `Flex ${formatMoney(a.available_minor_units, a.currency)} ${signal.marker}`.trim();
       } else if (this._view?.allowance) label = "Flex unavailable";
       else if (cards.length === 0) label = this._status === "error" ? "Offline" : "No cards";
       else label = totalLabel(this._view);
-      if (!this._view?.allowance && cards.some((card) => card.alert_state === "warning" || card.alert_state === "exceeded")) {
+      if (
+        !this._view?.allowance &&
+        cards.some((card) => card.alert_state === "warning" || card.alert_state === "exceeded")
+      ) {
         label = `${label} !`;
       }
 
@@ -276,7 +276,11 @@ const PlaidSpendIndicator = GObject.registerClass(
           OpenMenu: () => this.menu.open(false),
           CloseMenu: () => this.menu.close(false),
           GetPanelLabel: () => this._label.get_text(),
-          GetMenuText: () => this.menu._getMenuItems().map((item) => item.label?.get_text() || "").join("\n"),
+          GetMenuText: () =>
+            this.menu
+              ._getMenuItems()
+              .map((item) => item.label?.get_text() || "")
+              .join("\n"),
           GetMenuGeometry: () => {
             const actor = this.menu.actor;
             const [x, y] = actor.get_transformed_position();
@@ -339,17 +343,28 @@ const PlaidSpendIndicator = GObject.registerClass(
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem("Your flex cushion · advisory"));
         if (allowance.status === "active" && this._status === "ready") {
           const signal = allowanceSignal(allowance);
-          this._addReadOnly(`${formatMoney(allowance.available_minor_units, allowance.currency)} available`, "plaid-spend-hero");
-          this._addReadOnly(`${signal.arrow} ${signal.label}`.trim(), `plaid-spend-${signal.level}`);
+          this._addReadOnly(
+            `${formatMoney(allowance.available_minor_units, allowance.currency)} available`,
+            "plaid-spend-hero"
+          );
+          this._addReadOnly(`${signal.marker} ${signal.label}`.trim(), `plaid-spend-${signal.level}`);
           this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem("Recorded flexible spending"));
-          this._addReadOnly(`7 days   ${formatDaily(allowance.trailing_7_observed_daily_minor_units, allowance.currency)}`);
-          this._addReadOnly(`30 days  ${formatDaily(allowance.trailing_30_observed_daily_minor_units, allowance.currency)}`);
-          const daily = Math.round(Number(allowance.monthly_minor_units) * 12 / 365.2425);
+          this._addReadOnly(
+            `7 days   ${formatDaily(allowance.trailing_7_observed_daily_minor_units, allowance.currency)}`
+          );
+          this._addReadOnly(
+            `30 days  ${formatDaily(allowance.trailing_30_observed_daily_minor_units, allowance.currency)}`
+          );
+          const daily = Math.round((Number(allowance.monthly_minor_units) * 12) / 365.2425);
           this._addReadOnly(`Provisional leash ~${formatDaily(daily, allowance.currency)}`);
           this._addReadOnly("Positive purchases; past pace is not opening debt.", "plaid-spend-caption");
+          this._addReadOnly("Unmatched purchases count as flexible.", "plaid-spend-caption");
           this._addReadOnly("Leash capacity is not a sustainability target.", "plaid-spend-caption");
           if (allowance.last_synced_at)
-            this._addReadOnly(`Oldest account sync ${formatTimestamp(allowance.last_synced_at)}`, "plaid-spend-caption");
+            this._addReadOnly(
+              `Oldest account sync ${formatTimestamp(allowance.last_synced_at)}`,
+              "plaid-spend-caption"
+            );
         } else this._addReadOnly(allowance.note || "Allowance unavailable; check connection");
       }
       if (this._view?.dashboard_url?.startsWith("https://")) {
@@ -367,9 +382,12 @@ const PlaidSpendIndicator = GObject.registerClass(
         for (const card of cards) {
           this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(cardTitle(card)));
           const spend = formatMoney(card.spend_minor_units, card.currency);
-          const limit = card.limit_minor_units == null ? "no limit set" : formatMoney(card.limit_minor_units, card.currency);
+          const limit =
+            card.limit_minor_units == null ? "no limit set" : formatMoney(card.limit_minor_units, card.currency);
           const percent = card.spend_percent == null ? "" : ` · ${Number(card.spend_percent).toFixed(1)}%`;
-          this._addReadOnly(card.statement_available ? `Spend: ${spend} / ${limit}${percent}` : `Recorded spend: ${spend}`);
+          this._addReadOnly(
+            card.statement_available ? `Spend: ${spend} / ${limit}${percent}` : `Recorded spend: ${spend}`
+          );
           const cycle = card.statement_available
             ? `Cycle starts ${card.cycle_start}`
             : card.cycle_start

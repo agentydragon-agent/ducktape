@@ -47,6 +47,7 @@ def dashboard_url() -> Iterator[str]:
                 "note": None,
                 "currency": "USD",
                 "alert_state": "normal",
+                "spending_signal": "normal",
                 "monthly_minor_units": 70000,
                 "activation_at": "2026-10-01",
                 "available_minor_units": 20000,
@@ -155,6 +156,11 @@ async def test_spending_decision_render(
     assert await page.get_by_role("heading", name="Flexible spending", level=1).count() == 1
     assert await page.get_by_role("alert").get_by_text("2 charges ($15.00) need review").count() == 1
     assert await page.get_by_role("heading", name="Can I afford this?").count() == 1
+    assert await page.get_by_text("7 days", exact=True).count() == 1
+    assert await page.get_by_text("30 days", exact=True).count() == 1
+    assert await page.get_by_text("$12.50 / day", exact=True).count() == 2
+    assert await page.get_by_text("$10.00 / day", exact=True).count() == 1
+    assert await page.get_by_text("Below provisional leash", exact=True).count() == 1
     assert await page.get_by_text("$75.00", exact=True).count() == 1
     assert await page.get_by_text("Provisional card total since", exact=False).count() == 1
     assert await page.get_by_text("Includes purchases outside the allowance", exact=False).count() == 1
@@ -181,7 +187,7 @@ async def test_new_allowance_has_no_fake_zero_pace(page: Page, dashboard_url: st
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_text("Not enough data", exact=True).wait_for()
     assert await page.get_by_text("Pace warming up", exact=True).count() == 1
-    assert await page.get_by_text("Warming up", exact=True).count() == 1
+    assert await page.get_by_text("Warming up", exact=True).count() == 3
     assert await page.get_by_text("$700.00", exact=True).count() >= 1
     await page.get_by_label("Hypothetical flexible purchase").fill("10")
     assert await page.get_by_text("$690.00", exact=True).count() == 1

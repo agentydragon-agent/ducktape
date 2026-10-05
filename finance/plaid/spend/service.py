@@ -306,6 +306,7 @@ class SpendService:
                     trailing_30_observed_daily_minor_units=None,
                     estimated_exhaustion_at=None,
                     alert_state=PaceAlert.UNAVAILABLE,
+                    spending_signal=PaceAlert.UNAVAILABLE,
                     last_synced_at=last_synced,
                     note="Account coverage or sync freshness unavailable; do not rely on the allowance.",
                 )

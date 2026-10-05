@@ -170,9 +170,24 @@ def test_prior_purchases_inform_pace_without_importing_debt():
     assert result.windows_minor_units.trailing_7_days_minor_units == 0
     assert result.trailing_7_daily_minor_units == 1_000
     assert result.trailing_7_observed_daily_minor_units == 1_000
-    assert result.trailing_30_observed_daily_minor_units == 7_000 // 30
+    assert result.trailing_30_observed_daily_minor_units == 12_000 // 30
     assert result.alert_state == PaceAlert.WARNING
     assert result.projected_cycle_end_minor_units == -18_000
+
+
+def test_monthly_observed_pace_warns_without_weekly_forecast_or_opening_debt():
+    now = datetime(2026, 3, 2, tzinfo=UTC)
+    result = calculate(
+        policy(activation_at=now.date()),
+        [row("2026-02-10", 200)],
+        now=now,
+        last_synced_at=now,
+    )
+    assert result.available_minor_units == 10_000
+    assert result.trailing_7_observed_daily_minor_units is None
+    assert result.trailing_30_observed_daily_minor_units == 20_000 // 30
+    assert result.alert_state == PaceAlert.UNAVAILABLE
+    assert result.spending_signal == PaceAlert.WARNING
 
 
 def test_no_pace_until_history_or_a_full_week_of_zero_spend():
