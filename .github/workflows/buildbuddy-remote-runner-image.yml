@@ -104,6 +104,16 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
+      # update_image_pin.py formats the pins file with prettier when it finds it on PATH and
+      # writes json.dumps output when it does not. This pin runs in its own job, whose only other
+      # Nix install is `runner-image-tools` (skopeo + coreutils), so prettier has to be installed
+      # here as well; the sibling pins in container-images.yml and rbe-container-image.yml do the
+      # same. Same condition as the pin itself: nothing to format when nothing is published.
+      - uses: ./.github/actions/setup-nix-devtools
+        if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only
+        with:
+          package: prettier
+
       - name: Pin on the latest branch after verifying its inputs
         if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only
         env:
