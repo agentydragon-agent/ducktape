@@ -17,7 +17,7 @@ from cluster.cdk8s.model_selections import HarnessRoutes
 from model_catalog.catalog import Route
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
-_THREAD_PRESET_HAKU_CLAUDE = "haku-claude"
+_THREAD_PRESET_HAKU_CODEX = "haku-codex"
 # The EgressPolicy objects egress creates in every environment, named here
 # because presets and explicit grants refer to them.
 BASIC_POLICY = "basic"
@@ -65,6 +65,8 @@ def settings(
     action_federation: ActionFederationSettings | None = None,
     action_policy_sets: list[str] | None = None,
     sandbox_service_grpc_channel_options: dict[str, int | str] | None = None,
+    # None omits both Haku presets (agentplane-testing does); staging passes the Codex route
+    # its Haku Thread opens with, which must be offered under `Harness.CODEX`.
     haku_preset_model: Route | None = None,
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
     kubernetes_binding_cleanup_namespaces: list[str] | None = None,
@@ -104,10 +106,14 @@ def settings(
                 instructions=_PUBLIC_CODER_INSTRUCTIONS,
             ),
             **(
+                # TODO(#9121): consider switching Haku back to a Claude default once Anthropic
+                # models and the Claude adapter are wired up and validated again. Existing Haku
+                # Threads stay on Codex either way: a Thread cannot move to a model with a
+                # different configured context window.
                 {
-                    _THREAD_PRESET_HAKU_CLAUDE: ThreadPreset(
+                    _THREAD_PRESET_HAKU_CODEX: ThreadPreset(
                         title="Haku",
-                        harness=Harness.CLAUDE,
+                        harness=Harness.CODEX,
                         model=haku_preset_model.id,
                         cwd="/state/workspaces/{session_id}/haku-state",
                         reasoning_effort="medium",
@@ -182,7 +188,7 @@ def settings(
                             GITHUB_ACTIONS_LOGS_POLICY,
                         ],
                         action_policy_sets=[GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
-                        thread_preset=_THREAD_PRESET_HAKU_CLAUDE,
+                        thread_preset=_THREAD_PRESET_HAKU_CODEX,
                         # Each new Thread gets its own haku-state and ducktape checkout.
                     )
                 }
