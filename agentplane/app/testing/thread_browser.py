@@ -167,6 +167,10 @@ def append_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> 
     return latest
 
 
+def message_composer(page: Page) -> Locator:
+    return page.get_by_role("textbox", name="Message", exact=True)
+
+
 async def frames(page: Page) -> None:
     """Waits for the paint after the next layout, and any effect or observer it runs."""
     await page.evaluate("() => window.__threadPage.frames()")
