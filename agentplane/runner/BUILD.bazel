@@ -397,7 +397,6 @@ py_test(
         "@platforms//os:linux",
     ],
     deps = [
-        ":client",
         ":conftest",
         ":harness_process",
         ":store",
@@ -410,7 +409,6 @@ py_test(
         "//agentplane/runner/testing:launches",
         "//agentplane/runner/testing:scripted_model",
         "//util/bazel:runfiles",
-        "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -497,7 +495,6 @@ py_test(
     name = "test_initialize",
     srcs = ["test_initialize.py"],
     deps = [
-        ":client",
         ":config",
         ":conftest",
         ":service",
