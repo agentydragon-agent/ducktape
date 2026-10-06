@@ -342,7 +342,6 @@ py_library(
     srcs = ["app_settings.py"],
     data = [
         "ducktape_pr_instructions.md",
-        "haku_thread_setup.sh",
         "public_coder_instructions.md",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
@@ -395,6 +394,7 @@ py_library(
     data = [
         "finance_agent_instructions.md",
         "finance_agent_thread_setup.sh",
+        "haku_thread_setup.sh",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [

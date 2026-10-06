@@ -136,8 +136,8 @@ Direct local clients and Claude Code Web are unaffected.
 
 To restore the offerings, repopulate `STAGING_APP_MODELS.claude` and
 `TESTING_APP_MODELS.claude` in `cluster/cdk8s/model_selections.py`. Restoring Haku's
-Claude default is optional and separate: `haku_preset_model` in `staging_config.py`
-takes any route, and a Thread cannot move to a model with a different configured
-context window, so existing Haku Threads stay on Codex. Resolve the tracked
+Claude default is optional and separate: Haku's preset is defined in `staging_config.py`,
+where its `model` takes any route, and a Thread cannot move to a model with a different
+configured context window, so existing Haku Threads stay on Codex. Resolve the tracked
 client-budget/metadata questions before restoring Claude; regenerate manifests and
 check both launch forms. No session or volume migration is part of either pause or restoration.
