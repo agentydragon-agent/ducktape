@@ -15,6 +15,12 @@ py_library(
     deps = ["@pypi//fastmcp_slim"],
 )
 
+aspect_py_binary(
+    name = "fake_mcp_server_bin",
+    main = "fake_mcp_server.py",
+    deps = [":fake_mcp_server"],
+)
+
 py_library(
     name = "lifecycle",
     srcs = ["lifecycle.py"],

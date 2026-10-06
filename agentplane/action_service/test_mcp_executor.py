@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import os
-import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -50,7 +49,7 @@ from util.bazel.runfiles import get_required_path
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-workload-a"))
 OPERATOR = OperatorPrincipal(issuer="test-bff", subject="operator")
 GROUP_KEY = "demo"
-FAKE_SERVER = "_main/agentplane/action_service/testing/fake_mcp_server.py"
+FAKE_SERVER = "_main/agentplane/action_service/testing/fake_mcp_server_bin"
 
 
 def _group() -> ActionGroup:
@@ -287,12 +286,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
         executor=McpExecutorBinding(
             kind="mcp",
             description="subprocess test server",
-            config={
-                "transport": "stdio",
-                "command": sys.executable,
-                "args": [str(server_path)],
-                "env": {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
-            },
+            config={"transport": "stdio", "command": str(server_path), "args": [], "env": dict(os.environ)},
         ),
     )
     executor = McpActionGroupExecutor.from_group("slow", group)
