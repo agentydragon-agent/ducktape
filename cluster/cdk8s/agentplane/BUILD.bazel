@@ -299,7 +299,6 @@ py_library(
         ":app_settings",
         ":dex",
         ":egress",
-        ":staging_config",
         ":testing",
         "//agentplane/action_service/policies:resources",
         "//agentplane/action_service/sandbox:actions",
@@ -365,6 +364,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":actions_staging_policies",
         ":app_settings",
         ":staging_config",
         "//:conftest",
@@ -399,6 +399,7 @@ py_library(
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":actions_staging_policies",
         ":app_settings",
         ":rbac",
         ":sandbox_pod",

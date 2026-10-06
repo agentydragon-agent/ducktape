@@ -2,13 +2,12 @@
 
 import pytest_bazel
 
-from cluster.cdk8s.agentplane.app_settings import _PUBLIC_CODER_INSTRUCTIONS, DUCKTAPE_PR_INSTRUCTIONS
-from cluster.cdk8s.agentplane.staging_config import (
-    _FINANCE_AGENT_INSTRUCTIONS,
+from cluster.cdk8s.agentplane.actions_staging_policies import (
     FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
     FINANCE_AGENT_GAFFER_PR_CREATION_SET,
-    config,
 )
+from cluster.cdk8s.agentplane.app_settings import _PUBLIC_CODER_INSTRUCTIONS, DUCKTAPE_PR_INSTRUCTIONS
+from cluster.cdk8s.agentplane.staging_config import _FINANCE_AGENT_INSTRUCTIONS, config
 
 
 def test_ducktape_pr_instructions_are_shared_once() -> None:

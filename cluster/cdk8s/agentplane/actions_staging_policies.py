@@ -50,14 +50,6 @@ from cluster.cdk8s.agentplane.app_settings import (
     PLAID_PGWEB_POLICY,
     SSH_READS_SET,
 )
-from cluster.cdk8s.agentplane.staging_config import (
-    FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
-    FINANCE_AGENT_GAFFER_PR_CREATION_SET,
-    PUBLIC_DUCKTAPE_FORK_READS_SET,
-    PUBLIC_DUCKTAPE_READS_SET,
-    PUBLIC_GAFFER_PRIVATE_READS_SET,
-    PUBLIC_GITHUB_READS_SET,
-)
 from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
 from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
@@ -77,6 +69,18 @@ _GROCY_SF_READS_SET = "grocy-sf-reads"
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
 _GITHUB_DOWNLOADS_POLICY = "github-downloads"
+
+# The ActionPolicySet objects created below that the launch presets bind, named because a
+# preset refers to them by name. They live here rather than in the preset's own module so the
+# name and the object that answers to it are declared in one place: staging's presets import
+# these, never the other way round.
+PUBLIC_GITHUB_READS_SET = "public-github-reads"
+PUBLIC_DUCKTAPE_READS_SET = "public-ducktape-reads"
+PUBLIC_DUCKTAPE_FORK_READS_SET = "public-ducktape-fork-reads"
+PUBLIC_GAFFER_PRIVATE_READS_SET = "public-gaffer-private-reads"
+DUCKTAPE_PR_FAILED_JOBS_SET = "ducktape-pr-failed-jobs"
+FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET = "finance-agent-gaffer-branch-creation"
+FINANCE_AGENT_GAFFER_PR_CREATION_SET = "finance-agent-gaffer-pr-creation"
 
 
 def _policy_set(
@@ -441,7 +445,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "ducktape-pr-failed-jobs",
         metadata=ApiObjectMetadata(
-            name="ducktape-pr-failed-jobs",
+            name=DUCKTAPE_PR_FAILED_JOBS_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": (
