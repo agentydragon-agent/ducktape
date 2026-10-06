@@ -1,36 +1,49 @@
 # Flexible allowance
 
 The service can also compute a **single flexible spending allowance**, independently of
-statement-cycle card totals. The Deployment requires one privately delivered Secret,
-`plaid-mcp/plaid-spend-private-config`, with one `config.json` key. The JSON contains
-required `cards` and optional `allowance`; omitting `allowance` disables the allowance.
-Do not commit this configuration to the public repo; storing it in private git alone
-does not deploy it. Without the Secret the pod will not start. Invalid JSON or policy
-fails application startup. Reloader restarts the Deployment after the Secret changes; the
-process reads the file only at startup.
+statement-cycle card totals. Its `spend-policy.yaml` comes from the private finance-agent
+repository. Finance Flux reconciles it to a Secret in the isolated
+`finance-spend-config` namespace; Ducktape owns an ExternalSecret that copies the named
+Secret into `plaid-mcp` for the app. Keep Plaid account IDs in the private file, never in
+public ducktape. Until the Flux migration has rolled out, the live app still reads the
+existing named Secret. Without the policy file the pod will not start. Invalid YAML or
+policy fails application startup. Reloader restarts the Deployment after Secret changes;
+the process reads the file only at startup.
 Check the current read-only Plaid account coverage **before** configuring the allowance.
 
-Generic _synthetic_ example (amounts are integer cents; IDs, categories and prefixes illustrative):
+Generic _synthetic_ YAML example (amounts are integer cents; IDs, categories and prefixes illustrative):
 
-```json
-{
-  "cards": [],
-  "allowance": {
-    "monthly_minor_units": 100000,
-    "activation_at": "2026-01-31",
-    "spending_account_ids": ["example-credit-id", "example-checking-id"],
-    "currency": "USD",
-    "max_sync_age_hours": 72,
-    "rules": [
-      { "condition": { "type": "name_prefix", "field": "name", "prefix": "EXAMPLE RENT" }, "kind": "fixed" },
-      {
-        "condition": { "type": "category_exact", "field": "pfc_detailed", "value": "EXAMPLE_TRANSFER_DETAIL" },
-        "kind": "excluded"
-      },
-      { "condition": { "type": "name_prefix", "field": "name", "prefix": "EXAMPLE ONLINE" }, "kind": "flexible" }
-    ]
-  }
-}
+```yaml
+cards: []
+allowance:
+  monthly_minor_units: 100000
+  activation_at: 2026-01-31
+  spending_account_ids:
+    - example-credit-id
+    - example-checking-id
+  currency: USD
+  max_sync_age_hours: 72
+  rules:
+    - condition:
+        type: name_prefix
+        field: name
+        prefix: EXAMPLE RENT
+      kind: fixed
+      analysis_category: fixed_housing_candidate
+    - condition:
+        type: category_exact
+        field: pfc_detailed
+        value: EXAMPLE_TRANSFER_DETAIL
+      kind: excluded
+      analysis_category: excluded_transfer_or_fee
+  - condition:
+      type: name_prefix
+      field: name
+      prefix: EXAMPLE ONLINE
+    description: Example subscription; keep the classification reviewable.
+    kind: flexible
+      analysis_category: elastic_online_services_candidate
+      description: Optional plain-language context for people reviewing this rule.
 ```
 
 When `allowance` is present, it is active. Supply a required `activation_at` ISO date

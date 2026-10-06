@@ -89,7 +89,7 @@ def test_no_dependency_errors(cluster: ParsedCluster, repo_root: Path) -> None:
 
 
 def test_plaid_mcp_is_not_gated_by_unrelated_authentik_terraform(cluster: ParsedCluster) -> None:
-    """Auth service and secret operator are prerequisites; other SSO apps are not."""
+    """App infrastructure is a prerequisite; unrelated SSO apps are not."""
     spec = cluster.flux_kustomizations["plaid-mcp"]
     assert {dependency.name for dependency in spec.depends_on} == {"cnpg", "external-secrets-operator", "authentik"}
     assert spec.wait
@@ -218,7 +218,12 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
 
     external_grant_namespaces = {grant["namespace"] for grant in catalog.values() if grant["kind"] == "RoleBinding"}
     expected_external_scopes = (external_grant_namespaces | cleanup_namespaces) - {"agentplane-staging"}
-    assert expected_external_scopes == expected_external_namespaces | {"ducktape-flux", "haku-console", "haku-sandbox"}
+    assert expected_external_scopes == expected_external_namespaces | {
+        "ducktape-flux",
+        "haku-console",
+        "haku-sandbox",
+        "plaid-mcp",  # Finance's named spend-policy grant, outside shared diagnostics.
+    }
     assert not any(
         doc["kind"] in {"Role", "RoleBinding"}
         and doc["metadata"]["name"] in {"agentplane-staging-managed-bindings", "agentplane-staging-external-bindings"}
@@ -446,16 +451,16 @@ def test_static_managed_agent_permission_parity(
     assert not uncovered(managed, static)
 
 
-def test_finance_spend_secret_role_is_named_get_only(agent_permissions: tuple[Rbac, dict]) -> None:
+def test_finance_spend_policy_role_is_named_get_only(agent_permissions: tuple[Rbac, dict]) -> None:
     rbac, config = agent_permissions
-    role = config["kubernetes_grants"]["spend-private-config"]
+    role = config["kubernetes_grants"]["spend-policy-config"]
     assert role == {
         "kind": "RoleBinding",
         "namespace": "plaid-mcp",
         "role_ref": {"kind": "Role", "name": "plaid-spend-finance-config-reader"},
     }
     assert rbac.rules(RbacRoleRef(api_group="rbac.authorization.k8s.io", **role["role_ref"]), role["namespace"]) == {
-        Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-private-config")
+        Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy")
     }
 
 
@@ -468,7 +473,7 @@ def test_agent_permission_superset_and_finance_parity(agent_permissions: tuple[R
     assert not uncovered(public, finance)
     assert uncovered(finance, public) == {
         Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials"),
-        Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-private-config"),
+        Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy"),
     }
     static_public = rbac.identity("Group", "haku:access-profile:public-coder")
     for kind, name, namespace in (

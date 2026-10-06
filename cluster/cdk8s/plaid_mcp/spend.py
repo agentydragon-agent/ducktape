@@ -1,4 +1,4 @@
-"""The separate plaid-spend API and its shared encrypted card configuration."""
+"""The separate plaid-spend API and its Flux-managed private card policy."""
 
 from __future__ import annotations
 
@@ -28,8 +28,10 @@ NAMESPACE = db.NAMESPACE
 _NAME = "plaid-spend"
 _HOST = "plaid-spend.allegedly.works"
 _CONFIG_MAP = "plaid-spend-config"
-PRIVATE_CONFIG = SecretRef(namespace=NAMESPACE, name="plaid-spend-private-config")
+POLICY_SECRET = "plaid-spend-policy"
+POLICY_NAMESPACE = "finance-spend-config"
 FINANCE_CONFIG_READER = "plaid-spend-finance-config-reader"
+POLICY_READER = "plaid-spend-policy-reader"
 _WEB_OIDC_CREDENTIALS_NAME = "plaid-spend-web-oidc-config"
 _WEB_OIDC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name=_WEB_OIDC_CREDENTIALS_NAME)
 _WEB_OIDC_READER = "plaid-spend-web-oidc-reader"
@@ -99,6 +101,33 @@ def _web_oidc_credentials(chart: Chart) -> None:
     )
 
 
+def _spend_policy_secret(chart: Chart) -> None:
+    reader = ServiceAccount(
+        chart,
+        "spend-policy-secret-reader",
+        metadata=ApiObjectMetadata(name=POLICY_READER, namespace=NAMESPACE),
+        automount_token=False,
+    )
+    store = single_secret_store(
+        chart,
+        "plaid-spend-policy",
+        reader=reader,
+        source_namespace=POLICY_NAMESPACE,
+        source_secret=POLICY_SECRET,
+        consumer_namespace=NAMESPACE,
+    )
+    ExternalSecret(
+        chart,
+        "spend-policy-external-secret",
+        metadata=ApiObjectMetadata(name=POLICY_SECRET, namespace=NAMESPACE),
+        refresh_interval="10m",
+        secret_store_ref=SecretStoreRef.cluster(store),
+        data_from=[DataFrom.from_extract(POLICY_SECRET)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.DELETE,
+    )
+
+
 def _deployment(chart: Chart) -> None:
     health = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_WEB.pod_port))
     k8s.KubeServiceAccount(
@@ -131,8 +160,7 @@ def _deployment(chart: Chart) -> None:
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
-                    # A private delivery channel owns both files; the pod cannot start without the Secret.
-                    volumes=[k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=PRIVATE_CONFIG.name))],
+                    volumes=[k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=POLICY_SECRET))],
                     containers=[
                         k8s.Container(
                             name=_NAME,
@@ -182,11 +210,10 @@ def chart(app: App) -> Chart:
         chart,
         "finance-config-reader",
         metadata=k8s.ObjectMeta(name=FINANCE_CONFIG_READER, namespace=NAMESPACE),
-        rules=[
-            k8s.PolicyRule(api_groups=[""], resources=["secrets"], resource_names=[PRIVATE_CONFIG.name], verbs=["get"])
-        ],
+        rules=[k8s.PolicyRule(api_groups=[""], resources=["secrets"], resource_names=[POLICY_SECRET], verbs=["get"])],
     )
     _web_oidc_credentials(chart)
+    _spend_policy_secret(chart)
     _deployment(chart)
     k8s.KubeService(
         chart,

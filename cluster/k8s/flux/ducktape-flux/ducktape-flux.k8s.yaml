@@ -7,6 +7,153 @@ metadata:
   name: ducktape-flux
 spec: {}
 ---
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    description: Isolated target for the private Finance spend-policy Secret; namespace and access are Ducktape-owned.
+  labels:
+    goldilocks.fairwinds.com/enabled: "false"
+    name: finance-spend-config
+  name: finance-spend-config
+spec: {}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    description: Allows Finance Flux to create Secrets of any name only in the isolated finance-spend-config namespace and get, patch, or update only the named spend-policy Secret; no deletes or other resource kinds.
+  name: plaid-spend-config-applier
+  namespace: finance-spend-config
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-spend-policy
+    resources:
+      - secrets
+    verbs:
+      - get
+      - patch
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plaid-spend-config-applier
+  namespace: finance-spend-config
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: plaid-spend-config-applier
+subjects:
+  - kind: ServiceAccount
+    name: plaid-spend-config-applier
+    namespace: ducktape-flux
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: forgejo-secret-reader
+  namespace: ducktape-flux
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ducktape-flux-finance-agent-flux-read-credentials-reader
+  namespace: forgejo
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - finance-agent-flux-read-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ducktape-flux-finance-agent-flux-read-credentials-reader
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ducktape-flux-finance-agent-flux-read-credentials-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: forgejo-secret-reader
+    namespace: ducktape-flux
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-ducktape-flux-finance-agent-flux-read-credentials-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - ducktape-flux
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: forgejo-secret-reader
+      remoteNamespace: forgejo
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: finance-agent-flux-read-credentials
+  namespace: ducktape-flux
+spec:
+  dataFrom:
+    - extract:
+        key: finance-agent-flux-read-credentials
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-ducktape-flux-finance-agent-flux-read-credentials-secret-store
+  target:
+    creationPolicy: Owner
+    name: finance-agent-flux-read-credentials
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: finance-agent
+  namespace: ducktape-flux
+spec:
+  interval: 5m
+  ref:
+    branch: main
+  secretRef:
+    name: finance-agent-flux-read-credentials
+  sparseCheckout:
+    - config/plaid-spend/
+  url: http://forgejo-http.forgejo:3000/finance-agent/finance-agent.git
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plaid-spend-config-applier
+  namespace: ducktape-flux
+automountServiceAccountToken: false
+---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
