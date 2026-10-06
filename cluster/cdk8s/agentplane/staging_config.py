@@ -33,7 +33,7 @@ from cluster.cdk8s.agentplane.app_settings import (
 )
 from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_READER_ROLE_NAME
 from cluster.cdk8s.model_selections import STAGING_APP_MODELS
-from model_catalog.catalog import GPT6_LUNA_RESPONSES
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_256K
 
 _NAMESPACE = "agentplane-staging"
 _THREAD_PRESET_FINANCE_AGENT_CODEX = "finance-agent-codex"
@@ -75,7 +75,10 @@ def config(
         action_federation=action_federation,
         sandbox_service_grpc_channel_options=sandbox_service_grpc_channel_options,
         action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
-        # Haku/Claude launch presets are paused; their renderer and setup script remain.
+        # Haku launches on the local Qwen3.8 route with the wider 256K window the runner is
+        # configured for; the OpenAI-compatible wire is the one that carries reasoning effort.
+        # Both Qwen context windows stay offered, so an operator can pick the 128K one here.
+        haku_preset_model=OLLAMA_QWEN_IQ4XS_256K.openai,
         kubernetes_grants={
             "sandbox-tool-config": RoleBindingGrant(
                 kind="RoleBinding",
@@ -89,7 +92,8 @@ def config(
         kubernetes_binding_cleanup_namespaces=agent_access_profiles.cleanup_namespaces(),
         kubernetes_cluster_binding_cleanup=True,
     )
-    cfg.sandbox_presets["public-coder"].kubernetes_grants = list(agent_access_profiles.MANAGED_GRANTS["public-coder"])
+    for preset in ("public-coder", "haku"):
+        cfg.sandbox_presets[preset].kubernetes_grants = list(agent_access_profiles.MANAGED_GRANTS[preset])
     # The "finance-agent" thread/sandbox presets live only here, not in app_settings.py:
     # they name staging-only credentials (forgejo-finance-agent, plaid-pgweb) that
     # agentplane-testing never provisions, and unlike "haku" they have no other caller,
@@ -135,7 +139,7 @@ def config(
         thread_preset=_THREAD_PRESET_FINANCE_AGENT_CODEX,
         kubernetes_grants=list(agent_access_profiles.MANAGED_GRANTS["finance-agent"]),
     )
-    for preset in ("public-coder", "finance-agent"):
+    for preset in ("public-coder", "finance-agent", "haku"):
         cfg.sandbox_presets[preset].action_policy_sets.append(DUCKTAPE_PR_FAILED_JOBS_SET)
         cfg.sandbox_presets[preset].egress_policies.append(AGENTPLANE_TESTING_POLICY)
     return cfg

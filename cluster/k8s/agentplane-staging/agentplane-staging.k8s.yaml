@@ -2951,6 +2951,17 @@ data:
           branch with the substituted PAT. Never push directly to the upstream repository. Check the
           diff for personal data before pushing; public ducktape must contain only generic tooling and
           public-safe instructions.
+      haku-codex:
+        title: Haku
+        harness: HARNESS_CODEX
+        model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+        cwd: /state/workspaces/{session_id}/haku-state
+        reasoning_effort: medium
+        instructions: "You are Haku, the operator's tireless background executive assistant. Your current directory is your haku-state checkout: your durable home for memory, notes, and other agent state. The ducktape checkout is at ../ducktape. Make changes in the checkout of the repository that owns them; never copy another repository into haku-state. Commit and push every persistent change to the owning repository's upstream or authorized fork as you go. A new Thread starts from fresh checkouts. Git auth is already in place. haku-state also holds who you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at memory/procedures/run.md. Read those, then execute the run procedure end to end."
+        setup_script: |
+          #!/bin/sh
+          git clone --depth 1 --branch main --single-branch http://haku:agentplane-credential-forgejo-haku@forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git .
+          git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git ../ducktape
       finance-agent-codex:
         title: Finance agent / Codex
         harness: HARNESS_CODEX
@@ -3167,6 +3178,99 @@ data:
           if [ ! -f "$marker" ]; then
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
           fi
+      haku:
+        title: Haku
+        template: agentplane-runner
+        egress_policies:
+          - basic
+          - forgejo-haku
+          - packages
+          - google-readonly
+          - grocy-sf-readonly
+          - home-assistant-readonly
+          - activitywatch-read
+          - aiquota-read
+          - coinbase
+          - haku-mailbox
+          - plaid-pgweb
+          - github-clone
+          - github-agentydragon-agent
+          - github-actions-logs
+          - agentplane-testing
+        action_policy_sets:
+          - github-identity-reads
+          - ssh-reads
+          - ducktape-pr-failed-jobs
+        kubernetes_grants:
+          - agentplane-staging-metadata
+          - agentplane-staging-logs
+          - activitywatch-metadata
+          - activitywatch-logs
+          - agent-sandbox-system-metadata
+          - agentplane-index-metadata
+          - agentplane-index-logs
+          - agentplane-testing-metadata
+          - agentplane-testing-logs
+          - airlock-metadata
+          - airlock-logs
+          - authentik-metadata
+          - authentik-logs
+          - cert-manager-metadata
+          - cert-manager-logs
+          - cli-proxy-api-metadata
+          - cli-proxy-api-logs
+          - clickhouse-metadata
+          - clickhouse-logs
+          - cnpg-system-metadata
+          - cnpg-system-logs
+          - flux-system-metadata
+          - flux-system-logs
+          - gatus-metadata
+          - gatus-logs
+          - grocy-sf-metadata
+          - grocy-sf-logs
+          - grocy-vallejo-metadata
+          - grocy-vallejo-logs
+          - haku-ci-metadata
+          - haku-ci-logs
+          - litellm-metadata
+          - litellm-logs
+          - local-path-storage-metadata
+          - local-path-storage-logs
+          - loki-metadata
+          - loki-logs
+          - monitoring-metadata
+          - monitoring-logs
+          - nix-cache-metadata
+          - node-feature-discovery-metadata
+          - node-feature-discovery-logs
+          - nvidia-device-plugin-metadata
+          - nvidia-device-plugin-logs
+          - oci-cache-metadata
+          - oci-cache-logs
+          - openebs-metadata
+          - openebs-logs
+          - plaid-mcp-metadata
+          - plaid-mcp-logs
+          - proxmox-proxy-metadata
+          - proxmox-proxy-logs
+          - public-coder-agent-metadata
+          - study-casino-metadata
+          - study-casino-logs
+          - tana-mcp-metadata
+          - tana-mcp-logs
+          - vm-images-publisher-metadata
+          - haku-console-metadata
+          - clickhouse-diagnostics
+          - ducktape-flux-read
+          - public-coder-volsync-status
+          - public-coder-agent-reader
+          - agentplane-testing-operator
+          - agentplane-testing-login
+          - cluster-diagnostics
+          - haku-sandbox-write
+          - coinbase-credentials
+        thread_preset: haku-codex
       finance-agent:
         title: Finance agent
         template: agentplane-runner

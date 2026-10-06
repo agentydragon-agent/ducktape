@@ -123,8 +123,11 @@ assignments.
 During the [model-roster audit](https://github.com/agentydragon/ducktape/issues/9121),
 Agentplane staging and testing offer only Codex in new-session launch forms. An empty
 Claude list in the app model catalogue disables that harness in those forms; a new
-session defaults to an available harness. Staging
-also omits the Haku Claude thread/sandbox presets; their renderer and setup script remain.
+session defaults to an available harness. Staging's Haku preset follows: it launches
+Codex against the local Qwen3.8 route's 256K window, the widest one the runner is
+configured for, and the wider 128K/256K choice is otherwise an operator's per-session
+pick. Both Qwen windows carry their declared reasoning efforts on the OpenAI-compatible
+wire only, which is why the preset names that one.
 
 This is an offering pause, not a runtime prohibition: existing Claude sessions can
 still resume, receive commands, and show history. Explicit low-level session launches,
@@ -132,8 +135,9 @@ the native Claude adapter, credentials, and shared Anthropic/LiteLLM ingress rem
 Direct local clients and Claude Code Web are unaffected.
 
 To restore the offerings, repopulate `STAGING_APP_MODELS.claude` and
-`TESTING_APP_MODELS.claude` in `cluster/cdk8s/model_selections.py`. To restore Haku's
-preset, also pass `haku_preset_model` in `staging_config.py` and restore its preset
-policy and managed-grant assignments. Resolve the tracked client-budget/metadata questions before doing
-so; regenerate manifests and check both launch forms. No session or volume migration
-is part of either pause or restoration.
+`TESTING_APP_MODELS.claude` in `cluster/cdk8s/model_selections.py`. Restoring Haku's
+Claude default is optional and separate: `haku_preset_model` in `staging_config.py`
+takes any route, and a Thread cannot move to a model with a different configured
+context window, so existing Haku Threads stay on Codex. Resolve the tracked
+client-budget/metadata questions before restoring Claude; regenerate manifests and
+check both launch forms. No session or volume migration is part of either pause or restoration.

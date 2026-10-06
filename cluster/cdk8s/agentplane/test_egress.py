@@ -33,6 +33,7 @@ from cluster.cdk8s.agentplane.app_settings import (
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.agentplane.egress import KUBERNETES_AUDIENCE, KUBERNETES_CREDENTIAL, KUBERNETES_HOST
 from cluster.cdk8s.clickhouse import client
+from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_256K
 
 # What a workload token may reach on the Actions service: the MCP endpoint, its schema and
 # the action-group/request API. The operator API (/v1/operator/*) and the OAuth endpoints
@@ -188,9 +189,36 @@ def test_claude_pause_omits_launch_offerings_but_keeps_ingress(
     assert config["models"]["harnesses"]["HARNESS_CLAUDE"] == []
     assert config["models"]["harnesses"]["HARNESS_CODEX"]
     assert all(preset["harness"] == "HARNESS_CODEX" for preset in config["thread_presets"].values())
-    assert "haku" not in config["sandbox_presets"]
     # Existing sessions retain the Anthropic ingress endpoint and proxy policy.
     assert any(doc["kind"] == "Service" and doc["metadata"]["name"] == "agentplane-llm-ingress" for doc in docs)
+
+
+def test_haku_launches_on_codex_with_the_wider_qwen_context_window(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    """Haku's preset follows the paused Claude offerings onto the local Qwen route.
+
+    The preset is the only reason a launch form picks a model, so it must name a route the
+    harness accepts and an effort that route declares; agentplane-testing offers no Haku preset
+    at all, since only staging provisions Haku's credentials.
+    """
+    docs = agentplane_manifests[staging.ENV.namespace]
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    preset = config["thread_presets"]["haku-codex"]
+    assert preset["harness"] == "HARNESS_CODEX"
+    assert preset["model"] == OLLAMA_QWEN_IQ4XS_256K.openai.id
+    assert preset["model"] in config["models"]["harnesses"]["HARNESS_CODEX"]
+    option = one(model for model in config["models"]["models"] if model["model"] == preset["model"])
+    assert preset["reasoning_effort"] in option["reasoning_efforts"]
+    assert config["sandbox_presets"]["haku"]["thread_preset"] == "haku-codex"
+
+    testing_config = yaml.safe_load(
+        _by_name(agentplane_manifests[testing.ENV.namespace], "ConfigMap", "agentplane-app-config")["data"][
+            "config.yaml"
+        ]
+    )
+    assert not {"haku", "haku-codex"} & set(testing_config["sandbox_presets"])
+    assert not {"haku", "haku-codex"} & set(testing_config["thread_presets"])
 
 
 @pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
@@ -207,7 +235,15 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     assert COINBASE_POLICY not in _by_name(docs, "EgressBinding", "haku-agent")["spec"]["policies"]
     assert set(selected) == set(config["sandbox_presets"]["public-coder"]["kubernetes_grants"]) | credential_grants
     assert len(selected) == len(set(selected))
-    assert not {"cluster-diagnostics", "haku-sandbox-write"} & set(selected)
+    haku = config["sandbox_presets"]["haku"]["kubernetes_grants"]
+    assert len(haku) == len(set(haku))
+    assert (
+        set(haku) - set(selected)
+        == {"cluster-diagnostics", "haku-sandbox-write", "coinbase-credentials"} - credential_grants
+    )
+    assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"} | (
+        {"spend-private-config"} if preset == "finance-agent" else set()
+    )
     assert {
         "agentplane-staging-metadata",
         "agentplane-staging-logs",
@@ -344,8 +380,7 @@ def test_finance_aiquota_history_is_read_only_and_finance_only(
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
     assert FINANCE_AIQUOTA_HISTORY_POLICY in config["sandbox_presets"]["finance-agent"]["egress_policies"]
     for name in ("public-coder", "haku"):
-        if name in config["sandbox_presets"]:
-            assert FINANCE_AIQUOTA_HISTORY_POLICY not in config["sandbox_presets"][name]["egress_policies"]
+        assert FINANCE_AIQUOTA_HISTORY_POLICY not in config["sandbox_presets"][name]["egress_policies"]
     policy = _by_name(docs, "EgressPolicy", FINANCE_AIQUOTA_HISTORY_POLICY)
     assert policy["spec"]["rules"] == [
         {

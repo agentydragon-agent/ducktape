@@ -598,6 +598,7 @@ py_test(
         ":testing",
         "//:conftest",
         "//cluster/cdk8s/clickhouse:client",
+        "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",

@@ -158,7 +158,7 @@ def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
     assert not missing, f"agent-readable log namespaces missing from Loki proxy allowlist: {missing}"
 
 
-@pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
+@pytest.mark.parametrize("preset", ["haku", "public-coder", "finance-agent"])
 def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
     cluster: ParsedCluster,
     bootstrap_resources: list[K8sResource],
@@ -426,10 +426,22 @@ def agent_permissions(
     return Rbac(resources), config
 
 
-def test_static_managed_public_coder_permission_parity(agent_permissions: tuple[Rbac, dict]) -> None:
+# Distinct access paths, not a union that could hide a broken Console or OIDC path.
+@pytest.mark.parametrize(
+    ("kind", "name", "namespace", "preset"),
+    [
+        ("Group", "haku:access-profile:public-coder", "", "public-coder"),
+        ("Group", "oidc-ksbx-groups:haku", "", "haku"),
+        ("Group", "haku:access-profile:haku", "", "haku"),
+        ("ServiceAccount", "haku", "haku-sandbox", "haku"),
+    ],
+)
+def test_static_managed_agent_permission_parity(
+    agent_permissions: tuple[Rbac, dict], kind: str, name: str, namespace: str, preset: str
+) -> None:
     rbac, config = agent_permissions
-    static = rbac.identity("Group", "haku:access-profile:public-coder")
-    managed = rbac.managed(config, "public-coder", namespace="agentplane-staging")
+    static = rbac.identity(kind, name, namespace)
+    managed = rbac.managed(config, preset, namespace="agentplane-staging")
     assert not uncovered(static, managed)
     assert not uncovered(managed, static)
 
@@ -450,7 +462,7 @@ def test_finance_spend_secret_role_is_named_get_only(agent_permissions: tuple[Rb
 def test_agent_permission_superset_and_finance_parity(agent_permissions: tuple[Rbac, dict]) -> None:
     rbac, config = agent_permissions
     public = rbac.managed(config, "public-coder", namespace="agentplane-staging")
-    haku = rbac.identity("Group", "haku:access-profile:haku")
+    haku = rbac.managed(config, "haku", namespace="agentplane-staging")
     finance = rbac.managed(config, "finance-agent", namespace="agentplane-staging")
     assert not uncovered(public, haku)
     assert not uncovered(public, finance)
@@ -464,11 +476,7 @@ def test_agent_permission_superset_and_finance_parity(agent_permissions: tuple[R
         ("Group", "haku:access-profile:haku", ""),
         ("ServiceAccount", "haku", "haku-sandbox"),
     ):
-        # Haku's launch preset is paused, but its independent static identities remain.
-        static_haku = rbac.identity(kind, name, namespace)
-        assert not uncovered(static_public, static_haku), (kind, name, namespace)
-        assert not uncovered(haku, static_haku), (kind, name, namespace)
-        assert not uncovered(static_haku, haku), (kind, name, namespace)
+        assert not uncovered(static_public, rbac.identity(kind, name, namespace)), (kind, name, namespace)
 
 
 @pytest.mark.parametrize("account", ["claude-ai", "haku-agent"])
@@ -524,7 +532,8 @@ def test_cluster_diagnostics_kustomizations_are_read_only(agent_permissions: tup
 def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict]) -> None:
     rbac, config = agent_permissions
     profiles = {
-        name: rbac.managed(config, name, namespace="agentplane-staging") for name in ("public-coder", "finance-agent")
+        name: rbac.managed(config, name, namespace="agentplane-staging")
+        for name in ("public-coder", "finance-agent", "haku")
     }
     profiles.update(
         {
