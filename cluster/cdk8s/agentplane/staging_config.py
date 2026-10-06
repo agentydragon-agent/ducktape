@@ -13,6 +13,15 @@ from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from cluster.cdk8s import agent_access_profiles
+from cluster.cdk8s.agentplane.actions_staging_policies import (
+    DUCKTAPE_PR_FAILED_JOBS_SET,
+    FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
+    FINANCE_AGENT_GAFFER_PR_CREATION_SET,
+    PUBLIC_DUCKTAPE_FORK_READS_SET,
+    PUBLIC_DUCKTAPE_READS_SET,
+    PUBLIC_GAFFER_PRIVATE_READS_SET,
+    PUBLIC_GITHUB_READS_SET,
+)
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AGENTPLANE_TESTING_POLICY,
@@ -52,16 +61,10 @@ _FINANCE_AGENT_INSTRUCTIONS = "\n\n".join(
     ]
 )
 _FINANCE_AGENT_THREAD_SETUP = Path(__file__).with_name("finance_agent_thread_setup.sh").read_text(encoding="utf-8")
-# The ActionPolicySet objects actions_staging_policies creates for the public-coder
-# preset, named here because the preset binds them: reads of confirmed-public
-# repositories, of ducktape and its fork, and of the private Gaffer repository.
-PUBLIC_GITHUB_READS_SET = "public-github-reads"
-PUBLIC_DUCKTAPE_READS_SET = "public-ducktape-reads"
-PUBLIC_DUCKTAPE_FORK_READS_SET = "public-ducktape-fork-reads"
-PUBLIC_GAFFER_PRIVATE_READS_SET = "public-gaffer-private-reads"
-DUCKTAPE_PR_FAILED_JOBS_SET = "ducktape-pr-failed-jobs"
-FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET = "finance-agent-gaffer-branch-creation"
-FINANCE_AGENT_GAFFER_PR_CREATION_SET = "finance-agent-gaffer-pr-creation"
+# What the public-coder preset binds: reads of confirmed-public repositories, of ducktape and
+# its fork, and of the private Gaffer repository. The names come from
+# actions_staging_policies, which creates each ActionPolicySet this refers to; grouping them
+# into a preset is this module's business, naming them is not.
 PUBLIC_CODER_ACTION_POLICY_SETS = (
     PUBLIC_GITHUB_READS_SET,
     PUBLIC_DUCKTAPE_READS_SET,
