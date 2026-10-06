@@ -1824,6 +1824,12 @@ routes.push(
         namespace: "agentplane-visual",
         role_ref: { kind: "Role", name: "workspace-reader" },
       },
+      {
+        name: "config-read",
+        kind: "RoleBinding",
+        namespace: "agentplane-visual",
+        role_ref: { kind: "Role", name: "config-reader" },
+      },
     ],
   ],
   ["GET", /^\/egress\/policies$/, () => POLICIES],
@@ -2424,21 +2430,6 @@ if (scenario.preselectReconnect) {
     account.dispatchEvent(new Event("change", { bubbles: true }));
   });
   selectExisting.observe(document, { childList: true, subtree: true });
-}
-if (scenario.openActionPolicySets) {
-  // Once the preset's pick has landed as a pill, open the sets dropdown so the shot carries the
-  // namespace's options beside the pre-filled pick.
-  const openSets = new MutationObserver(() => {
-    const pill = [...document.querySelectorAll(".mantine-Pill-root")].find(
-      (node) => node.textContent?.trim() === "public-coder"
-    );
-    const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Action policy sets");
-    const control = label?.control;
-    if (!pill || !(control instanceof HTMLInputElement)) return;
-    openSets.disconnect();
-    control.click();
-  });
-  openSets.observe(document, { childList: true, subtree: true });
 }
 if (scenario.checkComposerControls) {
   const checkControls = new MutationObserver(() => {

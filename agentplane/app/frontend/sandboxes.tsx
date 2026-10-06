@@ -256,7 +256,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <MultiSelect
           label="Egress policies"
           description="What this sandbox may reach"
-          data={egressPolicies}
+          hidePickedOptions
+          data={egressPolicies.filter((policy) => !(form.egress_policies ?? []).includes(policy))}
           value={form.egress_policies ?? []}
           onChange={(picked) => setForm({ ...form, egress_policies: picked })}
           style={{ flex: "1 1 12rem" }}
@@ -264,6 +265,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <MultiSelect
           label="Action policy sets"
           description="What its harness may do without the operator"
+          hidePickedOptions
           data={policySets.map(policySetOption)}
           value={form.action_policy_sets ?? []}
           onChange={(picked) => setForm({ ...form, action_policy_sets: picked })}
@@ -272,6 +274,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <MultiSelect
           label="Kubernetes grants"
           description="Roles bound to this sandbox's ServiceAccount"
+          hidePickedOptions
           data={kubernetesGrantOptions.map((grant) => ({
             value: grant.name,
             label: `${grant.name} · ${grant.kind} · ${grant.namespace ? `namespace ${grant.namespace}` : "cluster"} → ${grant.role_ref.kind}/${grant.role_ref.name}`,

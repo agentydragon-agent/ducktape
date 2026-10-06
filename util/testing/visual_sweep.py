@@ -41,7 +41,7 @@ import pytest
 import pytest_asyncio
 import pytest_bazel
 from more_itertools import one
-from playwright.async_api import Page, Playwright, Route, async_playwright
+from playwright.async_api import Page, Playwright, Route, TimeoutError as PlaywrightTimeoutError, async_playwright
 from pydantic import JsonValue, TypeAdapter
 
 from util.bazel.runfiles import get_required_path
@@ -276,10 +276,44 @@ async def capture_scenario(
             # An interaction acts on a page whose first fetches have landed: its target may be replaced under it.
             await assert_network_settled(page, context=output_name, timeout_ms=timeout_ms)
         for click in scenario.clicks:
-            await page.click(click.selector, strict=True, timeout=timeout_ms)
-            await _wait_for_selectors(
-                page, page_errors, click.expect_visible, state="visible", context=output_name, timeout_ms=timeout_ms
-            )
+            if click.selector is not None:
+                target = page.locator(click.selector)
+                press_target = target
+            else:
+                assert click.label is not None
+                press_target = page.get_by_role("combobox", name=click.label, exact=True)
+                # Mantine's MultiSelect opens from its PillsInput wrapper's click handler; its
+                # labelled combobox input is read-only (and can be visually hidden).
+                target = press_target.locator(
+                    "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), "
+                    "' mantine-MultiSelect-input ')][1]"
+                )
+            if click.press is not None:
+                await press_target.press(click.press, timeout=timeout_ms)
+            else:
+                await target.click(force=click.force, timeout=timeout_ms)
+            try:
+                await _wait_for_selectors(
+                    page, page_errors, click.expect_visible, state="visible", context=output_name, timeout_ms=timeout_ms
+                )
+            except PlaywrightTimeoutError as error:
+                state = await page.evaluate(
+                    """() => ({
+                      multiSelects: [...document.querySelectorAll('.mantine-MultiSelect-input')].map(root => ({
+                        expanded: root.getAttribute('data-expanded'),
+                        input: root.querySelector('[role="combobox"]')?.outerHTML,
+                        options: [...root.querySelectorAll('[role="option"]')].map(option => ({
+                          text: option.textContent,
+                          visible: option.getBoundingClientRect().width > 0 && getComputedStyle(option).visibility === 'visible',
+                        })),
+                      })),
+                      visibleOptions: [...document.querySelectorAll('[role="option"]')]
+                        .filter(option => option.getBoundingClientRect().width > 0 && getComputedStyle(option).visibility === 'visible')
+                        .map(option => option.textContent),
+                    })"""
+                )
+                error.add_note(f"{output_name}: state after click: {state}")
+                raise
             await _wait_for_selectors(
                 page, page_errors, click.expect_hidden, state="hidden", context=output_name, timeout_ms=timeout_ms
             )

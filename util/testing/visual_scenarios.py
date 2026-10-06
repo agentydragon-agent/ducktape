@@ -39,12 +39,16 @@ class Viewport(_TableModel):
 
 
 class Click(_TableModel):
-    selector: str = Field(
+    selector: str | None = Field(
+        default=None,
         description=(
             "Selector of the element to click. It must match exactly one element, so that a click cannot "
             "land silently on a look-alike elsewhere on the page (`>> nth=0` says which one is meant)."
-        )
+        ),
     )
+    label: str | None = Field(default=None, description="Exact accessible label of the element to click.")
+    force: bool = Field(default=False, description="Dispatch the click even if another element intercepts it.")
+    press: str | None = Field(default=None, description="Keyboard key to send to the target instead of clicking it.")
     expect_visible: list[str] = Field(
         default_factory=list, description="Selectors that must be visible once the click has taken effect."
     )
@@ -54,6 +58,8 @@ class Click(_TableModel):
 
     @model_validator(mode="after")
     def _names_its_effect(self) -> Click:
+        if (self.selector is None) == (self.label is None):
+            raise ValueError(f"click {self!r} must specify exactly one of selector or label")
         # A click on the wrong element fails silently, and so does one whose effect arrives asynchronously
         # and never does: the scene still renders something plausible. The expectation is the click's proof.
         if not (self.expect_visible or self.expect_hidden):
