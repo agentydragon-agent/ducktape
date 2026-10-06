@@ -14,37 +14,38 @@ from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane.actions_staging_policies import (
+    AGENTPLANE_TESTING_POLICY,
+    COINBASE_POLICY,
     DUCKTAPE_PR_FAILED_JOBS_SET,
     FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
     FINANCE_AGENT_GAFFER_PR_CREATION_SET,
+    GITHUB_IDENTITY_READS_SET,
     PUBLIC_DUCKTAPE_FORK_READS_SET,
     PUBLIC_DUCKTAPE_READS_SET,
     PUBLIC_GAFFER_PRIVATE_READS_SET,
     PUBLIC_GITHUB_READS_SET,
+    SSH_READS_SET,
 )
-from cluster.cdk8s.agentplane.app_settings import (
-    ACTIVITYWATCH_READ_POLICY,
-    AGENTPLANE_TESTING_POLICY,
-    AIQUOTA_READ_POLICY,
+from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, settings
+from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
-    COINBASE_POLICY,
-    DUCKTAPE_PR_INSTRUCTIONS,
-    FINANCE_AIQUOTA_HISTORY_POLICY,
-    FORGEJO_FINANCE_AGENT_POLICY,
-    FORGEJO_HAKU_POLICY,
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
-    GITHUB_IDENTITY_READS_SET,
+    PACKAGES_POLICY,
+)
+from cluster.cdk8s.agentplane.egress_staging_credentials import (
+    ACTIVITYWATCH_READ_POLICY,
+    AIQUOTA_READ_POLICY,
+    FINANCE_AIQUOTA_HISTORY_POLICY,
+    FORGEJO_FINANCE_AGENT_POLICY,
+    FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
-    PACKAGES_POLICY,
     PLAID_PGWEB_POLICY,
-    SSH_READS_SET,
-    settings,
 )
 from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_READER_ROLE_NAME
 from cluster.cdk8s.model_selections import STAGING_APP_MODELS

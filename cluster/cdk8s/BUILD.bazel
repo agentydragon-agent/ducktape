@@ -1986,7 +1986,6 @@ py_library(
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:egresspolicy",
         "//agentplane/egress:sidecar",
-        "//cluster/cdk8s/agentplane:app_settings",
         "//cluster/cdk8s/agentplane:egress",
         "//cluster/cdk8s/agentplane:egress_credentials",
         "//cluster/cdk8s/clickhouse:client",

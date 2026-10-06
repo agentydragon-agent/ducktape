@@ -52,16 +52,6 @@ from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.main import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications
-from cluster.cdk8s.agentplane.app_settings import (
-    BASIC_POLICY,
-    BUILDBUDDY_POLICY,
-    GITHUB_ACTIONS_LOGS_POLICY,
-    GITHUB_AGENTYDRAGON_AGENT_POLICY,
-    GITHUB_CLONE_POLICY,
-    INFERENCE_EXPERIMENTS_POLICY,
-    PACKAGES_POLICY,
-    PUBLIC_INTERNET_POLICY,
-)
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
@@ -120,6 +110,18 @@ CA_BUNDLE_KEY = "ca-certificates.crt"
 # The sandbox bundle's roots again, as the PKCS12 trust store a JVM reads.
 JAVA_TRUST_STORE_KEY = "ca-certificates.p12"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
+
+# The EgressPolicy objects created below that every environment ships. A name is exported
+# because a preset or an explicit grant refers to the policy by name; each lives with the
+# construct that creates it, so renaming or dropping a policy is a change in one file.
+BASIC_POLICY = "basic"
+PACKAGES_POLICY = "packages"
+INFERENCE_EXPERIMENTS_POLICY = "inference-experiments"
+GITHUB_AGENTYDRAGON_AGENT_POLICY = "github-agentydragon-agent"
+GITHUB_CLONE_POLICY = "github-clone"
+GITHUB_ACTIONS_LOGS_POLICY = "github-actions-logs"
+BUILDBUDDY_POLICY = "buildbuddy"
+PUBLIC_INTERNET_POLICY = "public-internet"
 
 
 def _pods(namespace: str) -> Pods:

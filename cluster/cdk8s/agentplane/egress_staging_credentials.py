@@ -18,18 +18,6 @@ from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane.app_settings import (
-    ACTIVITYWATCH_READ_POLICY,
-    AIQUOTA_READ_POLICY,
-    FINANCE_AIQUOTA_HISTORY_POLICY,
-    FORGEJO_FINANCE_AGENT_POLICY,
-    FORGEJO_HAKU_POLICY,
-    GOOGLE_READONLY_POLICY,
-    GROCY_SF_READONLY_POLICY,
-    HAKU_MAILBOX_POLICY,
-    HOME_ASSISTANT_READONLY_POLICY,
-    PLAID_PGWEB_POLICY,
-)
 from cluster.cdk8s.agentplane.egress import FORGEJO_HOST, FORGEJO_HOST_ALIASES, FORGEJO_PUBLIC_HOST, HOME_ASSISTANT_HOST
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_READER,
@@ -55,6 +43,20 @@ _GROCY_SF_ACCOUNT = "agentplane-grocy-sf-readonly"
 # authentik-jwt-rotation CronJob (`haku-mail` entry); haku/mailbox.py mirrors the same Secret into
 # haku-sandbox.
 _HAKU_MAIL_TOKEN = "haku-mail-token"
+
+# The staging-only EgressPolicy objects created below, each carrying a credential that exists
+# only here. Exported because a launch preset or an EgressBinding refers to them by name; as in
+# egress.py, a name lives with the policy that answers to it.
+FORGEJO_HAKU_POLICY = "forgejo-haku"
+FORGEJO_FINANCE_AGENT_POLICY = "forgejo-finance-agent"
+HAKU_MAILBOX_POLICY = "haku-mailbox"
+GOOGLE_READONLY_POLICY = "google-readonly"
+GROCY_SF_READONLY_POLICY = "grocy-sf-readonly"
+HOME_ASSISTANT_READONLY_POLICY = "home-assistant-readonly"
+ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
+AIQUOTA_READ_POLICY = "aiquota-read"
+FINANCE_AIQUOTA_HISTORY_POLICY = "finance-aiquota-history"
+PLAID_PGWEB_POLICY = "plaid-pgweb"
 
 
 def add_staging_egress_credentials(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
