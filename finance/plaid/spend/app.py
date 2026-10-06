@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from finance.plaid.spend.models import SpendConfiguration, SpendView
+from finance.plaid.spend.models import SpendConfiguration, SpendConfigurationView, SpendView
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
 from mcp_infra.oidc_principal import (
@@ -77,7 +77,7 @@ def _web_login_config(settings: SpendSettings) -> LoginConfig:
     )
 
 
-def create_app(settings: SpendSettings, *, service: SpendService) -> FastAPI:
+def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bool = True) -> FastAPI:
     resolver = AuthentikOidcPrincipalResolver(
         expected_issuer=settings.api_oidc_issuer,
         discovered_issuer=settings.api_oidc_discovered_issuer,
@@ -103,11 +103,13 @@ def create_app(settings: SpendSettings, *, service: SpendService) -> FastAPI:
     async def healthz() -> dict[str, bool]:
         return {"ok": True}
 
-    @app.get("/", include_in_schema=False)
-    async def root() -> FileResponse:
-        return FileResponse(_UI_DIR / "index.html")
+    if include_ui:
 
-    app.mount("/static", StaticFiles(directory=_UI_DIR), name="spend-ui")
+        @app.get("/", include_in_schema=False)
+        async def root() -> FileResponse:
+            return FileResponse(_UI_DIR / "index.html")
+
+        app.mount("/static", StaticFiles(directory=_UI_DIR), name="spend-ui")
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon() -> Response:
@@ -120,6 +122,10 @@ def create_app(settings: SpendSettings, *, service: SpendService) -> FastAPI:
     @app.get("/api/v1/web/view", response_model=SpendView)
     async def get_web_view(reader: SpendReader) -> SpendView:
         return await reader.read_view()
+
+    @app.get("/api/v1/web/configuration", response_model=SpendConfigurationView)
+    async def get_web_configuration(reader: SpendReader) -> SpendConfigurationView:
+        return reader.read_configuration()
 
     @app.get("/api/v1/events")
     async def events(request: Request, _principal: ApiPrincipal, reader: SpendReader) -> StreamingResponse:
