@@ -21,7 +21,6 @@ from constructs import Construct
 from agentplane.egress import sidecar
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, egress
-from cluster.cdk8s.agentplane.app_settings import INFERENCE_EXPERIMENTS_POLICY, PUBLIC_INTERNET_POLICY
 from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, credential_external_secret
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
@@ -225,7 +224,7 @@ def add_gateway_resources(
         "binding",
         metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
         subjects=[EgressBindingSpecSubjects(namespace=NAMESPACE, name=SERVICE_ACCOUNT)],
-        policies=[POLICY, INFERENCE_EXPERIMENTS_POLICY, PUBLIC_INTERNET_POLICY],
+        policies=[POLICY, egress.INFERENCE_EXPERIMENTS_POLICY, egress.PUBLIC_INTERNET_POLICY],
     )
     NetworkPolicy(
         scope,

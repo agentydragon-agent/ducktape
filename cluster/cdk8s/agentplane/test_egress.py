@@ -12,26 +12,29 @@ from cdk8s import Testing as Cdk8sTesting
 from more_itertools import one
 
 from cluster.cdk8s.agentplane import binding_delegation, notifications, staging, testing
-from cluster.cdk8s.agentplane.app_settings import (
-    ACTIVITYWATCH_READ_POLICY,
-    AGENTPLANE_TESTING_POLICY,
-    AIQUOTA_READ_POLICY,
+from cluster.cdk8s.agentplane.actions_staging_policies import AGENTPLANE_TESTING_POLICY, COINBASE_POLICY
+from cluster.cdk8s.agentplane.conftest import NAMESPACES
+from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
-    COINBASE_POLICY,
+    GITHUB_AGENTYDRAGON_AGENT_POLICY,
+    INFERENCE_EXPERIMENTS_POLICY,
+    KUBERNETES_AUDIENCE,
+    KUBERNETES_CREDENTIAL,
+    KUBERNETES_HOST,
+    PUBLIC_INTERNET_POLICY,
+)
+from cluster.cdk8s.agentplane.egress_staging_credentials import (
+    ACTIVITYWATCH_READ_POLICY,
+    AIQUOTA_READ_POLICY,
     FINANCE_AIQUOTA_HISTORY_POLICY,
     FORGEJO_FINANCE_AGENT_POLICY,
     FORGEJO_HAKU_POLICY,
-    GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
-    INFERENCE_EXPERIMENTS_POLICY,
     PLAID_PGWEB_POLICY,
-    PUBLIC_INTERNET_POLICY,
 )
-from cluster.cdk8s.agentplane.conftest import NAMESPACES
-from cluster.cdk8s.agentplane.egress import KUBERNETES_AUDIENCE, KUBERNETES_CREDENTIAL, KUBERNETES_HOST
 from cluster.cdk8s.clickhouse import client
 from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_256K
 

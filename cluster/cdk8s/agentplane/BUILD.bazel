@@ -99,7 +99,6 @@ py_library(
     srcs = ["egress.py"],
     deps = [
         ":actions",
-        ":app_settings",
         ":database",
         ":egress_credentials",
         ":environment",
@@ -296,9 +295,9 @@ py_library(
     srcs = ["actions_staging_policies.py"],
     deps = [
         ":app",
-        ":app_settings",
         ":dex",
         ":egress",
+        ":egress_staging_credentials",
         ":testing",
         "//agentplane/action_service/policies:resources",
         "//agentplane/action_service/sandbox:actions",
@@ -346,6 +345,7 @@ py_library(
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":egress",
         "//agentplane:grpc_options",
         "//agentplane/app:action_federation",
         "//agentplane/app:api",
@@ -401,6 +401,8 @@ py_library(
     deps = [
         ":actions_staging_policies",
         ":app_settings",
+        ":egress",
+        ":egress_staging_credentials",
         ":rbac",
         ":sandbox_pod",
         "//agentplane/app:action_federation",
@@ -592,10 +594,11 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":app_settings",
+        ":actions_staging_policies",
         ":binding_delegation",
         ":conftest",
         ":egress",
+        ":egress_staging_credentials",
         ":notifications",
         ":staging",
         ":testing",
@@ -631,7 +634,6 @@ py_library(
     name = "egress_staging_credentials",
     srcs = ["egress_staging_credentials.py"],
     deps = [
-        ":app_settings",
         ":egress",
         ":egress_credentials",
         "//agentplane/crds:egresscredential",

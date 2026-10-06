@@ -13,38 +13,24 @@ from agentplane.app.main import AppSettingsConfig
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
+
+# The names of the objects other modules create. `settings()` below grants the public-coder
+# preset its baseline policies, so it refers to them; each comes from the module that creates the
+# policy answering to it, which is what lets either environment's preset name the same policy
+# without repeating the string.
+from cluster.cdk8s.agentplane.egress import (
+    BASIC_POLICY,
+    BUILDBUDDY_POLICY,
+    GITHUB_ACTIONS_LOGS_POLICY,
+    GITHUB_AGENTYDRAGON_AGENT_POLICY,
+    GITHUB_CLONE_POLICY,
+    INFERENCE_EXPERIMENTS_POLICY,
+    PACKAGES_POLICY,
+)
 from cluster.cdk8s.model_selections import HarnessRoutes
 from model_catalog.catalog import Route
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
-# The EgressPolicy objects egress creates in every environment, named here
-# because presets and explicit grants refer to them.
-BASIC_POLICY = "basic"
-INFERENCE_EXPERIMENTS_POLICY = "inference-experiments"
-GITHUB_AGENTYDRAGON_AGENT_POLICY = "github-agentydragon-agent"
-GITHUB_CLONE_POLICY = "github-clone"
-GITHUB_ACTIONS_LOGS_POLICY = "github-actions-logs"
-FORGEJO_HAKU_POLICY = "forgejo-haku"
-FORGEJO_FINANCE_AGENT_POLICY = "forgejo-finance-agent"
-AGENTPLANE_TESTING_POLICY = "agentplane-testing"
-PACKAGES_POLICY = "packages"
-PUBLIC_INTERNET_POLICY = "public-internet"
-GOOGLE_READONLY_POLICY = "google-readonly"
-GROCY_SF_READONLY_POLICY = "grocy-sf-readonly"
-HOME_ASSISTANT_READONLY_POLICY = "home-assistant-readonly"
-ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
-AIQUOTA_READ_POLICY = "aiquota-read"
-FINANCE_AIQUOTA_HISTORY_POLICY = "finance-aiquota-history"
-HAKU_MAILBOX_POLICY = "haku-mailbox"
-COINBASE_POLICY = "coinbase"
-BUILDBUDDY_POLICY = "buildbuddy"
-PLAID_PGWEB_POLICY = "plaid-pgweb"
-# The ActionPolicySet actions_staging_policies creates for the caller's own GitHub identity
-# (`get_me`, no repository or mutation surface) -- every preset binds it by default, named
-# here (not alongside the EgressPolicy names above) because it is a different CRD kind.
-GITHUB_IDENTITY_READS_SET = "github-identity-reads"
-SSH_READS_SET = "ssh-reads"
-
 
 DUCKTAPE_PR_INSTRUCTIONS = Path(__file__).with_name("ducktape_pr_instructions.md").read_text(encoding="utf-8").strip()
 _PUBLIC_CODER_INSTRUCTIONS = "\n\n".join(

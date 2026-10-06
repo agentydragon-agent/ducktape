@@ -29,26 +29,24 @@ from agentplane.action_service.policies.resources import BindingSpec, PolicySetS
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
 from cluster.cdk8s import agent_access_profiles as access, cilium, external_creds
 from cluster.cdk8s.agentplane import app as app_component, dex, egress, testing
-from cluster.cdk8s.agentplane.app_settings import (
-    ACTIVITYWATCH_READ_POLICY,
-    AGENTPLANE_TESTING_POLICY,
-    AIQUOTA_READ_POLICY,
+from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
-    COINBASE_POLICY,
-    FORGEJO_HAKU_POLICY,
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
-    GITHUB_IDENTITY_READS_SET,
+    INFERENCE_EXPERIMENTS_POLICY,
+    PACKAGES_POLICY,
+)
+from cluster.cdk8s.agentplane.egress_staging_credentials import (
+    ACTIVITYWATCH_READ_POLICY,
+    AIQUOTA_READ_POLICY,
+    FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
-    INFERENCE_EXPERIMENTS_POLICY,
-    PACKAGES_POLICY,
     PLAID_PGWEB_POLICY,
-    SSH_READS_SET,
 )
 from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
 from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
@@ -69,6 +67,14 @@ _GROCY_SF_READS_SET = "grocy-sf-reads"
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
 _GITHUB_DOWNLOADS_POLICY = "github-downloads"
+
+# The staging-only policies created below. `agentplane-testing` lets a staging sandbox reach the
+# testing instance and `coinbase` publishes the Coinbase key, so their names belong to this
+# module; so do the two ActionPolicySet reads every preset binds by default.
+AGENTPLANE_TESTING_POLICY = "agentplane-testing"
+COINBASE_POLICY = "coinbase"
+GITHUB_IDENTITY_READS_SET = "github-identity-reads"
+SSH_READS_SET = "ssh-reads"
 
 # The ActionPolicySet objects created below that the launch presets bind, named because a
 # preset refers to them by name. They live here rather than in the preset's own module so the
@@ -342,7 +348,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         automount_token=False,
     )
 
-    # A dedicated identity for the "haku" sandbox preset (app_settings.py), which clones
+    # A dedicated identity for the "haku" sandbox preset (staging_config.py), which clones
     # haku-state and works from there the way Haku itself does. Separate from claude-ai
     # rather than reusing it: claude-ai is the Claude.ai MCP connector's principal, and
     # Haku's own credentials (forgejo-haku, haku-mailbox) are bound to claude-ai today only
