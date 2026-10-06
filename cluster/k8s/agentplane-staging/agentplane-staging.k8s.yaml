@@ -3280,7 +3280,6 @@ data:
           - aiquota-read
           - finance-aiquota-history
           - coinbase
-          - finance-aiquota-history
           - forgejo-finance-agent
           - plaid-pgweb
           - github-agentydragon-agent
