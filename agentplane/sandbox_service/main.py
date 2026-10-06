@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     runner_port: int = Field(default=7000, ge=1, le=65535)
     admission_timeout_s: float = Field(default=15, gt=0, le=60)
     follow_lease_s: float = Field(default=900, gt=0, le=900)
+    runner_grpc_channel_options: dict[str, int | str] = Field(
+        default_factory=dict,
+        description="gRPC options for Sandbox Service-to-runner channels; receives retained journal events up to the configured limit.",
+    )
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     health_port: int = Field(default=8081, ge=1, le=65535)
@@ -121,6 +125,7 @@ async def serve(settings: Settings) -> None:
             caller_accounts=settings.caller_accounts,
             platform_instructions=platform_instructions,
             lifecycle_timeout_s=settings.lifecycle_timeout_s,
+            runner_grpc_channel_options=settings.runner_grpc_channel_options,
             provisioning=provisioning,
         )
         if settings.port == settings.health_port:

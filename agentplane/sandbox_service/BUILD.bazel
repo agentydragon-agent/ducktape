@@ -398,6 +398,7 @@ py_library(
     deps = [
         ":models",
         ":wire",
+        "//agentplane:grpc_options",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:errors",
@@ -422,6 +423,7 @@ py_library(
         ":provisioning",
         ":session_lifecycle",
         ":wire",
+        "//agentplane:grpc_options",
         "//agentplane:subjects",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:client",

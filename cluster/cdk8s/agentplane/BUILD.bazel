@@ -347,6 +347,7 @@ py_library(
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        "//agentplane:grpc_options",
         "//agentplane/app:action_federation",
         "//agentplane/app:api",
         "//agentplane/app:main",
@@ -381,6 +382,11 @@ py_library(
         "//cluster/cdk8s:model_selections",
         "//model_catalog:catalog",
     ],
+)
+
+py_library(
+    name = "grpc_channel_config",
+    srcs = ["grpc_channel_config.py"],
 )
 
 py_library(
@@ -465,6 +471,7 @@ py_library(
         ":egress_staging_credentials",
         ":environment",
         ":generation",
+        ":grpc_channel_config",
         ":notifications",
         ":staging_config",
         "//agentplane/action_service:catalog",
@@ -509,6 +516,7 @@ py_library(
         ":egress_testing_credentials",
         ":environment",
         ":generation",
+        ":grpc_channel_config",
         ":testing_config",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:main",
