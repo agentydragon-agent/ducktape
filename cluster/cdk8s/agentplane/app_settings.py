@@ -105,11 +105,11 @@ def settings(
                 reasoning_effort="medium",
                 instructions=_PUBLIC_CODER_INSTRUCTIONS,
             ),
+            # TODO(#9121): consider switching Haku back to a Claude default once Anthropic
+            # models and the Claude adapter are wired up and validated again. Existing Haku
+            # Threads stay on Codex either way: a Thread cannot move to a model with a
+            # different configured context window.
             **(
-                # TODO(#9121): consider switching Haku back to a Claude default once Anthropic
-                # models and the Claude adapter are wired up and validated again. Existing Haku
-                # Threads stay on Codex either way: a Thread cannot move to a model with a
-                # different configured context window.
                 {
                     _THREAD_PRESET_HAKU_CODEX: ThreadPreset(
                         title="Haku",
