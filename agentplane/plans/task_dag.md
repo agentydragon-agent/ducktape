@@ -811,7 +811,7 @@ Replace the two-state copy in `agentplane/app/frontend/threads/thread_commands.t
 indicator that names its stage: the browser holds it, the app has it, the runner was sent it, the
 runner admitted it, the harness has taken effect. Four of the five are observable now; the third
 waits on `COMMAND_DISPATCHED_EVENT`. Prefer a fixed-angular-position advancing indicator — a dot or
-breathing spinner whose position *is* the stage — over longer prose, with the exact stage and its
+breathing spinner whose position _is_ the stage — over longer prose, with the exact stage and its
 age in the hover/expanded copy. Keep the wording honest: nothing tells the app that the model's
 context contains the input, so the last stage stays "awaiting effect" and never claims the model has
 seen it. Pin the state machine and its transitions in tests, not the strings —
