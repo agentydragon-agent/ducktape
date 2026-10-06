@@ -39,10 +39,10 @@ bbr test //agentplane/app/...
   fields.
 - Sandbox provisioning, grants, and runner control are owned by `../sandbox_service/` and reached
   through its authenticated gRPC client. The app retains read-only Kubernetes projections for UI updates.
-- `egress.py`: read-only policy/binding projections for the UI, with mutations delegated to Sandbox
+- `egress.py`: read-only egress-policy/binding projections for the UI, with mutations delegated to Sandbox
   Service. Bindings remain desired-state grants, with expiry/revocation per binding and Flux-owned
   bindings protected from app revocation ([composition](../docs/egress_composition.md)).
-  `decisions.py` reads the proxy's recent decisions; an unreachable proxy leaves policy views readable.
+  `decisions.py` reads the proxy's recent decisions; an unreachable proxy leaves egress-policy views readable.
 - `action_policy.py`: read-only binding views composed with Action Service's effective-policy answer.
   Launch grants and binding mutations belong to Sandbox Service, not this app or its preset catalog.
 - `threads/`: the app-owned PostgreSQL archive and presentation state for
@@ -421,10 +421,10 @@ linked group becomes available is the Action Service's contract
 
 `GET /presets` publishes configured Sandbox presets and their inherited editable Thread defaults.
 `POST /sandboxes` keeps its no-preset shape and additionally accepts an optional preset: omitted
-fields inherit, while explicit policies and thread fields replace preset values. The Sandbox
+fields inherit, while explicit egress policy selections and thread fields replace preset values. The Sandbox
 annotation stores the preset name and only explicit thread edits, so later sessions resolve against
-the current configured default instead of freezing a copied form. `action_policy_sets` works as
-`policies` does: a preset pre-fills the pick, an explicit list replaces it (an empty one binds
+the current configured default instead of freezing a copied form. `action_policy_sets` works like
+the egress policy selection: a preset pre-fills the pick, an explicit list replaces it (an empty one binds
 nothing), and a launch without a preset may pick sets of its own. The launch writes one
 `ActionPolicyBinding` naming the picked sets for the new Sandbox; a set name the namespace does not
 hold is refused with 422 before the Sandbox exists, as an unknown egress policy is. The create form

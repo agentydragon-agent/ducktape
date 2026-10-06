@@ -1746,7 +1746,7 @@ data:
       read, print, persist, or ask for substituted credentials.
 
       All protected network egress goes through the configured Agentplane egress proxy. The proxy checks
-      the sandbox's active policy and substitutes an allowed placeholder with the real credential. Before
+      the sandbox's active egress policy and substitutes an allowed placeholder with the real credential. Before
       using a protected service, ask what is currently allowed at
       http://agentplane-egress.agentplane-testing.svc.cluster.local/v1/rules with Authorization: Bearer
       agentplane-credential-agentplane-workload; that API's OpenAPI schema is at
@@ -1916,7 +1916,7 @@ data:
       Subscriptions expire unless renewed. GET http://agentplane-notifications.agentplane-testing.svc.cluster.local:8080/v1/sources and the OpenAPI schema describe provider
       inputs and subscription management; consult the service documentation for retention and quotas.
     lifecycle_timeout_s: 300
-    default_policies:
+    default_egress_policies:
       - basic
       - inference-experiments
     kubernetes_grants: {}
@@ -2337,7 +2337,7 @@ data:
       public-coder:
         title: Public coder
         template: agentplane-runner
-        policies:
+        egress_policies:
           - basic
           - packages
           - github-agentydragon-agent
@@ -2352,7 +2352,7 @@ data:
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
           fi
     kubernetes_grants: {}
-    default_policies:
+    default_egress_policies:
       - basic
       - inference-experiments
     sandbox_service_grpc_channel_options:

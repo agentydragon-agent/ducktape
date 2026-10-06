@@ -108,7 +108,7 @@ def config(
     cfg.sandbox_presets["finance-agent"] = SandboxPreset(
         title="Finance agent",
         template="agentplane-runner",
-        policies=[
+        egress_policies=[
             BASIC_POLICY,
             PACKAGES_POLICY,
             AIQUOTA_READ_POLICY,
@@ -137,5 +137,5 @@ def config(
     )
     for preset in ("public-coder", "finance-agent"):
         cfg.sandbox_presets[preset].action_policy_sets.append(DUCKTAPE_PR_FAILED_JOBS_SET)
-        cfg.sandbox_presets[preset].policies.append(AGENTPLANE_TESTING_POLICY)
+        cfg.sandbox_presets[preset].egress_policies.append(AGENTPLANE_TESTING_POLICY)
     return cfg
