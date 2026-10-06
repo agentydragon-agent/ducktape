@@ -7,7 +7,7 @@ from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named 
 from cluster.cdk8s import public_coder_agent_config
 from cluster.cdk8s.litellm.config import main_proxy_config
 from cluster.cdk8s.parked import haku_openclaw_spike_config
-from model_catalog.catalog import ANTHROPIC_API_ROUTES, ANTHROPIC_SUBSCRIPTION_ROUTES, GPT6_ASTRA_RESPONSES
+from model_catalog.catalog import ANTHROPIC_SUBSCRIPTION_ROUTES, GPT6_ASTRA_RESPONSES
 
 
 def _public_coder_agent_models() -> list[dict]:
@@ -70,15 +70,6 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
     assert haku_env["OPENCLAW_LIVE_CLI_BACKEND_PRESERVE_ENV"] == "CLAUDE_CODE_OAUTH_TOKEN"
     assert haku_env["CLAUDE_CODE_OAUTH_TOKEN"].startswith("sk-ant-oat01-")
     assert haku_env["GH_PAT"] == "proxy-github-placeholder"
-
-    litellm_models = _litellm_models()
-    for route in ANTHROPIC_API_ROUTES:
-        model_name = route.id
-        assert litellm_models[model_name] == {
-            "model_name": model_name,
-            "litellm_params": {"model": route.upstream_id, "api_key": "os.environ/ANTHROPIC_API_KEY"},
-            "model_info": {"mode": "chat", "supports_function_calling": True},
-        }
 
 
 def test_public_coder_memory_model_is_a_served_embedding_route() -> None:

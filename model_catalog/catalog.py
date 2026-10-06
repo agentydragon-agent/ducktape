@@ -66,7 +66,7 @@ scheme and public-coder-agent's durable memory index stores that model identity,
 stays until the index is deliberately rebuilt.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from model_catalog import ollama
@@ -289,8 +289,8 @@ TANA_HAIKU = Route(
 # endpoint. Feeds Haku OpenClaw and the Terraform claude lane (litellm/keys.py), and is
 # the exposed set for the cliproxyapi Claude-subscription `anthropic-max20/ant-messages/*` route: cliproxyapi's Claude
 # OAuth session serves older generations too, but we expose only this current group — the
-# subscription and the direct API serve the same current models, and sharing one list
-# keeps them in sync ("newest group only", as with the Gemini roster).
+# subscription and direct API share these identities, not capacity evidence. Only
+# the direct-API routes below add API limits; subscription declarations stay unknown.
 _OPUS = Model("claude-opus-5", "Opus 5")
 _SONNET = Model("claude-sonnet-5", "Sonnet 5")
 _FABLE = Model("claude-fable-5", "Fable 5")
@@ -396,11 +396,10 @@ _ANTIGRAVITY_PRO = Model(
 # RESOURCE_EXHAUSTED with a quota of 0. It may simply have no quota, but keep it
 # out of the roster until that is verified. Feeds the gemini-clients Terraform
 # key (litellm/keys.py) and public-coder-agent's OpenClaw catalog.
-# Published input/output token limits shared across the current Gemini chat
-# generation: ai.google.dev/gemini-api/docs/models/gemini-3.7-flash and
-# .../gemini-3.5-flash-lite (2026-08-23). Unlike
-# the provisional ChatGPT allowances above, this pair comes from Google's
-# published figures, not a serving-path probe. OpenClaw keeps its own budgets.
+# Google explicitly labels these as input/output token limits (checked 2026-10-05):
+# https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash
+# https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite
+# These are direct Gemini API declarations, not Antigravity or client budgets.
 _GEMINI_LIMITS = TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536)
 
 _GEMINI_FLASH = Model(id="gemini-3.7-flash", display_name="Gemini 3.7 Flash", reasoning=True, limits=_GEMINI_LIMITS)
@@ -411,32 +410,38 @@ _GEMINI_FLASH_LITE = Model(
 # Mistral chat models that accepted a minimal completion with the cluster's API
 # key on 2026-08-31. Catalog entries that returned 403 are intentionally
 # excluded; account-specific fine-tuned models are excluded as well.
+# Copy max_input_tokens/max_output_tokens from each exact `mistral/<id>` entry in:
+# https://github.com/BerriAI/litellm/blob/02f61c9c420b9aa9de10ff673098ad7132b78f5b/model_prices_and_context_window.json
+# Equal bounds are NOT additive: Mistral requires prompt tokens + requested output
+# to fit the context length (https://docs.mistral.ai/api/endpoint/chat).
+# These are reviewed catalogue declarations, not measured capacities. Floating aliases
+# require an explicit metadata refresh; no runtime catalogue import supplies this pair.
 _MISTRAL_MODELS = (
-    Model("codestral-2508"),
-    Model("codestral-latest"),
-    Model("magistral-medium-latest"),
-    Model("magistral-small-latest"),
-    Model("ministral-14b-latest"),
-    Model("ministral-14b-2512"),
-    Model("ministral-8b-latest"),
-    Model("ministral-8b-2512"),
-    Model("ministral-3b-latest"),
-    Model("ministral-3b-2512"),
-    Model("mistral-code-fim-latest"),
-    Model("mistral-code-latest"),
-    Model("mistral-medium"),
-    Model("mistral-medium-2604"),
-    Model("mistral-medium-3"),
-    Model("mistral-medium-3-5"),
-    Model("mistral-medium-3.5"),
-    Model("mistral-medium-latest"),
-    Model("mistral-small-2603"),
-    Model("mistral-small-latest"),
-    Model("mistral-vibe-cli-fast"),
-    Model("mistral-vibe-cli-latest"),
-    Model("mistral-vibe-cli-with-tools"),
-    Model("voxtral-small-2507"),
-    Model("voxtral-small-latest"),
+    Model("codestral-2508", limits=TokenLimits(max_input_tokens=128_000, max_output_tokens=128_000)),
+    Model("codestral-latest", limits=TokenLimits(max_input_tokens=128_000, max_output_tokens=128_000)),
+    Model("magistral-medium-latest", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("magistral-small-latest", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("ministral-14b-latest", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("ministral-14b-2512", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("ministral-8b-latest", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("ministral-8b-2512", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("ministral-3b-latest", limits=TokenLimits(max_input_tokens=131_072, max_output_tokens=131_072)),
+    Model("ministral-3b-2512", limits=TokenLimits(max_input_tokens=131_072, max_output_tokens=131_072)),
+    Model("mistral-code-fim-latest", limits=TokenLimits(max_input_tokens=128_000, max_output_tokens=128_000)),
+    Model("mistral-code-latest", limits=TokenLimits(max_input_tokens=128_000, max_output_tokens=128_000)),
+    Model("mistral-medium", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-medium-2604", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-medium-3", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-medium-3-5", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-medium-3.5", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-medium-latest", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-small-2603", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-small-latest", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-vibe-cli-fast", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-vibe-cli-latest", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-vibe-cli-with-tools", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("voxtral-small-2507", limits=TokenLimits(max_input_tokens=32_768, max_output_tokens=32_768)),
+    Model("voxtral-small-latest", limits=TokenLimits(max_input_tokens=32_768, max_output_tokens=32_768)),
 )
 
 # Gemini embeddings, same key as the chat lineup. Added for OpenClaw memory search,
@@ -561,11 +566,31 @@ SONNET_SUBSCRIPTION = Route(_SONNET, ANTHROPIC_SUBSCRIPTION, reasoning_efforts=_
 FABLE_SUBSCRIPTION = Route(_FABLE, ANTHROPIC_SUBSCRIPTION, reasoning_efforts=_ANTHROPIC_EFFORTS)
 HAIKU_SUBSCRIPTION = Route(_HAIKU, ANTHROPIC_SUBSCRIPTION, reasoning_efforts=_ANTHROPIC_EFFORTS)
 ANTHROPIC_SUBSCRIPTION_ROUTES = (OPUS_SUBSCRIPTION, SONNET_SUBSCRIPTION, FABLE_SUBSCRIPTION, HAIKU_SUBSCRIPTION)
+# Direct-API limits copied from the exact unprefixed Claude model IDs in:
+# https://github.com/BerriAI/litellm/blob/02f61c9c420b9aa9de10ff673098ad7132b78f5b/model_prices_and_context_window.json
+# Copy the input/output fields, not a combined window. replace() keeps names/slugs
+# shared without attaching raw-API facts to the subscription models above.
 ANTHROPIC_API = Upstream(Provider.ANTHROPIC_API, "anthropic", "messages", supports_function_calling=True)
-OPUS_API = Route(_OPUS, ANTHROPIC_API)
-SONNET_API = Route(_SONNET, ANTHROPIC_API)
-FABLE_API = Route(_FABLE, ANTHROPIC_API)
-HAIKU_API = Route(_HAIKU, ANTHROPIC_API)
+OPUS_API = Route(
+    replace(_OPUS, limits=TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)),
+    ANTHROPIC_API,
+    publish_limits=True,
+)
+SONNET_API = Route(
+    replace(_SONNET, limits=TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)),
+    ANTHROPIC_API,
+    publish_limits=True,
+)
+FABLE_API = Route(
+    replace(_FABLE, limits=TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)),
+    ANTHROPIC_API,
+    publish_limits=True,
+)
+HAIKU_API = Route(
+    replace(_HAIKU, limits=TokenLimits(max_input_tokens=200_000, max_output_tokens=64_000)),
+    ANTHROPIC_API,
+    publish_limits=True,
+)
 ANTHROPIC_API_ROUTES = (OPUS_API, SONNET_API, FABLE_API, HAIKU_API)
 ANTIGRAVITY_MESSAGES = Upstream(Provider.ANTIGRAVITY, "anthropic", "messages", supports_function_calling=True)
 ANTIGRAVITY_OPUS = Route(_ANTIGRAVITY_OPUS, ANTIGRAVITY_MESSAGES, reasoning_efforts=_ANTHROPIC_EFFORTS)
@@ -646,14 +671,24 @@ ANTIGRAVITY_ROUTES = (
 )
 ANTIGRAVITY_FLASH_LITE_ROUTES = (ANTIGRAVITY_FLASH_LITE_31, ANTIGRAVITY_FLASH_LITE)
 GROQ_CHAT = Upstream(Provider.GROQ, "groq", "chat", supports_function_calling=True)
-GROQ_CHAT_ROUTES = tuple(Route(Model(id), GROQ_CHAT) for id in ("llama-3.3-70b-versatile", "llama-3.1-8b-instant"))
+# Exact `groq/<id>` input/output entries from our pinned LiteLLM 1.100.1 backup:
+# https://github.com/BerriAI/litellm/blob/1dba17b10ded12ad0021edb453ba2c54e4637928/litellm/model_prices_and_context_window_backup.json
+# The 2026-10-05 remote catalogue omits these IDs. Preserve the pinned backup's
+# last-known metadata explicitly, not a sibling-model guess or availability claim.
+GROQ_CHAT_ROUTES = tuple(
+    Route(model, GROQ_CHAT, publish_limits=True)
+    for model in (
+        Model("llama-3.3-70b-versatile", limits=TokenLimits(max_input_tokens=131_072, max_output_tokens=32_768)),
+        Model("llama-3.1-8b-instant", limits=TokenLimits(max_input_tokens=131_072, max_output_tokens=131_072)),
+    )
+)
 GROQ_TRANSCRIBE = Upstream(Provider.GROQ, "groq", "transcribe")
 GROQ_AUDIO_ROUTES = tuple(
     Route(Model(id), GROQ_TRANSCRIBE, bare_name=True) for id in ("whisper-large-v3", "whisper-large-v3-turbo")
 )
 GOOGLE_GENERATE = Upstream(Provider.GOOGLE, "gemini", "generate", supports_function_calling=True)
-GEMINI_FLASH = Route(_GEMINI_FLASH, GOOGLE_GENERATE)
-GEMINI_FLASH_LITE = Route(_GEMINI_FLASH_LITE, GOOGLE_GENERATE)
+GEMINI_FLASH = Route(_GEMINI_FLASH, GOOGLE_GENERATE, publish_limits=True)
+GEMINI_FLASH_LITE = Route(_GEMINI_FLASH_LITE, GOOGLE_GENERATE, publish_limits=True)
 GEMINI_ROUTES = (GEMINI_FLASH, GEMINI_FLASH_LITE)
 GOOGLE_EMBED = Upstream(Provider.GOOGLE, "gemini", "embed")
 GEMINI_EMBEDDING_2 = Route(_GEMINI_EMBEDDING_2, GOOGLE_EMBED)
@@ -661,7 +696,7 @@ GEMINI_EMBEDDING_001 = Route(_GEMINI_EMBEDDING_001, GOOGLE_EMBED)
 GEMINI_EMBEDDING_ROUTES = (GEMINI_EMBEDDING_2, GEMINI_EMBEDDING_001)
 GEMINI_EMBEDDING_ALIAS = RouteAlias(GEMINI_EMBEDDING_COMPAT_ALIAS, GEMINI_EMBEDDING_2)
 MISTRAL_CHAT = Upstream(Provider.MISTRAL, "mistral", "chat", supports_function_calling=True)
-MISTRAL_ROUTES = tuple(Route(model, MISTRAL_CHAT) for model in _MISTRAL_MODELS)
+MISTRAL_ROUTES = tuple(Route(model, MISTRAL_CHAT, publish_limits=True) for model in _MISTRAL_MODELS)
 
 # Ordered public catalog. Aliases reference routes rather than repeat their upstream
 # or metadata. Hidden harness-compatibility aliases are not advertised as model entries.

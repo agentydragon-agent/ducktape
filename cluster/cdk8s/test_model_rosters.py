@@ -56,6 +56,8 @@ def test_picker_is_narrower_than_ollama_key() -> None:
 def test_equal_model_slugs_do_not_collapse_account_routes() -> None:
     subscription, direct = ANTHROPIC_SUBSCRIPTION_ROUTES[0], ANTHROPIC_API_ROUTES[0]
     assert subscription.model.id == direct.model.id
+    assert subscription.model.limits is None
+    assert direct.model.limits is not None
     assert subscription.id != direct.id
     assert model_entry(subscription)["litellm_params"]["api_key"] != model_entry(direct)["litellm_params"]["api_key"]
     assert subscription.reasoning_efforts
