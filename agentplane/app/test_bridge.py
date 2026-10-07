@@ -1061,7 +1061,7 @@ async def test_command_admission_timeout_is_not_an_internal_server_error(
         assert "uncertain" in response.json()["detail"]
 
 
-async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_notification(
+async def test_command_returns_runner_receipt_before_app_archive_catches_up(
     bridge: RunnerBridge,
     event_logs: EventLogStore,
     content: ContentStore,
@@ -1073,48 +1073,45 @@ async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_no
         SESSION,
         protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/state/work", model="bridge-model"),
     )
-    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
-    assert lease is not None
     command = command_pb2.Command(
-        command_id="unnotified-admission", interrupt_turn=command_pb2.InterruptTurn(turn_id="target")
+        command_id="ahead-of-archive", interrupt_turn=command_pb2.InterruptTurn(turn_id="target")
     )
-    original_lookup = content.admitted_command
-    waiting = asyncio.Event()
-    lookups = 0
-
-    async def observed_lookup(thread_id: UUID, candidate: command_pb2.Command) -> event_log_pb2.EventEntry | None:
-        nonlocal lookups
-        lookups += 1
-        result = await original_lookup(thread_id, candidate)
-        if result is None and lookups == 2:
-            waiting.set()
-        return result
-
-    async def drop_notification(_session: object, _channel: Channel) -> None:
-        return None
-
     timestamp = Timestamp()
     timestamp.GetCurrentTime()
-    entry = event_log_pb2.EventEntry(
+    receipt = event_log_pb2.EventEntry(
         cursor=1,
         origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=1),
         event=event_pb2.Event(at=timestamp, command_admitted=event_pb2.CommandAdmitted(command=command)),
     )
-    monkeypatch.setattr(content, "admitted_command", observed_lookup)
-    monkeypatch.setattr("agentplane.app.threads.ingestion.notify", drop_notification)
-    monkeypatch.setattr("agentplane.app.threads.bridge.ADMISSION_REREAD_S", 0.01)
-    admission = asyncio.create_task(bridge._wait_for_admission(thread, command))
-    try:
-        async with asyncio.timeout(10):
-            await waiting.wait()
-        await ingestion.record(thread, [entry], lease=lease)
-        async with asyncio.timeout(10):
-            assert await admission == entry
-        assert lookups >= 3
-    finally:
-        if not admission.done():
-            admission.cancel()
-            await asyncio.gather(admission, return_exceptions=True)
+    called = 0
+
+    async def no_archive_yet() -> None:
+        return None
+
+    class Runner:
+        async def command(
+            self, session_id: str, candidate: command_pb2.Command, *, after_cursor: int
+        ) -> event_log_pb2.EventEntry:
+            nonlocal called
+            called += 1
+            assert session_id == SESSION
+            assert candidate == command
+            assert after_cursor == 0
+            return receipt
+
+    monkeypatch.setattr(bridge._ingester, "start", no_archive_yet)
+    monkeypatch.setattr(bridge._runners, "client", lambda _sandbox: Runner())
+    assert await bridge.command(thread, command) == receipt
+    assert await content.admitted_command(thread, command) is None
+    assert await event_logs.events(thread, limit=10) == []
+
+    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
+    assert lease is not None
+    await ingestion.record(thread, [receipt], lease=lease)
+    assert await content.admitted_command(thread, command) == receipt
+    # The archive, not the runner, answers exact retries once it has caught up.
+    assert await bridge.command(thread, command) == receipt
+    assert called == 1
 
 
 @dataclass

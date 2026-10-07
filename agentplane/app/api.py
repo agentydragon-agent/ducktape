@@ -781,11 +781,10 @@ async def thread_command(
     thread_id: UUID,
     body: dict[str, object],
 ) -> dict[str, object]:
-    """Relay one generated Command and return its exact archived CommandAdmitted EventEntry.
+    """Return the runner's exact durable CommandAdmitted EventEntry.
 
-    The response establishes runner admission plus PostgreSQL archival, not any eventual native
-    effect. An exact retry is answered from the archive before a deleted Sandbox's runner is
-    needed; command-id reuse with other work is rejected by the same lookup.
+    The app archive may still lag this receipt. An exact retry is served from the archive
+    when present, or deduplicated by the runner; neither response promises native effect.
     """
     command = runner_bridge.parse_command(body)
     if not command.command_id or command.WhichOneof("operation") is None:

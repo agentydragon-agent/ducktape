@@ -55,6 +55,7 @@ def resources(cluster: Cluster, runner: RunnerHandle) -> Resources:
         audiences=(AUDIENCE,),
     )
     return Resources(
+        runner_admission_ack_timeout_s=1,
         principals=WorkloadPrincipalResolver(
             authentication=k8s_client.AuthenticationV1Api(cluster.api),
             audience=AUDIENCE,

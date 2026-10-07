@@ -62,7 +62,9 @@ class Endpoint:
     token_file: Path
 
     def client(self) -> SandboxServiceClient:
-        return SandboxServiceClient(self.target, namespace=NAMESPACE, token_file=self.token_file)
+        return SandboxServiceClient(
+            self.target, namespace=NAMESPACE, token_file=self.token_file, command_admission_timeout_s=20
+        )
 
 
 @contextmanager
@@ -83,6 +85,7 @@ def backend(
     inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core_api)
     bindings = KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, rbac or FakeRbac()))
     resources = Resources(
+        runner_admission_ack_timeout_s=1,
         principals=WorkloadPrincipalResolver(
             authentication=cast(k8s_client.AuthenticationV1Api, Authentication()),
             audience=AUDIENCE,

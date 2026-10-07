@@ -2505,6 +2505,7 @@ data:
     token_audience: agentplane-sandbox-service
     runner_port: 7000
     admission_timeout_s: 15
+    runner_admission_ack_timeout_s: 15
     follow_lease_s: 900
     runner_grpc_channel_options:
       grpc.max_receive_message_length: 33554432

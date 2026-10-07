@@ -105,6 +105,7 @@ async def authenticated_service(
         audiences=(audience,),
     )
     resources = Resources(
+        runner_admission_ack_timeout_s=1,
         principals=WorkloadPrincipalResolver(
             authentication=k8s_client.AuthenticationV1Api(cluster.api),
             audience=audience,

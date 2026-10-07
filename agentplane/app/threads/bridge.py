@@ -1,9 +1,8 @@
-"""Runner-first sessions and commands, each answered once the ingester has archived what it caused."""
+"""Runner-first sessions and commands; commands answer from the durable runner receipt."""
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from typing import Annotated
 from uuid import UUID
 
@@ -23,9 +22,6 @@ from agentplane.runner.errors import RunnerError
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
-COMMAND_ADMISSION_S = 15
-ADMISSION_REREAD_S = 2
-
 
 class MalformedMessageError(Exception):
     """A request body is not the proto-JSON of the message the route takes."""
@@ -35,9 +31,7 @@ class RunnerAdmissionTimeoutError(Exception):
     """Command admission was not confirmed before the deadline; its outcome is uncertain."""
 
     def __init__(self, command_id: str) -> None:
-        super().__init__(
-            f"admission of command {command_id!r} was not confirmed within {COMMAND_ADMISSION_S} seconds; outcome uncertain"
-        )
+        super().__init__(f"runner admission of command {command_id!r} was not confirmed; outcome uncertain")
 
 
 class NewSession(BaseModel):
@@ -135,7 +129,11 @@ class RunnerBridge:
         return await self._archive_open(runner_session.sandbox, runner_session.session_id, attached)
 
     async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
-        """Return only after this Thread's matching runner admission is in the app archive."""
+        """Return the runner's durable receipt; the app archive can catch up later.
+
+        An exact retry already in the archive needs no runner, including when the Sandbox is
+        gone. Otherwise the runner deduplicates the unchanged id/payload in its journal.
+        """
         if admitted := await self._content.admitted_command(thread_id, command):
             return admitted
         runner_session = await self._event_logs.runner_session(thread_id)
@@ -144,42 +142,23 @@ class RunnerBridge:
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
-        # A runner rejection can still have followed earlier events the archive has not copied.
-        # Start its feed before relaying so the rejection path cannot strand that prefix.
+        # Start ingestion before relaying, so even an immediate runner rejection cannot strand
+        # the prefix preceding it. The response does not wait for that copy.
         await self._ingester.start()
         try:
-            await self._command(
+            return await self._command(
                 runner_session.sandbox,
                 runner_session.session_id,
                 command,
                 after_cursor=await self._event_logs.last_cursor(thread_id),
             )
-            return await self._wait_for_admission(thread_id, command)
         except TimeoutError as error:
             raise RunnerAdmissionTimeoutError(command.command_id) from error
 
-    async def _command(self, sandbox: str, session_id: str, command: command_pb2.Command, *, after_cursor: int) -> None:
-        await self._runners.client(sandbox).command(session_id, command, after_cursor=after_cursor)
-
-    async def _wait_for_admission(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
-        """Wait for the ingester's committed prefix, never for a native command effect."""
-        waiter = asyncio.Event()
-        with self._thread_changes.subscribe(waiter):
-            async with asyncio.timeout(COMMAND_ADMISSION_S):
-                while True:
-                    if admitted := await self._content.admitted_command(thread_id, command):
-                        return admitted
-                    waiter.clear()
-                    # A commit between the first read and clear is visible here even if its NOTIFY
-                    # was already consumed; notifications only wake this durable reread.
-                    if admitted := await self._content.admitted_command(thread_id, command):
-                        return admitted
-                    # LISTEN/NOTIFY is deliberately only a wake-up. If a notification is lost
-                    # while this app is attached, a bounded durable reread still finds the
-                    # committed runner admission without asking the runner to repeat it.
-                    with contextlib.suppress(TimeoutError):
-                        async with asyncio.timeout(ADMISSION_REREAD_S):
-                            await waiter.wait()
+    async def _command(
+        self, sandbox: str, session_id: str, command: command_pb2.Command, *, after_cursor: int
+    ) -> event_log_pb2.EventEntry:
+        return await self._runners.client(sandbox).command(session_id, command, after_cursor=after_cursor)
 
 
 def _parse[M: command_pb2.Command | protocol_pb2.SessionSpec](message: M, body: dict[str, object]) -> M:

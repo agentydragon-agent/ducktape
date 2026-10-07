@@ -102,10 +102,11 @@ bbr test //agentplane/app/...
 
 Every app replica can send commands through an independent runner attachment. Generated `Command`
 payloads go to `POST /threads/{id}/commands` with stable command ids. The runner serializes admission
-and deduplicates retries. HTTP success returns the exact archived `CommandAdmitted` entry, only after
-the contiguous PostgreSQL prefix includes it; admission does not claim native execution. Identical
-retries return that entry before contacting the runner; a reused id with different payload is rejected.
-There is no database command queue.
+and deduplicates retries. HTTP success returns the runner's exact, durable `CommandAdmitted`
+receipt; it does not wait for the app archive to catch up and does not claim native execution. The Thread event stream and
+projected sync publish the archived entry and eventual outcome. Once the archive has caught up,
+identical retries return that entry before contacting the runner; until then the runner deduplicates
+the same id and payload, rejecting conflicting reuse. There is no database command queue.
 
 One app replica leases each sandbox's ingestion in PostgreSQL. Each write locks and validates
 the lease token against database time, so an expired owner cannot write after takeover. A batch

@@ -149,7 +149,10 @@ kebab-case CLI flags. Required settings are `sandbox_namespace` and
 
 `port` defaults to 8080 for gRPC. `health_port` defaults to 8081 for unauthenticated HTTP `/healthz`;
 it is liveness, not proof that Kubernetes or a particular destination is ready. Admission requests
-are bounded by `admission_timeout_s` (default 15); management by `lifecycle_timeout_s` (default 300);
+are bounded by `admission_timeout_s` (default 15); `SubmitCommand` instead uses
+`runner_admission_ack_timeout_s` (default 15) for runner journal admission. Configure the
+app client's `sandbox_service_command_admission_timeout_s` (default 20) above that server budget.
+Management uses `lifecycle_timeout_s` (default 300);
 follow leases by `follow_lease_s` (default and configured maximum 900 seconds / 15 minutes).
 The client whole-follow safety deadline defaults to 960 seconds / 16 minutes; initial attachment
 still uses the short request timeout. Renewal repeats TokenReview and destination admission; it
