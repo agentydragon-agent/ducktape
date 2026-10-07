@@ -818,13 +818,24 @@ cursor. Try inexpensive improvements before requiring hook or native queue chang
   entries when the window expires; suppress a now-unneeded follow-up, otherwise send one notice
   covering the then-current cursor. Do not remind solely about already-covered, unacknowledged
   entries. Bound delay from the oldest *new* uncovered entry even under continuous arrivals,
-  missing acknowledgement, idle harnesses or unavailable lifecycle signals; make timers durable.
+  missing acknowledgement or unavailable lifecycle signals; make timers durable.
+- If the runner session becomes idle (harness running, no active turn), consider sending a
+  follow-up for *new, uncovered* entries promptly rather than waiting out the grace window:
+  the previous turn no longer has an opportunity to pick them up in its next read. Recheck the
+  inbox ack and runner state immediately before admission, including queued inputs and races
+  with a new turn. Idle alone does not authorize a reminder for already-covered unacked entries;
+  do not treat an offline, lost or suspended harness as idle. A submitted notice may itself start
+  a new turn, so prevent an idle-to-notice feedback loop.
 
 Measure the baseline and the proposed stages on both Claude and Codex: long operations,
 compaction, resume, successive arrivals, ack during the grace window, stuck/unconfirmed notice,
-restarts, and mixed/coalesced runner inputs. Specify the waiting reason and next eligible time
-(or event, with a time fallback) in durable/service-readable status so `NOTIFICATION_STATUS_UI`
-can explain why e.g. seven entries are pending; distinguish pending inbox entries from notices
+restarts, idle transitions, and mixed/coalesced runner inputs. The Notification Service needs a
+read-authorized, resumable view of runner session progress (e.g. attach state and turn events
+through the existing Sandbox Service route), with a catch-up read before relying on idle events;
+avoid per-inbox long-lived polling, cross-service DB access, and holding delivery leases while
+waiting. Specify the waiting reason and next eligible time (or event, with a time fallback) in
+durable/service-readable status so `NOTIFICATION_STATUS_UI` can explain why e.g. seven entries
+are pending; distinguish pending inbox entries from notices
 waiting for harness confirmation and entries awaiting agent acknowledgement. Do not claim a
 precise delivery time if it depends on a harness event or the runner being offline.
 
@@ -906,9 +917,10 @@ Explore a discoverable entry point in the Thread/Sandbox UI (overflow menu, stat
 panel; do not prescribe placement yet). Show useful empty, loading, disconnected, suspended and
 error states, plus timestamps and links to the underlying inbox/subscriptions where authorized.
 Display the service's actual pacing state when available: pending entry count, latest notice's
-stage, whether a follow-up is waiting for confirmation, a grace deadline, or a delivery retry,
-and the next eligible time or condition plus its reason. Label estimates and offline/unknown
-conditions honestly; never infer a cooldown from a frontend-only timer. This can ship first
+stage, whether a follow-up is waiting for confirmation, a grace deadline, a runner idle
+transition, or a delivery retry, and the next eligible time or condition plus its reason. Label
+estimates and offline/unknown conditions honestly; never infer a cooldown from a frontend-only
+timer. This can ship first
 with existing state and expand when `NOTIFICATION_NOTICE_PACING` adds stage-aware decisions.
 Do not imply that reading or inspecting marks entries handled; no implicit acknowledgement or
 subscription mutation. Decide the backend read/projection path with explicit operator-to-inbox
