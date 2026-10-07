@@ -539,7 +539,7 @@ app-owned pending ticket/outbox while the runner is unavailable changes the avai
 and remains an explicit `COMMAND_QUEUE_DECISION`, not an incidental implementation detail.
 Specify semantics for a repeated command id with a changed payload, rejection vs still-unobserved,
 reload/reconnect, multi-replica delivery, and retention of ticket/status evidence. Record a design
-and independently dispatchable implementation/acceptance nodes *after discussion*; do not fold a
+and independently dispatchable implementation/acceptance nodes _after discussion_; do not fold a
 protocol cutover into `ADMISSION_DEADLINE_BUDGET`'s timeout fix. The existing
 `ADMISSION_UNCERTAIN_OUTCOME` and `SUBMISSION_STAGE_INDICATOR` nodes remain distinct.
 
