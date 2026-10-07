@@ -190,6 +190,7 @@ async def test_signed_http_durable_acceptance_and_disabled_provider(
         create_autospec(SandboxServiceClient),
         github,
         notice_debounce=NoticeDebounceSettings(),
+        stale_confirmation_s=30,
     )
     app = create_app(service, create_autospec(WorkloadPrincipalResolver))
     app.dependency_overrides[authenticated_caller] = lambda: PRINCIPAL

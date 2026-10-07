@@ -7,6 +7,13 @@ the integration app or connect directly to runners.
 Agents subscribe with an explicit destination/session and an idempotence key, then retrieve stored
 payloads when notified. Reads are non-destructive; acknowledgement explicitly advances the handled
 contiguous prefix. Unacknowledged entries do not cause repeated reminders.
+For UID-pinned destinations, workers retire an inbox only after two `GetSandbox` lookups
+confirm that its managed Sandbox is missing or has a different UID, separated by the
+Pydantic-configured `stale_inbox_confirmation_s` grace period. Matching UIDs (including
+suspended Sandboxes) resume delivery; owner mismatches and transport failures never
+confirm retirement. Retirement cancels subscriptions and stops retries but retains entries
+and notices for normal retention and inspection; it never acknowledges them or rebinds
+an inbox to a replacement Sandbox.
 
 - [API, authorization, persistence and delivery semantics](docs/api.md)
 - [Staging GitHub acceptance record](docs/staging_github_acceptance.md) — live CI/comment delivery and its limits.

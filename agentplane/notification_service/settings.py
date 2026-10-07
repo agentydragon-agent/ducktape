@@ -95,6 +95,13 @@ class Settings(BaseSettings):
         default=TOKEN_AUDIENCE, description="Audience required when TokenReview authenticates callers of this API."
     )
     notice_debounce: NoticeDebounceSettings = Field(default_factory=NoticeDebounceSettings)
+    stale_inbox_confirmation_s: float = Field(
+        default=30,
+        gt=0,
+        le=3600,
+        allow_inf_nan=False,
+        description="Seconds between first and confirming unavailable UID-pinned Sandbox lookup.",
+    )
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     github: GitHubSettings | None = Field(

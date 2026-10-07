@@ -43,6 +43,7 @@ class Inbox(Base):
     claim: Mapped[UUID | None]
     claim_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     delivery_error: Mapped[str | None]
+    stale_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Subscription(Base):
