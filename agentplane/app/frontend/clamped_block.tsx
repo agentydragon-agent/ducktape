@@ -1,4 +1,4 @@
-import { Button, UnstyledButton } from "@mantine/core";
+import { UnstyledButton } from "@mantine/core";
 import { type JSX, type ReactNode, useLayoutEffect, useState } from "react";
 
 import { Disclosure } from "./disclosure";
@@ -57,7 +57,6 @@ export function ClampedBlock({
   const clipped = overflows && !expanded;
   // Expansion is user state. CodeMirror briefly measures shorter while mounting inside the
   // sticky shell; retain its collapse control through that transient measurement.
-  const showStickyCollapse = expanded;
   const body = (
     <div
       data-clamped={clipped}
@@ -96,24 +95,10 @@ export function ClampedBlock({
     <div className="agentplane-clamped-block" data-expanded={expanded} data-label={label}>
       {stickyCollapse ? (
         <>
-          {!showStickyCollapse && header}
+          {!expanded && header}
           <Disclosure
             className="agentplane-clamped-disclosure"
             summary={header ?? label}
-            summaryAside={
-              showStickyCollapse ? (
-                <Button
-                  className="agentplane-clamped-disclosure-action"
-                  variant="subtle"
-                  size="sm"
-                  aria-expanded={true}
-                  aria-label={`Collapse ${label}`}
-                  onClick={() => setExpanded(false)}
-                >
-                  Collapse {label}
-                </Button>
-              ) : null
-            }
             open={true}
             onOpenChange={setExpanded}
           >

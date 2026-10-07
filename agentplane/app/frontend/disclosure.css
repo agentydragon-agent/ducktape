@@ -76,10 +76,6 @@
   border-start-end-radius: inherit;
 }
 
-.agentplane-clamped-disclosure-action {
-  min-height: 2.75rem;
-}
-
 .agentplane-clamped-block[data-expanded="false"]
   > .agentplane-clamped-disclosure
   > .agentplane-disclosure-item
@@ -134,9 +130,6 @@
     padding-block: 0;
   }
 
-  .agentplane-clamped-disclosure-action {
-    min-height: 2rem;
-  }
 }
 
 .agentplane-disclosure-panel,
