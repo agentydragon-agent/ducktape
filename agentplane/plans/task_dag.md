@@ -797,7 +797,7 @@ cleanup: the worker can use the existing `GetSandbox(name)` and compare its retu
 
 A matching managed UID remains eligible, including when the Sandbox is suspended. A different
 UID at the same name cannot receive the old inbox. A `NOT_FOUND` from `GetSandbox` means the
-old incarnation is no longer in the *managed* inventory: this includes both a deleted
+old incarnation is no longer in the _managed_ inventory: this includes both a deleted
 Kubernetes object and an object whose managed label was removed. Treat either as terminal for
 that inbox after a bounded confirmation/recheck; restoring the label later does not resurrect a
 retired inbox. Do **not** turn a timeout, connection failure, other Kubernetes error, or an
