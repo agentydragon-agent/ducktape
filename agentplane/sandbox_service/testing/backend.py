@@ -63,7 +63,13 @@ class Endpoint:
 
     def client(self) -> SandboxServiceClient:
         return SandboxServiceClient(
-            self.target, namespace=NAMESPACE, token_file=self.token_file, command_admission_timeout_s=20
+            self.target,
+            namespace=NAMESPACE,
+            token_file=self.token_file,
+            command_admission_timeout_s=20,
+            request_timeout_s=20,
+            lifecycle_timeout_s=310,
+            follow_timeout_s=960,
         )
 
 

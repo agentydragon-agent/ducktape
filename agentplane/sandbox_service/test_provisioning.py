@@ -122,7 +122,13 @@ async def api(case: Case, cluster: Cluster, tmp_path: Path) -> AsyncIterator[San
     token_file.write_text(TOKEN)
     async with service(resources) as target:
         client = SandboxServiceClient(
-            target, namespace=NAMESPACE, token_file=token_file, command_admission_timeout_s=20
+            target,
+            namespace=NAMESPACE,
+            token_file=token_file,
+            command_admission_timeout_s=20,
+            request_timeout_s=20,
+            lifecycle_timeout_s=310,
+            follow_timeout_s=960,
         )
         try:
             yield client

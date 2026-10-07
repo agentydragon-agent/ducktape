@@ -83,10 +83,10 @@ class SandboxServiceClient:
         *,
         namespace: str,
         token_file: Path,
-        command_admission_timeout_s: float | None = None,
-        request_timeout_s: float = 20,
-        lifecycle_timeout_s: float = 310,
-        follow_timeout_s: float = 960,
+        command_admission_timeout_s: float | None,
+        request_timeout_s: float,
+        lifecycle_timeout_s: float,
+        follow_timeout_s: float,
         channel_options: Mapping[str, int | str] | None = None,
     ) -> None:
         if min(request_timeout_s, lifecycle_timeout_s, follow_timeout_s) <= 0 or (
