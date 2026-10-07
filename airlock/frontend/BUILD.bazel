@@ -178,7 +178,15 @@ py_visual_test(
         ":visual_harness_css",
     ],
     harness = ":visual_harness_js",
-    scenarios = "harness/scenarios.json",
+    test_module = "airlock.frontend.test_visual",
+    test_srcs = ["test_visual.py"],
+    test_deps = [
+        "//util/testing:visual_capture",
+        "//util/testing:visual_scenarios",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
     title = "Airlock",
 )
 

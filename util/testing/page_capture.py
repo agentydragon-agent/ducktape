@@ -17,11 +17,13 @@ import math
 import re
 from collections.abc import Awaitable, Callable, Mapping
 from types import MappingProxyType
+from typing import Literal
 
 from playwright.async_api import (
     CDPSession,
     Error as PlaywrightError,
     FloatRect,
+    Locator,
     Page,
     Request,
     Route,
@@ -229,9 +231,18 @@ async def screenshot_element(page: Page, selector: str, *, context: str) -> byte
     screenshot does: a fractional height such as 1630.4 would otherwise publish one row taller.
     An element taller than the viewport is captured whole.
     """
-    if (element := await page.query_selector(selector)) is None:
+    locator = page.locator(selector)
+    if await locator.count() == 0:
         raise LookupError(f"{context}: {selector=} matched no element")
-    box = await element.evaluate(_ELEMENT_BOX_JS)
+    return await screenshot_locator(page, locator, context=context)
+
+
+async def screenshot_locator(
+    page: Page, target: Locator, *, context: str, scale: Literal["css", "device"] = "device"
+) -> bytes:
+    if (count := await target.count()) != 1:
+        raise ValueError(f"{context}: screenshot target must match exactly one element, got {count}")
+    box = await target.evaluate(_ELEMENT_BOX_JS)
     x, y = _round_half_up(box["x"]), _round_half_up(box["y"])
     clip: FloatRect = {
         "x": x,
@@ -240,8 +251,8 @@ async def screenshot_element(page: Page, selector: str, *, context: str) -> byte
         "height": _round_half_up(box["height"] + box["y"] - y),
     }
     if clip["width"] == 0 or clip["height"] == 0:
-        raise ValueError(f"{context}: {selector=} has no visible extent: {clip=}")
-    return await page.screenshot(clip=clip, full_page=True)
+        raise ValueError(f"{context}: screenshot target has no visible extent: {clip=}")
+    return await page.screenshot(clip=clip, full_page=True, scale=scale)
 
 
 def _round_half_up(value: float) -> int:

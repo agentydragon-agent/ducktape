@@ -60,3 +60,15 @@ def retain_review_asset(
     shutil.copyfile(png_path, out_dir / asset_name)
     upsert_review_asset(out_dir, title=title, asset=VisualReviewAsset(path=asset_name, label=label))
     return out_dir / asset_name
+
+
+def publish_review_png(png: bytes, *, output_dir: Path, title: str, name: str, label: str) -> Path:
+    """Publish one capture; output names are unique within a test target execution."""
+    asset = VisualReviewAsset(path=name, label=label)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    destination = output_dir / asset.path
+    # Exclusive creation catches two tests claiming the same output before either can overwrite it.
+    with destination.open("xb") as stream:
+        stream.write(png)
+    upsert_review_asset(output_dir, title=title, asset=asset)
+    return destination

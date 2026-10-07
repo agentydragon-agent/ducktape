@@ -16,8 +16,8 @@ load("//devinfra/python:defs.bzl", "py_test")
 def py_visual_test(
         name,
         harness,
-        scenarios,
         title,
+        scenarios = None,
         assets = [],
         fonts = None,
         font_family = None,
@@ -94,7 +94,8 @@ def py_visual_test(
 
     sweep_env = dict(env)
     sweep_env["HARNESS_PATH"] = "$(rlocationpath %s)" % harness
-    sweep_env["SCENARIOS_PATH"] = "$(rlocationpath %s)" % scenarios
+    if scenarios != None:
+        sweep_env["SCENARIOS_PATH"] = "$(rlocationpath %s)" % scenarios
     sweep_env["VISUAL_TITLE"] = title
     if font_family:
         sweep_env["EXPECTED_FONT_FAMILY"] = font_family
@@ -119,13 +120,13 @@ def py_visual_test(
         name = name,
         main_module = test_module or "util.testing.visual_sweep",
         srcs = test_srcs,
-        data = assets + stylesheets + served_documents.values() + [harness, scenarios] +
+        data = assets + stylesheets + served_documents.values() + [harness] + ([scenarios] if scenarios != None else []) +
                ([fonts] if fonts != None else []),
         env = sweep_env,
         tags = tags + ["visual"],
         deps = [
             "//:conftest",
-            "//util/testing:visual_sweep",
+            "//util/testing:visual_sweep" if scenarios != None else "//util/testing:visual_fixtures",
         ] + test_deps,
         **kwargs
     )
