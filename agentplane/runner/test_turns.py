@@ -133,6 +133,48 @@ async def test_tool_call_reports_arguments_and_result(
         events.assert_sourced(seen)
 
 
+@pytest.mark.parametrize("partial", [False, True], ids=["before-content", "after-visible-text"])
+async def test_exhausted_model_retries_fail_one_turn_but_not_the_next(
+    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec, partial: bool
+) -> None:
+    """Capture real harness retry/error frames through runner normalization for both harnesses.
+
+    Native retry is not another runner input: one admitted command must end in one failed
+    turn, and the same running session must still accept a later successful command.
+    """
+    async with await client.attach(f"model-failure-{partial}", spec=spec) as session:
+        await session.send("failed-input", "Reply with exactly: SHOULD_NOT_SUCCEED")
+        # Both pinned harness scenarios cap native retries at two. Keep this aligned with
+        # harness_tests/*/test_connection_loss.py, which pins the native error frames.
+        for attempt in range(3):
+            request = await model.request()
+            assert request.user_texts[-1] == "Reply with exactly: SHOULD_NOT_SUCCEED"
+            await model.drop_connection(request, after_text="ABANDONED_PARTIAL" if partial and attempt == 0 else None)
+
+        failed = await session.until(events.turn_completed)
+        assert failed.event.turn_completed.status == event_pb2.TURN_STATUS_FAILED
+        (admitted,) = events.of_kind(session.seen, "command_admitted")
+        assert admitted.event.command_admitted.command.command_id == "failed-input"
+        assert len(events.of_kind(session.seen, "harness_user_message_confirmed")) == 1
+        assert len(events.of_kind(session.seen, "turn_completed")) == 1
+        assert model.request_count == 3
+        assert events.of_kind(session.seen, "native")
+
+        await session.send("follow-up", "Reply with exactly: AFTER_ERROR_OK")
+        request = await model.request()
+        assert request.user_texts[-1] == "Reply with exactly: AFTER_ERROR_OK"
+        await model.reply(request, Text("AFTER_ERROR_OK"))
+        recovered = await session.until(events.turn_completed)
+        assert recovered.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+        assert recovered.event.turn_completed.turn_id != failed.event.turn_completed.turn_id
+        assert [
+            entry.event.command_admitted.command.command_id
+            for entry in events.of_kind(session.seen, "command_admitted")
+        ] == ["failed-input", "follow-up"]
+        events.assert_contiguous(session.seen)
+        events.assert_sourced(session.seen)
+
+
 async def test_failed_tool_is_reported_as_failed(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
