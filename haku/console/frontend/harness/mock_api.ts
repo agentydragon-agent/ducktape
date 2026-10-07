@@ -3,15 +3,7 @@
 // module that captures `globalThis.fetch` (openapi-fetch does so when client.ts builds its
 // client) — harness.tsx imports this first. Paired with the `base_href` of the `:screenshots`
 // py_visual_test so the relative "/api/…" URL parses in the origin-less in-memory page.
-import {
-  SAMPLE_DEPLOYMENT,
-  SAMPLE_GRANTS,
-  SAMPLE_MCP_PROBES,
-  SAMPLE_MCP_SERVERS,
-  SAMPLE_PENDING,
-  SAMPLE_TOOL_CALLS,
-  sampleAiquota,
-} from "./sample_data";
+import { SAMPLE_DEPLOYMENT, SAMPLE_GRANTS, SAMPLE_PENDING, SAMPLE_TOOL_CALLS, sampleAiquota } from "./sample_data";
 import { mockOperatorMcpFetch } from "../tool_rendering/screenshot/mcp_mock";
 import { ensureLedger, recordViolation, tracked } from "../tool_rendering/screenshot/visual_network_ledger";
 import { GOOGLE_CALENDAR_MCP_FIXTURES } from "../tool_rendering/google_calendar/fixtures";
@@ -131,8 +123,6 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
   const mcpResponse = await mockOperatorMcpFetch(input, init, url, {
     ...GOOGLE_CALENDAR_MCP_FIXTURES,
     ...GROCY_MCP_FIXTURES,
-    list_mcp_servers: () => ({ servers: SAMPLE_MCP_SERVERS }),
-    get_mcp_server_status: (args) => SAMPLE_MCP_PROBES[String(args.server_id)],
   });
   if (mcpResponse !== null) return mcpResponse;
   if (url.includes("/api/tool-calls")) {

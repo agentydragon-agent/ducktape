@@ -150,17 +150,6 @@ ts_library(
 )
 
 ts_library(
-    name = "mcp_status_client",
-    srcs = ["mcp_status_client.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":mcp_client",
-        ":mcp_tool_result_schema",
-    ],
-)
-
-ts_library(
     name = "calendar_client",
     srcs = ["calendar_client.ts"],
     isolated_typecheck = True,
@@ -740,7 +729,6 @@ ts_library(
         ":console_events",
         ":grants_panel",
         ":link",
-        ":mcp_status_client",
         ":push_subscription",
         ":time",
         ":toast",
@@ -1256,7 +1244,6 @@ haku_vitest_test(
     isolated_typecheck = True,
     deps = [
         ":client",
-        ":mcp_status_client",
         ":settings_panel",
         "//:node_modules/vitest",
     ],
