@@ -48,6 +48,10 @@ Pass `test_module`, `test_srcs`, direct `test_deps`, bundled `harness`, `assets`
 `title` to `py_visual_test`. Exclude macro-owned test sources from Gazelle so it does
 not create a second test target. Shared helper modules remain Gazelle-managed.
 
+`visual.open()` can load a harness without any fixture ID. For harnesses with callable
+setup APIs, configure the mocks and mount the component from Python before asserting
+readiness. Do not add a name-to-recipe registry just to open a page.
+
 `visual.open()` accepts browser geometry (`util/testing/viewports.py`), color scheme,
 query parameters and an optional frozen instant. Inline harnesses use `window_globals`
 instead of a query. The macro's `page_url` gives an inline document an origin for

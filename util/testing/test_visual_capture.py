@@ -33,7 +33,8 @@ def harness(playwright: Playwright, tmp_path: Path) -> VisualHarness:
 
 
 async def test_test_owns_interaction_and_capture(harness: VisualHarness) -> None:
-    async with harness.open("plain") as view:
+    async with harness.open() as view:
+        assert await view.page.evaluate("location.search") == ""
         await expect(view.page.locator("#shot")).to_have_text("Closed")
         await view.page.get_by_role("button", name="Open").click()
         await expect(view.page.locator("#shot")).to_have_text("Opened")
