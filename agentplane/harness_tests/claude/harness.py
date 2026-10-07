@@ -31,6 +31,7 @@ class ClaudeHarness:
         session_id: str | None = None,
         replay_user_messages: bool = False,
         hooks: bool = False,
+        slash_commands: bool = False,
         deny_tools: bool = False,
         driver_tools: mcp.DriverMcpServer | None = None,
         initialize: bool = True,
@@ -45,6 +46,7 @@ class ClaudeHarness:
             session_id=session_id,
             replay_user_messages=replay_user_messages,
             hooks=hooks,
+            slash_commands=slash_commands,
         )
         environment = {
             **self.base_environment,

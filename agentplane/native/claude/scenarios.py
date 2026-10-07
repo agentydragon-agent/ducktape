@@ -153,6 +153,7 @@ def command(
     replay_user_messages: bool = False,
     effort: str | None = None,
     hooks: bool = False,
+    slash_commands: bool = False,
 ) -> list[str]:
     """`session_id` fixes a fresh session's id; with `resume_id` the resumed session keeps its own.
 
@@ -170,7 +171,7 @@ def command(
         # hooks a client registers at initialize. --setting-sources= below still keeps plugins out.
         *(["--include-hook-events"] if hooks else ["--safe-mode"]),
         # This disables skills and slash commands, removing their catalog from the prompt.
-        "--disable-slash-commands",
+        *([] if slash_commands else ["--disable-slash-commands"]),
         # This suppresses the optional prompt_suggestion frame after each turn.
         "--prompt-suggestions=false",
         # An empty source list ignores user, project, and local settings files.

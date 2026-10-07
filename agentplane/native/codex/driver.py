@@ -107,3 +107,8 @@ def interrupt(request_id: str, *, thread_id: str, turn_id: str) -> wire.TurnInte
     return wire.TurnInterruptRequest(
         id=request_id, params=wire.TurnInterruptParams(thread_id=thread_id, turn_id=turn_id)
     )
+
+
+def thread_compact(request_id: str, *, thread_id: str) -> wire.ThreadCompactRequest:
+    """Request native thread compaction, independently of an ordinary turn."""
+    return wire.ThreadCompactRequest(id=request_id, params=wire.ThreadCompactParams(thread_id=thread_id))

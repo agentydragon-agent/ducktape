@@ -383,6 +383,16 @@ class TurnStartRequest(Wire):
     params: TurnStartParams
 
 
+class ThreadCompactParams(Wire):
+    thread_id: str
+
+
+class ThreadCompactRequest(Wire):
+    method: Literal["thread/compact/start"] = "thread/compact/start"
+    id: RequestId
+    params: ThreadCompactParams
+
+
 class TurnSteerParams(Wire):
     thread_id: str
     # The steer is rejected unless this names the currently active turn.
@@ -419,6 +429,7 @@ Request = (
     | ThreadStartRequest
     | ThreadResumeRequest
     | TurnStartRequest
+    | ThreadCompactRequest
     | TurnSteerRequest
     | TurnInterruptRequest
 )

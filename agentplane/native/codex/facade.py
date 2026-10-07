@@ -80,6 +80,9 @@ class CodexHarness:
     ) -> CodexReceipt:
         return await self.request(self.turn_start_request(thread_id=thread_id, text=text, model=model, effort=effort))
 
+    async def compact_thread(self, *, thread_id: str) -> CodexReceipt:
+        return await self.request(driver.thread_compact(self._request_id(), thread_id=thread_id))
+
     async def steer(self, *, thread_id: str, turn_id: str, text: str) -> CodexReceipt:
         return await self.request(driver.steer(self._request_id(), thread_id=thread_id, turn_id=turn_id, text=text))
 

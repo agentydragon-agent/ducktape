@@ -199,6 +199,10 @@ class CodexRun:
         result = wire.TurnResult.model_validate(response.result)
         return CodexTurn(thread_id, result.turn.id, events)
 
+    async def compact(self) -> wire.Response:
+        """Start native compaction on an idle thread; caller observes `thread/compacted`."""
+        return _require(await self._codex().compact_thread(thread_id=self.thread_id))
+
     async def steer(self, turn: CodexTurn, text: str) -> wire.Response:
         self._assert_turn(turn)
         return _require(await self._codex().steer(thread_id=turn.thread_id, turn_id=turn.id, text=text))
