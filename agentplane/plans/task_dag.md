@@ -61,6 +61,7 @@ flowchart TB
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
+    NOTIFICATION_WORKER_ISOLATION["Reliability follow-up<br/>separate notification HTTP and delivery workers<br/>independent failure domains"]:::future
     HARNESS_AUTO_COMPACTION_PROOF["Future harness acceptance<br/>automatic compaction<br/>standing instructions on next request"]:::future
     NOTIFICATION_NOTICE_PACING["Incremental improvement<br/>stage-aware notice pacing<br/>avoid redundant busy-turn notices"]:::future
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
@@ -755,6 +756,32 @@ of its own.
 background work, but any such runner surface reuses the Action Service contracts rather than a
 second tool-request lifecycle; the settled harness behavior and the seam are in
 [driver tools and background work](driver_tools_and_background.md).
+
+### `NOTIFICATION_WORKER_ISOLATION` — separate notification API and delivery workers
+
+**Planned reliability improvement:** the notification HTTP server currently starts delivery
+workers in its lifespan. A fatal worker failure takes an HTTP replica out of service; if it repeats
+on both replicas, inbox reads, acknowledgements, subscription management and GitHub webhook
+receipt are unavailable even though the API and database may still be healthy. The worker
+supervision in [#9390](https://github.com/agentydragon/ducktape/pull/9390) makes crashes
+observable and restartable but intentionally does not change this failure domain.
+
+Run the continuous delivery loop and PostgreSQL wakeup listener in a separate, multi-replica
+worker Deployment. The HTTP Deployment handles authenticated API calls and webhook ingress
+without owning worker tasks; its readiness/liveness reflect only its own ability to serve.
+Give worker pods their own liveness/readiness and restart policy; no client-facing Service is
+needed for them. Keep source-specific webhook verification in the API, worker-side source
+reconciliation and delivery in workers, and scope credentials/RBAC/secret mounts to each role.
+Retain the existing PostgreSQL inbox, claim fencing, retry and `NOTIFY`-as-wakeup semantics:
+workers must resume due work after a missed wakeup or replica restart rather than rely on
+process-local queues. Do not promise exactly-once external delivery solely from a lease.
+
+**Acceptance:** kill a worker during delivery and prove the API still serves reads and explicit
+acknowledgements and can durably receive new webhook events. Verify surviving/restarted workers
+resume due inboxes across replicas without concurrent ownership, with errors visible and queue
+age/backlog monitored. Exercise independent rollouts and worker-only failure/restart without
+restarting or draining healthy HTTP pods. Diagnose any current worker crash separately; this
+split is not its root-cause fix.
 
 ### `NOTIFICATION_ACTION_FEED` — remove idle Action-history polling
 
