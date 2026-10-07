@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest_bazel
 
 from agentplane.harness_tests.claude import anthropic_sse as sse
@@ -14,14 +16,17 @@ async def test_manual_compact_keeps_standing_prompt_afterwards_and_on_resume(
     claude: ClaudeHarness, anthropic_messages: AnthropicMessages
 ) -> None:
     async with claude.start(anthropic_messages, hooks=True, slash_commands=True) as first:
-        seed = await first.send("Reply SEED_OK")
-        async with await anthropic_messages.await_next_request() as exchange:
-            assert exchange.request.system_text.endswith(SYSTEM_PROMPT)
-            await exchange.send(*sse.message_stream([sse.Text("SEED_OK")], model=MODEL).events)
-        assert (await seed.result()).result == "SEED_OK"
+        # /compact refuses a one-message session without ever contacting the model.
+        # Build enough native conversation history to qualify for a manual compaction.
+        for index in range(12):
+            seed = await first.send(f"Reply SEED_{index}_OK")
+            async with await anthropic_messages.await_next_request() as exchange:
+                assert exchange.request.system_text.endswith(SYSTEM_PROMPT)
+                await exchange.send(*sse.message_stream([sse.Text(f"SEED_{index}_OK")], model=MODEL).events)
+            assert (await seed.result()).result == f"SEED_{index}_OK"
 
         command = await first.send("/compact")
-        async with await anthropic_messages.await_next_request() as exchange:
+        async with await asyncio.wait_for(anthropic_messages.await_next_request(), 45) as exchange:
             # This is the compaction summary call, NOT the request we want to assert on.
             assert exchange.request.system_text
             await exchange.send(*sse.message_stream([sse.Text("Summary: seed turn completed.")], model=MODEL).events)

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest_bazel
 
 from agentplane.harness_tests.codex import responses_sse as sse
@@ -27,17 +25,13 @@ async def test_compaction_preserves_instructions_in_next_request_and_resume(
         # This RPC is not a model prompt. Require its native completion event before calling
         # the next request post-compaction; otherwise an ordinary second turn gives a false pass.
         events = first.events()
-        compact = asyncio.create_task(first.compact())
-        async with await openai_responses.await_next_request() as exchange:
-            assert exchange.request.client_metadata.thread_id == first.thread_id
-            await exchange.send(
-                *sse.response_stream([sse.Message("Summary: seed turn completed.")], model=MODEL).events
-            )
-        assert (await compact).error is None
+        assert (await first.compact()).error is None
+        # On a short thread there need not be a summary API call.
+        # Wait for the actual compaction item to finish rather than the RPC acceptance.
         while True:
             frame = await events.next()
-            if isinstance(frame, wire.UnknownNotification) and frame.method == "thread/compacted":
-                assert frame.params["threadId"] == first.thread_id
+            if isinstance(frame, wire.ItemCompleted) and frame.params.item.type == "contextCompaction":
+                assert frame.params.thread_id == first.thread_id
                 break
 
         turn = await first.start_turn("Reply AFTER_COMPACT_OK")

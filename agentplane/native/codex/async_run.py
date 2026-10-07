@@ -200,7 +200,7 @@ class CodexRun:
         return CodexTurn(thread_id, result.turn.id, events)
 
     async def compact(self) -> wire.Response:
-        """Start native compaction on an idle thread; caller observes `thread/compacted`."""
+        """Start native compaction on an idle thread; caller observes the compaction item lifecycle."""
         return _require(await self._codex().compact_thread(thread_id=self.thread_id))
 
     async def steer(self, turn: CodexTurn, text: str) -> wire.Response:
