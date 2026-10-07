@@ -595,9 +595,11 @@ for the duration of a long script despite no longer waiting for the app archive.
 **Design decision:** specify when a durable start receipt is safe, how the caller
 reads or follows scoped progress and terminal success/failure (including after
 restart/reconnect), and whether successful bootstrap must remain a precondition
-of opening a session. Preserve runner deduplication and script identity: a timeout
-or disconnect must not restart a changed script or claim failure without a terminal
-result. Separate the configured launch/RPC deadlines from the acceptance promise.
+of opening a session. Keep status reads separate from starting another attempt: today
+`Initialize` replays success but a later identical call re-executes a failed or
+interrupted script. Decide how an explicit, versioned retry works without a timeout,
+reconciler restart, or read silently causing side effects. Preserve script identity
+and separate the configured launch/RPC deadlines from the acceptance promise.
 Implementation comes after the contract is agreed; `THREAD_SETUP_PROGRESS` is the
 separate UI presentation work.
 
