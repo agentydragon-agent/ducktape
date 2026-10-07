@@ -605,7 +605,7 @@ class Store:
             if row is not None:
                 await session.delete(row)
                 await session.flush()
-            # This cursor is a preparation-time snapshot, not a cap on what the agent should read.
+            # Both cursors are preparation-time snapshots; read from acknowledgement, not notice coverage.
             row = Notice(
                 inbox_id=inbox.id,
                 command_id=uuid4(),
@@ -613,7 +613,9 @@ class Store:
                 text=(
                     f"Agentplane automated notification: {inbox.last_cursor - start} new notifications "
                     f"through cursor {inbox.last_cursor} when this notice was prepared; newer entries may exist. "
-                    f"Retrieve GET /v1/inboxes/{inbox.id}/entries from the notification service. "
+                    f"The inbox had acknowledged through cursor {inbox.acknowledged} when this notice was "
+                    f"prepared. Retrieve GET /v1/inboxes/{inbox.id}/entries?after_cursor={inbox.acknowledged}"
+                    "&limit=128 from the notification service; page after the last returned cursor. "
                     "Read does not acknowledge; explicitly acknowledge only the handled contiguous prefix."
                 ),
                 attempted=False,

@@ -236,6 +236,9 @@ async def test_overlapping_subscriptions_commit_one_prefix_and_read_does_not_ack
     assert notice is not None
     assert notice.through_cursor == 3
     assert "through cursor 3 when this notice was prepared; newer entries may exist" in notice.text
+    assert "acknowledged through cursor 2 when this notice was prepared" in notice.text
+    assert f"GET /v1/inboxes/{first.inbox_id}/entries?after_cursor=2&limit=128" in notice.text
+    assert "page after the last returned cursor" in notice.text
     retry = await store.notice(claim)
     assert retry is not None
     assert retry.command_id == notice.command_id
