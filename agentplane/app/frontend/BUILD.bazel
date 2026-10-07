@@ -1325,6 +1325,7 @@ py_library(
 
 py_library(
     name = "visual_fixtures",
+    testonly = True,
     srcs = ["visual_fixtures.py"],
     deps = [
         ":visual_app",

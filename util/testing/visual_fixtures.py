@@ -37,6 +37,7 @@ def color_scheme() -> Literal["light", "dark"]:
 
 @pytest.fixture
 def capture_name(request: pytest.FixtureRequest) -> str:
+    assert isinstance(request.node, pytest.Item)
     return request.node.name.removeprefix("test_")
 
 
