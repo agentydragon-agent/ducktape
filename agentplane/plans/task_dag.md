@@ -89,7 +89,7 @@ flowchart TB
     HARNESS_PROMPT_SUGGESTIONS["Optional, lowest estimated win<br/>Claude prompt suggestions<br/>measure UX before enabling"]:::future
     THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
     HOSTED_THREAD_SURFACES["Deferred design<br/>read and control surfaces for a hosted Thread<br/>beyond today's Sandbox-bound view"]:::future
-    CROSS_IDENTITY_READ_POLICY["Deferred decision<br/>explicit policy for reading across Identities<br/>what cross-Identity delivery waits on"]:::decision
+    THREAD_READ_POLICY["Deferred design<br/>explicit ServiceAccount access to Thread history<br/>specific IDs or reviewed selectors"]:::decision
     AG["Capstone<br/>hosted Agent and Thread model<br/>lifecycle, surfaces and read policy together"]:::milestone
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_RBAC["Managed Kubernetes access<br/>catalog choices and SA bindings<br/>live acceptance pending; see #8596"]:::active
@@ -124,7 +124,7 @@ flowchart TB
 
     THREAD_OUTLIVES_SANDBOX --> AG
     HOSTED_THREAD_SURFACES --> AG
-    CROSS_IDENTITY_READ_POLICY --> AG
+    THREAD_READ_POLICY --> AG
     PC_EGRESS_CREDENTIALS --> PC_EGRESS
 
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_SKILLS
@@ -758,12 +758,30 @@ view the derived read model serves. Separate from the lifecycle: a Thread can ou
 before anything new reads it that way, and these surfaces can be designed against a Thread that
 does not yet.
 
-### `CROSS_IDENTITY_READ_POLICY` — an explicit policy for reading across Identities
+### `THREAD_READ_POLICY` — explicit ServiceAccount grants for Thread history
 
-**Deferred decision:** what one Identity may read of another's Threads, stated explicitly rather
-than left to whatever a query happens to reach. Future cross-Identity notification delivery needs
-this policy, not the hosted lifecycle or surfaces. The [subscriptions v1](notifications.md) uses authenticated ServiceAccount authority and
-explicit runner-session scope; it does not require app Thread ownership or cross-account delivery policy.
+**Design first; no grant model selected:** a logical agent may run as a ServiceAccount in
+independent Threads over time and should be able to find and read authorized prior history,
+including after a Sandbox or runner session changes. Do not infer read authority merely from
+sharing a Sandbox, a label, a similarly named agent, or a previously used credential. Specify
+which identity owns a Thread and how a caller's ServiceAccount obtains read authority through
+an explicit, inspectable, revocable policy.
+
+Compare grants scoped to specific Thread IDs with broader reviewed scopes (for example an
+operator-assigned tag or collection of Threads). Define who may assign or change selectors,
+whether existing and future Threads match, what a retag does to access, and how grants survive
+ServiceAccount replacement without silently sharing another agent's history. Distinguish
+Thread identity from runner session/incarnation IDs, and bound list/search/discovery as well as
+raw Event/transcript reads so listing cannot leak inaccessible history. Decide what the agent
+can see versus what an operator can see, the authority for API and archive reads, revocation
+and audit behavior, and tests for same-agent history, cross-agent denial, selector changes and
+replay. Treat cross-Identity reads as a deliberate policy choice, not a side effect of queries.
+
+This design can proceed independently of a hosted-Thread lifecycle or UI. Future cross-Identity
+notification delivery needs its read policy, but [subscriptions v1](notifications.md) retains
+its authenticated ServiceAccount authority and explicit runner-session scope; it does not
+require app Thread ownership or cross-account delivery policy. Do not commit to a tag-based
+schema or implement broad reads before the authority model is reviewed.
 
 ### `AG` — hosted Agent and Thread model
 
