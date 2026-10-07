@@ -368,7 +368,7 @@
   },
   "session_phone_drawer_over_active_thread": {
     "element": "#app",
-    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000002",
     "viewport": "mobile",
     "streamingInterleaved": true,
     "readySelectors": ["[aria-label='Thread history'][data-layout-settled='true']"],
