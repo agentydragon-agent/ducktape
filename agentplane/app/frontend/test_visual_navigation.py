@@ -6,8 +6,8 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
+from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture
 from agentplane.app.frontend.visual_assertions import _assert_phone_composer_layout
-from agentplane.app.frontend.visual_app import AgentplaneFixture, IDLE_THREAD, RUNNING_THREAD
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 from util.testing.visual_capture import VisualHarness
@@ -18,7 +18,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 async def test_archived_thread_toggle(visual: VisualHarness) -> None:
     async with visual.open(viewport=DESKTOP) as view:
         app = AgentplaneFixture(view.page)
-        await app.mount_app('/')
+        await app.mount_app("/")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -33,7 +33,7 @@ async def test_archived_thread_toggle(visual: VisualHarness) -> None:
 async def test_mobile_navigation_drawer_threads_phone_drawer(visual: VisualHarness) -> None:
     async with visual.open(viewport=MOBILE) as view:
         app = AgentplaneFixture(view.page)
-        await app.mount_app('/')
+        await app.mount_app("/")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -47,7 +47,7 @@ async def test_mobile_navigation_drawer_threads_failed_turn_phone_drawer(visual:
     async with visual.open(viewport=MOBILE) as view:
         app = AgentplaneFixture(view.page)
         await app.failed_turn(after_content=False)
-        await app.mount_app('/')
+        await app.mount_app("/")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -63,7 +63,7 @@ async def test_mobile_navigation_drawer_threads_provisioning_phone(visual: Visua
     async with visual.open(viewport=MOBILE) as view:
         app = AgentplaneFixture(view.page)
         await app.add_provisioning_sandbox()
-        await app.mount_app('/')
+        await app.mount_app("/")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -78,7 +78,7 @@ async def test_mobile_navigation_drawer_threads_disconnected_phone(visual: Visua
         app = AgentplaneFixture(view.page)
         await app.disconnect_thread_stream()
         await app.age_outage(10000)
-        await app.mount_app('/')
+        await app.mount_app("/")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -149,7 +149,7 @@ async def test_disconnected_threads_tooltip(visual: VisualHarness) -> None:
         app = AgentplaneFixture(view.page)
         await app.disconnect_thread_stream()
         await app.age_outage(10000)
-        await app.mount_app('/')
+        await app.mount_app("/")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -163,7 +163,7 @@ async def test_paused_claude_harness_choice_sandboxes_claude_paused(visual: Visu
     async with visual.open(viewport=DESKTOP) as view:
         app = AgentplaneFixture(view.page)
         await app.pause_claude()
-        await app.mount_app('/sandboxes?preset=public-coder')
+        await app.mount_app("/sandboxes?preset=public-coder")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector('[role="option"][data-combobox-disabled]', state="attached")
         await view.check(context="fixture ready")
@@ -179,7 +179,7 @@ async def test_paused_claude_harness_choice_sandbox_claude_paused(visual: Visual
     async with visual.open(viewport=DESKTOP) as view:
         app = AgentplaneFixture(view.page)
         await app.pause_claude()
-        await app.mount_app('/sandboxes/ready-sandbox')
+        await app.mount_app("/sandboxes/ready-sandbox")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector('[role="option"][data-combobox-disabled]', state="attached")
         await view.check(context="fixture ready")

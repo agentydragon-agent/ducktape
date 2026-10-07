@@ -84,8 +84,14 @@ export interface DisclosureVisualProps {
 }
 
 export function DisclosureVisual({
-  nested = false, short = false, open = true, wrappedHeadings = false,
-  toolOutput = false, outputOpen = true, beforeOutput = true, afterOutput = true,
+  nested = false,
+  short = false,
+  open = true,
+  wrappedHeadings = false,
+  toolOutput = false,
+  outputOpen = true,
+  beforeOutput = true,
+  afterOutput = true,
   followingSection = false,
 }: DisclosureVisualProps): JSX.Element {
   const aboveCopy = short ? ABOVE_COPY.slice(0, 1) : ABOVE_COPY;

@@ -4,7 +4,14 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
-from agentplane.app.frontend.visual_app import AgentplaneFixture, DELETED_SANDBOX_THREAD, IDLE_THREAD, RUNNING_THREAD, SUSPENDED_THREAD, UNNAMED_THREAD
+from agentplane.app.frontend.visual_app import (
+    DELETED_SANDBOX_THREAD,
+    IDLE_THREAD,
+    RUNNING_THREAD,
+    SUSPENDED_THREAD,
+    UNNAMED_THREAD,
+    AgentplaneFixture,
+)
 from util.testing.viewports import DESKTOP, MOBILE, Viewport
 from util.testing.visual_capture import VisualHarness
 
@@ -17,7 +24,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 async def test_session_recovery_messages(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
     async with visual.open(viewport=screen) as view:
         app = AgentplaneFixture(view.page)
-        await app.recovery('messages')
+        await app.recovery("messages")
         await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector('[aria-label="Retention unknown"]', state="attached")
@@ -28,7 +35,7 @@ async def test_session_recovery_messages(visual: VisualHarness, screen: Viewport
 async def test_session_recovery_tools(visual: VisualHarness) -> None:
     async with visual.open(viewport=DESKTOP) as view:
         app = AgentplaneFixture(view.page)
-        await app.recovery('tools')
+        await app.recovery("tools")
         await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector('[aria-label="Retention unknown"]', state="attached")
@@ -39,7 +46,7 @@ async def test_session_recovery_tools(visual: VisualHarness) -> None:
 async def test_session_recovery_quiet(visual: VisualHarness) -> None:
     async with visual.open(viewport=DESKTOP) as view:
         app = AgentplaneFixture(view.page)
-        await app.recovery('quiet')
+        await app.recovery("quiet")
         await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector('[data-thread-anchor="50"]', state="attached")
@@ -111,7 +118,7 @@ async def test_session_thread_setup(visual: VisualHarness) -> None:
 async def test_threads(visual: VisualHarness) -> None:
     async with visual.open(viewport=DESKTOP) as view:
         app = AgentplaneFixture(view.page)
-        await app.mount_app('/')
+        await app.mount_app("/")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector("a.agentplane-sidebar-group-name", state="attached")
         await view.check(context="fixture ready")
@@ -121,7 +128,7 @@ async def test_threads(visual: VisualHarness) -> None:
 async def test_threads_phone(visual: VisualHarness) -> None:
     async with visual.open(viewport=MOBILE) as view:
         app = AgentplaneFixture(view.page)
-        await app.mount_app('/')
+        await app.mount_app("/")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         await view.capture("threads-phone", target=view.page.locator("#app"))
@@ -131,7 +138,7 @@ async def test_threads_failed_turn(visual: VisualHarness) -> None:
     async with visual.open(viewport=DESKTOP) as view:
         app = AgentplaneFixture(view.page)
         await app.failed_turn(after_content=False)
-        await app.mount_app('/')
+        await app.mount_app("/")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(
             ".agentplane-thread-status-indicator[data-status='turn_error']", state="attached"
@@ -144,7 +151,7 @@ async def test_threads_provisioning(visual: VisualHarness) -> None:
     async with visual.open(viewport=DESKTOP) as view:
         app = AgentplaneFixture(view.page)
         await app.add_provisioning_sandbox()
-        await app.mount_app('/')
+        await app.mount_app("/")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector('a[href="#/sandboxes/test-provisioning"]', state="attached")
         await view.check(context="fixture ready")
@@ -155,7 +162,7 @@ async def test_threads_updates_disconnected(visual: VisualHarness) -> None:
     async with visual.open(viewport=DESKTOP) as view:
         app = AgentplaneFixture(view.page)
         await app.disconnect_thread_database()
-        await app.mount_app('/')
+        await app.mount_app("/")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector('[role="alert"]', state="attached")
         await view.check(context="fixture ready")
@@ -166,7 +173,7 @@ async def test_threads_watch_stale(visual: VisualHarness) -> None:
     async with visual.open(viewport=DESKTOP) as view:
         app = AgentplaneFixture(view.page)
         await app.stale_watch()
-        await app.mount_app('/')
+        await app.mount_app("/")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector('[role="alert"]', state="attached")
         await view.check(context="fixture ready")
@@ -177,7 +184,7 @@ async def test_threads_watch_stale(visual: VisualHarness) -> None:
 async def test_sandboxes(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
     async with visual.open(viewport=screen) as view:
         app = AgentplaneFixture(view.page)
-        await app.mount_app('/sandboxes')
+        await app.mount_app("/sandboxes")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         await view.capture(image_name, target=view.page.locator("#app"))
@@ -187,7 +194,7 @@ async def test_sandboxes_stale(visual: VisualHarness) -> None:
     async with visual.open(viewport=DESKTOP) as view:
         app = AgentplaneFixture(view.page)
         await app.stale_watch()
-        await app.mount_app('/sandboxes')
+        await app.mount_app("/sandboxes")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         await view.capture("sandboxes_stale", target=view.page.locator("#app"))
@@ -214,7 +221,7 @@ async def test_actions(visual: VisualHarness, screen: Viewport, image_name: str)
     async with visual.open(viewport=screen) as view:
         app = AgentplaneFixture(view.page)
         await app.show_pending_actions()
-        await app.mount_app('/actions')
+        await app.mount_app("/actions")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
         await view.check(context="fixture ready")
@@ -226,7 +233,7 @@ async def test_actions_history_groups_unavailable(visual: VisualHarness) -> None
         app = AgentplaneFixture(view.page)
         await app.fail_action_groups()
         await app.show_pending_actions()
-        await app.mount_app('/actions')
+        await app.mount_app("/actions")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
         await view.page.wait_for_selector('[role="alert"]', state="attached")
@@ -239,7 +246,7 @@ async def test_actions_hidden_codepoints(visual: VisualHarness) -> None:
         app = AgentplaneFixture(view.page)
         await app.hidden_codepoints()
         await app.show_pending_actions()
-        await app.mount_app('/actions')
+        await app.mount_app("/actions")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".cm-agentplane-special-char-bidi", state="attached")
         await view.page.wait_for_selector(".cm-agentplane-special-char-ignorable", state="attached")
@@ -252,7 +259,7 @@ async def test_actions_hidden_codepoints(visual: VisualHarness) -> None:
 async def test_consent(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
     async with visual.open(viewport=screen) as view:
         app = AgentplaneFixture(view.page)
-        await app.mount_app('/connection-enrollments/test-only-opaque-handle')
+        await app.mount_app("/connection-enrollments/test-only-opaque-handle")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         await view.capture(image_name, target=view.page.locator("#app"))
@@ -262,7 +269,7 @@ async def test_consent(visual: VisualHarness, screen: Viewport, image_name: str)
 async def test_sandbox(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
     async with visual.open(viewport=screen) as view:
         app = AgentplaneFixture(view.page)
-        await app.mount_app('/sandboxes/ready-sandbox')
+        await app.mount_app("/sandboxes/ready-sandbox")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         await view.capture(image_name, target=view.page.locator("#app"))
@@ -272,7 +279,7 @@ async def test_sandbox(visual: VisualHarness, screen: Viewport, image_name: str)
 async def test_sandbox_status(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
     async with visual.open(viewport=screen) as view:
         app = AgentplaneFixture(view.page)
-        await app.mount_app('/sandboxes/ready-sandbox?tab=status')
+        await app.mount_app("/sandboxes/ready-sandbox?tab=status")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         await view.capture(image_name, target=view.page.locator("#app"))
@@ -282,7 +289,7 @@ async def test_sandbox_status_grant_error(visual: VisualHarness) -> None:
     async with visual.open(viewport=DESKTOP) as view:
         app = AgentplaneFixture(view.page)
         await app.fail_grant_provisioning()
-        await app.mount_app('/sandboxes/ready-sandbox?tab=status')
+        await app.mount_app("/sandboxes/ready-sandbox?tab=status")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         await view.capture("sandbox-status-grant-error", target=view.page.locator("#app"))
@@ -292,7 +299,7 @@ async def test_sandbox_status_grant_error(visual: VisualHarness) -> None:
 async def test_sandbox_policy(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
     async with visual.open(viewport=screen) as view:
         app = AgentplaneFixture(view.page)
-        await app.mount_app('/sandboxes/ready-sandbox?tab=policy')
+        await app.mount_app("/sandboxes/ready-sandbox?tab=policy")
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         await view.capture(image_name, target=view.page.locator("#app"))

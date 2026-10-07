@@ -4,6 +4,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
+from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
 from agentplane.app.frontend.visual_assertions import (
     _INNER,
     _MAIN,
@@ -21,7 +22,6 @@ from agentplane.app.frontend.visual_assertions import (
     _scroll_to,
     _scroll_to_copy,
 )
-from agentplane.app.frontend.visual_app import AgentplaneFixture, IDLE_THREAD
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, Viewport
 from util.testing.visual_capture import VisualHarness

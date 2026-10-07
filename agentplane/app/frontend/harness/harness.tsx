@@ -1166,20 +1166,8 @@ function statesRows(threadId: string, outcomes = false): Record<string, unknown>
       output: "42 passed",
       turn: "t2",
     }),
-    command(
-      24,
-      "queued-model",
-      "change_model",
-      outcomes ? "failed" : "pending",
-      "Model unavailable"
-    ),
-    command(
-      25,
-      "queued-interrupt",
-      "interrupt_turn",
-      outcomes ? "noop" : "pending",
-      "Target turn already ended"
-    ),
+    command(24, "queued-model", "change_model", outcomes ? "failed" : "pending", "Model unavailable"),
+    command(25, "queued-interrupt", "interrupt_turn", outcomes ? "noop" : "pending", "Target turn already ended"),
     // Admitted and still pending, so it renders inline as a pending message bubble rather than in
     // the pending-commands box below -- see projected_session.tsx's pendingSentMessage.
     command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),
@@ -1576,7 +1564,10 @@ function recoveryRows(threadId: string, kind: "messages" | "tools" | "quiet"): R
 let threadEntityRows = (threadId: string): Record<string, unknown>[] =>
   threadId === THREADS[2].id ? statesRows(threadId) : standardRows(threadId, false, false);
 
-function realisticRolloutRows(threadId: string, entries: typeof rollout | typeof reportedRollout): Record<string, unknown>[] {
+function realisticRolloutRows(
+  threadId: string,
+  entries: typeof rollout | typeof reportedRollout
+): Record<string, unknown>[] {
   const rows = entries.map((entry, index) => {
     const cursor = index + 1;
     const id = `rollout-${cursor}`;
@@ -2092,9 +2083,7 @@ routes.push(
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
     (match, query, _signal, body) => {
       const rows = threadRows(match[1]).map((row) =>
-        withholdEntitySegments && row.entity_kind === "view_state"
-          ? { ...row, revision_cursor: "8" }
-          : row
+        withholdEntitySegments && row.entity_kind === "view_state" ? { ...row, revision_cursor: "8" } : row
       );
       return electricSubset(
         entitySubset(rows, subsetOf(query, body)).map((row) => shapeRow("thread_entity", row)),
@@ -2244,10 +2233,7 @@ class HarnessEventSource extends EventTarget {
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
     if (url.pathname === "/actions/stream") {
-      const pending =
-        includePendingActions
-          ? ACTIONS.filter((request) => request.state === "decision_pending")
-          : [];
+      const pending = includePendingActions ? ACTIONS.filter((request) => request.state === "decision_pending") : [];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(pending) }));
       return;
     }
@@ -2308,28 +2294,58 @@ const visualHarness = {
   },
   failGrantProvisioning,
   addProvisioningSandbox,
-  pauseClaude(): void { availableClaudeModels = []; },
-  staleWatch(): void { watchHealth = WEDGED; },
-  disconnectThreadDatabase(): void { threadDatabaseConnected = false; },
-  disconnectThreadStream(): void { dropThreadStream = true; },
-  disconnectInventoryStream(): void { dropInventoryStream = true; },
-  ageOutage(milliseconds: number): void { streamRegistry.now = () => Date.now() + milliseconds; },
-  showPendingActions(): void { includePendingActions = true; },
-  paginateActionHistory(): void { pageActionHistory = true; },
-  failActionGroups(): void { actionGroupsUnavailable = true; },
-  timeOutCommandAdmission(): void { commandAdmissionTimedOut = true; },
-  failSyncScope(): void { syncScopeUnavailable = true; },
-  disconnectEntityStream(): void { entityStreamConnected = false; },
-  withholdEntitySegments(): void { withholdEntitySegments = true; },
+  pauseClaude(): void {
+    availableClaudeModels = [];
+  },
+  staleWatch(): void {
+    watchHealth = WEDGED;
+  },
+  disconnectThreadDatabase(): void {
+    threadDatabaseConnected = false;
+  },
+  disconnectThreadStream(): void {
+    dropThreadStream = true;
+  },
+  disconnectInventoryStream(): void {
+    dropInventoryStream = true;
+  },
+  ageOutage(milliseconds: number): void {
+    streamRegistry.now = () => Date.now() + milliseconds;
+  },
+  showPendingActions(): void {
+    includePendingActions = true;
+  },
+  paginateActionHistory(): void {
+    pageActionHistory = true;
+  },
+  failActionGroups(): void {
+    actionGroupsUnavailable = true;
+  },
+  timeOutCommandAdmission(): void {
+    commandAdmissionTimedOut = true;
+  },
+  failSyncScope(): void {
+    syncScopeUnavailable = true;
+  },
+  disconnectEntityStream(): void {
+    entityStreamConnected = false;
+  },
+  withholdEntitySegments(): void {
+    withholdEntitySegments = true;
+  },
   longPendingAction(): void {
     ACTIONS[1]!.arguments = {
-      host: "test-archive-host", user: "test-user", timeout_seconds: 60,
+      host: "test-archive-host",
+      user: "test-user",
+      timeout_seconds: 60,
       command: Array.from({ length: 55 }, (_, index) => `echo review-step-${index + 1}`).join("\n"),
     };
   },
   hiddenCodepoints(): void {
     ACTIONS[1]!.arguments = {
-      host: "test-archive-host", user: "test-user", timeout_seconds: 60,
+      host: "test-archive-host",
+      user: "test-user",
+      timeout_seconds: 60,
       command: 'printf "review \u202Ereversed\u202C zero\u200Bwidth control\u001B"',
     };
     const result = {
@@ -2339,7 +2355,9 @@ const visualHarness = {
     };
     ACTIONS[2]!.execution!.result = {
       _meta: { "io.modelcontextprotocol/serverInfo": { name: "ssh-mcp", version: "4.0.3" } },
-      content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: false,
+      content: [{ type: "text", text: JSON.stringify(result) }],
+      structuredContent: result,
+      isError: false,
     };
   },
   recovery(kind: "messages" | "tools" | "quiet"): void {
@@ -2353,35 +2371,65 @@ const visualHarness = {
     mapThread = withEndedAttachment;
     threadEntityRows = endedAttachmentRows;
   },
-  interleavedEvents(): void { threadEntityRows = interleavedRows; },
-  lifecycleGroup(): void { threadEntityRows = lifecycleGroupRows; },
-  threadSetup(): void { threadEntityRows = setupRows; },
-  shellCalls(): void { threadEntityRows = shellCallRows; },
-  markdownCodeFence(): void { threadEntityRows = codeFenceRows; },
-  streamingInterleaved(): void { threadEntityRows = streamingInterleavedRows; },
-  unfinishedReasoning(): void { threadEntityRows = unfinishedReasoningRows; },
+  interleavedEvents(): void {
+    threadEntityRows = interleavedRows;
+  },
+  lifecycleGroup(): void {
+    threadEntityRows = lifecycleGroupRows;
+  },
+  threadSetup(): void {
+    threadEntityRows = setupRows;
+  },
+  shellCalls(): void {
+    threadEntityRows = shellCallRows;
+  },
+  markdownCodeFence(): void {
+    threadEntityRows = codeFenceRows;
+  },
+  streamingInterleaved(): void {
+    threadEntityRows = streamingInterleavedRows;
+  },
+  unfinishedReasoning(): void {
+    threadEntityRows = unfinishedReasoningRows;
+  },
   standaloneReasoning(longPreview: boolean, codeFence: boolean, longBody: boolean): void {
     threadEntityRows = (id) => standaloneReasoningRows(id, longPreview, codeFence, longBody);
   },
   standardHistory(longPreview: boolean, longBody: boolean): void {
-    threadEntityRows = (id) => id === THREADS[2].id ? statesRows(id) : standardRows(id, longPreview, longBody);
+    threadEntityRows = (id) => (id === THREADS[2].id ? statesRows(id) : standardRows(id, longPreview, longBody));
   },
-  pendingCommands(): void { threadEntityRows = (id) => statesRows(id); },
-  commandOutcomes(): void { threadEntityRows = (id) => statesRows(id, true); },
+  pendingCommands(): void {
+    threadEntityRows = (id) => statesRows(id);
+  },
+  commandOutcomes(): void {
+    threadEntityRows = (id) => statesRows(id, true);
+  },
   rememberPendingInput,
   rememberSettledCommands,
   completedRollout(): void {
-    mapThread = (thread) => thread.session_id === "s-1" ? {
-      ...thread, name: "Completed diagnostic run", harness: "HARNESS_CODEX",
-      active_turn_id: null, last_turn_status: "TURN_STATUS_COMPLETED",
-    } : thread;
+    mapThread = (thread) =>
+      thread.session_id === "s-1"
+        ? {
+            ...thread,
+            name: "Completed diagnostic run",
+            harness: "HARNESS_CODEX",
+            active_turn_id: null,
+            last_turn_status: "TURN_STATUS_COMPLETED",
+          }
+        : thread;
     threadEntityRows = (id) => realisticRolloutRows(id, rollout);
   },
   reportedRollout(): void {
-    mapThread = (thread) => thread.session_id === "s-1" ? {
-      ...thread, name: "Reported thread excerpt", harness: "HARNESS_CODEX",
-      active_turn_id: null, last_turn_status: "TURN_STATUS_COMPLETED",
-    } : thread;
+    mapThread = (thread) =>
+      thread.session_id === "s-1"
+        ? {
+            ...thread,
+            name: "Reported thread excerpt",
+            harness: "HARNESS_CODEX",
+            active_turn_id: null,
+            last_turn_status: "TURN_STATUS_COMPLETED",
+          }
+        : thread;
     threadEntityRows = (id) => realisticRolloutRows(id, reportedRollout);
   },
 };

@@ -1327,3 +1327,9 @@ py_library(
         "@pypi//playwright",
     ],
 )
+
+py_library(
+    name = "visual_app",
+    srcs = ["visual_app.py"],
+    deps = ["@pypi//playwright"],
+)

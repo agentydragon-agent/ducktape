@@ -27,17 +27,30 @@ class AgentplaneFixture:
         await self.mount_app(f"/threads/{thread_id}")
 
     async def mount_disclosure(
-        self, *, nested: bool = False, short: bool = False, open: bool = True,
-        wrapped_headings: bool = False, tool_output: bool = False, output_open: bool = True,
-        before_output: bool = True, after_output: bool = True, following_section: bool = False,
+        self,
+        *,
+        nested: bool = False,
+        short: bool = False,
+        open: bool = True,
+        wrapped_headings: bool = False,
+        tool_output: bool = False,
+        output_open: bool = True,
+        before_output: bool = True,
+        after_output: bool = True,
+        following_section: bool = False,
     ) -> None:
         await self.page.evaluate(
             "props => window.agentplaneVisual.mountDisclosure(props)",
             {
-                "nested": nested, "short": short, "open": open,
-                "wrappedHeadings": wrapped_headings, "toolOutput": tool_output,
-                "outputOpen": output_open, "beforeOutput": before_output,
-                "afterOutput": after_output, "followingSection": following_section,
+                "nested": nested,
+                "short": short,
+                "open": open,
+                "wrappedHeadings": wrapped_headings,
+                "toolOutput": tool_output,
+                "outputOpen": output_open,
+                "beforeOutput": before_output,
+                "afterOutput": after_output,
+                "followingSection": following_section,
             },
         )
 
@@ -51,7 +64,7 @@ class AgentplaneFixture:
         await self.page.evaluate("after => window.agentplaneVisual.failedTurn(after)", after_content)
 
     async def standalone_reasoning(
-        self, *, long_preview: bool = False, code_fence: bool = False, long_body: bool = False,
+        self, *, long_preview: bool = False, code_fence: bool = False, long_body: bool = False
     ) -> None:
         await self.page.evaluate(
             "([preview, code, body]) => window.agentplaneVisual.standaloneReasoning(preview, code, body)",
@@ -60,7 +73,7 @@ class AgentplaneFixture:
 
     async def standard_history(self, *, long_preview: bool = False, long_body: bool = False) -> None:
         await self.page.evaluate(
-            "([preview, body]) => window.agentplaneVisual.standardHistory(preview, body)", [long_preview, long_body],
+            "([preview, body]) => window.agentplaneVisual.standardHistory(preview, body)", [long_preview, long_body]
         )
 
     async def fail_grant_provisioning(self) -> None:

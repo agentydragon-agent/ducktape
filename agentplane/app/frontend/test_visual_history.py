@@ -7,6 +7,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
+from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture
 from agentplane.app.frontend.visual_assertions import (
     _focus,
     _in_viewport,
@@ -17,7 +18,6 @@ from agentplane.app.frontend.visual_assertions import (
     _rollout_geometry,
     _rollout_start,
 )
-from agentplane.app.frontend.visual_app import AgentplaneFixture, IDLE_THREAD, RUNNING_THREAD
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, MOBILE_TOUCH, Viewport
 from util.testing.visual_capture import VisualHarness
@@ -239,7 +239,7 @@ async def test_recovery_details_open_session_recovery_messages_open(
 ) -> None:
     async with visual.open(viewport=screen) as view:
         app = AgentplaneFixture(view.page)
-        await app.recovery('messages')
+        await app.recovery("messages")
         await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
@@ -254,7 +254,7 @@ async def test_recovery_details_open_session_recovery_messages_open(
 async def test_recovery_details_open_session_recovery_quiet_open(visual: VisualHarness) -> None:
     async with visual.open(viewport=DESKTOP) as view:
         app = AgentplaneFixture(view.page)
-        await app.recovery('quiet')
+        await app.recovery("quiet")
         await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
@@ -383,7 +383,7 @@ async def test_thread_setup_output(visual: VisualHarness) -> None:
 async def test_recovery_tool_lower_states(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
     async with visual.open(viewport=screen) as view:
         app = AgentplaneFixture(view.page)
-        await app.recovery('tools')
+        await app.recovery("tools")
         await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
@@ -401,7 +401,7 @@ async def test_recovery_tool_lower_states(visual: VisualHarness, screen: Viewpor
 async def test_revised_recovery_tool_output(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
     async with visual.open(viewport=screen) as view:
         app = AgentplaneFixture(view.page)
-        await app.recovery('tools')
+        await app.recovery("tools")
         await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
