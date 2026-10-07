@@ -1016,7 +1016,7 @@ async def test_recovery_tool_lower_states(
     async def drive(page: Page) -> None:
         await _open_recovery_details(page)
         await _in_viewport(page.get_by_text("Failed, still in context", exact=True))
-        await _in_viewport(page.locator('[aria-label="Retention unknown"]').last)
+        await _focus(page, page.locator('[aria-label="Retention unknown"]').last)
 
     await _capture(scene, drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config)
 
@@ -1338,8 +1338,8 @@ async def test_collapsed_steps_in_open_run_are_compact(
     scene: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
 ) -> None:
     async def drive(page: Page) -> None:
-        run = page.locator(".agentplane-disclosure-summary").filter(has_text="32 tool calls").first
-        await run.click()
+        await _open_run(page)
+        await expect(page.locator(".agentplane-step-details [aria-busy='true']")).to_have_count(0)
         steps = page.locator(
             ".agentplane-run-steps .agentplane-step-details .agentplane-disclosure-summary[aria-expanded='false']"
         )
