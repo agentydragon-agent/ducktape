@@ -78,7 +78,7 @@ class ScriptedModel[RequestT: StreamableRequest](abc.ABC):
         async with request._exchange as exchange:
             if after_text is not None:
                 stream = self.stream([Text(after_text)])
-                delta = next(i for i, event in enumerate(stream) if "text_delta" in event.kind)
+                delta = next(i for i, event in enumerate(stream) if event.kind in ("text_delta", "response.output_text.delta"))
                 await exchange.send(*stream[: delta + 1])
             await exchange.abort()
 
