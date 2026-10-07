@@ -83,7 +83,7 @@ class SandboxServiceClient:
         *,
         namespace: str,
         token_file: Path,
-        command_admission_timeout_s: float | None = None,
+        command_admission_timeout_s: float | None,
         request_timeout_s: float = 20,
         lifecycle_timeout_s: float = 310,
         follow_timeout_s: float = 960,

@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from agentplane.notification_service.settings import CONFIG_FILE_ENV, NoticeDebounceSettings, Settings
+from agentplane.notification_service.settings import CONFIG_FILE_ENV, NoticeDebounceSettings, SandboxServiceSettings, Settings
 
 
 def test_yaml_settings_and_nested_environment_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -30,13 +30,16 @@ sandbox_service:
     assert settings.actions.token_file == Path("/tokens/actions")
     assert settings.sandbox_service.target == "sandboxes:8080"
     assert settings.sandbox_service.token_file == Path("/tokens/sandboxes")
+    assert settings.sandbox_service.command_admission_timeout_s == 20
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_ACTIONS__URL", "http://overridden-actions")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__TARGET", "overridden-sandboxes:8080")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_NOTICE_DEBOUNCE__QUIET_SECONDS", "0")
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__COMMAND_ADMISSION_TIMEOUT_S", "22")
     settings = Settings(_cli_parse_args=False)
     assert settings.notice_debounce == NoticeDebounceSettings(quiet_seconds=0, max_wait_seconds=15)
     assert settings.actions.url == "http://overridden-actions"
     assert settings.sandbox_service.target == "overridden-sandboxes:8080"
+    assert settings.sandbox_service.command_admission_timeout_s == 22
     assert settings.sandbox_service.token_file == Path("/tokens/sandboxes")
     with config.open("a") as file:
         file.write("unknown_setting: true\n")
@@ -61,6 +64,14 @@ sandbox_service:
 def test_invalid_notice_debounce(values: dict[str, float]) -> None:
     with pytest.raises(ValidationError):
         NoticeDebounceSettings(**values)
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
+def test_invalid_command_admission_timeout(timeout: float) -> None:
+    with pytest.raises(ValidationError):
+        SandboxServiceSettings(
+            target="sandboxes:8080", token_file=Path("/tokens/sandboxes"), command_admission_timeout_s=timeout
+        )
 
 
 def test_notice_debounce_defaults() -> None:

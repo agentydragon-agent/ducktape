@@ -51,6 +51,7 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 
 @pytest.mark.parametrize("busy", [False, True])
+@pytest.mark.parametrize("failed_before_rpc", [False, True])
 async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     store: Store,
     engine: AsyncEngine,
@@ -63,6 +64,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     busy: bool,
+    failed_before_rpc: bool,
 ) -> None:
     owner = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
     delegate = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="notifications")
@@ -220,13 +222,21 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     assert history_cursor > 128
                     original = Runner.command
                     lost = False
+                    attempted_id: str | None = None
 
                     async def lose_response(
                         self: Runner, session_id: str, command: command_pb2.Command, *, after_cursor: int
                     ) -> event_log_pb2.EventEntry:
-                        nonlocal lost
+                        nonlocal lost, attempted_id
                         if command.HasField("submit_input"):
                             assert after_cursor >= history_cursor
+                            if attempted_id is None:
+                                attempted_id = command.command_id
+                            else:
+                                assert command.command_id == attempted_id
+                            if failed_before_rpc and not lost:
+                                lost = True
+                                raise ValueError("simulated local failure before SubmitCommand")
                         receipt = await original(self, session_id, command, after_cursor=after_cursor)
                         if not lost and command.HasField("submit_input"):
                             lost = True
@@ -234,16 +244,30 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         return receipt
 
                     monkeypatch.setattr(Runner, "command", lose_response)
-                    await service.step()
+                    if failed_before_rpc:
+                        with pytest.raises(ValueError, match="before SubmitCommand"):
+                            await service.step()
+                    else:
+                        await service.step()
                     assert lost
                     if initial is not None:
                         await model.reply(initial, Text("Initial work complete"))
+                    if failed_before_rpc:
+                        # The durable attempt marker exists, but the runner has not been called.
+                        async with store.sessions.begin() as session:
+                            await session.execute(
+                                update(Inbox)
+                                .where(Inbox.id == UUID(subscription["inbox_id"]))
+                                .values(next_attempt=datetime.now(UTC))
+                            )
+                        await service.step()
                     notice_request = await model.request()
                     notices = [
                         text for text in notice_request.user_texts if text.startswith("Agentplane inbox notice: ")
                     ]
                     assert len(notices) == 1
                     hint = json.loads(notices[0].removeprefix("Agentplane inbox notice: "))
+                    assert attempted_id is not None
                     assert hint == {
                         "inbox_id": subscription["inbox_id"],
                         "acknowledged_at_preparation": 0,
@@ -272,6 +296,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             break
                     assert page is not None
                     assert page["notice"]["confirmed"]
+                    assert page["notice"]["command_id"] == attempted_id
                     assert page["inbox"]["acknowledged"] == 0
                     assert [entry["payload"]["state"] for entry in page["entries"]] == ["decision_pending", "denied"]
                     assert [entry["event"] for entry in page["entries"]] == [

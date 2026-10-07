@@ -40,7 +40,12 @@ from agentplane.sandbox_service.egress_views import EgressReader
 
 def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
     # Only routes and models shape the document; the inventory's clients are never called.
-    inventory = SandboxServiceClient("schema.invalid:8080", namespace="schema", token_file=Path("/schema-unused-token"))
+    inventory = SandboxServiceClient(
+        "schema.invalid:8080",
+        namespace="schema",
+        token_file=Path("/schema-unused-token"),
+        command_admission_timeout_s=None,
+    )
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
     engine = connect("postgresql+asyncpg://schema@localhost/schema")
     database_updates = DatabaseUpdates(engine.url)

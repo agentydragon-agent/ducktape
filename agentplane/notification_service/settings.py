@@ -43,6 +43,12 @@ class GitHubSettings(BaseModel):
 class SandboxServiceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     target: str = Field(description="Sandbox Service gRPC host:port for session access and runner commands.")
+    command_admission_timeout_s: float = Field(
+        default=20,
+        gt=0,
+        description="Seconds to wait for the runner admission receipt via Sandbox Service; keep above its "
+        "runner_admission_ack_timeout_s budget.",
+    )
     grpc_channel_options: dict[str, int | str] = Field(
         default_factory=dict,
         description="gRPC channel options for the Notification Service's connection to Sandbox Service.",

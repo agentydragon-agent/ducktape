@@ -114,14 +114,15 @@ class Service:
                 raise ConflictError("runner history ended before its promised cursor") from failure
             if copied < attachment.attached.last_cursor:
                 return
-            # Re-read durable receipt state. An admitted command with no confirmation is uncertain,
-            # not permission to generate another command or remind the agent.
+            # Re-read durable receipt state. A lost response is uncertain: reconcile
+            # the runner journal first, then retry only the same command ID/payload.
+            # Runner admission is idempotent; never prepare a second notice here.
             current = await self.store.notice(claim, prepare=False)
             if current is None or current.command_id != notice.command_id or current.confirmed or current.error:
                 return
             if attachment.attached.harness_state != runner_pb2.HARNESS_STATE_RUNNING:
                 return
-            if not current.admitted and await self.store.attempt(claim, current):
+            if not current.admitted and (current.attempted or await self.store.attempt(claim, current)):
                 await runner.command(
                     claim.session_id,
                     command_pb2.Command(
