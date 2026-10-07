@@ -82,12 +82,18 @@ const input = create(CommandSchema, {
 });
 
 it.each([504, 502, 408, 429])("treats HTTP %i without a command receipt as unconfirmed", async (status) => {
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "deadline" }, { status })));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({ detail: "deadline" }, { status }))
+  );
   await expect(command("thread", input)).rejects.toThrow("Command admission unconfirmed");
 });
 
 it.each([409, 422, 403])("recognizes explicit HTTP %i command rejection", async (status) => {
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "refused" }, { status })));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({ detail: "refused" }, { status }))
+  );
   await expect(command("thread", input)).rejects.toBeInstanceOf(CommandSubmissionRefused);
 });
 

@@ -285,7 +285,9 @@ function SelectedCommandRows({
                 )}
                 {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
                 {!admitted && errors.get(value.command.commandId)?.kind === "refused" && (
-                  <Text c="red" role="alert">{errors.get(value.command.commandId)?.message}</Text>
+                  <Text c="red" role="alert">
+                    {errors.get(value.command.commandId)?.message}
+                  </Text>
                 )}
                 {!admitted && <Button onClick={() => void deliver(value)}>Retry</Button>}
               </>
