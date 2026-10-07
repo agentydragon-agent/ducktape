@@ -33,26 +33,33 @@ def harness(playwright: Playwright, tmp_path: Path) -> VisualHarness:
 
 
 async def test_test_owns_interaction_and_capture(harness: VisualHarness) -> None:
-    async with harness.open() as view:
+    async with harness.open(capture_name="opened") as view:
         assert await view.page.evaluate("location.search") == ""
         await expect(view.page.locator("#shot")).to_have_text("Closed")
         await view.page.get_by_role("button", name="Open").click()
         await expect(view.page.locator("#shot")).to_have_text("Opened")
-        path = await view.capture("opened", target=view.page.locator("#shot"), label="Opened panel")
+        path = await view.capture(target=view.page.locator("#shot"), label="Opened panel")
     assert path.name == "opened-actual.png"
     manifest = json.loads((harness.output_dir / "visual-review.json").read_text())
     assert manifest["assets"] == [{"path": "opened-actual.png", "label": "Opened panel"}]
 
 
 async def test_multiple_checkpoints_have_distinct_outputs(harness: VisualHarness) -> None:
-    async with harness.open("plain") as view:
-        first = await view.capture("closed", target=view.page.locator("#shot"))
+    async with harness.open("plain", capture_name="closed") as view:
+        first = await view.capture(target=view.page.locator("#shot"))
         await view.page.get_by_role("button", name="Open").click()
         second = await view.capture("opened", target=view.page.locator("#shot"))
         assert first.read_bytes() != second.read_bytes()
         with pytest.raises(FileExistsError):
-            await view.capture("closed")
+            await view.capture()
         assert first.read_bytes() != second.read_bytes()
+
+
+async def test_unnamed_capture_requires_case_identity(harness: VisualHarness) -> None:
+    async with harness.open() as view:
+        with pytest.raises(ValueError, match="capture needs a name"):
+            await view.capture()
+    assert not harness.output_dir.exists()
 
 
 async def test_ambiguous_crop_fails_before_publication(harness: VisualHarness) -> None:

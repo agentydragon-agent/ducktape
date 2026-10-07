@@ -148,6 +148,7 @@ class VisualPage:
         fence: RequestFence | None = None,
         devtools_viewport: DevtoolsViewport | None = None,
         expected_font_family: str | None = None,
+        capture_name: str | None = None,
     ) -> None:
         self.page = page
         self.errors = PageErrors(page)
@@ -157,6 +158,7 @@ class VisualPage:
         self.fence = fence
         self.devtools_viewport = devtools_viewport
         self.expected_font_family = expected_font_family
+        self.capture_name = capture_name
 
     async def check(self, *, context: str) -> None:
         self.errors.assert_none(context=context)
@@ -168,7 +170,7 @@ class VisualPage:
 
     async def capture(
         self,
-        name: str,
+        name: str | None = None,
         *,
         target: Locator | None = None,
         label: str | None = None,
@@ -176,6 +178,9 @@ class VisualPage:
         scale: Literal["css", "device"] = "device",
         animations: Literal["allow", "disabled"] = "allow",
     ) -> Path:
+        name = name if name is not None else self.capture_name
+        if name is None:
+            raise ValueError("capture needs a name or a pytest case identity")
         if target is not None and full_page:
             raise ValueError("choose an element or a full page, not both")
         await self.check(context=name)
@@ -217,6 +222,7 @@ class VisualHarness:
         query: Mapping[str, str] | None = None,
         window_globals: Mapping[str, JsonValue] | None = None,
         frozen_now_ms: int = FROZEN_NOW_MS,
+        capture_name: str | None = None,
     ) -> AsyncIterator[VisualPage]:
         config = self.config
         viewport = viewport or Viewport()
@@ -258,6 +264,7 @@ class VisualHarness:
                 fence=fence,
                 devtools_viewport=devtools,
                 expected_font_family=config.expected_font_family,
+                capture_name=capture_name,
             )
             await fence.install(page)
             if config.inline_page is None:

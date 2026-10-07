@@ -80,11 +80,10 @@ async def _expect_compact_event_timeline(page: Page) -> Locator:
     return strips
 
 
-@pytest.mark.parametrize(
-    ("screen", "image_name"), [(_DESKTOP, "SessionCompletedActivity"), (_PHONE, "SessionCompletedActivity_mobile")]
-)
-async def test_completed_activity_collapsed(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("completed-activity", viewport=screen, color_scheme="light") as view:
+@pytest.mark.parametrize("screen", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
+@pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
+async def test_completed_activity(visual: VisualHarness, screen: Viewport, expanded: bool, capture_name: str) -> None:
+    async with visual.open("completed-activity", viewport=screen, capture_name=capture_name) as view:
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         fixture = await view.page.evaluate("window.__visualFixture__")
@@ -93,32 +92,15 @@ async def test_completed_activity_collapsed(visual: VisualHarness, screen: Viewp
         )
         await expect(activity).to_be_attached()
         assert await activity.evaluate("element => element.getBoundingClientRect().height") <= 28
+        if expanded:
+            await activity.locator("summary").click()
+            await expect(activity).to_have_attribute("open", "")
+            await expect(activity.locator("[data-activity-title]")).to_have_text(fixture["longCommandActivityTitle"])
+            await expect(activity.locator("[data-activity-detail]")).to_have_text(fixture["longCommandActivityDetail"])
+            await expect(activity.locator("[data-activity-title]")).to_be_visible()
+            await expect(activity.locator("[data-activity-detail]")).to_be_visible()
         await _scroll_into_view(activity)
-        await _capture(view, image_name)
-
-
-@pytest.mark.parametrize(
-    ("screen", "image_name"),
-    [(_DESKTOP, "SessionCompletedActivityExpanded"), (_PHONE, "SessionCompletedActivityExpanded_mobile")],
-)
-async def test_completed_activity_expanded(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("completed-activity", viewport=screen, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        fixture = await view.page.evaluate("window.__visualFixture__")
-        activity = view.page.locator('[data-fold-kind="activity"]').filter(
-            has=view.page.locator("summary").filter(has_text=fixture["longCommandActivityTitle"])
-        )
-        await expect(activity).to_be_attached()
-        assert await activity.evaluate("element => element.getBoundingClientRect().height") <= 28
-        await activity.locator("summary").click()
-        await expect(activity).to_have_attribute("open", "")
-        await expect(activity.locator("[data-activity-title]")).to_have_text(fixture["longCommandActivityTitle"])
-        await expect(activity.locator("[data-activity-detail]")).to_have_text(fixture["longCommandActivityDetail"])
-        await expect(activity.locator("[data-activity-title]")).to_be_visible()
-        await expect(activity.locator("[data-activity-detail]")).to_be_visible()
-        await _scroll_into_view(activity)
-        await _capture(view, image_name)
+        await _capture(view, capture_name)
 
 
 @pytest.mark.parametrize(("screen", "image_name"), [(_DESKTOP, "SessionMarkdown"), (_PHONE, "SessionMarkdown_mobile")])

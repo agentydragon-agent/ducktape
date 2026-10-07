@@ -20,18 +20,16 @@ async def test_main_page(visual: VisualHarness, scene: str) -> None:
         await view.capture(scene, target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("scene", ["changelog"])
-async def test_changelog(visual: VisualHarness, scene: str) -> None:
-    async with visual.open(scene, viewport=Viewport(height=900, width=1200)) as view:
+async def test_changelog(visual: VisualHarness) -> None:
+    async with visual.open("changelog", viewport=Viewport(height=900, width=1200)) as view:
         await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.capture(scene, target=view.page.locator("#app"))
+        await view.capture("changelog", target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("scene", ["session_award"])
-async def test_session_award(visual: VisualHarness, scene: str) -> None:
-    async with visual.open(scene, viewport=Viewport()) as view:
+async def test_session_award(visual: VisualHarness) -> None:
+    async with visual.open("session_award", viewport=Viewport()) as view:
         await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.capture(scene, target=view.page.locator("#shot"))
+        await view.capture("session_award", target=view.page.locator("#shot"))
 
 
 if __name__ == "__main__":

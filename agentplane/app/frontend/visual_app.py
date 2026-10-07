@@ -7,7 +7,7 @@ before mounting React; subsequent interactions use ordinary Playwright locators.
 
 from typing import Literal
 
-from playwright.async_api import Page
+from playwright.async_api import Page, expect
 
 IDLE_THREAD = "5f1c4a2e-0000-4000-8000-000000000001"
 RUNNING_THREAD = "5f1c4a2e-0000-4000-8000-000000000002"
@@ -22,6 +22,7 @@ class AgentplaneFixture:
 
     async def mount_app(self, route: str) -> None:
         await self.page.evaluate("route => window.agentplaneVisual.mountApp(route)", route)
+        await expect(self.page.locator("#app > *").first).to_be_attached()
 
     async def mount_thread(self, thread_id: str) -> None:
         await self.mount_app(f"/threads/{thread_id}")
@@ -53,6 +54,7 @@ class AgentplaneFixture:
                 "followingSection": following_section,
             },
         )
+        await expect(self.page.locator("#app > *").first).to_be_attached()
 
     async def age_outage(self, milliseconds: int) -> None:
         await self.page.evaluate("ms => window.agentplaneVisual.ageOutage(ms)", milliseconds)

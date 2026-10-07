@@ -31,17 +31,21 @@ select setup from a scene name or interpret a recipe object. Keep actual recorde
 such as rollout rows as data, not route/flag catalogs.
 
 ```python
-async with visual.open(viewport=MOBILE) as view:
-    app = AgentplaneFixture(view.page)
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+async def test_recovery(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.recovery("tools")
     await app.mount_thread(IDLE_THREAD)
     # Assert readiness, interact with locators, then capture.
+    await view.capture()
 ```
 
 Python tests own readiness, clicks, scrolls, assertions and capture. Pass browser geometry
 explicitly using `util/testing/viewports.py`, and pass crop locators to `view.capture()`.
-A screenshot name identifies an artifact; it must not select behavior. Preserve image
-names during a migration only to retain useful before/after comparisons.
+Load both `util.testing.visual_fixtures` and `agentplane.app.frontend.visual_fixtures`
+plugins. The shared `view` yield fixture owns browser cleanup; the app plugin provides
+`app` and the default desktop viewport. Default screenshot names follow the pytest case
+ID, not a parallel output-name table. A screenshot name identifies an artifact; it must
+not select behavior. Use explicit capture names only for additional checkpoints.
 
 Do not add harness switches that click, focus, scroll or inspect the DOM. Add an ordinary
 Python behavior test and an explicit screenshot checkpoint instead. BUILD names the test

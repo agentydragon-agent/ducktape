@@ -58,7 +58,19 @@ query parameters and an optional frozen instant. Inline harnesses use `window_gl
 instead of a query. The macro's `page_url` gives an inline document an origin for
 storage; `served_documents` supplies mock iframe documents.
 
-`view.capture()` takes a unique output name and optional caption. Pass a strict
+The shared pytest plugin also provides a per-test `view` yield fixture, with ordinary
+`viewport` and `color_scheme` fixtures that tests can override or parametrize. It opens
+an unnamed harness and closes its isolated browser context after the test. App-specific
+fixtures can depend on it to prepare reusable state without hiding test interactions.
+
+With `view`, `await view.capture()` derives the PNG name from the pytest function and
+parameter IDs. Use readable parameter IDs; do not wire a parallel `image_name` column
+just to identify each case. The `capture_name` fixture exposes this same identity to
+harnesses that need their own page-opening fixture. Pass it as `visual.open(capture_name=...)`
+to use unnamed capture there too. It never selects fixture data or app behavior.
+
+`view.capture()` also accepts an explicit unique output name and optional caption;
+use explicit names for multiple checkpoints in one test. Pass a strict
 `Locator` to crop one component, omit it to capture the viewport, or use
 `full_page=True`. Crops retain the nearest-pixel rounding convention.
 `devtools_viewport` retains device-pixel compatibility for existing galleries.

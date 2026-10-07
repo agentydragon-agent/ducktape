@@ -1,6 +1,7 @@
 """Pytest plugin for package-owned visual tests."""
 
 from collections.abc import AsyncIterator
+from typing import Literal
 
 import pytest
 import pytest_asyncio
@@ -8,7 +9,8 @@ from playwright.async_api import Playwright, async_playwright, expect
 
 from util.testing.page_capture import WAIT_TIMEOUT_MS
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_capture import HarnessConfig, VisualHarness
+from util.testing.viewports import Viewport
+from util.testing.visual_capture import HarnessConfig, VisualHarness, VisualPage
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -21,3 +23,37 @@ async def playwright_driver() -> AsyncIterator[Playwright]:
 @pytest.fixture(scope="session")
 def visual(playwright_driver: Playwright) -> VisualHarness:
     return VisualHarness(playwright_driver, HarnessConfig.from_env(), undeclared_outputs_dir())
+
+
+@pytest.fixture
+def viewport() -> Viewport:
+    return Viewport()
+
+
+@pytest.fixture
+def color_scheme() -> Literal["light", "dark"]:
+    return "light"
+
+
+@pytest.fixture
+def capture_name(request: pytest.FixtureRequest) -> str:
+    return request.node.name.removeprefix("test_")
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def view(
+    visual: VisualHarness,
+    viewport: Viewport,
+    color_scheme: Literal["light", "dark"],
+    capture_name: str,
+) -> AsyncIterator[VisualPage]:
+    """Isolated unnamed harness; pytest's case ID names the default screenshot.
+
+    Override/parametrize viewport and color_scheme as ordinary fixtures. Tests still
+    configure the app and own readiness, interactions and explicit capture checkpoints.
+    Multiple checkpoints must pass distinct names to capture().
+    """
+    async with visual.open(
+        viewport=viewport, color_scheme=color_scheme, capture_name=capture_name
+    ) as page:
+        yield page
