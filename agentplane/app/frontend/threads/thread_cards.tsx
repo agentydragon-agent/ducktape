@@ -138,6 +138,7 @@ export function UserInputBubble({
   status,
   statusColor = "dimmed",
   error,
+  note,
   pending = false,
   phase,
   action,
@@ -149,6 +150,7 @@ export function UserInputBubble({
   status?: string;
   statusColor?: MantineColor;
   error?: string;
+  note?: string;
   pending?: boolean;
   phase?: "local" | "pending" | "failed" | "noop" | "confirmed";
   action?: { label: string; onClick: () => void };
@@ -163,7 +165,7 @@ export function UserInputBubble({
       style={{ width: "100%" }}
       data-command-id={commandId ?? entity?.entityId}
     >
-      {(status || error || action) && (
+      {(status || error || note || action) && (
         <Stack className="agentplane-user-message-aside" gap={2} align="flex-end">
           {status && (
             <Text size="xs" c={statusColor} role="status">
@@ -175,6 +177,7 @@ export function UserInputBubble({
               {error}
             </Text>
           )}
+          {note && <Text size="xs" c="dimmed">{note}</Text>}
           {action && (
             <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
               {action.label}
@@ -186,7 +189,7 @@ export function UserInputBubble({
         className="agentplane-user-bubble agentplane-evidence-owner"
         data-message-phase={phase}
         data-has-action={action ? "true" : undefined}
-        data-has-aside={status || error || action ? "true" : undefined}
+        data-has-aside={status || error || note || action ? "true" : undefined}
         p="sm"
         style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
       >

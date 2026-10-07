@@ -2162,7 +2162,7 @@ routes.push(
     /^\/threads\/([0-9a-f-]+)\/commands$/,
     () =>
       scenario.commandAdmissionTimedOut
-        ? Response.json({ detail: "runner did not admit the command within 15 seconds" }, { status: 504 })
+        ? Response.json({ detail: "runner admission was not confirmed within 15 seconds" }, { status: 504 })
         : UNANSWERED,
   ],
   ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],

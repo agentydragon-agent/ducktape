@@ -197,6 +197,7 @@ export function PendingInputMessages({
             }
             statusColor={failed ? "red" : "dimmed"}
             error={issue?.kind === "refused" ? issue.message : undefined}
+            note={issue?.kind === "unconfirmed" ? issue.message : undefined}
             action={
               failed || noop
                 ? { label: "Dismiss", onClick: () => store.dismiss(id) }
@@ -284,8 +285,11 @@ function SelectedCommandRows({
                   <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
                 )}
                 {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
-                {!admitted && errors.get(value.command.commandId)?.kind === "refused" && (
-                  <Text c="red" role="alert">
+                {!admitted && errors.get(value.command.commandId) && (
+                  <Text
+                    c={errors.get(value.command.commandId)?.kind === "refused" ? "red" : "dimmed"}
+                    role={errors.get(value.command.commandId)?.kind === "refused" ? "alert" : undefined}
+                  >
                     {errors.get(value.command.commandId)?.message}
                   </Text>
                 )}

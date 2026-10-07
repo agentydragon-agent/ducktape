@@ -82,27 +82,39 @@ const input = create(CommandSchema, {
 });
 
 it.each([504, 502, 408, 429])("treats HTTP %i without a command receipt as unconfirmed", async (status) => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => Response.json({ detail: "deadline" }, { status }))
-  );
-  await expect(command("thread", input)).rejects.toThrow("Command admission unconfirmed");
+  const middleware = { onRequest: () => Response.json({ detail: "deadline" }, { status }) };
+  api.use(middleware);
+  try {
+    await expect(command("thread", input)).rejects.toThrow("Command admission unconfirmed");
+  } finally {
+    api.eject(middleware);
+  }
 });
 
 it.each([409, 422, 403])("recognizes explicit HTTP %i command rejection", async (status) => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => Response.json({ detail: "refused" }, { status }))
-  );
-  await expect(command("thread", input)).rejects.toBeInstanceOf(CommandSubmissionRefused);
+  const middleware = { onRequest: () => Response.json({ detail: "refused" }, { status }) };
+  api.use(middleware);
+  try {
+    await expect(command("thread", input)).rejects.toBeInstanceOf(CommandSubmissionRefused);
+  } finally {
+    api.eject(middleware);
+  }
 });
 
 it("treats a lost transport reply as unconfirmed without changing the submitted command", async () => {
-  const fetch = vi.fn(async (_request: Request) => {
-    throw new TypeError("connection lost");
-  });
-  vi.stubGlobal("fetch", fetch);
-  await expect(command("thread", input)).rejects.toThrow("Command admission unconfirmed");
-  expect(fetch).toHaveBeenCalledTimes(1);
-  expect(await fetch.mock.calls[0][0].json()).toMatchObject({ commandId: input.commandId });
+  const requests: Request[] = [];
+  const middleware = {
+    onRequest({ request }: { request: Request }) {
+      requests.push(request);
+      throw new TypeError("connection lost");
+    },
+  };
+  api.use(middleware);
+  try {
+    await expect(command("thread", input)).rejects.toThrow("Command admission unconfirmed");
+    expect(requests).toHaveLength(1);
+    expect(await requests[0].json()).toMatchObject({ commandId: input.commandId });
+  } finally {
+    api.eject(middleware);
+  }
 });

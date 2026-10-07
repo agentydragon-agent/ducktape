@@ -679,7 +679,7 @@ it("does not send a retained command whose admission it already holds", async ()
   expect(pendingRow(container, "retained-admitted").textContent).toContain("Saved · awaiting effect");
 });
 
-it("shows a delivery that outlives its deadline as a failed attempt the operator can retry", async () => {
+it("shows a delivery that outlives its deadline as unconfirmed and retriable", async () => {
   new LocalCommands(THREAD.id).remember(message("hung"));
   let expire!: (reason: unknown) => void;
   vi.mocked(command)
@@ -702,7 +702,7 @@ it("shows a delivery that outlives its deadline as a failed attempt the operator
   expect(pendingRow(container, "hung").textContent).not.toContain("signal timed out");
 });
 
-it("delivers a failed command again when the browser comes back online", async () => {
+it("redelivers an unconfirmed command when the browser comes back online", async () => {
   new LocalCommands(THREAD.id).remember(message("offline"));
   vi.mocked(command)
     .mockRejectedValueOnce(new Error("the sandbox's runner is not answering"))

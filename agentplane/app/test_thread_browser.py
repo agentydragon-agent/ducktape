@@ -1962,7 +1962,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
             drop_reply.set()
         pending = page.get_by_role("region", name="Input messages")
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
-        await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
+        await expect(pending.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_be_visible()
         await expect(page.locator('.agentplane-user-bubble[data-message-phase="local"]')).to_have_count(1)
 
         # Reload abandons the held Electric response. The new document delivers the same local
@@ -2094,7 +2094,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
         pending = page.get_by_role("region", name="Input messages")
-        await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
+        await expect(pending.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_be_visible()
 
         # Interrupt real shape delivery. The published Electric client must retry its own
         # handle/offset, without a document reload or an Agentplane event replay reducer.
@@ -2110,7 +2110,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
             assert (await app.replay_held()).cursor >= 5
         assert await document.evaluate("original => original === document")
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
-        await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
+        await expect(pending.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_be_visible()
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
 
         app.release_replay()
