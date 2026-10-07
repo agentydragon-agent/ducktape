@@ -42,11 +42,12 @@ together because their structure is versioned with the code.
 
 ```yaml
 notice_debounce:
-  quiet_seconds: 2
-  max_wait_seconds: 10
+  quiet_seconds: 60
+  max_wait_seconds: 120
 ```
 
-These are the defaults. Per inbox, wait for the quiet window after the newest unannounced entry,
+These are temporary defaults to coalesce bursty notices while limiting normal batching lag to
+two minutes. Per inbox, wait for the quiet window after the newest unannounced entry,
 subject to the maximum wait from the oldest unannounced entry. Set `quiet_seconds: 0` to disable
 batching delays. Both settings accept fractional seconds; the maximum wait must be positive.
 They apply to all sources, not individual subscriptions. Environment overrides use e.g.
