@@ -69,7 +69,7 @@ flowchart TB
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
     NOTIFICATION_COMPACT_NOTICES["Deferred design<br/>brief notices and shared instructions<br/>Claude/Codex compaction evidence"]:::future
-    NOTIFICATION_NOTICE_PACING["Deferred design<br/>avoid redundant notices during busy turns<br/>measure harness delivery boundaries"]:::future
+    NOTIFICATION_NOTICE_PACING["Incremental improvement<br/>stage-aware notice pacing<br/>avoid redundant busy-turn notices"]:::future
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
     HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
     NOTIFICATION_SOURCE_WIRING["Conditional future refactor<br/>extract shared source wiring<br/>from concrete implementations"]:::future
@@ -799,27 +799,40 @@ DB access. [Acceptance](notifications.md#next-event-driven-actions-consumption) 
 missed-signal recovery, subscription-creation races and idle-without-polling behavior.
 The shared PostgreSQL listener refactor did not implement this cross-service feed.
 
-### `NOTIFICATION_NOTICE_PACING` — reduce redundant notices across busy harness turns
+### `NOTIFICATION_NOTICE_PACING` — stage-aware batching before another notice
 
-**Deferred design; delivery policy TBD:** the current per-inbox quiet/max-wait debounce
-batches entry creation, not the agent's opportunities to process a notice. During a long tool
-call, compaction, or other busy turn, multiple prepared notices can be admitted before the agent
-can read the inbox; each has immutable text and coverage. Measure entry creation, notice
-preparation, runner admission, native input start, actual model visibility, inbox read and
-acknowledgement for Claude and Codex under busy turns, compaction and resume. Distinguish a
-confirmed input from an agent that actually handled its entries.
+**Incremental improvement, policy/timers TBD:** the current per-inbox quiet/max-wait debounce
+batches entry creation, not opportunities to act on a previous notice. Entries can accumulate
+while that input waits in the runner or during a long tool call/compaction; a second notice may
+be unnecessary if the agent's eventual read picks up all entries after its last acknowledged
+cursor. Try inexpensive improvements before requiring hook or native queue changes:
 
-Compare delaying preparation or submission until useful harness lifecycle boundaries, limiting
-unprocessed notices, and retaining a bounded fallback for idle or missing signals. Hooks (tool,
-stop or compaction events) may help with scheduling, but must be tested per harness; they are
-not assumed to run before every model sample. Evaluate native queued-input update/withdrawal
-only with explicit too-late outcomes, never silently edit an admitted command or cancel other
-coalesced inputs. Do not require intercepting LLM traffic, which could also cover subagents and
-unrelated harness requests. Keep inbox persistence and reads immediate, preserve immutable
-notice/retry receipts and explicit contiguous acknowledgement, and avoid either starvation or a
-storm of reminders when acknowledgement is delayed. Accept a design only after tests show
-bounded, nonduplicative delivery across retries, restarts, long operations and compaction.
-This is independent of making notices terse in `NOTIFICATION_COMPACT_NOTICES`.
+- Keep inbox persistence and reads immediate. Distinguish prepared, runner-admitted, harness-
+  confirmed, actually model-visible (when observable), read, and acknowledged states. Harness
+  confirmation does **not** prove the model sampled or handled a notice; a read does not ack.
+- Preserve the existing single-unconfirmed-notice behavior: accumulate newer entries rather than
+  preparing a second immutable notice. Keep its command ID, coverage, receipt/retry behavior and
+  recovery; handle uncertain admission without resubmitting under a new ID.
+- After confirmation, consider a bounded grace window for newer entries: the first notice may
+  prompt a read covering those entries too. Recheck acknowledgement and current uncovered
+  entries when the window expires; suppress a now-unneeded follow-up, otherwise send one notice
+  covering the then-current cursor. Do not remind solely about already-covered, unacknowledged
+  entries. Bound delay from the oldest *new* uncovered entry even under continuous arrivals,
+  missing acknowledgement, idle harnesses or unavailable lifecycle signals; make timers durable.
+
+Measure the baseline and the proposed stages on both Claude and Codex: long operations,
+compaction, resume, successive arrivals, ack during the grace window, stuck/unconfirmed notice,
+restarts, and mixed/coalesced runner inputs. Specify the waiting reason and next eligible time
+(or event, with a time fallback) in durable/service-readable status so `NOTIFICATION_STATUS_UI`
+can explain why e.g. seven entries are pending; distinguish pending inbox entries from notices
+waiting for harness confirmation and entries awaiting agent acknowledgement. Do not claim a
+precise delivery time if it depends on a harness event or the runner being offline.
+
+Compare optional lifecycle/hook signals only if simple stage-aware timers leave a measurable
+problem; hooks are not guaranteed pre-sample events. Native queued-input update/withdrawal
+needs explicit too-late outcomes and must not cancel other coalesced inputs. Do not require LLM
+proxy interception, which could cover subagents or unrelated requests. Keep this separate from
+making notices terse in `NOTIFICATION_COMPACT_NOTICES`.
 
 ### `NOTIFICATION_COMPACT_NOTICES` — shared instructions and brief cursor hints
 
@@ -892,6 +905,11 @@ inboxes into an ambiguous count.
 Explore a discoverable entry point in the Thread/Sandbox UI (overflow menu, status icon or a
 panel; do not prescribe placement yet). Show useful empty, loading, disconnected, suspended and
 error states, plus timestamps and links to the underlying inbox/subscriptions where authorized.
+Display the service's actual pacing state when available: pending entry count, latest notice's
+stage, whether a follow-up is waiting for confirmation, a grace deadline, or a delivery retry,
+and the next eligible time or condition plus its reason. Label estimates and offline/unknown
+conditions honestly; never infer a cooldown from a frontend-only timer. This can ship first
+with existing state and expand when `NOTIFICATION_NOTICE_PACING` adds stage-aware decisions.
 Do not imply that reading or inspecting marks entries handled; no implicit acknowledgement or
 subscription mutation. Decide the backend read/projection path with explicit operator-to-inbox
 authorization: the Notification Service's workload API is scoped to ServiceAccounts, not an
