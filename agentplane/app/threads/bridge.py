@@ -22,6 +22,7 @@ from agentplane.runner.errors import RunnerError
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
+
 class MalformedMessageError(Exception):
     """A request body is not the proto-JSON of the message the route takes."""
 

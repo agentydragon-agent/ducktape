@@ -1094,7 +1094,9 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
         ) -> event_log_pb2.EventEntry:
             nonlocal called
             called += 1
-            assert session_id == SESSION and candidate == command and after_cursor == 0
+            assert session_id == SESSION
+            assert candidate == command
+            assert after_cursor == 0
             return receipt
 
     monkeypatch.setattr(bridge._ingester, "start", no_archive_yet)
