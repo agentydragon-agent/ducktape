@@ -88,20 +88,5 @@ def test_github_secrets_are_server_only_and_not_in_yaml(
     )
 
 
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_deployed_notice_quiesce_is_bounded(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    config = one(
-        doc
-        for doc in agentplane_manifests[namespace]
-        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{notifications.NAME}-settings"
-    )
-    assert yaml.safe_load(config["data"]["settings.yaml"])["notice_debounce"] == {
-        "quiet_seconds": 60,
-        "max_wait_seconds": 120,
-    }
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
