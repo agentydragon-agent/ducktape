@@ -330,7 +330,6 @@ async def async_main(settings: Settings) -> None:
                     content,
                     event_logs=event_logs,
                     thread_changes=database_updates.changes[Channel.THREADS],
-            command_admission_timeout_s=settings.command_admission_timeout_s,
                 )
                 if settings.electric_url is not None
                 else None
