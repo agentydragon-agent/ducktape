@@ -218,9 +218,13 @@ async def test_sidebar_states(visual: VisualHarness, scene: str) -> None:
         page = view.page
         await _noisy_ready(page)
         if scene.endswith("_mobile"):
-            await page.locator('button[aria-controls="session-sidebar-mobile"]').click()
+            await page.locator('button[aria-controls="session-sidebar-mobile"]').press("Enter")
             await expect(page.locator(".mantine-Drawer-root #session-sidebar-mobile")).to_be_visible()
             await expect(page.locator(".mantine-Drawer-content")).to_have_css("opacity", "1")
+            await page.wait_for_function(
+                "() => document.querySelector('.mantine-Drawer-root').getAnimations({ subtree: true }).length === 0"
+            )
+            await expect(page.locator(".mantine-Drawer-close")).to_be_focused()
         elif "Collapsed" in scene:
             toggle = page.locator('button[aria-controls="session-sidebar"]')
             await toggle.click()
@@ -228,6 +232,11 @@ async def test_sidebar_states(visual: VisualHarness, scene: str) -> None:
         elif "Wide" in scene:
             separator = page.locator("[data-session-sidebar-resizer]")
             await separator.press("End")
+            maximum = await separator.get_attribute("aria-valuemax")
+            assert maximum is not None
+            await expect(separator).to_have_attribute("aria-valuenow", maximum)
+            # Capture the resized layout, not the keyboard focus outline on its drag handle.
+            await separator.blur()
         else:
             await expect(page.locator('button[aria-controls="session-sidebar"]')).to_have_attribute(
                 "aria-expanded", "true"
