@@ -73,6 +73,17 @@ class ScriptedModel[RequestT: StreamableRequest](abc.ABC):
         async with request._exchange as exchange:
             await exchange.send(*self.stream(list(items)))
 
+    async def drop_connection(self, request: ModelRequest[RequestT], *, after_text: str | None = None) -> None:
+        """Break a model response before content or after its first visible text delta."""
+        async with request._exchange as exchange:
+            if after_text is not None:
+                stream = self.stream([Text(after_text)])
+                delta = next(
+                    i for i, event in enumerate(stream) if event.kind in ("text_delta", "response.output_text.delta")
+                )
+                await exchange.send(*stream[: delta + 1])
+            await exchange.abort()
+
     async def hold(self, request: ModelRequest[RequestT]) -> None:
         """Begin an answer and never finish it, so the turn stays in flight until interrupted."""
         await request._exchange.send(*self.opened_stream())
