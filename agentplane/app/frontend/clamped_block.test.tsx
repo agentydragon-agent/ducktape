@@ -17,11 +17,35 @@ function control(container: HTMLElement, label: string): HTMLElement | undefined
 afterEach(() => vi.restoreAllMocks());
 
 describe("ClampedBlock", () => {
+  it("tracks content size through expansion and collapse", async () => {
+    contentHeight(1000);
+    const observe = vi.spyOn(ResizeObserver.prototype, "observe");
+    const container = await mount(<ClampedBlock maxHeightRem={10}>test-content</ClampedBlock>);
+    for (const label of ["Show all", "Collapse Expanded content", "Show all"]) {
+      await act(async () => control(container, label)?.click());
+      const content = container.querySelector("[data-clamped] > div");
+      expect(content?.isConnected).toBe(true);
+      expect(observe.mock.calls.some(([element]) => element === content)).toBe(true);
+    }
+  });
+
   it("leaves content within its cap alone, with nothing to click", async () => {
     contentHeight(40);
     const container = await mount(<ClampedBlock maxHeightRem={10}>test-content</ClampedBlock>);
     expect(container.querySelector('[data-clamped="true"]')).toBeNull();
     expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("keeps expanded content collapsible when its height shrinks", async () => {
+    let height = 1000;
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(() => height);
+    const container = await mount(<ClampedBlock maxHeightRem={10}>test-content</ClampedBlock>);
+    height = 40;
+    await act(async () => control(container, "Show all")?.click());
+    expect(control(container, "Collapse Expanded content")).toBeDefined();
+    await act(async () => control(container, "Collapse Expanded content")?.click());
+    expect(control(container, "Collapse Expanded content")).toBeUndefined();
+    expect(container.querySelector('[data-expanded="true"]')).toBeNull();
   });
 
   it("clips content past its cap, keeping all of it in the document, until the bottom is clicked", async () => {
