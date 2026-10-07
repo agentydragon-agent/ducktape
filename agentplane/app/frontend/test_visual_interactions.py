@@ -747,7 +747,11 @@ async def test_mobile_drawer_covers_jump_to_latest(
     async def drive(page: Page) -> None:
         history = page.locator("[aria-label='Thread history']")
         await expect(history).to_have_attribute("data-layout-settled", "true")
-        await history.evaluate("element => { element.scrollTop = 0; }")
+        # The fixture's folded run is short; open it to create real scroll distance
+        # before the reader leaves the bottom of this still-running thread.
+        await history.locator(".agentplane-disclosure-summary").filter(has_text="32 tool calls").first.click()
+        await history.hover()
+        await page.mouse.wheel(0, -2500)
         jump = page.get_by_role("button", name="Jump to latest")
         await expect(jump).to_be_visible()
         point = await jump.bounding_box()
