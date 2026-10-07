@@ -40,7 +40,9 @@ async def test_compaction_preserves_instructions_in_next_request_and_resume(
             frame = await events.next()
             if isinstance(frame, wire.ItemCompleted) and frame.params.item.type == "contextCompaction":
                 assert frame.params.thread_id == first.thread_id
+                compact_turn_id = frame.params.turn_id
                 break
+        assert (await events.turn_completed(compact_turn_id)).params.turn.status is wire.TurnStatus.COMPLETED
 
         turn = await first.start_turn("Reply AFTER_COMPACT_OK")
         async with await openai_responses.await_next_request() as exchange:
