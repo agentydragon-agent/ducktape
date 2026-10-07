@@ -30,10 +30,11 @@ Proposed execution order for the Thread correctness/UI track:
 - **Targeted hosted Haku acceptance:** verify a fresh Haku Thread has its per-Thread
   checkout (`THREAD_WORKSPACE_BOOTSTRAP`, [#8695](https://github.com/agentydragon/ducktape/issues/8695)).
   This no longer gates the rest of the Thread correctness work.
-- **P1, next harness correctness check:** force native compaction and verify standing
-  instructions in subsequent Claude/Codex model requests (`HARNESS_COMPACTION_INSTRUCTIONS`).
-  Share the compaction trigger/fixtures with the future frontend control; this proof does not
-  wait on UI work.
+- **P1, remaining compaction correctness check:** verify the *runner-constructed* standing
+  instructions survive native compaction and resume (`HARNESS_COMPACTION_RUNNER_PROOF`).
+  Native Claude/Codex compaction and post-compaction model-request probes are covered; the
+  runner's actual initialization/inbox guidance still needs its own acceptance. Automatic
+  compaction is tracked separately (`HARNESS_AUTO_COMPACTION_PROOF`).
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
 - **Unranked future harness capabilities:** project skills and commands, web search, visual input,
@@ -71,7 +72,8 @@ flowchart TB
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
-    HARNESS_COMPACTION_INSTRUCTIONS["P1 harness acceptance<br/>trigger native compaction<br/>verify post-compact instructions"]:::active
+    HARNESS_COMPACTION_RUNNER_PROOF["P1 runner acceptance<br/>standing instructions and inbox hint<br/>through compaction and resume"]:::active
+    HARNESS_AUTO_COMPACTION_PROOF["Future harness acceptance<br/>automatic compaction<br/>standing instructions on next request"]:::future
     NOTIFICATION_COMPACT_NOTICES["Deferred design<br/>brief notices and shared instructions<br/>Claude/Codex compaction evidence"]:::future
     NOTIFICATION_NOTICE_PACING["Incremental improvement<br/>stage-aware notice pacing<br/>avoid redundant busy-turn notices"]:::future
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
@@ -130,8 +132,9 @@ flowchart TB
     HOSTED_THREAD_SURFACES --> AG
     CROSS_IDENTITY_READ_POLICY --> AG
     PC_EGRESS_CREDENTIALS --> PC_EGRESS
-    HARNESS_COMPACTION_INSTRUCTIONS --> NOTIFICATION_COMPACT_NOTICES
-    HARNESS_COMPACTION_INSTRUCTIONS --> HARNESS_MANUAL_COMPACTION
+    HARNESS_COMPACTION_RUNNER_PROOF --> NOTIFICATION_COMPACT_NOTICES
+    HARNESS_AUTO_COMPACTION_PROOF --> NOTIFICATION_COMPACT_NOTICES
+    HARNESS_COMPACTION_RUNNER_PROOF --> HARNESS_MANUAL_COMPACTION
 
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_SKILLS
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_WEB_SEARCH
@@ -838,24 +841,24 @@ needs explicit too-late outcomes and must not cancel other coalesced inputs. Do 
 proxy interception, which could cover subagents or unrelated requests. Keep this separate from
 making notices terse in `NOTIFICATION_COMPACT_NOTICES`.
 
-### `HARNESS_COMPACTION_INSTRUCTIONS` — trigger compaction and prove standing instructions survive
+### `HARNESS_COMPACTION_RUNNER_PROOF` — verify runner-owned instructions after compaction
 
-**P1 harness correctness acceptance:** add a reproducible native compaction trigger and mock-LLM
-capture for both runner-matched Claude and Codex. Supply distinctive Agentplane standing
-instructions; force real harness compaction, then inspect the actual subsequent LLM request(s),
-not just the initial runner handshake, a harness callback, or its final answer. Check which
-instructions persist across automatic and explicitly triggered compaction where supported, and
-across resume after compaction; test a continued turn with a short inbox hint to expose loss of
-retrieval/acknowledgement guidance. Record harness/version-specific behavior rather than assuming
-that a compacted summary or a hook restores instructions. If instructions can be lost, specify
-and test reinjection or retain self-contained notices until fixed.
+**P1 remaining acceptance:** use the runner's real initialization/standing-instruction path
+for Claude and Codex, not just an isolated harness test prompt. Force native compaction,
+then assert on the first *ordinary* model request after it and again after resume that the
+Agentplane instructions, including inbox retrieval and explicit contiguous-prefix acknowledgement,
+are present. Exercise a short inbox hint in a continued turn so the model has the guidance
+needed to act on it; if it is lost, specify and test reinjection/fallback. Reuse the native
+compaction fixtures and model-request capture; avoid production LLM-proxy interception.
+Do not treat a compaction summary request, command admission, or a final answer as proof.
 
-Build the trigger and evidence fixtures to be reusable by `HARNESS_MANUAL_COMPACTION`: Codex's
-`thread/compact/start` is inventoried but untested, while Claude's compaction path needs native
-capability verification. This task pins the native operation and post-compaction model context;
-the separate frontend control covers authorized user requests and their UI lifecycle. Neither
-requires LLM proxy interception in production. Gate shortening notices in
-`NOTIFICATION_COMPACT_NOTICES` on this proof.
+### `HARNESS_AUTO_COMPACTION_PROOF` — exercise non-manual compaction
+
+**Future acceptance:** deterministically trigger harness-initiated automatic compaction in
+both runner-matched Claude and Codex, where supported. Prove the actual compaction boundary
+and test the first following ordinary LLM request and resume for runner-constructed standing
+instructions. Keep this separate from explicit `/compact` and `thread/compact/start`: their
+passing tests do not establish what happens when the harness decides to compact itself.
 
 ### `NOTIFICATION_COMPACT_NOTICES` — shared instructions and brief cursor hints
 
@@ -1147,8 +1150,8 @@ admission from actual start/completion/failure using runner evidence, including 
 Preserve Thread/session identity and the durable transcript/Event archive: compacting model context
 is not deleting conversation history. Acceptance covers a real frontend request, native compaction,
 continued conversation and retained shared instructions for each supported harness, plus failure and
-reconnect behavior. Reuse the native trigger and post-compaction evidence from
-`HARNESS_COMPACTION_INSTRUCTIONS`; those tests do not need to wait for the frontend control.
+reconnect behavior. Reuse the native triggers and post-compaction evidence from the harness tests and
+`HARNESS_COMPACTION_RUNNER_PROOF`; those tests do not need to wait for the frontend control.
 Implementation and UI details remain open.
 
 ### `CONTROL_STATE` — dynamic runtime control acceptance
