@@ -97,6 +97,7 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Deferred combined UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox selected, Thread fields editable"]:::future
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
+    ASYNC_PROTOCOL_AUDIT["Design decision<br/>audit long-lived request/response contracts<br/>ticket vs durable admission vs push"]:::decision
     ADMISSION_DEADLINE_BUDGET["P1 reported failure<br/>submission waits bound on archive lag<br/>four coupled 15 s budgets, one setting"]:::active
     ADMISSION_UNCERTAIN_OUTCOME["Planned correctness<br/>unconfirmed submission reconciles<br/>not a failed send"]:::future
     COMMAND_DISPATCHED_EVENT["Missing observation<br/>runner handed the command to the harness<br/>journal-only today; needs an Event"]:::future
@@ -522,6 +523,25 @@ each input is confirmed, terminally dropped/no-op, or later confirmed; none may 
 admitted without a terminal outcome. No acknowledgement, retry, steering, cancellation, or completion may be invented by the
 runner. Keep unsupported operations native or explicitly unavailable. **Deferred:** generic queue
 management and unproven per-input cancellation.
+
+### `ASYNC_PROTOCOL_AUDIT` — choose a truthful asynchronous interaction contract
+
+**Design first, before changing submission APIs:** audit Thread Open/Resume/SubmitCommand and
+related browser, app, Sandbox Service, runner, and archive protocols for requests held open across
+long-running work. Inventory who owns durable state at each boundary, the exact point where a
+response can truthfully promise acceptance, timeout/disconnect behavior, retry and replay identity,
+authorization of status reads, and how the client learns later outcomes. Include other comparable
+long-running request/response flows encountered in the audit, not just command submission.
+
+Compare runner-first admission with a prompt ticket plus status lookup / existing Thread push feed;
+a `202 Accepted` must not imply durable acceptance before an authority has committed it. An
+app-owned pending ticket/outbox while the runner is unavailable changes the availability promise
+and remains an explicit `COMMAND_QUEUE_DECISION`, not an incidental implementation detail.
+Specify semantics for a repeated command id with a changed payload, rejection vs still-unobserved,
+reload/reconnect, multi-replica delivery, and retention of ticket/status evidence. Record a design
+and independently dispatchable implementation/acceptance nodes *after discussion*; do not fold a
+protocol cutover into `ADMISSION_DEADLINE_BUDGET`'s timeout fix. The existing
+`ADMISSION_UNCERTAIN_OUTCOME` and `SUBMISSION_STAGE_INDICATOR` nodes remain distinct.
 
 ### `COMMAND_QUEUE_DECISION` — where submission becomes durable
 
