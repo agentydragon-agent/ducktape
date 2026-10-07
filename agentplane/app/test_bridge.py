@@ -1538,6 +1538,14 @@ async def test_open_and_resume_reply_before_archive_catches_up(
         thread_id,
         command_pb2.Command(command_id="stop-before-archive", stop_runner_session=command_pb2.StopRunnerSession()),
     )
+    # Admission is not harness shutdown. Wait on the runner's own state, not on the
+    # stalled archive, before attempting a legitimate Resume.
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+    ):
+        with attempt:
+            (summary,) = await local_runners.client(SANDBOX).list_sessions()
+            assert summary.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
     resumed = await asyncio.wait_for(
         bridge.resume_thread(
             thread_id, expected_harness=protocol_pb2.Harness.Name(spec.harness), expected_cwd=spec.cwd
