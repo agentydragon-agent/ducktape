@@ -1,6 +1,7 @@
 """Real Actions → notification inbox → Sandbox Service → both native harnesses, no app."""
 
 import asyncio
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
@@ -238,13 +239,27 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     if initial is not None:
                         await model.reply(initial, Text("Initial work complete"))
                     notice_request = await model.request()
-                    assert any("Agentplane automated notification" in text for text in notice_request.user_texts)
+                    notices = [
+                        text for text in notice_request.user_texts
+                        if text.startswith("Agentplane automated notification: ")
+                    ]
+                    assert len(notices) == 1
+                    hint = json.loads(notices[0].removeprefix("Agentplane automated notification: "))
+                    assert hint == {
+                        "inbox_id": subscription["inbox_id"],
+                        "acknowledged_at_preparation": 0,
+                        "through_at_preparation": 2,
+                    }
+                    assert "GET" not in notices[0] and "acknowledgement" not in notices[0]
+                    assert "Agentplane compact notices v1" in notice_request.system_text
+                    assert "/v1/inboxes/INBOX_ID/entries?after_cursor=0&limit=128" in notice_request.system_text
+                    assert "/v1/inboxes/INBOX_ID/acknowledgement" in notice_request.system_text
                     assert "/v1/subscriptions" in notice_request.system_text
                     assert SANDBOX_UID in notice_request.system_text
                     await model.reply(notice_request, Text("Notifications received"))
                     # A fresh service object has no in-memory delivery state to lean on.
                     recovered = Service(Store(engine), source, remote, notice_debounce=service.notice_debounce)
-                    inbox_id = UUID(subscription["inbox_id"])
+                    inbox_id = UUID(hint["inbox_id"])
                     page = None
                     for _ in range(10):
                         async with store.sessions.begin() as session:
@@ -252,7 +267,10 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                                 update(Inbox).where(Inbox.id == inbox_id).values(next_attempt=datetime.now(UTC))
                             )
                         await recovered.step()
-                        response = await agent.get(f"/v1/inboxes/{inbox_id}/entries")
+                        response = await agent.get(
+                            f"/v1/inboxes/{inbox_id}/entries",
+                            params={"after_cursor": hint["acknowledged_at_preparation"], "limit": 128},
+                        )
                         response.raise_for_status()
                         page = response.json()
                         if page["notice"]["confirmed"]:
@@ -270,6 +288,16 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             f"/v1/inboxes/{inbox_id}/entries", headers={"Authorization": "Bearer other-token"}
                         )
                     ).status_code == 404
+                    ack = await agent.put(
+                        f"/v1/inboxes/{inbox_id}/acknowledgement",
+                        json={"through_cursor": page["entries"][0]["cursor"]},
+                    )
+                    assert ack.json()["acknowledged"] == 1
+                    remaining = await agent.get(
+                        f"/v1/inboxes/{inbox_id}/entries", params={"after_cursor": 1, "limit": 128}
+                    )
+                    assert remaining.json()["inbox"]["acknowledged"] == 1
+                    assert [entry["cursor"] for entry in remaining.json()["entries"]] == [2]
                     ack = await agent.put(
                         f"/v1/inboxes/{inbox_id}/acknowledgement",
                         json={"through_cursor": page["entries"][-1]["cursor"]},

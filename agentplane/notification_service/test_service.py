@@ -1,7 +1,7 @@
 """Delivery-policy tests with real durable inbox state and worker scheduling."""
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import create_autospec
+from unittest.mock import AsyncMock, create_autospec
 from uuid import uuid4
 
 import pytest
@@ -15,9 +15,10 @@ from agentplane.notification_service.models import ActionsSource, DestinationRef
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import Actions
-from agentplane.notification_service.store import Store
+from agentplane.notification_service.store import COMPACT_NOTICE_MARKER, Store
 from agentplane.protocol import event_log_pb2, event_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.sandbox_service.client import Runner, SandboxServiceClient
 from agentplane.workload_auth.principal import WorkloadPrincipal
 
 # gazelle:include_dep @pypi//protobuf
@@ -139,6 +140,45 @@ async def test_notice_max_wait_and_inflight_notice_are_not_extended(service: Ser
     await store.acknowledge(PRINCIPAL.account, subscription.inbox_id, 3)
     await store.release(claim, None, notice_due_at=await service.get_notice_due_at(claim))
     assert await store.get_next_work_at() is None
+
+
+@pytest.mark.parametrize("supports_compact", [False, True])
+async def test_notice_contract_respects_persisted_session_and_retries(
+    service: Service, supports_compact: bool
+) -> None:
+    store = service.store
+    service.notice_debounce = NoticeDebounceSettings(quiet_seconds=0)
+    subscription = await store.subscribe(PRINCIPAL, BODY)
+    claim = await store.claim()
+    assert claim is not None
+    source = await store.source(claim)
+    assert source is not None
+    await store.record(claim, source, events(1))
+    runner = create_autospec(Runner)
+    runner.list_sessions = AsyncMock(
+        return_value=[
+            runner_pb2.SessionSummary(
+                session_id=claim.session_id,
+                spec=runner_pb2.SessionSpec(instructions=COMPACT_NOTICE_MARKER if supports_compact else "legacy"),
+            )
+        ]
+    )
+    notice = await service.prepare_notice(claim, runner=runner)
+    assert notice is not None
+    assert notice.through_cursor == 1
+    assert ("GET /v1/inboxes/" not in notice.text) == supports_compact
+    assert str(subscription.inbox_id) in notice.text
+    runner.list_sessions = AsyncMock(
+        return_value=[
+            runner_pb2.SessionSummary(
+                session_id=claim.session_id,
+                spec=runner_pb2.SessionSpec(instructions="legacy" if supports_compact else COMPACT_NOTICE_MARKER),
+            )
+        ]
+    )
+    retry = await service.prepare_notice(claim, runner=runner)
+    assert retry is not None
+    assert (retry.command_id, retry.text) == (notice.command_id, notice.text)
 
 
 if __name__ == "__main__":

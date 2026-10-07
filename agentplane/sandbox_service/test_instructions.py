@@ -41,6 +41,10 @@ def test_platform_instructions_render_all_deployment_guidance_together() -> None
     assert '"source": {"provider": "actions", "request_id": "REAL_REQUEST_ID", "after_sequence": 0}' in instructions
     assert "event.request_id and event.sequence" in instructions
     assert '"through_cursor": LAST_HANDLED_CURSOR' in instructions
+    assert "acknowledged_at_preparation / through_at_preparation cursor snapshots" in instructions
+    assert "Continue paging beyond through_at_preparation" in instructions
+    assert "starting after the notice's acknowledged_at_preparation cursor" in instructions
+    assert "GET {{" not in instructions
     assert "Reads and runner delivery receipts never acknowledge." in instructions
     assert "unsubscribing is not withdrawal." in instructions
     assert "No notification-triggered harness/sandbox startup or wake-up is available." in instructions

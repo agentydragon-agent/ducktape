@@ -36,6 +36,7 @@ from agentplane.workload_auth.principal import WorkloadPrincipal
 
 _EVENT: TypeAdapter[EventIdentity] = TypeAdapter(EventIdentity)
 GITHUB_INGRESS_LOCK = 0x474854504E
+COMPACT_NOTICE_MARKER = "Agentplane compact notices v1"
 
 
 class NotFoundError(Exception):
@@ -592,7 +593,7 @@ class Store:
             assert last is not None
             return first, last
 
-    async def notice(self, claim: Inbox, *, prepare: bool = True) -> Notice | None:
+    async def notice(self, claim: Inbox, *, prepare: bool = True, compact: bool = False) -> Notice | None:
         async with self.sessions.begin() as session:
             inbox = await self.fenced(session, claim)
             row = await session.get(Notice, inbox.id)
@@ -610,13 +611,28 @@ class Store:
                 inbox_id=inbox.id,
                 command_id=uuid4(),
                 through_cursor=inbox.last_cursor,
+                # Once a session has the v1 contract in its immutable standing instructions,
+                # only its snapshot values need to ride in each native user input. Existing
+                # sessions keep the old self-contained text; retries keep the stored text.
                 text=(
-                    f"Agentplane automated notification: {inbox.last_cursor - start} new notifications "
-                    f"through cursor {inbox.last_cursor} when this notice was prepared; newer entries may exist. "
-                    f"The inbox had acknowledged through cursor {inbox.acknowledged} when this notice was "
-                    f"prepared. Retrieve GET /v1/inboxes/{inbox.id}/entries?after_cursor={inbox.acknowledged}"
-                    "&limit=128 from the notification service; page after the last returned cursor. "
-                    "Read does not acknowledge; explicitly acknowledge only the handled contiguous prefix."
+                    "Agentplane automated notification: "
+                    + json.dumps(
+                        {
+                            "inbox_id": str(inbox.id),
+                            "acknowledged_at_preparation": inbox.acknowledged,
+                            "through_at_preparation": inbox.last_cursor,
+                        },
+                        separators=(",", ":"),
+                    )
+                    if compact
+                    else (
+                        f"Agentplane automated notification: {inbox.last_cursor - start} new notifications "
+                        f"through cursor {inbox.last_cursor} when this notice was prepared; newer entries may exist. "
+                        f"The inbox had acknowledged through cursor {inbox.acknowledged} when this notice was "
+                        f"prepared. Retrieve GET /v1/inboxes/{inbox.id}/entries?after_cursor={inbox.acknowledged}"
+                        "&limit=128 from the notification service; page after the last returned cursor. "
+                        "Read does not acknowledge; explicitly acknowledge only the handled contiguous prefix."
+                    )
                 ),
                 attempted=False,
                 admitted=False,

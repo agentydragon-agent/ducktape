@@ -1,6 +1,7 @@
 """Committed prefixes, ownership, idempotence, replay, and delivery are distinct facts."""
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -232,13 +233,17 @@ async def test_overlapping_subscriptions_commit_one_prefix_and_read_does_not_ack
     assert (await store.acknowledge(PRINCIPAL.account, first.inbox_id, 1)).acknowledged == 2
     with pytest.raises(ConflictError):
         await store.acknowledge(PRINCIPAL.account, first.inbox_id, 4)
-    notice = await store.notice(claim)
+    notice = await store.notice(claim, compact=True)
     assert notice is not None
     assert notice.through_cursor == 3
-    assert "through cursor 3 when this notice was prepared; newer entries may exist" in notice.text
-    assert "acknowledged through cursor 2 when this notice was prepared" in notice.text
-    assert f"GET /v1/inboxes/{first.inbox_id}/entries?after_cursor=2&limit=128" in notice.text
-    assert "page after the last returned cursor" in notice.text
+    assert notice.text.startswith("Agentplane automated notification: ")
+    assert json.loads(notice.text.removeprefix("Agentplane automated notification: ")) == {
+        "inbox_id": str(first.inbox_id),
+        "acknowledged_at_preparation": 2,
+        "through_at_preparation": 3,
+    }
+    assert "GET" not in notice.text
+    assert "limit=128" not in notice.text
     retry = await store.notice(claim)
     assert retry is not None
     assert retry.command_id == notice.command_id

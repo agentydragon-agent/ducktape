@@ -72,6 +72,10 @@ include worked subscribe/read/ack examples and the explicit destination identifi
 are not human instructions; agents acknowledge handled progress explicitly and cancel completed
 subscriptions without withdrawing Actions or retiring the session inbox.
 Prompt changes apply to newly opened sessions; existing runner sessions keep their immutable specs.
+For sessions whose persisted instructions contain the compact-notice contract, notices carry only
+the inbox ID and preparation-time acknowledgement/coverage cursors; retrieval, paging, and
+contiguous-ack instructions are in the standing prompt. Older sessions retain self-contained notices.
+Previously prepared notices keep their original text on retries.
 
 ## Persistence and recovery
 
