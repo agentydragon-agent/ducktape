@@ -28,6 +28,14 @@ class ClaudeModel(ScriptedModel[MessagesRequest]):
         super().__init__(model=MODEL)
         self.endpoint = endpoint
 
+    async def reply(self, request: ModelRequest[MessagesRequest], *items: Item) -> None:
+        if request.streaming:
+            await super().reply(request, *items)
+        else:
+            # Claude falls back to a non-streaming retry after losing an SSE response.
+            async with request._exchange as exchange:
+                await exchange.respond(sse.message_body([_block(item) for item in items], model=self.model))
+
     async def next_exchange(self) -> ModelExchange[MessagesRequest]:
         return await self.endpoint.await_next_request()
 
