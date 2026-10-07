@@ -1336,6 +1336,41 @@ async def test_shell_call_command_and_output(
 @pytest.mark.parametrize(
     "scene", ["session_tool_output_sticky", "session_tool_output_sticky_phone"], ids=["desktop", "phone"]
 )
+async def test_expanded_command_uses_heading_to_collapse(
+    scene: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        await _open_tool_run(page)
+        command = (
+            page.locator(".agentplane-clamped-block[data-label='Command']")
+            .filter(has=page.get_by_role("button", name=re.compile(r"^Show all")))
+            .first
+        )
+        await expect(command).to_be_attached()
+        await command.get_by_role("button", name=re.compile(r"^Show all")).click()
+        # The Show all control disappears after expansion, so use the expanded
+        # block rather than a locator that keeps filtering for Show all.
+        heading = page.locator(
+            ".agentplane-clamped-block[data-label='Command'][data-expanded='true'] "
+            ".agentplane-clamped-disclosure .agentplane-disclosure-heading"
+        ).first
+        await expect(heading.locator("button")).to_have_count(1)
+        await expect(heading.get_by_role("button", name="Command", expanded=True)).to_be_visible()
+        await _focus(page, heading)
+
+    await _capture(
+        scene,
+        drive,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name=f"{scene}_expanded_command",
+    )
+
+
+@pytest.mark.parametrize(
+    "scene", ["session_tool_output_sticky", "session_tool_output_sticky_phone"], ids=["desktop", "phone"]
+)
 async def test_expanded_shell_output_sticks_while_scrolling(
     scene: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
 ) -> None:
