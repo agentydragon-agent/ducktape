@@ -62,6 +62,10 @@ Replace the notification source's five-second Action-history polling in a separa
 - Recurring scheduled/cron notifications with durable scheduling and explicit missed-tick behavior:
   [`CRON_NOTIFICATIONS`](task_dag.md#cron_notifications--scheduled-notifications-for-agents).
 
+- Thread/Sandbox notification status inspection in the integration app:
+  [`NOTIFICATION_STATUS_UI`](task_dag.md#notification_status_ui--inspect-threadsandbox-notification-status-in-the-integration-app).
+  Show inbox and subscription state without implying read means acknowledged.
+
 - Structured notification-message provenance for eventual compact frontend rendering:
   [`NOTIFICATION_PRESENTATION`](task_dag.md#notification_presentation--structured-metadata-and-compact-notification-rendering).
   Preserve full agent-facing text and raw evidence; never identify notices by text prefix alone.
