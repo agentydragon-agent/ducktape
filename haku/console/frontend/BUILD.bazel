@@ -998,8 +998,6 @@ py_visual_test(
     served_documents = {"https://haku-ui.test/": "harness/mock_haku_ui.html"},
     shard_count = 4,
     stylesheets = [":styles_css"],
-    test_module = "haku.console.frontend.test_visual",
-    test_srcs = ["test_visual.py"],
     test_deps = [
         "//util/testing:page_capture",
         "//util/testing:visual_capture",
@@ -1008,6 +1006,8 @@ py_visual_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+    test_module = "haku.console.frontend.test_visual",
+    test_srcs = ["test_visual.py"],
     title = "Haku Console",
 )
 

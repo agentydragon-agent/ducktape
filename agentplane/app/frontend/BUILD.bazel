@@ -1,5 +1,6 @@
 # The visual macro collects this test module under :visual so its PNGs keep the same gallery identity.
 # gazelle:exclude test_visual_interactions.py
+# gazelle:exclude test_visual_scenes.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
@@ -1280,11 +1281,11 @@ py_visual_test(
         ":visual_bundle_css",
     ],
     devtools_viewport = True,
-    env = {"INTERACTION_SCENARIOS_PATH": "$(rlocationpath harness/interaction_scenarios.json)"},
     harness = ":visual_bundle_js",
-    scenarios = "harness/scenarios.json",
     shard_count = 6,
     test_deps = [
+        ":visual_pages",
+        "//util/testing:visual_capture",
         "//util/testing:page_capture",
         "//util/testing:undeclared_outputs",
         "//util/testing:visual_scenarios",
@@ -1294,7 +1295,7 @@ py_visual_test(
         "@pypi//pytest_bazel",
     ],
     test_module = "agentplane.app.frontend.test_visual_interactions",
-    test_srcs = ["test_visual_interactions.py"],
+    test_srcs = ["test_visual_interactions.py", "test_visual_scenes.py"],
     title = "Agentplane",
 )
 

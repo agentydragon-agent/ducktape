@@ -18,7 +18,8 @@ from playwright.async_api import (
 
 from util.testing import visual_sweep
 from util.testing.visual_scenarios import Click, Scenario, Viewport
-from util.testing.visual_sweep import InlinePage, SweepConfig, capture_scenario
+from util.testing.visual_capture import InlinePage
+from util.testing.visual_sweep import SweepConfig, capture_scenario
 from util.visual_review import VisualReviewManifest
 
 # gazelle:include_dep //util:playwright

@@ -34,6 +34,7 @@ from finance.evidence.markets import Platform
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context, stability_style
+from util.testing.page_capture import wait_for_stable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
 
@@ -492,25 +493,6 @@ def page_errors(page: Page) -> list[str]:
     return errors
 
 
-async def _wait_for_painted_frame(page: Page) -> None:
-    """Fonts applied, images decoded, a frame painted: `wait_for_stable` in util/testing/page_capture.py,
-    which also says why `document.getAnimations()` is not awaited."""
-    await page.evaluate(
-        """
-        async () => {
-          await document.fonts.ready;
-          await Promise.all(
-            Array.from(document.images)
-              .filter((image) => !image.complete)
-              .map((image) => image.decode().catch(() => {}))
-          );
-          // Two frames: the first flushes pending style and layout, the second lands after paint.
-          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        }
-        """
-    )
-
-
 async def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Path:
     # Pin the `sticky top-0` header to the top of the full-page capture: Playwright paints a
     # sticky element at its last on-screen position, so a mid-page scroll (e.g. after a rollout
@@ -519,7 +501,7 @@ async def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Pa
     previous_bytes: bytes | None = None
     previous_path: Path | None = None
     for attempt in range(6):
-        await _wait_for_painted_frame(page)
+        await wait_for_stable(page)
         attempt_path = target_path.with_name(f"{target_path.stem}.attempt{attempt}{target_path.suffix}")
         await page.screenshot(path=str(attempt_path), full_page=True, animations="disabled", caret="hide", scale="css")
         current_bytes = attempt_path.read_bytes()
@@ -529,8 +511,10 @@ async def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Pa
         previous_bytes = current_bytes
         previous_path = attempt_path
     assert previous_path is not None
-    shutil.copy(previous_path, target_path)
-    return target_path
+    diagnostics = undeclared_outputs_dir()
+    for attempt_path in target_path.parent.glob(f"{target_path.stem}.attempt*{target_path.suffix}"):
+        shutil.copy(attempt_path, diagnostics / attempt_path.name)
+    raise AssertionError(f"{target_path.stem}: render did not stabilize in six captures; inspect {diagnostics}")
 
 
 async def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path) -> Path:

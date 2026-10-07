@@ -209,13 +209,14 @@ class VisualHarness:
         self,
         name: str,
         *,
-        viewport: Viewport = Viewport(),
+        viewport: Viewport | None = None,
         color_scheme: Literal["light", "dark"] = "light",
         query: Mapping[str, str] | None = None,
         window_globals: Mapping[str, JsonValue] | None = None,
         frozen_now_ms: int = FROZEN_NOW_MS,
     ) -> AsyncIterator[VisualPage]:
         config = self.config
+        viewport = viewport or Viewport()
         if config.inline_page is None and window_globals is not None:
             raise ValueError("window globals require an inline harness")
         if config.inline_page is not None and query is not None:

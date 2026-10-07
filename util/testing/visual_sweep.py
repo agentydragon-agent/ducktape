@@ -45,20 +45,16 @@ from playwright.async_api import Page, Playwright, async_playwright
 from pydantic import TypeAdapter
 
 from util.bazel.runfiles import get_required_path
-from util.testing.page_capture import (
-    WAIT_TIMEOUT_MS,
-    PageErrors,
-    assert_network_settled,
-    wait_for_stable,
-)
+from util.testing.page_capture import WAIT_TIMEOUT_MS, PageErrors, assert_network_settled, wait_for_stable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.visual_capture import HarnessConfig, InlinePage, VisualHarness
 from util.testing.visual_scenarios import Scenario, load_scenarios
-from util.testing.visual_capture import HarnessConfig, InlinePage, VisualHarness, inline_page_html as inline_page_html
 
 _PATHS_BY_URL = TypeAdapter(dict[str, str])
 
 # One event loop for the whole sweep, so one Playwright driver serves every scenario.
 pytestmark = pytest.mark.asyncio(loop_scope="session")
+
 
 @dataclass(frozen=True)
 class SweepConfig:
@@ -146,16 +142,22 @@ async def capture_scenario(
     harness = VisualHarness(
         playwright,
         HarnessConfig(
-            harness_path=config.harness_path, title=config.title,
-            expected_font_family=config.expected_font_family, output_suffix=config.output_suffix,
-            inline_page=config.inline_page, devtools_viewport=config.devtools_viewport,
+            harness_path=config.harness_path,
+            title=config.title,
+            expected_font_family=config.expected_font_family,
+            output_suffix=config.output_suffix,
+            inline_page=config.inline_page,
+            devtools_viewport=config.devtools_viewport,
             served_documents=config.served_documents,
         ),
         output_dir,
     )
     async with harness.open(
-        scenario_name, viewport=scenario.viewport, color_scheme=scenario.color_scheme,
-        query=scenario.query, window_globals=scenario.window_globals,
+        scenario_name,
+        viewport=scenario.viewport,
+        color_scheme=scenario.color_scheme,
+        query=scenario.query,
+        window_globals=scenario.window_globals,
     ) as view:
         page = view.page
         page_errors = view.errors
@@ -211,7 +213,8 @@ async def capture_scenario(
             await wait_for_stable(page)
         await assert_network_settled(page, context=output_name, timeout_ms=timeout_ms)
         await view.capture(
-            output_name, label=scenario.label,
+            output_name,
+            label=scenario.label,
             target=None if scenario.capture_viewport else page.locator(scenario.element),
         )
 
