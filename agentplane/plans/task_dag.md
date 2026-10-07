@@ -96,7 +96,10 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Deferred combined UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox selected, Thread fields editable"]:::future
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
-    ASYNC_PROTOCOL_AUDIT["Design decision<br/>audit long-lived request/response contracts<br/>ticket vs durable admission vs push"]:::decision
+    THREAD_OPEN_RELOAD_RECOVERY["Open recovery follow-up<br/>runner committed but mapping absent<br/>safe reload reconciliation"]:::future
+    BOOTSTRAP_PROGRESS_CONTRACT["Design decision<br/>durable bootstrap start/progress/result<br/>no HTTP-held script execution"]:::decision
+    SANDBOX_CREATE_RECONCILE["Lifecycle acceptance<br/>lost Create reply and partial grants<br/>current UID, no deleted-object tombstone"]:::future
+    ACTION_DIRECT_RECOVERY["Deferred Action decision<br/>discover direct-tool request<br/>when first MCP reply is lost"]:::decision
     COMMAND_DISPATCHED_EVENT["Missing observation<br/>runner handed the command to the harness<br/>journal-only today; needs an Event"]:::future
     SUBMISSION_STAGE_INDICATOR["Planned UI<br/>staged submission indicator<br/>which of five stages, not two strings"]:::future
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
@@ -526,26 +529,70 @@ admitted without a terminal outcome. No acknowledgement, retry, steering, cancel
 runner. Keep unsupported operations native or explicitly unavailable. **Deferred:** generic queue
 management and unproven per-input cancellation.
 
-### `ASYNC_PROTOCOL_AUDIT` — choose a truthful asynchronous interaction contract
+### `THREAD_OPEN_RELOAD_RECOVERY` — find a committed Open without a Thread mapping
 
-**Design first, before changing submission APIs:** audit Thread Open/Resume/SubmitCommand and
-related browser, app, Sandbox Service, runner, and archive protocols for requests held open across
-long-running work. Inventory who owns durable state at each boundary, the exact point where a
-response can truthfully promise acceptance, timeout/disconnect behavior, retry and replay identity,
-authorization of status reads, and how the client learns later outcomes. Include other comparable
-long-running request/response flows encountered in the audit, not just command submission.
+**Failure window:** the runner may commit Open/Attach, but the app may lose the reply or fail
+before committing the `(sandbox, session_id) → Thread` mapping. The browser can check
+that mapping by its stable session ID, but after a reload it retains only the ID, not
+the original spec and setup script. "No Thread yet" therefore means **unknown**, not
+"no session"; retrying with freshly assembled defaults or a new ID can create a
+second or conflicting session.
 
-Compare runner-first admission with a prompt ticket plus status lookup / existing Thread push feed;
-a `202 Accepted` must not imply durable acceptance before an authority has committed it. An
-app-owned pending ticket/outbox while the runner is unavailable changes the availability promise
-and remains an explicit `COMMAND_QUEUE_DECISION`, not an incidental implementation detail.
-The command POST now returns the runner's durable admission receipt without waiting for the
-archive ([#9365](https://github.com/agentydragon/ducktape/pull/9365)); do not reintroduce an
-archive wait while assessing Open/Resume and other long-lived requests. Specify semantics for a
-repeated command id with a changed payload, rejection vs still-unobserved, reload/reconnect,
-multi-replica delivery, and retention of ticket/status evidence. Record a design and independently
-dispatchable implementation/acceptance nodes _after discussion_. Keep
-`SUBMISSION_STAGE_INDICATOR` distinct.
+**Design and acceptance:** choose an authorized way to inspect the runner's retained
+session and adopt/reconcile the exact Open (or explicitly report that it cannot be
+recovered), without trusting a guessed ID or persisting secrets in browser storage.
+Scope reads to the caller's Sandbox and distinguish a current Sandbox UID from an
+old/deleted one. Exercise reply loss before and after runner commit and before and
+after app mapping commit, reload, changed spec/script, missing Sandbox, and two app
+replicas. Do not infer that a session never existed from an absent mapping.
+
+### `BOOTSTRAP_PROGRESS_CONTRACT` — do not hold Open through script execution
+
+Sandbox Service currently awaits the runner's `Initialize` _terminal result_ for
+the Sandbox binding's bootstrap script **before** Open/Attach. The runner retains
+script identity, ordered output, and result, but Sandbox Service has no independent
+authorized bootstrap start/status/progress API. Thus the Open RPC can remain open
+for the duration of a long script despite no longer waiting for the app archive.
+
+**Design decision:** specify when a durable start receipt is safe, how the caller
+reads or follows scoped progress and terminal success/failure (including after
+restart/reconnect), and whether successful bootstrap must remain a precondition
+of opening a session. Preserve runner deduplication and script identity: a timeout
+or disconnect must not restart a changed script or claim failure without a terminal
+result. Separate the configured launch/RPC deadlines from the acceptance promise.
+Implementation comes after the contract is agreed; `THREAD_SETUP_PROGRESS` is the
+separate UI presentation work.
+
+### `SANDBOX_CREATE_RECONCILE` — lost lifecycle response and partial provisioning
+
+Create may persist a Kubernetes Sandbox CR and then fail while provisioning its
+grants or sending the response; Kubernetes intent is not Pod readiness. A caller
+can use authorized Get by **name** (or List) and compare the current object's UID,
+but Kubernetes offers no get-by-UID here and a deleted CR has no retained tombstone.
+An absent name cannot prove that no Sandbox was previously created.
+
+**Acceptance:** exercise lost replies before/after CR commit, failures between CR
+and grants, a later grant reconciliation, replacement under the same name with a
+new UID, watcher restart, and concurrent callers. State exactly what Get/List
+can establish and when an outcome must remain unknown; do not silently create
+under a fresh name on uncertainty. Add a lifecycle ticket only if current intent
+and UID checks cannot provide the required recovery.
+
+### `ACTION_DIRECT_RECOVERY` — lost first direct-tool receipt
+
+Action Service HTTP submissions use a caller-chosen idempotency key and return
+a durable Action ID, with events/SSE for later transitions. The direct MCP tool instead mints a new
+`direct-<uuid>` key server-side per call and can wait for a bounded result. If its
+first response is lost **after** persistence, the caller lacks the key/ID to look
+up the Action; retrying the tool would create a second request and potentially
+repeat a side effect.
+
+**Deferred design decision:** choose a caller-stable request identity or another
+unambiguous, authorized discovery mechanism (including retention and ownership
+checks), and define what a lost reply means before and after persistence. Test
+lost first response, repeat with the same identity, two replicas, and an already
+executing or completed Action. Do not equate approval with execution success or
+recommend a fresh direct call as recovery.
 
 ### `COMMAND_QUEUE_DECISION` — where submission becomes durable
 
