@@ -1257,12 +1257,11 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
 
                 dispatched = False
 
-                def reject_dispatch(*_args: object, **_kwargs: object) -> None:
+                async def reject_dispatch(*_args: object, **_kwargs: object) -> None:
                     nonlocal dispatched
                     dispatched = True
-                    raise AssertionError("a rejected feed must not contact the runner")
 
-                monkeypatch.setattr(survivor._runners, "client", reject_dispatch)
+                monkeypatch.setattr(survivor, "_command", reject_dispatch)
                 with pytest.raises(RunnerError):
                     await survivor.command(
                         thread,

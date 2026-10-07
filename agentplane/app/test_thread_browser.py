@@ -1666,6 +1666,8 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         assert admission.event.command_admitted.command == command
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
         await expect_pending_message_bubble(page, command.submit_input.text)
+        async with asyncio.timeout(15):
+            assert (await thread_browser.app.replay_held()).cursor >= admission.cursor
         assert admission in await thread_browser.event_logs.events(thread.id, limit=100)
 
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
