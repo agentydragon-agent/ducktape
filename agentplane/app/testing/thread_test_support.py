@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import TypedDict
 
 from google.protobuf.timestamp_pb2 import Timestamp
 
@@ -29,12 +30,22 @@ SPEC = protocol_pb2.SessionSpec(
     harness=protocol_pb2.HARNESS_CLAUDE, cwd="/state/work", model="test-model", reasoning_effort="low"
 )
 
-# Wait budgets for a `RunnerBridge` under test. The bridge takes them from config and has no defaults
-# of its own, so a test states what it runs with instead of inheriting a production number. These are
-# the values the bridge ran under before the settings existed; nothing here waits on them, so their
-# only job is to be generous enough that no test passes or fails because of them. A test that
-# exercises a deadline overrides the one it cares about.
-BRIDGE_WAIT_BUDGETS: dict[str, float] = {
+
+# The three waits a `RunnerBridge` under test is built with. The bridge takes them from config and has
+# no defaults of its own, so a test states what it runs with instead of inheriting a production number.
+# These are the values the bridge ran under before the settings existed; nothing here waits on them, so
+# their only job is to be generous enough that no test passes or fails because of them. A test that
+# exercises a deadline names it explicitly instead of using this.
+#
+# A `TypedDict`, not a `dict[str, float]`, because callers pass it with `**`: the keys have to stay
+# literal for a type checker to bind them to the bridge's parameters rather than any other keyword.
+class BridgeWaitBudgets(TypedDict):
+    command_admission_timeout_s: float
+    session_archive_timeout_s: float
+    admission_reread_s: float
+
+
+BRIDGE_WAIT_BUDGETS: BridgeWaitBudgets = {
     "command_admission_timeout_s": 300.0,
     "session_archive_timeout_s": 60.0,
     "admission_reread_s": 2.0,

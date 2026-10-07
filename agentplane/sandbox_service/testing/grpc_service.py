@@ -3,6 +3,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import TypedDict
 
 import grpc
 
@@ -11,12 +12,23 @@ from agentplane.sandbox_service.grpc_api import Resources, add_service
 
 # gazelle:include_dep @pypi//grpcio
 
-# Wait budgets for a `Resources` under test. `Resources` takes them from config and has no defaults of
-# its own, so a test states what it waits with rather than inheriting a deployment's number. These are
-# the values these helpers ran under before the waits were settings at all -- the old single
-# `admission_timeout_s` was 15 -- so nothing here changes behaviour. A test that exercises one of the
-# budgets overrides the one it cares about.
-RESOURCE_WAIT_BUDGETS: dict[str, float] = {
+
+# The three waits a `Resources` under test is built with. `Resources` takes them from config and has
+# no defaults of its own, so a test states what it waits with rather than inheriting a deployment's
+# number. These are the values these helpers ran under before the waits were settings at all -- the
+# old single `admission_timeout_s` was 15 -- so nothing here changes behaviour. A test that exercises
+# one of the budgets names it explicitly instead of using this.
+#
+# A `TypedDict`, not a `dict[str, float]`, because every caller passes it with `**`: mypy can only bind
+# an unpacked mapping to the parameters its keys name when the keys are literal, and `Resources` also
+# has a `dict`-valued field (`runner_grpc_channel_options`) for it to try to absorb otherwise.
+class ResourceWaitBudgets(TypedDict):
+    request_timeout_s: float
+    command_admission_timeout_s: float
+    stream_write_timeout_s: float
+
+
+RESOURCE_WAIT_BUDGETS: ResourceWaitBudgets = {
     "request_timeout_s": 15,
     "command_admission_timeout_s": 15,
     "stream_write_timeout_s": 15,

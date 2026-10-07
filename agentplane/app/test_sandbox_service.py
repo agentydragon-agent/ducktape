@@ -13,6 +13,7 @@ from kubernetes_asyncio import client as k8s_client
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.live import LiveIndex
 from agentplane.app.testing.thread_test_support import BRIDGE_WAIT_BUDGETS
 from agentplane.app.threads import ingestion as ingestion_module
 from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
