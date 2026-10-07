@@ -137,4 +137,12 @@ class Environment:
     # environment and nothing else: a name left off the list reaches no child however the image is set.
     # TZDIR is the case that motivated this: nixpkgs' glibc looks for zoneinfo under its own store
     # path, which holds none, so without it `TZ=America/Los_Angeles` silently means UTC.
+    #
+    # TODO(2026-10-07, Haku): revisit before this list grows. Two open questions: (1) the value may
+    # be removable at the image rather than forwarded — the sandbox image already symlinks
+    # /usr/share/zoneinfo and exports TZDIR in its own Config/Env (agentplane/images/sandbox.nix),
+    # so shipping tzdata where nixpkgs' glibc actually looks would delete the variable instead of
+    # plumbing it; (2) `--harness-env` takes a bare NAME too, so `--harness-env TZDIR` forwards the
+    # same value — the separate flag buys only that inherited names apply first and stay
+    # overridable. If nothing else needs that ordering, one flag is serving one name.
     harness_inherited_env: Sequence[str] = ("TZDIR",)
