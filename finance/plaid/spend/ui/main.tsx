@@ -40,6 +40,7 @@ type TransactionsView = components["schemas"]["SpendTransactionsView"];
 type TransactionRow = components["schemas"]["SpendTransactionRow"];
 type TransactionPeriodId = TransactionsView["requested_period_id"];
 type AllowancePeriodId = components["schemas"]["Period"]["id"];
+type EstimatePeriodId = Extract<AllowancePeriodId, "rolling_7d" | "rolling_30d">;
 type RuleCondition = components["schemas"]["Rule"]["condition"];
 type RuleKind = components["schemas"]["Rule"]["kind"];
 type SpendTab = "spending" | "transactions" | "configuration";
@@ -100,7 +101,7 @@ function cardTitle(card: CardView): string {
 function spendPeriod(allowance: Allowance, periodId: AllowancePeriodId) {
   return allowance.spend_periods.find((report) => report.period.id === periodId);
 }
-function pacePeriod(allowance: Allowance, periodId: "rolling_7d" | "rolling_30d") {
+function pacePeriod(allowance: Allowance, periodId: AllowancePeriodId) {
   return allowance.recorded_pace_periods.find((report) => report.period.id === periodId);
 }
 type Signal = "normal" | "warning" | "exceeded";
@@ -135,8 +136,15 @@ function Metric({ label, value, detail }: { label: string; value: ReactNode; det
   );
 }
 
-function PurchaseCheck({ allowance }: { allowance: Allowance }) {
-  const [purchase, setPurchase] = useState<number | string>("");
+function PurchaseCheck({
+  allowance,
+  purchase,
+  onPurchaseChange,
+}: {
+  allowance: Allowance;
+  purchase: number | string;
+  onPurchaseChange: (value: number | string) => void;
+}) {
   const cents = typeof purchase === "number" ? Math.round(purchase * 100) : NaN;
   const valid = typeof purchase === "number" && purchase >= 0 && Number.isSafeInteger(cents);
   const available = allowance.available_minor_units;
@@ -173,7 +181,7 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
           decimalScale={2}
           placeholder="Enter an amount"
           value={purchase}
-          onChange={setPurchase}
+          onChange={onPurchaseChange}
           inputMode="decimal"
           hideControls
         />
@@ -232,7 +240,15 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
   );
 }
 
-function AllowancePanel({ allowance }: { allowance: Allowance }) {
+function AllowancePanel({
+  allowance,
+  purchase,
+  onPurchaseChange,
+}: {
+  allowance: Allowance;
+  purchase: number | string;
+  onPurchaseChange: (value: number | string) => void;
+}) {
   if (allowance.status !== "active" || allowance.available_minor_units == null) {
     return (
       <Alert color="yellow" title="Allowance unavailable">
@@ -247,6 +263,7 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
     ? (allowance.spending_signal as Signal)
     : null;
   const cycleSpend = spendPeriod(allowance, "credit_cycle");
+  const selectedPace = pacePeriod(allowance, allowance.forecast.basis_period.id);
   const historyPeriods = [
     { id: "rolling_7d", label: "LAST 7 DAYS" },
     { id: "rolling_30d", label: "LAST 30 DAYS" },
@@ -310,24 +327,18 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
               </Text>
             )}
             <Divider />
-            <Text size="sm" fw={700}>
-              Recorded flexible spending pace
-            </Text>
-            {(["rolling_7d", "rolling_30d"] as const).map((periodId) => {
-              const report = pacePeriod(allowance, periodId);
-              return (
-                <Group justify="space-between" gap="sm" key={periodId}>
-                  <Text size="sm">{periodId === "rolling_7d" ? "7 days" : "30 days"}</Text>
-                  <Text size="sm" fw={700}>
-                    {report?.observed_daily_minor_units == null ? (
-                      "Warming up"
-                    ) : (
-                      <>{m(report.observed_daily_minor_units)} / day</>
-                    )}
-                  </Text>
-                </Group>
-              );
-            })}
+            <Group justify="space-between" gap="sm">
+              <Text size="sm" fw={700}>
+                Recorded flexible spending pace
+              </Text>
+              <Text size="sm" fw={700}>
+                {selectedPace?.observed_daily_minor_units == null ? (
+                  "Warming up"
+                ) : (
+                  <>{m(selectedPace.observed_daily_minor_units)} / day</>
+                )}
+              </Text>
+            </Group>
             <Text size="sm" c="dimmed">
               Provisional leash ~{m(Math.round((allowance.monthly_minor_units * 12) / 365.2425))} / day. This is
               spending capacity, not a sustainability target.
@@ -345,21 +356,9 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
                 </Text>
               ) : null;
             })}
-            <Divider />
-            <Group justify="space-between" gap="sm">
-              <Text size="sm">Pace used for estimate ({periodLabels[allowance.forecast.basis_period.id]})</Text>
-              <Text size="sm" fw={700}>
-                {allowance.forecast.daily_pace_minor_units == null ? (
-                  "Warming up"
-                ) : (
-                  <>{m(allowance.forecast.daily_pace_minor_units)} / day</>
-                )}
-              </Text>
-            </Group>
             <Text size="xs" c="dimmed">
-              Uses positive flexible purchases in the selected period, including before the allowance began; early
-              post-start bursts can increase the pace. Earlier purchases inform the estimate but do not reduce your
-              available balance. Plaid data may lag.
+              The estimate may use a higher daily pace when purchases since the allowance began are concentrated in
+              fewer days.
             </Text>
             {allowance.forecast.estimated_exhaustion_at && (
               <Text size="sm">
@@ -371,7 +370,7 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
         </Paper>
       </SimpleGrid>
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
-        <PurchaseCheck allowance={allowance} />
+        <PurchaseCheck allowance={allowance} purchase={purchase} onPurchaseChange={onPurchaseChange} />
         <Card component="section" aria-labelledby="cycle-title" withBorder radius="lg" padding="xl">
           <Stack gap="lg">
             <div>
@@ -601,7 +600,7 @@ function ConfigurationPanel({
                   <Metric label="START DATE" value={allowance.activation_at} />
                   <Metric label="ACCOUNTS IN SCOPE" value={allowance.spending_account_count} />
                   <Metric label="MAX SYNC AGE" value={`${allowance.max_sync_age_hours} hours`} />
-                  <Metric label="FORECAST BASIS" value={periodLabels[allowance.forecast_basis_period_id]} />
+                  <Metric label="DEFAULT ESTIMATE WINDOW" value={periodLabels[allowance.forecast_basis_period_id]} />
                 </SimpleGrid>
                 <Divider />
                 <div>
@@ -1248,6 +1247,8 @@ function App() {
   const [configurationLoading, setConfigurationLoading] = useState(false);
   const [configurationError, setConfigurationError] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<TransactionsView | null>(null);
+  const [selectedEstimatePeriodId, setSelectedEstimatePeriodId] = useState<EstimatePeriodId | null>(null);
+  const [purchase, setPurchase] = useState<number | string>("");
   const [transactionPeriodId, setTransactionPeriodId] = useState<TransactionPeriodId>("rolling_30d");
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
@@ -1260,9 +1261,10 @@ function App() {
   }, []);
   useEffect(() => {
     let mounted = true;
+    const estimateQuery = selectedEstimatePeriodId ? `?estimate_period_id=${selectedEstimatePeriodId}` : "";
     const load = async () => {
       try {
-        const response = await fetch("/api/v1/view", { cache: "no-store", credentials: "same-origin" });
+        const response = await fetch(`/api/v1/view${estimateQuery}`, { cache: "no-store", credentials: "same-origin" });
         if (response.status === 401) {
           window.location.assign("/auth/login");
           return;
@@ -1281,7 +1283,7 @@ function App() {
       }
     };
     void load();
-    const events = new EventSource("/api/v1/events");
+    const events = new EventSource(`/api/v1/events${estimateQuery}`);
     events.addEventListener("view", (event) => {
       try {
         if (mounted) {
@@ -1304,7 +1306,7 @@ function App() {
       mounted = false;
       events.close();
     };
-  }, []);
+  }, [selectedEstimatePeriodId]);
   useEffect(() => {
     if (activeTab !== "configuration" || configuration != null) return;
     let mounted = true;
@@ -1365,6 +1367,13 @@ function App() {
     return () => controller.abort();
   }, [activeTab, transactionPeriodId, viewRevision]);
   const cards = view?.cards || [];
+  const estimatePeriodId =
+    selectedEstimatePeriodId ??
+    (view?.allowance?.forecast.basis_period.id === "rolling_30d" ? "rolling_30d" : "rolling_7d");
+  const estimatePending =
+    selectedEstimatePeriodId != null &&
+    view?.allowance != null &&
+    view.allowance.forecast.basis_period.id !== selectedEstimatePeriodId;
   return (
     <MantineProvider defaultColorScheme="auto">
       <Tabs
@@ -1432,13 +1441,39 @@ function App() {
                   {state}
                 </Badge>
               </Group>
+              {view?.allowance && (
+                <Group justify="space-between" gap="sm">
+                  <Text size="sm" fw={600}>
+                    Estimate window
+                  </Text>
+                  <SegmentedControl
+                    aria-label="Estimate window"
+                    value={estimatePeriodId}
+                    onChange={(periodId) => {
+                      setError(null);
+                      setSelectedEstimatePeriodId(periodId as EstimatePeriodId);
+                    }}
+                    data={[
+                      { value: "rolling_7d", label: "7 days" },
+                      { value: "rolling_30d", label: "30 days" },
+                    ]}
+                  />
+                </Group>
+              )}
               {error && (
                 <Alert color="red" title="Couldn't refresh your view">
                   {error}. Showing the most recent data we have.
                 </Alert>
               )}
-              {view?.allowance ? (
-                <AllowancePanel allowance={view.allowance} />
+              {estimatePending ? (
+                <Alert
+                  color={error ? "red" : "blue"}
+                  title={error ? "Selected estimate unavailable" : "Updating estimate"}
+                >
+                  {error || `Calculating from ${periodLabels[estimatePeriodId].toLowerCase()} of purchases…`}
+                </Alert>
+              ) : view?.allowance ? (
+                <AllowancePanel allowance={view.allowance} purchase={purchase} onPurchaseChange={setPurchase} />
               ) : (
                 <Alert color="yellow" title="No flexible allowance yet">
                   {view
