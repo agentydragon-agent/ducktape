@@ -98,7 +98,10 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
             first = command_pb2.Command(command_id="remote-first", submit_input=command_pb2.SubmitInput(text="first"))
             receipt = await bridge.command(thread, first)
             assert receipt.event.command_admitted.command == first
-            assert receipt in await event_logs.events(thread, limit=1000)
+            # The runner receipt can arrive before the independent app archive copy.
+            async with asyncio.timeout(10):
+                while receipt not in await event_logs.events(thread, limit=1000):
+                    await asyncio.sleep(0.05)
             await model.reply(await model.request(), Text("FIRST"))
             # Observe actual renewal (or lost-marker recovery), not just elapsed wall time.
             async with asyncio.timeout(10):

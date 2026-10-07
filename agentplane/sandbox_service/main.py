@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     token_audience: str = "agentplane-sandbox-service"
     runner_port: int = Field(default=7000, ge=1, le=65535)
     admission_timeout_s: float = Field(default=15, gt=0, le=60)
+    runner_admission_ack_timeout_s: float = Field(
+        default=15,
+        gt=0,
+        description="Seconds SubmitCommand waits for the runner journal to durably record the exact "
+        "command; expiry leaves admission uncertain.",
+    )
     follow_lease_s: float = Field(default=900, gt=0, le=900)
     runner_grpc_channel_options: dict[str, int | str] = Field(
         default_factory=dict,
@@ -123,6 +129,7 @@ async def serve(settings: Settings) -> None:
             principals=principals,
             destinations=DestinationResolver(inventory, core, settings.runner_port),
             admission_timeout_s=settings.admission_timeout_s,
+            runner_admission_ack_timeout_s=settings.runner_admission_ack_timeout_s,
             follow_lease_s=settings.follow_lease_s,
             caller_accounts=settings.caller_accounts,
             platform_instructions=platform_instructions,

@@ -132,6 +132,7 @@ def resources(cluster: Cluster, peer: Peer) -> Resources:
         audiences=(AUDIENCE,),
     )
     return Resources(
+        runner_admission_ack_timeout_s=1,
         principals=WorkloadPrincipalResolver(
             authentication=k8s_client.AuthenticationV1Api(cluster.api),
             audience=AUDIENCE,
@@ -332,6 +333,26 @@ async def test_unanswered_runner_open_is_a_deadline_not_a_state_rejection(
         connection = await peer.attachments.get()
         await connection.closed.wait()
         assert connection.commands.empty()
+
+
+async def test_command_uses_runner_ack_budget_not_unary_request_budget(
+    resources: Resources, token_file: Path, peer: Peer
+) -> None:
+    command = command_pb2.Command(command_id="slow-ack", submit_input=command_pb2.SubmitInput(text="hi"))
+    # Unary authorization/destination work must not cap the runner's separate receipt wait.
+    async with service_client(
+        replace(resources, admission_timeout_s=0.1, runner_admission_ack_timeout_s=1), token_file
+    ) as remote:
+        remote.request_timeout_s = 0.1  # The client also must not use its short generic RPC deadline.
+        async with asyncio.timeout(8), asyncio.TaskGroup() as tasks:
+            submitted = tasks.create_task(remote.runner(DESTINATION).command("session", command, after_cursor=0))
+            connection = await peer.attachments.get()
+            assert (await connection.commands.get()).command == command
+            assert (await connection.commands.get()).HasField("detach")
+            await asyncio.sleep(0.2)
+            receipt = admission(command, 1)
+            connection.responses.put_nowait(runner_pb2.ServerMessage(event_entry=receipt))
+            assert await submitted == receipt
 
 
 async def test_timeout_is_uncertain_and_closes_attachment(remote: SandboxServiceClient, peer: Peer) -> None:
@@ -543,7 +564,9 @@ async def test_bare_service_eof_is_not_native_closure(tmp_path: Path) -> None:
     await server.start()
     token_file = tmp_path / "token"
     token_file.write_text(TOKEN)
-    client = SandboxServiceClient(f"127.0.0.1:{port}", namespace=SANDBOX_NAMESPACE, token_file=token_file)
+    client = SandboxServiceClient(
+        f"127.0.0.1:{port}", namespace=SANDBOX_NAMESPACE, token_file=token_file, command_admission_timeout_s=20
+    )
     try:
         attachment = await client.runner(DESTINATION).attach("session")
         try:

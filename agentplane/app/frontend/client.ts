@@ -307,24 +307,13 @@ export async function models(): Promise<ModelCatalog> {
   return data as ModelCatalog;
 }
 
-/**
- * Above the server's own bound: two sequential `COMMAND_ADMISSION_S` (15 s) waits, for runner
- * admission and then for its archive copy (`agentplane/app/threads/bridge.py`). The
- * clock also runs while the browser queues the request for a free connection, so a queued or hung
- * request surfaces as a failed attempt rather than waiting silently forever.
- */
-const COMMAND_TIMEOUT_MS = 45_000;
-
-/**
- * The saved command boundary: this is the exact archived CommandAdmitted EventEntry, not a
- * prediction that a harness has already executed the operation. Replaying the same immutable
- * command returns that same entry, so a lost HTTP response is safe to retry.
+/** The runner's exact durable CommandAdmitted receipt; the app archive may still be catching up.
+ * Replaying the same immutable command id/payload is safe after a lost response.
  */
 export async function command(threadId: string, message: Command): Promise<EventEntry> {
   const { data, error } = await api.POST("/threads/{thread_id}/commands", {
     params: { path: { thread_id: threadId } },
     body: toJson(CommandSchema, message) as JsonObject,
-    signal: AbortSignal.timeout(COMMAND_TIMEOUT_MS),
   });
   if (error) throw new Error(displayableError(error));
   return fromJson(EventEntrySchema, data as JsonValue);

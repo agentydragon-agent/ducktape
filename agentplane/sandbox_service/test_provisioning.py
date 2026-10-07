@@ -107,6 +107,7 @@ async def api(case: Case, cluster: Cluster, tmp_path: Path) -> AsyncIterator[San
         audiences=(AUDIENCE,),
     )
     resources = Resources(
+        runner_admission_ack_timeout_s=1,
         principals=WorkloadPrincipalResolver(
             authentication=k8s_client.AuthenticationV1Api(cluster.api),
             audience=AUDIENCE,
@@ -120,7 +121,9 @@ async def api(case: Case, cluster: Cluster, tmp_path: Path) -> AsyncIterator[San
     token_file = tmp_path / "token"
     token_file.write_text(TOKEN)
     async with service(resources) as target:
-        client = SandboxServiceClient(target, namespace=NAMESPACE, token_file=token_file)
+        client = SandboxServiceClient(
+            target, namespace=NAMESPACE, token_file=token_file, command_admission_timeout_s=20
+        )
         try:
             yield client
         finally:
