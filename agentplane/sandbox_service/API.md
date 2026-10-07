@@ -148,8 +148,8 @@ kebab-case CLI flags. Required settings are `sandbox_namespace` and
 `token_audience` defaults to `agentplane-sandbox-service`. Kubernetes access is in-cluster unless `kubeconfig` is supplied.
 
 `port` defaults to 8080 for gRPC. `health_port` defaults to 8081 for unauthenticated HTTP `/healthz`;
-it is liveness, not proof that Kubernetes or a particular destination is ready. Admission requests
-are bounded by `admission_timeout_s` (default 15); management by `lifecycle_timeout_s` (default 300);
+it is liveness, not proof that Kubernetes or a particular destination is ready. Command submissions are bounded by `command_admission_timeout_s` (default 300), separate from
+the short `admission_timeout_s` (default 15) for other requests and FollowSession writes; management by `lifecycle_timeout_s` (default 300);
 follow leases by `follow_lease_s` (default and configured maximum 900 seconds / 15 minutes).
 The client whole-follow safety deadline defaults to 960 seconds / 16 minutes; initial attachment
 still uses the short request timeout. Renewal repeats TokenReview and destination admission; it

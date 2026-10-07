@@ -40,12 +40,18 @@ class Resources:
     caller_accounts: frozenset[ServiceAccountRef]
     platform_instructions: str
     admission_timeout_s: float = 15
+    command_admission_timeout_s: float = 300
     follow_lease_s: float = 900
     lifecycle_timeout_s: float = 300
     runner_grpc_channel_options: dict[str, int | str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if min(self.admission_timeout_s, self.follow_lease_s, self.lifecycle_timeout_s) <= 0:
+        if min(
+            self.admission_timeout_s,
+            self.command_admission_timeout_s,
+            self.follow_lease_s,
+            self.lifecycle_timeout_s,
+        ) <= 0:
             raise ValueError("timeouts must be positive")
         if not self.caller_accounts:
             raise ValueError("at least one service caller is required")
@@ -256,7 +262,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     async def SubmitCommand(
         self, request: protocol_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
     ) -> event_log_pb2.EventEntry:
-        async with self.request(context):
+        async with self.request(context, timeout_s=self.resources.command_admission_timeout_s):
             destination = request.destination
             if (
                 not destination.session_id
@@ -270,7 +276,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     destination.session_id,
                     request.command,
                     after_cursor=request.follow.after_cursor,
-                    timeout_s=self.resources.admission_timeout_s,
+                    timeout_s=self.resources.command_admission_timeout_s,
                 )
 
     # mypy-protobuf omits aio's supported writer-style streaming handlers. Explicit writes are

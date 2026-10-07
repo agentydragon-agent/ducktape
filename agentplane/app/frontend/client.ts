@@ -308,12 +308,12 @@ export async function models(): Promise<ModelCatalog> {
 }
 
 /**
- * Above the server's own bound: two sequential `COMMAND_ADMISSION_S` (15 s) waits, for runner
- * admission and then for its archive copy (`agentplane/app/threads/bridge.py`). The
+ * Above the app's default 300-second command submission budget (runner admission and
+ * archive catch-up share one deadline in `agentplane/app/threads/bridge.py`). The
  * clock also runs while the browser queues the request for a free connection, so a queued or hung
  * request surfaces as a failed attempt rather than waiting silently forever.
  */
-const COMMAND_TIMEOUT_MS = 45_000;
+const COMMAND_TIMEOUT_MS = 330_000;
 
 /**
  * The saved command boundary: this is the exact archived CommandAdmitted EventEntry, not a

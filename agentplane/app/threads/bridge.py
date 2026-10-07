@@ -23,7 +23,7 @@ from agentplane.runner.errors import RunnerError
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
-COMMAND_ADMISSION_S = 15
+COMMAND_ADMISSION_S = 300
 ADMISSION_REREAD_S = 2
 
 
@@ -34,9 +34,9 @@ class MalformedMessageError(Exception):
 class RunnerAdmissionTimeoutError(Exception):
     """Command admission was not confirmed before the deadline; its outcome is uncertain."""
 
-    def __init__(self, command_id: str) -> None:
+    def __init__(self, command_id: str, timeout_s: float = COMMAND_ADMISSION_S) -> None:
         super().__init__(
-            f"admission of command {command_id!r} was not confirmed within {COMMAND_ADMISSION_S} seconds; outcome uncertain"
+            f"admission of command {command_id!r} was not confirmed within {timeout_s:g} seconds; outcome uncertain"
         )
 
 
@@ -58,11 +58,15 @@ class RunnerBridge:
         content: ContentStore,
         ingester: Ingester,
         thread_changes: Changes,
+        command_admission_timeout_s: float = COMMAND_ADMISSION_S,
     ) -> None:
         self._runners = runners
         self._event_logs = event_logs
         self._content = content
         self._ingester = ingester
+        if command_admission_timeout_s <= 0:
+            raise ValueError("command admission timeout must be positive")
+        self._command_admission_timeout_s = command_admission_timeout_s
         self._thread_changes = thread_changes
 
     async def list_sessions(self, sandbox: str) -> list[protocol_pb2.SessionSummary]:
@@ -97,7 +101,7 @@ class RunnerBridge:
         # previous harness ended. Commands remain runner-first; this only synchronizes Open.
         waiter = asyncio.Event()
         with self._thread_changes.subscribe(waiter):
-            async with asyncio.timeout(15):
+            async with asyncio.timeout(self._command_admission_timeout_s):
                 while True:
                     waiter.clear()
                     if await self._event_logs.last_cursor(thread_id) >= attached.last_cursor:
@@ -148,15 +152,16 @@ class RunnerBridge:
         # Start its feed before relaying so the rejection path cannot strand that prefix.
         await self._ingester.start()
         try:
-            await self._command(
-                runner_session.sandbox,
-                runner_session.session_id,
-                command,
-                after_cursor=await self._event_logs.last_cursor(thread_id),
-            )
-            return await self._wait_for_admission(thread_id, command)
+            async with asyncio.timeout(self._command_admission_timeout_s):
+                await self._command(
+                    runner_session.sandbox,
+                    runner_session.session_id,
+                    command,
+                    after_cursor=await self._event_logs.last_cursor(thread_id),
+                )
+                return await self._wait_for_admission(thread_id, command)
         except TimeoutError as error:
-            raise RunnerAdmissionTimeoutError(command.command_id) from error
+            raise RunnerAdmissionTimeoutError(command.command_id, self._command_admission_timeout_s) from error
 
     async def _command(self, sandbox: str, session_id: str, command: command_pb2.Command, *, after_cursor: int) -> None:
         await self._runners.client(sandbox).command(session_id, command, after_cursor=after_cursor)
@@ -165,7 +170,7 @@ class RunnerBridge:
         """Wait for the ingester's committed prefix, never for a native command effect."""
         waiter = asyncio.Event()
         with self._thread_changes.subscribe(waiter):
-            async with asyncio.timeout(COMMAND_ADMISSION_S):
+            async with asyncio.timeout(self._command_admission_timeout_s):
                 while True:
                     if admitted := await self._content.admitted_command(thread_id, command):
                         return admitted

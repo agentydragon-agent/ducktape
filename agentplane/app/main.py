@@ -186,6 +186,7 @@ class Settings(AppSettingsConfig):
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
     )
     sandbox_service_target: str = Field(min_length=1)
+    command_admission_timeout_s: float = Field(default=300, gt=0)
     sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
     host: str = Field(default="127.0.0.1", description="Bind address.")
     port: int = Field(default=8080, description="Bind port.")
@@ -273,6 +274,7 @@ async def async_main(settings: Settings) -> None:
             namespace=settings.sandbox_namespace,
             token_file=settings.sandbox_service_token_file,
             channel_options=settings.sandbox_service_grpc_channel_options,
+            command_admission_timeout_s=settings.command_admission_timeout_s + 10,
         )
         egress = EgressAccess(EgressReader(namespace=settings.namespace, custom_objects=custom_objects), inventory)
         # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
@@ -301,6 +303,7 @@ async def async_main(settings: Settings) -> None:
             content=content,
             ingester=ingester,
             thread_changes=database_updates.changes[Channel.THREADS],
+            command_admission_timeout_s=settings.command_admission_timeout_s,
         )
 
         operator_actions = (
@@ -327,6 +330,7 @@ async def async_main(settings: Settings) -> None:
                     content,
                     event_logs=event_logs,
                     thread_changes=database_updates.changes[Channel.THREADS],
+            command_admission_timeout_s=settings.command_admission_timeout_s,
                 )
                 if settings.electric_url is not None
                 else None

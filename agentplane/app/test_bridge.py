@@ -1539,3 +1539,34 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+async def test_command_archive_wait_uses_configured_budget(
+    bridge: RunnerBridge, event_logs: EventLogStore
+) -> None:
+    thread = await event_logs.open(
+        SANDBOX,
+        SESSION,
+        protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/state/work", model="bridge-model"),
+    )
+    bridge._command_admission_timeout_s = 0.02
+    command = command_pb2.Command(command_id="pending-admission", interrupt_turn=command_pb2.InterruptTurn(turn_id="turn"))
+    with pytest.raises(TimeoutError):
+        await bridge._wait_for_admission(thread, command)
+
+async def test_command_budget_covers_runner_rpc(
+    bridge: RunnerBridge, event_logs: EventLogStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    thread = await event_logs.open(
+        SANDBOX,
+        SESSION,
+        protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/state/work", model="bridge-model"),
+    )
+    bridge._command_admission_timeout_s = 0.02
+
+    async def stalled_command(*_args: object, **_kwargs: object) -> None:
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(bridge, "_command", stalled_command)
+    command = command_pb2.Command(command_id="pending-runner", interrupt_turn=command_pb2.InterruptTurn(turn_id="turn"))
+    with pytest.raises(RunnerAdmissionTimeoutError, match="outcome uncertain"):
+        await bridge.command(thread, command)

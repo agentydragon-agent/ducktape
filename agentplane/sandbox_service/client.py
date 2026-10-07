@@ -86,9 +86,10 @@ class SandboxServiceClient:
         request_timeout_s: float = 20,
         lifecycle_timeout_s: float = 310,
         follow_timeout_s: float = 960,
+        command_admission_timeout_s: float = 310,
         channel_options: Mapping[str, int | str] | None = None,
     ) -> None:
-        if min(request_timeout_s, lifecycle_timeout_s, follow_timeout_s) <= 0:
+        if min(request_timeout_s, lifecycle_timeout_s, follow_timeout_s, command_admission_timeout_s) <= 0:
             raise ValueError("timeouts must be positive")
         self.target = target
         self.namespace = namespace
@@ -96,6 +97,7 @@ class SandboxServiceClient:
         self.request_timeout_s = request_timeout_s
         self.lifecycle_timeout_s = lifecycle_timeout_s
         self.follow_timeout_s = follow_timeout_s
+        self.command_admission_timeout_s = command_admission_timeout_s
         self._channel_options = channel_options
         self._channel: grpc.aio.Channel | None = None
         self._stub: protocol_pb2_grpc.SandboxServiceAsyncStub | None = None
@@ -219,6 +221,7 @@ class Runner:
                 command=command,
                 follow=event_log_pb2.Follow(after_cursor=after_cursor),
             ),
+            timeout_s=self.service.command_admission_timeout_s,
         )
         if not receipt.event.HasField("command_admitted") or receipt.event.command_admitted.command != command:
             raise ConnectionError("Sandbox Service did not return the exact command admission")
@@ -230,6 +233,7 @@ class Runner:
                 destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
                 follow=event_log_pb2.Follow(after_cursor=after_cursor),
             ),
+            timeout_s=self.service.command_admission_timeout_s,
             metadata=await self.service.metadata(),
             timeout=self.service.follow_timeout_s,
         )
