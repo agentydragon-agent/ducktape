@@ -3,10 +3,11 @@
 import json
 import re
 from textwrap import dedent
+
 from playwright.async_api import FloatRect, Locator, Page, expect
+
 from util.testing.page_capture import wait_for_stable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-
 
 _SCROLL = "[data-disclosure-demo-scroll]"
 

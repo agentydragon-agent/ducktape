@@ -29,7 +29,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
         "SnapshotDetail",
     ],
 )
-async def test_definition_detail(visual: VisualHarness, scene: str) -> None:
+async def test_fixture(visual: VisualHarness, scene: str) -> None:
     async with visual.open(scene, viewport=Viewport()) as view:
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.capture(scene, target=view.page.locator("#shot"))

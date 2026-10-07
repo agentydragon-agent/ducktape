@@ -231,6 +231,7 @@ filegroup(
 py_visual_test(
     name = "visual",
     size = "small",
+    args = ["-vv"],
     assets = [
         ":harness_bundle",
         ":visual_test_assets",

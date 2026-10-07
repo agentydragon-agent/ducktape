@@ -286,132 +286,73 @@ async def test_activity_disclosures(visual: VisualHarness, scene: str) -> None:
         await _capture(view, scene)
 
 
-async def test_session_viewer(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionViewer") as view:
+@pytest.mark.parametrize("scene", ["SessionViewer", "SessionViewer_dark", "SessionViewer_mobile"])
+async def test_session_viewer(visual: VisualHarness, scene: str) -> None:
+    async with _open(visual, scene) as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="tool-run"][data-tool-count="5"]')).to_be_attached()
         await expect(view.page.locator("[data-tool-run-toggle]").first).to_be_attached()
-        await _capture(view, "SessionViewer")
+        await _capture(view, scene)
 
 
-async def test_session_viewer_dark(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionViewer_dark") as view:
-        await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(view.page.locator('[data-fold-kind="tool-run"][data-tool-count="5"]')).to_be_attached()
-        await expect(view.page.locator("[data-tool-run-toggle]").first).to_be_attached()
-        await _capture(view, "SessionViewer_dark")
-
-
-async def test_session_viewer_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionViewer_mobile") as view:
-        await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(view.page.locator('[data-fold-kind="tool-run"][data-tool-count="5"]')).to_be_attached()
-        await expect(view.page.locator("[data-tool-run-toggle]").first).to_be_attached()
-        await _capture(view, "SessionViewer_mobile")
-
-
-async def test_session_tool_result(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionToolResult") as view:
+@pytest.mark.parametrize("scene", ["SessionToolResult", "SessionToolResult_mobile"])
+async def test_session_tool_result(visual: VisualHarness, scene: str) -> None:
+    async with _open(visual, scene) as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-tool-name="Read"]')).to_be_attached()
         await expect(view.page.locator("[data-tool-output-image]")).to_be_attached()
-        await _capture(view, "SessionToolResult")
+        await _capture(view, scene)
 
 
-async def test_session_tool_result_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionToolResult_mobile") as view:
-        await view.page.locator("[data-tool-run-toggle]").first.click()
-        await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
-        await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(view.page.locator('[data-tool-name="Read"]')).to_be_attached()
-        await expect(view.page.locator("[data-tool-output-image]")).to_be_attached()
-        await _capture(view, "SessionToolResult_mobile")
-
-
-async def test_session_read_file_result(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionReadFileResult") as view:
+@pytest.mark.parametrize("scene", ["SessionReadFileResult", "SessionReadFileResult_mobile"])
+async def test_session_read_file_result(visual: VisualHarness, scene: str) -> None:
+    async with _open(visual, scene) as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-tool-file-path="src/session-viewer.ts"]')).to_be_attached()
         await expect(view.page.locator("[data-tool-file-preview]")).to_be_attached()
-        await _capture(view, "SessionReadFileResult")
+        await _capture(view, scene)
 
 
-async def test_session_read_file_result_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionReadFileResult_mobile") as view:
-        await view.page.locator("[data-tool-run-toggle]").first.click()
-        await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
-        await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(view.page.locator('[data-tool-file-path="src/session-viewer.ts"]')).to_be_attached()
-        await expect(view.page.locator("[data-tool-file-preview]")).to_be_attached()
-        await _capture(view, "SessionReadFileResult_mobile")
-
-
-async def test_session_subagent(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionSubagent") as view:
+@pytest.mark.parametrize("scene", ["SessionSubagent", "SessionSubagent_mobile"])
+async def test_session_subagent(visual: VisualHarness, scene: str) -> None:
+    async with _open(visual, scene) as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-subagent-activity][data-subagent-tool-count="2"]')).to_be_attached()
         await expect(view.page.locator('[data-subagent-latest-tool="Grep"]')).to_be_attached()
-        await _capture(view, "SessionSubagent")
+        await _capture(view, scene)
 
 
-async def test_session_subagent_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionSubagent_mobile") as view:
-        await view.page.locator("[data-tool-run-toggle]").first.click()
-        await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
-        await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(view.page.locator('[data-subagent-activity][data-subagent-tool-count="2"]')).to_be_attached()
-        await expect(view.page.locator('[data-subagent-latest-tool="Grep"]')).to_be_attached()
-        await _capture(view, "SessionSubagent_mobile")
-
-
-async def test_session_peer_hold(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionPeerHold") as view:
+@pytest.mark.parametrize("scene", ["SessionPeerHold", "SessionPeerHold_mobile"])
+async def test_session_peer_hold(visual: VisualHarness, scene: str) -> None:
+    async with _open(visual, scene) as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="peer-message"][data-peer-from="plan-agent"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="peer-hold"][data-peer-state="held"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="peer-hold"][data-peer-state="dropped"]')).to_be_attached()
-        await _capture(view, "SessionPeerHold")
+        await _capture(view, scene)
 
 
-async def test_session_peer_hold_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionPeerHold_mobile") as view:
-        await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(view.page.locator('[data-fold-kind="peer-message"][data-peer-from="plan-agent"]')).to_be_attached()
-        await expect(view.page.locator('[data-fold-kind="peer-hold"][data-peer-state="held"]')).to_be_attached()
-        await expect(view.page.locator('[data-fold-kind="peer-hold"][data-peer-state="dropped"]')).to_be_attached()
-        await _capture(view, "SessionPeerHold_mobile")
-
-
-async def test_session_peer_message(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionPeerMessage") as view:
+@pytest.mark.parametrize("scene", ["SessionPeerMessage", "SessionPeerMessage_mobile"])
+async def test_session_peer_message(visual: VisualHarness, scene: str) -> None:
+    async with _open(visual, scene) as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(
             view.page.locator(
                 '[data-fold-kind="peer-message"][data-peer-from="review-agent"][data-peer-handback="true"]'
             )
         ).to_be_attached()
-        await _capture(view, "SessionPeerMessage")
+        await _capture(view, scene)
 
 
-async def test_session_peer_message_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionPeerMessage_mobile") as view:
-        await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(
-            view.page.locator(
-                '[data-fold-kind="peer-message"][data-peer-from="review-agent"][data-peer-handback="true"]'
-            )
-        ).to_be_attached()
-        await _capture(view, "SessionPeerMessage_mobile")
-
-
-async def test_session_local_command_rows(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionLocalCommandRows") as view:
+@pytest.mark.parametrize("scene", ["SessionLocalCommandRows", "SessionLocalCommandRows_mobile"])
+async def test_session_local_command_rows(visual: VisualHarness, scene: str) -> None:
+    async with _open(visual, scene) as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(
             view.page.locator('[data-fold-kind="context"][data-context-model="claude-sonnet-4-5"]')
@@ -419,40 +360,15 @@ async def test_session_local_command_rows(visual: VisualHarness) -> None:
         await expect(view.page.locator('[data-fold-kind="stats"][data-stats-state="data"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="usage"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="status"]')).to_be_attached()
-        await _capture(view, "SessionLocalCommandRows")
+        await _capture(view, scene)
 
 
-async def test_session_local_command_rows_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionLocalCommandRows_mobile") as view:
-        await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(
-            view.page.locator('[data-fold-kind="context"][data-context-model="claude-sonnet-4-5"]')
-        ).to_be_attached()
-        await expect(view.page.locator('[data-fold-kind="stats"][data-stats-state="data"]')).to_be_attached()
-        await expect(view.page.locator('[data-fold-kind="usage"]')).to_be_attached()
-        await expect(view.page.locator('[data-fold-kind="status"]')).to_be_attached()
-        await _capture(view, "SessionLocalCommandRows_mobile")
-
-
-async def test_session_sync(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionSync") as view:
+@pytest.mark.parametrize("scene", ["SessionSync", "SessionSync_paired_dark", "SessionSync_paired_mobile"])
+async def test_session_sync(visual: VisualHarness, scene: str) -> None:
+    async with _open(visual, scene) as view:
         await expect(view.page.locator("#overview-heading")).to_be_attached()
         await expect(view.page.locator("#pairing-heading")).to_be_attached()
-        await _capture(view, "SessionSync")
-
-
-async def test_session_sync_paired_dark(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionSync_paired_dark") as view:
-        await expect(view.page.locator("#overview-heading")).to_be_attached()
-        await expect(view.page.locator("#pairing-heading")).to_be_attached()
-        await _capture(view, "SessionSync_paired_dark")
-
-
-async def test_session_sync_paired_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, "SessionSync_paired_mobile") as view:
-        await expect(view.page.locator("#overview-heading")).to_be_attached()
-        await expect(view.page.locator("#pairing-heading")).to_be_attached()
-        await _capture(view, "SessionSync_paired_mobile")
+        await _capture(view, scene)
 
 
 if __name__ == "__main__":

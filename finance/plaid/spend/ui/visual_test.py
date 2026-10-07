@@ -403,9 +403,6 @@ async def test_spending_decision_render(page: Page, dashboard_url: str, width: i
     view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend decisions", output_suffix="")
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
-    await page.wait_for_timeout(1200)
-    normal = f"dashboard-{width}.png"
-    await view.capture(normal.removesuffix(".png"), label=f"{width}px available", full_page=True, animations="disabled")
     await page.get_by_text("$200", exact=True).wait_for()
     assert await page.get_by_role("heading", name="Flexible spending", level=1).count() == 1
     assert await page.get_by_role("alert").get_by_text("2 charges ($15) need review").count() == 1
@@ -422,6 +419,8 @@ async def test_spending_decision_render(page: Page, dashboard_url: str, width: i
     assert await page.get_by_text("Includes purchases outside the allowance", exact=False).count() == 1
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    normal = f"dashboard-{width}.png"
+    await view.capture(normal.removesuffix(".png"), label=f"{width}px available", full_page=True, animations="disabled")
     await page.get_by_label("Hypothetical flexible purchase").fill("250")
     await page.get_by_text("Over allowance", exact=True).last.wait_for()
     assert await page.get_by_text("-$50", exact=True).count() == 1

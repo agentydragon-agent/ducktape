@@ -41,25 +41,25 @@ def py_visual_test(
     if page_url != None and base_href != None:
         fail("py_visual_test(%s) sets page_url, which is its own base: drop base_href." % name)
 
-    sweep_env = dict(env)
-    sweep_env["HARNESS_PATH"] = "$(rlocationpath %s)" % harness
-    sweep_env["VISUAL_TITLE"] = title
+    visual_env = dict(env)
+    visual_env["HARNESS_PATH"] = "$(rlocationpath %s)" % harness
+    visual_env["VISUAL_TITLE"] = title
     if font_family:
-        sweep_env["EXPECTED_FONT_FAMILY"] = font_family
+        visual_env["EXPECTED_FONT_FAMILY"] = font_family
     if devtools_viewport:
-        sweep_env["DEVTOOLS_VIEWPORT"] = "1"
+        visual_env["DEVTOOLS_VIEWPORT"] = "1"
     if output_suffix != None:
-        sweep_env["OUTPUT_SUFFIX"] = output_suffix
+        visual_env["OUTPUT_SUFFIX"] = output_suffix
     if inline_page:
-        sweep_env["INLINE_PAGE"] = "1"
-        sweep_env["STYLESHEET_PATHS"] = " ".join(["$(rlocationpath %s)" % sheet for sheet in stylesheets])
+        visual_env["INLINE_PAGE"] = "1"
+        visual_env["STYLESHEET_PATHS"] = " ".join(["$(rlocationpath %s)" % sheet for sheet in stylesheets])
         if base_href != None:
-            sweep_env["BASE_HREF"] = base_href
+            visual_env["BASE_HREF"] = base_href
         if page_url != None:
-            sweep_env["PAGE_URL"] = page_url
+            visual_env["PAGE_URL"] = page_url
 
     if served_documents:
-        sweep_env["SERVED_DOCUMENTS"] = json.encode(
+        visual_env["SERVED_DOCUMENTS"] = json.encode(
             {url: "$(rlocationpath %s)" % document for url, document in served_documents.items()},
         )
 
@@ -69,7 +69,7 @@ def py_visual_test(
         srcs = test_srcs,
         data = assets + stylesheets + served_documents.values() + [harness] +
                ([fonts] if fonts != None else []),
-        env = sweep_env,
+        env = visual_env,
         tags = tags + ["visual"],
         deps = [
             "//:conftest",

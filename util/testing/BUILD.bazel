@@ -305,8 +305,8 @@ py_library(
 
 py_library(
     name = "gnome",
-    visibility = ["//visibility:public"],
     srcs = ["gnome.py"],
+    visibility = ["//visibility:public"],
     deps = [
         "@pypi//docker",
         "@pypi//pillow",
@@ -315,8 +315,8 @@ py_library(
 
 py_library(
     name = "stable_capture",
-    visibility = ["//visibility:public"],
     srcs = ["stable_capture.py"],
+    visibility = ["//visibility:public"],
     deps = [
         ":page_capture",
         "@pypi//playwright",

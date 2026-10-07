@@ -335,6 +335,7 @@ filegroup(
 
 py_visual_test(
     name = "visual",
+    args = ["-vv"],
     size = "small",
     assets = [
         "harness/index.html",

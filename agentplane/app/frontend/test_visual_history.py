@@ -2,12 +2,23 @@
 
 import re
 from textwrap import dedent
+
 import pytest
 from playwright.async_api import expect
+
+from agentplane.app.frontend.visual_assertions import (
+    _focus,
+    _in_viewport,
+    _open_debug_history,
+    _open_recovery_details,
+    _open_run,
+    _open_tool_run,
+    _rollout_geometry,
+    _rollout_start,
+)
 from agentplane.app.frontend.visual_pages import capture_scene, open_scene
 from util.testing.page_capture import wait_for_stable
 from util.testing.visual_capture import VisualHarness
-from agentplane.app.frontend.visual_assertions import _focus, _in_viewport, _open_debug_history, _open_recovery_details, _open_run, _open_tool_run, _rollout_geometry, _rollout_start
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 

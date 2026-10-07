@@ -2,10 +2,27 @@
 
 import pytest
 from playwright.async_api import expect
+
+from agentplane.app.frontend.visual_assertions import (
+    _INNER,
+    _MAIN,
+    _OUTER,
+    _OUTPUT,
+    _SCROLL,
+    _box,
+    _expect_at,
+    _expect_released,
+    _focus,
+    _heading_top,
+    _height,
+    _in_viewport,
+    _open_tool_run,
+    _scroll_to,
+    _scroll_to_copy,
+)
 from agentplane.app.frontend.visual_pages import capture_scene, open_scene
 from util.testing.page_capture import wait_for_stable
 from util.testing.visual_capture import VisualHarness
-from agentplane.app.frontend.visual_assertions import _INNER, _MAIN, _OUTER, _OUTPUT, _SCROLL, _box, _expect_at, _expect_released, _focus, _heading_top, _height, _in_viewport, _open_tool_run, _scroll_to, _scroll_to_copy
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 

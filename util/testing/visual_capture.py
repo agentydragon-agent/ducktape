@@ -82,7 +82,7 @@ class HarnessConfig:
 
     @classmethod
     def from_env(cls) -> HarnessConfig:
-        """What `py_visual_test` sets: runfiles paths (`rlocationpath`) of the bundle and the table, and the rest as is."""
+        """What `py_visual_test` sets: runfiles paths (`rlocationpath`) of harness assets and capture metadata."""
         return cls(
             harness_path=get_required_path(os.environ["HARNESS_PATH"]),
             title=os.environ["VISUAL_TITLE"],

@@ -104,7 +104,7 @@ async def wait_for_stable(page: Page) -> None:
     """Wait until the page is done rendering what it has: fonts applied, images decoded, a frame painted.
 
     Finishes as soon as those hold, and cannot pass early on a loaded runner the way a sleep can.
-    Deliberately does not await `document.getAnimations()`: the sweep pins every animation with
+    Deliberately does not await `document.getAnimations()`: harness pages pin animations with
     `animation-play-state: paused`, and a paused animation's `finished` never settles, so awaiting it
     would hang instead of capturing.
 

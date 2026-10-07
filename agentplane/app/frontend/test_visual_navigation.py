@@ -1,12 +1,14 @@
 """Agentplane navigation visual behavior tests."""
 
 import re
+
 import pytest
 from playwright.async_api import expect
+
+from agentplane.app.frontend.visual_assertions import _assert_phone_composer_layout
 from agentplane.app.frontend.visual_pages import capture_scene, open_scene
 from util.testing.page_capture import wait_for_stable
 from util.testing.visual_capture import VisualHarness
-from agentplane.app.frontend.visual_assertions import _assert_phone_composer_layout
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 

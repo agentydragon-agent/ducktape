@@ -1301,7 +1301,14 @@ py_visual_test(
         "@pypi//pytest_bazel",
     ],
     test_module = "agentplane.app.frontend.test_visual_interactions",
-    test_srcs = ["test_visual_interactions.py", "test_visual_scenes.py", "test_visual_disclosures.py", "test_visual_history.py", "test_visual_policies.py", "test_visual_navigation.py"],
+    test_srcs = [
+        "test_visual_disclosures.py",
+        "test_visual_history.py",
+        "test_visual_interactions.py",
+        "test_visual_navigation.py",
+        "test_visual_policies.py",
+        "test_visual_scenes.py",
+    ],
     title = "Agentplane",
 )
 

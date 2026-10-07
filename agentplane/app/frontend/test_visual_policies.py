@@ -1,12 +1,21 @@
 """Agentplane policies visual behavior tests."""
 
 import re
+
 import pytest
 from playwright.async_api import expect
+
+from agentplane.app.frontend.visual_assertions import (
+    _assert_phone_composer_layout,
+    _focus,
+    _in_viewport,
+    _open_raw_switches,
+    _open_select,
+    _select_reconnect,
+)
 from agentplane.app.frontend.visual_pages import capture_scene, open_scene
 from util.testing.page_capture import wait_for_stable
 from util.testing.visual_capture import VisualHarness
-from agentplane.app.frontend.visual_assertions import _assert_phone_composer_layout, _focus, _in_viewport, _open_raw_switches, _open_select, _select_reconnect
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
