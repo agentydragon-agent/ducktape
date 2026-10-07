@@ -24,9 +24,6 @@ Proposed execution order for the Thread correctness/UI track:
   (`ADMISSION_DEADLINE_BUDGET`, then `ADMISSION_UNCERTAIN_OUTCOME`). The staged submission
   indicator (`SUBMISSION_STAGE_INDICATOR`) follows them and shares its test changes with
   [#9063](https://github.com/agentydragon/ducktape/issues/9063).
-- **Targeted hosted Haku acceptance:** verify a fresh Haku Thread has its per-Thread
-  checkout (`THREAD_WORKSPACE_BOOTSTRAP`, [#8695](https://github.com/agentydragon/ducktape/issues/8695)).
-  This no longer gates the rest of the Thread correctness work.
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
 - **Unranked future harness capabilities:** project skills and commands, web search, visual input,
@@ -109,7 +106,7 @@ flowchart TB
     SANDBOX_VM_ISOLATION["Deferred provider integration<br/>selectable KubeVirt environments<br/>production service, gateway and lifecycle proof"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
-    THREAD_WORKSPACE_BOOTSTRAP["Targeted Haku acceptance<br/>fresh hosted Thread checkout<br/>per-Thread cwd; #8695"]:::future
+    THREAD_SETUP_PROGRESS["P2 Thread UI<br/>coalesce live setup stdout/stderr<br/>progress widget with raw detail"]:::future
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
@@ -300,14 +297,18 @@ ownership: an account's bindings must not fight a reconciler for the same object
 
 ## Named gates and acceptance evidence
 
-### `THREAD_WORKSPACE_BOOTSTRAP` — make Thread cwd and bootstrap ownership coherent
+### `THREAD_SETUP_PROGRESS` — coalesce live Thread setup output
 
-**Targeted remaining acceptance:** in a _fresh_ hosted Haku Sandbox using the current preset,
-verify a Thread starts in its own cwd with the expected `ducktape` checkout and can work there.
-Existing Sandboxes retain their saved bindings and do not prove new defaults. Setup failure,
-interruption, cwd override and multi-Thread isolation remain useful focused tests under
-[#8695](https://github.com/agentydragon/ducktape/issues/8695), but do not block unrelated
-Thread correctness work.
+**P2, observed during fresh Haku checkout:** setup currently renders each incoming stderr chunk
+as a separate “Setup stderr” block. A Git clone then fills the transcript with repeated
+“Cloning into ...” and “Updating files: N%” blocks rather than showing one progressing operation.
+Group consecutive setup output for the same setup run and stream into a live setup widget; render
+carriage-return and newline progress sensibly, including distinct clone steps, and expose an
+expandable raw stdout/stderr log for diagnostics. Preserve original archived events and ordering;
+do not silently hide warnings, nonzero exit status, or interrupted setup. On reconnect/replay,
+rebuild the same widget without duplicating chunks, and leave a useful final summary when setup
+finishes. Test incremental arrival, interleaved stdout/stderr, failure, and replay using the
+existing Thread event feed. This is presentation work, not a new setup protocol.
 
 ### `CLUSTER_BROWSER_ACCEPTANCE` — browser-driven acceptance in the cluster
 
