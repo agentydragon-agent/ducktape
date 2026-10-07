@@ -7,6 +7,7 @@ import pytest_bazel
 from agentplane.harness_tests.codex import frames, responses_sse as sse
 from agentplane.harness_tests.codex.harness import MODEL, CodexHarness
 from agentplane.harness_tests.codex.responses import OpenAIResponses
+from agentplane.harness_tests.model_endpoint import JsonResponse
 from agentplane.native.codex import wire
 from agentplane.native.codex.scenarios import MAX_RETRIES
 
@@ -100,6 +101,32 @@ async def test_retry_exhaustion_fails_the_turn_and_the_thread_accepts_the_next_i
         wire.TurnStatus.COMPLETED,
     ]
     frames.assert_success(captured, "POST_EXHAUSTION_FOLLOW_UP_OK")
+
+
+async def test_http_502_exhaustion_is_terminal_but_next_input_succeeds(
+    codex: CodexHarness, openai_responses: OpenAIResponses
+) -> None:
+    async with codex.start(openai_responses) as run:
+        first = await run.start_turn("Reply with exactly: HTTP_FAILURE")
+        for attempt in range(1 + MAX_RETRIES):
+            async with await openai_responses.await_next_request() as exchange:
+                assert exchange.request.messages("user")[-1].text == "Reply with exactly: HTTP_FAILURE"
+                await exchange.respond(
+                    JsonResponse(b'{"error":{"type":"server_error","message":"scripted upstream failure"}}', status=502)
+                )
+            if attempt < MAX_RETRIES:
+                assert (await first.error()).params.will_retry
+        assert (await first.completed()).params.turn.status is wire.TurnStatus.FAILED
+        assert run.running
+        second = await run.start_turn("Reply with exactly: HTTP_FOLLOW_UP_OK")
+        async with await openai_responses.await_next_request() as exchange:
+            assert exchange.request.messages("user")[-1].text == "Reply with exactly: HTTP_FOLLOW_UP_OK"
+            await exchange.send(*sse.response_stream([sse.Message("HTTP_FOLLOW_UP_OK")], model=MODEL).events)
+        assert (await second.completed()).params.turn.status is wire.TurnStatus.COMPLETED
+    assert [turn.status for turn in frames.completed_turns(run.native_frames())] == [
+        wire.TurnStatus.FAILED,
+        wire.TurnStatus.COMPLETED,
+    ]
 
 
 if __name__ == "__main__":

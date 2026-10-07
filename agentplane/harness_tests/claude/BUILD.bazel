@@ -104,6 +104,7 @@ py_test(
         ":messages",
         "//:conftest",
         "//agentplane/harness_tests:conftest",
+        "//agentplane/harness_tests:model_endpoint",
         "//agentplane/native/claude:scenarios",
         "@pypi//pytest_bazel",
     ],

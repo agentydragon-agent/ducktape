@@ -98,6 +98,7 @@ py_test(
         ":responses_sse",
         "//:conftest",
         "//agentplane/harness_tests:conftest",
+        "//agentplane/harness_tests:model_endpoint",
         "//agentplane/native/codex:scenarios",
         "//agentplane/native/codex:wire",
         "@pypi//pytest_bazel",
