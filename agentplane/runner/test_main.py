@@ -41,6 +41,30 @@ def test_an_empty_value_is_a_set_variable_not_an_inherited_one() -> None:
     assert child == {"TEST_SET": ""}
 
 
+def test_an_inherited_name_comes_from_the_image_that_owns_it() -> None:
+    """The deployment names a variable whose value it never sees: the image set TZDIR, the runner
+    holds it, and the child starts with it."""
+    child = harness_environment({"TZDIR": "/usr/share/zoneinfo"}, declared=[], inherited=["TZDIR"])
+    assert child == {"TZDIR": "/usr/share/zoneinfo"}
+
+
+def test_an_inherited_name_the_runner_lacks_is_absent_rather_than_invented() -> None:
+    assert harness_environment({}, declared=[], inherited=["TZDIR"]) == {}
+
+
+def test_a_deployment_still_overrides_an_inherited_name() -> None:
+    """Naming a name forwards it; setting it wins, whichever order the two flags are read in."""
+    child = harness_environment({"TZDIR": "/from/image"}, declared=["TZDIR=/from/deployment"], inherited=["TZDIR"])
+    assert child["TZDIR"] == "/from/deployment"
+
+
+def test_an_inherited_name_must_be_bare() -> None:
+    """A value belongs on --harness-env; silently reading `NAME=value` as a name would forward
+    nothing and set nothing."""
+    with pytest.raises(ValueError, match="takes a bare NAME"):
+        harness_environment({}, declared=[], inherited=["TZDIR=/usr/share/zoneinfo"])
+
+
 def test_model_context_windows_are_optional_runner_owned_configuration() -> None:
     assert parse_model_context_windows(None) == {}
     assert parse_model_context_windows('{"qwen-128": 131072, "qwen-256": 262144}') == {
