@@ -275,6 +275,7 @@ py_library(
     deps = [
         ":page_capture",
         ":undeclared_outputs",
+        ":viewports",
         ":visual_capture",
         "@pypi//playwright",
         "@pypi//pytest",

@@ -25,7 +25,7 @@ pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.visua
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_inline_action_review(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_pending_actions()
     await app.mount_thread(IDLE_THREAD)
@@ -37,7 +37,9 @@ async def test_inline_action_review(view: VisualPage, app: AgentplaneFixture) ->
     await view.capture()
 
 
-async def test_inline_action_review_scrolls_to_decisions_actions_attention_composer_long_desktop(view: VisualPage, app: AgentplaneFixture) -> None:
+async def test_inline_action_review_scrolls_to_decisions_actions_attention_composer_long_desktop(
+    view: VisualPage, app: AgentplaneFixture
+) -> None:
     await app.show_pending_actions()
     await app.long_pending_action()
     await app.mount_thread(IDLE_THREAD)
@@ -53,8 +55,10 @@ async def test_inline_action_review_scrolls_to_decisions_actions_attention_compo
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
-async def test_inline_action_review_scrolls_to_decisions_actions_attention_composer_long_phone(view: VisualPage, app: AgentplaneFixture) -> None:
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+async def test_inline_action_review_scrolls_to_decisions_actions_attention_composer_long_phone(
+    view: VisualPage, app: AgentplaneFixture
+) -> None:
     await app.show_pending_actions()
     await app.long_pending_action()
     await app.mount_thread(IDLE_THREAD)
@@ -82,7 +86,7 @@ async def test_actions_raw_switches(view: VisualPage, app: AgentplaneFixture) ->
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_sandbox_status_raw_switches(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=status")
     await view.check(context="fixture ready")
@@ -101,7 +105,7 @@ async def test_connections_settings_modal_connections(view: VisualPage, app: Age
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_connections_settings_modal_connections_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     await view.check(context="fixture ready")
@@ -122,7 +126,7 @@ async def test_consent_reconnect_warning_desktop(view: VisualPage, app: Agentpla
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_pending_actions()
     await app.mount_app("/actions")
@@ -136,7 +140,7 @@ async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) 
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_action_history_diagram(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_pending_actions()
     await app.mount_app("/actions")
@@ -171,9 +175,7 @@ async def test_action_history_paging_control(view: VisualPage, app: AgentplaneFi
     page = view.page
     load_more = page.get_by_test_id("action-history-load-more")
     await expect(load_more).to_have_text("Load more")
-    await page.locator(".agentplane-shell-main").evaluate(
-        "element => { element.scrollTop = element.scrollHeight; }"
-    )
+    await page.locator(".agentplane-shell-main").evaluate("element => { element.scrollTop = element.scrollHeight; }")
     await wait_for_stable(page)
     # The scroll extent can grow after the first move. Bring the control into view after
     # that layout settles, then verify the final captured state.
@@ -183,21 +185,31 @@ async def test_action_history_paging_control(view: VisualPage, app: AgentplaneFi
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_mcp_servers_linked_and_expired(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/mcp-servers")
     await view.page.wait_for_selector("[data-mcp-server]", state="attached")
     await view.check(context="fixture ready")
     page = view.page
     await _in_viewport(page.locator('[data-mcp-server="linkage:example_docs"]').get_by_text("linked", exact=True))
-    await _in_viewport(
-        page.locator('[data-mcp-server="linkage:example_cluster"]').get_by_text("expired", exact=True)
-    )
+    await _in_viewport(page.locator('[data-mcp-server="linkage:example_cluster"]').get_by_text("expired", exact=True))
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize(('focus_key', 'focus_state', 'other_key', 'other_state', 'viewport'), [('linkage:example_pantry', 'unlinked', 'linkage:example_calendar', 'degraded', MOBILE), ('group:example_notes', 'available', 'group:example_mail', 'connect_failed', MOBILE)], ids=['linkage:example-pantry-unlinked-linkage:example-calendar-degraded-mobile', 'group:example-notes-available-group:example-mail-connect-failed-mobile'])
-async def test_mcp_servers_lower_statuses_mcp_servers_phone(view: VisualPage, app: AgentplaneFixture, focus_key: str, focus_state: str, other_key: str, other_state: str) -> None:
+@pytest.mark.parametrize(
+    ("focus_key", "focus_state", "other_key", "other_state", "viewport"),
+    [
+        ("linkage:example_pantry", "unlinked", "linkage:example_calendar", "degraded", MOBILE),
+        ("group:example_notes", "available", "group:example_mail", "connect_failed", MOBILE),
+    ],
+    ids=[
+        "linkage:example-pantry-unlinked-linkage:example-calendar-degraded-mobile",
+        "group:example-notes-available-group:example-mail-connect-failed-mobile",
+    ],
+)
+async def test_mcp_servers_lower_statuses_mcp_servers_phone(
+    view: VisualPage, app: AgentplaneFixture, focus_key: str, focus_state: str, other_key: str, other_state: str
+) -> None:
     await app.mount_app("/mcp-servers")
     await view.page.wait_for_selector("[data-mcp-server]", state="attached")
     await view.check(context="fixture ready")
@@ -215,20 +227,14 @@ async def test_mcp_servers_lower_statuses_mcp_servers(view: VisualPage, app: Age
     page = view.page
     focused = page.locator('[data-mcp-server="group:example_notes"]').get_by_text("available", exact=True)
     await _focus(page, focused)
-    await _in_viewport(
-        page.locator('[data-mcp-server="group:example_mail"]').get_by_text("connect_failed", exact=True)
-    )
+    await _in_viewport(page.locator('[data-mcp-server="group:example_mail"]').get_by_text("connect_failed", exact=True))
     # All lower states fit together at desktop width, so one focused image covers them.
-    await _in_viewport(
-        page.locator('[data-mcp-server="linkage:example_calendar"]').get_by_text("degraded", exact=True)
-    )
-    await _in_viewport(
-        page.locator('[data-mcp-server="linkage:example_pantry"]').get_by_text("unlinked", exact=True)
-    )
+    await _in_viewport(page.locator('[data-mcp-server="linkage:example_calendar"]').get_by_text("degraded", exact=True))
+    await _in_viewport(page.locator('[data-mcp-server="linkage:example_pantry"]').get_by_text("unlinked", exact=True))
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_consent_reconnect_warning_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/connection-enrollments/test-only-opaque-handle")
     await view.check(context="fixture ready")
@@ -239,7 +245,7 @@ async def test_consent_reconnect_warning_phone(view: VisualPage, app: Agentplane
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_consent_reconnect_decision_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/connection-enrollments/test-only-opaque-handle")
     await view.check(context="fixture ready")
@@ -252,7 +258,7 @@ async def test_consent_reconnect_decision_phone(view: VisualPage, app: Agentplan
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_action_policy_selector_hides_picked_option(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes?preset=public-coder")
     await view.page.wait_for_selector(".mantine-Pill-root", state="attached")
@@ -262,19 +268,17 @@ async def test_action_policy_selector_hides_picked_option(view: VisualPage, app:
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_egress_policy_selector_hides_picked_option(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes?preset=public-coder")
     await view.page.wait_for_selector('.mantine-Pill-root:has-text("github-public")', state="attached")
     await view.check(context="fixture ready")
     page = view.page
-    await _open_select(
-        page, label="Egress policies", available="pypi", picked="github-public", press_arrow_down=True
-    )
+    await _open_select(page, label="Egress policies", available="pypi", picked="github-public", press_arrow_down=True)
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_grant_selector_hides_picked_option(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes?preset=public-coder")
     await view.page.wait_for_selector(".mantine-Pill-root", state="attached")
@@ -284,7 +288,7 @@ async def test_grant_selector_hides_picked_option(view: VisualPage, app: Agentpl
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_sandbox_egress_pick_updates_options(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=egress&rules=ready-sandbox-github-public")
     await view.check(context="fixture ready")

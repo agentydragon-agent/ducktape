@@ -30,7 +30,7 @@ async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) 
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_mobile_navigation_drawer_threads_phone_drawer(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     await view.check(context="fixture ready")
@@ -41,21 +41,21 @@ async def test_mobile_navigation_drawer_threads_phone_drawer(view: VisualPage, a
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
-async def test_mobile_navigation_drawer_threads_failed_turn_phone_drawer(view: VisualPage, app: AgentplaneFixture) -> None:
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+async def test_mobile_navigation_drawer_threads_failed_turn_phone_drawer(
+    view: VisualPage, app: AgentplaneFixture
+) -> None:
     await app.failed_turn(after_content=False)
     await app.mount_app("/")
     await view.check(context="fixture ready")
     page = view.page
     await page.get_by_role("button", name="Toggle navigation").click()
     await expect(page.locator(".agentplane-sidebar-open")).to_be_visible()
-    await expect(
-        page.locator('.agentplane-thread-status-indicator[data-status="turn_error"]').first
-    ).to_be_visible()
+    await expect(page.locator('.agentplane-thread-status-indicator[data-status="turn_error"]').first).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_mobile_navigation_drawer_threads_provisioning_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.add_provisioning_sandbox()
     await app.mount_app("/")
@@ -67,7 +67,7 @@ async def test_mobile_navigation_drawer_threads_provisioning_phone(view: VisualP
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_mobile_navigation_drawer_threads_disconnected_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.disconnect_thread_stream()
     await app.age_outage(10000)
@@ -80,7 +80,7 @@ async def test_mobile_navigation_drawer_threads_disconnected_phone(view: VisualP
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_mobile_drawer_covers_thread_controls(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.standalone_reasoning(long_body=True)
     await app.mount_thread(IDLE_THREAD)
@@ -103,7 +103,7 @@ async def test_mobile_drawer_covers_thread_controls(view: VisualPage, app: Agent
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_mobile_drawer_covers_jump_to_latest(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.streaming_interleaved()
     await app.mount_thread(RUNNING_THREAD)
@@ -170,7 +170,7 @@ async def test_paused_claude_in_sandbox_details(view: VisualPage, app: Agentplan
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [SMALL_MOBILE], ids=['small-mobile'])
+@pytest.mark.parametrize("viewport", [SMALL_MOBILE], ids=["small-mobile"])
 async def test_phone_composer_controls_fit(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
@@ -179,7 +179,7 @@ async def test_phone_composer_controls_fit(view: VisualPage, app: AgentplaneFixt
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_composer_more_menu(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")

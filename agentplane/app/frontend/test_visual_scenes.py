@@ -2,7 +2,6 @@
 
 import pytest
 import pytest_bazel
-from playwright.async_api import expect
 
 from agentplane.app.frontend.visual_app import (
     DELETED_SANDBOX_THREAD,
@@ -21,7 +20,7 @@ pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.visua
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_session_recovery_messages(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.recovery("messages")
     await app.mount_thread(IDLE_THREAD)
@@ -50,21 +49,17 @@ async def test_session_error(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.failed_turn(after_content=False)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector('[data-thread-anchor="6"]', state="attached")
-    await view.page.wait_for_selector(
-        '.agentplane-thread-status-indicator[data-status="turn_error"]', state="attached"
-    )
+    await view.page.wait_for_selector('.agentplane-thread-status-indicator[data-status="turn_error"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_session_error_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.failed_turn(after_content=True)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector('[data-thread-anchor="8"]', state="attached")
-    await view.page.wait_for_selector(
-        '.agentplane-thread-status-indicator[data-status="turn_error"]', state="attached"
-    )
+    await view.page.wait_for_selector('.agentplane-thread-status-indicator[data-status="turn_error"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture()
 
@@ -100,7 +95,7 @@ async def test_threads(view: VisualPage, app: AgentplaneFixture) -> None:
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_threads_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     await view.check(context="fixture ready")
@@ -110,9 +105,7 @@ async def test_threads_phone(view: VisualPage, app: AgentplaneFixture) -> None:
 async def test_threads_failed_turn(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.failed_turn(after_content=False)
     await app.mount_app("/")
-    await view.page.wait_for_selector(
-        ".agentplane-thread-status-indicator[data-status='turn_error']", state="attached"
-    )
+    await view.page.wait_for_selector(".agentplane-thread-status-indicator[data-status='turn_error']", state="attached")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 
@@ -141,7 +134,7 @@ async def test_threads_watch_stale(view: VisualPage, app: AgentplaneFixture) -> 
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_sandboxes(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes")
     await view.check(context="fixture ready")
@@ -155,7 +148,7 @@ async def test_sandboxes_stale(view: VisualPage, app: AgentplaneFixture) -> None
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_actions_attention_composer_desktop(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_pending_actions()
     await app.mount_thread(IDLE_THREAD)
@@ -165,7 +158,7 @@ async def test_actions_attention_composer_desktop(view: VisualPage, app: Agentpl
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_actions(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_pending_actions()
     await app.mount_app("/actions")
@@ -195,21 +188,21 @@ async def test_actions_hidden_codepoints(view: VisualPage, app: AgentplaneFixtur
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_consent(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/connection-enrollments/test-only-opaque-handle")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_sandbox_status(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=status")
     await view.check(context="fixture ready")
@@ -223,14 +216,14 @@ async def test_sandbox_status_grant_error(view: VisualPage, app: AgentplaneFixtu
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_sandbox_policy(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=policy")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_session(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector('[data-thread-anchor="34"]', state="attached")
@@ -238,7 +231,7 @@ async def test_session(view: VisualPage, app: AgentplaneFixture) -> None:
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_session_deleted_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(DELETED_SANDBOX_THREAD)
     await view.page.wait_for_selector('[role="status"]', state="attached")
@@ -246,7 +239,7 @@ async def test_session_deleted_sandbox(view: VisualPage, app: AgentplaneFixture)
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_session_suspended_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(SUSPENDED_THREAD)
     await view.page.wait_for_selector(':text("Last observed Sandbox and Pod")', state="attached")
@@ -264,7 +257,7 @@ async def test_session_inventory_stale(view: VisualPage, app: AgentplaneFixture)
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_session_inventory_stale_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.stale_watch()
     await app.mount_thread(DELETED_SANDBOX_THREAD)
@@ -285,7 +278,7 @@ async def test_session_inventory_dropped(view: VisualPage, app: AgentplaneFixtur
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_session_inventory_dropped_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.disconnect_inventory_stream()
     await app.age_outage(90000)
@@ -296,7 +289,7 @@ async def test_session_inventory_dropped_phone(view: VisualPage, app: Agentplane
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_session_unnamed(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(UNNAMED_THREAD)
     await view.page.wait_for_selector('[data-thread-anchor="34"]', state="attached")
@@ -322,7 +315,7 @@ async def test_session_standalone_reasoning(view: VisualPage, app: AgentplaneFix
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_session_standalone_reasoning_preview(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.standalone_reasoning(long_preview=True)
     await app.mount_thread(IDLE_THREAD)
@@ -334,7 +327,7 @@ async def test_session_standalone_reasoning_preview(view: VisualPage, app: Agent
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_session_unfinished_reasoning(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.unfinished_reasoning()
     await app.mount_thread(IDLE_THREAD)
@@ -343,7 +336,7 @@ async def test_session_unfinished_reasoning(view: VisualPage, app: AgentplaneFix
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_session_reasoning_code_fence(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.standalone_reasoning(code_fence=True)
     await app.mount_thread(IDLE_THREAD)
@@ -359,9 +352,7 @@ async def test_session_states(view: VisualPage, app: AgentplaneFixture) -> None:
     await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
     await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="failed"]', state="attached")
     await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="noop"]', state="attached")
-    await view.page.wait_for_selector(
-        '.agentplane-thread-status-indicator[data-status="running"]', state="attached"
-    )
+    await view.page.wait_for_selector('.agentplane-thread-status-indicator[data-status="running"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture()
 
@@ -384,7 +375,7 @@ async def test_session_resume(view: VisualPage, app: AgentplaneFixture) -> None:
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [DESKTOP, MOBILE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_session_pending(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.pending_commands()
     await app.remember_pending_input()
@@ -417,7 +408,7 @@ async def test_session_pending_controls(view: VisualPage, app: AgentplaneFixture
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_session_command_outcomes_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.command_outcomes()
     await app.remember_settled_commands()
@@ -457,7 +448,7 @@ async def test_session_sync_reconnecting(view: VisualPage, app: AgentplaneFixtur
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_session_sync_reconnecting_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.disconnect_entity_stream()
     await app.age_outage(90000)
@@ -469,7 +460,7 @@ async def test_session_sync_reconnecting_phone(view: VisualPage, app: Agentplane
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_session_states_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")

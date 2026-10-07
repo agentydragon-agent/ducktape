@@ -42,10 +42,7 @@ def capture_name(request: pytest.FixtureRequest) -> str:
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def view(
-    visual: VisualHarness,
-    viewport: Viewport,
-    color_scheme: Literal["light", "dark"],
-    capture_name: str,
+    visual: VisualHarness, viewport: Viewport, color_scheme: Literal["light", "dark"], capture_name: str
 ) -> AsyncIterator[VisualPage]:
     """Isolated unnamed harness; pytest's case ID names the default screenshot.
 
@@ -53,7 +50,5 @@ async def view(
     configure the app and own readiness, interactions and explicit capture checkpoints.
     Multiple checkpoints must pass distinct names to capture().
     """
-    async with visual.open(
-        viewport=viewport, color_scheme=color_scheme, capture_name=capture_name
-    ) as page:
+    async with visual.open(viewport=viewport, color_scheme=color_scheme, capture_name=capture_name) as page:
         yield page

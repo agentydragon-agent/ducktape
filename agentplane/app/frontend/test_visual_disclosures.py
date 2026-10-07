@@ -32,7 +32,7 @@ pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.visua
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_collapsed_disclosure(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_disclosure(open=False)
     await view.page.wait_for_selector(
@@ -45,7 +45,7 @@ async def test_collapsed_disclosure(view: VisualPage, app: AgentplaneFixture) ->
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_short_disclosure_fits(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_disclosure(short=True)
     await view.page.wait_for_selector(
@@ -58,7 +58,7 @@ async def test_short_disclosure_fits(view: VisualPage, app: AgentplaneFixture) -
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_long_disclosure_before_sticking(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_disclosure()
     await view.page.wait_for_selector(
@@ -74,7 +74,7 @@ async def test_long_disclosure_before_sticking(view: VisualPage, app: Agentplane
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_long_disclosure_sticks(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_disclosure()
     await view.page.wait_for_selector(
@@ -87,7 +87,7 @@ async def test_long_disclosure_sticks(view: VisualPage, app: AgentplaneFixture) 
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_disclosure_releases_after_content(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_disclosure(following_section=True)
     await view.page.wait_for_selector("[data-demo-target='following-disclosure']", state="attached")
@@ -98,7 +98,7 @@ async def test_disclosure_releases_after_content(view: VisualPage, app: Agentpla
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_nested_parent_sticks_before_child(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_disclosure(nested=True)
     await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
@@ -114,7 +114,7 @@ async def test_nested_parent_sticks_before_child(view: VisualPage, app: Agentpla
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_nested_headings_stack(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_disclosure(nested=True)
     await view.page.wait_for_selector(
@@ -130,7 +130,7 @@ async def test_nested_headings_stack(view: VisualPage, app: AgentplaneFixture) -
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_wrapped_nested_headings_stack(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_disclosure(nested=True, wrapped_headings=True)
     await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
@@ -147,7 +147,7 @@ async def test_wrapped_nested_headings_stack(view: VisualPage, app: AgentplaneFi
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_nested_child_releases_behind_parent(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_disclosure(nested=True)
     await view.page.wait_for_selector(
@@ -166,7 +166,7 @@ async def test_nested_child_releases_behind_parent(view: VisualPage, app: Agentp
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_nested_parent_releases_after_content(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_disclosure(nested=True)
     await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
@@ -179,7 +179,7 @@ async def test_nested_parent_releases_after_content(view: VisualPage, app: Agent
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_output_heading_stacks_below_tool(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_disclosure(nested=True, tool_output=True, after_output=False)
     await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
@@ -199,7 +199,7 @@ async def test_output_heading_stacks_below_tool(view: VisualPage, app: Agentplan
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_output_heading_enters_below_tool(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_disclosure(nested=True, tool_output=True)
     await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
@@ -217,7 +217,7 @@ async def test_output_heading_enters_below_tool(view: VisualPage, app: Agentplan
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_collapsed_output_keeps_its_sticky_slot(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_disclosure(nested=True, tool_output=True, output_open=False, before_output=False)
     await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
@@ -234,7 +234,7 @@ async def test_collapsed_output_keeps_its_sticky_slot(view: VisualPage, app: Age
     await view.capture()
 
 
-@pytest.mark.parametrize('viewport', [MOBILE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_output_heading_releases_after_content(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_disclosure(nested=True, tool_output=True)
     await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
@@ -250,7 +250,29 @@ async def test_output_heading_releases_after_content(view: VisualPage, app: Agen
     await view.capture()
 
 
-@pytest.mark.parametrize(('state', 'viewport'), [('collapsed-hover', DESKTOP), ('collapsed-hover', MOBILE), ('expanded-hover', DESKTOP), ('expanded-hover', MOBILE), ('tool-hover', DESKTOP), ('tool-hover', MOBILE), ('expanded-focus', DESKTOP), ('expanded-focus', MOBILE)], ids=['collapsed-hover-desktop', 'collapsed-hover-mobile', 'expanded-hover-desktop', 'expanded-hover-mobile', 'tool-hover-desktop', 'tool-hover-mobile', 'expanded-focus-desktop', 'expanded-focus-mobile'])
+@pytest.mark.parametrize(
+    ("state", "viewport"),
+    [
+        ("collapsed-hover", DESKTOP),
+        ("collapsed-hover", MOBILE),
+        ("expanded-hover", DESKTOP),
+        ("expanded-hover", MOBILE),
+        ("tool-hover", DESKTOP),
+        ("tool-hover", MOBILE),
+        ("expanded-focus", DESKTOP),
+        ("expanded-focus", MOBILE),
+    ],
+    ids=[
+        "collapsed-hover-desktop",
+        "collapsed-hover-mobile",
+        "expanded-hover-desktop",
+        "expanded-hover-mobile",
+        "tool-hover-desktop",
+        "tool-hover-mobile",
+        "expanded-focus-desktop",
+        "expanded-focus-mobile",
+    ],
+)
 async def test_disclosure_control_reaches_card_edges(view: VisualPage, app: AgentplaneFixture, state: str) -> None:
     await app.shell_calls()
     await app.mount_thread(IDLE_THREAD)

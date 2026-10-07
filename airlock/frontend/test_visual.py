@@ -15,7 +15,9 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 @pytest.mark.parametrize("color_scheme", ["light", "dark"])
 @pytest.mark.parametrize("viewport", [Viewport(), Viewport(width=375, height=812)], ids=["desktop", "mobile"])
-async def test_oauth_consent(visual: VisualHarness, viewport: Viewport, color_scheme: Literal["light", "dark"], capture_name: str) -> None:
+async def test_oauth_consent(
+    visual: VisualHarness, viewport: Viewport, color_scheme: Literal["light", "dark"], capture_name: str
+) -> None:
     async with visual.open("OAuthPage", viewport=viewport, color_scheme=color_scheme) as view:
         await view.page.wait_for_selector('form[action^="/oauth/authorize/"] button', state="attached")
         await view.page.wait_for_selector("footer", state="attached")

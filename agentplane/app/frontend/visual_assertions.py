@@ -82,9 +82,7 @@ async def _rollout_run(view: VisualPage, position: str) -> None:
     steps = page.locator(".agentplane-run-steps").first
     if position == "start":
         static_title = await steps.locator(".agentplane-step-static .agentplane-step-title").first.bounding_box()
-        disclosure_title = await steps.locator(
-            ".agentplane-step-details .agentplane-step-title"
-        ).first.bounding_box()
+        disclosure_title = await steps.locator(".agentplane-step-details .agentplane-step-title").first.bounding_box()
         assert static_title is not None
         assert disclosure_title is not None
         assert abs(static_title["x"] - disclosure_title["x"]) <= 1, "plain and expandable steps must align"
