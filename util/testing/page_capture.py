@@ -5,8 +5,8 @@ context options, set by `frontend_visual.deterministic_browser_context`. What is
 records or waits for, and each recorder is a value the caller holds, so asserting on a page nobody
 instrumented cannot be written.
 
-Loading content and orchestrating several shots stay with the caller: `visual_sweep` for a table of
-harness scenes, a bespoke driver for anything else.
+Loading content and orchestrating shots stay with the test. `visual_capture` combines these
+primitives with deterministic page lifecycles and visual-review publication.
 """
 
 from __future__ import annotations

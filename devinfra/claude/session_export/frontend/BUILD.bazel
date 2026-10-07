@@ -1,3 +1,4 @@
+# gazelle:exclude test_visual.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
@@ -340,8 +341,17 @@ py_visual_test(
         ":visual_harness_css",
     ],
     harness = ":visual_harness_js",
-    scenarios = "harness/scenarios.json",
     shard_count = 2,
+    test_module = "devinfra.claude.session_export.frontend.test_visual",
+    test_srcs = ["test_visual.py"],
+    test_deps = [
+        "//util/testing:page_capture",
+        "//util/testing:visual_capture",
+        "//util/testing:viewports",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
     title = "Claude session sync",
 )
 

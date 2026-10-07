@@ -1,3 +1,4 @@
+# gazelle:exclude test_visual.py
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
@@ -279,7 +280,15 @@ py_visual_test(
     font_family = "Outfit",
     fonts = ":casino_fonts",
     harness = ":visual_harness_js",
-    scenarios = "tests/harness/scenarios.json",
     shard_count = 2,
+    test_module = "study_casino.frontend.test_visual",
+    test_srcs = ["test_visual.py"],
+    test_deps = [
+        "//util/testing:visual_capture",
+        "//util/testing:viewports",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
     title = "Study Casino",
 )

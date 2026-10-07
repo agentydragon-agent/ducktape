@@ -6,7 +6,6 @@ import { createRoot } from "react-dom/client";
 
 import App from "../App";
 import type { DeploymentInfo, OAuthProviderStatus } from "../types";
-import SCENARIOS from "./scenarios.json";
 
 const DEPLOYMENT_INFO: DeploymentInfo = {
   image_tag: "devel-20260529194300-3b9e37c",
@@ -68,7 +67,7 @@ const scenarioName = params.get("page");
 const appElement = document.getElementById("app");
 if (!appElement) throw new Error("No #app element");
 
-const showApp = scenarioName !== null && Object.prototype.hasOwnProperty.call(SCENARIOS, scenarioName);
+const showApp = scenarioName === "OAuthPage";
 if (showApp) {
   window.fetch = async (input: RequestInfo | URL): Promise<Response> => {
     const requestUrl = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
@@ -84,6 +83,6 @@ if (showApp) {
 
 createRoot(appElement).render(
   <MantineProvider defaultColorScheme="auto">
-    {showApp ? <App /> : <HarnessIndex pages={Object.keys(SCENARIOS)} error={scenarioName} />}
+    {showApp ? <App /> : <HarnessIndex pages={["OAuthPage"]} error={scenarioName} />}
   </MantineProvider>
 );

@@ -31,7 +31,7 @@ from util.testing.page_capture import (
     wait_for_stable,
 )
 from util.testing.visual_review import publish_review_png
-from util.testing.visual_scenarios import Viewport
+from util.testing.viewports import Viewport
 
 # `document.fonts.check` is true for a family no `@font-face` declares, so on its own it passes when the
 # stylesheet declaring the font never arrived (or the name is misspelled) and the page renders in a fallback.

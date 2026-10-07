@@ -1,15 +1,4 @@
-"""How a package declares its Playwright visual-render sweep.
-
-One `py_visual_test` per frontend. The package contributes
-its harness page and a `scenarios.json`; the sweep (`//util/testing:visual_sweep`) is the default test.
-A package with interaction-heavy scenes can provide a Python main module that also collects the
-sweep. The macro carries what no caller should have to know: the
-environment the sweep reads, and the `visual` tag that lets the weekly determinism sweep and the PR
-visual job find these targets by query instead of by a hand-maintained roster.
-
-The browser needs no wiring: `//util/testing:frontend_visual` puts the pinned headless shell in the
-test's runfiles.
-"""
+"""Bazel wiring for package-owned Python visual tests."""
 
 load("//devinfra/python:defs.bzl", "py_test")
 
@@ -17,7 +6,7 @@ def py_visual_test(
         name,
         harness,
         title,
-        scenarios = None,
+        test_module,
         assets = [],
         fonts = None,
         font_family = None,
@@ -28,58 +17,18 @@ def py_visual_test(
         base_href = None,
         page_url = None,
         served_documents = {},
-        test_module = None,
         test_srcs = [],
         test_deps = [],
         env = {},
         tags = [],
         **kwargs):
-    """A scenario sweep: one fresh browser and one PNG per row of `scenarios`.
+    """Run Python tests with hermetic browser assets and visual-review metadata.
 
-    Args:
-      name: target name; `visual` by convention, so `//pkg/frontend:visual` names the sweep. A
-        `py_test`'s executable is `<package>/<name>`, so a package with a `visual/` directory of
-        harness sources cannot use it: the directory's outputs (`visual/dist/harness.js`) would sit
-        under the executable's path. Name the directory something else (`harness/`).
-      harness: the bundled harness page's JS. The page is the `index.html` beside it, or beside its
-        `dist/` directory.
-      scenarios: the scenario table, a JSON file (see `//util/testing:visual_scenarios`) shared with
-        the harness, or generated from the data the harness already consumes when its rows derive
-        from it. The only list of scenarios: BUILD names a shard count, not a scenario, and
-        `--test_filter=<scenario>` runs one.
-      title: title of the published visual-review manifest.
-      assets: everything else the harness page pulls over `file://`: its `index.html`, any
-        stylesheet, the bundle rule itself.
-      fonts: optional app-owned font filegroup the harness serves alongside its assets.
-      font_family: optional named family, which the harness's stylesheet must declare with an
-        `@font-face` and which must have loaded. Required with `fonts`, so a custom font asset
-        cannot be staged without declaring its purpose.
-      output_suffix: what follows a scenario's output name in its PNG's file name; `-actual` if
-        unset. A lane migrating from a runner that wrote bare `<name>.png` sets `""`, so its images
-        keep their names in PR visual review.
-      inline_page: load the harness as a document assembled in memory (`set_content`) from the
-        bundle, `stylesheets` and the scenario's `windowGlobals`, not as the `index.html` beside the
-        bundle. The page then has no origin: the request fence allows nothing, not even `file://`.
-        `harness` may be an esbuild `output_dir`, and `assets` is not needed.
-      stylesheets: with `inline_page`, the CSS files inlined into the document, in order.
-      base_href: with `inline_page`, the document's `<base href>`, for a harness that parses relative
-        URLs its stubbed `fetch` never sends.
-      page_url: with `inline_page`, serve the document at this URL instead of loading it with
-        `set_content`, so the page has that origin: `localStorage`, `location`, a cross-origin frame. The
-        URL is the document's base too, so `base_href` is not also set.
-      served_documents: URL prefix to the HTML file the request fence answers a request under it with,
-        for a shell that frames another origin (the harness mocks that origin's document). Any other
-        request still fails the scenario.
-      test_module: optional package-owned Python main module that collects the generic sweep test
-        and named interaction tests under the same visual target.
-      test_srcs: source files for `test_module`.
-      test_deps: direct dependencies of `test_module` beyond the generic sweep.
-      devtools_viewport: emulate and capture each viewport over the DevTools protocol
-        (`DevtoolsViewport`), so a lane keeps its published images byte-identical at a device scale
-        factor where Playwright's own viewport differs.
-      env: extra environment for the sweep.
-      tags: extra tags; `visual` is always added.
-      **kwargs: passed to `py_test` -- `size` and `shard_count` in practice.
+    `test_module` is a pytest_bazel entry point. Harness assets are runfiles, not an
+    instruction table; the test owns selection, actions, assertions and capture.
+    `inline_page` assembles the bundle and stylesheets in memory. `page_url` gives
+    that document an origin; `served_documents` supplies mocked iframe documents.
+    `devtools_viewport` preserves existing device-pixel viewport captures.
     """
     if fonts != None and font_family == None:
         fail("py_visual_test(%s) brings its own fonts, so it must name the font_family they force; " % name +
@@ -94,8 +43,6 @@ def py_visual_test(
 
     sweep_env = dict(env)
     sweep_env["HARNESS_PATH"] = "$(rlocationpath %s)" % harness
-    if scenarios != None:
-        sweep_env["SCENARIOS_PATH"] = "$(rlocationpath %s)" % scenarios
     sweep_env["VISUAL_TITLE"] = title
     if font_family:
         sweep_env["EXPECTED_FONT_FAMILY"] = font_family
@@ -118,15 +65,15 @@ def py_visual_test(
 
     py_test(
         name = name,
-        main_module = test_module or "util.testing.visual_sweep",
+        main_module = test_module,
         srcs = test_srcs,
-        data = assets + stylesheets + served_documents.values() + [harness] + ([scenarios] if scenarios != None else []) +
+        data = assets + stylesheets + served_documents.values() + [harness] +
                ([fonts] if fonts != None else []),
         env = sweep_env,
         tags = tags + ["visual"],
         deps = [
             "//:conftest",
-            "//util/testing:visual_sweep" if scenarios != None else "//util/testing:visual_fixtures",
+            "//util/testing:visual_fixtures",
         ] + test_deps,
         **kwargs
     )

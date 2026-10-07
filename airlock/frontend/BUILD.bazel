@@ -102,11 +102,7 @@ spa_bundle(
 )
 
 # The scenario table: read by the harness (it mounts the scene `?page=` names) and by the sweep.
-js_library(
-    name = "visual_scenarios",
-    testonly = True,
-    srcs = ["harness/scenarios.json"],
-)
+
 
 ts_library(
     name = "visual_harness_lib",
@@ -119,7 +115,6 @@ ts_library(
     deps = [
         ":App",
         ":types",
-        ":visual_scenarios",
         "//:node_modules/@mantine/core",
         "//:node_modules/@mantine/hooks",
         "//:node_modules/@types/react",
@@ -181,7 +176,7 @@ py_visual_test(
     harness = ":visual_harness_js",
     test_deps = [
         "//util/testing:visual_capture",
-        "//util/testing:visual_scenarios",
+        "//util/testing:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

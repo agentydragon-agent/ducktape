@@ -7,7 +7,7 @@ import pytest_bazel
 from playwright.async_api import expect
 
 from util.testing.visual_capture import VisualHarness
-from util.testing.visual_scenarios import Viewport
+from util.testing.viewports import Viewport
 
 # gazelle:include_dep //util/testing:visual_fixtures
 pytest_plugins = ("util.testing.visual_fixtures",)
@@ -19,8 +19,8 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 async def test_oauth_consent(visual: VisualHarness, viewport: Viewport, color_scheme: Literal["light", "dark"]) -> None:
     name = "OAuthPage" + ("_mobile" if viewport.width == 375 else "") + ("_dark" if color_scheme == "dark" else "")
     async with visual.open("OAuthPage", viewport=viewport, color_scheme=color_scheme) as view:
-        await expect(view.page.locator('form[action^="/oauth/authorize/"] button')).to_be_attached()
-        await expect(view.page.locator("footer")).to_be_attached()
+        await view.page.wait_for_selector('form[action^="/oauth/authorize/"] button', state="attached")
+        await view.page.wait_for_selector("footer", state="attached")
         await view.capture(name, target=view.page.locator("#app"))
 
 

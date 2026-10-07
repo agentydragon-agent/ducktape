@@ -8,7 +8,7 @@ import pytest_bazel
 from playwright.async_api import Playwright, expect
 
 from util.testing.visual_capture import HarnessConfig, VisualHarness
-from util.testing.visual_scenarios import Viewport
+from util.testing.viewports import Viewport
 
 # gazelle:include_dep //util:playwright
 pytest_plugins = ("util.playwright",)
@@ -61,11 +61,13 @@ async def test_ambiguous_crop_fails_before_publication(harness: VisualHarness) -
 
 
 async def test_no_capture_can_hide_a_page_error(harness: VisualHarness) -> None:
-    with pytest.raises(AssertionError, match="deliberate crash"):
+    async def crash() -> None:
         async with harness.open("plain") as view:
-            await view.page.evaluate(
-                "() => window.dispatchEvent(new ErrorEvent('error', {message: 'deliberate crash', error: new Error('deliberate crash')}))"
-            )
+            async with view.page.expect_event("pageerror"):
+                await view.page.add_script_tag(content="throw new Error('deliberate crash')")
+
+    with pytest.raises(AssertionError, match="deliberate crash"):
+        await crash()
 
 
 async def test_external_request_fails_before_publication(harness: VisualHarness) -> None:

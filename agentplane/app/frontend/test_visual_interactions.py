@@ -16,9 +16,10 @@ import pytest
 import pytest_bazel
 from playwright.async_api import FloatRect, Locator, Page, expect
 
+from agentplane.app.frontend.visual_pages import capture_scene, open_scene
 from util.testing.page_capture import wait_for_stable
 from util.testing.visual_capture import VisualHarness
-from agentplane.app.frontend.visual_pages import open_scene, capture_scene
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The shared Playwright driver is session-scoped; tests must run on its event loop, as the generic
 # visual sweep does. Asyncio auto mode handles discovery; this mark only aligns the loop scope.
@@ -192,7 +193,11 @@ async def test_realistic_rollout_call(viewport: str, expanded_output: bool, visu
         else:
             await _focus(page, call.locator(".agentplane-clamped-block[data-label='Command']"))
         await page.mouse.move(0, 0)
-        await capture_scene(view, f"realistic_rollout_{viewport}", output_name=f"realistic-rollout-{viewport}-{'output-scrolled' if expanded_output else 'call'}")
+        await capture_scene(
+            view,
+            f"realistic_rollout_{viewport}",
+            output_name=f"realistic-rollout-{viewport}-{'output-scrolled' if expanded_output else 'call'}",
+        )
 
 
 async def _open_recovery_details(page: Page) -> None:
@@ -754,7 +759,9 @@ async def test_mcp_servers_linked_and_expired(scene: str, visual: VisualHarness)
     ],
     ids=["oauth-phone", "health-desktop", "health-phone"],
 )
-async def test_mcp_servers_lower_statuses(scene: str, focus_key: str, focus_state: str, other_key: str, other_state: str, suffix: str, visual: VisualHarness) -> None:
+async def test_mcp_servers_lower_statuses(
+    scene: str, focus_key: str, focus_state: str, other_key: str, other_state: str, suffix: str, visual: VisualHarness
+) -> None:
     async with open_scene(visual, scene) as view:
         page = view.page
         focused = page.locator(f'[data-mcp-server="{focus_key}"]').get_by_text(focus_state, exact=True)
@@ -978,7 +985,9 @@ async def test_open_tool_calls_and_output(scene: str, shell_calls: bool, visual:
     ("scene", "viewport_name"), [("session_shell_calls_open", "desktop"), ("session_shell_calls_open_phone", "phone")]
 )
 @pytest.mark.parametrize("state", ["collapsed-hover", "expanded-hover", "tool-hover", "expanded-focus"])
-async def test_disclosure_control_reaches_card_edges(scene: str, viewport_name: str, state: str, visual: VisualHarness) -> None:
+async def test_disclosure_control_reaches_card_edges(
+    scene: str, viewport_name: str, state: str, visual: VisualHarness
+) -> None:
     async with open_scene(visual, scene) as view:
         page = view.page
         if state != "collapsed-hover":
@@ -1040,7 +1049,9 @@ async def test_disclosure_control_reaches_card_edges(scene: str, viewport_name: 
     ],
     ids=["claude-desktop", "claude-phone", "codex-desktop", "codex-phone"],
 )
-async def test_shell_call_command_and_output(scene: str, call_text: str, tool: str, suffix: str, visual: VisualHarness) -> None:
+async def test_shell_call_command_and_output(
+    scene: str, call_text: str, tool: str, suffix: str, visual: VisualHarness
+) -> None:
     async with open_scene(visual, scene) as view:
         page = view.page
         await _open_tool_run(page)

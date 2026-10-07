@@ -50,12 +50,12 @@ def preview_screenshots(name, entry, fixtures, deps, visibility = None):
         visibility = visibility,
     )
     js_run_binary(
-        name = name + "_scenarios",
+        name = name + "_fixtures",
         srcs = [fixtures],
-        outs = [name + "_scenarios.json"],
-        args = [fixtures, name + "_scenarios.json"],
+        outs = [name + "_fixtures.json"],
+        args = [fixtures, name + "_fixtures.json"],
         chdir = native.package_name(),
-        tool = "//haku/console/frontend/tool_rendering/screenshot:emit_scenarios",
+        tool = "//haku/console/frontend/tool_rendering/screenshot:emit_fixtures",
     )
     py_visual_test(
         name = name,
@@ -63,7 +63,10 @@ def preview_screenshots(name, entry, fixtures, deps, visibility = None):
         # to 130s with all seven running at once. large gave a 900s budget to under two minutes of work.
         size = "medium",
         harness = ":%s_bundle" % name,
-        scenarios = ":%s_scenarios" % name,
+        assets = [":%s_fixtures" % name],
+        env = {"FIXTURE_CATALOG": "$(rlocationpath :%s_fixtures)" % name},
+        test_module = "haku.console.frontend.tool_rendering.screenshot.preview_visual",
+        test_deps = ["//haku/console/frontend/tool_rendering/screenshot:preview_visual"],
         title = "Haku Console previews",
         # The harness is inlined into a page of no origin, whose relative `/api/…` URLs the mock
         # fetch parses and never sends: the base gives them something to resolve against.

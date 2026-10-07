@@ -300,6 +300,7 @@ py_test(
     size = "medium",
     srcs = ["test_visual_sweep.py"],
     deps = [
+        ":visual_capture",
         ":visual_scenarios",
         ":visual_sweep",
         "//:conftest",
