@@ -30,7 +30,9 @@ async def test_compaction_preserves_instructions_in_next_request_and_resume(
         compact = asyncio.create_task(first.compact())
         async with await openai_responses.await_next_request() as exchange:
             assert exchange.request.client_metadata.thread_id == first.thread_id
-            await exchange.send(*sse.response_stream([sse.Message("Summary: seed turn completed.")], model=MODEL).events)
+            await exchange.send(
+                *sse.response_stream([sse.Message("Summary: seed turn completed.")], model=MODEL).events
+            )
         assert (await compact).error is None
         while True:
             frame = await events.next()

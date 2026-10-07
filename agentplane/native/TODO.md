@@ -104,3 +104,12 @@ unanswered, recording time to `result` or timeout notice with a ceiling above 60
 `system/init` and `initialize` has no client-capability field. The section's table (`:109-113`,
 from `sdk.d.ts`, version unstated) lists `queued_notifications` but not `msg_lifecycle_v1`, which
 2.1.220 advertised. Experiment: a scripted test recording `system/init.capabilities` on 2.1.252.
+
+## Harness-neutral compaction boundaries
+
+Claude emits `compact_boundary` (with a synthetic summary user frame); Codex emits
+`thread/compacted`. Surface both as one harness-neutral compaction boundary event in
+the runner/native protocol, while retaining the provider-specific metadata in native
+evidence. Test ordering against the summary and the first ordinary post-compaction
+model request, including resume. Do not mistake the synthetic summary for an operator
+message or treat a completed RPC as proof of a completed compaction.
