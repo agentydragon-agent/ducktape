@@ -817,10 +817,10 @@ cursor. Try inexpensive improvements before requiring hook or native queue chang
   prompt a read covering those entries too. Recheck acknowledgement and current uncovered
   entries when the window expires; suppress a now-unneeded follow-up, otherwise send one notice
   covering the then-current cursor. Do not remind solely about already-covered, unacknowledged
-  entries. Bound delay from the oldest *new* uncovered entry even under continuous arrivals,
+  entries. Bound delay from the oldest _new_ uncovered entry even under continuous arrivals,
   missing acknowledgement or unavailable lifecycle signals; make timers durable.
 - If the runner session becomes idle (harness running, no active turn), consider sending a
-  follow-up for *new, uncovered* entries promptly rather than waiting out the grace window:
+  follow-up for _new, uncovered_ entries promptly rather than waiting out the grace window:
   the previous turn no longer has an opportunity to pick them up in its next read. Recheck the
   inbox ack and runner state immediately before admission, including queued inputs and races
   with a new turn. Idle alone does not authorize a reminder for already-covered unacked entries;
