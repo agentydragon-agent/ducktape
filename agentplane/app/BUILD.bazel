@@ -921,10 +921,11 @@ py_test(
     name = "test_thread_browser",
     size = "medium",
     srcs = ["test_thread_browser.py"],
-    args = ["-vv"],
+    args = ["-vv", "--setup-show"],
     data = [
         "//agentplane/app/frontend:bundle",
     ],
+    env = {"DEBUG": "pw:api,pw:browser"},
     requires_docker = True,
     shard_count = 8,
     deps = [
