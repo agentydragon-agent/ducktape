@@ -86,6 +86,59 @@ export { renderCard };
 
     let text = run_spec_validate(&fixture.spec_path, &["--format", "text"]);
     assert!(text.status.success(), "stderr={}", text.stderr);
+
+    let default = Command::new(debundler_path())
+        .args(["spec", "validate", "--spec"])
+        .arg(&fixture.spec_path)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(default.status.success(), "stderr={:?}", default.stderr);
+}
+
+#[test]
+fn validate_reports_all_outcomes_before_failing_by_default() {
+    let fixture = write_validate_fixture_spec(mixed_selector_failure_fixture());
+    let output = Command::new(debundler_path())
+        .args(["spec", "validate", "--spec"])
+        .arg(&fixture.spec_path)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    let out = CommandResult {
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        status: output.status,
+    };
+    assert!(!out.status.success(), "stdout:\n{}", out.stdout);
+    assert!(
+        out.stderr.contains("validation found selector errors"),
+        "{}",
+        out.stderr
+    );
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(
+        report["counts"],
+        json!({"no_match": 1, "ambiguous": 1, "duplicate_claim": 1})
+    );
+}
+
+#[test]
+fn validate_source_only_fails_by_default_after_ndjson_report() {
+    let fixture = write_source_only_validate_fixture();
+    let output = Command::new(debundler_path())
+        .args(["spec", "validate", "--modules"])
+        .arg(&fixture.modules_root)
+        .arg("--source-file")
+        .arg(&fixture.source_file)
+        .args(["--format", "ndjson"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "stdout:\n{:?}", output.stdout);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let summary: Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
+    assert_eq!(summary["section"], "summary");
+    assert_eq!(summary["counts"], json!({"no_match": 1, "ambiguous": 1}));
 }
 
 #[test]

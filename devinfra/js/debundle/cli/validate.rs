@@ -49,6 +49,11 @@ pub struct ValidateArgs {
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
 
+    /// Emit the diagnostic report without failing for selector errors.
+    /// By default, error outcomes cause a nonzero exit after the full report.
+    #[arg(long)]
+    pub report_only: bool,
+
     /// Tree-shaped modules root to source-preflight without a full transform spec.
     #[arg(long = "modules")]
     pub modules_root: Option<std::path::PathBuf>,
@@ -68,16 +73,27 @@ pub struct ValidateArgs {
 
 pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
     let format = OutputFormat::resolve(args.format);
+    let report_only = args.report_only;
     let report = if args.source_only_requested() {
         js_ast::with_swc_globals(|| run_source_only_validate(&args))?
     } else {
         run_spec_validate(args)?
     };
     if format == OutputFormat::Ndjson {
-        return emit_validate_ndjson(&report);
+        emit_validate_ndjson(&report)?;
+    } else {
+        print_report(&report, format, |report, buf| report.render_text(buf, None))
+            .context("writing validate output")?;
     }
-    print_report(&report, format, |report, buf| report.render_text(buf, None))
-        .context("writing validate output")
+    if !report_only
+        && report
+            .outcomes
+            .iter()
+            .any(|outcome| outcome.severity() == Severity::Error)
+    {
+        bail!("validation found selector errors");
+    }
+    Ok(())
 }
 
 fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
@@ -90,10 +106,10 @@ fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
     let capture = tempfile::tempdir().context("creating selector-diagnostics capture dir")?;
     // The keep-going pass writes the per-chunk reports *and then* fails the
     // pipeline at the end with the collected findings — that rejection is the
-    // contract for `debundle run`. `validate` treats the findings as data, not a
-    // tool failure: when the run produced reports, we emit them and exit zero;
-    // only a run that errored *without* producing any report is a real failure
-    // (bad spec path, parse error, …).
+    // contract for `debundle run`. When reports exist, `validate` emits them
+    // before deciding its exit status in `run_validate_cmd`; only a pass that
+    // errored without producing a report fails here (bad spec path, parse
+    // error, …).
     let pass = run_transform_cli(
         &cli,
         TransformRunOptions {
