@@ -1,6 +1,6 @@
 /**
  * Visual-test harness: the app mounted on canned data, nothing on the network. The `?page=` query
- * (set by the visual sweep) picks the route; `fetch` (stubbed by network.ts, imported first so the
+ * (set by the Python test) picks the route; `fetch` (stubbed by network.ts, imported first so the
  * app's client captures the stub) answers API and Electric Shape routes. `EventSource` remains
  * only for the live sandbox, thread, and action-inventory views.
  */
@@ -28,26 +28,26 @@ import {
   type SessionSummary,
 } from "../../../runner/protocol_pb";
 import { DisclosureVisual } from "./disclosure_visual";
-import { SCENARIOS, type Scenario } from "./scenario";
+import { FIXTURES, type VisualFixture } from "./fixture";
 import { LocalCommands } from "../threads/local_commands";
 import { streamRegistry } from "../stream_status";
 import { ThemeProvider } from "../theme";
 import rollout from "./realistic_rollout.json";
 import reportedRollout from "./reported_rollout.json";
 
-/** Resolved before any fixture is built: the scenario's fields are what the fixtures vary on. */
-function resolveScenario(): Scenario {
+/** Resolved before any fixture is built: the fixture's fields are what the fixtures vary on. */
+function resolveFixture(): VisualFixture {
   const name = new URLSearchParams(window.location.search).get("page") ?? "sandboxes";
-  const found: Scenario | undefined = SCENARIOS[name];
-  if (found === undefined) throw new Error(`unknown harness scenario ${name}`);
+  const found: VisualFixture | undefined = FIXTURES[name];
+  if (found === undefined) throw new Error(`unknown harness fixture ${name}`);
   return found;
 }
 
-const scenario = resolveScenario();
-// Pages in a visual sweep share an origin. Each scene owns its local-command fixtures.
+const fixture = resolveFixture();
+// Each test owns its local-command fixtures.
 localStorage.clear();
 
-// The visual sweep freezes the wall clock before this bundle runs, so relative ages stay put.
+// The visual harness freezes the wall clock before this bundle runs, so relative ages stay put.
 const NOW = Date.now();
 const HOUR = 3_600_000;
 
@@ -172,14 +172,14 @@ const SANDBOXES: SandboxView[] = [
   },
 ];
 
-if (scenario.grantError) {
+if (fixture.grantError) {
   const sandbox = SANDBOXES[0]!;
   sandbox.launch_grants_pending = true;
   sandbox.kubernetes_grants_ready = false;
   sandbox.kubernetes_grant_error = "ApiException (403)";
 }
 
-if (scenario.threadlessSandbox) {
+if (fixture.threadlessSandbox) {
   SANDBOXES.push({
     name: "test-provisioning",
     uid: "0f9c1d2e-0000-4000-8000-000000000007",
@@ -406,7 +406,7 @@ const DECISIONS: Decision[] = [
   },
 ];
 
-/** The phone scenario shows the proxy unreachable, the desktop one its decisions; both fit on a page. */
+/** The phone fixture shows the proxy unreachable, the desktop one its decisions; both fit on a page. */
 function egressDecisions(): Decision[] | Response {
   if (window.matchMedia("(max-width: 600px)").matches) {
     return Response.json({ detail: "the egress proxy did not answer: connection refused" }, { status: 502 });
@@ -546,7 +546,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   },
 ];
 
-/** The `endedAttachment` scenario: the states thread's harness was shut down, and the runner feed has ended. */
+/** The `endedAttachment` fixture: the states thread's harness was shut down, and the runner feed has ended. */
 function withEndedAttachment(thread: ThreadView): ThreadView {
   return thread.session_id === "s-2"
     ? {
@@ -567,16 +567,16 @@ function withFailedTurn(thread: ThreadView): ThreadView {
 }
 
 function scenarioThread(thread: ThreadView): ThreadView {
-  if (scenario.realisticRollout && thread.session_id === "s-1")
+  if (fixture.realisticRollout && thread.session_id === "s-1")
     return {
       ...thread,
-      name: scenario.realisticRollout === "reported" ? "Reported thread excerpt" : "Completed diagnostic run",
+      name: fixture.realisticRollout === "reported" ? "Reported thread excerpt" : "Completed diagnostic run",
       harness: "HARNESS_CODEX",
       active_turn_id: null,
       last_turn_status: "TURN_STATUS_COMPLETED",
     };
-  if (scenario.endedAttachment) return withEndedAttachment(thread);
-  return scenario.failedTurn ? withFailedTurn(thread) : thread;
+  if (fixture.endedAttachment) return withEndedAttachment(thread);
+  return fixture.failedTurn ? withFailedTurn(thread) : thread;
 }
 
 // A 32x32 checkerboard, 95 bytes: a real image, small enough to inline.
@@ -590,7 +590,7 @@ const SSH_EXEC_RESULT = {
   user: "test-user",
   exit_code: 2,
   stdout: [
-    ...(scenario.hiddenCodepoints
+    ...(fixture.hiddenCodepoints
       ? ["review result: visible start \u202Ereversed\u202C, joined\u200Bword, and control\u001Bmarker"]
       : [
           "/home/test-user/test-archive:",
@@ -602,7 +602,7 @@ const SSH_EXEC_RESULT = {
           "",
         ]),
   ].join("\n"),
-  stderr: scenario.hiddenCodepoints
+  stderr: fixture.hiddenCodepoints
     ? "stderr contains a zero-width\u200B separator and U+202E bidi override\u202C\n"
     : "ls: cannot access '/home/test-user/test-archive/test-missing': No such file or directory\n",
   stdout_truncated: false,
@@ -640,9 +640,9 @@ const ACTIONS: ActionRequestView[] = [
     arguments: {
       host: "test-archive-host",
       user: "test-user",
-      command: scenario.longPendingAction
+      command: fixture.longPendingAction
         ? Array.from({ length: 55 }, (_, index) => `echo review-step-${index + 1}`).join("\n")
-        : scenario.hiddenCodepoints
+        : fixture.hiddenCodepoints
           ? 'printf "review \u202Ereversed\u202C zero\u200Bwidth control\u001B"'
           : 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"',
       timeout_seconds: 60,
@@ -1200,14 +1200,14 @@ function statesRows(threadId: string): Record<string, unknown>[] {
       24,
       "queued-model",
       "change_model",
-      scenario.pendingCommands === "outcomes" ? "failed" : "pending",
+      fixture.pendingCommands === "outcomes" ? "failed" : "pending",
       "Model unavailable"
     ),
     command(
       25,
       "queued-interrupt",
       "interrupt_turn",
-      scenario.pendingCommands === "outcomes" ? "noop" : "pending",
+      fixture.pendingCommands === "outcomes" ? "noop" : "pending",
       "Target turn already ended"
     ),
     // Admitted and still pending, so it renders inline as a pending message bubble rather than in
@@ -1538,9 +1538,9 @@ function quietRecoveryRows(threadId: string): Record<string, unknown>[] {
 }
 
 function recoveryRows(threadId: string): Record<string, unknown>[] {
-  if (scenario.recovery === "quiet") return quietRecoveryRows(threadId);
+  if (fixture.recovery === "quiet") return quietRecoveryRows(threadId);
   const rows =
-    scenario.recovery === "tools"
+    fixture.recovery === "tools"
       ? [
           item(10, "revised-tool", ItemKind.TOOL_CALL, null, {
             threadId,
@@ -1599,35 +1599,35 @@ function recoveryRows(threadId: string): Record<string, unknown>[] {
             }
           ),
         ];
-  if (scenario.recovery === "tools") rows[0].output_ref = payload(10, "revised-tool", "output", "aborted");
+  if (fixture.recovery === "tools") rows[0].output_ref = payload(10, "revised-tool", "output", "aborted");
   return [{ ...viewState(40, null), thread_id: threadId }, ...rows];
 }
 
 function threadEntityRows(threadId: string): Record<string, unknown>[] {
-  if (scenario.realisticRollout) return realisticRolloutRows(threadId);
-  if (scenario.recovery) return recoveryRows(threadId);
-  if (scenario.shellCalls) return shellCallRows(threadId);
-  if (scenario.endedAttachment) return endedAttachmentRows(threadId);
-  if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
-  if (scenario.interleavedEvents) return interleavedRows(threadId);
-  if (scenario.lifecycleGroup) return lifecycleGroupRows(threadId);
-  if (scenario.threadSetup) return setupRows(threadId);
-  if (scenario.markdownCodeFence) return codeFenceRows(threadId);
-  if (scenario.streamingInterleaved) return streamingInterleavedRows(threadId);
-  if (scenario.unfinishedReasoning) return unfinishedReasoningRows(threadId);
-  if (scenario.standaloneReasoning)
+  if (fixture.realisticRollout) return realisticRolloutRows(threadId);
+  if (fixture.recovery) return recoveryRows(threadId);
+  if (fixture.shellCalls) return shellCallRows(threadId);
+  if (fixture.endedAttachment) return endedAttachmentRows(threadId);
+  if (fixture.failedTurn) return failedRows(threadId, fixture.failedTurn === "after-content");
+  if (fixture.interleavedEvents) return interleavedRows(threadId);
+  if (fixture.lifecycleGroup) return lifecycleGroupRows(threadId);
+  if (fixture.threadSetup) return setupRows(threadId);
+  if (fixture.markdownCodeFence) return codeFenceRows(threadId);
+  if (fixture.streamingInterleaved) return streamingInterleavedRows(threadId);
+  if (fixture.unfinishedReasoning) return unfinishedReasoningRows(threadId);
+  if (fixture.standaloneReasoning)
     return standaloneReasoningRows(
       threadId,
-      scenario.longReasoningPreview ?? false,
-      scenario.reasoningCodeFence ?? false,
-      scenario.longReasoningBody ?? false
+      fixture.longReasoningPreview ?? false,
+      fixture.reasoningCodeFence ?? false,
+      fixture.longReasoningBody ?? false
     );
-  if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
-  return standardRows(threadId, scenario.longReasoningPreview ?? false, scenario.longReasoningBody ?? false);
+  if (threadId === THREADS[2].id || fixture.pendingCommands) return statesRows(threadId);
+  return standardRows(threadId, fixture.longReasoningPreview ?? false, fixture.longReasoningBody ?? false);
 }
 
 function realisticRolloutRows(threadId: string): Record<string, unknown>[] {
-  const entries = scenario.realisticRollout === "reported" ? reportedRollout : rollout;
+  const entries = fixture.realisticRollout === "reported" ? reportedRollout : rollout;
   const rows = entries.map((entry, index) => {
     const cursor = index + 1;
     const id = `rollout-${cursor}`;
@@ -1673,7 +1673,7 @@ function threadScope(threadId: string): Record<string, string> {
   return { projection_epoch: CONVERSATION_EPOCH, through_cursor: String(through) };
 }
 
-if (scenario.pendingCommands === "mixed") {
+if (fixture.pendingCommands === "mixed") {
   const local = new LocalCommands(THREADS[2].id);
   local.remember(
     create(CommandSchema, {
@@ -1686,7 +1686,7 @@ if (scenario.pendingCommands === "mixed") {
   );
 }
 
-if (scenario.pendingCommands === "outcomes") {
+if (fixture.pendingCommands === "outcomes") {
   // A settled command shows while the browser that sent it still holds it.
   const local = new LocalCommands(THREADS[2].id);
   local.remember(
@@ -1856,7 +1856,7 @@ routes.push(
         },
       ],
       harnesses: {
-        HARNESS_CLAUDE: scenario.claudePaused ? [] : ["harness-claude-model", "next-model"],
+        HARNESS_CLAUDE: fixture.claudePaused ? [] : ["harness-claude-model", "next-model"],
         HARNESS_CODEX: ["harness-codex-model"],
       },
     }),
@@ -1910,9 +1910,9 @@ routes.push(
     /^\/actions\/history$/,
     (_match, query) => {
       const past = ACTIONS.filter((request) => request.state !== "decision_pending");
-      return scenario.historyPaged && !query.has("cursor")
+      return fixture.historyPaged && !query.has("cursor")
         ? { items: past.slice(0, 2), next_cursor: "second-page" }
-        : { items: scenario.historyPaged ? past.slice(2) : past, next_cursor: null };
+        : { items: fixture.historyPaged ? past.slice(2) : past, next_cursor: null };
     },
   ],
   [
@@ -1943,7 +1943,7 @@ routes.push(
     "GET",
     /^\/action-groups$/,
     () =>
-      scenario.actionGroupsUnavailable
+      fixture.actionGroupsUnavailable
         ? Response.json({ detail: "the Action Service did not answer: connection refused" }, { status: 502 })
         : MCP_GROUPS,
   ],
@@ -2122,7 +2122,7 @@ routes.push(
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/scope$/,
     (match) =>
-      scenario.sessionReplay === "unavailable"
+      fixture.sessionReplay === "unavailable"
         ? // This persistent service failure is distinct from a retired epoch's 410, which the
           // production store resolves by reading the scope again.
           Response.json({ detail: "thread fold is temporarily unavailable" }, { status: 503 })
@@ -2134,7 +2134,7 @@ routes.push(
     (match, query, signal) =>
       query.get("live") !== "true"
         ? electricShape([], `visual-entities-${match[1]}`)
-        : scenario.sessionReplay === "reconnecting"
+        : fixture.sessionReplay === "reconnecting"
           ? Response.json({ detail: "thread shape is temporarily unavailable" }, { status: 503 })
           : electricLive(`visual-entities-${match[1]}`, undefined, signal),
   ],
@@ -2143,7 +2143,7 @@ routes.push(
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
     (match, query, _signal, body) => {
       const rows = threadRows(match[1]).map((row) =>
-        scenario.sessionReplay === "catching-up" && row.entity_kind === "view_state"
+        fixture.sessionReplay === "catching-up" && row.entity_kind === "view_state"
           ? { ...row, revision_cursor: "8" }
           : row
       );
@@ -2214,7 +2214,7 @@ routes.push(
     "POST",
     /^\/threads\/([0-9a-f-]+)\/commands$/,
     () =>
-      scenario.commandAdmissionTimedOut
+      fixture.commandAdmissionTimedOut
         ? Response.json({ detail: "runner admission was not confirmed within 15 seconds" }, { status: 504 })
         : UNANSWERED,
   ],
@@ -2254,11 +2254,11 @@ const WEDGED: WatchHealth = {
 };
 
 function watch(): WatchHealth {
-  return scenario.wedgedWatch ? WEDGED : FRESH;
+  return fixture.wedgedWatch ? WEDGED : FRESH;
 }
 
 /** Live inventory and action streams remain EventSource; projected threads use Electric fetches above.
- * A stream a scenario drops goes back to `CONNECTING`, as a browser's does when the network drops,
+ * A stream a fixture drops goes back to `CONNECTING`, as a browser's does when the network drops,
  * and never reconnects. */
 class HarnessEventSource extends EventTarget {
   static readonly CONNECTING = 0;
@@ -2280,23 +2280,23 @@ class HarnessEventSource extends EventTarget {
       const snapshot: ThreadsSnapshot = {
         sandboxes: SANDBOXES,
         threads: THREADS_WITH_SANDBOXES.map(scenarioThread),
-        updates_connected: scenario.sidebarSource !== "database-disconnected",
+        updates_connected: fixture.sidebarSource !== "database-disconnected",
         watch: watch(),
       };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (scenario.sidebarSource === "disconnected") this.drop();
+      if (fixture.sidebarSource === "disconnected") this.drop();
       return;
     }
     if (url.pathname === "/live/sandboxes") {
       const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (scenario.inventoryDropped) this.drop();
+      if (fixture.inventoryDropped) this.drop();
       return;
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
     if (url.pathname === "/actions/stream") {
       const pending =
-        scenario.pendingActions || scenario.route.startsWith("/actions")
+        fixture.pendingActions || fixture.route.startsWith("/actions")
           ? ACTIONS.filter((request) => request.state === "decision_pending")
           : [];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(pending) }));
@@ -2330,15 +2330,15 @@ window.EventSource = HarnessEventSource as unknown as typeof EventSource;
 
 // Under the frozen clock no stream is ever off for any time at all, so the registry's runs ahead of
 // it instead: a stream off since the scene began has been off this long when it renders.
-const { outageAge } = scenario;
+const { outageAge } = fixture;
 if (outageAge !== undefined) streamRegistry.now = () => Date.now() + outageAge;
 
-if (!scenario.disclosureVisual) window.location.hash = scenario.route;
+if (!fixture.disclosureVisual) window.location.hash = fixture.route;
 
 const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");
 createRoot(container).render(
   <ThemeProvider>
-    {scenario.disclosureVisual ? <DisclosureVisual stage={scenario.disclosureVisual} /> : <App />}
+    {fixture.disclosureVisual ? <DisclosureVisual stage={fixture.disclosureVisual} /> : <App />}
   </ThemeProvider>
 );

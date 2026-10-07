@@ -3,10 +3,6 @@
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
     "recovery": "messages"
   },
-  "session_recovery_messages_phone": {
-    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
-    "recovery": "messages"
-  },
   "session_recovery_tools": {
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
     "recovery": "tools"
@@ -38,9 +34,6 @@
   "threads": {
     "route": "/"
   },
-  "threads_phone": {
-    "route": "/"
-  },
   "threads_failed_turn": {
     "route": "/",
     "failedTurn": "before-content"
@@ -60,25 +53,15 @@
   "sandboxes": {
     "route": "/sandboxes"
   },
-  "sandboxes_phone": {
-    "route": "/sandboxes"
-  },
   "sandboxes_stale": {
     "route": "/sandboxes",
     "wedgedWatch": true
   },
-  "actions_attention_composer_desktop": {
-    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
-    "pendingActions": true
-  },
-  "actions_attention_composer_phone": {
+  "actions_attention_composer": {
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
     "pendingActions": true
   },
   "actions": {
-    "route": "/actions"
-  },
-  "actions_phone": {
     "route": "/actions"
   },
   "actions_history_groups_unavailable": {
@@ -92,19 +75,10 @@
   "consent": {
     "route": "/connection-enrollments/test-only-opaque-handle"
   },
-  "consent_phone": {
-    "route": "/connection-enrollments/test-only-opaque-handle"
-  },
   "sandbox": {
     "route": "/sandboxes/ready-sandbox"
   },
-  "sandbox_phone": {
-    "route": "/sandboxes/ready-sandbox"
-  },
   "sandbox_status": {
-    "route": "/sandboxes/ready-sandbox?tab=status"
-  },
-  "sandbox_status_phone": {
     "route": "/sandboxes/ready-sandbox?tab=status"
   },
   "sandbox_status_grant_error": {
@@ -114,22 +88,13 @@
   "sandbox_policy": {
     "route": "/sandboxes/ready-sandbox?tab=policy"
   },
-  "sandbox_policy_phone": {
-    "route": "/sandboxes/ready-sandbox?tab=policy"
-  },
   "session": {
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001"
   },
   "session_deleted_sandbox": {
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000005"
   },
-  "session_deleted_sandbox_phone": {
-    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000005"
-  },
   "session_suspended_sandbox": {
-    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000004"
-  },
-  "session_suspended_sandbox_phone": {
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000004"
   },
   "session_inventory_stale": {
@@ -145,18 +110,7 @@
     "inventoryDropped": true,
     "outageAge": 90000
   },
-  "session_inventory_dropped_phone": {
-    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
-    "inventoryDropped": true,
-    "outageAge": 90000
-  },
-  "session_phone": {
-    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001"
-  },
   "session_unnamed": {
-    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000000"
-  },
-  "session_unnamed_phone": {
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000000"
   },
   "session_markdown_code_fence": {
@@ -176,16 +130,7 @@
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
     "unfinishedReasoning": true
   },
-  "session_unfinished_reasoning_phone": {
-    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
-    "unfinishedReasoning": true
-  },
   "session_reasoning_code_fence": {
-    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
-    "standaloneReasoning": true,
-    "reasoningCodeFence": true
-  },
-  "session_reasoning_code_fence_phone": {
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
     "standaloneReasoning": true,
     "reasoningCodeFence": true
@@ -202,10 +147,6 @@
     "endedAttachment": true
   },
   "session_pending": {
-    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000002",
-    "pendingCommands": "mixed"
-  },
-  "session_pending_phone": {
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000002",
     "pendingCommands": "mixed"
   },
@@ -240,7 +181,112 @@
     "sessionReplay": "reconnecting",
     "outageAge": 90000
   },
-  "session_states_phone": {
-    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000002"
+  "new_sandbox": {
+    "route": "/sandboxes?preset=public-coder"
+  },
+  "sandbox_egress": {
+    "route": "/sandboxes/ready-sandbox?tab=egress&rules=ready-sandbox-github-public"
+  },
+  "actions_history_more": {
+    "route": "/actions",
+    "historyPaged": true
+  },
+  "mcp_servers": {
+    "route": "/mcp-servers"
+  },
+  "session_shell_calls": {
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "shellCalls": true
+  },
+  "disclosure_collapsed": {
+    "route": "/",
+    "disclosureVisual": "collapsed"
+  },
+  "disclosure_short_expanded": {
+    "route": "/",
+    "disclosureVisual": "short-expanded"
+  },
+  "disclosure_long_top": {
+    "route": "/",
+    "disclosureVisual": "long-top"
+  },
+  "disclosure_long_scrolled": {
+    "route": "/",
+    "disclosureVisual": "long-scrolled"
+  },
+  "disclosure_after_disclosure": {
+    "route": "/",
+    "disclosureVisual": "after-disclosure"
+  },
+  "disclosure_nested_child_scrolled": {
+    "route": "/",
+    "disclosureVisual": "nested-child-scrolled"
+  },
+  "disclosure_nested_after_child": {
+    "route": "/",
+    "disclosureVisual": "nested-after-child"
+  },
+  "disclosure_nested_parent_only": {
+    "route": "/",
+    "disclosureVisual": "nested-parent-only-scrolled"
+  },
+  "disclosure_nested_after_outer": {
+    "route": "/",
+    "disclosureVisual": "nested-after-outer"
+  },
+  "disclosure_nested_wrapped_headings": {
+    "route": "/",
+    "disclosureVisual": "nested-wrapped-headings"
+  },
+  "disclosure_nested_expanded_output": {
+    "route": "/",
+    "disclosureVisual": "nested-expanded-output"
+  },
+  "disclosure_nested_before_output": {
+    "route": "/",
+    "disclosureVisual": "nested-before-output"
+  },
+  "disclosure_nested_after_output": {
+    "route": "/",
+    "disclosureVisual": "nested-after-output"
+  },
+  "disclosure_nested_output_collapsed": {
+    "route": "/",
+    "disclosureVisual": "nested-output-collapsed"
+  },
+  "threads_disconnected": {
+    "route": "/",
+    "sidebarSource": "disconnected",
+    "outageAge": 10000
+  },
+  "sandboxes_claude_paused": {
+    "route": "/sandboxes?preset=public-coder",
+    "claudePaused": true
+  },
+  "actions_attention_composer_long": {
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "pendingActions": true,
+    "longPendingAction": true
+  },
+  "sandbox_claude_paused": {
+    "route": "/sandboxes/ready-sandbox",
+    "claudePaused": true
+  },
+  "session_reasoning": {
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "longReasoningPreview": true
+  },
+  "session_reasoning_sticky": {
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "standaloneReasoning": true,
+    "longReasoningBody": true
+  },
+  "realistic_rollout": {
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "realisticRollout": "completed"
+  },
+  "reported_rollout": {
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "realisticRollout": "reported"
   }
 }

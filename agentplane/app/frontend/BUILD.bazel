@@ -1178,30 +1178,24 @@ vitest_config(
     setup_files = ["test_setup.ts"],
 )
 
-# Visual render-health tests: the app mounted by harness/harness.tsx on canned inventory and runner
-# events (fetch and EventSource stubbed, nothing on the network), one scenario per row of
-# harness/scenarios.json, the PNGs published for PR visual review on the shared
-# //util/testing/frontend_visual machinery.
-#
-# The fixture tables: the harness reads both to mount a scene by `?page=`. The generic sweep
-# captures scenarios.json; Python Playwright tests drive and capture interaction_scenarios.json.
+# Python visual tests mount the app against canned inventory and runner events.
+# Fixture identities select data only; tests own browser geometry and screenshot checkpoints.
 js_library(
-    name = "visual_scenarios_json",
+    name = "visual_fixtures_json",
     testonly = True,
     srcs = [
-        "harness/interaction_scenarios.json",
         "harness/realistic_rollout.json",
         "harness/reported_rollout.json",
-        "harness/scenarios.json",
+        "harness/fixtures.json",
     ],
 )
 
 ts_library(
-    name = "visual_scenario",
+    name = "visual_fixture",
     testonly = True,
-    srcs = ["harness/scenario.ts"],
+    srcs = ["harness/fixture.ts"],
     tsconfig = TSCONFIG,
-    deps = [":visual_scenarios_json"],
+    deps = [":visual_fixtures_json"],
 )
 
 ts_library(
@@ -1225,8 +1219,8 @@ ts_library(
         ":stream_status",
         ":test_model_catalog",
         ":theme",
-        ":visual_scenario",
-        ":visual_scenarios_json",
+        ":visual_fixture",
+        ":visual_fixtures_json",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -1267,9 +1261,7 @@ filegroup(
     srcs = ["harness/bundle.css"],
 )
 
-# Every scenario in both fixture tables, each on its own browser -- `shard_count` buys the
-# parallelism per-scenario targets used to give, without BUILD repeating the scene list. Filter
-# static scenes by scenario name and interactive scenes by Python test name; see AGENTS.md.
+# Filter render-only and interactive cases by their Python test names.
 #
 # medium: a shard renders 20-21 scenarios, each on its own browser. The six shards took 32-59s in a
 # run alone (invocation b4c9de0e-a2bd-4dd7-9cf4-336af5fc7295) and up to 74s with three such runs and
@@ -1282,7 +1274,6 @@ py_visual_test(
     size = "medium",
     assets = [
         "harness/index.html",
-        "harness/interaction_scenarios.json",
         ":visual_bundle_css",
     ],
     devtools_viewport = True,
@@ -1290,7 +1281,6 @@ py_visual_test(
     shard_count = 6,
     test_deps = [
         ":visual_assertions",
-        ":visual_pages",
         "//util/testing:page_capture",
         "//util/testing:undeclared_outputs",
         "//util/testing:viewports",
@@ -1336,16 +1326,6 @@ agentplane_vitest_test(
 
 check_vitest_specs()
 
-py_library(
-    name = "visual_pages",
-    testonly = True,
-    srcs = ["visual_pages.py"],
-    deps = [
-        "//util/testing:viewports",
-        "//util/testing:visual_capture",
-        "@pypi//playwright",
-    ],
-)
 
 py_library(
     name = "visual_assertions",

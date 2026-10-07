@@ -8,6 +8,9 @@ JSON/jq instruction interpreter and no browser-side test driver.
 
 - **Tests** own fixture selection, readiness, actions, assertions, scrolling, pointer
   placement and screenshot checkpoints. Use normal functions and pytest parameterization.
+  Fixture identifiers select data, not viewport, theme, readiness, or interactions. Reuse a
+  fixture for multiple tests. Screenshot names identify outputs; do not dispatch behavior
+  from their spelling or suffixes.
 - **TS harnesses** mount production components and provide synthetic fixture data or fake
   services. A shared/generated fixture catalog may enumerate data; it must not contain
   selectors, clicks, waits, or capture instructions.

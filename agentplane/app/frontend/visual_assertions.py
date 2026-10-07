@@ -74,7 +74,7 @@ async def _rollout_start(page: Page) -> None:
 
 
 async def _rollout_geometry(page: Page, state: str) -> None:
-    scene = await page.evaluate("new URL(location.href).searchParams.get('page')")
+    fixture_id = await page.evaluate("new URL(location.href).searchParams.get('page')")
     geometry = await page.evaluate(
         dedent("""() => {
       const box = element => {
@@ -92,7 +92,7 @@ async def _rollout_geometry(page: Page, state: str) -> None:
       };
     }""")
     )
-    (undeclared_outputs_dir() / f"{scene}-{state}-geometry.json").write_text(json.dumps(geometry, indent=2))
+    (undeclared_outputs_dir() / f"{fixture_id}-{state}-geometry.json").write_text(json.dumps(geometry, indent=2))
 
 
 async def _open_recovery_details(page: Page) -> None:

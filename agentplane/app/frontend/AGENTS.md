@@ -24,11 +24,12 @@ itself, not an animation's start/end frames — which visual tests disable anywa
 
 ## Adding a visual test
 
-Fixture catalogs in `harness/scenarios.json` and `harness/interaction_scenarios.json`
-contain routes and canned application data only. Python tests own readiness, clicks,
-scrolls, assertions and capture; `visual_pages.py` shares preparation and capture metadata.
-Use `util/testing/viewports.py` for browser geometry. Keep the existing target and image
-names so PR visual review retains its baseline identity.
+`harness/fixtures.json` contains routes and canned application data only. Reuse a
+fixture across viewport sizes and interactions; do not add a new fixture identity merely
+for another screenshot. Python tests own readiness, clicks, scrolls, assertions and capture.
+Pass browser geometry explicitly using `util/testing/viewports.py`, and pass crop locators
+to `view.capture()`. A screenshot name identifies an artifact; it must not select behavior.
+Preserve image names during a migration only to retain useful before/after comparisons.
 
 Do not add harness switches that click, focus, scroll or inspect the DOM. Add an ordinary
 Python behavior test and an explicit screenshot checkpoint instead. BUILD names the test

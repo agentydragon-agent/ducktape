@@ -1,12 +1,5 @@
-/**
- * What `harness.tsx` reads of a row in either fixture table: the route it mounts and the fixture
- * variations that route alone does not express. Python captures from `scenarios.json` in the
- * generic sweep and drives `interaction_scenarios.json` with named Playwright tests. BUILD names
- * no individual scenario.
- */
-
-import table from "./scenarios.json";
-import interactionTable from "./interaction_scenarios.json";
+/** Canned app data selected independently of viewport, interactions, and screenshot names. */
+import table from "./fixtures.json";
 
 export type DisclosureVisualStage =
   | "collapsed"
@@ -24,7 +17,7 @@ export type DisclosureVisualStage =
   | "nested-after-output"
   | "nested-output-collapsed";
 
-export interface Scenario {
+export interface VisualFixture {
   /** Sanitized staging-derived run, preserving the sequence and relative sizes of its items. */
   realisticRollout?: "completed" | "reported";
   /** Mount the isolated shared-disclosure phone scene instead of the full app. */
@@ -122,5 +115,5 @@ export interface Scenario {
   failedTurn?: "before-content" | "after-content";
 }
 
-// The JSON modules type string fields as `string`, not as the literal union `Scenario` names.
-export const SCENARIOS: Record<string, Scenario> = { ...table, ...interactionTable } as Record<string, Scenario>;
+// The JSON modules type string fields as `string`, not as the literal union `VisualFixture` names.
+export const FIXTURES: Record<string, VisualFixture> = table as Record<string, VisualFixture>;

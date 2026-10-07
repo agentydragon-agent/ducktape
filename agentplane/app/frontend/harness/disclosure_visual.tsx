@@ -3,7 +3,7 @@ import { type JSX } from "react";
 
 import { ClampedBlock } from "../clamped_block";
 import { Disclosure } from "../disclosure";
-import { type DisclosureVisualStage } from "./scenario";
+import { type DisclosureVisualStage } from "./fixture";
 
 const ABOVE_COPY = Array.from(
   { length: 4 },
