@@ -18,6 +18,11 @@ the authority's notification/watch mechanism (PostgreSQL `NOTIFY` for Action Ser
 reconnect/replay from durable state rather than process-local memory. A single-replica deployment
 is an explicit temporary operational constraint, never an implicit correctness assumption.
 
+**Immediate operator priority:** `THREAD_READ_POLICY` — enable explicitly scoped
+ServiceAccount access to selected Thread history. Design the identity and authorization
+boundary first; this is independent of hosted Threads, bootstrap orchestration, and
+future harness-capability research.
+
 Proposed execution order for the Thread correctness/UI track:
 
 - **Thread UI:** the staged submission indicator (`SUBMISSION_STAGE_INDICATOR`) follows
@@ -25,11 +30,11 @@ Proposed execution order for the Thread correctness/UI track:
   [#9063](https://github.com/agentydragon/ducktape/issues/9063).
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
-- **Unranked future harness capabilities:** project skills and commands, web search, visual input,
-  native subagents, interactive controls, project hooks/plugins, prompt suggestions, and a Claude
-  RemoteIO transport evaluation. The
-  existing P2 item `DT` is included below as a cross-reference and keeps its current priority; it
-  covers Action-backed tools and background-work control. The new candidates are an inventory, not
+- **Unranked future harness capabilities:** project skills and commands, web search,
+  file/image uploads, visual input, MCP Tasks interoperability research, native subagents,
+  interactive controls, project hooks/plugins, prompt suggestions, and a Claude RemoteIO
+  transport evaluation. The existing P2 item `DT` keeps its priority and covers
+  Action-backed tools and background-work control. The new candidates are an inventory, not
   an execution order or a priority claim against the rest of this DAG. Their win/work estimates are
   provisional; compare them with the full roadmap when scheduling. `HARNESS_CONFIG_ISOLATION` is
   the shared technical prerequisite.
@@ -57,6 +62,8 @@ flowchart TB
     T3["Deferred product work<br/>thread search and lookup<br/>later prioritization"]:::future
     PC_EGRESS_CREDENTIALS["Remaining configuration<br/>label public-coder's OpenClaw caller<br/>for Action Service admission"]:::future
     PC_EGRESS["Capstone<br/>public-coder-agent egress migration<br/>proven equivalent, cut over, old proxy retired"]:::milestone
+    ANTHROPIC_INCLUDED_API_ROUTING["Unranked integration<br/>use eligible subscription-linked API credits<br/>reviewed provider route and billing"]:::future
+    AIQUOTA_ANTHROPIC_API_CREDIT["Unranked reporting<br/>show subscription-linked API credit<br/>separate from Claude Code usage"]:::future
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
@@ -73,9 +80,11 @@ flowchart TB
     KUBERNETES_MONITORING["Unranked future capability<br/>agent-visible Kubernetes rollout monitoring<br/>notifications are an option"]:::future
     DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
     HARNESS_CONFIG_ISOLATION["Unranked prerequisite<br/>separate hosted feature config from capture scenarios<br/>keep project and host settings isolated"]:::future
+    HARNESS_MCP_TASKS_EVAL["Unranked reading project<br/>MCP Tasks in pinned Claude and Codex clients<br/>compare with Action receipts"]:::decision
     HARNESS_SKILLS["Unranked candidate<br/>project-scoped skills and commands<br/>both native harnesses"]:::future
     HARNESS_WEB_SEARCH["Unranked candidate<br/>routed web search<br/>source evidence in Thread"]:::future
     HARNESS_VISUAL_INPUT["Unranked candidate<br/>image attachments and visual input<br/>composer, protocol, storage, replay"]:::future
+    THREAD_UPLOADS["Unranked candidate<br/>attach files and images to a Thread<br/>authorized upload, retained bytes, agent access"]:::future
     HARNESS_MANUAL_COMPACTION["Unranked future control<br/>user-triggered harness compaction<br/>from the frontend"]:::future
     CLAUDE_REMOTE_IO_EVAL["Unranked transport evaluation<br/>Claude RemoteIO through egress proxy<br/>compare with stream-json"]:::decision
     HARNESS_INTERACTIVE_CONTROLS["Unranked candidate<br/>questions and permission decisions<br/>durable park, answer, recovery"]:::future
@@ -84,7 +93,7 @@ flowchart TB
     HARNESS_PROMPT_SUGGESTIONS["Optional, lowest estimated win<br/>Claude prompt suggestions<br/>measure UX before enabling"]:::future
     THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
     HOSTED_THREAD_SURFACES["Deferred design<br/>read and control surfaces for a hosted Thread<br/>beyond today's Sandbox-bound view"]:::future
-    THREAD_READ_POLICY["Deferred design<br/>explicit ServiceAccount access to Thread history<br/>specific IDs or reviewed selectors"]:::decision
+    THREAD_READ_POLICY["Priority design<br/>explicit SA access to selected Thread history<br/>start with per-Thread grants"]:::active
     AG["Capstone<br/>hosted Agent and Thread model<br/>lifecycle, surfaces and read policy together"]:::milestone
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_RBAC["Managed Kubernetes access<br/>catalog choices and SA bindings<br/>live acceptance pending; see #8596"]:::active
@@ -96,7 +105,9 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Deferred combined UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox selected, Thread fields editable"]:::future
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
-    ASYNC_PROTOCOL_AUDIT["Design decision<br/>audit long-lived request/response contracts<br/>ticket vs durable admission vs push"]:::decision
+    THREAD_OPEN_RELOAD_RECOVERY["Open recovery follow-up<br/>runner committed but mapping absent<br/>safe reload reconciliation"]:::future
+    BOOTSTRAP_PROGRESS_CONTRACT["Planned contract<br/>one bootstrap attempt with durable progress/result<br/>no HTTP-held script execution"]:::future
+    SANDBOX_CREATE_RECONCILE["Lifecycle acceptance<br/>lost Create reply and partial grants<br/>current UID, no deleted-object tombstone"]:::future
     COMMAND_DISPATCHED_EVENT["Missing observation<br/>runner handed the command to the harness<br/>journal-only today; needs an Event"]:::future
     SUBMISSION_STAGE_INDICATOR["Planned UI<br/>staged submission indicator<br/>which of five stages, not two strings"]:::future
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
@@ -346,6 +357,15 @@ needs evidence that work does not already provide.
 - **`CLAUDE_REMOTE_IO_EVAL` — unranked decision:** Compare Claude RemoteIO with `stream-json`,
   prove the scoped egress interception and runner-owned bridge, and measure compaction-summary
   visibility before choosing an implementation. See [Claude RemoteIO transport](claude_remote_io.md).
+- **`HARNESS_MCP_TASKS_EVAL` — unranked capability reading project:** Read the current MCP
+  Tasks protocol and the pinned Claude CLI and Codex client implementations (and verify with
+  native captures where available). Determine which clients actually negotiate task-capable
+  tool calls, obtain a durable task ID, inspect/follow results, cancel, and recover across
+  disconnects; identify transport/version or UI gaps. Compare the Task lifecycle with Action
+  Service's durable request/receipt/events semantics before recommending an integration.
+  Distinguish MCP Tasks from Claude subagents, Codex multi-agent features, and FastMCP's
+  internal Python task machinery. Do not assume either harness supports Tasks or treat this
+  investigation as a fix for direct-tool response loss.
 - **`HARNESS_INTERACTIVE_CONTROLS` — high win, high work:** Support questions and permission
   requests that park a turn, survive reconnect/restart, accept or reject a durable decision, and
   resume safely. Keep user decisions distinct from Action Service authorization.
@@ -361,6 +381,14 @@ needs evidence that work does not already provide.
 - **`HARNESS_SKILLS` — high win, low–medium work:** Enable project-scoped skills and custom
   commands for Claude and Codex. Prove the project catalog is available in a Thread while
   host-global settings and unrelated user configuration stay out.
+- **`THREAD_UPLOADS` — unranked candidate:** Allow a user to upload files and images for an
+  agent to inspect, bound to an authorized Thread rather than an arbitrary Sandbox path. Design
+  size/type limits, durable bytes and scoped references, safe workspace materialization or
+  harness attachment, and cleanup/retention across restart and deletion. Expose the attachment
+  on a user message with replayable provenance; do not mistake a filename or a preview for bytes
+  the agent actually received. Test reconnect, duplicate submission, cross-Thread access denial,
+  missing Sandbox, and both harnesses. Browser-provided images additionally require
+  `HARNESS_VISUAL_INPUT`; that node's workspace `view_image` fixture is a different input path.
 - **`HARNESS_VISUAL_INPUT` — high win, high work:** Carry supported image input/viewing through the
   harness protocol and retained Thread history; prove Claude's image input path and Codex viewing
   an image already in its workspace. Text-only transcripts are insufficient acceptance. For Codex,
@@ -489,6 +517,24 @@ current consumers before removing or splitting any shared resource. Source inven
 [`public_coder_proxy.py`](../../cluster/cdk8s/public_coder_proxy.py) and
 [`haku_egress_proxy.py`](../../cluster/cdk8s/haku_egress_proxy.py).
 
+### `ANTHROPIC_INCLUDED_API_ROUTING` — use subscription-linked Anthropic API credit
+
+**Unranked future integration:** verify the actual eligibility, amount, expiry, API credential
+mechanism, and terms for Anthropic's subscription-linked API credit before wiring a model route
+to it. Use an authorized credential owner and scoped egress/proxy configuration; do not substitute
+a Claude Code subscription OAuth usage token for an API credential without explicit support.
+Prove which API calls draw down this credit, how routing/fallback behaves when exhausted, and
+how paid spend is bounded. Keep the decision to use the credit independent from the quota UI.
+
+### `AIQUOTA_ANTHROPIC_API_CREDIT` — show API credit in aiquota
+
+**Unranked reporting:** read an authoritative Anthropic API credit/balance/usage surface if
+available, through an authorized read-only credential path. Distinguish included API credit,
+paid API spend, and aiquota's existing Claude subscription usage windows and extra spend; do
+not present one as the other. Preserve units, reset/expiry, unavailable and stale states, and
+historical observations without logging credentials. Test changes in balance and the limit
+boundary. This can be investigated independently of the model-route integration.
+
 ### `INPUT_DELIVERY` — remaining native queue and recovery evidence
 
 **Remaining evidence:** close the harness-specific queue and recovery gaps, independently of
@@ -526,26 +572,68 @@ admitted without a terminal outcome. No acknowledgement, retry, steering, cancel
 runner. Keep unsupported operations native or explicitly unavailable. **Deferred:** generic queue
 management and unproven per-input cancellation.
 
-### `ASYNC_PROTOCOL_AUDIT` — choose a truthful asynchronous interaction contract
+### `THREAD_OPEN_RELOAD_RECOVERY` — find a committed Open without a Thread mapping
 
-**Design first, before changing submission APIs:** audit Thread Open/Resume/SubmitCommand and
-related browser, app, Sandbox Service, runner, and archive protocols for requests held open across
-long-running work. Inventory who owns durable state at each boundary, the exact point where a
-response can truthfully promise acceptance, timeout/disconnect behavior, retry and replay identity,
-authorization of status reads, and how the client learns later outcomes. Include other comparable
-long-running request/response flows encountered in the audit, not just command submission.
+**Failure window:** the runner may commit Open/Attach, but the app may lose the reply or fail
+before committing the `(sandbox, session_id) → Thread` mapping. The browser can check
+that mapping by its stable session ID, but after a reload it retains only the ID, not
+the original spec and setup script. "No Thread yet" therefore means **unknown**, not
+"no session"; retrying with freshly assembled defaults or a new ID can create a
+second or conflicting session.
 
-Compare runner-first admission with a prompt ticket plus status lookup / existing Thread push feed;
-a `202 Accepted` must not imply durable acceptance before an authority has committed it. An
-app-owned pending ticket/outbox while the runner is unavailable changes the availability promise
-and remains an explicit `COMMAND_QUEUE_DECISION`, not an incidental implementation detail.
-The command POST now returns the runner's durable admission receipt without waiting for the
-archive ([#9365](https://github.com/agentydragon/ducktape/pull/9365)); do not reintroduce an
-archive wait while assessing Open/Resume and other long-lived requests. Specify semantics for a
-repeated command id with a changed payload, rejection vs still-unobserved, reload/reconnect,
-multi-replica delivery, and retention of ticket/status evidence. Record a design and independently
-dispatchable implementation/acceptance nodes _after discussion_. Keep
-`SUBMISSION_STAGE_INDICATOR` distinct.
+**Design and acceptance:** choose an authorized way to inspect the runner's retained
+session and adopt/reconcile the exact Open (or explicitly report that it cannot be
+recovered), without trusting a guessed ID or persisting secrets in browser storage.
+Scope reads to the caller's Sandbox and distinguish a current Sandbox UID from an
+old/deleted one. Exercise reply loss before and after runner commit and before and
+after app mapping commit, reload, changed spec/script, missing Sandbox, and two app
+replicas. Do not infer that a session never existed from an absent mapping.
+
+### `BOOTSTRAP_PROGRESS_CONTRACT` — do not hold Open through script execution
+
+Sandbox Service currently awaits the runner's `Initialize` _terminal result_ for
+the Sandbox binding's bootstrap script **before** Open/Attach. The runner retains
+script identity, ordered output, and result, but Sandbox Service has no independent
+authorized bootstrap start/status/progress API. Thus the Open RPC can remain open
+for the duration of a long script despite no longer waiting for the app archive.
+
+**Decided invariant: one bootstrap attempt per Sandbox, never a retry mechanism.**
+Today `Initialize` replays success but an identical later call re-executes a failed
+or interrupted script; change that behavior before an asynchronous reconciler can
+call it safely. A repeat must report the retained result/state, including failure or
+interruption, without launching another process. On runner restart, persist an honest
+interrupted/unknown outcome for an attempt that has no terminal result; do not invent
+success/failure or restart it. To run a different initialization, create a distinct
+Sandbox rather than retrying inside the old one. Pin tests for failure, lost response,
+reconnect, and runner restart.
+
+Specify a durable start receipt and scoped progress/result reads or feed without
+making Open wait for the script; keep successful bootstrap as an Open precondition
+unless a separately reviewed contract changes that. Separate the configured
+launch/RPC deadlines from the acceptance promise. `THREAD_SETUP_PROGRESS` is
+separate UI presentation work; per-session setup is not this Sandbox initialization.
+
+### `SANDBOX_CREATE_RECONCILE` — lost lifecycle response and partial provisioning
+
+Create currently mints a _new random suffix_ from the caller's slug inside
+`SandboxInventory.create`, before creating a same-name ServiceAccount and the Sandbox CR.
+If the reply is lost, the caller does not know the name, so Get by name cannot recover
+it and a retry can create a second Sandbox. Create may also commit the CR then fail
+while provisioning grants; Kubernetes intent is not Pod readiness.
+
+**Implementation and acceptance:** give each Create a caller-retained stable identity and
+known target name before the request is sent; retry must use that same name and exact
+choices. Record the identity and normalized intent on the CR and verify both and
+caller authorization before treating an existing object as success; mismatches are
+conflicts, not adoption. Handle existing/in-flight same-name ServiceAccounts and
+ambiguous Kubernetes writes without deleting an SA if its CR may have committed.
+The existing provisioning-intent annotation and reconciler should finish incomplete
+grants rather than creating another Sandbox. Exercise reply loss at SA creation,
+CR commit, owner-reference patch, and grant provisioning; concurrent retries,
+conflicts, restart, and deletion/recreation under the same name. Compare current
+UIDs to distinguish replacement; Kubernetes has no get-by-UID or retained tombstone,
+so absence after deletion remains unknown without a separate durable request ledger.
+Do not promise exactly-once across deletion from a name lookup alone.
 
 ### `COMMAND_QUEUE_DECISION` — where submission becomes durable
 
@@ -720,30 +808,30 @@ view the derived read model serves. Separate from the lifecycle: a Thread can ou
 before anything new reads it that way, and these surfaces can be designed against a Thread that
 does not yet.
 
-### `THREAD_READ_POLICY` — explicit ServiceAccount grants for Thread history
+### `THREAD_READ_POLICY` — explicitly scoped ServiceAccount Thread reads
 
-**Design first; no grant model selected:** a logical agent may run as a ServiceAccount in
-independent Threads over time and should be able to find and read authorized prior history,
-including after a Sandbox or runner session changes. Do not infer read authority merely from
-sharing a Sandbox, a label, a similarly named agent, or a previously used credential. Specify
-which identity owns a Thread and how a caller's ServiceAccount obtains read authority through
-an explicit, inspectable, revocable policy.
+**Immediate design priority:** today `TokenReviewer` admits named ServiceAccount subjects,
+but the app's `require_caller` router dependency does not apply per-Thread authorization.
+An admitted token can read the full Thread list and raw Events, not just its own history.
+Do not add new token subjects as a substitute for per-Thread grants. Operator sessions
+retain their existing broader view; token authentication alone conveys no Thread scope.
 
-Compare grants scoped to specific Thread IDs with broader reviewed scopes (for example an
-operator-assigned tag or collection of Threads). Define who may assign or change selectors,
-whether existing and future Threads match, what a retag does to access, and how grants survive
-ServiceAccount replacement without silently sharing another agent's history. Distinguish
-Thread identity from runner session/incarnation IDs, and bound list/search/discovery as well as
-raw Event/transcript reads so listing cannot leak inaccessible history. Decide what the agent
-can see versus what an operator can see, the authority for API and archive reads, revocation
-and audit behavior, and tests for same-agent history, cross-agent denial, selector changes and
-replay. Treat cross-Identity reads as a deliberate policy choice, not a side effect of queries.
+**Preferred first slice to evaluate:** operator-managed, inspectable/revocable grants of
+read access to specific stable Thread IDs for specific ServiceAccount identities. Filter
+list/discovery in the authoritative app store and check direct reads, Events, observations,
+evidence/frame routes, live feeds and replay at the same boundary. Treat a not-authorized
+Thread as not found to that caller; reconnect must reauthorize, and revocation must stop
+ongoing feeds. Bind to an authenticated ServiceAccount identity with an explicit policy for
+name/UID reuse, rather than assuming a Sandbox name or runner session confers ownership.
 
-This design can proceed independently of a hosted-Thread lifecycle or UI. Future cross-Identity
-notification delivery needs its read policy, but [subscriptions v1](notifications.md) retains
-its authenticated ServiceAccount authority and explicit runner-session scope; it does not
-require app Thread ownership or cross-account delivery policy. Do not commit to a tag-based
-schema or implement broad reads before the authority model is reviewed.
+**Design gate:** decide the narrow grant schema, how a grant is assigned/revoked, and
+whether replacing a ServiceAccount should inherit its grants. Audit adjacent mutation,
+media, and bulk/sync endpoints before promising that the caller can see _only_ granted
+Threads; a read-only guard is not isolation if another route can return history or control
+the Thread. Test selected versus other Threads, list/search leaks, archived and deleted
+Sandboxes, two replicas, revocation during SSE/replay, and role changes. Broader tag or
+collection selectors, including future Threads, are a later explicit policy decision;
+do not couple the first slice to the hosted-Thread lifecycle or UI.
 
 ### `AG` — hosted Agent and Thread model
 
