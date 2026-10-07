@@ -18,7 +18,7 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.testing.grpc_service import service_client
+from agentplane.sandbox_service.testing.grpc_service import RESOURCE_WAIT_BUDGETS, service_client
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict, fake_apiserver, pod_for
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -115,6 +115,7 @@ async def authenticated_service(
         caller_accounts=frozenset({manager}),
         platform_instructions=platform_instructions,
         follow_lease_s=1,
+        **RESOURCE_WAIT_BUDGETS,
     )
     async with service_client(resources, token_file) as client:
         yield client

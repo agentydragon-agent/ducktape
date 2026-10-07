@@ -29,6 +29,17 @@ SPEC = protocol_pb2.SessionSpec(
     harness=protocol_pb2.HARNESS_CLAUDE, cwd="/state/work", model="test-model", reasoning_effort="low"
 )
 
+# Wait budgets for a `RunnerBridge` under test. The bridge takes them from config and has no defaults
+# of its own, so a test states what it runs with instead of inheriting a production number. These are
+# the values the bridge ran under before the settings existed; nothing here waits on them, so their
+# only job is to be generous enough that no test passes or fails because of them. A test that
+# exercises a deadline overrides the one it cares about.
+BRIDGE_WAIT_BUDGETS: dict[str, float] = {
+    "command_admission_timeout_s": 300.0,
+    "session_archive_timeout_s": 60.0,
+    "admission_reread_s": 2.0,
+}
+
 
 def event_entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
     """One runner event at `cursor`, timestamped from it so a thread's order is its cursor order."""

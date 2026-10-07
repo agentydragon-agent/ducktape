@@ -27,7 +27,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
-from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
+from agentplane.app.testing.thread_test_support import BRIDGE_WAIT_BUDGETS, SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
@@ -234,6 +234,7 @@ def bridge(
         content=content,
         ingester=ingester,
         thread_changes=database_updates.changes[Channel.THREADS],
+        **BRIDGE_WAIT_BUDGETS,
     )
 
 

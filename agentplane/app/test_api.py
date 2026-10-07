@@ -29,6 +29,7 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
+from agentplane.app.testing.thread_test_support import BRIDGE_WAIT_BUDGETS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.ingestion import Ingester, Ingestion
@@ -626,6 +627,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
                     content=content,
                     ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion),
                     thread_changes=database_updates.changes[Channel.THREADS],
+                    **BRIDGE_WAIT_BUDGETS,
                 ),
                 store,
                 TEST_MODELS,
@@ -682,6 +684,7 @@ async def test_a_runner_that_never_answers_open_is_a_504_and_releases_its_stream
                     content=content,
                     ingester=ingester,
                     thread_changes=database_updates.changes[Channel.THREADS],
+                    **BRIDGE_WAIT_BUDGETS,
                 ),
                 store,
                 TEST_MODELS,

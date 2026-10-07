@@ -23,24 +23,6 @@ from agentplane.runner.errors import RunnerError
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
-# Defaults for the waits a submission pays. Each is a `Settings` field, so a deployment changes it
-# without a code change; these are only what an unconfigured app uses.
-#
-# `command_admission_timeout_s` bounds waiting for the Ingester to copy the runner's already-written
-# CommandAdmitted into the app archive. It is not a runner round trip, and not a proxy for the
-# harness having taken the input: a Codex harness inserts a steer only at an opportunity inside the
-# turn, so on a local model both the admission and its ingest can run minutes behind the request.
-# Too short turns a healthy slow submission into a reported failure whose command is running anyway.
-DEFAULT_COMMAND_ADMISSION_S = 300.0
-# `session_archive_timeout_s` bounds the same copy for Open and Resume: waiting for the archive to
-# reach the cursor the runner reported as attached, so a resumed Thread is never served while the
-# database still says its previous harness ended. Shorter than the submission wait on purpose --
-# nothing has to happen in a harness first, only the copy of bytes already in the runner's log.
-DEFAULT_SESSION_ARCHIVE_S = 60.0
-# `admission_reread_s` is the fallback poll period behind LISTEN/NOTIFY: notifications only wake a
-# durable reread, so this bounds what a lost notification costs, not how long a submission may take.
-DEFAULT_ADMISSION_REREAD_S = 2.0
-
 
 class MalformedMessageError(Exception):
     """A request body is not the proto-JSON of the message the route takes."""
@@ -76,12 +58,22 @@ class RunnerBridge:
         content: ContentStore,
         ingester: Ingester,
         thread_changes: Changes,
-        command_admission_timeout_s: float = DEFAULT_COMMAND_ADMISSION_S,
-        session_archive_timeout_s: float = DEFAULT_SESSION_ARCHIVE_S,
-        admission_reread_s: float = DEFAULT_ADMISSION_REREAD_S,
+        # The three waits a submission pays, with no defaults here: what each one means, and what a
+        # sensible value depends on, are stated once on the `Settings` fields that own them
+        # (`agentplane/app/main.py`). A caller passes what *it* needs -- a deployment through config,
+        # a test through its own shorter bound -- rather than inheriting a number invented in the
+        # middle of the app, where it would silently become the default that production runs on.
+        #
+        # `command_admission_timeout_s` bounds the wait for the Ingester to copy the runner's
+        # CommandAdmitted into the app archive; `session_archive_timeout_s` bounds the same copy for
+        # Open and Resume; `admission_reread_s` is the LISTEN/NOTIFY fallback poll period, so it costs
+        # only a lost notification.
+        command_admission_timeout_s: float,
+        session_archive_timeout_s: float,
+        admission_reread_s: float,
     ) -> None:
         if min(command_admission_timeout_s, session_archive_timeout_s, admission_reread_s) <= 0:
-            raise ValueError("archive wait budgets must be positive")
+            raise ValueError("wait budgets must be positive")
         self._runners = runners
         self._command_admission_timeout_s = command_admission_timeout_s
         self._session_archive_timeout_s = session_archive_timeout_s

@@ -30,7 +30,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     sandbox,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
-from agentplane.sandbox_service.testing.grpc_service import service
+from agentplane.sandbox_service.testing.grpc_service import RESOURCE_WAIT_BUDGETS, service
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOX_API
@@ -98,6 +98,7 @@ def backend(
             grants if grants is not None else {},
             bindings,
         ),
+        **RESOURCE_WAIT_BUDGETS,
     )
     with start_blocking_portal() as portal, portal.wrap_async_context_manager(service(resources)) as target:
         yield Endpoint(target, token_file)

@@ -44,18 +44,22 @@ class Resources:
     # long a stalled stream consumer could pin an attachment, the opposite of what that shorter bound
     # exists for. `lifecycle_timeout_s` and `follow_lease_s` below were always separate.
     #
+    # No defaults here: what each is and what a sensible value depends on are stated once on the
+    # `Settings` fields that own them (`main.py`), and a deployment's number is not this dataclass's
+    # to invent. A caller -- the server from config, a test from itself -- says what it waits with.
+    #
     # `request_timeout_s`: one unary round trip -- TokenReview, destination resolution, and the
     # runner attach that opens a follow. Transport-shaped, so it stays short.
-    request_timeout_s: float = 15
+    request_timeout_s: float
     # `command_admission_timeout_s`: how long SubmitCommand waits for the runner to prove it
     # committed the whole Command (see `admit_running_command`), not for the harness to act on it.
     # Long on purpose: a Codex harness admits a steer only at an opportunity inside the turn, and a
     # local model's turn boundary can be minutes away. The command may still be committed when this
     # expires -- API.md, "Errors and uncertain outcomes".
-    command_admission_timeout_s: float = 300
+    command_admission_timeout_s: float
     # `stream_write_timeout_s`: one write to a downstream follower. Bounds a stalled consumer, so a
     # blocked reader cancels the attachment promptly instead of holding it open.
-    stream_write_timeout_s: float = 15
+    stream_write_timeout_s: float
     follow_lease_s: float = 900
     lifecycle_timeout_s: float = 300
     runner_grpc_channel_options: dict[str, int | str] = field(default_factory=dict)

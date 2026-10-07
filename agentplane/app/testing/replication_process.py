@@ -42,6 +42,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.replication_source import SANDBOX
+from agentplane.app.testing.thread_test_support import BRIDGE_WAIT_BUDGETS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
@@ -277,6 +278,7 @@ async def _serve(
             content=content,
             ingester=ingester,
             thread_changes=database_updates.changes[Channel.THREADS],
+            **BRIDGE_WAIT_BUDGETS,
         )
         async with (
             httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,

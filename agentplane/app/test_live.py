@@ -49,7 +49,7 @@ from agentplane.app.operator_sessions import (
 from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.shutdown import Drain
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
-from agentplane.app.testing.thread_test_support import Replica
+from agentplane.app.testing.thread_test_support import BRIDGE_WAIT_BUDGETS, Replica
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.ingestion import Ingester, Ingestion
@@ -315,6 +315,7 @@ def app(
         content=content,
         ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
         thread_changes=database_updates.changes[Channel.THREADS],
+        **BRIDGE_WAIT_BUDGETS,
     )
     return create_app(
         inventory,

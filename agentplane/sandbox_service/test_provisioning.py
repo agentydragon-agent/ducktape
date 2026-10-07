@@ -36,7 +36,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     pod,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
-from agentplane.sandbox_service.testing.grpc_service import service
+from agentplane.sandbox_service.testing.grpc_service import RESOURCE_WAIT_BUDGETS, service
 from agentplane.sandbox_service.testing.kubernetes import Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
@@ -116,6 +116,7 @@ async def api(case: Case, cluster: Cluster, tmp_path: Path) -> AsyncIterator[San
         caller_accounts=frozenset({ADMIN}),
         platform_instructions="",
         provisioning=case.service,
+        **RESOURCE_WAIT_BUDGETS,
     )
     token_file = tmp_path / "token"
     token_file.write_text(TOKEN)

@@ -39,6 +39,7 @@ py_library(
     deps = [
         ":model_test_data",
         ":replication_source",
+        ":thread_test_support",
         "//agentplane/app:action_policy",
         "//agentplane/app:api",
         "//agentplane/app:database",

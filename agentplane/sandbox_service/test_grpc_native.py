@@ -25,7 +25,7 @@ from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination, SessionDefaults
-from agentplane.sandbox_service.testing.grpc_service import service_client
+from agentplane.sandbox_service.testing.grpc_service import RESOURCE_WAIT_BUDGETS, service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
@@ -64,6 +64,7 @@ def resources(cluster: Cluster, runner: RunnerHandle) -> Resources:
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
         caller_accounts=frozenset({OWNER}),
         platform_instructions="Test backend-owned guidance.",
+        **RESOURCE_WAIT_BUDGETS,
     )
 
 

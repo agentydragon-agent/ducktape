@@ -55,6 +55,11 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
             content=content,
             ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
             thread_changes=database_updates.changes[Channel.THREADS],
+            # Only routes and models shape the document, so no wait here is ever paid; these are
+            # placeholders for the required budgets, not values with meaning.
+            command_admission_timeout_s=1,
+            session_archive_timeout_s=1,
+            admission_reread_s=1,
         ),
         ThreadStore(engine),
         ModelCatalog(

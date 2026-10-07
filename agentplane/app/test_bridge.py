@@ -38,6 +38,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
+from agentplane.app.testing.thread_test_support import BRIDGE_WAIT_BUDGETS
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore, FeedError
 from agentplane.app.threads.events.stream import follow
@@ -182,6 +183,7 @@ async def app_url(
         content=content,
         ingester=ingester,
         thread_changes=database_updates.changes[Channel.THREADS],
+        **BRIDGE_WAIT_BUDGETS,
     )
     app = create_app(
         inventory,
@@ -1098,6 +1100,7 @@ async def replicas(
         content=content,
         ingester=owner_ingester,
         thread_changes=database_updates.changes[Channel.THREADS],
+        **BRIDGE_WAIT_BUDGETS,
     )
     survivor = RunnerBridge(
         runners=survivor_runners,
@@ -1105,6 +1108,7 @@ async def replicas(
         content=ContentStore(replica_engine),
         ingester=survivor_ingester,
         thread_changes=replica_updates.changes[Channel.THREADS],
+        **BRIDGE_WAIT_BUDGETS,
     )
     try:
         async with replica_updates.listener.listen():
@@ -1195,6 +1199,7 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
                 content=ContentStore(replica_engine),
                 ingester=survivor_ingester,
                 thread_changes=replica_updates.changes[Channel.THREADS],
+                **BRIDGE_WAIT_BUDGETS,
             )
             try:
                 await survivor_ingester.start()
@@ -1463,6 +1468,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
         content=content,
         ingester=offline_ingester,
         thread_changes=database_updates.changes[Channel.THREADS],
+        **BRIDGE_WAIT_BUDGETS,
     )
     try:
         # A lost HTTP response is retryable from the committed Thread prefix even after the
