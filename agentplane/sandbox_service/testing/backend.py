@@ -62,7 +62,7 @@ class Endpoint:
     token_file: Path
 
     def client(self) -> SandboxServiceClient:
-        return SandboxServiceClient(self.target, namespace=NAMESPACE, token_file=self.token_file)
+        return SandboxServiceClient(self.target, namespace=NAMESPACE, token_file=self.token_file, command_timeout_s=310)
 
 
 @contextmanager

@@ -51,7 +51,10 @@ async def service(resources: Resources) -> AsyncIterator[str]:
 async def service_client(resources: Resources, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
     async with service(resources) as target:
         client = SandboxServiceClient(
-            target, namespace=resources.destinations.inventory.namespace, token_file=token_file
+            target,
+            namespace=resources.destinations.inventory.namespace,
+            token_file=token_file,
+            command_timeout_s=resources.command_admission_timeout_s + 10,
         )
         try:
             yield client

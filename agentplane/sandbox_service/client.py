@@ -84,12 +84,14 @@ class SandboxServiceClient:
         namespace: str,
         token_file: Path,
         request_timeout_s: float = 20,
-        command_timeout_s: float = 310,
+        command_timeout_s: float | None = None,
         lifecycle_timeout_s: float = 310,
         follow_timeout_s: float = 960,
         channel_options: Mapping[str, int | str] | None = None,
     ) -> None:
-        if min(request_timeout_s, command_timeout_s, lifecycle_timeout_s, follow_timeout_s) <= 0:
+        if min(request_timeout_s, lifecycle_timeout_s, follow_timeout_s) <= 0 or (
+            command_timeout_s is not None and command_timeout_s <= 0
+        ):
             raise ValueError("timeouts must be positive")
         self.target = target
         self.namespace = namespace
@@ -219,6 +221,8 @@ class Runner:
     async def command(
         self, session_id: str, command: command_pb2.Command, *, after_cursor: int
     ) -> event_log_pb2.EventEntry:
+        if self.service.command_timeout_s is None:
+            raise ValueError("SubmitCommand requires an explicit client deadline")
         receipt = await self.service.unary(
             self.service.stub.SubmitCommand,
             protocol_pb2.SubmitCommandRequest(

@@ -315,7 +315,7 @@ export async function models(): Promise<ModelCatalog> {
  * offer a turn opportunity at all. The clock also runs while the browser queues for a connection.
  *
  * Known soft coupling: the browser cannot read the deployed setting, so raising that setting above
- * ~5.5 minutes means raising this constant in the same change. Publishing the bound to the client is
+ * ~6 minutes means raising this constant in the same change. Publishing the bound to the client is
  * the fix, and is deliberately out of scope here.
  */
 const COMMAND_TIMEOUT_MS = 360_000;

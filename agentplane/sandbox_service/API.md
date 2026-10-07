@@ -166,10 +166,10 @@ transport:
   configured maximum 900 seconds / 15 minutes) the follow lease.
 
 The client whole-follow safety deadline defaults to 960 seconds / 16 minutes; initial attachment
-still uses the short request timeout. Its `SubmitCommand` deadline, default 310 seconds, is the one
-caller-side timeout longer than a transport round trip, because that call stays open for the
-admission receipt; keep it above `command_admission_timeout_s` so this service is what reports a
-reason, and raise the two together. The app's own value is
+still uses the short request timeout. `SubmitCommand` requires an explicit client deadline; the
+app config defaults it to 310 seconds. That call stays open for the admission receipt: keep its
+deadline above the server `command_admission_timeout_s` so the service reports a reason, and
+raise the two together. The app's own value is
 `AGENTPLANE_SANDBOX_SERVICE_COMMAND_TIMEOUT_S`. Renewal repeats TokenReview and destination
 admission; it is not in-stream reauthentication or a lease derived from the token's exact expiry.
 The app's 30-second database ingestion-ownership lease is independently renewed without closing

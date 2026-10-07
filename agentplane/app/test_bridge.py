@@ -1487,5 +1487,29 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
         await offline_ingester.close()
 
 
+async def test_command_submission_shares_one_deadline_across_runner_and_archive(
+    bridge: RunnerBridge, event_logs: EventLogStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    thread = await event_logs.open(
+        SANDBOX,
+        SESSION,
+        protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/state/work", model="bridge-model"),
+    )
+    monkeypatch.setattr(bridge, "_command_admission_timeout_s", 0.13)
+
+    async def slow_runner(*_args: object, **_kwargs: object) -> None:
+        await asyncio.sleep(0.08)
+
+    async def slow_archive(*_args: object) -> event_log_pb2.EventEntry:
+        await asyncio.sleep(0.10)
+        return event_log_pb2.EventEntry()
+
+    monkeypatch.setattr(bridge, "_command", slow_runner)
+    monkeypatch.setattr(bridge, "_wait_for_admission", slow_archive)
+    command = command_pb2.Command(command_id="budgeted", interrupt_turn=command_pb2.InterruptTurn(turn_id="turn"))
+    with pytest.raises(RunnerAdmissionTimeoutError, match="outcome uncertain"):
+        await bridge.command(thread, command)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

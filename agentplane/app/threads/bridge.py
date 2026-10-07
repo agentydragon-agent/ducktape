@@ -166,13 +166,16 @@ class RunnerBridge:
         # Start its feed before relaying so the rejection path cannot strand that prefix.
         await self._ingester.start()
         try:
-            await self._command(
-                runner_session.sandbox,
-                runner_session.session_id,
-                command,
-                after_cursor=await self._event_logs.last_cursor(thread_id),
-            )
-            return await self._wait_for_admission(thread_id, command)
+            # The runner receipt and its archive copy share one submission deadline. Two
+            # consecutive full budgets would outlast the browser and misreport a healthy steer.
+            async with asyncio.timeout(self._command_admission_timeout_s):
+                await self._command(
+                    runner_session.sandbox,
+                    runner_session.session_id,
+                    command,
+                    after_cursor=await self._event_logs.last_cursor(thread_id),
+                )
+                return await self._wait_for_admission(thread_id, command)
         except TimeoutError as error:
             raise RunnerAdmissionTimeoutError(command.command_id, self._command_admission_timeout_s) from error
 
