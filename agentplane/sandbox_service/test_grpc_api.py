@@ -342,14 +342,17 @@ async def test_timeout_is_uncertain_and_closes_attachment(resources: Resources, 
         with pytest.raises(TimeoutError):
             await remote.runner(DESTINATION).command("session", command, after_cursor=0)
 
-    async with service_client(replace(resources, command_admission_timeout_s=0.2), token_file) as remote:
-        async with asyncio.timeout(8), asyncio.TaskGroup() as tasks:
-            pending = tasks.create_task(submit(remote))
-            connection = await peer.attachments.get()
-            assert (await connection.commands.get()).command == command
-            await pending
-            await connection.closed.wait()
-            assert peer.attachments.empty()  # The client did not retry the uncertain mutation.
+    async with (
+        service_client(replace(resources, command_admission_timeout_s=0.2), token_file) as remote,
+        asyncio.timeout(8),
+        asyncio.TaskGroup() as tasks,
+    ):
+        pending = tasks.create_task(submit(remote))
+        connection = await peer.attachments.get()
+        assert (await connection.commands.get()).command == command
+        await pending
+        await connection.closed.wait()
+        assert peer.attachments.empty()  # The client did not retry the uncertain mutation.
 
 
 async def test_stopped_command_does_not_send_input(remote: SandboxServiceClient, peer: Peer) -> None:
