@@ -1288,8 +1288,8 @@ py_visual_test(
         ":visual_pages",
         "//util/testing:page_capture",
         "//util/testing:undeclared_outputs",
-        "//util/testing:visual_capture",
         "//util/testing:viewports",
+        "//util/testing:visual_capture",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -1331,8 +1331,8 @@ py_library(
     name = "visual_pages",
     srcs = ["visual_pages.py"],
     deps = [
+        "//util/testing:viewports",
         "//util/testing:visual_capture",
-        "//util/testing:visual_scenarios",
         "@pypi//playwright",
     ],
 )

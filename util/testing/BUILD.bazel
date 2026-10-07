@@ -238,35 +238,6 @@ py_library(
     deps = ["@pypi//playwright"],
 )
 
-py_library(
-    name = "visual_scenarios",
-    srcs = ["visual_scenarios.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//playwright",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "visual_sweep",
-    srcs = ["visual_sweep.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":page_capture",
-        ":undeclared_outputs",
-        ":visual_capture",
-        ":visual_scenarios",
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
-        "@pypi//playwright",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_test(
     name = "test_page_capture",
     srcs = ["test_page_capture.py"],
@@ -281,39 +252,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_visual_scenarios",
-    srcs = ["test_visual_scenarios.py"],
-    deps = [
-        ":visual_scenarios",
-        "//:conftest",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_visual_sweep",
-    # medium: 38 tests, nearly each on a browser of its own, measure 60s of pytest and 73s with startup
-    # on the RBE worker, every one making progress; `small` is 60s.
-    size = "medium",
-    srcs = ["test_visual_sweep.py"],
-    deps = [
-        ":visual_capture",
-        ":visual_scenarios",
-        ":visual_sweep",
-        "//:conftest",
-        "//util:playwright",
-        "//util:visual_review",
-        "@pypi//matplotlib",
-        "@pypi//pillow",
-        "@pypi//playwright",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "visual_capture",
     srcs = ["visual_capture.py"],
@@ -321,8 +259,8 @@ py_library(
     deps = [
         ":frontend_visual",
         ":page_capture",
+        ":viewports",
         ":visual_review",
-        ":visual_scenarios",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//playwright",
@@ -335,6 +273,7 @@ py_library(
     srcs = ["visual_fixtures.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":page_capture",
         ":undeclared_outputs",
         ":visual_capture",
         "@pypi//playwright",
@@ -347,12 +286,19 @@ py_test(
     name = "test_visual_capture",
     srcs = ["test_visual_capture.py"],
     deps = [
+        ":viewports",
         ":visual_capture",
-        ":visual_scenarios",
         "//:conftest",
         "//util:playwright",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "viewports",
+    visibility = ["//visibility:public"],
+    srcs = ["viewports.py"],
+    deps = ["@pypi//playwright"],
 )

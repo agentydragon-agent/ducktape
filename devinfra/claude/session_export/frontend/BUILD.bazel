@@ -342,16 +342,16 @@ py_visual_test(
     ],
     harness = ":visual_harness_js",
     shard_count = 2,
-    test_module = "devinfra.claude.session_export.frontend.test_visual",
-    test_srcs = ["test_visual.py"],
     test_deps = [
         "//util/testing:page_capture",
-        "//util/testing:visual_capture",
         "//util/testing:viewports",
+        "//util/testing:visual_capture",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+    test_module = "devinfra.claude.session_export.frontend.test_visual",
+    test_srcs = ["test_visual.py"],
     title = "Claude session sync",
 )
 

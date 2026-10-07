@@ -10,8 +10,8 @@ from playwright.async_api import expect
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 from util.bazel.runfiles import get_required_path
-from util.testing.visual_capture import VisualHarness
 from util.testing.viewports import Viewport
+from util.testing.visual_capture import VisualHarness
 
 # gazelle:include_dep //util/testing:visual_fixtures
 pytest_plugins = ("util.testing.visual_fixtures",)
@@ -37,15 +37,21 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
 
 @pytest.mark.parametrize("color_scheme", ["light", "dark"])
 @pytest.mark.parametrize("variant", ["compact", "detailed"])
-async def test_preview(visual: VisualHarness, fixture: Fixture, variant: str, color_scheme: Literal["light", "dark"]) -> None:
+async def test_preview(
+    visual: VisualHarness, fixture: Fixture, variant: str, color_scheme: Literal["light", "dark"]
+) -> None:
     name = f"preview-{fixture.slug}-{variant}-{color_scheme}"
     async with visual.open(
-        name, viewport=Viewport(width=1200, height=900, device_scale_factor=2), color_scheme=color_scheme,
+        name,
+        viewport=Viewport(width=1200, height=900, device_scale_factor=2),
+        color_scheme=color_scheme,
         window_globals={"__FIXTURE__": fixture.index, "__VARIANT__": variant},
     ) as view:
         card = view.page.locator(".haku-preview-card")
         await expect(card).to_be_attached()
-        await view.capture(name, target=card, label=f"{fixture.server_id} · {fixture.tool_name} — {variant} · {color_scheme}")
+        await view.capture(
+            name, target=card, label=f"{fixture.server_id} · {fixture.tool_name} — {variant} · {color_scheme}"
+        )
 
 
 if __name__ == "__main__":

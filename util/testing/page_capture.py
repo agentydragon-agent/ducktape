@@ -238,7 +238,8 @@ async def screenshot_element(page: Page, selector: str, *, context: str) -> byte
 
 
 async def screenshot_locator(
-    page: Page, target: Locator, *, context: str, scale: Literal["css", "device"] = "device"
+    page: Page, target: Locator, *, context: str, scale: Literal["css", "device"] = "device",
+    animations: Literal["allow", "disabled"] = "allow",
 ) -> bytes:
     if (count := await target.count()) != 1:
         raise ValueError(f"{context}: screenshot target must match exactly one element, got {count}")
@@ -252,7 +253,7 @@ async def screenshot_locator(
     }
     if clip["width"] == 0 or clip["height"] == 0:
         raise ValueError(f"{context}: screenshot target has no visible extent: {clip=}")
-    return await page.screenshot(clip=clip, full_page=True, scale=scale)
+    return await page.screenshot(clip=clip, full_page=True, scale=scale, animations=animations)
 
 
 def _round_half_up(value: float) -> int:

@@ -456,6 +456,7 @@ const QuotaIndicator = GObject.registerClass(
         '<node><interface name="works.allegedly.AiQuotaTest">' +
           '<method name="Reload"><arg type="s" direction="in" name="path"/></method>' +
           '<method name="OpenMenu"/>' +
+          '<method name="WaitForPaint"/>' +
           '<method name="CloseMenu"/>' +
           '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
           "</interface></node>",
@@ -464,6 +465,16 @@ const QuotaIndicator = GObject.registerClass(
             const [ok, bytes] = GLib.file_get_contents(path);
             if (!ok) throw new Error(`fixture not readable: ${path}`);
             this._loadFixtureData(JSON.parse(decodeBytes(bytes)));
+          },
+          WaitForPaintAsync: (_params, invocation) => {
+            const signal = global.stage.connect("after-paint", () => {
+              global.stage.disconnect(signal);
+              GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                invocation.return_value(null);
+                return GLib.SOURCE_REMOVE;
+              });
+            });
+            global.stage.queue_redraw();
           },
           OpenMenu: () => this.menu.open(false),
           CloseMenu: () => this.menu.close(false),

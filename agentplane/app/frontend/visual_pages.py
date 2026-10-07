@@ -288,10 +288,12 @@ async def open_scene(visual: VisualHarness, name: str) -> AsyncIterator[VisualPa
             case "session_catching_up":
                 await view.page.wait_for_selector('[data-thread-catchup="true"]', state="attached")
             case "session_sync_reconnecting":
-                await view.page.wait_for_selector('[aria-label="Runner feed active · harness running"]', state="attached")                await view.page.wait_for_selector('[data-connection="degraded"]', state="attached")
+                await view.page.wait_for_selector('[aria-label="Runner feed active · harness running"]', state="attached")
+                await view.page.wait_for_selector('[data-connection="degraded"]', state="attached")
                 await view.page.wait_for_selector('[data-thread-anchor="34"]', state="attached")
             case "session_sync_reconnecting_phone":
-                await view.page.wait_for_selector('[aria-label="Runner feed active · harness running"]', state="attached")                await view.page.wait_for_selector(':text("may be out of date")', state="attached")
+                await view.page.wait_for_selector('[aria-label="Runner feed active · harness running"]', state="attached")
+                await view.page.wait_for_selector(':text("may be out of date")', state="attached")
                 await view.page.wait_for_selector('[data-thread-anchor="34"]', state="attached")
             case "session_states_phone":
                 await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")

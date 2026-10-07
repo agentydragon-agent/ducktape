@@ -58,8 +58,8 @@ from agentplane.app.threads.view.views import ThreadFeedErrorState, ThreadOperat
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_review import upsert_review_asset
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
+from util.testing.visual_review import upsert_review_asset
 from util.visual_review import VisualReviewAsset
 
 # gazelle:include_dep @pypi//protobuf

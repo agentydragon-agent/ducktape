@@ -30,8 +30,8 @@ from util.testing.page_capture import (
     screenshot_locator,
     wait_for_stable,
 )
-from util.testing.visual_review import publish_review_png
 from util.testing.viewports import Viewport
+from util.testing.visual_review import publish_review_png
 
 # `document.fonts.check` is true for a family no `@font-face` declares, so on its own it passes when the
 # stylesheet declaring the font never arrived (or the name is misspelled) and the page renders in a fallback.
@@ -121,7 +121,7 @@ def inline_page_html(page: InlinePage, *, bundle_script: str, window_globals: Ma
     The animation-pinning CSS goes in with the stylesheets so it is in effect before anything mounts.
     """
     css = "".join(path.read_text(encoding="utf-8") for path in page.stylesheet_paths) + DISABLE_ANIMATIONS_CSS
-    assignments = "".join(f"window.{name}={_script_literal(value)};" for name, value in (window_globals or {}).items())
+    assignments = f"Object.assign(window, {_script_literal(dict(window_globals or {}))});"
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         + (f"<base href='{page.base_href}'>" if page.base_href else "")
@@ -174,6 +174,7 @@ class VisualPage:
         label: str | None = None,
         full_page: bool = False,
         scale: Literal["css", "device"] = "device",
+        animations: Literal["allow", "disabled"] = "allow",
     ) -> Path:
         if target is not None and full_page:
             raise ValueError("choose an element or a full page, not both")
@@ -183,11 +184,13 @@ class VisualPage:
             if status != "loaded":
                 raise AssertionError(f"{name}: {self.expected_font_family} font did not load ({status})")
         if target is not None:
-            screenshot = await screenshot_locator(self.page, target, context=name, scale=scale)
+            screenshot = await screenshot_locator(self.page, target, context=name, scale=scale, animations=animations)
         elif self.devtools_viewport is not None and not full_page and scale == "device":
+            if animations != "allow":
+                raise ValueError("DevTools captures require animations to be pinned before mount")
             screenshot = await self.devtools_viewport.screenshot()
         else:
-            screenshot = await self.page.screenshot(full_page=full_page, scale=scale)
+            screenshot = await self.page.screenshot(full_page=full_page, scale=scale, animations=animations)
         await self.check(context=name)
         return publish_review_png(
             screenshot,

@@ -1,0 +1,29 @@
+from pathlib import Path
+from unittest.mock import AsyncMock
+
+import pytest
+import pytest_bazel
+from playwright.async_api import Page
+
+from util.testing.stable_capture import stable_full_page_png
+
+
+async def test_returns_only_after_two_consecutive_identical_frames(tmp_path: Path) -> None:
+    page = AsyncMock(spec=Page)
+    page.screenshot.side_effect = [b"before", b"settled", b"settled"]
+    result = await stable_full_page_png(page, name="scene", diagnostics=tmp_path, attempts=3)
+    assert result == b"settled"
+    assert page.screenshot.await_count == 3
+    assert not list(tmp_path.iterdir())
+
+
+async def test_nonconvergence_fails_and_retains_every_frame(tmp_path: Path) -> None:
+    page = AsyncMock(spec=Page)
+    page.screenshot.side_effect = [b"one", b"two", b"three"]
+    with pytest.raises(AssertionError, match="scene: render did not stabilize in 3 captures"):
+        await stable_full_page_png(page, name="scene", diagnostics=tmp_path, attempts=3)
+    assert [path.read_bytes() for path in sorted(tmp_path.glob("*.png"))] == [b"one", b"two", b"three"]
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

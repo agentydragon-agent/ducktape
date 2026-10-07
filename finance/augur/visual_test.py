@@ -23,7 +23,7 @@ from urllib.parse import urlencode
 
 import pytest
 import pytest_bazel
-from playwright.async_api import Error, Page, Playwright, ViewportSize
+from playwright.async_api import Page, Playwright, ViewportSize
 
 from finance.augur.api.config import Config
 from finance.augur.api.server import static_price_clients
@@ -34,7 +34,8 @@ from finance.evidence.markets import Platform
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context, stability_style
-from util.testing.page_capture import wait_for_stable
+from util.testing.page_capture import PageErrors
+from util.testing.stable_capture import stable_full_page_png
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
 
@@ -472,25 +473,12 @@ async def page(playwright: Playwright) -> AsyncIterator[Page]:
     ) as context:
         page = await context.new_page()
 
-        async def record_js_error(err: Error) -> None:
-            await page.evaluate(
-                "err => { window.__jsErrors = window.__jsErrors || []; window.__jsErrors.push(String(err)); }", str(err)
-            )
-
-        page.on("pageerror", record_js_error)
         yield page
 
 
 @pytest.fixture
-def page_errors(page: Page) -> list[str]:
-    """Uncaught JS exceptions thrown in the page during a test.
-
-    esbuild bundles undefined-variable and bad-prop bugs without complaint, and a screenshot diff
-    won't always surface a render-time `ReferenceError` (the crashing subtree may be off the tested
-    path). Collecting `pageerror` events lets the visual test fail loudly on any uncaught exception."""
-    errors: list[str] = []
-    page.on("pageerror", lambda exc: errors.append(str(exc)))
-    return errors
+def page_errors(page: Page) -> PageErrors:
+    return PageErrors(page)
 
 
 async def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Path:
@@ -498,23 +486,10 @@ async def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Pa
     # sticky element at its last on-screen position, so a mid-page scroll (e.g. after a rollout
     # interaction) would otherwise leave the header floating over the middle of the screenshot.
     await page.evaluate("() => window.scrollTo(0, 0)")
-    previous_bytes: bytes | None = None
-    previous_path: Path | None = None
-    for attempt in range(6):
-        await wait_for_stable(page)
-        attempt_path = target_path.with_name(f"{target_path.stem}.attempt{attempt}{target_path.suffix}")
-        await page.screenshot(path=str(attempt_path), full_page=True, animations="disabled", caret="hide", scale="css")
-        current_bytes = attempt_path.read_bytes()
-        if current_bytes == previous_bytes:
-            shutil.copy(attempt_path, target_path)
-            return target_path
-        previous_bytes = current_bytes
-        previous_path = attempt_path
-    assert previous_path is not None
-    diagnostics = undeclared_outputs_dir()
-    for attempt_path in target_path.parent.glob(f"{target_path.stem}.attempt*{target_path.suffix}"):
-        shutil.copy(attempt_path, diagnostics / attempt_path.name)
-    raise AssertionError(f"{target_path.stem}: render did not stabilize in six captures; inspect {diagnostics}")
+    target_path.write_bytes(
+        await stable_full_page_png(page, name=target_path.stem, diagnostics=undeclared_outputs_dir())
+    )
+    return target_path
 
 
 async def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path) -> Path:
@@ -526,8 +501,7 @@ async def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path)
         await page.screenshot(path=str(debug_dir / f"{case.name}.debug.png"), full_page=True)
         dom = await page.content()
         (debug_dir / f"{case.name}.debug.html").write_text(dom[:5000])
-        errors = await page.evaluate("() => window.__jsErrors?.join('\\n') ?? 'no __jsErrors'")
-        (debug_dir / f"{case.name}.debug.txt").write_text(f"JS errors: {errors}\nURL: {page.url}")
+        (debug_dir / f"{case.name}.debug.txt").write_text(f"URL: {page.url}")
         raise
     await page.goto(page.url, wait_until="networkidle", timeout=60_000)
     await case.wait_ready(page)
@@ -539,11 +513,10 @@ async def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path)
 
 @pytest.mark.parametrize("case", VISUAL_CASES, ids=[case.name for case in VISUAL_CASES])
 async def test_augur_pages_render(
-    page: Page, page_errors: list[str], augur_server: str, tmp_path: Path, case: VisualCase
+    page: Page, page_errors: PageErrors, augur_server: str, tmp_path: Path, case: VisualCase
 ) -> None:
     rendered = await _render_case(page, augur_server, case, tmp_path)
-    if page_errors:
-        raise AssertionError(f"{case.name}: uncaught page error(s) during render:\n" + "\n".join(page_errors))
+    page_errors.assert_none(context=case.name)
 
     # Retain the render + visual-review manifest for the PR visual-review
     # publisher (devinfra/pr_visuals/publisher.py) — the pixel-review path.

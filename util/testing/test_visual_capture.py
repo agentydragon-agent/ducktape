@@ -1,14 +1,15 @@
 """The capture API preserves health gates without owning the test's interactions."""
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 from playwright.async_api import Playwright, expect
 
-from util.testing.visual_capture import HarnessConfig, VisualHarness
 from util.testing.viewports import Viewport
+from util.testing.visual_capture import HarnessConfig, InlinePage, VisualHarness
 
 # gazelle:include_dep //util:playwright
 pytest_plugins = ("util.playwright",)
@@ -62,9 +63,8 @@ async def test_ambiguous_crop_fails_before_publication(harness: VisualHarness) -
 
 async def test_no_capture_can_hide_a_page_error(harness: VisualHarness) -> None:
     async def crash() -> None:
-        async with harness.open("plain") as view:
-            async with view.page.expect_event("pageerror"):
-                await view.page.add_script_tag(content="throw new Error('deliberate crash')")
+        async with harness.open("plain") as view, view.page.expect_event("pageerror"):
+            await view.page.add_script_tag(content="throw new Error('deliberate crash')")
 
     with pytest.raises(AssertionError, match="deliberate crash"):
         await crash()
@@ -89,6 +89,62 @@ async def test_new_page_is_isolated_and_pixels_repeat(harness: VisualHarness) ->
         await expect(view.page.locator("#shot")).to_have_text("Closed")
         second = await view.capture("second", target=view.page.locator("#shot"))
     assert first.read_bytes() == second.read_bytes()
+
+
+@pytest.fixture
+def inline_harness(harness: VisualHarness, tmp_path: Path) -> VisualHarness:
+    stylesheet = tmp_path / "inline.css"
+    stylesheet.write_text("@keyframes fade { to { opacity: 0 } } #shot { width: 100px; height: 40px; animation: fade 1s infinite }")
+    harness.config.harness_path.write_text("document.querySelector('#app').innerHTML = '<div id=shot>Inline scene</div>';")
+    return VisualHarness(
+        harness.playwright,
+        replace(harness.config, inline_page=InlinePage(stylesheet_paths=(stylesheet,), base_href=None)),
+        harness.output_dir,
+    )
+
+
+async def test_inline_bootstrap_preserves_values_and_pins_animation(inline_harness: VisualHarness) -> None:
+    value = "</script><p>Not markup</p>"
+    async with inline_harness.open("inline", window_globals={"__VALUE__": value}) as view:
+        assert await view.page.evaluate("window.__VALUE__") == value
+        await view.check(context="inline")
+        assert await view.page.locator("#shot").evaluate("element => element.getAnimations().map(animation => animation.playState)") == ["paused"]
+        first = await view.capture("first", target=view.page.locator("#shot"))
+        second = await view.capture("second", target=view.page.locator("#shot"))
+    assert first.read_bytes() == second.read_bytes()
+
+
+async def test_inline_origin_and_mock_frame(inline_harness: VisualHarness, tmp_path: Path) -> None:
+    document = tmp_path / "frame.html"
+    document.write_text("<main>Mock frame</main>")
+    inline_harness.config.harness_path.write_text(
+        "localStorage.setItem('probe', 'present'); document.querySelector('#app').innerHTML = '<iframe src=\"https://frame.test/\"></iframe>';"
+    )
+    assert inline_harness.config.inline_page is not None
+    harness = VisualHarness(
+        inline_harness.playwright,
+        replace(inline_harness.config, inline_page=replace(inline_harness.config.inline_page, url="https://app.test/"), served_documents={"https://frame.test/": document}),
+        inline_harness.output_dir,
+    )
+    async with harness.open("framed") as view:
+        await expect(view.page.frame_locator("iframe").locator("main")).to_have_text("Mock frame")
+        assert await view.page.evaluate("localStorage.getItem('probe')") == "present"
+        await view.capture("framed")
+
+
+async def test_undeclared_named_font_fails_before_publication(harness: VisualHarness) -> None:
+    harness = VisualHarness(harness.playwright, replace(harness.config, expected_font_family="Absent Font"), harness.output_dir)
+    async with harness.open("plain") as view:
+        with pytest.raises(AssertionError, match="Absent Font font did not load.*undeclared"):
+            await view.capture("missing-font")
+    assert not harness.output_dir.exists()
+
+
+async def test_capture_modes_are_mutually_exclusive(harness: VisualHarness) -> None:
+    async with harness.open("plain") as view:
+        with pytest.raises(ValueError, match="not both"):
+            await view.capture("invalid", target=view.page.locator("#shot"), full_page=True)
+    assert not harness.output_dir.exists()
 
 
 if __name__ == "__main__":

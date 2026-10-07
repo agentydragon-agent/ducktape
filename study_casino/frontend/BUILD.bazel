@@ -281,14 +281,14 @@ py_visual_test(
     fonts = ":casino_fonts",
     harness = ":visual_harness_js",
     shard_count = 2,
-    test_module = "study_casino.frontend.test_visual",
-    test_srcs = ["test_visual.py"],
     test_deps = [
-        "//util/testing:visual_capture",
         "//util/testing:viewports",
+        "//util/testing:visual_capture",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+    test_module = "study_casino.frontend.test_visual",
+    test_srcs = ["test_visual.py"],
     title = "Study Casino",
 )

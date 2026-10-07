@@ -9,8 +9,8 @@ import pytest_bazel
 from playwright.async_api import expect
 
 from util.testing.page_capture import wait_for_stable
-from util.testing.visual_capture import VisualHarness, VisualPage
 from util.testing.viewports import Viewport
+from util.testing.visual_capture import VisualHarness, VisualPage
 
 # gazelle:include_dep //util/testing:visual_fixtures
 pytest_plugins = ("util.testing.visual_fixtures",)
@@ -168,7 +168,9 @@ async def test_settings_notifications(visual: VisualHarness, color_scheme: Liter
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.locator("[role='tab']:has-text('Notifications')").click()
-        await view.page.wait_for_selector("[role='tab'][aria-selected='true']:has-text('Notifications')", state="visible")
+        await view.page.wait_for_selector(
+            "[role='tab'][aria-selected='true']:has-text('Notifications')", state="visible"
+        )
         await view.page.wait_for_selector(":text('This browser')", state="visible")
         await _park_pointer(view)
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")

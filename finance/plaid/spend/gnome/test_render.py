@@ -10,15 +10,10 @@ from __future__ import annotations
 
 import ast
 import json
-import re
-import shlex
-import time
 import zipfile
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
 
-import docker.models.containers
 import pytest
 import pytest_bazel
 from PIL import Image
@@ -26,6 +21,7 @@ from testcontainers.core.container import DockerContainer
 
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
+from util.testing.gnome import GnomeSession, crop_panel_menu
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
 
@@ -41,16 +37,8 @@ _FIXTURE_NAMES = (
     "allowance_exhausted",
 )
 _FIXTURE_DIR = "_main/finance/plaid/spend/gnome/fixtures"
-_SCREEN_WIDTH = 1920
-_EXTENSION_STATE_ENABLED = 1
 _TEST_DBUS_DEST = "works.allegedly.PlaidSpendTest"
 _TEST_DBUS_PATH = "/works/allegedly/PlaidSpendTest"
-
-
-def _exec_output(result: docker.models.containers.ExecResult) -> tuple[bytes, bytes]:
-    """Return demultiplexed Docker output as bytes."""
-    stdout, stderr = cast(tuple[bytes | None, bytes | None], result.output)
-    return stdout or b"", stderr or b""
 
 
 def test_extension_metadata_supports_gnome_50() -> None:
@@ -86,7 +74,7 @@ def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 @pytest.fixture(scope="module")
 def render_session(
     gnome_shell_test_image: str, extension_dir: Path, fixture_json_dir: Path, tmp_path_factory: pytest.TempPathFactory
-) -> Iterator[tuple[docker.models.containers.Container, Path]]:
+) -> Iterator[tuple[GnomeSession, Path]]:
     """Share one Xvfb, D-Bus bus, and GNOME Shell process across all fixtures."""
     output_dir = tmp_path_factory.mktemp("plaid-spend-renders")
     output_dir.chmod(0o777)
@@ -97,185 +85,34 @@ def render_session(
     container.with_volume_mapping(str(output_dir), "/out", "rw")
 
     with container:
-        raw = container.get_wrapped_container()
-        raw.exec_run(["/usr/local/bin/boot.sh"], detach=True)
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            if raw.exec_run(["test", "-f", "/tmp/boot.ready"]).exit_code == 0:
-                break
-            time.sleep(0.2)
-        else:
-            xvfb_log, _ = _exec_output(raw.exec_run(["cat", "/tmp/xvfb.log"], demux=True))
-            pytest.fail(
-                f"container boot.sh never produced /tmp/boot.ready within 30s\nxvfb.log:\n{xvfb_log.decode(errors='replace')}"
-            )
-
+        session = GnomeSession(
+            container.get_wrapped_container(), extension=_EXTENSION_UUID,
+            destination=_TEST_DBUS_DEST, object_path=_TEST_DBUS_PATH,
+        )
         try:
-            # Exercise the production D-Bus proxy path with no daemon present;
-            # the gated test interface only supplies deterministic render data.
-            _start_gnome_shell(raw)
-            _wait_for_shell_bus(raw)
-            _wait_for_extension_enabled(raw)
-            _wait_for_test_dbus(raw)
-            time.sleep(0.5)
-            _assert_no_plaid_extension_error(raw)
-        except (AssertionError, RuntimeError, TimeoutError) as error:
-            _save_shell_log(raw, undeclared_outputs_dir() / "startup.shell.log")
-            pytest.fail(f"render_session startup failed: {error}")
-
-        yield raw, output_dir
+            session.boot()
+            session.start(environment={"PLAID_SPEND_TEST": "1"})
+            session.wait_for_paint()
+            _assert_no_plaid_extension_error(session)
+        except (AssertionError, TimeoutError, RuntimeError):
+            session.save_log(undeclared_outputs_dir() / "startup.shell.log")
+            raise
+        yield session, output_dir
 
 
-def _exec_in_session(
-    container: docker.models.containers.Container, shell_cmd: str, *, detach: bool = False
-) -> docker.models.containers.ExecResult:
-    """Run a command with the test container's persistent session bus and X display."""
-    full_cmd = (
-        "set -euo pipefail; "
-        "source /tmp/dbus.env; "
-        'export DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"; '
-        "export DISPLAY=:99; "
-        f"{shell_cmd}"
-    )
-    return container.exec_run(["bash", "-c", full_cmd], demux=True, detach=detach)
-
-
-def _start_gnome_shell(container: docker.models.containers.Container) -> None:
-    command = (
-        f"gsettings set org.gnome.shell enabled-extensions '[\"{_EXTENSION_UUID}\"]'; "
-        "gsettings set org.gnome.shell disable-user-extensions false; "
-        "export PLAID_SPEND_TEST=1; "
-        "nohup gnome-shell --x11 >/tmp/shell.log 2>&1 &"
-    )
-    _exec_in_session(container, command, detach=True)
-
-
-def _wait_for_shell_bus(container: docker.models.containers.Container, *, timeout_s: float = 60) -> None:
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        result = _exec_in_session(
-            container,
-            "gdbus introspect --session --dest org.gnome.Shell --object-path /org/gnome/Shell >/dev/null 2>&1",
-        )
-        if result.exit_code == 0:
-            return
-        time.sleep(0.5)
-    raise TimeoutError(f"gnome-shell never owned the bus name within {timeout_s}s")
-
-
-def _wait_for_extension_enabled(container: docker.models.containers.Container, *, timeout_s: float = 10) -> None:
-    deadline = time.monotonic() + timeout_s
-    last_response = b""
-    while time.monotonic() < deadline:
-        result = _exec_in_session(
-            container,
-            "gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell "
-            f"--method org.gnome.Shell.Extensions.GetExtensionInfo {shlex.quote(_EXTENSION_UUID)}",
-        )
-        stdout, stderr = _exec_output(result)
-        last_response = stdout + stderr
-        if result.exit_code == 0 and f"'state': <{_EXTENSION_STATE_ENABLED}.0>".encode() in last_response:
-            return
-        time.sleep(0.25)
-    raise TimeoutError(
-        f"extension {_EXTENSION_UUID} never reached ENABLED; last response: {last_response.decode(errors='replace')!r}"
-    )
-
-
-def _wait_for_test_dbus(container: docker.models.containers.Container, *, timeout_s: float = 10) -> None:
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        result = _exec_in_session(
-            container,
-            f"gdbus introspect --session --dest {_TEST_DBUS_DEST} --object-path {_TEST_DBUS_PATH} >/dev/null 2>&1",
-        )
-        if result.exit_code == 0:
-            return
-        time.sleep(0.2)
-    raise TimeoutError("Plaid Spend screenshot-test D-Bus interface was not exported")
-
-
-def _test_dbus_call(
-    container: docker.models.containers.Container, method: str, *args: str
-) -> docker.models.containers.ExecResult:
-    arg_str = " ".join(args)
-    return _exec_in_session(
-        container,
-        f"gdbus call --session --dest {_TEST_DBUS_DEST} "
-        f"--object-path {_TEST_DBUS_PATH} --method {_TEST_DBUS_DEST}.{method} {arg_str}",
-    )
-
-
-def _test_dbus_call_output(container: docker.models.containers.Container, method: str, *args: str) -> bytes:
-    result = _test_dbus_call(container, method, *args)
-    stdout, stderr = _exec_output(result)
-    if result.exit_code != 0:
-        raise RuntimeError(f"{method} failed: {stderr.decode(errors='replace')}")
-    return stdout
-
-
-def _reload_fixture(container: docker.models.containers.Container, fixture_path: str) -> None:
-    _test_dbus_call_output(container, "Reload", shlex.quote(fixture_path))
-    time.sleep(0.3)
-
-
-def _panel_label(container: docker.models.containers.Container) -> str:
-    output = _test_dbus_call_output(container, "GetPanelLabel").decode().strip()
+def _panel_label(container: GnomeSession) -> str:
+    output = container.call("GetPanelLabel").decode().strip()
     parsed = ast.literal_eval(output)
     if not isinstance(parsed, tuple) or len(parsed) != 1 or not isinstance(parsed[0], str):
         raise RuntimeError(f"GetPanelLabel returned an unexpected value: {output!r}")
     return parsed[0]
 
 
-def _open_menu(container: docker.models.containers.Container) -> tuple[int, int, int, int]:
-    _test_dbus_call_output(container, "OpenMenu")
-    time.sleep(0.2)
-    output = _test_dbus_call_output(container, "GetMenuGeometry")
-    match = re.search(rb"\((-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\)", output)
-    if not match:
-        raise RuntimeError(f"GetMenuGeometry returned an unparseable value: {output!r}")
-    geometry = (int(match.group(1)), int(match.group(2)), int(match.group(3)), int(match.group(4)))
-    if geometry[2] <= 0 or geometry[3] <= 0:
-        raise RuntimeError(f"menu has non-positive dimensions: {geometry}")
-    return geometry
-
-
-def _close_menu(container: docker.models.containers.Container) -> None:
-    _test_dbus_call_output(container, "CloseMenu")
-
-
-def _screenshot(container: docker.models.containers.Container, path: str) -> None:
-    result = _exec_in_session(container, f"scrot --display :99 --overwrite {shlex.quote(path)}")
-    if result.exit_code != 0:
-        _, stderr = _exec_output(result)
-        raise RuntimeError(f"scrot failed: {stderr.decode(errors='replace')}")
-
-
-def _shell_log(container: docker.models.containers.Container) -> bytes:
-    result = container.exec_run(["cat", "/tmp/shell.log"], demux=True)
-    stdout, stderr = _exec_output(result)
-    return stdout + stderr
-
-
-def _assert_no_plaid_extension_error(container: docker.models.containers.Container) -> None:
-    log = _shell_log(container).decode(errors="replace")
+def _assert_no_plaid_extension_error(container: GnomeSession) -> None:
+    log = container.log().decode(errors="replace")
     extension_error = f"/extensions/{_EXTENSION_UUID}/extension.js:"
     if extension_error in log or f"Extension {_EXTENSION_UUID}:" in log:
         raise AssertionError(f"GNOME logged a Plaid Spend extension error during default startup:\n{log}")
-
-
-def _save_shell_log(container: docker.models.containers.Container, path: Path) -> None:
-    path.write_bytes(_shell_log(container))
-
-
-def _crop_combined(full: Image.Image, menu_geometry: tuple[int, int, int, int]) -> Image.Image:
-    menu_x, menu_y, menu_width, menu_height = menu_geometry
-    left = max(0, menu_x)
-    right = min(full.width, max(menu_x + menu_width, _SCREEN_WIDTH))
-    bottom = min(full.height, menu_y + menu_height)
-    if right <= left or bottom <= 0:
-        raise AssertionError(f"menu lies outside the screenshot: {menu_geometry}, screen={full.size}")
-    return full.crop((left, 0, right, bottom))
 
 
 @pytest.mark.parametrize(
@@ -290,7 +127,7 @@ def _crop_combined(full: Image.Image, menu_geometry: tuple[int, int, int, int]) 
     ],
 )
 def test_render(
-    render_session: tuple[docker.models.containers.Container, Path],
+    render_session: tuple[GnomeSession, Path],
     tmp_path: Path,
     fixture_name: str,
     expected_label: str,
@@ -300,12 +137,12 @@ def test_render(
     fixture_path = f"/fixtures/{fixture_name}.json"
     output_path = f"/out/{image_name}"
 
-    _close_menu(container)
-    _reload_fixture(container, fixture_path)
+    container.close_menu()
+    container.reload(fixture_path)
     assert _panel_label(container) == expected_label
-    menu_geometry = _open_menu(container)
+    menu_geometry = container.open_menu()
     if fixture_name.startswith("allowance_"):
-        menu_text = ast.literal_eval(_test_dbus_call_output(container, "GetMenuText").decode().strip())[0]
+        menu_text = ast.literal_eval(container.call("GetMenuText").decode().strip())[0]
         assert "Synthetic card" not in menu_text
         assert "Check a purchase / dashboard" in menu_text
         if fixture_name == "allowance_paced":
@@ -322,13 +159,13 @@ def test_render(
             assert "7d n/a" in menu_text
         if fixture_name == "allowance_exhausted":
             assert "Exhausted" in menu_text
-    _screenshot(container, output_path)
-    _close_menu(container)
+    container.screenshot(output_path)
+    container.close_menu()
 
     full_path = output_dir / image_name
     assert full_path.is_file(), f"scrot did not produce {full_path}"
     actual_path = tmp_path / f"{fixture_name}.cropped.png"
-    _crop_combined(Image.open(full_path), menu_geometry).save(actual_path)
+    crop_panel_menu(Image.open(full_path), menu_geometry).save(actual_path)
     retain_review_asset(
         actual_path, title="Plaid Spend GNOME extension", label=fixture_name.replace("_", " "), name=image_name
     )

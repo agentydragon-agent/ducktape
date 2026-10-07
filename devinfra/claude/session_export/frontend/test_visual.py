@@ -9,8 +9,8 @@ import pytest_bazel
 from playwright.async_api import Locator, Page, expect
 
 from util.testing.page_capture import wait_for_stable
-from util.testing.visual_capture import VisualHarness, VisualPage
 from util.testing.viewports import Viewport
+from util.testing.visual_capture import VisualHarness, VisualPage
 
 # gazelle:include_dep //util/testing:visual_fixtures
 pytest_plugins = ("util.testing.visual_fixtures",)
@@ -70,7 +70,15 @@ async def _noisy_ready(page: Page) -> None:
     await expect(page.locator('[data-fold-kind="notice"]')).to_have_count(0)
 
 
-@pytest.mark.parametrize("scene", ['SessionCompletedActivity', 'SessionCompletedActivityExpanded', 'SessionCompletedActivity_mobile', 'SessionCompletedActivityExpanded_mobile'])
+@pytest.mark.parametrize(
+    "scene",
+    [
+        "SessionCompletedActivity",
+        "SessionCompletedActivityExpanded",
+        "SessionCompletedActivity_mobile",
+        "SessionCompletedActivityExpanded_mobile",
+    ],
+)
 async def test_completed_activity(visual: VisualHarness, scene: str) -> None:
     async with _open(visual, scene) as view:
         fixture = await view.page.evaluate("window.__visualFixture__")
@@ -95,14 +103,17 @@ async def test_markdown_is_sanitized(visual: VisualHarness, scene: str) -> None:
     async with _open(visual, scene) as view:
         page = view.page
         for selector in (
-            '[aria-label="Session history"]', '[data-message-role="user"] .agentplane-markdown ul',
+            '[aria-label="Session history"]',
+            '[data-message-role="user"] .agentplane-markdown ul',
             '[data-message-role="user"] .agentplane-markdown table',
             '[data-message-role="assistant"] .agentplane-markdown h2',
             '[data-message-role="assistant"] .agentplane-markdown a[href^="https://"]',
             '[data-message-role="assistant"] .agentplane-markdown .agentplane-code-block .cm-editor',
         ):
             await expect(page.locator(selector)).to_be_attached()
-        markdown = page.locator('[data-message-role="user"] .agentplane-markdown, [data-message-role="assistant"] .agentplane-markdown')
+        markdown = page.locator(
+            '[data-message-role="user"] .agentplane-markdown, [data-message-role="assistant"] .agentplane-markdown'
+        )
         await expect(markdown.locator("script, img, [onclick], [onerror]")).to_have_count(0)
         assert not await markdown.locator("a").evaluate_all(
             "links => links.some(link => /^(javascript|data):/i.test(link.getAttribute('href') ?? ''))"
@@ -158,7 +169,17 @@ async def test_history_tail_and_prepend_anchor(visual: VisualHarness, scene: str
         await _capture(view, scene)
 
 
-@pytest.mark.parametrize("scene", ["SessionNoisy", "SessionNoisy_mobile", "SessionNoisyThinking", "SessionNoisyRaw", "SessionNoisyHook", "SessionNoisyHook_mobile"])
+@pytest.mark.parametrize(
+    "scene",
+    [
+        "SessionNoisy",
+        "SessionNoisy_mobile",
+        "SessionNoisyThinking",
+        "SessionNoisyRaw",
+        "SessionNoisyHook",
+        "SessionNoisyHook_mobile",
+    ],
+)
 async def test_noisy_history(visual: VisualHarness, scene: str) -> None:
     async with _open(visual, scene) as view:
         page = view.page
@@ -187,7 +208,10 @@ async def test_noisy_history(visual: VisualHarness, scene: str) -> None:
         await _capture(view, scene)
 
 
-@pytest.mark.parametrize("scene", ["SessionNoisySidebar", "SessionNoisySidebarCollapsed", "SessionNoisySidebarWide", "SessionNoisySidebar_mobile"])
+@pytest.mark.parametrize(
+    "scene",
+    ["SessionNoisySidebar", "SessionNoisySidebarCollapsed", "SessionNoisySidebarWide", "SessionNoisySidebar_mobile"],
+)
 async def test_sidebar_states(visual: VisualHarness, scene: str) -> None:
     async with _open(visual, scene) as view:
         page = view.page
@@ -204,18 +228,30 @@ async def test_sidebar_states(visual: VisualHarness, scene: str) -> None:
             separator = page.locator("[data-session-sidebar-resizer]")
             await separator.press("End")
         else:
-            await expect(page.locator('button[aria-controls="session-sidebar"]')).to_have_attribute("aria-expanded", "true")
+            await expect(page.locator('button[aria-controls="session-sidebar"]')).to_have_attribute(
+                "aria-expanded", "true"
+            )
         await _capture(view, scene)
 
 
-@pytest.mark.parametrize("scene", ['SessionNoisyTimeline', 'SessionNoisyTimeline_mobile', 'SessionNoisyTimelineExpanded', 'SessionNoisyTimelineExpanded_mobile'])
+@pytest.mark.parametrize(
+    "scene",
+    [
+        "SessionNoisyTimeline",
+        "SessionNoisyTimeline_mobile",
+        "SessionNoisyTimelineExpanded",
+        "SessionNoisyTimelineExpanded_mobile",
+    ],
+)
 async def test_event_timeline(visual: VisualHarness, scene: str) -> None:
     async with _open(visual, scene) as view:
         page = view.page
         await _noisy_ready(page)
         strips = page.locator("[data-event-strip]")
         await expect(strips.first).to_be_attached()
-        sequences = await strips.evaluate_all("strips => strips.flatMap(strip => strip.dataset.historySequences.split(' '))")
+        sequences = await strips.evaluate_all(
+            "strips => strips.flatMap(strip => strip.dataset.historySequences.split(' '))"
+        )
         assert len(sequences) == len(set(sequences)) == await page.evaluate("window.__visualFixture__.noisyEventCount")
         for strip in await strips.all():
             assert await strip.evaluate("element => element.getBoundingClientRect().height") <= 28
@@ -231,7 +267,9 @@ async def test_event_timeline(visual: VisualHarness, scene: str) -> None:
         await _capture(view, scene)
 
 
-@pytest.mark.parametrize("scene", ['SessionNoisyActivity', 'SessionNoisyActivityExpanded', 'SessionNoisyActivityExpanded_mobile'])
+@pytest.mark.parametrize(
+    "scene", ["SessionNoisyActivity", "SessionNoisyActivityExpanded", "SessionNoisyActivityExpanded_mobile"]
+)
 async def test_activity_disclosures(visual: VisualHarness, scene: str) -> None:
     async with _open(visual, scene) as view:
         page = view.page
@@ -248,161 +286,173 @@ async def test_activity_disclosures(visual: VisualHarness, scene: str) -> None:
         await _capture(view, scene)
 
 
-async def test_SessionViewer(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionViewer') as view:
+async def test_session_viewer(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionViewer") as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="tool-run"][data-tool-count="5"]')).to_be_attached()
-        await expect(view.page.locator('[data-tool-run-toggle]')).to_be_attached()
-        await _capture(view, 'SessionViewer')
+        await expect(view.page.locator("[data-tool-run-toggle]")).to_be_attached()
+        await _capture(view, "SessionViewer")
 
 
-async def test_SessionViewer_dark(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionViewer_dark') as view:
+async def test_session_viewer_dark(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionViewer_dark") as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="tool-run"][data-tool-count="5"]')).to_be_attached()
-        await expect(view.page.locator('[data-tool-run-toggle]')).to_be_attached()
-        await _capture(view, 'SessionViewer_dark')
+        await expect(view.page.locator("[data-tool-run-toggle]")).to_be_attached()
+        await _capture(view, "SessionViewer_dark")
 
 
-async def test_SessionViewer_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionViewer_mobile') as view:
+async def test_session_viewer_mobile(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionViewer_mobile") as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="tool-run"][data-tool-count="5"]')).to_be_attached()
-        await expect(view.page.locator('[data-tool-run-toggle]')).to_be_attached()
-        await _capture(view, 'SessionViewer_mobile')
+        await expect(view.page.locator("[data-tool-run-toggle]")).to_be_attached()
+        await _capture(view, "SessionViewer_mobile")
 
 
-async def test_SessionToolResult(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionToolResult') as view:
+async def test_session_tool_result(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionToolResult") as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-tool-name="Read"]')).to_be_attached()
-        await expect(view.page.locator('[data-tool-output-image]')).to_be_attached()
-        await _capture(view, 'SessionToolResult')
+        await expect(view.page.locator("[data-tool-output-image]")).to_be_attached()
+        await _capture(view, "SessionToolResult")
 
 
-async def test_SessionToolResult_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionToolResult_mobile') as view:
+async def test_session_tool_result_mobile(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionToolResult_mobile") as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-tool-name="Read"]')).to_be_attached()
-        await expect(view.page.locator('[data-tool-output-image]')).to_be_attached()
-        await _capture(view, 'SessionToolResult_mobile')
+        await expect(view.page.locator("[data-tool-output-image]")).to_be_attached()
+        await _capture(view, "SessionToolResult_mobile")
 
 
-async def test_SessionReadFileResult(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionReadFileResult') as view:
+async def test_session_read_file_result(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionReadFileResult") as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-tool-file-path="src/session-viewer.ts"]')).to_be_attached()
-        await expect(view.page.locator('[data-tool-file-preview]')).to_be_attached()
-        await _capture(view, 'SessionReadFileResult')
+        await expect(view.page.locator("[data-tool-file-preview]")).to_be_attached()
+        await _capture(view, "SessionReadFileResult")
 
 
-async def test_SessionReadFileResult_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionReadFileResult_mobile') as view:
+async def test_session_read_file_result_mobile(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionReadFileResult_mobile") as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-tool-file-path="src/session-viewer.ts"]')).to_be_attached()
-        await expect(view.page.locator('[data-tool-file-preview]')).to_be_attached()
-        await _capture(view, 'SessionReadFileResult_mobile')
+        await expect(view.page.locator("[data-tool-file-preview]")).to_be_attached()
+        await _capture(view, "SessionReadFileResult_mobile")
 
 
-async def test_SessionSubagent(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionSubagent') as view:
+async def test_session_subagent(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionSubagent") as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-subagent-activity][data-subagent-tool-count="2"]')).to_be_attached()
         await expect(view.page.locator('[data-subagent-latest-tool="Grep"]')).to_be_attached()
-        await _capture(view, 'SessionSubagent')
+        await _capture(view, "SessionSubagent")
 
 
-async def test_SessionSubagent_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionSubagent_mobile') as view:
+async def test_session_subagent_mobile(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionSubagent_mobile") as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-subagent-activity][data-subagent-tool-count="2"]')).to_be_attached()
         await expect(view.page.locator('[data-subagent-latest-tool="Grep"]')).to_be_attached()
-        await _capture(view, 'SessionSubagent_mobile')
+        await _capture(view, "SessionSubagent_mobile")
 
 
-async def test_SessionPeerHold(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionPeerHold') as view:
+async def test_session_peer_hold(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionPeerHold") as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="peer-message"][data-peer-from="plan-agent"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="peer-hold"][data-peer-state="held"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="peer-hold"][data-peer-state="dropped"]')).to_be_attached()
-        await _capture(view, 'SessionPeerHold')
+        await _capture(view, "SessionPeerHold")
 
 
-async def test_SessionPeerHold_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionPeerHold_mobile') as view:
+async def test_session_peer_hold_mobile(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionPeerHold_mobile") as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="peer-message"][data-peer-from="plan-agent"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="peer-hold"][data-peer-state="held"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="peer-hold"][data-peer-state="dropped"]')).to_be_attached()
-        await _capture(view, 'SessionPeerHold_mobile')
+        await _capture(view, "SessionPeerHold_mobile")
 
 
-async def test_SessionPeerMessage(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionPeerMessage') as view:
+async def test_session_peer_message(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionPeerMessage") as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(view.page.locator('[data-fold-kind="peer-message"][data-peer-from="review-agent"][data-peer-handback="true"]')).to_be_attached()
-        await _capture(view, 'SessionPeerMessage')
+        await expect(
+            view.page.locator(
+                '[data-fold-kind="peer-message"][data-peer-from="review-agent"][data-peer-handback="true"]'
+            )
+        ).to_be_attached()
+        await _capture(view, "SessionPeerMessage")
 
 
-async def test_SessionPeerMessage_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionPeerMessage_mobile') as view:
+async def test_session_peer_message_mobile(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionPeerMessage_mobile") as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(view.page.locator('[data-fold-kind="peer-message"][data-peer-from="review-agent"][data-peer-handback="true"]')).to_be_attached()
-        await _capture(view, 'SessionPeerMessage_mobile')
+        await expect(
+            view.page.locator(
+                '[data-fold-kind="peer-message"][data-peer-from="review-agent"][data-peer-handback="true"]'
+            )
+        ).to_be_attached()
+        await _capture(view, "SessionPeerMessage_mobile")
 
 
-async def test_SessionLocalCommandRows(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionLocalCommandRows') as view:
+async def test_session_local_command_rows(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionLocalCommandRows") as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(view.page.locator('[data-fold-kind="context"][data-context-model="claude-sonnet-4-5"]')).to_be_attached()
+        await expect(
+            view.page.locator('[data-fold-kind="context"][data-context-model="claude-sonnet-4-5"]')
+        ).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="stats"][data-stats-state="data"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="usage"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="status"]')).to_be_attached()
-        await _capture(view, 'SessionLocalCommandRows')
+        await _capture(view, "SessionLocalCommandRows")
 
 
-async def test_SessionLocalCommandRows_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionLocalCommandRows_mobile') as view:
+async def test_session_local_command_rows_mobile(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionLocalCommandRows_mobile") as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(view.page.locator('[data-fold-kind="context"][data-context-model="claude-sonnet-4-5"]')).to_be_attached()
+        await expect(
+            view.page.locator('[data-fold-kind="context"][data-context-model="claude-sonnet-4-5"]')
+        ).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="stats"][data-stats-state="data"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="usage"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="status"]')).to_be_attached()
-        await _capture(view, 'SessionLocalCommandRows_mobile')
+        await _capture(view, "SessionLocalCommandRows_mobile")
 
 
-async def test_SessionSync(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionSync') as view:
-        await expect(view.page.locator('#overview-heading')).to_be_attached()
-        await expect(view.page.locator('#pairing-heading')).to_be_attached()
-        await _capture(view, 'SessionSync')
+async def test_session_sync(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionSync") as view:
+        await expect(view.page.locator("#overview-heading")).to_be_attached()
+        await expect(view.page.locator("#pairing-heading")).to_be_attached()
+        await _capture(view, "SessionSync")
 
 
-async def test_SessionSync_paired_dark(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionSync_paired_dark') as view:
-        await expect(view.page.locator('#overview-heading')).to_be_attached()
-        await expect(view.page.locator('#pairing-heading')).to_be_attached()
-        await _capture(view, 'SessionSync_paired_dark')
+async def test_session_sync_paired_dark(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionSync_paired_dark") as view:
+        await expect(view.page.locator("#overview-heading")).to_be_attached()
+        await expect(view.page.locator("#pairing-heading")).to_be_attached()
+        await _capture(view, "SessionSync_paired_dark")
 
 
-async def test_SessionSync_paired_mobile(visual: VisualHarness) -> None:
-    async with _open(visual, 'SessionSync_paired_mobile') as view:
-        await expect(view.page.locator('#overview-heading')).to_be_attached()
-        await expect(view.page.locator('#pairing-heading')).to_be_attached()
-        await _capture(view, 'SessionSync_paired_mobile')
+async def test_session_sync_paired_mobile(visual: VisualHarness) -> None:
+    async with _open(visual, "SessionSync_paired_mobile") as view:
+        await expect(view.page.locator("#overview-heading")).to_be_attached()
+        await expect(view.page.locator("#pairing-heading")).to_be_attached()
+        await _capture(view, "SessionSync_paired_mobile")
 
 
 if __name__ == "__main__":

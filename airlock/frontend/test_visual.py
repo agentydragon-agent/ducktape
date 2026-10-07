@@ -4,10 +4,9 @@ from typing import Literal
 
 import pytest
 import pytest_bazel
-from playwright.async_api import expect
 
-from util.testing.visual_capture import VisualHarness
 from util.testing.viewports import Viewport
+from util.testing.visual_capture import VisualHarness
 
 # gazelle:include_dep //util/testing:visual_fixtures
 pytest_plugins = ("util.testing.visual_fixtures",)

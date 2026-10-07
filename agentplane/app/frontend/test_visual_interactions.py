@@ -18,8 +18,8 @@ from playwright.async_api import FloatRect, Locator, Page, expect
 
 from agentplane.app.frontend.visual_pages import capture_scene, open_scene
 from util.testing.page_capture import wait_for_stable
-from util.testing.visual_capture import VisualHarness
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.visual_capture import VisualHarness
 
 # The shared Playwright driver is session-scoped; tests must run on its event loop, as the generic
 # visual sweep does. Asyncio auto mode handles discovery; this mark only aligns the loop scope.

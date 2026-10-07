@@ -103,7 +103,6 @@ spa_bundle(
 
 # The scenario table: read by the harness (it mounts the scene `?page=` names) and by the sweep.
 
-
 ts_library(
     name = "visual_harness_lib",
     testonly = True,
@@ -175,8 +174,8 @@ py_visual_test(
     ],
     harness = ":visual_harness_js",
     test_deps = [
-        "//util/testing:visual_capture",
         "//util/testing:viewports",
+        "//util/testing:visual_capture",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

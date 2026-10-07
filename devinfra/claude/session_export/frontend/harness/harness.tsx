@@ -743,7 +743,11 @@ const pathname = scenario.startsWith("SessionSync") ? "/sync" : "/sessions";
 
 // Expected fixture data only. Python owns interactions, layout assertions and capture readiness.
 Object.assign(window, {
-  __visualFixture__: { longCommandActivityTitle, longCommandActivityDetail, noisyEventCount: noisySessionEvents.length },
+  __visualFixture__: {
+    longCommandActivityTitle,
+    longCommandActivityDetail,
+    noisyEventCount: noisySessionEvents.length,
+  },
 });
 
 createRoot(root).render(
