@@ -784,23 +784,36 @@ age/backlog monitored. Exercise independent rollouts and worker-only failure/res
 restarting or draining healthy HTTP pods. Diagnose any current worker crash separately; this
 split is not its root-cause fix.
 
-### `NOTIFICATION_STALE_INBOX_RETIRE` — retire inboxes for deleted Sandboxes
+### `NOTIFICATION_STALE_INBOX_RETIRE` — retire stale UID-pinned inboxes
 
-**Planned cleanup:** an inbox can outlive its UID-pinned Sandbox. Workers currently reject its
+**Planned cleanup:** an inbox can outlive its Sandbox. Workers currently reject its
 missing destination, then re-claim the non-retired inbox on its next deadline; this produces
 repeated `DestinationRejectedError` logs and can leave undeliverable entries queued forever.
-Automatically retire inboxes only when authoritative Sandbox inventory proves that the pinned
-Sandbox is gone or its name now belongs to a different UID. Cancel their subscriptions and stop
-retrying, while retaining entries and notice evidence under the existing retirement/retention
-contract. Do not acknowledge unread entries, mint replacement commands, or silently rebind an
-inbox to a replacement Sandbox. A suspended Sandbox is not deleted; transient inventory or
-Sandbox Service failures must remain retryable, not trigger retirement.
+The inbox's persisted destination name, UID, and owner were validated at subscription creation:
+that is the evidence of the old incarnation, not a Sandbox Service tombstone. Kubernetes looks
+up objects by namespace/name, not UID; a UID-only lookup would require a list or an index.
+Keep the name as a locator and the UID as the identity. No new lookup RPC is needed for this
+cleanup: the worker can use the existing `GetSandbox(name)` and compare its returned UID.
 
-**Acceptance:** test deletion with both covered and uncovered entries, name reuse with a new
-UID, suspension, and transient lookup failures. Prove a stale inbox stops claiming/retrying
-across worker replicas, retained entries remain inspectable until normal expiry, and a new
-Sandbox's inbox is unaffected. Make the retirement reason visible in diagnostics without
-logging notification payloads.
+A matching managed UID remains eligible, including when the Sandbox is suspended. A different
+UID at the same name cannot receive the old inbox. A `NOT_FOUND` from `GetSandbox` means the
+old incarnation is no longer in the _managed_ inventory: this includes both a deleted
+Kubernetes object and an object whose managed label was removed. Treat either as terminal for
+that inbox after a bounded confirmation/recheck; restoring the label later does not resurrect a
+retired inbox. Do **not** turn a timeout, connection failure, other Kubernetes error, or an
+unresolved owner mismatch into evidence of deletion. Keep those failures retryable and visible.
+
+Retire terminal inboxes under their claim fence, cancel subscriptions and stop scheduling retries.
+Preserve entries and notice evidence under the existing retention contract; never acknowledge
+unread entries, mint replacement commands, or rebind to a replacement Sandbox. An owner-requested
+new subscription must not revive a retired inbox's old identity. This does not require Sandbox
+Service to remember deleted objects or notification workers to gain Kubernetes read permissions.
+
+**Acceptance:** test deletion with covered and uncovered entries, name reuse with a new UID,
+managed-label removal, suspension, owner mismatch, and transient lookup failures. Prove
+confirmation avoids a transient false `NOT_FOUND`; a stale inbox stops claiming/retrying across
+worker replicas while retained entries remain inspectable until normal expiry, and a new Sandbox
+and its inbox are unaffected. Make the retirement reason visible without logging payloads.
 
 ### `NOTIFICATION_ACTION_FEED` — remove idle Action-history polling
 
