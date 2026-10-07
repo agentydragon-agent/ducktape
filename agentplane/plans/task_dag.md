@@ -25,11 +25,11 @@ Proposed execution order for the Thread correctness/UI track:
   [#9063](https://github.com/agentydragon/ducktape/issues/9063).
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
-- **Unranked future harness capabilities:** project skills and commands, web search, file/image uploads,
-  visual input, native subagents, interactive controls, project hooks/plugins, prompt suggestions, and a Claude
-  RemoteIO transport evaluation. The
-  existing P2 item `DT` is included below as a cross-reference and keeps its current priority; it
-  covers Action-backed tools and background-work control. The new candidates are an inventory, not
+- **Unranked future harness capabilities:** project skills and commands, web search,
+  file/image uploads, visual input, MCP Tasks interoperability research, native subagents,
+  interactive controls, project hooks/plugins, prompt suggestions, and a Claude RemoteIO
+  transport evaluation. The existing P2 item `DT` keeps its priority and covers
+  Action-backed tools and background-work control. The new candidates are an inventory, not
   an execution order or a priority claim against the rest of this DAG. Their win/work estimates are
   provisional; compare them with the full roadmap when scheduling. `HARNESS_CONFIG_ISOLATION` is
   the shared technical prerequisite.
@@ -57,6 +57,8 @@ flowchart TB
     T3["Deferred product work<br/>thread search and lookup<br/>later prioritization"]:::future
     PC_EGRESS_CREDENTIALS["Remaining configuration<br/>label public-coder's OpenClaw caller<br/>for Action Service admission"]:::future
     PC_EGRESS["Capstone<br/>public-coder-agent egress migration<br/>proven equivalent, cut over, old proxy retired"]:::milestone
+    ANTHROPIC_INCLUDED_API_ROUTING["Unranked integration<br/>use eligible subscription-linked API credits<br/>reviewed provider route and billing"]:::future
+    AIQUOTA_ANTHROPIC_API_CREDIT["Unranked reporting<br/>show subscription-linked API credit<br/>separate from Claude Code usage"]:::future
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
@@ -73,6 +75,7 @@ flowchart TB
     KUBERNETES_MONITORING["Unranked future capability<br/>agent-visible Kubernetes rollout monitoring<br/>notifications are an option"]:::future
     DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
     HARNESS_CONFIG_ISOLATION["Unranked prerequisite<br/>separate hosted feature config from capture scenarios<br/>keep project and host settings isolated"]:::future
+    HARNESS_MCP_TASKS_EVAL["Unranked reading project<br/>MCP Tasks in pinned Claude and Codex clients<br/>compare with Action receipts"]:::decision
     HARNESS_SKILLS["Unranked candidate<br/>project-scoped skills and commands<br/>both native harnesses"]:::future
     HARNESS_WEB_SEARCH["Unranked candidate<br/>routed web search<br/>source evidence in Thread"]:::future
     HARNESS_VISUAL_INPUT["Unranked candidate<br/>image attachments and visual input<br/>composer, protocol, storage, replay"]:::future
@@ -100,7 +103,6 @@ flowchart TB
     THREAD_OPEN_RELOAD_RECOVERY["Open recovery follow-up<br/>runner committed but mapping absent<br/>safe reload reconciliation"]:::future
     BOOTSTRAP_PROGRESS_CONTRACT["Design decision<br/>durable bootstrap start/progress/result<br/>no HTTP-held script execution"]:::decision
     SANDBOX_CREATE_RECONCILE["Lifecycle acceptance<br/>lost Create reply and partial grants<br/>current UID, no deleted-object tombstone"]:::future
-    ACTION_DIRECT_RECOVERY["Deferred Action decision<br/>discover direct-tool request<br/>when first MCP reply is lost"]:::decision
     COMMAND_DISPATCHED_EVENT["Missing observation<br/>runner handed the command to the harness<br/>journal-only today; needs an Event"]:::future
     SUBMISSION_STAGE_INDICATOR["Planned UI<br/>staged submission indicator<br/>which of five stages, not two strings"]:::future
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
@@ -350,6 +352,15 @@ needs evidence that work does not already provide.
 - **`CLAUDE_REMOTE_IO_EVAL` — unranked decision:** Compare Claude RemoteIO with `stream-json`,
   prove the scoped egress interception and runner-owned bridge, and measure compaction-summary
   visibility before choosing an implementation. See [Claude RemoteIO transport](claude_remote_io.md).
+- **`HARNESS_MCP_TASKS_EVAL` — unranked capability reading project:** Read the current MCP
+  Tasks protocol and the pinned Claude CLI and Codex client implementations (and verify with
+  native captures where available). Determine which clients actually negotiate task-capable
+  tool calls, obtain a durable task ID, inspect/follow results, cancel, and recover across
+  disconnects; identify transport/version or UI gaps. Compare the Task lifecycle with Action
+  Service's durable request/receipt/events semantics before recommending an integration.
+  Distinguish MCP Tasks from Claude subagents, Codex multi-agent features, and FastMCP's
+  internal Python task machinery. Do not assume either harness supports Tasks or treat this
+  investigation as a fix for direct-tool response loss.
 - **`HARNESS_INTERACTIVE_CONTROLS` — high win, high work:** Support questions and permission
   requests that park a turn, survive reconnect/restart, accept or reject a durable decision, and
   resume safely. Keep user decisions distinct from Action Service authorization.
@@ -501,6 +512,24 @@ current consumers before removing or splitting any shared resource. Source inven
 [`public_coder_proxy.py`](../../cluster/cdk8s/public_coder_proxy.py) and
 [`haku_egress_proxy.py`](../../cluster/cdk8s/haku_egress_proxy.py).
 
+### `ANTHROPIC_INCLUDED_API_ROUTING` — use subscription-linked Anthropic API credit
+
+**Unranked future integration:** verify the actual eligibility, amount, expiry, API credential
+mechanism, and terms for Anthropic's subscription-linked API credit before wiring a model route
+to it. Use an authorized credential owner and scoped egress/proxy configuration; do not substitute
+a Claude Code subscription OAuth usage token for an API credential without explicit support.
+Prove which API calls draw down this credit, how routing/fallback behaves when exhausted, and
+how paid spend is bounded. Keep the decision to use the credit independent from the quota UI.
+
+### `AIQUOTA_ANTHROPIC_API_CREDIT` — show API credit in aiquota
+
+**Unranked reporting:** read an authoritative Anthropic API credit/balance/usage surface if
+available, through an authorized read-only credential path. Distinguish included API credit,
+paid API spend, and aiquota's existing Claude subscription usage windows and extra spend; do
+not present one as the other. Preserve units, reset/expiry, unavailable and stale states, and
+historical observations without logging credentials. Test changes in balance and the limit
+boundary. This can be investigated independently of the model-route integration.
+
 ### `INPUT_DELIVERY` — remaining native queue and recovery evidence
 
 **Remaining evidence:** close the harness-specific queue and recovery gaps, independently of
@@ -593,22 +622,6 @@ conflicts, restart, and deletion/recreation under the same name. Compare current
 UIDs to distinguish replacement; Kubernetes has no get-by-UID or retained tombstone,
 so absence after deletion remains unknown without a separate durable request ledger.
 Do not promise exactly-once across deletion from a name lookup alone.
-
-### `ACTION_DIRECT_RECOVERY` — lost first direct-tool receipt
-
-Action Service HTTP submissions use a caller-chosen idempotency key and return
-a durable Action ID, with events/SSE for later transitions. The direct MCP tool instead mints a new
-`direct-<uuid>` key server-side per call and can wait for a bounded result. If its
-first response is lost **after** persistence, the caller lacks the key/ID to look
-up the Action; retrying the tool would create a second request and potentially
-repeat a side effect.
-
-**Deferred design decision:** choose a caller-stable request identity or another
-unambiguous, authorized discovery mechanism (including retention and ownership
-checks), and define what a lost reply means before and after persistence. Test
-lost first response, repeat with the same identity, two replicas, and an already
-executing or completed Action. Do not equate approval with execution success or
-recommend a fresh direct call as recovery.
 
 ### `COMMAND_QUEUE_DECISION` — where submission becomes durable
 

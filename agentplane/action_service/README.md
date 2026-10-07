@@ -317,6 +317,18 @@ policy does not cover still resolves, so it is refused with a reason rather than
 is per request with no `tools/list_changed`: a client holding an older list only meets refusals,
 and `request_action` reaches any Action whatever the list says.
 
+**Direct-tool retry limitation:** every `call_direct` invocation uses a fresh server-minted
+`direct-<uuid>` idempotency key. If its first response is lost after submission, the caller
+has neither the request ID nor that key; calling the same tool again can submit and execute
+another Action, even with identical arguments. An unfinished/error response includes the
+request ID for subsequent reads; a completed direct-tool response relays the backend result.
+For side-effectful calls requiring recovery from a lost first reply, use `request_action`
+with a caller-chosen idempotency key and recover by that key instead.
+Do not infer that repeating arguments is a safe deduplication rule: two identical calls may be
+intentional. This is a limitation of the current direct-tool call shape, not a pending
+Action-Service retry fix. MCP Tasks interoperability is a separate harness-capability question
+tracked in the [task DAG](../plans/task_dag.md).
+
 ## Action catalog
 
 `catalog.ActionCatalog` is the Agent-facing discovery seam: an `ActionGroup` (e.g. `github`) is the
