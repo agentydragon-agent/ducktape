@@ -4,7 +4,8 @@ Credentials come from the runner's own environment, never from flags or the prot
 ANTHROPIC_AUTH_TOKEN for Claude sessions, OPENAI_API_KEY for Codex sessions. A harness child
 inherits nothing implicitly: its environment is what --harness-env declares, so a variable the
 runner holds reaches the child only when the deployment names it -- those two keys above all stay
-with the runner.
+with the runner. --harness-inherit-env names one of those held variables without setting a value
+for it, for the case where the image and not the deployment owns the value.
 """
 
 from __future__ import annotations
@@ -29,13 +30,25 @@ MODEL_CONTEXT_WINDOWS_ENV = "AGENTPLANE_MODEL_CONTEXT_WINDOWS"
 app = typer.Typer(add_completion=False)
 
 
-def harness_environment(environ: Mapping[str, str], *, declared: Sequence[str]) -> dict[str, str]:
-    """The environment every harness child starts from, as --harness-env gave it: `NAME=value` sets
-    the variable, a bare `NAME` takes the runner's own value and is absent when the runner has none
-    (`docker run -e` and Bazel's --action_env read the two forms the same way). Entries apply in
-    order, so a later one wins."""
+def harness_environment(
+    environ: Mapping[str, str], *, declared: Sequence[str], inherited: Sequence[str] = ()
+) -> dict[str, str]:
+    """The environment every harness child starts from, as --harness-env and --harness-inherit-env
+    gave it: `NAME=value` sets the variable, a bare `NAME` takes the runner's own value and is
+    absent when the runner has none (`docker run -e` and Bazel's --action_env read the two forms the
+    same way). Entries apply in order, so a later one wins.
+
+    `inherited` is the bare form spelled on its own flag, for names whose value the *image* owns
+    (TZDIR, say) and the deployment merely forwards. It applies first, so a deployment that also
+    sets one explicitly still wins. A name the runner was started without is reported rather than
+    silently dropped: a value that goes missing from the image is otherwise indistinguishable from
+    a correctly absent variable, and the child just behaves as if the zone were unrecognised.
+    """
+    for name in inherited:
+        if "=" in name:
+            raise ValueError(f"--harness-inherit-env takes a bare NAME, got {name!r}")
     child: dict[str, str] = {}
-    for entry in declared:
+    for entry in [*inherited, *declared]:
         name, separator, value = entry.partition("=")
         if not name:
             raise ValueError(f"--harness-env expects NAME or NAME=value, got {entry!r}")
@@ -43,6 +56,9 @@ def harness_environment(environ: Mapping[str, str], *, declared: Sequence[str]) 
             child[name] = value
         elif name in environ:
             child[name] = environ[name]
+    for name in inherited:
+        if name not in child:
+            logger.warning("inherited %s is absent from the runner environment: harnesses will not see it", name)
     return child
 
 
@@ -88,6 +104,14 @@ def main(
             "value; repeat per variable.",
         ),
     ] = None,
+    harness_inherit_env: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--harness-inherit-env",
+            help="Bare NAME of a variable this process holds that every harness child should start "
+            "with, its value owned by the image rather than by this invocation; repeat per name.",
+        ),
+    ] = None,
     test_debug_checkpoint_name: Annotated[
         str | None, typer.Option(hidden=True, help="Test-only crash-test checkpoint name.")
     ] = None,
@@ -112,7 +136,9 @@ def main(
         raise typer.BadParameter("both test debug checkpoint options must be set together")
     config = RunnerConfig(
         state_dir=state_dir,
-        harness_environment=harness_environment(os.environ, declared=harness_env or []),
+        harness_environment=harness_environment(
+            os.environ, declared=harness_env or [], inherited=harness_inherit_env or []
+        ),
         model_context_windows=parse_model_context_windows(os.environ.get(MODEL_CONTEXT_WINDOWS_ENV)),
         claude=claude,
         codex=codex,
