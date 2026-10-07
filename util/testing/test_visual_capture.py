@@ -94,8 +94,12 @@ async def test_new_page_is_isolated_and_pixels_repeat(harness: VisualHarness) ->
 @pytest.fixture
 def inline_harness(harness: VisualHarness, tmp_path: Path) -> VisualHarness:
     stylesheet = tmp_path / "inline.css"
-    stylesheet.write_text("@keyframes fade { to { opacity: 0 } } #shot { width: 100px; height: 40px; animation: fade 1s infinite }")
-    harness.config.harness_path.write_text("document.querySelector('#app').innerHTML = '<div id=shot>Inline scene</div>';")
+    stylesheet.write_text(
+        "@keyframes fade { to { opacity: 0 } } #shot { width: 100px; height: 40px; animation: fade 1s infinite }"
+    )
+    harness.config.harness_path.write_text(
+        "document.querySelector('#app').innerHTML = '<div id=shot>Inline scene</div>';"
+    )
     return VisualHarness(
         harness.playwright,
         replace(harness.config, inline_page=InlinePage(stylesheet_paths=(stylesheet,), base_href=None)),
@@ -108,7 +112,9 @@ async def test_inline_bootstrap_preserves_values_and_pins_animation(inline_harne
     async with inline_harness.open("inline", window_globals={"__VALUE__": value}) as view:
         assert await view.page.evaluate("window.__VALUE__") == value
         await view.check(context="inline")
-        assert await view.page.locator("#shot").evaluate("element => element.getAnimations().map(animation => animation.playState)") == ["paused"]
+        assert await view.page.locator("#shot").evaluate(
+            "element => element.getAnimations().map(animation => animation.playState)"
+        ) == ["paused"]
         first = await view.capture("first", target=view.page.locator("#shot"))
         second = await view.capture("second", target=view.page.locator("#shot"))
     assert first.read_bytes() == second.read_bytes()
@@ -123,7 +129,11 @@ async def test_inline_origin_and_mock_frame(inline_harness: VisualHarness, tmp_p
     assert inline_harness.config.inline_page is not None
     harness = VisualHarness(
         inline_harness.playwright,
-        replace(inline_harness.config, inline_page=replace(inline_harness.config.inline_page, url="https://app.test/"), served_documents={"https://frame.test/": document}),
+        replace(
+            inline_harness.config,
+            inline_page=replace(inline_harness.config.inline_page, url="https://app.test/"),
+            served_documents={"https://frame.test/": document},
+        ),
         inline_harness.output_dir,
     )
     async with harness.open("framed") as view:
@@ -133,9 +143,11 @@ async def test_inline_origin_and_mock_frame(inline_harness: VisualHarness, tmp_p
 
 
 async def test_undeclared_named_font_fails_before_publication(harness: VisualHarness) -> None:
-    harness = VisualHarness(harness.playwright, replace(harness.config, expected_font_family="Absent Font"), harness.output_dir)
+    harness = VisualHarness(
+        harness.playwright, replace(harness.config, expected_font_family="Absent Font"), harness.output_dir
+    )
     async with harness.open("plain") as view:
-        with pytest.raises(AssertionError, match="Absent Font font did not load.*undeclared"):
+        with pytest.raises(AssertionError, match=r"Absent Font font did not load.*undeclared"):
             await view.capture("missing-font")
     assert not harness.output_dir.exists()
 

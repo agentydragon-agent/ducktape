@@ -13,7 +13,7 @@ the real pixels, not a specific mechanism for getting there:
 --test_filter=<scenario-or-test-name> --noremote_accept_cached --nocache_test_results` — and download the PNG it
   writes to the test's
   undeclared outputs (`buildbuddy_api` skill: `bbapi artifact list <invocation-id>` for the exact
-  name, which is the scenario's `outputName` or its key, then `bbapi artifact download <invocation-id>
+  name, passed to `capture_scene`, then `bbapi artifact download <invocation-id>
 "<name>-actual.png"`), then view it. A failure in another shard: `bbapi target log <invocation-id>
 visual --failed`.
 

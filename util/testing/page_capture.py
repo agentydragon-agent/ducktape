@@ -238,7 +238,11 @@ async def screenshot_element(page: Page, selector: str, *, context: str) -> byte
 
 
 async def screenshot_locator(
-    page: Page, target: Locator, *, context: str, scale: Literal["css", "device"] = "device",
+    page: Page,
+    target: Locator,
+    *,
+    context: str,
+    scale: Literal["css", "device"] = "device",
     animations: Literal["allow", "disabled"] = "allow",
 ) -> bytes:
     if (count := await target.count()) != 1:

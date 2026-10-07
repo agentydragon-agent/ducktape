@@ -110,7 +110,7 @@ async def test_markdown_is_sanitized(visual: VisualHarness, scene: str) -> None:
             '[data-message-role="assistant"] .agentplane-markdown a[href^="https://"]',
             '[data-message-role="assistant"] .agentplane-markdown .agentplane-code-block .cm-editor',
         ):
-            await expect(page.locator(selector)).to_be_attached()
+            await expect(page.locator(selector).first).to_be_attached()
         markdown = page.locator(
             '[data-message-role="user"] .agentplane-markdown, [data-message-role="assistant"] .agentplane-markdown'
         )
@@ -202,7 +202,7 @@ async def test_noisy_history(visual: VisualHarness, scene: str) -> None:
             await _noisy_ready(page)
             if "Thinking" in scene:
                 await page.locator('[data-tool-group-toggle][aria-expanded="false"]').first.click()
-                thinking = page.locator('[data-fold-kind="thinking"]')
+                thinking = page.locator('[data-fold-kind="thinking"]').first
                 await thinking.locator("summary").click()
                 await _scroll_into_view(thinking)
         await _capture(view, scene)
@@ -261,7 +261,7 @@ async def test_event_timeline(visual: VisualHarness, scene: str) -> None:
         assert await page.locator('[data-fold-kind="tool-run"]').count() <= 3
         if "Expanded" in scene:
             await strips.first.locator("[data-event-dot]").first.click()
-            await strips.first.locator("[data-raw-event] summary").click()
+            await strips.first.locator("[data-raw-event] summary").first.click()
             await expect(strips.first.locator("[data-event-json]")).to_be_attached()
         await _scroll_into_view(strips.first)
         await _capture(view, scene)
@@ -290,7 +290,7 @@ async def test_session_viewer(visual: VisualHarness) -> None:
     async with _open(visual, "SessionViewer") as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="tool-run"][data-tool-count="5"]')).to_be_attached()
-        await expect(view.page.locator("[data-tool-run-toggle]")).to_be_attached()
+        await expect(view.page.locator("[data-tool-run-toggle]").first).to_be_attached()
         await _capture(view, "SessionViewer")
 
 
@@ -298,7 +298,7 @@ async def test_session_viewer_dark(visual: VisualHarness) -> None:
     async with _open(visual, "SessionViewer_dark") as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="tool-run"][data-tool-count="5"]')).to_be_attached()
-        await expect(view.page.locator("[data-tool-run-toggle]")).to_be_attached()
+        await expect(view.page.locator("[data-tool-run-toggle]").first).to_be_attached()
         await _capture(view, "SessionViewer_dark")
 
 
@@ -306,7 +306,7 @@ async def test_session_viewer_mobile(visual: VisualHarness) -> None:
     async with _open(visual, "SessionViewer_mobile") as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="tool-run"][data-tool-count="5"]')).to_be_attached()
-        await expect(view.page.locator("[data-tool-run-toggle]")).to_be_attached()
+        await expect(view.page.locator("[data-tool-run-toggle]").first).to_be_attached()
         await _capture(view, "SessionViewer_mobile")
 
 

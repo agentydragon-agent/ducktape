@@ -5,8 +5,7 @@ to produce one `py_visual_test` that renders that server's tool-call preview car
 fixture × variant × color scheme) plus a `visual-review.json`. The shared harness — the card
 renderer, the mount, the mock — lives in `//haku/console/frontend/tool_rendering/screenshot`; this
 macro only bundles the server's entry (an IIFE that imports the shared mount + that server's
-fixtures), derives the scenario table from the server's fixtures, and runs the shared sweep
-(`//util/testing:visual_sweep`).
+fixtures), exports fixture identities, and runs the Python tests in preview_visual.py.
 
 Co-locating fixtures + target per server means a widget change re-runs only that server's
 screenshots (per-target Bazel caching), and `pr_visuals.py` already aggregates every test

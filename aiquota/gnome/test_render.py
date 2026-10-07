@@ -116,14 +116,16 @@ def render_session(
 
     with container:
         session = GnomeSession(
-            container.get_wrapped_container(), extension=_EXTENSION_UUID,
-            destination=_TEST_DBUS_DEST, object_path=_TEST_DBUS_PATH,
+            container.get_wrapped_container(),
+            extension=_EXTENSION_UUID,
+            destination=_TEST_DBUS_DEST,
+            object_path=_TEST_DBUS_PATH,
         )
         try:
             session.boot()
             session.start(environment={"AI_QUOTA_FIXTURE": f"/fixtures/{FIXTURE_NAMES[0]}.json"})
             session.wait_for_paint()
-        except (AssertionError, TimeoutError, RuntimeError):
+        except AssertionError, TimeoutError, RuntimeError:
             session.save_log(undeclared_outputs_dir() / "startup.shell.log")
             raise
         yield session, out_dir
@@ -138,10 +140,7 @@ def undeclared_dir() -> Path:
 
 @pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)
 def test_render(
-    render_session: tuple[GnomeSession, Path],
-    undeclared_dir: Path,
-    tmp_path: Path,
-    fixture_name: str,
+    render_session: tuple[GnomeSession, Path], undeclared_dir: Path, tmp_path: Path, fixture_name: str
 ) -> None:
     container, container_out_dir = render_session
     out_name = f"{fixture_name}.png"

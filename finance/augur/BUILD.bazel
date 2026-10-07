@@ -126,6 +126,7 @@ py_test(
         "//util/testing:asgi",
         "//util/testing:frontend_visual",
         "//util/testing:page_capture",
+        "//util/testing:stable_capture",
         "//util/testing:undeclared_outputs",
         "//util/testing:visual_review",
         "@pypi//playwright",

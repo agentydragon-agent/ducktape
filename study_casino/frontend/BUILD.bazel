@@ -213,7 +213,7 @@ spa_bundle(
 #
 # Renders the StudyCasino component with mocked state and publishes the
 # screenshot for PR visual review (publishOnly — no checked-in baselines).
-# Swept by the Playwright scenario sweep at //util/testing:visual_sweep.
+# Python tests in test_visual.py own readiness and capture.
 # Casino fonts above are wired in so the test captures the same typography users see in production.
 
 # The scenario table: read by the harness (it mounts the scene `?page=` names) and by the sweep.

@@ -86,15 +86,17 @@ def render_session(
 
     with container:
         session = GnomeSession(
-            container.get_wrapped_container(), extension=_EXTENSION_UUID,
-            destination=_TEST_DBUS_DEST, object_path=_TEST_DBUS_PATH,
+            container.get_wrapped_container(),
+            extension=_EXTENSION_UUID,
+            destination=_TEST_DBUS_DEST,
+            object_path=_TEST_DBUS_PATH,
         )
         try:
             session.boot()
             session.start(environment={"PLAID_SPEND_TEST": "1"})
             session.wait_for_paint()
             _assert_no_plaid_extension_error(session)
-        except (AssertionError, TimeoutError, RuntimeError):
+        except AssertionError, TimeoutError, RuntimeError:
             session.save_log(undeclared_outputs_dir() / "startup.shell.log")
             raise
         yield session, output_dir
@@ -127,10 +129,7 @@ def _assert_no_plaid_extension_error(container: GnomeSession) -> None:
     ],
 )
 def test_render(
-    render_session: tuple[GnomeSession, Path],
-    tmp_path: Path,
-    fixture_name: str,
-    expected_label: str,
+    render_session: tuple[GnomeSession, Path], tmp_path: Path, fixture_name: str, expected_label: str
 ) -> None:
     container, output_dir = render_session
     image_name = f"{fixture_name}.png"

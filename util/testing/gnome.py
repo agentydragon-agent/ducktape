@@ -36,15 +36,22 @@ class GnomeSession:
 
     def exec(self, command: str, *, detach: bool = False) -> ExecResult:
         return self.container.exec_run(
-            ["bash", "-c", 'set -euo pipefail; source /tmp/dbus.env; export DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"; export DISPLAY=:99; ' + command],
-            demux=True, detach=detach,
+            [
+                "bash",
+                "-c",
+                'set -euo pipefail; source /tmp/dbus.env; export DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"; export DISPLAY=:99; '
+                + command,
+            ],
+            demux=True,
+            detach=detach,
         )
 
     def boot(self) -> None:
         self.container.exec_run(["/usr/local/bin/boot.sh"], detach=True)
         _wait(
             lambda: self.container.exec_run(["test", "-f", "/tmp/boot.ready"]).exit_code == 0,
-            timeout=30, description="container boot.sh never produced /tmp/boot.ready",
+            timeout=30,
+            description="container boot.sh never produced /tmp/boot.ready",
         )
 
     def start(self, *, environment: Mapping[str, str]) -> None:
@@ -56,8 +63,12 @@ class GnomeSession:
             detach=True,
         )
         _wait(
-            lambda: self.exec("gdbus introspect --session --dest org.gnome.Shell --object-path /org/gnome/Shell").exit_code == 0,
-            timeout=60, description="gnome-shell never owned its bus name",
+            lambda: (
+                self.exec("gdbus introspect --session --dest org.gnome.Shell --object-path /org/gnome/Shell").exit_code
+                == 0
+            ),
+            timeout=60,
+            description="gnome-shell never owned its bus name",
         )
 
         def enabled() -> bool:
@@ -70,8 +81,14 @@ class GnomeSession:
 
         _wait(enabled, timeout=10, description=f"extension {self.extension} never reached ENABLED")
         _wait(
-            lambda: self.exec(f"gdbus introspect --session --dest {shlex.quote(self.destination)} --object-path {shlex.quote(self.object_path)}").exit_code == 0,
-            timeout=10, description=f"test D-Bus interface {self.destination} was not exported",
+            lambda: (
+                self.exec(
+                    f"gdbus introspect --session --dest {shlex.quote(self.destination)} --object-path {shlex.quote(self.object_path)}"
+                ).exit_code
+                == 0
+            ),
+            timeout=10,
+            description=f"test D-Bus interface {self.destination} was not exported",
         )
 
     def call(self, method: str, *args: str) -> bytes:

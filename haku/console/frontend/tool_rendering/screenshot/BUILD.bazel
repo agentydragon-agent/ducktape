@@ -62,6 +62,7 @@ ts_library(
 
 py_library(
     name = "preview_visual",
+    testonly = True,
     srcs = ["preview_visual.py"],
     deps = [
         "//util/bazel:runfiles",

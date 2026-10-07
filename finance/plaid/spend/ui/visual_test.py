@@ -11,7 +11,6 @@ import json
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -63,9 +62,9 @@ from finance.plaid.spend.models import (
 )
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.visual_capture import VisualPage
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.frontend_visual import deterministic_browser_context
+from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.visual_capture import VisualPage
 
 # pytest_plugins loads util.playwright by name; Gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
@@ -77,7 +76,8 @@ _UI_DIR = get_required_path("_main/finance/plaid/spend/ui/dist/index.html").pare
 @pytest.fixture
 async def page(playwright: Playwright) -> AsyncIterator[Page]:
     async with await deterministic_browser_context(
-        playwright, viewport={"width": 1280, "height": 720},
+        playwright,
+        viewport={"width": 1280, "height": 720},
         frozen_now_ms=int(datetime(2026, 10, 15, tzinfo=UTC).timestamp() * 1000),
     ) as context:
         yield await context.new_page()
@@ -400,12 +400,12 @@ def dashboard_url() -> Iterator[str]:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
 async def test_spending_decision_render(page: Page, dashboard_url: str, width: int, height: int) -> None:
-    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title='Spend decisions', output_suffix="")
+    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend decisions", output_suffix="")
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.wait_for_timeout(1200)
-    normal = f'dashboard-{width}.png'
-    await view.capture(normal.removesuffix(".png"), label=f'{width}px available', full_page=True, animations="disabled")
+    normal = f"dashboard-{width}.png"
+    await view.capture(normal.removesuffix(".png"), label=f"{width}px available", full_page=True, animations="disabled")
     await page.get_by_text("$200", exact=True).wait_for()
     assert await page.get_by_role("heading", name="Flexible spending", level=1).count() == 1
     assert await page.get_by_role("alert").get_by_text("2 charges ($15) need review").count() == 1
@@ -430,14 +430,16 @@ async def test_spending_decision_render(page: Page, dashboard_url: str, width: i
     await page.get_by_label("Hypothetical flexible purchase").fill("200.01")
     assert await page.get_by_text("-<$1", exact=True).count() == 1
     assert await page.locator('span[title="-$0.01"]').count() == 1
-    exceeded = f'dashboard-{width}-purchase.png'
-    await view.capture(exceeded.removesuffix(".png"), label=f'{width}px hypothetical purchase', full_page=True, animations="disabled")
+    exceeded = f"dashboard-{width}-purchase.png"
+    await view.capture(
+        exceeded.removesuffix(".png"), label=f"{width}px hypothetical purchase", full_page=True, animations="disabled"
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
 async def test_spending_decision_dark_theme(page: Page, dashboard_url: str, width: int, height: int) -> None:
-    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title='Spend decisions', output_suffix="")
+    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend decisions", output_suffix="")
     await page.emulate_media(color_scheme="dark")
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -445,26 +447,34 @@ async def test_spending_decision_dark_theme(page: Page, dashboard_url: str, widt
     assert await page.locator("html").get_attribute("data-mantine-color-scheme") == "dark"
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-    initial = f'dashboard-dark-{width}.png'
-    await view.capture(initial.removesuffix(".png"), label=f'{width}px dark theme', full_page=True, animations="disabled")
+    initial = f"dashboard-dark-{width}.png"
+    await view.capture(
+        initial.removesuffix(".png"), label=f"{width}px dark theme", full_page=True, animations="disabled"
+    )
     await page.get_by_label("Hypothetical flexible purchase").fill("100")
     await page.get_by_text("Pace warning", exact=True).last.wait_for()
     view.errors.assert_none(context="Spend")
-    warning = f'dashboard-dark-{width}-warning.png'
-    await view.capture(warning.removesuffix(".png"), label=f'{width}px dark pace warning', full_page=True, animations="disabled")
+    warning = f"dashboard-dark-{width}-warning.png"
+    await view.capture(
+        warning.removesuffix(".png"), label=f"{width}px dark pace warning", full_page=True, animations="disabled"
+    )
     await page.get_by_label("Hypothetical flexible purchase").fill("250")
     await page.get_by_text("Over allowance", exact=True).last.wait_for()
     view.errors.assert_none(context="Spend")
-    exceeded = f'dashboard-dark-{width}-exceeded.png'
-    await view.capture(exceeded.removesuffix(".png"), label=f'{width}px dark over allowance', full_page=True, animations="disabled")
+    exceeded = f"dashboard-dark-{width}-exceeded.png"
+    await view.capture(
+        exceeded.removesuffix(".png"), label=f"{width}px dark over allowance", full_page=True, animations="disabled"
+    )
 
 
 @pytest.mark.asyncio
 async def test_new_allowance_has_no_fake_zero_pace(page: Page, dashboard_url: str) -> None:
-    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title='Spend decisions', output_suffix="")
+    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend decisions", output_suffix="")
     await page.add_init_script("window.EventSource = class { addEventListener() {} close() {} }")
+
     async def serve_warmup(route: Route) -> None:
         await route.continue_(url=f"{dashboard_url}/api/v1/view?warmup=true")
+
     await page.route("**/api/v1/view", serve_warmup)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_text("Not enough data", exact=True).wait_for()
@@ -474,14 +484,16 @@ async def test_new_allowance_has_no_fake_zero_pace(page: Page, dashboard_url: st
     await page.get_by_label("Hypothetical flexible purchase").fill("10")
     assert await page.get_by_text("$690", exact=True).count() == 1
     assert await page.get_by_text("Pace estimate warming up", exact=False).count() == 1
-    image = 'dashboard-warmup.png'
-    await view.capture(image.removesuffix(".png"), label='New allowance warming up', full_page=True, animations="disabled")
+    image = "dashboard-warmup.png"
+    await view.capture(
+        image.removesuffix(".png"), label="New allowance warming up", full_page=True, animations="disabled"
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
 async def test_review_rule_configuration_render(page: Page, dashboard_url: str, width: int, height: int) -> None:
-    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title='Spend configuration', output_suffix="")
+    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend configuration", output_suffix="")
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_role("tab", name="Configuration").click()
@@ -489,14 +501,16 @@ async def test_review_rule_configuration_render(page: Page, dashboard_url: str, 
     assert await page.get_by_text("Review", exact=True).count() == 1
     assert await page.get_by_text("Amount is negative AND (Transaction name starts with", exact=False).count() == 1
     view.errors.assert_none(context="Spend")
-    image = f'configuration-review-{width}.png'
-    await view.capture(image.removesuffix(".png"), label=f'{width}px review rule', full_page=True, animations="disabled")
+    image = f"configuration-review-{width}.png"
+    await view.capture(
+        image.removesuffix(".png"), label=f"{width}px review rule", full_page=True, animations="disabled"
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844), (320, 720)])
 async def test_transaction_explanations_render(page: Page, dashboard_url: str, width: int, height: int) -> None:
-    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title='Spend transactions', output_suffix="")
+    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend transactions", output_suffix="")
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_role("tab", name="Transactions").click()
@@ -511,8 +525,8 @@ async def test_transaction_explanations_render(page: Page, dashboard_url: str, w
         assert await rows.locator("tbody tr").count() == 4
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-    image = f'transactions-{width}.png'
-    await view.capture(image.removesuffix(".png"), label=f'{width}px all rows', full_page=True, animations="disabled")
+    image = f"transactions-{width}.png"
+    await view.capture(image.removesuffix(".png"), label=f"{width}px all rows", full_page=True, animations="disabled")
     await page.get_by_text("Credit cycle", exact=True).click()
     await page.get_by_text("Allowance bridge", exact=True).wait_for()
     if width >= 992:
@@ -533,20 +547,24 @@ async def test_transaction_explanations_render(page: Page, dashboard_url: str, w
     assert await rows.get_by_text("Personal detail: TRANSPORTATION_SHIPPING", exact=True).count() == 1
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-    expanded = f'transactions-expanded-{width}.png'
-    await view.capture(expanded.removesuffix(".png"), label=f'{width}px rule explanation', full_page=True, animations="disabled")
+    expanded = f"transactions-expanded-{width}.png"
+    await view.capture(
+        expanded.removesuffix(".png"), label=f"{width}px rule explanation", full_page=True, animations="disabled"
+    )
     await page.get_by_text("Review", exact=True).click()
     await page.get_by_text("Showing 2 of 4", exact=True).wait_for()
     assert await rows.get_by_text("UPS", exact=True).count() == 0
     assert not await rows.get_by_text("Confirm the purchase before netting this refund.").is_visible()
     view.errors.assert_none(context="Spend")
-    review = f'transactions-review-{width}.png'
-    await view.capture(review.removesuffix(".png"), label=f'{width}px review filter', full_page=True, animations="disabled")
+    review = f"transactions-review-{width}.png"
+    await view.capture(
+        review.removesuffix(".png"), label=f"{width}px review filter", full_page=True, animations="disabled"
+    )
 
 
 @pytest.mark.asyncio
 async def test_transaction_explanations_dark_theme(page: Page, dashboard_url: str) -> None:
-    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title='Spend transactions', output_suffix="")
+    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend transactions", output_suffix="")
     await page.emulate_media(color_scheme="dark")
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -557,8 +575,8 @@ async def test_transaction_explanations_dark_theme(page: Page, dashboard_url: st
     await page.get_by_text("Required document shipping for a synthetic example.").wait_for()
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-    image = 'transactions-dark-390.png'
-    await view.capture(image.removesuffix(".png"), label='390px dark theme', full_page=True, animations="disabled")
+    image = "transactions-dark-390.png"
+    await view.capture(image.removesuffix(".png"), label="390px dark theme", full_page=True, animations="disabled")
 
 
 if __name__ == "__main__":

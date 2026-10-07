@@ -6,8 +6,8 @@ from typing import Literal
 
 from playwright.async_api import expect
 
+from util.testing.viewports import DESKTOP, MOBILE, MOBILE_TOUCH, SMALL_MOBILE
 from util.testing.visual_capture import VisualHarness, VisualPage
-from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE
 
 
 @asynccontextmanager
@@ -189,10 +189,14 @@ async def open_scene(visual: VisualHarness, name: str) -> AsyncIterator[VisualPa
                 await view.page.wait_for_selector('[data-thread-anchor="50"]', state="attached")
             case "session_error":
                 await view.page.wait_for_selector('[data-thread-anchor="6"]', state="attached")
-                await view.page.wait_for_selector('.agentplane-thread-status-indicator[data-status="turn_error"]', state="attached")
+                await view.page.wait_for_selector(
+                    '.agentplane-thread-status-indicator[data-status="turn_error"]', state="attached"
+                )
             case "session_error_phone":
                 await view.page.wait_for_selector('[data-thread-anchor="8"]', state="attached")
-                await view.page.wait_for_selector('.agentplane-thread-status-indicator[data-status="turn_error"]', state="attached")
+                await view.page.wait_for_selector(
+                    '.agentplane-thread-status-indicator[data-status="turn_error"]', state="attached"
+                )
             case "session_interleaved":
                 await view.page.wait_for_selector('[data-thread-anchor="18"]', state="attached")
             case "session_thread_setup":
@@ -200,7 +204,9 @@ async def open_scene(visual: VisualHarness, name: str) -> AsyncIterator[VisualPa
             case "threads":
                 await view.page.wait_for_selector("a.agentplane-sidebar-group-name", state="attached")
             case "threads_failed_turn":
-                await view.page.wait_for_selector(".agentplane-thread-status-indicator[data-status='turn_error']", state="attached")
+                await view.page.wait_for_selector(
+                    ".agentplane-thread-status-indicator[data-status='turn_error']", state="attached"
+                )
             case "threads_provisioning":
                 await view.page.wait_for_selector('a[href="#/sandboxes/test-provisioning"]', state="attached")
             case "threads_updates_disconnected" | "threads_watch_stale" | "session_sync_unavailable":
@@ -251,48 +257,80 @@ async def open_scene(visual: VisualHarness, name: str) -> AsyncIterator[VisualPa
             case "session_markdown_code_fence":
                 await view.page.wait_for_selector(".agentplane-code-block", state="attached")
             case "session_standalone_reasoning":
-                await view.page.wait_for_selector('[data-thread-anchor="20"] .agentplane-step-preview .agentplane-markdown--single-line', state="attached")
+                await view.page.wait_for_selector(
+                    '[data-thread-anchor="20"] .agentplane-step-preview .agentplane-markdown--single-line',
+                    state="attached",
+                )
             case "session_standalone_reasoning_preview":
-                await view.page.wait_for_selector('[data-thread-anchor="20"] .agentplane-step-details .agentplane-disclosure-summary:not(:has(a))', state="attached")
+                await view.page.wait_for_selector(
+                    '[data-thread-anchor="20"] .agentplane-step-details .agentplane-disclosure-summary:not(:has(a))',
+                    state="attached",
+                )
             case "session_unfinished_reasoning" | "session_unfinished_reasoning_phone":
                 await view.page.wait_for_selector(".agentplane-step-title--streaming", state="attached")
             case "session_reasoning_code_fence" | "session_reasoning_code_fence_phone":
-                await view.page.wait_for_selector('[data-thread-anchor="20"] .agentplane-step-preview .agentplane-code-inline', state="attached")
+                await view.page.wait_for_selector(
+                    '[data-thread-anchor="20"] .agentplane-step-preview .agentplane-code-inline', state="attached"
+                )
             case "session_states":
                 await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
-                await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="failed"]', state="attached")
-                await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="noop"]', state="attached")
-                await view.page.wait_for_selector('.agentplane-thread-status-indicator[data-status="running"]', state="attached")
+                await view.page.wait_for_selector(
+                    '.agentplane-user-bubble[data-message-phase="failed"]', state="attached"
+                )
+                await view.page.wait_for_selector(
+                    '.agentplane-user-bubble[data-message-phase="noop"]', state="attached"
+                )
+                await view.page.wait_for_selector(
+                    '.agentplane-thread-status-indicator[data-status="running"]', state="attached"
+                )
             case "session_streaming_interleaved":
-                await view.page.wait_for_selector('.agentplane-streaming-cursor[aria-label="Streaming"]', state="attached")
-                await view.page.wait_for_selector('[aria-label="Thread history"][data-layout-settled="true"]', state="attached")
+                await view.page.wait_for_selector(
+                    '.agentplane-streaming-cursor[aria-label="Streaming"]', state="attached"
+                )
+                await view.page.wait_for_selector(
+                    '[aria-label="Thread history"][data-layout-settled="true"]', state="attached"
+                )
             case "session_resume":
                 await view.page.wait_for_selector('[aria-label="Harness not running"]', state="attached")
                 await view.page.wait_for_selector('[aria-label="Resume harness"]', state="attached")
             case "session_pending" | "session_pending_phone":
                 await view.page.wait_for_selector('[aria-label="Pending commands"]', state="attached")
                 await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
-                await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="local"]', state="attached")
+                await view.page.wait_for_selector(
+                    '.agentplane-user-bubble[data-message-phase="local"]', state="attached"
+                )
             case "session_pending_failed":
-                await view.page.wait_for_selector(':text("Admission unconfirmed · checking Thread history")', state="attached")
+                await view.page.wait_for_selector(
+                    ':text("Admission unconfirmed · checking Thread history")', state="attached"
+                )
                 await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
-                await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="local"]', state="attached")
+                await view.page.wait_for_selector(
+                    '.agentplane-user-bubble[data-message-phase="local"]', state="attached"
+                )
             case "session_pending_controls":
                 await view.page.wait_for_selector('[data-command-id="queued-interrupt"]', state="attached")
                 await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
             case "session_command_outcomes_phone":
                 await view.page.wait_for_selector('[aria-label="Pending commands"]', state="attached")
                 await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
-                await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="failed"]', state="attached")
-                await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="noop"]', state="attached")
+                await view.page.wait_for_selector(
+                    '.agentplane-user-bubble[data-message-phase="failed"]', state="attached"
+                )
+                await view.page.wait_for_selector(
+                    '.agentplane-user-bubble[data-message-phase="noop"]', state="attached"
+                )
             case "session_catching_up":
                 await view.page.wait_for_selector('[data-thread-catchup="true"]', state="attached")
             case "session_sync_reconnecting":
-                await view.page.wait_for_selector('[aria-label="Runner feed active · harness running"]', state="attached")
+                await view.page.wait_for_selector(
+                    '[aria-label="Runner feed active · harness running"]', state="attached"
+                )
                 await view.page.wait_for_selector('[data-connection="degraded"]', state="attached")
                 await view.page.wait_for_selector('[data-thread-anchor="34"]', state="attached")
             case "session_sync_reconnecting_phone":
-                await view.page.wait_for_selector('[aria-label="Runner feed active · harness running"]', state="attached")
+                await view.page.wait_for_selector(
+                    '[aria-label="Runner feed active · harness running"]', state="attached"
+                )
                 await view.page.wait_for_selector(':text("may be out of date")', state="attached")
                 await view.page.wait_for_selector('[data-thread-anchor="34"]', state="attached")
             case "session_states_phone":
@@ -310,17 +348,27 @@ async def open_scene(visual: VisualHarness, name: str) -> AsyncIterator[VisualPa
             case "mcp_servers" | "mcp_servers_phone":
                 await view.page.wait_for_selector("[data-mcp-server]", state="attached")
             case "disclosure_component_phone_collapsed":
-                await view.page.wait_for_selector(".demo-main .agentplane-disclosure-summary[aria-expanded='false']", state="attached")
+                await view.page.wait_for_selector(
+                    ".demo-main .agentplane-disclosure-summary[aria-expanded='false']", state="attached"
+                )
             case "disclosure_component_phone_short_expanded" | "disclosure_component_phone_long_top":
-                await view.page.wait_for_selector(".demo-main .agentplane-disclosure-summary[aria-expanded='true']", state="attached")
+                await view.page.wait_for_selector(
+                    ".demo-main .agentplane-disclosure-summary[aria-expanded='true']", state="attached"
+                )
             case "disclosure_component_phone_long_scrolled":
-                await view.page.wait_for_selector(".demo-main .agentplane-disclosure-heading[data-expanded='true']", state="attached")
+                await view.page.wait_for_selector(
+                    ".demo-main .agentplane-disclosure-heading[data-expanded='true']", state="attached"
+                )
             case "disclosure_component_phone_after_disclosure":
                 await view.page.wait_for_selector("[data-disclosure-visual-stage='after-disclosure']", state="attached")
             case "disclosure_component_phone_nested_child_scrolled":
-                await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading[data-expanded='true']", state="attached")
+                await view.page.wait_for_selector(
+                    ".demo-inner .agentplane-disclosure-heading[data-expanded='true']", state="attached"
+                )
             case "disclosure_component_phone_nested_after_child":
-                await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading[data-expanded='true']", state="attached")
+                await view.page.wait_for_selector(
+                    ".demo-outer .agentplane-disclosure-heading[data-expanded='true']", state="attached"
+                )
             case (
                 "disclosure_component_phone_nested_parent_only"
                 | "disclosure_component_phone_nested_after_outer"
@@ -344,7 +392,9 @@ async def open_scene(visual: VisualHarness, name: str) -> AsyncIterator[VisualPa
                 | "reported_rollout_desktop"
                 | "realistic_rollout_desktop_dark"
             ):
-                await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
+                await view.page.wait_for_selector(
+                    "[aria-label='Thread history'][data-layout-settled='true']", state="attached"
+                )
             case "sandboxes_claude_paused" | "sandbox_claude_paused":
                 await view.page.wait_for_selector('[role="option"][data-combobox-disabled]', state="attached")
         await view.check(context=name)

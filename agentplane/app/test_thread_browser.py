@@ -9,6 +9,7 @@ import json
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from dataclasses import replace
 from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
@@ -806,7 +807,7 @@ async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thre
 @pytest.mark.parametrize("raw", [False, True], ids=["normal", "raw"])
 @pytest.mark.parametrize(
     ("viewport", "resized_viewport"),
-    [(DESKTOP, DESKTOP.model_copy(update={"height": SMALL_MOBILE.height})), (MOBILE, SMALL_MOBILE)],
+    [(DESKTOP, replace(DESKTOP, height=SMALL_MOBILE.height)), (MOBILE, SMALL_MOBILE)],
     ids=["desktop", "phone"],
 )
 async def test_thread_follows_bottom_until_reader_scrolls_up(

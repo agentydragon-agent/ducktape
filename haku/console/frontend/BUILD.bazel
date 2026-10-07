@@ -915,8 +915,7 @@ spa_bundle(
 # (harness/harness.tsx) to a PNG in the test's undeclared outputs, for eyeballing (see
 # AGENTS.md). Browser rendering runs on the RBE worker's display stack, so it is a test, not a
 # `bb run` binary. It is a generator, not a pixel-diff gate: it passes as long as every scene renders.
-# Swept by the Playwright scenario sweep at //util/testing:visual_sweep, one test per shot
-# (`--test_filter=<scene>-<scheme>` renders one).
+# Python tests in test_visual.py own interactions, readiness and capture.
 
 ts_library(
     name = "screenshot_harness_lib",

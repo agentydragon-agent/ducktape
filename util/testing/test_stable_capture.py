@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -14,7 +15,7 @@ async def test_returns_only_after_two_consecutive_identical_frames(tmp_path: Pat
     result = await stable_full_page_png(page, name="scene", diagnostics=tmp_path, attempts=3)
     assert result == b"settled"
     assert page.screenshot.await_count == 3
-    assert not list(tmp_path.iterdir())
+    assert not await asyncio.to_thread(lambda: list(tmp_path.iterdir()))
 
 
 async def test_nonconvergence_fails_and_retains_every_frame(tmp_path: Path) -> None:
@@ -22,7 +23,11 @@ async def test_nonconvergence_fails_and_retains_every_frame(tmp_path: Path) -> N
     page.screenshot.side_effect = [b"one", b"two", b"three"]
     with pytest.raises(AssertionError, match="scene: render did not stabilize in 3 captures"):
         await stable_full_page_png(page, name="scene", diagnostics=tmp_path, attempts=3)
-    assert [path.read_bytes() for path in sorted(tmp_path.glob("*.png"))] == [b"one", b"two", b"three"]
+    assert await asyncio.to_thread(_read_frames, tmp_path) == [b"one", b"two", b"three"]
+
+
+def _read_frames(directory: Path) -> list[bytes]:
+    return [path.read_bytes() for path in sorted(directory.glob("*.png"))]
 
 
 if __name__ == "__main__":

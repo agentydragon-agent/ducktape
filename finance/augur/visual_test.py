@@ -13,8 +13,8 @@ devinfra/pr_visuals/plans/goldens_to_pr_visuals.md).
 
 from __future__ import annotations
 
+import asyncio
 import json
-import shutil
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
@@ -486,9 +486,8 @@ async def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Pa
     # sticky element at its last on-screen position, so a mid-page scroll (e.g. after a rollout
     # interaction) would otherwise leave the header floating over the middle of the screenshot.
     await page.evaluate("() => window.scrollTo(0, 0)")
-    target_path.write_bytes(
-        await stable_full_page_png(page, name=target_path.stem, diagnostics=undeclared_outputs_dir())
-    )
+    png = await stable_full_page_png(page, name=target_path.stem, diagnostics=undeclared_outputs_dir())
+    await asyncio.to_thread(target_path.write_bytes, png)
     return target_path
 
 

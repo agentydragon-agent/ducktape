@@ -1,5 +1,6 @@
 """Bounded screenshot convergence, with diagnostic frames on failure."""
 
+import asyncio
 from pathlib import Path
 
 from playwright.async_api import Page
@@ -17,7 +18,11 @@ async def stable_full_page_png(page: Page, *, name: str, diagnostics: Path, atte
         if frames and frame == frames[-1]:
             return frame
         frames.append(frame)
+    await asyncio.to_thread(_write_frames, diagnostics, name, frames)
+    raise AssertionError(f"{name}: render did not stabilize in {attempts} captures; inspect {diagnostics}")
+
+
+def _write_frames(diagnostics: Path, name: str, frames: list[bytes]) -> None:
     diagnostics.mkdir(parents=True, exist_ok=True)
     for index, frame in enumerate(frames):
         (diagnostics / f"{name}.attempt{index}.png").write_bytes(frame)
-    raise AssertionError(f"{name}: render did not stabilize in {attempts} captures; inspect {diagnostics}")

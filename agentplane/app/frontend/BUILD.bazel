@@ -1,3 +1,7 @@
+# gazelle:exclude test_visual_disclosures.py
+# gazelle:exclude test_visual_history.py
+# gazelle:exclude test_visual_policies.py
+# gazelle:exclude test_visual_navigation.py
 # The visual macro collects this test module under :visual so its PNGs keep the same gallery identity.
 # gazelle:exclude test_visual_interactions.py
 # gazelle:exclude test_visual_scenes.py
@@ -1285,6 +1289,7 @@ py_visual_test(
     harness = ":visual_bundle_js",
     shard_count = 6,
     test_deps = [
+        ":visual_assertions",
         ":visual_pages",
         "//util/testing:page_capture",
         "//util/testing:undeclared_outputs",
@@ -1296,10 +1301,7 @@ py_visual_test(
         "@pypi//pytest_bazel",
     ],
     test_module = "agentplane.app.frontend.test_visual_interactions",
-    test_srcs = [
-        "test_visual_interactions.py",
-        "test_visual_scenes.py",
-    ],
+    test_srcs = ["test_visual_interactions.py", "test_visual_scenes.py", "test_visual_disclosures.py", "test_visual_history.py", "test_visual_policies.py", "test_visual_navigation.py"],
     title = "Agentplane",
 )
 
@@ -1329,10 +1331,22 @@ check_vitest_specs()
 
 py_library(
     name = "visual_pages",
+    testonly = True,
     srcs = ["visual_pages.py"],
     deps = [
         "//util/testing:viewports",
         "//util/testing:visual_capture",
+        "@pypi//playwright",
+    ],
+)
+
+py_library(
+    name = "visual_assertions",
+    testonly = True,
+    srcs = ["visual_assertions.py"],
+    deps = [
+        "//util/testing:page_capture",
+        "//util/testing:undeclared_outputs",
         "@pypi//playwright",
     ],
 )
