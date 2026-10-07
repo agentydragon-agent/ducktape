@@ -1,6 +1,8 @@
 """Workload-authenticated HTTP surface; no implicit current session and no destructive reads."""
 
 import asyncio
+import logging
+import traceback
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, cast
@@ -30,6 +32,8 @@ from agentplane.notification_service.sources.github import (
 from agentplane.notification_service.store import ConflictError, NotFoundError, QuotaError
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
+
+logger = logging.getLogger(__name__)
 
 
 def notification_service(request: Request) -> Service:
@@ -62,7 +66,12 @@ async def ready(request: Request, service: Notifications) -> dict[str, str]:
 
 
 @router.get("/healthz")
-async def health() -> dict[str, str]:
+async def health(request: Request) -> dict[str, str]:
+    # A failed delivery worker cannot be repaired by HTTP readiness alone: it
+    # must also fail liveness so Kubernetes replaces the still-running process.
+    workers = cast(list[asyncio.Task[None]], request.app.state.notification_workers)
+    if any(worker.done() for worker in workers):
+        raise HTTPException(503, "notification workers failed")
     return {"status": "alive"}
 
 
@@ -193,12 +202,27 @@ async def unavailable(request: Request, error: Exception) -> JSONResponse:
     return JSONResponse({"detail": "backend temporarily unavailable"}, status_code=503)
 
 
+def _report_worker_exit(worker: asyncio.Task[None]) -> None:
+    if worker.cancelled():
+        return  # Expected on application shutdown.
+    error = worker.exception()  # Retrieve it even while the task is retained by app.state.
+    if error is None:
+        logger.error("notification worker %s stopped unexpectedly", worker.get_name())
+    else:
+        # Do not print the exception message or locals: downstream exceptions can
+        # contain delivery payloads or credentials. Preserve the stack and type.
+        stack = "".join(traceback.format_list(traceback.extract_tb(error.__traceback__)))
+        logger.error("notification worker %s failed: %s\n%s", worker.get_name(), type(error).__name__, stack)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     service = cast(Service, app.state.notification_service)
     async with service.store.wakeups.listener.listen():
         workers = [asyncio.create_task(service.run(), name=f"notifications-{i}") for i in range(4)]
         app.state.notification_workers = workers
+        for worker in workers:
+            worker.add_done_callback(_report_worker_exit)
         try:
             yield
         finally:

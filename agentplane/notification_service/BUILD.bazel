@@ -206,6 +206,7 @@ py_test(
         "//:conftest",
         "//agentplane/workload_auth:principal",
         "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
