@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
 

@@ -921,7 +921,10 @@ py_test(
     name = "test_thread_browser",
     size = "medium",
     srcs = ["test_thread_browser.py"],
-    args = ["-vv", "--setup-show"],
+    args = [
+        "-vv",
+        "--setup-show",
+    ],
     data = [
         "//agentplane/app/frontend:bundle",
     ],
