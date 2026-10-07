@@ -31,6 +31,10 @@ Proposed execution order for the Thread correctness/UI track:
 - **P0, hosted Haku blocker, pending deployment acceptance:** verify per-Thread setup and
   working directories for Haku and Finance (`THREAD_WORKSPACE_BOOTSTRAP`,
   [#8695](https://github.com/agentydragon/ducktape/issues/8695)).
+- **P1, next harness correctness check:** force native compaction and verify standing
+  instructions in subsequent Claude/Codex model requests (`HARNESS_COMPACTION_INSTRUCTIONS`).
+  Share the compaction trigger/fixtures with the future frontend control; this proof does not
+  wait on UI work.
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
 - **Unranked future harness capabilities:** project skills and commands, web search, visual input,
@@ -68,6 +72,7 @@ flowchart TB
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
+    HARNESS_COMPACTION_INSTRUCTIONS["P1 harness acceptance<br/>trigger native compaction<br/>verify post-compact instructions"]:::active
     NOTIFICATION_COMPACT_NOTICES["Deferred design<br/>brief notices and shared instructions<br/>Claude/Codex compaction evidence"]:::future
     NOTIFICATION_NOTICE_PACING["Deferred design<br/>avoid redundant notices during busy turns<br/>measure harness delivery boundaries"]:::future
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
@@ -127,6 +132,8 @@ flowchart TB
     HOSTED_THREAD_SURFACES --> AG
     CROSS_IDENTITY_READ_POLICY --> AG
     PC_EGRESS_CREDENTIALS --> PC_EGRESS
+    HARNESS_COMPACTION_INSTRUCTIONS --> NOTIFICATION_COMPACT_NOTICES
+    HARNESS_COMPACTION_INSTRUCTIONS --> HARNESS_MANUAL_COMPACTION
 
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_SKILLS
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_WEB_SEARCH
@@ -821,6 +828,25 @@ storm of reminders when acknowledgement is delayed. Accept a design only after t
 bounded, nonduplicative delivery across retries, restarts, long operations and compaction.
 This is independent of making notices terse in `NOTIFICATION_COMPACT_NOTICES`.
 
+### `HARNESS_COMPACTION_INSTRUCTIONS` — trigger compaction and prove standing instructions survive
+
+**P1 harness correctness acceptance:** add a reproducible native compaction trigger and mock-LLM
+capture for both runner-matched Claude and Codex. Supply distinctive Agentplane standing
+instructions; force real harness compaction, then inspect the actual subsequent LLM request(s),
+not just the initial runner handshake, a harness callback, or its final answer. Check which
+instructions persist across automatic and explicitly triggered compaction where supported, and
+across resume after compaction; test a continued turn with a short inbox hint to expose loss of
+retrieval/acknowledgement guidance. Record harness/version-specific behavior rather than assuming
+that a compacted summary or a hook restores instructions. If instructions can be lost, specify
+and test reinjection or retain self-contained notices until fixed.
+
+Build the trigger and evidence fixtures to be reusable by `HARNESS_MANUAL_COMPACTION`: Codex's
+`thread/compact/start` is inventoried but untested, while Claude's compaction path needs native
+capability verification. This task pins the native operation and post-compaction model context;
+the separate frontend control covers authorized user requests and their UI lifecycle. Neither
+requires LLM proxy interception in production. Gate shortening notices in
+`NOTIFICATION_COMPACT_NOTICES` on this proof.
+
 ### `NOTIFICATION_COMPACT_NOTICES` — shared instructions and brief cursor hints
 
 **Deferred design; wire format TBD:** put retrieval/explicit-acknowledgement instructions in shared
@@ -1105,8 +1131,9 @@ admission from actual start/completion/failure using runner evidence, including 
 Preserve Thread/session identity and the durable transcript/Event archive: compacting model context
 is not deleting conversation history. Acceptance covers a real frontend request, native compaction,
 continued conversation and retained shared instructions for each supported harness, plus failure and
-reconnect behavior. Coordinate compaction fixtures with `NOTIFICATION_COMPACT_NOTICES`; those tests
-do not need to wait for the frontend control. Implementation and UI details remain open.
+reconnect behavior. Reuse the native trigger and post-compaction evidence from
+`HARNESS_COMPACTION_INSTRUCTIONS`; those tests do not need to wait for the frontend control.
+Implementation and UI details remain open.
 
 ### `CONTROL_STATE` — dynamic runtime control acceptance
 
