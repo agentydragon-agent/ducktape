@@ -25,8 +25,8 @@ Proposed execution order for the Thread correctness/UI track:
   [#9063](https://github.com/agentydragon/ducktape/issues/9063).
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
-- **Unranked future harness capabilities:** project skills and commands, web search, visual input,
-  native subagents, interactive controls, project hooks/plugins, prompt suggestions, and a Claude
+- **Unranked future harness capabilities:** project skills and commands, web search, file/image uploads,
+  visual input, native subagents, interactive controls, project hooks/plugins, prompt suggestions, and a Claude
   RemoteIO transport evaluation. The
   existing P2 item `DT` is included below as a cross-reference and keeps its current priority; it
   covers Action-backed tools and background-work control. The new candidates are an inventory, not
@@ -76,6 +76,7 @@ flowchart TB
     HARNESS_SKILLS["Unranked candidate<br/>project-scoped skills and commands<br/>both native harnesses"]:::future
     HARNESS_WEB_SEARCH["Unranked candidate<br/>routed web search<br/>source evidence in Thread"]:::future
     HARNESS_VISUAL_INPUT["Unranked candidate<br/>image attachments and visual input<br/>composer, protocol, storage, replay"]:::future
+    THREAD_UPLOADS["Unranked candidate<br/>attach files and images to a Thread<br/>authorized upload, retained bytes, agent access"]:::future
     HARNESS_MANUAL_COMPACTION["Unranked future control<br/>user-triggered harness compaction<br/>from the frontend"]:::future
     CLAUDE_REMOTE_IO_EVAL["Unranked transport evaluation<br/>Claude RemoteIO through egress proxy<br/>compare with stream-json"]:::decision
     HARNESS_INTERACTIVE_CONTROLS["Unranked candidate<br/>questions and permission decisions<br/>durable park, answer, recovery"]:::future
@@ -364,6 +365,14 @@ needs evidence that work does not already provide.
 - **`HARNESS_SKILLS` — high win, low–medium work:** Enable project-scoped skills and custom
   commands for Claude and Codex. Prove the project catalog is available in a Thread while
   host-global settings and unrelated user configuration stay out.
+- **`THREAD_UPLOADS` — unranked candidate:** Allow a user to upload files and images for an
+  agent to inspect, bound to an authorized Thread rather than an arbitrary Sandbox path. Design
+  size/type limits, durable bytes and scoped references, safe workspace materialization or
+  harness attachment, and cleanup/retention across restart and deletion. Expose the attachment
+  on a user message with replayable provenance; do not mistake a filename or a preview for bytes
+  the agent actually received. Test reconnect, duplicate submission, cross-Thread access denial,
+  missing Sandbox, and both harnesses. Browser-provided images additionally require
+  `HARNESS_VISUAL_INPUT`; that node's workspace `view_image` fixture is a different input path.
 - **`HARNESS_VISUAL_INPUT` — high win, high work:** Carry supported image input/viewing through the
   harness protocol and retained Thread history; prove Claude's image input path and Codex viewing
   an image already in its workspace. Text-only transcripts are insufficient acceptance. For Codex,
@@ -565,18 +574,25 @@ separate UI presentation work.
 
 ### `SANDBOX_CREATE_RECONCILE` — lost lifecycle response and partial provisioning
 
-Create may persist a Kubernetes Sandbox CR and then fail while provisioning its
-grants or sending the response; Kubernetes intent is not Pod readiness. A caller
-can use authorized Get by **name** (or List) and compare the current object's UID,
-but Kubernetes offers no get-by-UID here and a deleted CR has no retained tombstone.
-An absent name cannot prove that no Sandbox was previously created.
+Create currently mints a _new random suffix_ from the caller's slug inside
+`SandboxInventory.create`, before creating a same-name ServiceAccount and the Sandbox CR.
+If the reply is lost, the caller does not know the name, so Get by name cannot recover
+it and a retry can create a second Sandbox. Create may also commit the CR then fail
+while provisioning grants; Kubernetes intent is not Pod readiness.
 
-**Acceptance:** exercise lost replies before/after CR commit, failures between CR
-and grants, a later grant reconciliation, replacement under the same name with a
-new UID, watcher restart, and concurrent callers. State exactly what Get/List
-can establish and when an outcome must remain unknown; do not silently create
-under a fresh name on uncertainty. Add a lifecycle ticket only if current intent
-and UID checks cannot provide the required recovery.
+**Implementation and acceptance:** give each Create a caller-retained stable identity and
+known target name before the request is sent; retry must use that same name and exact
+choices. Record the identity and normalized intent on the CR and verify both and
+caller authorization before treating an existing object as success; mismatches are
+conflicts, not adoption. Handle existing/in-flight same-name ServiceAccounts and
+ambiguous Kubernetes writes without deleting an SA if its CR may have committed.
+The existing provisioning-intent annotation and reconciler should finish incomplete
+grants rather than creating another Sandbox. Exercise reply loss at SA creation,
+CR commit, owner-reference patch, and grant provisioning; concurrent retries,
+conflicts, restart, and deletion/recreation under the same name. Compare current
+UIDs to distinguish replacement; Kubernetes has no get-by-UID or retained tombstone,
+so absence after deletion remains unknown without a separate durable request ledger.
+Do not promise exactly-once across deletion from a name lookup alone.
 
 ### `ACTION_DIRECT_RECOVERY` — lost first direct-tool receipt
 
