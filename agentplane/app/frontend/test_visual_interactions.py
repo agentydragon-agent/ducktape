@@ -707,6 +707,40 @@ async def test_mobile_navigation_drawer(
     await _capture(scene, drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config)
 
 
+async def test_mobile_drawer_covers_thread_controls(
+    scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        reasoning = page.locator('[data-thread-anchor="20"] .agentplane-step-details')
+        await reasoning.locator(".agentplane-disclosure-summary").first.click()
+        history = page.locator("[aria-label='Thread history']")
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        await history.evaluate("element => { element.scrollTop = element.scrollHeight / 2; }")
+        await wait_for_stable(page)
+        await page.get_by_role("button", name="Toggle navigation").click()
+        drawer = page.locator(".agentplane-sidebar-open")
+        await expect(drawer).to_be_visible()
+        # A sticky disclosure heading (z=100) or Jump to latest (z=101) in the main
+        # column must never punch through the drawer's lower numeric z-index.
+        assert await page.evaluate("""() => {
+            const drawer = document.querySelector('.agentplane-sidebar-open');
+            const main = document.querySelector('.agentplane-shell-main');
+            if (!drawer || !main) return false;
+            return getComputedStyle(main).zIndex === '0' &&
+                getComputedStyle(drawer).zIndex === '30' &&
+                document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.closest('.agentplane-sidebar') === drawer;
+        }""")
+
+    await _capture(
+        "session_reasoning_sticky_phone",
+        drive,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name="session-phone-drawer-over-transcript",
+    )
+
+
 async def test_disconnected_threads_tooltip(
     scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
 ) -> None:

@@ -10,6 +10,10 @@
 }
 
 .agentplane-shell-main {
+  /* Contain transcript sticky headings and Jump to latest (z-index 100+) beneath the
+     sibling mobile drawer (z-index 30), regardless of their internal stack levels. */
+  position: relative;
+  z-index: 0;
   flex: 1;
   min-width: 0;
   display: flex;
