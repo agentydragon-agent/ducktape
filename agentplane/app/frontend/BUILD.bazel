@@ -1184,9 +1184,9 @@ js_library(
     name = "visual_fixtures_json",
     testonly = True,
     srcs = [
+        "harness/fixtures.json",
         "harness/realistic_rollout.json",
         "harness/reported_rollout.json",
-        "harness/fixtures.json",
     ],
 )
 
@@ -1325,7 +1325,6 @@ agentplane_vitest_test(
 )
 
 check_vitest_specs()
-
 
 py_library(
     name = "visual_assertions",
