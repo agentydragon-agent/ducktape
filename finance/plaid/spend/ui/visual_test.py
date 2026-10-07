@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -17,7 +17,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from playwright.async_api import Page, Playwright, Route
+from playwright.async_api import Page, Route
 
 from finance.plaid.spend.allowance import (
     AllOf,
@@ -62,7 +62,7 @@ from finance.plaid.spend.models import (
 )
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual import deterministic_browser_context
+from util.testing.frontend_visual import frozen_clock_script
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_capture import VisualPage
 
@@ -73,14 +73,9 @@ pytest_plugins = ("util.playwright",)
 _UI_DIR = get_required_path("_main/finance/plaid/spend/ui/dist/index.html").parent
 
 
-@pytest.fixture
-async def page(playwright: Playwright) -> AsyncIterator[Page]:
-    async with await deterministic_browser_context(
-        playwright,
-        viewport={"width": 1280, "height": 720},
-        frozen_now_ms=int(datetime(2026, 10, 15, tzinfo=UTC).timestamp() * 1000),
-    ) as context:
-        yield await context.new_page()
+@pytest.fixture(autouse=True)
+async def freeze_clock(page: Page) -> None:
+    await page.add_init_script(frozen_clock_script(int(datetime(2026, 10, 15, tzinfo=UTC).timestamp() * 1000)))
 
 
 @pytest.fixture(scope="module")
