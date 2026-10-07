@@ -1016,7 +1016,7 @@ async def test_recovery_tool_lower_states(
     async def drive(page: Page) -> None:
         await _open_recovery_details(page)
         await _in_viewport(page.get_by_text("Failed, still in context", exact=True))
-        await _in_viewport(page.locator('[aria-label="Retention unknown"]').last)
+        await _focus(page, page.locator('[aria-label="Retention unknown"]').last)
 
     await _capture(scene, drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config)
 
@@ -1331,6 +1331,31 @@ async def test_shell_call_command_and_output(
         sweep_config=sweep_config,
         output_name=f"{scene}_{suffix}",
     )
+
+
+@pytest.mark.parametrize("scene", ["session_compact_run", "session_compact_run_phone"], ids=["desktop", "phone"])
+async def test_collapsed_steps_in_open_run_are_compact(
+    scene: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        await _open_run(page)
+        await expect(page.locator(".agentplane-step-details [aria-busy='true']")).to_have_count(0)
+        steps = page.locator(
+            ".agentplane-run-steps .agentplane-step-details .agentplane-disclosure-summary[aria-expanded='false']"
+        )
+        await expect(steps.first).to_be_attached()
+        # Both kinds share the step disclosure control. Its normal mobile min-height
+        # and label padding must not turn every collapsed step into a full-size card.
+        assert await steps.first.evaluate("el => getComputedStyle(el).minHeight") == "24px"
+        assert (
+            await steps.first.locator(".agentplane-disclosure-summary-content").evaluate(
+                "el => getComputedStyle(el).paddingBlockStart"
+            )
+            == "0px"
+        )
+        await _focus(page, steps.first)
+
+    await _capture(scene, drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config)
 
 
 @pytest.mark.parametrize(

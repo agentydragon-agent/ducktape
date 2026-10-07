@@ -138,6 +138,22 @@
     "shellCalls": true,
     "readySelectors": [".agentplane-disclosure-summary"]
   },
+  "session_compact_run": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": "desktop",
+    "shellCalls": true,
+    "readySelectors": [".agentplane-disclosure-summary"],
+    "captureViewport": true
+  },
+  "session_compact_run_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": "mobile",
+    "shellCalls": true,
+    "readySelectors": [".agentplane-disclosure-summary"],
+    "captureViewport": true
+  },
   "session_tool_output_sticky": {
     "element": "#app",
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
