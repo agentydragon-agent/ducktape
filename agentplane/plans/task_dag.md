@@ -18,6 +18,11 @@ the authority's notification/watch mechanism (PostgreSQL `NOTIFY` for Action Ser
 reconnect/replay from durable state rather than process-local memory. A single-replica deployment
 is an explicit temporary operational constraint, never an implicit correctness assumption.
 
+**Immediate operator priority:** `THREAD_READ_POLICY` — enable explicitly scoped
+ServiceAccount access to selected Thread history. Design the identity and authorization
+boundary first; this is independent of hosted Threads, bootstrap orchestration, and
+future harness-capability research.
+
 Proposed execution order for the Thread correctness/UI track:
 
 - **Thread UI:** the staged submission indicator (`SUBMISSION_STAGE_INDICATOR`) follows
@@ -88,7 +93,7 @@ flowchart TB
     HARNESS_PROMPT_SUGGESTIONS["Optional, lowest estimated win<br/>Claude prompt suggestions<br/>measure UX before enabling"]:::future
     THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
     HOSTED_THREAD_SURFACES["Deferred design<br/>read and control surfaces for a hosted Thread<br/>beyond today's Sandbox-bound view"]:::future
-    THREAD_READ_POLICY["Deferred design<br/>explicit ServiceAccount access to Thread history<br/>specific IDs or reviewed selectors"]:::decision
+    THREAD_READ_POLICY["Priority design<br/>explicit SA access to selected Thread history<br/>start with per-Thread grants"]:::active
     AG["Capstone<br/>hosted Agent and Thread model<br/>lifecycle, surfaces and read policy together"]:::milestone
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_RBAC["Managed Kubernetes access<br/>catalog choices and SA bindings<br/>live acceptance pending; see #8596"]:::active
@@ -798,30 +803,30 @@ view the derived read model serves. Separate from the lifecycle: a Thread can ou
 before anything new reads it that way, and these surfaces can be designed against a Thread that
 does not yet.
 
-### `THREAD_READ_POLICY` — explicit ServiceAccount grants for Thread history
+### `THREAD_READ_POLICY` — explicitly scoped ServiceAccount Thread reads
 
-**Design first; no grant model selected:** a logical agent may run as a ServiceAccount in
-independent Threads over time and should be able to find and read authorized prior history,
-including after a Sandbox or runner session changes. Do not infer read authority merely from
-sharing a Sandbox, a label, a similarly named agent, or a previously used credential. Specify
-which identity owns a Thread and how a caller's ServiceAccount obtains read authority through
-an explicit, inspectable, revocable policy.
+**Immediate design priority:** today `TokenReviewer` admits named ServiceAccount subjects,
+but the app's `require_caller` router dependency does not apply per-Thread authorization.
+An admitted token can read the full Thread list and raw Events, not just its own history.
+Do not add new token subjects as a substitute for per-Thread grants. Operator sessions
+retain their existing broader view; token authentication alone conveys no Thread scope.
 
-Compare grants scoped to specific Thread IDs with broader reviewed scopes (for example an
-operator-assigned tag or collection of Threads). Define who may assign or change selectors,
-whether existing and future Threads match, what a retag does to access, and how grants survive
-ServiceAccount replacement without silently sharing another agent's history. Distinguish
-Thread identity from runner session/incarnation IDs, and bound list/search/discovery as well as
-raw Event/transcript reads so listing cannot leak inaccessible history. Decide what the agent
-can see versus what an operator can see, the authority for API and archive reads, revocation
-and audit behavior, and tests for same-agent history, cross-agent denial, selector changes and
-replay. Treat cross-Identity reads as a deliberate policy choice, not a side effect of queries.
+**Preferred first slice to evaluate:** operator-managed, inspectable/revocable grants of
+read access to specific stable Thread IDs for specific ServiceAccount identities. Filter
+list/discovery in the authoritative app store and check direct reads, Events, observations,
+evidence/frame routes, live feeds and replay at the same boundary. Treat a not-authorized
+Thread as not found to that caller; reconnect must reauthorize, and revocation must stop
+ongoing feeds. Bind to an authenticated ServiceAccount identity with an explicit policy for
+name/UID reuse, rather than assuming a Sandbox name or runner session confers ownership.
 
-This design can proceed independently of a hosted-Thread lifecycle or UI. Future cross-Identity
-notification delivery needs its read policy, but [subscriptions v1](notifications.md) retains
-its authenticated ServiceAccount authority and explicit runner-session scope; it does not
-require app Thread ownership or cross-account delivery policy. Do not commit to a tag-based
-schema or implement broad reads before the authority model is reviewed.
+**Design gate:** decide the narrow grant schema, how a grant is assigned/revoked, and
+whether replacing a ServiceAccount should inherit its grants. Audit adjacent mutation,
+media, and bulk/sync endpoints before promising that the caller can see _only_ granted
+Threads; a read-only guard is not isolation if another route can return history or control
+the Thread. Test selected versus other Threads, list/search leaks, archived and deleted
+Sandboxes, two replicas, revocation during SSE/replay, and role changes. Broader tag or
+collection selectors, including future Threads, are a later explicit policy decision;
+do not couple the first slice to the hosted-Thread lifecycle or UI.
 
 ### `AG` — hosted Agent and Thread model
 
