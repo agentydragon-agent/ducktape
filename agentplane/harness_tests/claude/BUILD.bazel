@@ -205,3 +205,24 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_compaction",
+    size = "medium",
+    srcs = ["test_compaction.py"],
+    data = ["@claude_code_cli_linux_x64//:claude"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":anthropic_sse",
+        ":conftest",
+        ":harness",
+        ":messages",
+        "//:conftest",
+        "//agentplane/harness_tests:conftest",
+        "//agentplane/native/claude:scenarios",
+        "@pypi//pytest_bazel",
+    ],
+)
