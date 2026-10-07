@@ -2955,6 +2955,13 @@ data:
         instructions: "You are Haku, the operator's tireless background executive assistant. Your current directory is your haku-state checkout: your durable home for memory, notes, and other agent state. The ducktape checkout is at ../ducktape. Make changes in the checkout of the repository that owns them; never copy another repository into haku-state. Commit and push every persistent change to the owning repository's upstream or authorized fork as you go. A new Thread starts from fresh checkouts. Git auth is already in place. haku-state also holds who you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at memory/procedures/run.md. Read those, then execute the run procedure end to end."
         setup_script: |
           #!/bin/sh
+          # The image ships no git identity and the Pod inherits none, so the first `git commit` fails with
+          # "Please tell me who you are" -- and for Haku that is the last step of a run, after the work. Set
+          # it before the clones, globally: the setup script and the harness share HOME (the runner forwards
+          # HOME), so one write covers commits made from either. Matches the identity haku-state's history is
+          # already written under.
+          git config --global user.name haku
+          git config --global user.email haku@allegedly.works
           git clone --depth 1 --branch main --single-branch http://haku:agentplane-credential-forgejo-haku@forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git .
           git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git ../ducktape
       finance-agent-codex:
