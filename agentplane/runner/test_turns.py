@@ -177,6 +177,34 @@ async def test_model_connection_loss_through_runner(
         events.assert_sourced(session.seen)
 
 
+async def test_model_http_error_through_runner(
+    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+) -> None:
+    """HTTP failure is a failed turn, not a lost admission or a reason to resend input."""
+    async with await client.attach("http-error", spec=spec) as session:
+        await session.send("first-input", "Reply with exactly: HTTP_ERROR")
+        for _ in range(3):
+            request = await model.request()
+            assert request.user_texts[-1] == "Reply with exactly: HTTP_ERROR"
+            await model.http_error(request)
+        failed = await session.until(events.turn_completed)
+        assert failed.event.turn_completed.status == event_pb2.TURN_STATUS_FAILED
+        assert len(events.of_kind(session.seen, "harness_user_message_confirmed")) == 1
+        assert events.of_kind(session.seen, "native")
+        await session.send("second-input", "Reply with exactly: AFTER_HTTP_ERROR_OK")
+        request = await model.request()
+        assert request.user_texts[-1] == "Reply with exactly: AFTER_HTTP_ERROR_OK"
+        await model.reply(request, Text("AFTER_HTTP_ERROR_OK"))
+        success = await session.until(events.turn_completed)
+        assert success.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+        assert success.event.turn_completed.turn_id != failed.event.turn_completed.turn_id
+        assert [entry.event.command_admitted.command.command_id for entry in events.of_kind(session.seen, "command_admitted")] == [
+            "first-input", "second-input"
+        ]
+        events.assert_contiguous(session.seen)
+        events.assert_sourced(session.seen)
+
+
 async def test_failed_tool_is_reported_as_failed(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
