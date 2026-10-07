@@ -73,13 +73,17 @@
 /* Disclosure's general 2.75rem touch target and label padding are right for a standalone
    heading, but add a blank band around every folded step in an already expanded run.
    Keep the opened step's normal heading size, and only tighten these nested closed controls. */
-.agentplane-run-steps .agentplane-step-details .agentplane-disclosure-heading[data-expanded="false"]
+.agentplane-run-steps
+  .agentplane-step-details
+  .agentplane-disclosure-heading[data-expanded="false"]
   > .agentplane-disclosure-summary {
   min-height: 1.5rem;
   padding-block: 0;
 }
 
-.agentplane-run-steps .agentplane-step-details .agentplane-disclosure-heading[data-expanded="false"]
+.agentplane-run-steps
+  .agentplane-step-details
+  .agentplane-disclosure-heading[data-expanded="false"]
   .agentplane-disclosure-summary-content {
   padding-block: 0;
 }

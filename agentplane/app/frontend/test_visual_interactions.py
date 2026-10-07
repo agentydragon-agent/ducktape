@@ -1347,9 +1347,12 @@ async def test_collapsed_steps_in_open_run_are_compact(
         # Both kinds share the step disclosure control. Its normal mobile min-height
         # and label padding must not turn every collapsed step into a full-size card.
         assert await steps.first.evaluate("el => getComputedStyle(el).minHeight") == "24px"
-        assert await steps.first.locator(".agentplane-disclosure-summary-content").evaluate(
-            "el => getComputedStyle(el).paddingBlockStart"
-        ) == "0px"
+        assert (
+            await steps.first.locator(".agentplane-disclosure-summary-content").evaluate(
+                "el => getComputedStyle(el).paddingBlockStart"
+            )
+            == "0px"
+        )
         await _focus(page, steps.first)
 
     await _capture(scene, drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config)
