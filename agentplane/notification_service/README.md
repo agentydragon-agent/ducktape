@@ -40,16 +40,12 @@ together because their structure is versioned with the code.
 
 ### Runner notice debounce
 
-```yaml
-notice_debounce:
-  quiet_seconds: 60
-  max_wait_seconds: 120
-```
+The deployment ConfigMap sets the `notice_debounce.quiet_seconds` and
+`notice_debounce.max_wait_seconds` policy. Per inbox, wait for the quiet window after the newest
+unannounced entry, subject to the maximum wait from the oldest unannounced entry. Set
+`quiet_seconds: 0` to disable batching delays. Both settings accept fractional seconds; the
+maximum wait must be positive.
 
-These are temporary defaults to coalesce bursty notices while limiting normal batching lag to
-two minutes. Per inbox, wait for the quiet window after the newest unannounced entry,
-subject to the maximum wait from the oldest unannounced entry. Set `quiet_seconds: 0` to disable
-batching delays. Both settings accept fractional seconds; the maximum wait must be positive.
 They apply to all sources, not individual subscriptions. Environment overrides use e.g.
 `AGENTPLANE_NOTIFICATIONS_NOTICE_DEBOUNCE__QUIET_SECONDS`.
 

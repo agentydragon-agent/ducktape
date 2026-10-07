@@ -64,7 +64,7 @@ def test_invalid_notice_debounce(values: dict[str, float]) -> None:
 
 
 def test_notice_debounce_defaults() -> None:
-    assert NoticeDebounceSettings().model_dump() == {"quiet_seconds": 60, "max_wait_seconds": 120}
+    assert NoticeDebounceSettings().model_dump() == {"quiet_seconds": 2, "max_wait_seconds": 10}
 
 
 if __name__ == "__main__":

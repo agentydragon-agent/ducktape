@@ -92,6 +92,7 @@ class Notifications(Construct):
             content={
                 "namespace": env.namespace,
                 "token_audience": TOKEN_AUDIENCE,
+                "notice_debounce": {"quiet_seconds": 60, "max_wait_seconds": 120},
                 "actions": {
                     "url": f"http://{actions.fqdn}:{actions.port.number}",
                     "token_file": "/var/run/secrets/notifications/actions",

@@ -5480,6 +5480,9 @@ data:
   settings.yaml: |
     namespace: agentplane-staging
     token_audience: agentplane-notifications
+    notice_debounce:
+      quiet_seconds: 60
+      max_wait_seconds: 120
     actions:
       url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
       token_file: /var/run/secrets/notifications/actions
