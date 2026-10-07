@@ -20,17 +20,15 @@ is an explicit temporary operational constraint, never an implicit correctness a
 
 Proposed execution order for the Thread correctness/UI track:
 
-- **P0:** close deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`). Keep one
-  runner-owned command queue; no app outbox or combined-start expansion in this batch.
 - **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Native
   resume/recovery remains on the board but is excluded from this dispatch batch.
 - **P1, reported against deployed staging:** command-submission deadlines
   (`ADMISSION_DEADLINE_BUDGET`, then `ADMISSION_UNCERTAIN_OUTCOME`). The staged submission
   indicator (`SUBMISSION_STAGE_INDICATOR`) follows them and shares its test changes with
   [#9063](https://github.com/agentydragon/ducktape/issues/9063).
-- **P0, hosted Haku blocker, pending deployment acceptance:** verify per-Thread setup and
-  working directories for Haku and Finance (`THREAD_WORKSPACE_BOOTSTRAP`,
-  [#8695](https://github.com/agentydragon/ducktape/issues/8695)).
+- **Targeted hosted Haku acceptance:** verify a fresh Haku Thread has its per-Thread
+  checkout (`THREAD_WORKSPACE_BOOTSTRAP`, [#8695](https://github.com/agentydragon/ducktape/issues/8695)).
+  This no longer gates the rest of the Thread correctness work.
 - **P1, next harness correctness check:** force native compaction and verify standing
   instructions in subsequent Claude/Codex model requests (`HARNESS_COMPACTION_INSTRUCTIONS`).
   Share the compaction trigger/fixtures with the future frontend control; this proof does not
@@ -118,9 +116,8 @@ flowchart TB
     SANDBOX_VM_ISOLATION["Deferred provider integration<br/>selectable KubeVirt environments<br/>production service, gateway and lifecycle proof"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
-    THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
     LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::active
-    THREAD_WORKSPACE_BOOTSTRAP["P0 deployment acceptance<br/>per-Thread setup in cwd<br/>Haku and Finance repos; #8695"]:::active
+    THREAD_WORKSPACE_BOOTSTRAP["Targeted Haku acceptance<br/>fresh hosted Thread checkout<br/>per-Thread cwd; #8695"]:::future
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
@@ -313,15 +310,6 @@ ownership: an account's bindings must not fight a reconciler for the same object
 
 ## Named gates and acceptance evidence
 
-### `THREAD_DEPLOYED_ACCEPTANCE` — close the deployed command/Event cutover
-
-**P0 remaining acceptance:** from the cluster devbox, run the operator-authenticated MCP
-linkage and Action decision cases against the deployed testing profile, then verify fixture
-cleanup. Validate the command-relay candidate against the final deployed app and runner images.
-Use the [acceptance suite](../acceptance/README.md) for setup and evidence handling; this is
-API-level deployed proof, not browser click-through proof. Do not reuse the failed staging input
-as a test. Signed offline tests alone do not close this gate.
-
 ### `LLM_ERROR_SURFACE` — truthful model-turn failures through every layer
 
 **P1, independent of the particular 502 cause:** audit and pin native error behavior for
@@ -344,11 +332,12 @@ delivery retry from requesting a new model turn; do not silently resend the orig
 
 ### `THREAD_WORKSPACE_BOOTSTRAP` — make Thread cwd and bootstrap ownership coherent
 
-**Remaining deployment acceptance:** [#8695](https://github.com/agentydragon/ducktape/issues/8695)
-tracks this hosted Haku blocker. After the preset changes deploy, create Haku and Finance Sandboxes;
-verify first and later Threads use the intended checked-out repository and each has a separate
-directory. Verify setup output and failure through the UI, then confirm a new Thread is the recovery
-path. Existing Sandboxes retain their saved bindings and must be recreated to use new defaults.
+**Targeted remaining acceptance:** in a _fresh_ hosted Haku Sandbox using the current preset,
+verify a Thread starts in its own cwd with the expected `ducktape` checkout and can work there.
+Existing Sandboxes retain their saved bindings and do not prove new defaults. Setup failure,
+interruption, cwd override and multi-Thread isolation remain useful focused tests under
+[#8695](https://github.com/agentydragon/ducktape/issues/8695), but do not block unrelated
+Thread correctness work.
 
 ### `CLUSTER_BROWSER_ACCEPTANCE` — browser-driven acceptance in the cluster
 
