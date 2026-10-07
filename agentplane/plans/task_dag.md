@@ -20,8 +20,9 @@ is an explicit temporary operational constraint, never an implicit correctness a
 
 Proposed execution order for the Thread correctness/UI track:
 
-- **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Native
-  resume/recovery remains on the board but is excluded from this dispatch batch.
+- **P1, remaining error work:** HTTP-error behavior and app archive/UI evidence
+  (`LLM_ERROR_SURFACE`). Native resume/recovery remains on the board but is excluded
+  from this dispatch batch.
 - **P1, reported against deployed staging:** command-submission deadlines
   (`ADMISSION_DEADLINE_BUDGET`, then `ADMISSION_UNCERTAIN_OUTCOME`). The staged submission
   indicator (`SUBMISSION_STAGE_INDICATOR`) follows them and shares its test changes with
@@ -116,7 +117,7 @@ flowchart TB
     SANDBOX_VM_ISOLATION["Deferred provider integration<br/>selectable KubeVirt environments<br/>production service, gateway and lifecycle proof"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
-    LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::active
+    LLM_ERROR_SURFACE["P1 remaining correctness<br/>HTTP model errors and app archive/UI<br/>terminal status and safe evidence"]:::active
     THREAD_WORKSPACE_BOOTSTRAP["Targeted Haku acceptance<br/>fresh hosted Thread checkout<br/>per-Thread cwd; #8695"]:::future
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
@@ -310,25 +311,21 @@ ownership: an account's bindings must not fight a reconciler for the same object
 
 ## Named gates and acceptance evidence
 
-### `LLM_ERROR_SURFACE` — truthful model-turn failures through every layer
+### `LLM_ERROR_SURFACE` — HTTP failures through runner, archive and UI
 
-**P1, independent of the particular 502 cause:** audit and pin native error behavior for
-Claude and Codex with the scripted LLM endpoints. Cover an HTTP error before content,
-failure after partial streaming, a native retry that succeeds, exhausted retries, and
-a later successful turn. Assert exact request/response evidence; process loss is a
-separate outcome, and a native internal retry is not an app-issued replacement command.
+**P1 remaining, independent of any particular 502 cause:** use scripted Claude and Codex
+model endpoints to pin HTTP errors before content, including native retry/exhaustion behavior
+as applicable and a later successful turn. Extend native-backed runner tests if HTTP failure
+normalization differs from the now-covered connection-loss cases. Assert request/response
+and safe diagnostic evidence; process loss is separate, and native retries must not become
+app-issued replacement commands.
 
-Verify runner normalization and app archival/replay preserve the terminal status and
-available safe diagnostic/native evidence without turning an admitted or confirmed input
-back into an unsaved command. Do not attribute an opaque harness error to LiteLLM, egress,
-or a model vendor without evidence, or invent retryability guarantees. Use the existing
-[layering contract](../docs/thread_layering.md), extending it only where the evidence
-requires a new guarantee; do not create a parallel error protocol.
-
-Finish native-backed verification of these failures through the app archive and normal/Raw
-views, including reload and a later successful input; controlled-source browser coverage is
-not native harness evidence. Any future retry control must explicitly distinguish same-command
-delivery retry from requesting a new model turn; do not silently resend the original input.
+Verify app archival/replay preserves terminal status and available safe diagnostic/native
+evidence without turning an admitted or confirmed input into an unsaved command. Exercise
+normal/Raw views, reload and a later successful input with a native-backed source. Do not
+attribute an opaque harness error to LiteLLM, egress or a vendor without evidence, invent
+retryability guarantees, or create a parallel error protocol. Any future retry control must
+distinguish same-command delivery retry from requesting a new model turn.
 
 ### `THREAD_WORKSPACE_BOOTSTRAP` — make Thread cwd and bootstrap ownership coherent
 

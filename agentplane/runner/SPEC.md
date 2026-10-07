@@ -90,6 +90,14 @@ harness-native detail is one lookup away.
 | item    | `ItemStarted` (assistant text, reasoning, tool call), `TextDelta`, `ToolArgumentsDelta`, `ToolArguments`, `ToolOutputDelta`, `ItemCompleted` |
 | native  | `Native` (direction, exact line)                                                                                                             |
 
+Connection-loss behavior pinned by `harness_tests/{claude,codex}/test_connection_loss.py` and
+`runner/test_turns.py::test_model_connection_loss_through_runner`: with the runner driving the
+real harnesses against scripted model endpoints, both survive native retry exhaustion before
+content as one admitted input and one `FAILED` turn, then accept another input successfully.
+After a visible partial text delta and lost stream, both harnesses can retry successfully;
+Claude switches to a non-streaming model request for that retry. These tests do not establish
+HTTP-error behavior or app archive/UI presentation of failures.
+
 Items are the units of assistant output within a turn. Text and reasoning items stream `TextDelta`
 and complete with their full text; tool calls stream their arguments where the harness does,
 report the complete `ToolArguments`, stream output where the harness does, and complete with the
