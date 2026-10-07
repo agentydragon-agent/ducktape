@@ -49,9 +49,9 @@ def test_gaffer_write_policies_are_finance_agent_only() -> None:
 
 
 def test_haku_preset_binds_what_its_account_binding_names() -> None:
-    """The Haku preset covers the reviewed bundle the `haku-agent-reads` binding describes, plus the
-    one preset-only write. Both are read-only sets whose auto-approval was reviewed for the
-    connector principals; the preset is what the per-Sandbox ServiceAccount actually gets."""
+    """The Haku preset covers every set the `haku-agent-reads` binding describes, plus Haku's one
+    write. The binding is the reviewed bundle; the preset is what a launch actually gets, because a
+    managed runner Pod runs as its own per-Sandbox ServiceAccount and never sees that binding."""
     docs = _manifests()
     binding = one(
         doc for doc in docs if doc["kind"] == "ActionPolicyBinding" and doc["metadata"]["name"] == "haku-agent-reads"
@@ -61,9 +61,9 @@ def test_haku_preset_binds_what_its_account_binding_names() -> None:
         doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
     )
     preset = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]["haku"]["action_policy_sets"]
-    assert set(HAKU_ACTION_POLICY_SETS) == bound, "preset bundle drifted from the reviewed binding"
     assert bound <= set(preset), f"preset is missing {sorted(bound - set(preset))}"
-    assert set(preset) - bound == {DUCKTAPE_PR_FAILED_JOBS_SET}
+    assert set(preset) == set(HAKU_ACTION_POLICY_SETS), "preset and its named bundle drifted"
+    assert set(preset) - bound == {DUCKTAPE_PR_FAILED_JOBS_SET}, "a second write joined the bundle"
     assert len(preset) == len(set(preset))
 
     # Every name the preset binds must resolve to a set this namespace actually creates, or the

@@ -81,11 +81,11 @@ PUBLIC_CODER_ACTION_POLICY_SETS = (
 )
 
 
-# What the Haku preset binds: the same reviewed read-only bundle the haku-agent-reads and
-# claude-ai-reads bindings name (GitHub, Home Assistant, Gmail, Google Calendar, Tana, Grocy SF,
-# SSH) plus sandbox use, and the GitHub identity read. Nothing here is a new grant: each of these
-# is an ActionPolicySet whose own auto-approval rule was reviewed for the connector principals,
-# and every write stays on the human path.
+# What the Haku preset binds: the reviewed read-only bundle the haku-agent-reads and claude-ai-reads
+# bindings name (GitHub, Home Assistant, Gmail, Google Calendar, Tana, Grocy SF, SSH) plus sandbox
+# use and the GitHub identity read, and Haku's one write: rerunning failed jobs on a ducktape CI
+# run. Nothing here is a new grant -- each set's own auto-approval rule was reviewed for the
+# connector principals, and every other write stays on the human path.
 HAKU_ACTION_POLICY_SETS = (
     GITHUB_READS_SET,
     GITHUB_IDENTITY_READS_SET,
@@ -96,6 +96,7 @@ HAKU_ACTION_POLICY_SETS = (
     TANA_READS_SET,
     GROCY_SF_READS_SET,
     SSH_READS_SET,
+    DUCKTAPE_PR_FAILED_JOBS_SET,
 )
 
 
@@ -188,12 +189,10 @@ def config(
             GITHUB_ACTIONS_LOGS_POLICY,
             AGENTPLANE_TESTING_POLICY,
         ],
-        # The reviewed read bundle the haku-agent-reads ActionPolicyBinding describes, bound at
-        # launch rather than by a static account: a managed runner Pod runs as its own per-Sandbox
-        # ServiceAccount, so `haku-agent-reads` (subject: haku-agent) never reaches it and the
-        # preset is the only thing that decides what this Haku may do without the operator.
-        # `sandbox-self` is its own command boxes, which act only as this caller.
-        action_policy_sets=[*HAKU_ACTION_POLICY_SETS, DUCKTAPE_PR_FAILED_JOBS_SET],
+        # Bound at launch rather than by a static account: a managed runner Pod runs as its own
+        # per-Sandbox ServiceAccount, so `haku-agent-reads` (subject: haku-agent) never reaches it
+        # and the preset is the only thing that decides what this Haku may do without the operator.
+        action_policy_sets=list(HAKU_ACTION_POLICY_SETS),
         thread_preset=_THREAD_PRESET_HAKU_CODEX,
         kubernetes_grants=list(agent_access_profiles.MANAGED_GRANTS["haku"]),
         # Each new Thread gets its own haku-state and ducktape checkout.
