@@ -20,12 +20,9 @@ is an explicit temporary operational constraint, never an implicit correctness a
 
 Proposed execution order for the Thread correctness/UI track:
 
-- **P1, reported against deployed staging:** reconcile uncertain command admission
-  (`ADMISSION_UNCERTAIN_OUTCOME`). Command POST now returns the runner's durable receipt
-  without waiting for app archival ([#9365](https://github.com/agentydragon/ducktape/pull/9365));
-  its deadline can still leave the client unsure whether admission happened. The staged submission
-  indicator (`SUBMISSION_STAGE_INDICATOR`) follows reconciliation and dispatch evidence, and shares
-  its test changes with [#9063](https://github.com/agentydragon/ducktape/issues/9063).
+- **Thread UI:** the staged submission indicator (`SUBMISSION_STAGE_INDICATOR`) follows
+  `COMMAND_DISPATCHED_EVENT` and shares its test changes with
+  [#9063](https://github.com/agentydragon/ducktape/issues/9063).
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
 - **Unranked future harness capabilities:** project skills and commands, web search, visual input,
@@ -99,7 +96,6 @@ flowchart TB
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
     ASYNC_PROTOCOL_AUDIT["Design decision<br/>audit long-lived request/response contracts<br/>ticket vs durable admission vs push"]:::decision
-    ADMISSION_UNCERTAIN_OUTCOME["Planned correctness<br/>unconfirmed submission reconciles<br/>not a failed send"]:::future
     COMMAND_DISPATCHED_EVENT["Missing observation<br/>runner handed the command to the harness<br/>journal-only today; needs an Event"]:::future
     SUBMISSION_STAGE_INDICATOR["Planned UI<br/>staged submission indicator<br/>which of five stages, not two strings"]:::future
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
@@ -137,7 +133,6 @@ flowchart TB
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     CODEX_RECOVERY -. required recovery evidence .-> CODEX_RECOVERY_PROTOCOL
     COMMAND_QUEUE_DECISION -. if app-first acceptance chosen .-> THREAD_COMMAND_DELIVERY
-    ADMISSION_UNCERTAIN_OUTCOME --> SUBMISSION_STAGE_INDICATOR
     COMMAND_DISPATCHED_EVENT --> SUBMISSION_STAGE_INDICATOR
     THREAD_COMMAND_DELIVERY --> THREAD_OUTBOX_CUTOVER
     THREAD_OUTBOX_CUTOVER --> NEWTHREAD_DURABLE
@@ -549,7 +544,7 @@ archive wait while assessing Open/Resume and other long-lived requests. Specify 
 repeated command id with a changed payload, rejection vs still-unobserved, reload/reconnect,
 multi-replica delivery, and retention of ticket/status evidence. Record a design and independently
 dispatchable implementation/acceptance nodes _after discussion_. Keep
-`ADMISSION_UNCERTAIN_OUTCOME` and `SUBMISSION_STAGE_INDICATOR` distinct.
+`SUBMISSION_STAGE_INDICATOR` distinct.
 
 ### `COMMAND_QUEUE_DECISION` — where submission becomes durable
 
@@ -562,21 +557,6 @@ Keep #6625's outbox and #6985's mixed Thread-record design outside the current m
 sequence. Review them for independently useful changes to salvage into appropriate
 slices; do not stack new work on their deferred queue design. Preserve the runner's
 own journal in either option.
-
-### `ADMISSION_UNCERTAIN_OUTCOME` — an unconfirmed submission reconciles instead of failing
-
-Command POST now returns the runner's exact durable `CommandAdmitted` receipt without waiting
-for the app archive. The app's named runner-admission deadline can still expire after the runner
-has committed the command but before its receipt reaches the browser. A disconnect can leave the
-same uncertainty. Neither means the command failed. Today the composer surfaces the error as a
-failed send even if the command was admitted and running.
-
-Keep the locally saved immutable command and show a non-terminal, unconfirmed state; reconcile
-through the Thread's existing push feed when archival catches up. Any deliberate retry must use
-that same command id and payload: the app answers from the archive if present, and otherwise the
-runner deduplicates it. Distinguish a confirmed refusal from an unobserved result; do not claim
-admission, failure, or native effect from an elapsed deadline. Cover late runner receipt,
-archive lag, disconnect/reload, exact replay and changed-payload rejection in tests.
 
 ### `COMMAND_DISPATCHED_EVENT` — make "the runner sent this to the harness" an observation
 
