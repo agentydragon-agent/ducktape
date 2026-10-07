@@ -7,6 +7,7 @@ import pytest_bazel
 from agentplane.harness_tests.claude import anthropic_sse as sse, frames
 from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
 from agentplane.harness_tests.claude.messages import AnthropicMessages
+from agentplane.harness_tests.model_endpoint import JsonResponse
 from agentplane.native.claude.scenarios import MAX_RETRIES
 
 
@@ -95,6 +96,31 @@ async def test_retry_exhaustion_fails_the_turn_and_the_process_accepts_the_next_
     assert len(frames.retry_notices(captured)) == MAX_RETRIES
     assert [terminal.is_error for terminal in frames.terminals(captured)] == [True, False]
     frames.assert_success(captured, "POST_EXHAUSTION_FOLLOW_UP_OK")
+
+
+async def test_http_502_exhaustion_is_terminal_but_next_input_succeeds(
+    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+) -> None:
+    async with claude.start(anthropic_messages) as run:
+        first = await run.send("Reply with exactly: HTTP_FAILURE")
+        for _ in range(1 + MAX_RETRIES):
+            async with await anthropic_messages.await_next_request() as exchange:
+                assert exchange.request.texts("user")[-1] == "Reply with exactly: HTTP_FAILURE"
+                await exchange.respond(
+                    JsonResponse(
+                        b'{"type":"error","error":{"type":"api_error","message":"scripted upstream failure"}}',
+                        status=502,
+                    )
+                )
+        failed = await first.result()
+        assert failed.is_error
+        assert run.running
+        second = await run.send("Reply with exactly: HTTP_FOLLOW_UP_OK")
+        async with await anthropic_messages.await_next_request() as exchange:
+            assert exchange.request.texts("user")[-1] == "Reply with exactly: HTTP_FOLLOW_UP_OK"
+            await exchange.send(*sse.message_stream([sse.Text("HTTP_FOLLOW_UP_OK")], model=MODEL).events)
+        assert (await second.result()).result == "HTTP_FOLLOW_UP_OK"
+    assert [terminal.is_error for terminal in frames.terminals(run.native_frames())] == [True, False]
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from agentplane.harness_tests.model_endpoint import ModelExchange, SseEvent, StreamableRequest
+from agentplane.harness_tests.model_endpoint import JsonResponse, ModelExchange, SseEvent, StreamableRequest
 
 
 @dataclass(frozen=True)
@@ -72,6 +72,16 @@ class ScriptedModel[RequestT: StreamableRequest](abc.ABC):
     async def reply(self, request: ModelRequest[RequestT], *items: Item) -> None:
         async with request._exchange as exchange:
             await exchange.send(*self.stream(list(items)))
+
+    async def http_error(self, request: ModelRequest[RequestT], *, status: int = 502) -> None:
+        """Return an HTTP error before streaming any model content."""
+        async with request._exchange as exchange:
+            await exchange.respond(
+                JsonResponse(
+                    b'{"type":"error","error":{"type":"api_error","message":"scripted upstream failure"}}',
+                    status=status,
+                )
+            )
 
     async def drop_connection(self, request: ModelRequest[RequestT], *, after_text: str | None = None) -> None:
         """Break a model response before content or after its first visible text delta."""

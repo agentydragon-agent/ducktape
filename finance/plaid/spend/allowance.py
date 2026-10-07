@@ -10,7 +10,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, Json, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, Json, TypeAdapter, ValidationError, field_validator
 
 
 class Kind(StrEnum):
@@ -79,10 +79,33 @@ class CounterpartyExact(BaseModel):
     name: str = Field(min_length=1)
 
 
+class PlaidCounterpartyBacs(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+    account: str | None = None
+    sort_code: str | None = None
+
+
+class PlaidCounterpartyInternational(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+    iban: str | None = None
+    bic: str | None = None
+
+
+class PlaidCounterpartyNumbers(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+    bacs: PlaidCounterpartyBacs | None = None
+    international: PlaidCounterpartyInternational | None = None
+
+
 class PlaidCounterparty(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
     type: str | None = None
     name: str | None = None
+    entity_id: str | None = None
+    website: str | None = None
+    logo_url: str | None = None
+    confidence_level: str | None = None
+    account_numbers: PlaidCounterpartyNumbers | None = None
 
 
 _COUNTERPARTIES_JSON = TypeAdapter(Json[list[PlaidCounterparty]])
@@ -126,6 +149,19 @@ class AllowancePolicy(BaseModel):
     currency: Literal["USD"] = "USD"
     rules: list[Rule] = Field(min_length=1)
     max_sync_age_hours: int = Field(default=72, ge=1, le=720)
+    analysis_category_labels: dict[str, str] = Field(
+        default_factory=dict, description="Optional display labels for rule analysis_category values."
+    )
+
+    @field_validator("analysis_category_labels")
+    @classmethod
+    def _valid_category_labels(cls, labels: dict[str, str]) -> dict[str, str]:
+        if any(
+            not category or category.strip() != category or not label.strip() or len(label.strip()) > 80
+            for category, label in labels.items()
+        ):
+            raise ValueError("analysis category keys must be nonblank; labels must be 1 to 80 characters")
+        return {category: label.strip() for category, label in labels.items()}
 
 
 class Transaction(BaseModel):
@@ -154,6 +190,27 @@ class Purchase:
     needs_review: bool
 
 
+class Disposition(StrEnum):
+    COUNTED = "counted"
+    PACE_ONLY = "pace_only"
+    FIXED = "fixed"
+    EXCLUDED = "excluded"
+    HELD_REFUND = "held_refund"
+    SUPERSEDED_PENDING = "superseded_pending"
+    OTHER_CURRENCY = "other_currency"
+
+
+@dataclass(frozen=True)
+class TransactionDecision:
+    transaction: Transaction
+    rule_number: int | None
+    rule: Rule | None
+    disposition: Disposition
+    allowance_minor_units: int
+    trailing_7_pace_minor_units: int
+    trailing_30_pace_minor_units: int
+
+
 class Windows(BaseModel):
     current_credit_cycle_minor_units: int
     calendar_month_minor_units: int
@@ -168,6 +225,7 @@ class AllowanceView(BaseModel):
     currency: str
     monthly_minor_units: int
     activation_at: date
+    current_cycle_start: date | None = None
     available_minor_units: int | None
     next_credit_at: datetime | None
     posted_minor_units: int
@@ -265,7 +323,12 @@ def matching_rule(transaction: Transaction | Mapping[str, object], rules: list[R
 
 
 def calculate(
-    policy: AllowancePolicy, transactions: list[Transaction], *, now: datetime, last_synced_at: datetime | None
+    policy: AllowancePolicy,
+    transactions: list[Transaction],
+    *,
+    now: datetime,
+    last_synced_at: datetime | None,
+    decisions: list[TransactionDecision] | None = None,
 ) -> AllowanceView:
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
@@ -292,35 +355,72 @@ def calculate(
     unmatched = 0
     pace_start = (now - timedelta(days=6)).date()
     monthly_pace_start = (now - timedelta(days=29)).date()
+
+    def record(
+        transaction: Transaction,
+        rule: Rule | None,
+        disposition: Disposition,
+        *,
+        allowance_minor_units: int = 0,
+        trailing_7_pace_minor_units: int = 0,
+        trailing_30_pace_minor_units: int = 0,
+    ) -> None:
+        if decisions is not None:
+            decisions.append(
+                TransactionDecision(
+                    transaction=transaction,
+                    rule_number=next((i for i, candidate in enumerate(policy.rules, 1) if candidate is rule), None),
+                    rule=rule,
+                    disposition=disposition,
+                    allowance_minor_units=allowance_minor_units,
+                    trailing_7_pace_minor_units=trailing_7_pace_minor_units,
+                    trailing_30_pace_minor_units=trailing_30_pace_minor_units,
+                )
+            )
+
     for transaction in transactions:
         if not min(start.date(), monthly_pace_start) <= transaction.date <= now.date():
             continue
         if transaction.pending and (transaction.account_id, transaction.transaction_id) in superseded:
+            record(transaction, None, Disposition.SUPERSEDED_PENDING)
             continue
         if transaction.currency not in (None, policy.currency):
+            record(transaction, None, Disposition.OTHER_CURRENCY)
             continue
         rule = matching_rule(transaction, policy.rules)
         if rule is not None and rule.kind in (Kind.FIXED, Kind.EXCLUDED):
+            record(transaction, rule, Disposition.FIXED if rule.kind == Kind.FIXED else Disposition.EXCLUDED)
             continue
         amount = int((transaction.amount * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
-        # An inferred category alone cannot associate a refund with an actual discretionary purchase.
-        if amount < 0 and (rule is None or rule.kind == Kind.REVIEW or not isinstance(rule.condition, NamePrefix)):
+        # A merchant rule does not prove which earlier purchase a credit reverses.
+        if amount < 0:
             if transaction.date >= start.date():
                 unmatched += -amount
+            record(transaction, rule, Disposition.HELD_REFUND)
             continue
+        pace_7 = max(0, amount) if transaction.date >= pace_start else 0
+        pace_30 = max(0, amount) if transaction.date >= monthly_pace_start else 0
         if transaction.date >= pace_start:
-            recent_positive += max(0, amount)
+            recent_positive += pace_7
             if (rule is None or rule.kind == Kind.REVIEW) and amount > 0:
                 weekly_unmatched_count += 1
                 weekly_unmatched_minor_units += amount
         if transaction.date >= monthly_pace_start:
-            monthly_positive += max(0, amount)
+            monthly_positive += pace_30
         if transaction.date >= start.date():
             included.append(
                 Purchase(
                     transaction=transaction, minor_units=amount, needs_review=rule is None or rule.kind == Kind.REVIEW
                 )
             )
+        record(
+            transaction,
+            rule,
+            Disposition.COUNTED if transaction.date >= start.date() else Disposition.PACE_ONLY,
+            allowance_minor_units=amount if transaction.date >= start.date() else 0,
+            trailing_7_pace_minor_units=pace_7,
+            trailing_30_pace_minor_units=pace_30,
+        )
 
     posted = sum(p.minor_units for p in included if not p.transaction.pending)
     pending = sum(p.minor_units for p in included if p.transaction.pending)
@@ -378,6 +478,7 @@ def calculate(
         currency=policy.currency,
         monthly_minor_units=policy.monthly_minor_units,
         activation_at=policy.activation_at,
+        current_cycle_start=cycle_start,
         available_minor_units=available,
         next_credit_at=next_credit,
         posted_minor_units=posted,

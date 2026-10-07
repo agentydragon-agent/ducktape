@@ -12,7 +12,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20261005095527-52c67c3 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner
-    newTag: devel-20261007042542-4db40ea # {"$imagepolicy": "flux-system:agentplane-runner:tag"}
+    newTag: devel-20261007063442-3fbbbdf # {"$imagepolicy": "flux-system:agentplane-runner:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
     newTag: devel-20261005082044-e6f4a5c # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
@@ -25,9 +25,9 @@ images:
     newTag: devel-20261005050136-23ec961 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
   # Bootstrap only: keep rollout suspended until CI publishes and automation pins a real tag.
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-service
-    newTag: devel-20261006100413-f5827b1 # {"$imagepolicy": "flux-system:agentplane-sandbox-service:tag"}
+    newTag: devel-20261007061435-899583e # {"$imagepolicy": "flux-system:agentplane-sandbox-service:tag"}
   # Bootstrap only: CI publishes the first images after merge; Flux must select real tags before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261007025844-b37b7c0 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261007061432-899583e # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
     newTag: devel-20261004100359-0ffc8e8 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}

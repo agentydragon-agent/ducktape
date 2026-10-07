@@ -9,9 +9,10 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
-from datetime import date
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 import pytest_bazel
@@ -20,8 +21,30 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from playwright.async_api import Page, Route
 
-from finance.plaid.spend.allowance import AllOf, AmountSign, AnyOf, FieldExact, Kind, NamePrefix, Rule
-from finance.plaid.spend.models import AllowanceConfigurationView, CardConfigurationView, SpendConfigurationView
+from finance.plaid.spend.allowance import (
+    AllOf,
+    AllowanceView,
+    AmountSign,
+    AnyOf,
+    Disposition,
+    FieldExact,
+    Kind,
+    NamePrefix,
+    PlaidCounterparty,
+    Rule,
+)
+from finance.plaid.spend.models import (
+    AllowanceConfigurationView,
+    CardConfigurationView,
+    PlaidPaymentMeta,
+    PlaidPersonalFinanceCategory,
+    PlaidTransactionDetails,
+    PlaidTransactionLocation,
+    SpendConfigurationView,
+    SpendTransactionRow,
+    SpendTransactionsView,
+    StatementReason,
+)
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.visual_review import retain_review_asset
@@ -41,7 +64,7 @@ def dashboard_url() -> Iterator[str]:
     def index() -> FileResponse:
         return FileResponse(_UI_DIR / "index.html")
 
-    @app.get("/api/v1/web/view")
+    @app.get("/api/v1/view")
     def view(warmup: bool = False) -> dict:
         payload: dict[str, Any] = {
             "generated_at": "2026-10-15T12:00:00Z",
@@ -53,6 +76,7 @@ def dashboard_url() -> Iterator[str]:
                 "spending_signal": "normal",
                 "monthly_minor_units": 70000,
                 "activation_at": "2026-10-01",
+                "current_cycle_start": "2026-10-01",
                 "available_minor_units": 20000,
                 "prior_carry_minor_units": 5000,
                 "posted_minor_units": 52500,
@@ -132,7 +156,7 @@ def dashboard_url() -> Iterator[str]:
             payload["allowance"]["windows_minor_units"] = dict.fromkeys(payload["allowance"]["windows_minor_units"], 0)
         return payload
 
-    @app.get("/api/v1/web/events")
+    @app.get("/api/v1/events")
     async def events() -> StreamingResponse:
         async def updates() -> AsyncIterator[str]:
             yield f"event: view\ndata: {json.dumps(view())}\n\n"
@@ -142,7 +166,7 @@ def dashboard_url() -> Iterator[str]:
 
         return StreamingResponse(updates(), media_type="text/event-stream")
 
-    @app.get("/api/v1/web/configuration", response_model=SpendConfigurationView)
+    @app.get("/api/v1/configuration", response_model=SpendConfigurationView)
     def configuration() -> SpendConfigurationView:
         return SpendConfigurationView(
             cards=[
@@ -175,6 +199,138 @@ def dashboard_url() -> Iterator[str]:
                     )
                 ],
             ),
+        )
+
+    @app.get("/api/v1/transactions", response_model=SpendTransactionsView)
+    def transactions(window: Literal["7d", "30d", "cycle"] = "30d") -> SpendTransactionsView:
+        return SpendTransactionsView(
+            generated_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
+            window=window,
+            window_start={"7d": date(2026, 10, 9), "30d": date(2026, 9, 16), "cycle": date(2026, 10, 1)}[window],
+            allowance=AllowanceView.model_validate(view()["allowance"]),
+            rows=[
+                SpendTransactionRow(
+                    date=date(2026, 10, 15),
+                    account_label="Example card",
+                    name="EXAMPLE CAFE PURCHASE",
+                    merchant_name="Example Cafe",
+                    amount_minor_units=1500,
+                    currency="USD",
+                    pending=True,
+                    allowance_in_scope=True,
+                    disposition=Disposition.COUNTED,
+                    rule_number=None,
+                    rule=None,
+                    allowance_minor_units=1500,
+                    trailing_7_pace_minor_units=1500,
+                    trailing_30_pace_minor_units=1500,
+                    statement_minor_units=1500,
+                    statement_reason=StatementReason.COUNTED,
+                    pfc_primary="FOOD_AND_DRINK",
+                    pfc_detailed="FOOD_AND_DRINK_COFFEE",
+                    merchant_category_code="5812",
+                ),
+                SpendTransactionRow(
+                    date=date(2026, 10, 14),
+                    account_label="Example card",
+                    name="UPS SHIPPING",
+                    merchant_name="UPS",
+                    amount_minor_units=1850,
+                    currency="USD",
+                    pending=False,
+                    allowance_in_scope=True,
+                    disposition=Disposition.FIXED,
+                    rule_number=2,
+                    rule=Rule(
+                        condition=NamePrefix(field="name", prefix="UPS"),
+                        kind=Kind.FIXED,
+                        analysis_category="shipping",
+                        description="Required document shipping for a synthetic example.",
+                    ),
+                    allowance_minor_units=0,
+                    trailing_7_pace_minor_units=0,
+                    trailing_30_pace_minor_units=0,
+                    statement_minor_units=1850,
+                    statement_reason=StatementReason.COUNTED,
+                    pfc_primary="TRANSPORTATION",
+                    pfc_detailed="TRANSPORTATION_SHIPPING",
+                    merchant_category_code="4215",
+                    counterparties=[
+                        PlaidCounterparty(
+                            name="Example Shipping",
+                            type="merchant",
+                            confidence_level="HIGH",
+                            entity_id="synthetic-merchant",
+                            website="https://example.invalid/shipping",
+                        )
+                    ],
+                    details=PlaidTransactionDetails(
+                        account_id="synthetic-account",
+                        transaction_id="synthetic-transaction",
+                        amount=Decimal("18.50"),
+                        iso_currency_code="USD",
+                        original_description="EXAMPLE SHIPPING PAYMENT",
+                        authorized_date=date(2026, 10, 13),
+                        payment_channel="in store",
+                        location=PlaidTransactionLocation(city="Example City", region="CA", country="US"),
+                        payment_meta=PlaidPaymentMeta(reference_number="synthetic-reference"),
+                        personal_finance_category=PlaidPersonalFinanceCategory(
+                            primary="TRANSPORTATION", detailed="TRANSPORTATION_SHIPPING", confidence_level="HIGH"
+                        ),
+                    ),
+                ),
+                SpendTransactionRow(
+                    date=date(2026, 10, 13),
+                    account_label="Example card",
+                    name="EXAMPLE REFUND",
+                    merchant_name=None,
+                    amount_minor_units=-4200,
+                    currency="USD",
+                    pending=False,
+                    allowance_in_scope=True,
+                    disposition=Disposition.HELD_REFUND,
+                    rule_number=1,
+                    rule=Rule(
+                        condition=NamePrefix(field="name", prefix="EXAMPLE"),
+                        kind=Kind.REVIEW,
+                        description="Confirm the purchase before netting this refund.",
+                    ),
+                    allowance_minor_units=0,
+                    trailing_7_pace_minor_units=0,
+                    trailing_30_pace_minor_units=0,
+                    statement_minor_units=-4200,
+                    statement_reason=StatementReason.COUNTED,
+                    pfc_primary="GENERAL_MERCHANDISE",
+                    pfc_detailed="GENERAL_MERCHANDISE_OTHER",
+                    merchant_category_code=None,
+                ),
+                SpendTransactionRow(
+                    date=date(2026, 10, 2),
+                    account_label="Example checking",
+                    name="EXAMPLE TRAVEL PURCHASE",
+                    merchant_name="Example Travel",
+                    amount_minor_units=53500,
+                    currency="USD",
+                    pending=False,
+                    allowance_in_scope=True,
+                    disposition=Disposition.COUNTED,
+                    rule_number=3,
+                    rule=Rule(
+                        condition=NamePrefix(field="name", prefix="EXAMPLE TRAVEL"),
+                        kind=Kind.FLEXIBLE,
+                        analysis_category="travel",
+                        description="Synthetic discretionary trip purchase.",
+                    ),
+                    allowance_minor_units=53500,
+                    trailing_7_pace_minor_units=0,
+                    trailing_30_pace_minor_units=53500,
+                    statement_minor_units=None,
+                    statement_reason=None,
+                    pfc_primary="TRAVEL",
+                    pfc_detailed="TRAVEL_OTHER",
+                    merchant_category_code=None,
+                ),
+            ],
         )
 
     app.mount("/static", StaticFiles(directory=_UI_DIR))
@@ -226,13 +382,46 @@ async def test_spending_decision_render(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_spending_decision_dark_theme(
+    page: Page, dashboard_url: str, width: int, height: int, tmp_path: Path
+) -> None:
+    errors: list[str] = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    await page.emulate_media(color_scheme="dark")
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await page.get_by_role("heading", name="Where you stand").wait_for()
+    assert await page.locator("html").get_attribute("data-mantine-color-scheme") == "dark"
+    assert not errors
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    initial = tmp_path / f"dashboard-dark-{width}.png"
+    await page.screenshot(path=str(initial), full_page=True, animations="disabled")
+    retain_review_asset(initial, title="Spend decisions", label=f"{width}px dark theme", name=initial.name)
+
+    await page.get_by_label("Hypothetical flexible purchase").fill("100")
+    await page.get_by_text("Pace warning", exact=True).last.wait_for()
+    assert not errors
+    warning = tmp_path / f"dashboard-dark-{width}-warning.png"
+    await page.screenshot(path=str(warning), full_page=True, animations="disabled")
+    retain_review_asset(warning, title="Spend decisions", label=f"{width}px dark pace warning", name=warning.name)
+
+    await page.get_by_label("Hypothetical flexible purchase").fill("250")
+    await page.get_by_text("Over allowance", exact=True).last.wait_for()
+    assert not errors
+    exceeded = tmp_path / f"dashboard-dark-{width}-exceeded.png"
+    await page.screenshot(path=str(exceeded), full_page=True, animations="disabled")
+    retain_review_asset(exceeded, title="Spend decisions", label=f"{width}px dark over allowance", name=exceeded.name)
+
+
+@pytest.mark.asyncio
 async def test_new_allowance_has_no_fake_zero_pace(page: Page, dashboard_url: str, tmp_path: Path) -> None:
     await page.add_init_script("window.EventSource = class { addEventListener() {} close() {} }")
 
     async def serve_warmup(route: Route) -> None:
-        await route.continue_(url=f"{dashboard_url}/api/v1/web/view?warmup=true")
+        await route.continue_(url=f"{dashboard_url}/api/v1/view?warmup=true")
 
-    await page.route("**/api/v1/web/view", serve_warmup)
+    await page.route("**/api/v1/view", serve_warmup)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_text("Not enough data", exact=True).wait_for()
     assert await page.get_by_text("Pace warming up", exact=True).count() == 1
@@ -263,6 +452,82 @@ async def test_review_rule_configuration_render(
     image = tmp_path / f"configuration-review-{width}.png"
     await page.screenshot(path=str(image), full_page=True, animations="disabled")
     retain_review_asset(image, title="Spend configuration", label=f"{width}px review rule", name=image.name)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844), (320, 720)])
+async def test_transaction_explanations_render(
+    page: Page, dashboard_url: str, width: int, height: int, tmp_path: Path
+) -> None:
+    errors: list[str] = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await page.get_by_role("tab", name="Transactions").click()
+    rows = page.get_by_role("table") if width >= 992 else page.locator(".mantine-Accordion-root").first
+    await rows.get_by_text("Example Cafe", exact=True).wait_for()
+    assert await page.get_by_role("heading", name="Transactions", level=1).count() == 1
+    assert await rows.get_by_text("Refund held", exact=True).count() == 1
+    assert await page.get_by_text("2 · $15", exact=True).count() == 1
+    if width >= 992:
+        assert await rows.locator("tbody tr").count() == 4
+    assert not errors
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    image = tmp_path / f"transactions-{width}.png"
+    await page.screenshot(path=str(image), full_page=True, animations="disabled")
+    retain_review_asset(image, title="Spend transactions", label=f"{width}px all rows", name=image.name)
+
+    await page.get_by_text("Credit cycle", exact=True).click()
+    await page.get_by_text("Allowance bridge", exact=True).wait_for()
+    if width >= 992:
+        await page.get_by_role("button", name="Show details for UPS").click()
+        assert await rows.locator("tbody tr").count() == 5
+    else:
+        await rows.get_by_role("button", name="UPS", exact=False).click()
+    await rows.get_by_text("Required document shipping for a synthetic example.").wait_for()
+    assert await rows.get_by_text("Counterparties: Example Shipping", exact=True).count() == 1
+    assert await rows.get_by_text("Example Shipping · merchant", exact=True).count() == 1
+    assert await rows.get_by_text("Mandatory · outside allowance", exact=False).count() == 1
+    assert await rows.get_by_text("Card statement: Counted in card cycle", exact=False).count() >= 1
+    await rows.get_by_role("button", name="Plaid source fields").click()
+    await rows.get_by_text("Plaid amount (major units): 18.50", exact=True).wait_for()
+    assert await rows.get_by_text("Original description: EXAMPLE SHIPPING PAYMENT", exact=True).count() == 1
+    assert await rows.get_by_text("City: Example City", exact=True).count() == 1
+    assert await rows.get_by_text("Reference number: synthetic-reference", exact=True).count() == 1
+    assert await rows.get_by_text("Personal detail: TRANSPORTATION_SHIPPING", exact=True).count() == 1
+    assert not errors
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    expanded = tmp_path / f"transactions-expanded-{width}.png"
+    await page.screenshot(path=str(expanded), full_page=True, animations="disabled")
+    retain_review_asset(expanded, title="Spend transactions", label=f"{width}px rule explanation", name=expanded.name)
+
+    await page.get_by_text("Review", exact=True).click()
+    await page.get_by_text("Showing 2 of 4", exact=True).wait_for()
+    assert await rows.get_by_text("UPS", exact=True).count() == 0
+    assert not await rows.get_by_text("Confirm the purchase before netting this refund.").is_visible()
+    assert not errors
+    review = tmp_path / f"transactions-review-{width}.png"
+    await page.screenshot(path=str(review), full_page=True, animations="disabled")
+    retain_review_asset(review, title="Spend transactions", label=f"{width}px review filter", name=review.name)
+
+
+@pytest.mark.asyncio
+async def test_transaction_explanations_dark_theme(page: Page, dashboard_url: str, tmp_path: Path) -> None:
+    errors: list[str] = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    await page.emulate_media(color_scheme="dark")
+    await page.set_viewport_size({"width": 390, "height": 844})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await page.get_by_role("tab", name="Transactions").click()
+    rows = page.locator(".mantine-Accordion-root")
+    await rows.get_by_text("Example Cafe", exact=True).wait_for()
+    await rows.get_by_role("button", name="UPS", exact=False).click()
+    await page.get_by_text("Required document shipping for a synthetic example.").wait_for()
+    assert not errors
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    image = tmp_path / "transactions-dark-390.png"
+    await page.screenshot(path=str(image), full_page=True, animations="disabled")
+    retain_review_asset(image, title="Spend transactions", label="390px dark theme", name=image.name)
 
 
 if __name__ == "__main__":

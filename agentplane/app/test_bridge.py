@@ -473,6 +473,63 @@ def _has_turn_status(entries: list[dict[str, Any]], status: str) -> bool:
     return any(entry["event"].get("turnCompleted", {}).get("status") == status for entry in entries)
 
 
+async def test_http_error_is_archived_as_failed_turn_and_follow_up_succeeds(
+    app_url: str, model: ScriptedModel, spec: protocol_pb2.SessionSpec, failed_native_journal: None
+) -> None:
+    """A failed model turn stays admitted and replayable; a later input is a separate turn."""
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
+        opened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
+        assert opened.status_code == 201, opened.text
+        thread_id = await _thread_id(http)
+        accepted = await http.post(
+            _commands(thread_id),
+            json={"commandId": "http-failure", "submitInput": {"text": "Reply with exactly: HTTP_ERROR"}},
+        )
+        assert accepted.status_code == 200, accepted.text
+        for _ in range(3):
+            request = await _next_model_request(model)
+            assert request.user_texts[-1] == "Reply with exactly: HTTP_ERROR"
+            await model.http_error(request)
+        failed = await _stored_events(
+            http,
+            thread_id,
+            until="turnCompleted",
+            matches=lambda entries: _has_turn_status(entries, "TURN_STATUS_FAILED"),
+        )
+        assert [
+            entry["event"]["commandAdmitted"]["command"]["commandId"]
+            for entry in failed
+            if "commandAdmitted" in entry["event"]
+        ] == ["http-failure"]
+        assert any("native" in entry["event"] for entry in failed)
+        assert (await http.get(f"/threads/{thread_id}")).json()["last_turn_status"] == "TURN_STATUS_FAILED"
+        # Re-reading the archive, as on a UI reload, retains the same terminal evidence.
+        assert (await http.get(f"/threads/{thread_id}/events")).json() == failed
+        accepted = await http.post(
+            _commands(thread_id),
+            json={"commandId": "http-follow-up", "submitInput": {"text": "Reply with exactly: AFTER_HTTP_ERROR_OK"}},
+        )
+        assert accepted.status_code == 200, accepted.text
+        request = await _next_model_request(model)
+        assert request.user_texts[-1] == "Reply with exactly: AFTER_HTTP_ERROR_OK"
+        await model.reply(request, Text("AFTER_HTTP_ERROR_OK"))
+        recovered = await _stored_events(
+            http,
+            thread_id,
+            until="turnCompleted",
+            matches=lambda entries: (
+                _has_turn_status(entries, "TURN_STATUS_COMPLETED")
+                and sum("turnCompleted" in entry["event"] for entry in entries) == 2
+            ),
+        )
+        assert [
+            entry["event"]["commandAdmitted"]["command"]["commandId"]
+            for entry in recovered
+            if "commandAdmitted" in entry["event"]
+        ] == ["http-failure", "http-follow-up"]
+        assert (await http.get(f"/threads/{thread_id}")).json()["last_turn_status"] == "TURN_STATUS_COMPLETED"
+
+
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_stream_recovery_reports_the_content_the_model_receives(
     app_url: str,

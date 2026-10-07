@@ -610,13 +610,16 @@ class Store:
                 inbox_id=inbox.id,
                 command_id=uuid4(),
                 through_cursor=inbox.last_cursor,
-                text=(
-                    f"Agentplane automated notification: {inbox.last_cursor - start} new notifications "
-                    f"through cursor {inbox.last_cursor} when this notice was prepared; newer entries may exist. "
-                    f"The inbox had acknowledged through cursor {inbox.acknowledged} when this notice was "
-                    f"prepared. Retrieve GET /v1/inboxes/{inbox.id}/entries?after_cursor={inbox.acknowledged}"
-                    "&limit=128 from the notification service; page after the last returned cursor. "
-                    "Read does not acknowledge; explicitly acknowledge only the handled contiguous prefix."
+                # Standing instructions carry the shared read/ack procedure. Persist the exact
+                # snapshot hint once so lost responses replay the same command and cursors.
+                text="Agentplane inbox notice: "
+                + json.dumps(
+                    {
+                        "inbox_id": str(inbox.id),
+                        "acknowledged_at_preparation": inbox.acknowledged,
+                        "through_at_preparation": inbox.last_cursor,
+                    },
+                    separators=(",", ":"),
                 ),
                 attempted=False,
                 admitted=False,
