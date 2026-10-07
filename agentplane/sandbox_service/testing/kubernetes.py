@@ -115,6 +115,7 @@ async def authenticated_service(
         caller_accounts=frozenset({manager}),
         platform_instructions=platform_instructions,
         follow_lease_s=1,
+        command_admission_timeout_s=300,
     )
     async with service_client(resources, token_file) as client:
         yield client

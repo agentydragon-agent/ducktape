@@ -64,6 +64,7 @@ def resources(cluster: Cluster, runner: RunnerHandle) -> Resources:
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
         caller_accounts=frozenset({OWNER}),
         platform_instructions="Test backend-owned guidance.",
+        command_admission_timeout_s=300,
     )
 
 

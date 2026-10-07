@@ -86,10 +86,12 @@ class SandboxServiceClient:
         request_timeout_s: float = 20,
         lifecycle_timeout_s: float = 310,
         follow_timeout_s: float = 960,
-        command_admission_timeout_s: float = 310,
+        command_admission_timeout_s: float | None = None,
         channel_options: Mapping[str, int | str] | None = None,
     ) -> None:
-        if min(request_timeout_s, lifecycle_timeout_s, follow_timeout_s, command_admission_timeout_s) <= 0:
+        if min(request_timeout_s, lifecycle_timeout_s, follow_timeout_s) <= 0 or (
+            command_admission_timeout_s is not None and command_admission_timeout_s <= 0
+        ):
             raise ValueError("timeouts must be positive")
         self.target = target
         self.namespace = namespace
@@ -233,7 +235,6 @@ class Runner:
                 destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
                 follow=event_log_pb2.Follow(after_cursor=after_cursor),
             ),
-            timeout_s=self.service.command_admission_timeout_s,
             metadata=await self.service.metadata(),
             timeout=self.service.follow_timeout_s,
         )

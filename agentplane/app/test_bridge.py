@@ -182,6 +182,7 @@ async def app_url(
         content=content,
         ingester=ingester,
         thread_changes=database_updates.changes[Channel.THREADS],
+        command_admission_timeout_s=300,
     )
     app = create_app(
         inventory,
@@ -1051,7 +1052,7 @@ async def test_command_admission_timeout_is_not_an_internal_server_error(
         async def timed_out(
             _bridge: RunnerBridge, _thread_id: UUID, _command: command_pb2.Command
         ) -> event_log_pb2.EventEntry:
-            raise RunnerAdmissionTimeoutError("timed-out-command")
+            raise RunnerAdmissionTimeoutError("timed-out-command", 0.02)
 
         monkeypatch.setattr(RunnerBridge, "command", timed_out)
         response = await http.post(
@@ -1154,6 +1155,7 @@ async def replicas(
         content=content,
         ingester=owner_ingester,
         thread_changes=database_updates.changes[Channel.THREADS],
+        command_admission_timeout_s=300,
     )
     survivor = RunnerBridge(
         runners=survivor_runners,
@@ -1161,6 +1163,7 @@ async def replicas(
         content=ContentStore(replica_engine),
         ingester=survivor_ingester,
         thread_changes=replica_updates.changes[Channel.THREADS],
+        command_admission_timeout_s=300,
     )
     try:
         async with replica_updates.listener.listen():
@@ -1251,6 +1254,7 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
                 content=ContentStore(replica_engine),
                 ingester=survivor_ingester,
                 thread_changes=replica_updates.changes[Channel.THREADS],
+                command_admission_timeout_s=300,
             )
             try:
                 await survivor_ingester.start()
@@ -1519,6 +1523,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
         content=content,
         ingester=offline_ingester,
         thread_changes=database_updates.changes[Channel.THREADS],
+        command_admission_timeout_s=300,
     )
     try:
         # A lost HTTP response is retryable from the committed Thread prefix even after the

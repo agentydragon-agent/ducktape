@@ -116,6 +116,7 @@ async def api(case: Case, cluster: Cluster, tmp_path: Path) -> AsyncIterator[San
         caller_accounts=frozenset({ADMIN}),
         platform_instructions="",
         provisioning=case.service,
+        command_admission_timeout_s=300,
     )
     token_file = tmp_path / "token"
     token_file.write_text(TOKEN)

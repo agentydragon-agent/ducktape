@@ -98,6 +98,7 @@ def backend(
             grants if grants is not None else {},
             bindings,
         ),
+        command_admission_timeout_s=300,
     )
     with start_blocking_portal() as portal, portal.wrap_async_context_manager(service(resources)) as target:
         yield Endpoint(target, token_file)

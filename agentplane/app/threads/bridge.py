@@ -23,7 +23,6 @@ from agentplane.runner.errors import RunnerError
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
-COMMAND_ADMISSION_S = 300
 ADMISSION_REREAD_S = 2
 
 
@@ -34,7 +33,7 @@ class MalformedMessageError(Exception):
 class RunnerAdmissionTimeoutError(Exception):
     """Command admission was not confirmed before the deadline; its outcome is uncertain."""
 
-    def __init__(self, command_id: str, timeout_s: float = COMMAND_ADMISSION_S) -> None:
+    def __init__(self, command_id: str, timeout_s: float) -> None:
         super().__init__(
             f"admission of command {command_id!r} was not confirmed within {timeout_s:g} seconds; outcome uncertain"
         )
@@ -58,7 +57,7 @@ class RunnerBridge:
         content: ContentStore,
         ingester: Ingester,
         thread_changes: Changes,
-        command_admission_timeout_s: float = COMMAND_ADMISSION_S,
+        command_admission_timeout_s: float,
     ) -> None:
         self._runners = runners
         self._event_logs = event_logs

@@ -186,7 +186,9 @@ class Settings(AppSettingsConfig):
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
     )
     sandbox_service_target: str = Field(min_length=1)
-    command_admission_timeout_s: float = Field(default=300, gt=0)
+    command_admission_timeout_s: float = Field(
+        default=300, gt=0, le=320, description="Whole command submission budget; browser abort is 330 seconds."
+    )
     sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
     host: str = Field(default="127.0.0.1", description="Bind address.")
     port: int = Field(default=8080, description="Bind port.")

@@ -234,6 +234,7 @@ def bridge(
         content=content,
         ingester=ingester,
         thread_changes=database_updates.changes[Channel.THREADS],
+        command_admission_timeout_s=300,
     )
 
 

@@ -84,6 +84,7 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
             content=content,
             ingester=ingester,
             thread_changes=database_updates.changes[Channel.THREADS],
+            command_admission_timeout_s=300,
         )
         try:
             with pytest.raises(MalformedMessageError):

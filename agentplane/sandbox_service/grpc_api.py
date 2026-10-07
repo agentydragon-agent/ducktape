@@ -39,8 +39,8 @@ class Resources:
     provisioning: Provisioning
     caller_accounts: frozenset[ServiceAccountRef]
     platform_instructions: str
+    command_admission_timeout_s: float
     admission_timeout_s: float = 15
-    command_admission_timeout_s: float = 300
     follow_lease_s: float = 900
     lifecycle_timeout_s: float = 300
     runner_grpc_channel_options: dict[str, int | str] = field(default_factory=dict)

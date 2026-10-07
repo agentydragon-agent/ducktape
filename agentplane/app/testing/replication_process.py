@@ -277,6 +277,7 @@ async def _serve(
             content=content,
             ingester=ingester,
             thread_changes=database_updates.changes[Channel.THREADS],
+            command_admission_timeout_s=300,
         )
         async with (
             httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,

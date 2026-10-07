@@ -143,6 +143,7 @@ def resources(cluster: Cluster, peer: Peer) -> Resources:
         platform_instructions="Test guidance",
         follow_lease_s=0.5,
         admission_timeout_s=1,
+        command_admission_timeout_s=300,
     )
 
 

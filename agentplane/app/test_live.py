@@ -315,6 +315,7 @@ def app(
         content=content,
         ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
         thread_changes=database_updates.changes[Channel.THREADS],
+        command_admission_timeout_s=300,
     )
     return create_app(
         inventory,
