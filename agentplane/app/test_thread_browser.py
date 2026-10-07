@@ -1303,6 +1303,7 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
         # removed the collapse control after the first render of the expanded block.
         await frames(page)
         await expect(command).to_have_attribute("data-expanded", "true")
+        await expect(command.locator(".agentplane-clamped-disclosure .agentplane-disclosure-heading button")).to_have_count(1)
         assert await editor.evaluate("node => node.isConnected"), "expanding remounted the CodeMirror editor"
         assert await page.evaluate("() => window.getSelection()?.toString()") == "echo command line 0"
         await read_at(page, command.locator(".cm-line").filter(has_text="echo command line 20"), 0.5)
