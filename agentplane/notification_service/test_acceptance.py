@@ -242,10 +242,10 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     notices = [
                         text
                         for text in notice_request.user_texts
-                        if text.startswith("Agentplane automated notification: ")
+                        if text.startswith("Agentplane inbox notice: ")
                     ]
                     assert len(notices) == 1
-                    hint = json.loads(notices[0].removeprefix("Agentplane automated notification: "))
+                    hint = json.loads(notices[0].removeprefix("Agentplane inbox notice: "))
                     assert hint == {
                         "inbox_id": subscription["inbox_id"],
                         "acknowledged_at_preparation": 0,

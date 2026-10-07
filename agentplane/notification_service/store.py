@@ -612,7 +612,7 @@ class Store:
                 through_cursor=inbox.last_cursor,
                 # Standing instructions carry the shared read/ack procedure. Persist the exact
                 # snapshot hint once so lost responses replay the same command and cursors.
-                text="Agentplane automated notification: "
+                text="Agentplane inbox notice: "
                 + json.dumps(
                     {
                         "inbox_id": str(inbox.id),

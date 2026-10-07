@@ -236,8 +236,8 @@ async def test_overlapping_subscriptions_commit_one_prefix_and_read_does_not_ack
     notice = await store.notice(claim)
     assert notice is not None
     assert notice.through_cursor == 3
-    assert notice.text.startswith("Agentplane automated notification: ")
-    assert json.loads(notice.text.removeprefix("Agentplane automated notification: ")) == {
+    assert notice.text.startswith("Agentplane inbox notice: ")
+    assert json.loads(notice.text.removeprefix("Agentplane inbox notice: ")) == {
         "inbox_id": str(first.inbox_id),
         "acknowledged_at_preparation": 2,
         "through_at_preparation": 3,
