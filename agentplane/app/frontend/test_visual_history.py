@@ -17,6 +17,7 @@ from agentplane.app.frontend.visual_assertions import (
     _rollout_geometry,
     _rollout_start,
 )
+from agentplane.app.frontend.visual_app import AgentplaneFixture, IDLE_THREAD, RUNNING_THREAD
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, MOBILE_TOUCH, Viewport
 from util.testing.visual_capture import VisualHarness
@@ -31,7 +32,10 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 async def test_realistic_rollout_overview_realistic_rollout_desktop(
     visual: VisualHarness, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("realistic_rollout", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.completed_rollout()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
         await view.check(context="fixture ready")
@@ -41,7 +45,10 @@ async def test_realistic_rollout_overview_realistic_rollout_desktop(
 
 
 async def test_realistic_rollout_overview_realistic_rollout_desktop_dark(visual: VisualHarness) -> None:
-    async with visual.open("realistic_rollout", viewport=DESKTOP, color_scheme="dark") as view:
+    async with visual.open(viewport=DESKTOP, color_scheme="dark") as view:
+        app = AgentplaneFixture(view.page)
+        await app.completed_rollout()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
         await view.check(context="fixture ready")
@@ -51,7 +58,10 @@ async def test_realistic_rollout_overview_realistic_rollout_desktop_dark(visual:
 
 
 async def test_realistic_rollout_overview_reported_rollout_desktop(visual: VisualHarness) -> None:
-    async with visual.open("reported_rollout", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.reported_rollout()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
         await view.check(context="fixture ready")
@@ -72,7 +82,10 @@ async def test_realistic_rollout_overview_reported_rollout_desktop(visual: Visua
 async def test_realistic_rollout_run_realistic_rollout_desktop(
     visual: VisualHarness, position: str, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("realistic_rollout", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.completed_rollout()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
         await view.check(context="fixture ready")
@@ -102,7 +115,10 @@ async def test_realistic_rollout_run_realistic_rollout_desktop(
 async def test_realistic_rollout_run_realistic_rollout_desktop_dark(
     visual: VisualHarness, position: str, image_name: str
 ) -> None:
-    async with visual.open("realistic_rollout", viewport=DESKTOP, color_scheme="dark") as view:
+    async with visual.open(viewport=DESKTOP, color_scheme="dark") as view:
+        app = AgentplaneFixture(view.page)
+        await app.completed_rollout()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
         await view.check(context="fixture ready")
@@ -132,7 +148,10 @@ async def test_realistic_rollout_run_realistic_rollout_desktop_dark(
 async def test_realistic_rollout_run_reported_rollout_desktop(
     visual: VisualHarness, position: str, image_name: str
 ) -> None:
-    async with visual.open("reported_rollout", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.reported_rollout()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
         await view.check(context="fixture ready")
@@ -167,7 +186,10 @@ async def test_realistic_rollout_run_reported_rollout_desktop(
 async def test_realistic_rollout_call(
     visual: VisualHarness, expanded_output: bool, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("realistic_rollout", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.completed_rollout()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
         await view.check(context="fixture ready")
@@ -215,7 +237,10 @@ async def test_realistic_rollout_call(
 async def test_recovery_details_open_session_recovery_messages_open(
     visual: VisualHarness, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("session_recovery_messages", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.recovery('messages')
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -227,7 +252,10 @@ async def test_recovery_details_open_session_recovery_messages_open(
 
 
 async def test_recovery_details_open_session_recovery_quiet_open(visual: VisualHarness) -> None:
-    async with visual.open("session_recovery_quiet", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.recovery('quiet')
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -237,7 +265,10 @@ async def test_recovery_details_open_session_recovery_quiet_open(visual: VisualH
 
 
 async def test_debug_history_latest_session_error_raw(visual: VisualHarness) -> None:
-    async with visual.open("session_error_phone", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.failed_turn(after_content=True)
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -249,7 +280,10 @@ async def test_debug_history_latest_session_error_raw(visual: VisualHarness) -> 
 
 
 async def test_debug_history_latest_session_error_raw_phone(visual: VisualHarness) -> None:
-    async with visual.open("session_error", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.failed_turn(after_content=False)
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -266,7 +300,10 @@ async def test_debug_history_latest_session_error_raw_phone(visual: VisualHarnes
 async def test_debug_history_latest_session_interleaved_raw(
     visual: VisualHarness, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("session_interleaved", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.interleaved_events()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -279,7 +316,9 @@ async def test_debug_history_latest_session_interleaved_raw(
 
 @pytest.mark.parametrize(("screen", "image_name"), [(DESKTOP, "session_raw"), (MOBILE, "session-raw-phone")])
 async def test_debug_history_latest_session_raw(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("session", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -291,7 +330,11 @@ async def test_debug_history_latest_session_raw(visual: VisualHarness, screen: V
 
 
 async def test_debug_history_latest_session_pending_raw(visual: VisualHarness) -> None:
-    async with visual.open("session_pending", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.pending_commands()
+        await app.remember_pending_input()
+        await app.mount_thread(RUNNING_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -305,7 +348,10 @@ async def test_debug_history_latest_session_pending_raw(visual: VisualHarness) -
 
 
 async def test_debug_history_stderr_disclosure(visual: VisualHarness) -> None:
-    async with visual.open("session_interleaved", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.interleaved_events()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -317,7 +363,10 @@ async def test_debug_history_stderr_disclosure(visual: VisualHarness) -> None:
 
 
 async def test_thread_setup_output(visual: VisualHarness) -> None:
-    async with visual.open("session_thread_setup", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.thread_setup()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -332,7 +381,10 @@ async def test_thread_setup_output(visual: VisualHarness) -> None:
     ("screen", "image_name"), [(DESKTOP, "session_recovery_tools_open"), (MOBILE, "session_recovery_tools_open_phone")]
 )
 async def test_recovery_tool_lower_states(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("session_recovery_tools", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.recovery('tools')
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -347,7 +399,10 @@ async def test_recovery_tool_lower_states(visual: VisualHarness, screen: Viewpor
     [(DESKTOP, "session_recovery_tools_open_revised"), (MOBILE, "session_recovery_tools_open_phone_revised")],
 )
 async def test_revised_recovery_tool_output(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("session_recovery_tools", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.recovery('tools')
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -362,7 +417,10 @@ async def test_revised_recovery_tool_output(visual: VisualHarness, screen: Viewp
     ("screen", "image_name"), [(DESKTOP, "session-reasoning"), (MOBILE, "session-reasoning-phone")]
 )
 async def test_reasoning_inside_tool_run(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("session_reasoning", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.standard_history(long_preview=True)
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -381,7 +439,10 @@ async def test_reasoning_inside_tool_run(visual: VisualHarness, screen: Viewport
 async def test_reasoning_heading_sticks_at_history_bottom(
     visual: VisualHarness, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("session_reasoning_sticky", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.standalone_reasoning(long_body=True)
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -399,7 +460,10 @@ async def test_reasoning_heading_sticks_at_history_bottom(
 
 
 async def test_standalone_reasoning_opens_session_standalone_reasoning_open(visual: VisualHarness) -> None:
-    async with visual.open("session_standalone_reasoning_preview", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.standalone_reasoning(long_preview=True)
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -419,7 +483,10 @@ async def test_standalone_reasoning_opens_session_standalone_reasoning_open(visu
 async def test_standalone_reasoning_opens_session_reasoning_code_fence_open(
     visual: VisualHarness, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("session_reasoning_code_fence", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.standalone_reasoning(code_fence=True)
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -436,7 +503,10 @@ async def test_standalone_reasoning_opens_session_reasoning_code_fence_open(
     ("screen", "image_name"), [(DESKTOP, "session-shell-calls"), (MOBILE, "session-shell-calls-phone")]
 )
 async def test_shell_call_run_previews(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("session_shell_calls", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.shell_calls()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -449,7 +519,9 @@ async def test_shell_call_run_previews(visual: VisualHarness, screen: Viewport, 
     ("anchor", "screen", "image_name"), [("4", DESKTOP, "session_evidence"), ("34", MOBILE, "session_evidence_phone")]
 )
 async def test_thread_evidence_panel(visual: VisualHarness, anchor: str, screen: Viewport, image_name: str) -> None:
-    async with visual.open("session", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -473,7 +545,9 @@ async def test_thread_evidence_panel(visual: VisualHarness, anchor: str, screen:
     ],
 )
 async def test_evidence_button_reveals_on_hover(visual: VisualHarness, target: str, image_name: str) -> None:
-    async with visual.open("session", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -484,7 +558,9 @@ async def test_evidence_button_reveals_on_hover(visual: VisualHarness, target: s
 
 
 async def test_evidence_button_reveals_on_tap(visual: VisualHarness) -> None:
-    async with visual.open("session", viewport=MOBILE_TOUCH) as view:
+    async with visual.open(viewport=MOBILE_TOUCH) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -500,7 +576,9 @@ async def test_evidence_button_reveals_on_tap(visual: VisualHarness) -> None:
 async def test_open_tool_calls_and_output_session_tool_payloads(
     visual: VisualHarness, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("session", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
         await view.check(context="fixture ready")
@@ -518,7 +596,10 @@ async def test_open_tool_calls_and_output_session_tool_payloads(
 async def test_open_tool_calls_and_output_session_shell_calls_open(
     visual: VisualHarness, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("session_shell_calls", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.shell_calls()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
         await view.check(context="fixture ready")
@@ -543,7 +624,10 @@ async def test_open_tool_calls_and_output_session_shell_calls_open(
 async def test_shell_call_command_and_output(
     visual: VisualHarness, call_text: str, tool: str, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("session_shell_calls", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.shell_calls()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
         await view.check(context="fixture ready")
@@ -562,7 +646,10 @@ async def test_shell_call_command_and_output(
 async def test_collapsed_steps_in_open_run_are_compact(
     visual: VisualHarness, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("session_shell_calls", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.shell_calls()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
         await view.check(context="fixture ready")
@@ -596,7 +683,10 @@ async def test_collapsed_steps_in_open_run_are_compact(
 async def test_expanded_command_uses_heading_to_collapse(
     visual: VisualHarness, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("session_shell_calls", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.shell_calls()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
         await view.check(context="fixture ready")
@@ -626,7 +716,10 @@ async def test_expanded_command_uses_heading_to_collapse(
 async def test_expanded_shell_output_sticks_while_scrolling(
     visual: VisualHarness, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("session_shell_calls", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.shell_calls()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
         await view.check(context="fixture ready")

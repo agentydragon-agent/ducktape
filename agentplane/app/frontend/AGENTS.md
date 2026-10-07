@@ -13,7 +13,7 @@ the real pixels, not a specific mechanism for getting there:
 --test_filter=<scenario-or-test-name> --noremote_accept_cached --nocache_test_results` — and download the PNG it
   writes to the test's
   undeclared outputs (`buildbuddy_api` skill: `bbapi artifact list <invocation-id>` for the exact
-  name, passed to `capture_scene`, then `bbapi artifact download <invocation-id>
+  name, passed to `view.capture()`, then `bbapi artifact download <invocation-id>
 "<name>-actual.png"`), then view it. A failure in another shard: `bbapi target log <invocation-id>
 visual --failed`.
 
@@ -24,12 +24,24 @@ itself, not an animation's start/end frames — which visual tests disable anywa
 
 ## Adding a visual test
 
-`harness/fixtures.json` contains routes and canned application data only. Reuse a
-fixture across viewport sizes and interactions; do not add a new fixture identity merely
-for another screenshot. Python tests own readiness, clicks, scrolls, assertions and capture.
-Pass browser geometry explicitly using `util/testing/viewports.py`, and pass crop locators
-to `view.capture()`. A screenshot name identifies an artifact; it must not select behavior.
-Preserve image names during a migration only to retain useful before/after comparisons.
+Tests configure mock services through `AgentplaneFixture` in `visual_app.py`, then
+explicitly mount the app at a route (or mount the isolated disclosure specimen).
+The TypeScript harness exposes callable data builders and component mounts; it does not
+select setup from a scene name or interpret a recipe object. Keep actual recorded payloads
+such as rollout rows as data, not route/flag catalogs.
+
+```python
+async with visual.open(viewport=MOBILE) as view:
+    app = AgentplaneFixture(view.page)
+    await app.recovery("tools")
+    await app.mount_thread(IDLE_THREAD)
+    # Assert readiness, interact with locators, then capture.
+```
+
+Python tests own readiness, clicks, scrolls, assertions and capture. Pass browser geometry
+explicitly using `util/testing/viewports.py`, and pass crop locators to `view.capture()`.
+A screenshot name identifies an artifact; it must not select behavior. Preserve image
+names during a migration only to retain useful before/after comparisons.
 
 Do not add harness switches that click, focus, scroll or inspect the DOM. Add an ordinary
 Python behavior test and an explicit screenshot checkpoint instead. BUILD names the test

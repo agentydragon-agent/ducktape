@@ -1179,23 +1179,14 @@ vitest_config(
 )
 
 # Python visual tests mount the app against canned inventory and runner events.
-# Fixture identities select data only; tests own browser geometry and screenshot checkpoints.
+# Python calls fixture builders and mounts explicitly; JSON files contain recorded event rows only.
 js_library(
-    name = "visual_fixtures_json",
+    name = "visual_rollouts",
     testonly = True,
     srcs = [
-        "harness/fixtures.json",
         "harness/realistic_rollout.json",
         "harness/reported_rollout.json",
     ],
-)
-
-ts_library(
-    name = "visual_fixture",
-    testonly = True,
-    srcs = ["harness/fixture.ts"],
-    tsconfig = TSCONFIG,
-    deps = [":visual_fixtures_json"],
 )
 
 ts_library(
@@ -1219,8 +1210,7 @@ ts_library(
         ":stream_status",
         ":test_model_catalog",
         ":theme",
-        ":visual_fixture",
-        ":visual_fixtures_json",
+        ":visual_rollouts",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -1280,6 +1270,7 @@ py_visual_test(
     harness = ":visual_bundle_js",
     shard_count = 6,
     test_deps = [
+        ":visual_app",
         ":visual_assertions",
         "//util/testing:page_capture",
         "//util/testing:undeclared_outputs",

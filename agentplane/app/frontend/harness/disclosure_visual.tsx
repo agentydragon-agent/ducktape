@@ -3,7 +3,6 @@ import { type JSX } from "react";
 
 import { ClampedBlock } from "../clamped_block";
 import { Disclosure } from "../disclosure";
-import { type DisclosureVisualStage } from "./fixture";
 
 const ABOVE_COPY = Array.from(
   { length: 4 },
@@ -72,25 +71,31 @@ function Summary({ title }: { title: string }): JSX.Element {
 }
 
 /** An app-free phone specimen for the shared Disclosure's Control, Panel, and nested stack behavior. */
-export function DisclosureVisual({ stage }: { stage: DisclosureVisualStage }): JSX.Element {
-  const isNested = stage.startsWith("nested-");
-  const isShort = stage === "short-expanded";
-  const isOpen = stage !== "collapsed";
-  const aboveCopy = isShort ? ABOVE_COPY.slice(0, 1) : ABOVE_COPY;
-  const outsideCopy = isShort ? OUTSIDE_COPY.slice(0, 1) : OUTSIDE_COPY;
-  const outerTitle = stage === "nested-wrapped-headings" ? WRAPPED_OUTER_TITLE : "Outer section";
-  const innerTitle = stage === "nested-wrapped-headings" ? WRAPPED_INNER_TITLE : "Nested section";
-  const hasToolOutput = [
-    "nested-before-output",
-    "nested-expanded-output",
-    "nested-after-output",
-    "nested-output-collapsed",
-  ].includes(stage);
+export interface DisclosureVisualProps {
+  nested?: boolean;
+  short?: boolean;
+  open?: boolean;
+  wrappedHeadings?: boolean;
+  toolOutput?: boolean;
+  outputOpen?: boolean;
+  beforeOutput?: boolean;
+  afterOutput?: boolean;
+  followingSection?: boolean;
+}
+
+export function DisclosureVisual({
+  nested = false, short = false, open = true, wrappedHeadings = false,
+  toolOutput = false, outputOpen = true, beforeOutput = true, afterOutput = true,
+  followingSection = false,
+}: DisclosureVisualProps): JSX.Element {
+  const aboveCopy = short ? ABOVE_COPY.slice(0, 1) : ABOVE_COPY;
+  const outsideCopy = short ? OUTSIDE_COPY.slice(0, 1) : OUTSIDE_COPY;
+  const outerTitle = wrappedHeadings ? WRAPPED_OUTER_TITLE : "Outer section";
+  const innerTitle = wrappedHeadings ? WRAPPED_INNER_TITLE : "Nested section";
 
   return (
     <main
       id="shot"
-      data-disclosure-visual-stage={stage}
       style={{
         position: "fixed",
         top: 0,
@@ -121,7 +126,7 @@ export function DisclosureVisual({ stage }: { stage: DisclosureVisualStage }): J
             </Text>
           ))}
 
-          {isNested ? (
+          {nested ? (
             <>
               <Disclosure
                 className="demo-outer"
@@ -147,9 +152,9 @@ export function DisclosureVisual({ stage }: { stage: DisclosureVisualStage }): J
                     }
                     defaultOpen
                   >
-                    {hasToolOutput ? (
+                    {toolOutput ? (
                       <>
-                        {stage !== "nested-output-collapsed" && (
+                        {beforeOutput && (
                           <Stack gap="md">
                             {TOOL_OUTPUT_BEFORE_COPY.map((paragraph, index) => (
                               <Text
@@ -172,7 +177,7 @@ export function DisclosureVisual({ stage }: { stage: DisclosureVisualStage }): J
                               20 results
                             </Text>
                           }
-                          defaultOpen={stage !== "nested-output-collapsed"}
+                          defaultOpen={outputOpen}
                         >
                           <ClampedBlock maxHeightRem={8} expansion={[true, () => undefined]} stickyCollapse={false}>
                             <Stack gap="md">
@@ -190,7 +195,7 @@ export function DisclosureVisual({ stage }: { stage: DisclosureVisualStage }): J
                             </Stack>
                           </ClampedBlock>
                         </Disclosure>
-                        {stage !== "nested-expanded-output" && (
+                        {afterOutput && (
                           <Stack gap="md">
                             {TOOL_OUTPUT_FOLLOWING_COPY.map((paragraph, index) => (
                               <Text
@@ -253,9 +258,9 @@ export function DisclosureVisual({ stage }: { stage: DisclosureVisualStage }): J
             </>
           ) : (
             <>
-              <Disclosure className="demo-main" summary={<Summary title="Section details" />} defaultOpen={isOpen}>
+              <Disclosure className="demo-main" summary={<Summary title="Section details" />} defaultOpen={open}>
                 <Stack gap="md">
-                  {isShort ? (
+                  {short ? (
                     <Text size="sm">
                       This short panel fits in the viewport, so its Control stays in normal document flow.
                     </Text>
@@ -275,11 +280,11 @@ export function DisclosureVisual({ stage }: { stage: DisclosureVisualStage }): J
                 </Stack>
               </Disclosure>
               <Stack gap="md">
-                {(stage === "after-disclosure" ? FOLLOWING_COPY : outsideCopy).map((paragraph, index) => (
+                {(followingSection ? FOLLOWING_COPY : outsideCopy).map((paragraph, index) => (
                   <Text
                     key={index}
                     component="p"
-                    data-demo-target={stage === "after-disclosure" && index === 5 ? "following-disclosure" : undefined}
+                    data-demo-target={followingSection && index === 5 ? "following-disclosure" : undefined}
                     size="sm"
                     m={0}
                   >

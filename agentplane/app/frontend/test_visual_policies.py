@@ -14,6 +14,7 @@ from agentplane.app.frontend.visual_assertions import (
     _open_select,
     _select_reconnect,
 )
+from agentplane.app.frontend.visual_app import AgentplaneFixture, IDLE_THREAD
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, Viewport
 from util.testing.visual_capture import VisualHarness
@@ -26,7 +27,10 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
     [(DESKTOP, "actions_attention_composer_open_desktop"), (MOBILE, "actions_attention_composer_open_phone")],
 )
 async def test_inline_action_review(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("actions_attention_composer", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.show_pending_actions()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -39,7 +43,11 @@ async def test_inline_action_review(visual: VisualHarness, screen: Viewport, ima
 async def test_inline_action_review_scrolls_to_decisions_actions_attention_composer_long_desktop(
     visual: VisualHarness,
 ) -> None:
-    async with visual.open("actions_attention_composer_long", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.show_pending_actions()
+        await app.long_pending_action()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -56,7 +64,11 @@ async def test_inline_action_review_scrolls_to_decisions_actions_attention_compo
 async def test_inline_action_review_scrolls_to_decisions_actions_attention_composer_long_phone(
     visual: VisualHarness,
 ) -> None:
-    async with visual.open("actions_attention_composer_long", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.show_pending_actions()
+        await app.long_pending_action()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -72,7 +84,10 @@ async def test_inline_action_review_scrolls_to_decisions_actions_attention_compo
 
 
 async def test_actions_raw_switches(visual: VisualHarness) -> None:
-    async with visual.open("actions", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.show_pending_actions()
+        await app.mount_app('/actions')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -86,7 +101,9 @@ async def test_actions_raw_switches(visual: VisualHarness) -> None:
     ("screen", "image_name"), [(DESKTOP, "sandbox-status-raw"), (MOBILE, "sandbox-status-raw-phone")]
 )
 async def test_sandbox_status_raw_switches(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("sandbox_status", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_app('/sandboxes/ready-sandbox?tab=status')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -96,7 +113,9 @@ async def test_sandbox_status_raw_switches(visual: VisualHarness, screen: Viewpo
 
 
 async def test_connections_settings_modal_connections(visual: VisualHarness) -> None:
-    async with visual.open("threads", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_app('/')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -106,7 +125,9 @@ async def test_connections_settings_modal_connections(visual: VisualHarness) -> 
 
 
 async def test_connections_settings_modal_connections_phone(visual: VisualHarness) -> None:
-    async with visual.open("threads", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_app('/')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -118,7 +139,9 @@ async def test_connections_settings_modal_connections_phone(visual: VisualHarnes
 
 
 async def test_consent_reconnect_warning_desktop(visual: VisualHarness) -> None:
-    async with visual.open("consent", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_app('/connection-enrollments/test-only-opaque-handle')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -129,7 +152,10 @@ async def test_consent_reconnect_warning_desktop(visual: VisualHarness) -> None:
 
 @pytest.mark.parametrize(("screen", "image_name"), [(DESKTOP, "actions_history"), (MOBILE, "actions_history_phone")])
 async def test_action_history_receipt(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("actions", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.show_pending_actions()
+        await app.mount_app('/actions')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
         await view.page.wait_for_selector('img[src^="data:image/"]', state="attached")
@@ -145,7 +171,10 @@ async def test_action_history_receipt(visual: VisualHarness, screen: Viewport, i
     ("screen", "image_name"), [(DESKTOP, "actions_history_diagram"), (MOBILE, "actions_history_phone_diagram")]
 )
 async def test_action_history_diagram(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("actions", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.show_pending_actions()
+        await app.mount_app('/actions')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
         await view.page.wait_for_selector('img[src^="data:image/"]', state="attached")
@@ -158,7 +187,10 @@ async def test_action_history_diagram(visual: VisualHarness, screen: Viewport, i
 
 
 async def test_action_history_raw_receipt(visual: VisualHarness) -> None:
-    async with visual.open("actions", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.show_pending_actions()
+        await app.mount_app('/actions')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -169,7 +201,11 @@ async def test_action_history_raw_receipt(visual: VisualHarness) -> None:
 
 
 async def test_action_history_paging_control(visual: VisualHarness) -> None:
-    async with visual.open("actions_history_more", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.paginate_action_history()
+        await app.show_pending_actions()
+        await app.mount_app('/actions')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
         await view.page.wait_for_selector('[data-testid="action-history-load-more"]', state="attached")
@@ -191,7 +227,9 @@ async def test_action_history_paging_control(visual: VisualHarness) -> None:
 
 @pytest.mark.parametrize(("screen", "image_name"), [(DESKTOP, "mcp_servers"), (MOBILE, "mcp_servers_phone")])
 async def test_mcp_servers_linked_and_expired(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("mcp_servers", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_app('/mcp-servers')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector("[data-mcp-server]", state="attached")
         await view.check(context="fixture ready")
@@ -213,7 +251,9 @@ async def test_mcp_servers_linked_and_expired(visual: VisualHarness, screen: Vie
 async def test_mcp_servers_lower_statuses_mcp_servers_phone(
     visual: VisualHarness, focus_key: str, focus_state: str, other_key: str, other_state: str, image_name: str
 ) -> None:
-    async with visual.open("mcp_servers", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_app('/mcp-servers')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector("[data-mcp-server]", state="attached")
         await view.check(context="fixture ready")
@@ -225,7 +265,9 @@ async def test_mcp_servers_lower_statuses_mcp_servers_phone(
 
 
 async def test_mcp_servers_lower_statuses_mcp_servers(visual: VisualHarness) -> None:
-    async with visual.open("mcp_servers", viewport=DESKTOP) as view:
+    async with visual.open(viewport=DESKTOP) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_app('/mcp-servers')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector("[data-mcp-server]", state="attached")
         await view.check(context="fixture ready")
@@ -246,7 +288,9 @@ async def test_mcp_servers_lower_statuses_mcp_servers(visual: VisualHarness) -> 
 
 
 async def test_consent_reconnect_warning_phone(visual: VisualHarness) -> None:
-    async with visual.open("consent", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_app('/connection-enrollments/test-only-opaque-handle')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -257,7 +301,9 @@ async def test_consent_reconnect_warning_phone(visual: VisualHarness) -> None:
 
 
 async def test_consent_reconnect_decision_phone(visual: VisualHarness) -> None:
-    async with visual.open("consent", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_app('/connection-enrollments/test-only-opaque-handle')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page
@@ -273,7 +319,9 @@ async def test_consent_reconnect_decision_phone(visual: VisualHarness) -> None:
 async def test_action_policy_selector_hides_picked_option(
     visual: VisualHarness, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("new_sandbox", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_app('/sandboxes?preset=public-coder')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".mantine-Pill-root", state="attached")
         await view.check(context="fixture ready")
@@ -288,7 +336,9 @@ async def test_action_policy_selector_hides_picked_option(
 async def test_egress_policy_selector_hides_picked_option(
     visual: VisualHarness, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("new_sandbox", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_app('/sandboxes?preset=public-coder')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector('.mantine-Pill-root:has-text("github-public")', state="attached")
         await view.check(context="fixture ready")
@@ -303,7 +353,9 @@ async def test_egress_policy_selector_hides_picked_option(
     ("screen", "image_name"), [(DESKTOP, "new-sandbox-grants"), (MOBILE, "new-sandbox-grants-phone")]
 )
 async def test_grant_selector_hides_picked_option(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("new_sandbox", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_app('/sandboxes?preset=public-coder')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".mantine-Pill-root", state="attached")
         await view.check(context="fixture ready")
@@ -314,7 +366,9 @@ async def test_grant_selector_hides_picked_option(visual: VisualHarness, screen:
 
 @pytest.mark.parametrize(("screen", "image_name"), [(DESKTOP, "sandbox-egress"), (MOBILE, "sandbox-egress-phone")])
 async def test_sandbox_egress_pick_updates_options(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("sandbox_egress", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_app('/sandboxes/ready-sandbox?tab=egress&rules=ready-sandbox-github-public')
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.check(context="fixture ready")
         page = view.page

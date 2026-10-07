@@ -21,6 +21,7 @@ from agentplane.app.frontend.visual_assertions import (
     _scroll_to,
     _scroll_to_copy,
 )
+from agentplane.app.frontend.visual_app import AgentplaneFixture, IDLE_THREAD
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, Viewport
 from util.testing.visual_capture import VisualHarness
@@ -29,7 +30,9 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 async def test_collapsed_disclosure(visual: VisualHarness) -> None:
-    async with visual.open("disclosure_collapsed", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_disclosure(open=False)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(
             ".demo-main .agentplane-disclosure-summary[aria-expanded='false']", state="attached"
@@ -42,7 +45,9 @@ async def test_collapsed_disclosure(visual: VisualHarness) -> None:
 
 
 async def test_short_disclosure_fits(visual: VisualHarness) -> None:
-    async with visual.open("disclosure_short_expanded", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_disclosure(short=True)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(
             ".demo-main .agentplane-disclosure-summary[aria-expanded='true']", state="attached"
@@ -55,7 +60,9 @@ async def test_short_disclosure_fits(visual: VisualHarness) -> None:
 
 
 async def test_long_disclosure_before_sticking(visual: VisualHarness) -> None:
-    async with visual.open("disclosure_long_top", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_disclosure()
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(
             ".demo-main .agentplane-disclosure-summary[aria-expanded='true']", state="attached"
@@ -71,7 +78,9 @@ async def test_long_disclosure_before_sticking(visual: VisualHarness) -> None:
 
 
 async def test_long_disclosure_sticks(visual: VisualHarness) -> None:
-    async with visual.open("disclosure_long_scrolled", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_disclosure()
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(
             ".demo-main .agentplane-disclosure-heading[data-expanded='true']", state="attached"
@@ -84,9 +93,11 @@ async def test_long_disclosure_sticks(visual: VisualHarness) -> None:
 
 
 async def test_disclosure_releases_after_content(visual: VisualHarness) -> None:
-    async with visual.open("disclosure_after_disclosure", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_disclosure(following_section=True)
         await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.page.wait_for_selector("[data-disclosure-visual-stage='after-disclosure']", state="attached")
+        await view.page.wait_for_selector("[data-demo-target='following-disclosure']", state="attached")
         await view.check(context="fixture ready")
         page = view.page
         await _scroll_to_copy(page, "following-disclosure", 64)
@@ -95,7 +106,9 @@ async def test_disclosure_releases_after_content(visual: VisualHarness) -> None:
 
 
 async def test_nested_parent_sticks_before_child(visual: VisualHarness) -> None:
-    async with visual.open("disclosure_nested_parent_only", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_disclosure(nested=True)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
         await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading", state="attached")
@@ -111,7 +124,9 @@ async def test_nested_parent_sticks_before_child(visual: VisualHarness) -> None:
 
 
 async def test_nested_headings_stack_disclosure_component_phone_nested_child_scrolled(visual: VisualHarness) -> None:
-    async with visual.open("disclosure_nested_child_scrolled", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_disclosure(nested=True)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(
             ".demo-inner .agentplane-disclosure-heading[data-expanded='true']", state="attached"
@@ -127,7 +142,9 @@ async def test_nested_headings_stack_disclosure_component_phone_nested_child_scr
 
 
 async def test_nested_headings_stack_disclosure_component_phone_nested_wrapped_headings(visual: VisualHarness) -> None:
-    async with visual.open("disclosure_nested_wrapped_headings", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_disclosure(nested=True, wrapped_headings=True)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
         await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading", state="attached")
@@ -144,7 +161,9 @@ async def test_nested_headings_stack_disclosure_component_phone_nested_wrapped_h
 
 
 async def test_nested_child_releases_behind_parent(visual: VisualHarness) -> None:
-    async with visual.open("disclosure_nested_after_child", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_disclosure(nested=True)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(
             ".demo-outer .agentplane-disclosure-heading[data-expanded='true']", state="attached"
@@ -163,7 +182,9 @@ async def test_nested_child_releases_behind_parent(visual: VisualHarness) -> Non
 
 
 async def test_nested_parent_releases_after_content(visual: VisualHarness) -> None:
-    async with visual.open("disclosure_nested_after_outer", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_disclosure(nested=True)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
         await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading", state="attached")
@@ -176,7 +197,9 @@ async def test_nested_parent_releases_after_content(visual: VisualHarness) -> No
 
 
 async def test_output_heading_stacks_below_tool(visual: VisualHarness) -> None:
-    async with visual.open("disclosure_nested_expanded_output", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_disclosure(nested=True, tool_output=True, after_output=False)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
         await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading", state="attached")
@@ -196,7 +219,9 @@ async def test_output_heading_stacks_below_tool(visual: VisualHarness) -> None:
 
 
 async def test_output_heading_enters_below_tool(visual: VisualHarness) -> None:
-    async with visual.open("disclosure_nested_before_output", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_disclosure(nested=True, tool_output=True)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
         await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading", state="attached")
@@ -214,7 +239,9 @@ async def test_output_heading_enters_below_tool(visual: VisualHarness) -> None:
 
 
 async def test_collapsed_output_keeps_its_sticky_slot(visual: VisualHarness) -> None:
-    async with visual.open("disclosure_nested_output_collapsed", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_disclosure(nested=True, tool_output=True, output_open=False, before_output=False)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
         await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading", state="attached")
@@ -231,7 +258,9 @@ async def test_collapsed_output_keeps_its_sticky_slot(visual: VisualHarness) -> 
 
 
 async def test_output_heading_releases_after_content(visual: VisualHarness) -> None:
-    async with visual.open("disclosure_nested_after_output", viewport=MOBILE) as view:
+    async with visual.open(viewport=MOBILE) as view:
+        app = AgentplaneFixture(view.page)
+        await app.mount_disclosure(nested=True, tool_output=True)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
         await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading", state="attached")
@@ -262,7 +291,10 @@ async def test_output_heading_releases_after_content(visual: VisualHarness) -> N
 async def test_disclosure_control_reaches_card_edges(
     visual: VisualHarness, state: str, screen: Viewport, image_name: str
 ) -> None:
-    async with visual.open("session_shell_calls", viewport=screen) as view:
+    async with visual.open(viewport=screen) as view:
+        app = AgentplaneFixture(view.page)
+        await app.shell_calls()
+        await app.mount_thread(IDLE_THREAD)
         await expect(view.page.locator("#app > *").first).to_be_attached()
         await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
         await view.check(context="fixture ready")
