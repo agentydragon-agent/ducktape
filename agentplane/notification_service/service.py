@@ -15,7 +15,7 @@ from agentplane.notification_service.models import ActionsSource, DestinationRef
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import Actions, SourceNotOwnedError
 from agentplane.notification_service.sources.github import GitHub, GitHubRetryError, GitHubUnavailableError
-from agentplane.notification_service.store import COMPACT_NOTICE_MARKER, ClaimLostError, ConflictError, QuotaError, Store
+from agentplane.notification_service.store import ClaimLostError, ConflictError, QuotaError, Store
 from agentplane.protocol import command_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
@@ -149,19 +149,9 @@ class Service:
             first + timedelta(seconds=self.notice_debounce.max_wait_seconds),
         )
 
-    async def prepare_notice(self, claim: Inbox, *, runner: Runner | None = None) -> Notice | None:
+    async def prepare_notice(self, claim: Inbox) -> Notice | None:
         due_at = await self.get_notice_due_at(claim)
-        due = due_at is not None and due_at <= datetime.now(UTC)
-        # A runner session's instructions are immutable. Only shorten new notices when its
-        # persisted spec actually contains the shared contract; legacy sessions need the
-        # self-contained text. Do not replace an already prepared notice on retries.
-        compact = False
-        if due and runner is not None:
-            compact = any(
-                session.session_id == claim.session_id and COMPACT_NOTICE_MARKER in session.spec.instructions
-                for session in await runner.list_sessions()
-            )
-        notice = await self.store.notice(claim, prepare=due, compact=compact)
+        notice = await self.store.notice(claim, prepare=due_at is not None and due_at <= datetime.now(UTC))
         # Debounce only new notices, never retry/confirmation of an existing command.
         if notice is not None and not notice.confirmed and notice.error is None:
             return notice
@@ -215,7 +205,7 @@ class Service:
                             ),
                             failure.retry_seconds if isinstance(failure, GitHubRetryError) else 60,
                         )
-                notice = await self.prepare_notice(claim, runner=runner)
+                notice = await self.prepare_notice(claim)
                 if notice is not None and error is None:
                     await self.deliver(claim, runner, notice)
         except ConflictError as failure:

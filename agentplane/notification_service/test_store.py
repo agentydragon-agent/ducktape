@@ -233,7 +233,7 @@ async def test_overlapping_subscriptions_commit_one_prefix_and_read_does_not_ack
     assert (await store.acknowledge(PRINCIPAL.account, first.inbox_id, 1)).acknowledged == 2
     with pytest.raises(ConflictError):
         await store.acknowledge(PRINCIPAL.account, first.inbox_id, 4)
-    notice = await store.notice(claim, compact=True)
+    notice = await store.notice(claim)
     assert notice is not None
     assert notice.through_cursor == 3
     assert notice.text.startswith("Agentplane automated notification: ")

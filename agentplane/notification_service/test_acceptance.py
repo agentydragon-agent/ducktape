@@ -240,7 +240,8 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         await model.reply(initial, Text("Initial work complete"))
                     notice_request = await model.request()
                     notices = [
-                        text for text in notice_request.user_texts
+                        text
+                        for text in notice_request.user_texts
                         if text.startswith("Agentplane automated notification: ")
                     ]
                     assert len(notices) == 1
@@ -250,10 +251,8 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         "acknowledged_at_preparation": 0,
                         "through_at_preparation": 2,
                     }
-                    assert "GET" not in notices[0] and "acknowledgement" not in notices[0]
-                    assert "Agentplane compact notices v1" in notice_request.system_text
-                    assert "/v1/inboxes/INBOX_ID/entries?after_cursor=0&limit=128" in notice_request.system_text
-                    assert "/v1/inboxes/INBOX_ID/acknowledgement" in notice_request.system_text
+                    assert "GET" not in notices[0]
+                    assert "acknowledgement" not in notices[0]
                     assert "/v1/subscriptions" in notice_request.system_text
                     assert SANDBOX_UID in notice_request.system_text
                     await model.reply(notice_request, Text("Notifications received"))
