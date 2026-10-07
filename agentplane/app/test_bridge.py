@@ -1520,6 +1520,7 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     event_logs: EventLogStore,
     content: ContentStore,
     ingestion: Ingestion,
+    model: ScriptedModel,
     spec: protocol_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1532,6 +1533,22 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     thread_id = await event_logs.find(SANDBOX, SESSION)
     assert thread_id is not None
     assert opened.last_cursor > 0
+    assert await event_logs.last_cursor(thread_id) == 0
+
+    # A native conversation must exist before Resume: an idle Open has no Claude/Codex
+    # history to restore even if the runner subsequently reports STOPPED.
+    seed = await bridge.command(
+        thread_id,
+        command_pb2.Command(command_id="seed-before-archive", submit_input=command_pb2.SubmitInput(text="SEED")),
+    )
+    await model.reply(await model.request(), Text("SEED_REPLY"))
+    attachment = await local_runners.client(SANDBOX).attach(SESSION, after_cursor=seed.cursor)
+    try:
+        async with asyncio.timeout(20):
+            while (await attachment.next_entry()).event.WhichOneof("observation") != "turn_completed":
+                pass
+    finally:
+        attachment.cancel()
     assert await event_logs.last_cursor(thread_id) == 0
 
     await bridge.command(
