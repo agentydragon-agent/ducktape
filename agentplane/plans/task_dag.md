@@ -93,7 +93,7 @@ flowchart TB
     HARNESS_PROMPT_SUGGESTIONS["Optional, lowest estimated win<br/>Claude prompt suggestions<br/>measure UX before enabling"]:::future
     THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
     HOSTED_THREAD_SURFACES["Deferred design<br/>read and control surfaces for a hosted Thread<br/>beyond today's Sandbox-bound view"]:::future
-    THREAD_READ_POLICY["Priority design<br/>explicit SA access to selected Thread history<br/>start with per-Thread grants"]:::active
+    THREAD_READ_POLICY["Priority design<br/>explicit SA access to selected Thread history<br/>evaluate Thread compartments"]:::active
     CROSS_THREAD_DELIVERY["Deferred design<br/>agents send to other Threads<br/>command vs notification inbox"]:::decision
     THREAD_CREATE_POLICY["Deferred design<br/>SA-authorized Thread creation<br/>scoped Sandbox and stable identity"]:::decision
     AG["Capstone<br/>hosted Agent and Thread model<br/>lifecycle, surfaces and read policy together"]:::milestone
@@ -818,24 +818,39 @@ An admitted token can read the full Thread list and raw Events, not just its own
 Do not add new token subjects as a substitute for per-Thread grants. Operator sessions
 retain their existing broader view; token authentication alone conveys no Thread scope.
 
-**Preferred first slice to evaluate:** operator-managed, inspectable/revocable grants of
-read access to specific stable Thread IDs for specific ServiceAccount identities. Filter
-list/discovery in the authoritative app store and check direct reads, Events, observations,
-evidence/frame routes, live feeds and replay at the same boundary. Treat a not-authorized
-Thread as not found to that caller; reconnect must reauthorize, and revocation must stop
-ongoing feeds. Bind to an authenticated ServiceAccount identity with an explicit policy for
-name/UID reuse, rather than assuming a Sandbox name or runner session confers ownership.
+**Leading scope candidate to evaluate:** operator-defined Thread _compartments_ (or
+collections), not agent types. A stable Thread has one explicit compartment and a
+ServiceAccount may have separate `read` grants for named compartments; exact Thread-ID
+grants can handle exceptional delegation. Example: a director SA reads the compartments
+for its own conversations, finance-private discussions, and selected public-coder work,
+but receives `send` authority only for a narrower set. Neither being a subordinate in an
+organizational hierarchy nor using the same launch preset grants access. Presets may
+suggest a compartment at launch, but app authorization must validate the assignment
+and persist it on the Thread, not infer it from the current preset, Sandbox, or runner
+session. Existing Threads need a default that exposes nothing to token callers until
+classified by an authorized operator.
 
-**Design gate:** decide the narrow grant schema, how a grant is assigned/revoked, and
-whether replacing a ServiceAccount should inherit its grants. Audit adjacent mutation,
-media, and bulk/sync endpoints before promising that the caller can see _only_ granted
-Threads; a read-only guard is not isolation if another route can return history or control
-the Thread. Test selected versus other Threads, list/search leaks, archived and deleted
-Sandboxes, two replicas, revocation during SSE/replay, and role changes. Broader tag or
-collection selectors, including future Threads, are a later explicit policy decision;
-do not couple the first slice to the hosted-Thread lifecycle or UI. Co-design the grant
-vocabulary with future `CROSS_THREAD_DELIVERY` and `THREAD_CREATE_POLICY`: **read does not
-imply send or create**, and those capabilities do not block this first read-only slice.
+Unlike hierarchical intelligence _levels_, compartments have no implied dominance:
+`read(finance-private)` does not imply `read(public-coder)` or `send(finance-private)`.
+A Thread-level label grants access to its whole history, including prior messages;
+reclassification should be operator-authorized and audited, with any wider disclosure
+reviewed explicitly. Use another Thread rather than mixing unrelated confidentiality
+scopes inside one transcript. Decide whether one compartment per Thread suffices before
+adding multi-label OR semantics that could unexpectedly widen access.
+
+**Design gate:** choose who creates compartments, assigns/reclassifies Threads, grants
+scoped verbs to ServiceAccounts, and revokes them; pin SA identity and replacement
+semantics without silently inheriting another principal's access. Filter list/discovery
+in the authoritative app store and check direct reads, Events, observations,
+evidence/frame routes, live feeds and replay at the same boundary. Treat an
+unauthorized Thread as not found, reauthorize reconnects, and stop feeds on revocation.
+Audit adjacent mutation, media, and bulk/sync endpoints before claiming that a caller
+can see _only_ authorized Threads. Test selected versus other compartments, archived
+and deleted Sandboxes, two replicas, reclassification, and revocation during SSE.
+Co-design the grant vocabulary with future `CROSS_THREAD_DELIVERY` and
+`THREAD_CREATE_POLICY`: **read does not imply send or create**. Do not block the
+first read implementation on choosing command versus mailbox delivery or a hosted
+Thread lifecycle.
 
 ### `CROSS_THREAD_DELIVERY` — send a message to another agent's Thread
 
