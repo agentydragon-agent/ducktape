@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -18,6 +19,7 @@ from finance.plaid.spend.models import (
     AllowanceConfigurationView,
     CardConfigurationView,
     CardView,
+    PlaidTransactionDetails,
     SpendConfiguration,
     SpendConfigurationView,
     SpendTransactionRow,
@@ -30,6 +32,10 @@ logger = logging.getLogger(__name__)
 
 _CHANNEL = "plaid_spend_changed"
 _CARD_PAYMENT_CATEGORY = "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
+_COUNTERPARTIES_COLUMN = (
+    "CASE WHEN jsonb_typeof(t.raw_json->'counterparties') = 'array' "
+    "THEN (t.raw_json->'counterparties')::text ELSE '[]' END AS counterparties"
+)
 
 
 class SpendService:
@@ -110,6 +116,7 @@ class SpendService:
         account_labels: dict[str, str] | None = None,
         card_transactions: list[asyncpg.Record] | None = None,
         statement_decisions: dict[tuple[str, str], tuple[StatementReason, int]] | None = None,
+        transaction_details: dict[tuple[str, str], PlaidTransactionDetails] | None = None,
     ) -> SpendView:
         generated_at = datetime.now(UTC)
         today = generated_at.date()
@@ -118,7 +125,9 @@ class SpendService:
             return SpendView(
                 generated_at=generated_at,
                 cards=[],
-                allowance=await self._read_allowance(generated_at, allowance_decisions, account_labels),
+                allowance=await self._read_allowance(
+                    generated_at, allowance_decisions, account_labels, transaction_details
+                ),
                 dashboard_url=self._dashboard_url,
             )
 
@@ -147,7 +156,9 @@ class SpendService:
                 return SpendView(
                     generated_at=generated_at,
                     cards=[],
-                    allowance=await self._read_allowance(generated_at, allowance_decisions, account_labels),
+                    allowance=await self._read_allowance(
+                        generated_at, allowance_decisions, account_labels, transaction_details
+                    ),
                     dashboard_url=self._dashboard_url,
                 )
 
@@ -188,16 +199,20 @@ class SpendService:
             transaction_rows: list[asyncpg.Record] = []
             if counted_accounts:
                 first_cycle_start = min(cycle_starts[row["account_id"]] for row in counted_accounts)
+                raw_column = "t.raw_json," if transaction_details is not None else ""
+                counterparties_column = f"{_COUNTERPARTIES_COLUMN}," if transaction_details is not None else ""
                 transaction_rows = await connection.fetch(
-                    """
+                    f"""
                     SELECT t.account_id, t.transaction_id, t.date, t.amount, t.pending,
                            t.pending_transaction_id,
                            t.name, t.merchant_name, t.pfc_primary,
+                           {raw_column}
+                           {counterparties_column}
                            t.raw_json->>'merchant_category_code' AS merchant_category_code,
                            COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency,
                            COALESCE(
                                t.pfc_detailed,
-                               t.raw_json #>> '{personal_finance_category,detailed}'
+                               t.raw_json #>> '{{personal_finance_category,detailed}}'
                            ) AS pfc_detailed
                     FROM public.transactions AS t
                     JOIN public.accounts AS a
@@ -330,7 +345,9 @@ class SpendService:
         return SpendView(
             generated_at=generated_at,
             cards=cards,
-            allowance=await self._read_allowance(generated_at, allowance_decisions, account_labels),
+            allowance=await self._read_allowance(
+                generated_at, allowance_decisions, account_labels, transaction_details
+            ),
             dashboard_url=self._dashboard_url,
         )
 
@@ -339,11 +356,13 @@ class SpendService:
         labels: dict[str, str] = {}
         card_rows: list[asyncpg.Record] = []
         statement_decisions: dict[tuple[str, str], tuple[StatementReason, int]] = {}
+        details_by_key: dict[tuple[str, str], PlaidTransactionDetails] = {}
         view = await self.read_view(
             allowance_decisions=decisions,
             account_labels=labels,
             card_transactions=card_rows,
             statement_decisions=statement_decisions,
+            transaction_details=details_by_key,
         )
         today = view.generated_at.date()
         if window == "7d":
@@ -356,6 +375,8 @@ class SpendService:
         card_cycle_starts = {card.account_id: card.cycle_start for card in view.cards}
         card_ids = {card.account_id for card in self._configuration.cards if card.enabled}
         allowance_ids = self._configuration.allowance.spending_account_ids if self._configuration.allowance else set()
+        for row in card_rows:
+            details_by_key.setdefault((row["account_id"], row["transaction_id"]), _plaid_details(row["raw_json"]))
         labels.update({card.account_id: card.label for card in self._configuration.cards if card.enabled})
         rows: list[SpendTransactionRow] = []
         seen: set[tuple[str, str]] = set()
@@ -368,6 +389,7 @@ class SpendService:
                 return
             seen.add(key)
             statement = statement_decisions.get(key)
+            details = details_by_key.get(key, PlaidTransactionDetails())
             is_card = transaction.account_id in card_ids
             currency = transaction.currency or card_currencies.get(transaction.account_id) or "USD"
             card_cycle_start = card_cycle_starts.get(transaction.account_id)
@@ -404,6 +426,8 @@ class SpendService:
                     pfc_primary=transaction.pfc_primary,
                     pfc_detailed=transaction.pfc_detailed,
                     merchant_category_code=transaction.merchant_category_code,
+                    counterparties=transaction.counterparties or [],
+                    details=details,
                 )
             )
 
@@ -426,6 +450,7 @@ class SpendService:
                     pfc_detailed=row["pfc_detailed"],
                     currency=row["currency"],
                     merchant_category_code=row["merchant_category_code"],
+                    counterparties=row["counterparties"],
                 ),
                 None,
             )
@@ -439,6 +464,7 @@ class SpendService:
         now: datetime,
         decisions: list[TransactionDecision] | None = None,
         account_labels: dict[str, str] | None = None,
+        transaction_details: dict[tuple[str, str], PlaidTransactionDetails] | None = None,
     ) -> AllowanceView | None:
         policy = self._configuration.allowance
         if policy is None:
@@ -453,7 +479,10 @@ class SpendService:
             )
             synced = [_as_utc(row["last_synced_at"]) for row in accounts]
             if account_labels is not None:
-                account_labels.update({row["account_id"]: row["name"] for row in accounts})
+                for row in accounts:
+                    account_labels.setdefault(
+                        row["account_id"], self._configuration.account_labels.get(row["account_id"], row["name"])
+                    )
             last_synced = min((value for value in synced if value is not None), default=None)
             if (
                 len(accounts) != len(policy.spending_account_ids)
@@ -486,14 +515,15 @@ class SpendService:
                 )
             rows = []
             if policy.activation_at <= now.date():
+                raw_column = "t.raw_json," if transaction_details is not None else ""
                 rows = await connection.fetch(
-                    """SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
+                    f"""SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
                               t.date, t.amount, t.pending, t.name, t.merchant_name,
                               t.pfc_primary, t.pfc_detailed,
+                              {raw_column}
                               a.type AS account_type,
                               t.raw_json->>'merchant_category_code' AS merchant_category_code,
-                              CASE WHEN jsonb_typeof(t.raw_json->'counterparties') = 'array'
-                                   THEN (t.raw_json->'counterparties')::text ELSE '[]' END AS counterparties,
+                              {_COUNTERPARTIES_COLUMN},
                               COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency
                        FROM public.transactions t
                        JOIN public.accounts a ON a.account_id = t.account_id AND a.item_id = t.item_id
@@ -503,6 +533,10 @@ class SpendService:
                     list(policy.spending_account_ids),
                     min(policy.activation_at, (now - timedelta(days=29)).date()),
                     now.date(),
+                )
+            if transaction_details is not None:
+                transaction_details.update(
+                    {(row["account_id"], row["transaction_id"]): _plaid_details(row["raw_json"]) for row in rows}
                 )
         return calculate(
             policy,
@@ -584,3 +618,9 @@ def _as_utc(value: datetime | None) -> datetime | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _plaid_details(value: str | dict[str, object]) -> PlaidTransactionDetails:
+    """Parse documented Plaid fields from asyncpg's jsonb value."""
+    payload = json.loads(value, parse_float=Decimal) if isinstance(value, str) else value
+    return PlaidTransactionDetails.model_validate(payload)

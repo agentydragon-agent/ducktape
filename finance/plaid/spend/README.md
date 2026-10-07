@@ -35,7 +35,12 @@ and notification-backed event stream.
 - `GET /api/v1/transactions?window=30d` supplies the read-only Transactions tab; `window` also
   accepts `7d` and `cycle`. It returns recent rows from allowance accounts and configured cards, with
   the first matched policy rule, the calculator's allowance and pace contributions, and each card
-  row's statement-cycle contribution or exclusion reason. Account and transaction IDs are omitted.
+  row's statement-cycle contribution or exclusion reason. Each row exposes parsed Plaid
+  counterparties and named, typed Plaid Transactions fields in `details` for the authenticated
+  detail view. The details include Plaid account and transaction IDs and the original Plaid amount
+  in major currency units as a decimal string; calculated amounts in the compact row remain integer
+  minor units. Unknown source fields are omitted. The compact row uses configured display names
+  instead of identifiers.
   An unavailable allowance leaves classifications unavailable; an unavailable credit cycle falls
   back to a 30-day transaction window.
 
@@ -103,6 +108,11 @@ it from `/etc/plaid-spend/spend-policy.yaml`. Until the policy Secret exists, th
 a missing or invalid file fails application startup. Reloader restarts the Deployment after updating it;
 the process does not watch for mounted Secret updates. The spend database role can only read the
 four Plaid source tables needed to compute the view; it does not store or write this configuration.
+
+Each card's `label` is its short display name. For spending accounts that are not cards, an optional
+top-level `account_labels` mapping in the same private policy supplies short names keyed by Plaid
+account ID. A missing mapping falls back to the Plaid account name. Card IDs cannot also appear in
+`account_labels`, so each display name has one configured source.
 
 Allowance rules are evaluated in order; the first match determines the classification. `review`
 rules keep positive purchases in provisional spending and the unmatched total, while unverified

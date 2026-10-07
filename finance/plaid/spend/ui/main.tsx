@@ -706,6 +706,134 @@ function classificationForRow(row: TransactionRow): { label: string; color: stri
   return { label: "Unmatched", color: "orange" };
 }
 
+function CompactCounterparties({ counterparties }: { counterparties: TransactionRow["counterparties"] }) {
+  if (!counterparties?.length) return null;
+  return (
+    <Text size="xs" c="dimmed" lineClamp={1}>
+      Counterparties: {counterparties.map((counterparty) => counterparty.name || "Unnamed").join(", ")}
+    </Text>
+  );
+}
+
+type PlaidFieldValue = string | number | null | undefined;
+
+function hasSuppliedValue(value: unknown): boolean {
+  if (value == null || value === "") return false;
+  if (Array.isArray(value)) return value.some(hasSuppliedValue);
+  if (typeof value === "object") return Object.values(value).some(hasSuppliedValue);
+  return true;
+}
+
+function PlaidFieldGroup({ title, fields }: { title: string; fields: Array<[string, PlaidFieldValue]> }) {
+  const supplied = fields.filter(([, value]) => hasSuppliedValue(value));
+  if (supplied.length === 0) return null;
+  return (
+    <Stack gap="xs">
+      <Text size="sm" fw={650}>
+        {title}
+      </Text>
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+        {supplied.map(([label, value]) => (
+          <Text key={label} size="sm" style={{ overflowWrap: "anywhere" }}>
+            <strong>{label}:</strong> {value}
+          </Text>
+        ))}
+      </SimpleGrid>
+    </Stack>
+  );
+}
+
+function PlaidSourceFields({ row }: { row: TransactionRow }) {
+  const details = row.details;
+  return (
+    <Accordion variant="contained">
+      <Accordion.Item value="plaid-fields">
+        <Accordion.Control>Plaid source fields</Accordion.Control>
+        <Accordion.Panel>
+          <Text size="xs" c="dimmed" mb="sm">
+            Original amount and running balance are in major currency units. The table and allowance effects use integer
+            minor units.
+          </Text>
+          {hasSuppliedValue(details) ? (
+            <Stack gap="md">
+              <PlaidFieldGroup
+                title="Source and merchant"
+                fields={[
+                  ["Plaid amount (major units)", details?.amount],
+                  ["ISO currency code", details?.iso_currency_code],
+                  ["Unofficial currency code", details?.unofficial_currency_code],
+                  ["Original description", details?.original_description],
+                  ["Plaid account ID", details?.account_id],
+                  ["Plaid transaction ID", details?.transaction_id],
+                  ["Pending transaction ID", details?.pending_transaction_id],
+                  ["Account owner", details?.account_owner],
+                  ["Check number", details?.check_number],
+                  ["Payment channel", details?.payment_channel],
+                  ["Transaction type", details?.transaction_type],
+                  ["Transaction code", details?.transaction_code],
+                  ["Merchant entity ID", details?.merchant_entity_id],
+                  ["Website", details?.website],
+                  ["Logo URL", details?.logo_url],
+                  ["Category icon URL", details?.personal_finance_category_icon_url],
+                  ["Running balance (major units)", details?.running_balance],
+                  ["Custom entity ID", details?.client_customization?.custom_entity_id],
+                ]}
+              />
+              <PlaidFieldGroup
+                title="Timing and categories"
+                fields={[
+                  ["Authorized date", details?.authorized_date],
+                  ["Authorized time", details?.authorized_datetime],
+                  ["Posted time", details?.datetime],
+                  ["Personal category", details?.personal_finance_category?.primary],
+                  ["Personal detail", details?.personal_finance_category?.detailed],
+                  ["Personal category confidence", details?.personal_finance_category?.confidence_level],
+                  ["Personal category version", details?.personal_finance_category?.version],
+                  ["Business category", details?.business_finance_category?.primary],
+                  ["Business detail", details?.business_finance_category?.detailed],
+                  ["Business category confidence", details?.business_finance_category?.confidence_level],
+                  ["Legacy categories", details?.category?.join(" / ")],
+                  ["Legacy category ID", details?.category_id],
+                ]}
+              />
+              <PlaidFieldGroup
+                title="Location"
+                fields={[
+                  ["Address", details?.location?.address],
+                  ["City", details?.location?.city],
+                  ["Region", details?.location?.region],
+                  ["Postal code", details?.location?.postal_code],
+                  ["Country", details?.location?.country],
+                  ["Latitude", details?.location?.lat],
+                  ["Longitude", details?.location?.lon],
+                  ["Store number", details?.location?.store_number],
+                ]}
+              />
+              <PlaidFieldGroup
+                title="Transfer metadata"
+                fields={[
+                  ["Reference number", details?.payment_meta?.reference_number],
+                  ["PPD ID", details?.payment_meta?.ppd_id],
+                  ["Payee", details?.payment_meta?.payee],
+                  ["By order of", details?.payment_meta?.by_order_of],
+                  ["Payer", details?.payment_meta?.payer],
+                  ["Payment method", details?.payment_meta?.payment_method],
+                  ["Payment processor", details?.payment_meta?.payment_processor],
+                  ["Reason", details?.payment_meta?.reason],
+                ]}
+              />
+            </Stack>
+          ) : (
+            <Text size="sm" c="dimmed">
+              No additional Plaid fields supplied.
+            </Text>
+          )}
+        </Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
+  );
+}
+
 function TransactionDetails({ row, currency }: { row: TransactionRow; currency: string }) {
   const m = (value: number | null | undefined) => <Money value={value} currency={currency} />;
   return (
@@ -761,6 +889,30 @@ function TransactionDetails({ row, currency }: { row: TransactionRow; currency: 
         {row.pfc_detailed || row.pfc_primary || "Unknown"} · merchant category code:{" "}
         {row.merchant_category_code || "Unknown"}
       </Text>
+      {(row.counterparties?.length ?? 0) > 0 && (
+        <Stack gap={2}>
+          <Text size="sm" fw={650}>
+            Plaid counterparties
+          </Text>
+          {row.counterparties?.map((counterparty, index) => (
+            <PlaidFieldGroup
+              key={index}
+              title={`${counterparty.name || "Unnamed"} · ${counterparty.type || "Unknown type"}`}
+              fields={[
+                ["Confidence", counterparty.confidence_level],
+                ["Entity ID", counterparty.entity_id],
+                ["Website", counterparty.website],
+                ["Logo URL", counterparty.logo_url],
+                ["Bacs account", counterparty.account_numbers?.bacs?.account],
+                ["Bacs sort code", counterparty.account_numbers?.bacs?.sort_code],
+                ["IBAN", counterparty.account_numbers?.international?.iban],
+                ["BIC", counterparty.account_numbers?.international?.bic],
+              ]}
+            />
+          ))}
+        </Stack>
+      )}
+      <PlaidSourceFields row={row} />
     </Stack>
   );
 }
@@ -934,9 +1086,12 @@ function TransactionsPanel({
                           <Table.Td style={{ whiteSpace: "nowrap" }}>{row.date}</Table.Td>
                           <Table.Td>
                             <Group gap="xs" wrap="nowrap">
-                              <Text size="sm" fw={650} style={{ overflowWrap: "anywhere" }}>
-                                {row.merchant_name || row.name}
-                              </Text>
+                              <Stack gap={0} miw={0}>
+                                <Text size="sm" fw={650} style={{ overflowWrap: "anywhere" }}>
+                                  {row.merchant_name || row.name}
+                                </Text>
+                                <CompactCounterparties counterparties={row.counterparties} />
+                              </Stack>
                               {row.pending && (
                                 <Badge size="xs" variant="light" color="yellow">
                                   Pending
@@ -994,6 +1149,7 @@ function TransactionsPanel({
                           <Text fw={650} size="sm" style={{ overflowWrap: "anywhere" }}>
                             {row.merchant_name || row.name}
                           </Text>
+                          <CompactCounterparties counterparties={row.counterparties} />
                           <Group gap="xs">
                             <Text size="xs" c="dimmed">
                               {row.date} · {row.account_label}
