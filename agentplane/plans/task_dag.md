@@ -106,7 +106,7 @@ flowchart TB
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
     THREAD_OPEN_RELOAD_RECOVERY["Open recovery follow-up<br/>runner committed but mapping absent<br/>safe reload reconciliation"]:::future
-    BOOTSTRAP_PROGRESS_CONTRACT["Design decision<br/>durable bootstrap start/progress/result<br/>no HTTP-held script execution"]:::decision
+    BOOTSTRAP_PROGRESS_CONTRACT["Planned contract<br/>one bootstrap attempt with durable progress/result<br/>no HTTP-held script execution"]:::future
     SANDBOX_CREATE_RECONCILE["Lifecycle acceptance<br/>lost Create reply and partial grants<br/>current UID, no deleted-object tombstone"]:::future
     COMMAND_DISPATCHED_EVENT["Missing observation<br/>runner handed the command to the harness<br/>journal-only today; needs an Event"]:::future
     SUBMISSION_STAGE_INDICATOR["Planned UI<br/>staged submission indicator<br/>which of five stages, not two strings"]:::future
@@ -597,16 +597,21 @@ script identity, ordered output, and result, but Sandbox Service has no independ
 authorized bootstrap start/status/progress API. Thus the Open RPC can remain open
 for the duration of a long script despite no longer waiting for the app archive.
 
-**Design decision:** specify when a durable start receipt is safe, how the caller
-reads or follows scoped progress and terminal success/failure (including after
-restart/reconnect), and whether successful bootstrap must remain a precondition
-of opening a session. Keep status reads separate from starting another attempt: today
-`Initialize` replays success but a later identical call re-executes a failed or
-interrupted script. Decide how an explicit, versioned retry works without a timeout,
-reconciler restart, or read silently causing side effects. Preserve script identity
-and separate the configured launch/RPC deadlines from the acceptance promise.
-Implementation comes after the contract is agreed; `THREAD_SETUP_PROGRESS` is the
-separate UI presentation work.
+**Decided invariant: one bootstrap attempt per Sandbox, never a retry mechanism.**
+Today `Initialize` replays success but an identical later call re-executes a failed
+or interrupted script; change that behavior before an asynchronous reconciler can
+call it safely. A repeat must report the retained result/state, including failure or
+interruption, without launching another process. On runner restart, persist an honest
+interrupted/unknown outcome for an attempt that has no terminal result; do not invent
+success/failure or restart it. To run a different initialization, create a distinct
+Sandbox rather than retrying inside the old one. Pin tests for failure, lost response,
+reconnect, and runner restart.
+
+Specify a durable start receipt and scoped progress/result reads or feed without
+making Open wait for the script; keep successful bootstrap as an Open precondition
+unless a separately reviewed contract changes that. Separate the configured
+launch/RPC deadlines from the acceptance promise. `THREAD_SETUP_PROGRESS` is
+separate UI presentation work; per-session setup is not this Sandbox initialization.
 
 ### `SANDBOX_CREATE_RECONCILE` — lost lifecycle response and partial provisioning
 
