@@ -336,15 +336,11 @@ filegroup(
 py_visual_test(
     name = "visual",
     size = "small",
-    args = [
-        "-vv",
-        "--setup-show",
-    ],
+    args = ["-vv"],
     assets = [
         "harness/index.html",
         ":visual_harness_css",
     ],
-    env = {"DEBUG": "pw:api,pw:browser"},
     harness = ":visual_harness_js",
     shard_count = 2,
     test_deps = [
