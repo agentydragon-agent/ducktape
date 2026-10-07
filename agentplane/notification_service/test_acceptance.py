@@ -240,9 +240,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         await model.reply(initial, Text("Initial work complete"))
                     notice_request = await model.request()
                     notices = [
-                        text
-                        for text in notice_request.user_texts
-                        if text.startswith("Agentplane inbox notice: ")
+                        text for text in notice_request.user_texts if text.startswith("Agentplane inbox notice: ")
                     ]
                     assert len(notices) == 1
                     hint = json.loads(notices[0].removeprefix("Agentplane inbox notice: "))
