@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
+import { create } from "@bufbuild/protobuf";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, threadObservations, displayableError, httpError } from "./client";
+import { CommandSchema } from "../../protocol/command_pb";
+
+import { api, command, CommandSubmissionRefused, threadObservations, displayableError, httpError } from "./client";
 import { restoreRouteAfterLogin } from "./operator_login";
 
 afterEach(() => {
@@ -71,4 +74,29 @@ it("on a 401 sends the browser to log in once and never hands the response back 
   const afterLogin = { hash: "" };
   restoreRouteAfterLogin(afterLogin);
   expect(afterLogin.hash).toBe("#/mcp-servers");
+});
+
+const input = create(CommandSchema, {
+  commandId: "immutable-command",
+  operation: { case: "submitInput", value: { text: "keep this input" } },
+});
+
+it.each([504, 502, 408, 429])("treats HTTP %i without a command receipt as unconfirmed", async (status) => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "deadline" }, { status })));
+  await expect(command("thread", input)).rejects.toThrow("Command admission unconfirmed");
+});
+
+it.each([409, 422, 403])("recognizes explicit HTTP %i command rejection", async (status) => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "refused" }, { status })));
+  await expect(command("thread", input)).rejects.toBeInstanceOf(CommandSubmissionRefused);
+});
+
+it("treats a lost transport reply as unconfirmed without changing the submitted command", async () => {
+  const fetch = vi.fn(async (_request: Request) => {
+    throw new TypeError("connection lost");
+  });
+  vi.stubGlobal("fetch", fetch);
+  await expect(command("thread", input)).rejects.toThrow("Command admission unconfirmed");
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(await fetch.mock.calls[0][0].json()).toMatchObject({ commandId: input.commandId });
 });
