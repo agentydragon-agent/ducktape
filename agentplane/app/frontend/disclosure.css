@@ -1,11 +1,53 @@
-/* TODO: Reduce accumulated padding, borders, and heading chrome in nested disclosures, especially
-   short outputs on phones, while preserving usable touch targets. */
 .agentplane-disclosure {
   min-width: 0;
 }
 
 .agentplane-disclosure-item {
   min-width: 0;
+  /* Each disclosure is a singleton accordion; its card owns the group boundary. */
+  border-bottom: 0;
+}
+
+/* The card and its first control share an edge. Keep the control itself clickable through the
+   card's padding, rather than painting a larger hover area around a smaller hit target. */
+.agentplane-collapsible-card {
+  position: relative;
+  --agentplane-card-padding-inline: 0px;
+  --agentplane-card-padding-block: 0px;
+  padding-inline: var(--agentplane-card-padding-inline);
+  padding-block: var(--agentplane-card-padding-block);
+}
+
+.agentplane-collapsible-card[data-open="true"] {
+  --agentplane-card-padding-inline: var(--mantine-spacing-xs);
+}
+
+.agentplane-collapsible-card[data-stable-inline-size] {
+  /* Reserve the border inside the existing padding budget, keeping both the content width and
+     the border stable while the heading paints to its edge. An inset shadow is covered by it. */
+  --agentplane-card-padding-inline: calc(var(--mantine-spacing-xs) - 1px);
+  --agentplane-card-padding-block: 0px;
+  border: 1px solid transparent;
+}
+
+.agentplane-collapsible-card[data-stable-inline-size][data-open="true"] {
+  border-color: var(--mantine-color-default-border);
+}
+
+.agentplane-collapsible-card > .agentplane-disclosure,
+.agentplane-collapsible-card > .agentplane-step-row > .agentplane-disclosure {
+  --agentplane-disclosure-edge-inline: var(--agentplane-card-padding-inline);
+  --agentplane-disclosure-edge-divider: 0px;
+}
+
+/* Evidence toggles are absolutely positioned; recovery notes and other preceding content are not.
+   Only a heading at the top of the card should reach its rounded top corners. */
+.agentplane-collapsible-card > .agentplane-disclosure:nth-child(1 of :not(.agentplane-evidence-toggle)),
+.agentplane-collapsible-card
+  > .agentplane-step-row:nth-child(1 of :not(.agentplane-evidence-toggle))
+  > .agentplane-disclosure {
+  --agentplane-disclosure-edge-top: var(--agentplane-card-padding-block);
+  --agentplane-disclosure-edge-radius: var(--paper-radius, var(--mantine-radius-default));
 }
 
 .agentplane-disclosure-heading {
@@ -16,6 +58,10 @@
   min-width: 0;
   align-items: center;
   background: var(--mantine-color-body);
+  margin-inline: calc(0px - var(--agentplane-disclosure-edge-inline, 0px));
+  margin-block-start: calc(0px - var(--agentplane-disclosure-edge-top, 0px));
+  border-start-start-radius: var(--agentplane-disclosure-edge-radius, 0px);
+  border-start-end-radius: var(--agentplane-disclosure-edge-radius, 0px);
 }
 
 .agentplane-disclosure-summary {
@@ -25,6 +71,9 @@
   flex: 1 1 0;
   min-height: 2.75rem;
   padding-block: 0;
+  padding-inline: var(--agentplane-disclosure-edge-inline, var(--mantine-spacing-xs));
+  border-start-start-radius: inherit;
+  border-start-end-radius: inherit;
 }
 
 .agentplane-clamped-disclosure-action {
@@ -94,4 +143,42 @@
 .agentplane-disclosure-content {
   min-width: 0;
   overflow: visible;
+}
+
+.agentplane-disclosure-panel {
+  --agentplane-disclosure-edge-inline: 0px;
+  --agentplane-disclosure-edge-top: 0px;
+  --agentplane-disclosure-edge-radius: 0px;
+  --agentplane-disclosure-edge-divider: initial;
+}
+
+/* Panels own vertical spacing; cards own their horizontal inset. Standalone disclosures retain
+   one panel inset, without adding another inset inside an already padded card. */
+.agentplane-disclosure-content {
+  padding: var(--mantine-spacing-xs);
+}
+
+.agentplane-collapsible-card
+  > .agentplane-disclosure
+  > .agentplane-disclosure-item
+  > .agentplane-disclosure-panel
+  > .agentplane-disclosure-content,
+.agentplane-collapsible-card
+  > .agentplane-step-row
+  > .agentplane-disclosure
+  > .agentplane-disclosure-item
+  > .agentplane-disclosure-panel
+  > .agentplane-disclosure-content {
+  padding-inline: 0;
+}
+
+/* A card panel has no additional inline padding. Its immediate nested heading therefore only
+   crosses the card inset; deeper panels reset this variable and retain their own inset. */
+.agentplane-collapsible-card > .agentplane-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-panel,
+.agentplane-collapsible-card
+  > .agentplane-step-row
+  > .agentplane-disclosure
+  > .agentplane-disclosure-item
+  > .agentplane-disclosure-panel {
+  --agentplane-disclosure-edge-divider: var(--agentplane-card-padding-inline);
 }

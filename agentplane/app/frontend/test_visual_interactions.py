@@ -6,9 +6,11 @@ assertion for a real UI behavior, then uses the shared visual capture and review
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
+from textwrap import dedent
 
 import pytest
 import pytest_asyncio
@@ -110,6 +112,157 @@ async def _open_run(page: Page) -> None:
     )
     await run.click()
     await expect(page.locator(".agentplane-step-details").first).to_be_visible()
+
+
+async def _rollout_start(page: Page) -> None:
+    history = page.get_by_role("region", name="Thread history")
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await history.evaluate("element => { element.scrollTop = 0; }")
+    await wait_for_stable(page)
+    await _rollout_geometry(page, "overview")
+
+
+async def _rollout_geometry(page: Page, state: str) -> None:
+    scene = await page.evaluate("new URL(location.href).searchParams.get('page')")
+    geometry = await page.evaluate(
+        dedent("""() => {
+      const box = element => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
+          clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
+          scrollLeft: element.scrollLeft, paddingLeft: style.paddingLeft, paddingRight: style.paddingRight };
+      };
+      const history = document.querySelector('[aria-label="Thread history"]');
+      return {
+        shell: box(document.querySelector('.agentplane-shell-main-content')),
+        history: box(history),
+        rows: [...history.querySelectorAll('[data-thread-anchor]')].map(box)
+      };
+    }""")
+    )
+    (undeclared_outputs_dir() / f"{scene}-{state}-geometry.json").write_text(json.dumps(geometry, indent=2))
+
+
+@pytest.mark.parametrize(
+    "scene",
+    [
+        "realistic_rollout_desktop",
+        "realistic_rollout_desktop_dark",
+        "realistic_rollout_mobile",
+        "reported_rollout_desktop",
+    ],
+)
+async def test_realistic_rollout_overview(
+    scene: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    await _capture(
+        scene,
+        _rollout_start,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name=f"{scene.replace('_', '-')}-overview",
+    )
+
+
+@pytest.mark.parametrize(
+    "scene",
+    [
+        "realistic_rollout_desktop",
+        "realistic_rollout_desktop_dark",
+        "realistic_rollout_mobile",
+        "reported_rollout_desktop",
+    ],
+)
+@pytest.mark.parametrize("position", ["start", "end"])
+async def test_realistic_rollout_run(
+    scene: str, position: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        await _rollout_start(page)
+        await _open_run(page)
+        steps = page.locator(".agentplane-run-steps").first
+        if position == "start":
+            static_title = await steps.locator(".agentplane-step-static .agentplane-step-title").first.bounding_box()
+            disclosure_title = await steps.locator(
+                ".agentplane-step-details .agentplane-step-title"
+            ).first.bounding_box()
+            assert static_title is not None
+            assert disclosure_title is not None
+            assert abs(static_title["x"] - disclosure_title["x"]) <= 1, "plain and expandable steps must align"
+        target = steps.locator(":scope > *").first if position == "start" else steps.locator(":scope > *").last
+        await _focus(page, target)
+        await target.hover()
+        await _rollout_geometry(page, f"run-{position}")
+
+    await _capture(
+        scene,
+        drive,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name=f"{scene.replace('_', '-')}-run-{position}",
+    )
+
+
+@pytest.mark.parametrize("viewport", ["desktop", "mobile"])
+@pytest.mark.parametrize("expanded_output", [False, True], ids=["call", "output-scrolled"])
+async def test_realistic_rollout_call(
+    viewport: str,
+    expanded_output: bool,
+    scenes: dict[str, Scenario],
+    playwright_driver: Playwright,
+    sweep_config: SweepConfig,
+) -> None:
+    async def drive(page: Page) -> None:
+        await _rollout_start(page)
+        await _open_run(page)
+        call = (
+            page.locator(".agentplane-run-steps .agentplane-step-details")
+            .filter(has=page.locator(".agentplane-step-title:text-is('Shell')"))
+            .nth(1)
+        )
+        await call.locator(".agentplane-disclosure-summary").first.click()
+        output = call.locator(".agentplane-clamped-block[data-label='Output']")
+        await expect(output).to_be_attached()
+        heading = call.locator(
+            ".agentplane-output-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-heading"
+        )
+        divider_edges = await heading.evaluate(
+            dedent("""element => {
+                const heading = element.getBoundingClientRect();
+                const divider = getComputedStyle(element, '::after');
+                const card = element.closest('.agentplane-collapsible-card').getBoundingClientRect();
+                return [heading.left + parseFloat(divider.left) - card.left,
+                        card.right - heading.right + parseFloat(divider.right)];
+            }""")
+        )
+        assert all(abs(edge) <= 1 for edge in divider_edges), f"output divider escaped its card: {divider_edges}"
+        if expanded_output:
+            await _focus(page, output)
+            await output.get_by_role("button", name=re.compile(r"^Show all")).click()
+            await expect(output).to_have_attribute("data-expanded", "true")
+            await output.evaluate(
+                dedent("""element => {
+                  const history = element.closest('[aria-label="Thread history"]');
+                  history.scrollTop += element.getBoundingClientRect().top - history.getBoundingClientRect().top + 300;
+                }""")
+            )
+            await wait_for_stable(page)
+            await expect(call.locator(".agentplane-output-label")).to_be_in_viewport()
+        else:
+            await _focus(page, call.locator(".agentplane-clamped-block[data-label='Command']"))
+        await page.mouse.move(0, 0)
+
+    await _capture(
+        f"realistic_rollout_{viewport}",
+        drive,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name=f"realistic-rollout-{viewport}-{'output-scrolled' if expanded_output else 'call'}",
+    )
 
 
 async def _open_recovery_details(page: Page) -> None:
@@ -1072,6 +1225,76 @@ async def test_open_tool_calls_and_output(
             await expect(page.locator("[data-clamped='true']").first).to_be_attached()
 
     await _capture(scene, drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config)
+
+
+@pytest.mark.parametrize(
+    ("scene", "viewport_name"), [("session_shell_calls_open", "desktop"), ("session_shell_calls_open_phone", "phone")]
+)
+@pytest.mark.parametrize("state", ["collapsed-hover", "expanded-hover", "tool-hover", "expanded-focus"])
+async def test_disclosure_control_reaches_card_edges(
+    scene: str,
+    viewport_name: str,
+    state: str,
+    scenes: dict[str, Scenario],
+    playwright_driver: Playwright,
+    sweep_config: SweepConfig,
+) -> None:
+    async def drive(page: Page) -> None:
+        if state != "collapsed-hover":
+            await _open_tool_run(page)
+        if state == "tool-hover":
+            control = (
+                page.locator(".agentplane-step-details")
+                .filter(has=page.locator(".agentplane-step-title:text-is('Bash')"))
+                .locator(".agentplane-disclosure-summary")
+                .first
+            )
+        else:
+            control = page.locator(".agentplane-disclosure-summary").filter(has_text="tool calls").first
+        if state == "tool-hover":
+            await _focus(page, control)
+        else:
+            # A sticky control can already be visible while its card's top is far above the
+            # viewport. Show the card's real rounded corners for this coverage check and capture.
+            await page.locator('[aria-label="Thread history"]').evaluate("el => { el.scrollTop = 0; }")
+            await wait_for_stable(page)
+            await _in_viewport(control)
+        card = control.locator("xpath=ancestor::*[@data-open][1]")
+        control_box = await control.bounding_box()
+        card_box = await card.bounding_box()
+        assert control_box is not None
+        assert card_box is not None
+        # Allow the card's one-pixel border. The top and both sides belong to the actual control,
+        # including the area that used to be inert padding around its rectangular hover fill.
+        assert abs(control_box["x"] - card_box["x"]) <= 1
+        assert abs(control_box["y"] - card_box["y"]) <= 1
+        assert abs(control_box["x"] + control_box["width"] - card_box["x"] - card_box["width"]) <= 1
+        assert await control.evaluate("el => parseFloat(getComputedStyle(el).borderTopLeftRadius)") > 0
+        assert await control.evaluate(
+            """el => {
+                const r = el.getBoundingClientRect();
+                return [[r.x + 5, r.y + 2], [r.right - 5, r.y + 2]].every(([x, y]) =>
+                    el.contains(document.elementFromPoint(x, y)));
+            }"""
+        )
+        if state == "expanded-focus":
+            await control.focus()
+            await page.keyboard.press("Tab")
+            await page.keyboard.press("Shift+Tab")
+            await expect(control).to_be_focused()
+            assert await control.evaluate("el => el.matches(':focus-visible')")
+        else:
+            await control.hover(position={"x": 5, "y": 2})
+            assert await control.evaluate("el => el.matches(':hover')")
+
+    await _capture(
+        scene,
+        drive,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name=f"disclosure-{state}-{viewport_name}",
+    )
 
 
 @pytest.mark.parametrize(
