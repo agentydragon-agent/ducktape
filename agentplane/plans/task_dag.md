@@ -30,7 +30,7 @@ Proposed execution order for the Thread correctness/UI track:
 - **Targeted hosted Haku acceptance:** verify a fresh Haku Thread has its per-Thread
   checkout (`THREAD_WORKSPACE_BOOTSTRAP`, [#8695](https://github.com/agentydragon/ducktape/issues/8695)).
   This no longer gates the rest of the Thread correctness work.
-- **P1, remaining compaction correctness check:** verify the *runner-constructed* standing
+- **P1, remaining compaction correctness check:** verify the _runner-constructed_ standing
   instructions survive native compaction and resume (`HARNESS_COMPACTION_RUNNER_PROOF`).
   Native Claude/Codex compaction and post-compaction model-request probes are covered; the
   runner's actual initialization/inbox guidance still needs its own acceptance. Automatic
@@ -845,7 +845,7 @@ making notices terse in `NOTIFICATION_COMPACT_NOTICES`.
 
 **P1 remaining acceptance:** use the runner's real initialization/standing-instruction path
 for Claude and Codex, not just an isolated harness test prompt. Force native compaction,
-then assert on the first *ordinary* model request after it and again after resume that the
+then assert on the first _ordinary_ model request after it and again after resume that the
 Agentplane instructions, including inbox retrieval and explicit contiguous-prefix acknowledgement,
 are present. Exercise a short inbox hint in a continued turn so the model has the guidance
 needed to act on it; if it is lost, specify and test reinjection/fallback. Reuse the native
