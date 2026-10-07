@@ -708,19 +708,20 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
           last_id: noisySessionEvents.at(-1)?.event_id,
         })
       );
-    const events = fixture === "file-result"
-      ? readFileEventPage
-      : fixture === "tool-result"
-        ? toolResultEventPage
-        : fixture === "subagent"
-          ? subagentEventPage
-          : fixture === "peer-message"
-            ? peerMessageEventPage
-            : fixture === "peer-hold"
-              ? peerHoldEventPage
-              : fixture === "local-commands"
-                ? localCommandEventPage
-                : eventPage;
+    const events =
+      fixture === "file-result"
+        ? readFileEventPage
+        : fixture === "tool-result"
+          ? toolResultEventPage
+          : fixture === "subagent"
+            ? subagentEventPage
+            : fixture === "peer-message"
+              ? peerMessageEventPage
+              : fixture === "peer-hold"
+                ? peerHoldEventPage
+                : fixture === "local-commands"
+                  ? localCommandEventPage
+                  : eventPage;
     return Promise.resolve(json(events));
   }
   return Promise.reject(new Error(`Unmocked session sync request: ${url.pathname}`));
@@ -731,7 +732,25 @@ window.fetch = mockFetch;
 const root = document.getElementById("app");
 if (!root) throw new Error("Visual test harness is missing #app");
 const fixture = new URLSearchParams(window.location.search).get("page");
-if (!["sync-paired", "sync", "markdown", "history", "completed-activity", "narration", "sidebar", "noisy", "file-result", "tool-result", "subagent", "peer-message", "peer-hold", "local-commands", "viewer"].includes(fixture ?? "")) {
+if (
+  ![
+    "sync-paired",
+    "sync",
+    "markdown",
+    "history",
+    "completed-activity",
+    "narration",
+    "sidebar",
+    "noisy",
+    "file-result",
+    "tool-result",
+    "subagent",
+    "peer-message",
+    "peer-hold",
+    "local-commands",
+    "viewer",
+  ].includes(fixture ?? "")
+) {
   throw new Error(`Unknown session fixture ${fixture}`);
 }
 try {
