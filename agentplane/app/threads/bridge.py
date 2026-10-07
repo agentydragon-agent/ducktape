@@ -43,12 +43,7 @@ class NewSession(BaseModel):
 
 class RunnerBridge:
     def __init__(
-        self,
-        *,
-        runners: SandboxSessions,
-        event_logs: EventLogStore,
-        content: ContentStore,
-        ingester: Ingester,
+        self, *, runners: SandboxSessions, event_logs: EventLogStore, content: ContentStore, ingester: Ingester
     ) -> None:
         self._runners = runners
         self._event_logs = event_logs

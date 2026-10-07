@@ -177,12 +177,7 @@ async def app_url(
     server is real because SSE needs a response that streams, which an in-process ASGI transport
     would buffer."""
     ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
-    bridge = RunnerBridge(
-        runners=local_runners,
-        event_logs=event_logs,
-        content=content,
-        ingester=ingester,
-    )
+    bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=ingester)
     app = create_app(
         inventory,
         bridge,
@@ -1145,12 +1140,7 @@ async def replicas(
     survivor_ingester = Ingester(
         runners=survivor_runners, event_logs=survivor_event_logs, ingestion=Ingestion(replica_engine)
     )
-    owner = RunnerBridge(
-        runners=local_runners,
-        event_logs=event_logs,
-        content=content,
-        ingester=owner_ingester,
-    )
+    owner = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=owner_ingester)
     survivor = RunnerBridge(
         runners=survivor_runners,
         event_logs=survivor_event_logs,
@@ -1507,12 +1497,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
 
     del live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX]
     offline_ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
-    offline = RunnerBridge(
-        runners=local_runners,
-        event_logs=event_logs,
-        content=content,
-        ingester=offline_ingester,
-    )
+    offline = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=offline_ingester)
     try:
         # A lost HTTP response is retryable from the committed Thread prefix even after the
         # sandbox disappears: this answer must not attempt a new runner attachment, which with the

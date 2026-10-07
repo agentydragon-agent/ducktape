@@ -228,12 +228,7 @@ def bridge(
     ingester: Ingester,
     database_updates: DatabaseUpdates,
 ) -> RunnerBridge:
-    return RunnerBridge(
-        runners=runners,
-        event_logs=event_logs,
-        content=content,
-        ingester=ingester,
-    )
+    return RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
 
 
 @pytest.fixture

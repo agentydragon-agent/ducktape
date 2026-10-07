@@ -675,12 +675,7 @@ async def test_a_runner_that_never_answers_open_is_a_504_and_releases_its_stream
             ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
             app = create_app(
                 inventory,
-                RunnerBridge(
-                    runners=runners,
-                    event_logs=event_logs,
-                    content=content,
-                    ingester=ingester,
-                ),
+                RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester),
                 store,
                 TEST_MODELS,
                 egress,

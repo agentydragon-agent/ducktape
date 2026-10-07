@@ -632,8 +632,9 @@ export function SandboxPage({
             {pendingOpen && (
               <Stack gap="xs">
                 <Text size="sm" role="status">
-                  Open for {pendingOpen.sessionId} may have succeeded. Do not start another session until you have checked
-                  this attempt. {pendingOpen.spec
+                  Open for {pendingOpen.sessionId} may have succeeded. Do not start another session until you have
+                  checked this attempt.{" "}
+                  {pendingOpen.spec
                     ? "Retry sends the same ID, specification, and setup script, even if you edit the form."
                     : "After a reload the original specification and setup script are unavailable; only the ID was saved."}
                 </Text>

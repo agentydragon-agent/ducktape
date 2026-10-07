@@ -309,12 +309,7 @@ async def async_main(settings: Settings) -> None:
         content = ContentStore(engine)
         runners = SandboxSessions(live, inventory)
         ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine))
-        bridge = RunnerBridge(
-            runners=runners,
-            event_logs=event_logs,
-            content=content,
-            ingester=ingester,
-        )
+        bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
 
         operator_actions = (
             FederatedOperatorActions(settings.action_federation, oidc, actions_http)
