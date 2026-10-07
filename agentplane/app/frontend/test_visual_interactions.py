@@ -741,6 +741,38 @@ async def test_mobile_drawer_covers_thread_controls(
     )
 
 
+async def test_mobile_drawer_covers_jump_to_latest(
+    scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        history = page.locator("[aria-label='Thread history']")
+        await expect(history).to_have_attribute("data-layout-settled", "true")
+        await history.evaluate("element => { element.scrollTop = 0; }")
+        jump = page.get_by_role("button", name="Jump to latest")
+        await expect(jump).to_be_visible()
+        point = await jump.bounding_box()
+        assert point is not None
+        await page.get_by_role("button", name="Toggle navigation").click()
+        await expect(page.locator(".agentplane-sidebar-open")).to_be_visible()
+        # Probe where the actual high-z floating button was painted, not an arbitrary
+        # uncovered patch of the drawer.
+        assert await page.evaluate(
+            """point => {
+            const top = document.elementFromPoint(point.x + point.width / 2, point.y + point.height / 2);
+            return top?.closest('.agentplane-sidebar-open') === document.querySelector('.agentplane-sidebar-open');
+        }""",
+            point,
+        )
+
+    await _capture(
+        "session_phone_drawer_over_active_thread",
+        drive,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+    )
+
+
 async def test_disconnected_threads_tooltip(
     scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
 ) -> None:
