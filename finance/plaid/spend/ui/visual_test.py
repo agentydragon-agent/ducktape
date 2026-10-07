@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,8 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from playwright.async_api import Page, Route
 
+from finance.plaid.spend.allowance import AllOf, AmountSign, AnyOf, FieldExact, Kind, NamePrefix, Rule
+from finance.plaid.spend.models import AllowanceConfigurationView, CardConfigurationView, SpendConfigurationView
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.visual_review import retain_review_asset
@@ -139,6 +142,41 @@ def dashboard_url() -> Iterator[str]:
 
         return StreamingResponse(updates(), media_type="text/event-stream")
 
+    @app.get("/api/v1/web/configuration", response_model=SpendConfigurationView)
+    def configuration() -> SpendConfigurationView:
+        return SpendConfigurationView(
+            cards=[
+                CardConfigurationView(
+                    label="Example card", enabled=True, limit_minor_units=None, alert_threshold_percent=None
+                )
+            ],
+            allowance=AllowanceConfigurationView(
+                monthly_minor_units=70000,
+                activation_at=date(2026, 10, 1),
+                currency="USD",
+                spending_account_count=1,
+                max_sync_age_hours=72,
+                rules=[
+                    Rule(
+                        condition=AllOf(
+                            conditions=[
+                                AmountSign(sign="negative"),
+                                AnyOf(
+                                    conditions=[
+                                        NamePrefix(field="name", prefix="EXAMPLE"),
+                                        FieldExact(field="merchant_category_code", value="5812"),
+                                    ]
+                                ),
+                            ]
+                        ),
+                        kind=Kind.REVIEW,
+                        analysis_category="refund_review",
+                        description="Unverified credit; inspect the earlier purchase before netting it.",
+                    )
+                ],
+            ),
+        )
+
     app.mount("/static", StaticFiles(directory=_UI_DIR))
     with serve_app_sync(app) as url:
         yield url
@@ -206,6 +244,25 @@ async def test_new_allowance_has_no_fake_zero_pace(page: Page, dashboard_url: st
     image = tmp_path / "dashboard-warmup.png"
     await page.screenshot(path=str(image), full_page=True, animations="disabled")
     retain_review_asset(image, title="Spend decisions", label="New allowance warming up", name=image.name)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_review_rule_configuration_render(
+    page: Page, dashboard_url: str, width: int, height: int, tmp_path: Path
+) -> None:
+    errors: list[str] = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await page.get_by_role("tab", name="Configuration").click()
+    await page.get_by_text("Unverified credit; inspect the earlier purchase before netting it.").wait_for()
+    assert await page.get_by_text("Review", exact=True).count() == 1
+    assert await page.get_by_text("Amount is negative AND (Transaction name starts with", exact=False).count() == 1
+    assert not errors
+    image = tmp_path / f"configuration-review-{width}.png"
+    await page.screenshot(path=str(image), full_page=True, animations="disabled")
+    retain_review_asset(image, title="Spend configuration", label=f"{width}px review rule", name=image.name)
 
 
 if __name__ == "__main__":

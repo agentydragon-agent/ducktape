@@ -29,6 +29,14 @@ type CardView = components["schemas"]["CardView"];
 type View = components["schemas"]["SpendView"];
 type SpendConfiguration = components["schemas"]["SpendConfigurationView"];
 type RuleCondition = components["schemas"]["Rule"]["condition"];
+type RuleKind = components["schemas"]["Rule"]["kind"];
+
+const ruleKindDisplay = {
+  fixed: { label: "Mandatory", color: "blue" },
+  excluded: { label: "Excluded", color: "gray" },
+  review: { label: "Review", color: "orange" },
+  flexible: { label: "Flexible", color: "teal" },
+} satisfies Record<RuleKind, { label: string; color: string }>;
 
 function money(value: number | null | undefined, currency: string | null, exact = false): string {
   if (value == null || !Number.isFinite(value)) return "Unavailable";
@@ -481,8 +489,18 @@ function ruleConditionText(condition: RuleCondition): string {
       return `${condition.field} equals ${condition.value}`;
     case "amount_exact":
       return `Amount equals ${condition.value} USD`;
+    case "amount_sign":
+      return `Amount is ${condition.sign}`;
+    case "field_exact":
+      return `${condition.field === "merchant_category_code" ? "Merchant category code" : condition.field} equals ${String(condition.value)}`;
+    case "counterparty_exact":
+      return `${condition.counterparty_type} counterparty is “${condition.name}”`;
+    case "any_of":
+      return condition.conditions.map(ruleConditionText).join(" OR ");
     case "all_of":
-      return condition.conditions.map(ruleConditionText).join(" AND ");
+      return condition.conditions
+        .map((part) => (part.type === "any_of" ? `(${ruleConditionText(part)})` : ruleConditionText(part)))
+        .join(" AND ");
   }
 }
 
@@ -546,9 +564,7 @@ function ConfigurationPanel({
                   </Text>
                   <Stack gap="xs">
                     {allowance.rules.map((rule, index) => {
-                      const kind =
-                        rule.kind === "fixed" ? "Mandatory" : rule.kind === "excluded" ? "Excluded" : "Flexible";
-                      const color = rule.kind === "fixed" ? "blue" : rule.kind === "excluded" ? "gray" : "teal";
+                      const { label, color } = ruleKindDisplay[rule.kind];
                       return (
                         <Paper key={`${rule.kind}-${index}`} withBorder radius="md" p="sm">
                           <Group align="flex-start" gap="sm" wrap="nowrap">
@@ -556,7 +572,7 @@ function ConfigurationPanel({
                               {index + 1}.
                             </Text>
                             <Badge color={color} variant="light" style={{ flexShrink: 0 }}>
-                              {kind}
+                              {label}
                             </Badge>
                             <Stack gap={2} style={{ minWidth: 0 }}>
                               <Text size="sm" style={{ overflowWrap: "anywhere" }}>

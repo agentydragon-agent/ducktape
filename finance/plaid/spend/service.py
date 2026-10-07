@@ -352,6 +352,10 @@ class SpendService:
                     """SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
                               t.date, t.amount, t.pending, t.name, t.merchant_name,
                               t.pfc_primary, t.pfc_detailed,
+                              a.type AS account_type,
+                              t.raw_json->>'merchant_category_code' AS merchant_category_code,
+                              CASE WHEN jsonb_typeof(t.raw_json->'counterparties') = 'array'
+                                   THEN (t.raw_json->'counterparties')::text ELSE '[]' END AS counterparties,
                               COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency
                        FROM public.transactions t
                        JOIN public.accounts a ON a.account_id = t.account_id AND a.item_id = t.item_id

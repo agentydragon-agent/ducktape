@@ -10,13 +10,14 @@ from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, Json, TypeAdapter, ValidationError
 
 
 class Kind(StrEnum):
     FLEXIBLE = "flexible"
     FIXED = "fixed"
     EXCLUDED = "excluded"
+    REVIEW = "review"
 
 
 class Status(StrEnum):
@@ -33,42 +34,83 @@ class PaceAlert(StrEnum):
 
 class NamePrefix(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    type: Literal["name_prefix"]
+    type: Literal["name_prefix"] = "name_prefix"
     field: Literal["name", "merchant_name"]
     prefix: str = Field(min_length=2)
 
 
 class NameContains(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    type: Literal["name_contains"]
+    type: Literal["name_contains"] = "name_contains"
     field: Literal["name", "merchant_name"]
     substring: str = Field(min_length=2)
 
 
 class CategoryExact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    type: Literal["category_exact"]
+    type: Literal["category_exact"] = "category_exact"
     field: Literal["pfc_primary", "pfc_detailed"]
     value: str = Field(min_length=2)
 
 
 class AmountExact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    type: Literal["amount_exact"]
+    type: Literal["amount_exact"] = "amount_exact"
     value: str = Field(pattern=r"^\d+(\.\d{1,4})?$")
+
+
+class AmountSign(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["amount_sign"] = "amount_sign"
+    sign: Literal["negative", "zero", "positive"]
+
+
+class FieldExact(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["field_exact"] = "field_exact"
+    field: Literal["name", "merchant_name", "account_type", "merchant_category_code"]
+    value: str | bool
+
+
+class CounterpartyExact(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["counterparty_exact"] = "counterparty_exact"
+    counterparty_type: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+
+
+class PlaidCounterparty(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+    type: str | None = None
+    name: str | None = None
+
+
+_COUNTERPARTIES_JSON = TypeAdapter(Json[list[PlaidCounterparty]])
+
+
+type SimpleCondition = (
+    NamePrefix | NameContains | CategoryExact | AmountExact | AmountSign | FieldExact | CounterpartyExact
+)
+
+
+class AnyOf(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["any_of"] = "any_of"
+    conditions: list[Annotated[SimpleCondition, Field(discriminator="type")]] = Field(min_length=2)
 
 
 class AllOf(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    type: Literal["all_of"]
-    conditions: list[
-        Annotated[NamePrefix | NameContains | CategoryExact | AmountExact, Field(discriminator="type")]
-    ] = Field(min_length=2)
+    type: Literal["all_of"] = "all_of"
+    conditions: list[Annotated[SimpleCondition | AnyOf, Field(discriminator="type")]] = Field(min_length=2)
+
+
+type Condition = SimpleCondition | AnyOf | AllOf
 
 
 class Rule(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    condition: Annotated[NamePrefix | NameContains | CategoryExact | AmountExact | AllOf, Field(discriminator="type")]
+    condition: Annotated[Condition, Field(discriminator="type")]
     kind: Kind
     analysis_category: str | None = Field(default=None, min_length=1)
     description: str | None = Field(
@@ -100,6 +142,9 @@ class Transaction(BaseModel):
     pfc_primary: str | None
     pfc_detailed: str | None
     currency: str | None
+    account_type: str | None = None
+    merchant_category_code: str | None = None
+    counterparties: Json[list[PlaidCounterparty]] | None = None
 
 
 @dataclass(frozen=True)
@@ -157,15 +202,7 @@ def month_anniversary(start: datetime, months: int) -> datetime:
     return start.replace(year=year, month=month, day=min(start.day, calendar.monthrange(year, month)[1]))
 
 
-def matches(
-    transaction: Transaction, condition: NamePrefix | NameContains | CategoryExact | AmountExact | AllOf
-) -> bool:
-    return matches_fields(transaction, condition)
-
-
-def matches_fields(
-    fields: Mapping[str, object] | object, condition: NamePrefix | NameContains | CategoryExact | AmountExact | AllOf
-) -> bool:
+def matches_fields(fields: Transaction | Mapping[str, object], condition: Condition) -> bool:
     """Match policy conditions against a mapping or a runtime model object."""
 
     def value(field: str) -> object | None:
@@ -175,6 +212,8 @@ def matches_fields(
 
     if isinstance(condition, AllOf):
         return all(matches_fields(fields, part) for part in condition.conditions)
+    if isinstance(condition, AnyOf):
+        return any(matches_fields(fields, part) for part in condition.conditions)
     if isinstance(condition, CategoryExact):
         category = value(condition.field)
         return category == condition.value
@@ -184,6 +223,35 @@ def matches_fields(
             return amount is not None and Decimal(str(amount)) == Decimal(condition.value)
         except ArithmeticError:
             return False
+    if isinstance(condition, AmountSign):
+        amount = value("amount")
+        try:
+            number = Decimal(str(amount))
+        except ArithmeticError:
+            return False
+        return (
+            number < 0 if condition.sign == "negative" else number > 0 if condition.sign == "positive" else number == 0
+        )
+    if isinstance(condition, FieldExact):
+        actual = value(condition.field)
+        if isinstance(actual, str) and isinstance(condition.value, str):
+            return actual.casefold() == condition.value.casefold()
+        return actual == condition.value
+    if isinstance(condition, CounterpartyExact):
+        counterparties = value("counterparties")
+        if isinstance(counterparties, str):
+            try:
+                counterparties = _COUNTERPARTIES_JSON.validate_python(counterparties)
+            except ValidationError:
+                return False
+        return isinstance(counterparties, list) and any(
+            isinstance(counterparty, PlaidCounterparty)
+            and isinstance(counterparty.type, str)
+            and counterparty.type.casefold() == condition.counterparty_type.casefold()
+            and isinstance(counterparty.name, str)
+            and counterparty.name.casefold() == condition.name.casefold()
+            for counterparty in counterparties
+        )
     name = value(condition.field)
     if name is None:
         return False
@@ -192,8 +260,8 @@ def matches_fields(
     return isinstance(name, str) and condition.substring.casefold() in name.casefold()
 
 
-def matching_rule(transaction: Transaction, rules: list[Rule]) -> Rule | None:
-    return next((rule for rule in rules if matches(transaction, rule.condition)), None)
+def matching_rule(transaction: Transaction | Mapping[str, object], rules: list[Rule]) -> Rule | None:
+    return next((rule for rule in rules if matches_fields(transaction, rule.condition)), None)
 
 
 def calculate(
@@ -232,23 +300,27 @@ def calculate(
         if transaction.currency not in (None, policy.currency):
             continue
         rule = matching_rule(transaction, policy.rules)
-        if rule is not None and rule.kind != Kind.FLEXIBLE:
+        if rule is not None and rule.kind in (Kind.FIXED, Kind.EXCLUDED):
             continue
         amount = int((transaction.amount * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
         # An inferred category alone cannot associate a refund with an actual discretionary purchase.
-        if amount < 0 and not (rule is not None and isinstance(rule.condition, NamePrefix)):
+        if amount < 0 and (rule is None or rule.kind == Kind.REVIEW or not isinstance(rule.condition, NamePrefix)):
             if transaction.date >= start.date():
                 unmatched += -amount
             continue
         if transaction.date >= pace_start:
             recent_positive += max(0, amount)
-            if rule is None and amount > 0:
+            if (rule is None or rule.kind == Kind.REVIEW) and amount > 0:
                 weekly_unmatched_count += 1
                 weekly_unmatched_minor_units += amount
         if transaction.date >= monthly_pace_start:
             monthly_positive += max(0, amount)
         if transaction.date >= start.date():
-            included.append(Purchase(transaction=transaction, minor_units=amount, needs_review=rule is None))
+            included.append(
+                Purchase(
+                    transaction=transaction, minor_units=amount, needs_review=rule is None or rule.kind == Kind.REVIEW
+                )
+            )
 
     posted = sum(p.minor_units for p in included if not p.transaction.pending)
     pending = sum(p.minor_units for p in included if p.transaction.pending)
