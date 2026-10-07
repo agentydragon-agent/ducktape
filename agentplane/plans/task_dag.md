@@ -69,6 +69,7 @@ flowchart TB
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
     NOTIFICATION_COMPACT_NOTICES["Deferred design<br/>brief notices and shared instructions<br/>Claude/Codex compaction evidence"]:::future
+    NOTIFICATION_NOTICE_PACING["Deferred design<br/>avoid redundant notices during busy turns<br/>measure harness delivery boundaries"]:::future
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
     HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
     NOTIFICATION_SOURCE_WIRING["Conditional future refactor<br/>extract shared source wiring<br/>from concrete implementations"]:::future
@@ -796,6 +797,28 @@ Reuse the existing Action Service committed-event signals; no operator authority
 DB access. [Acceptance](notifications.md#next-event-driven-actions-consumption) includes reconnect,
 missed-signal recovery, subscription-creation races and idle-without-polling behavior.
 The shared PostgreSQL listener refactor did not implement this cross-service feed.
+
+### `NOTIFICATION_NOTICE_PACING` — reduce redundant notices across busy harness turns
+
+**Deferred design; delivery policy TBD:** the current per-inbox quiet/max-wait debounce
+batches entry creation, not the agent's opportunities to process a notice. During a long tool
+call, compaction, or other busy turn, multiple prepared notices can be admitted before the agent
+can read the inbox; each has immutable text and coverage. Measure entry creation, notice
+preparation, runner admission, native input start, actual model visibility, inbox read and
+acknowledgement for Claude and Codex under busy turns, compaction and resume. Distinguish a
+confirmed input from an agent that actually handled its entries.
+
+Compare delaying preparation or submission until useful harness lifecycle boundaries, limiting
+unprocessed notices, and retaining a bounded fallback for idle or missing signals. Hooks (tool,
+stop or compaction events) may help with scheduling, but must be tested per harness; they are
+not assumed to run before every model sample. Evaluate native queued-input update/withdrawal
+only with explicit too-late outcomes, never silently edit an admitted command or cancel other
+coalesced inputs. Do not require intercepting LLM traffic, which could also cover subagents and
+unrelated harness requests. Keep inbox persistence and reads immediate, preserve immutable
+notice/retry receipts and explicit contiguous acknowledgement, and avoid either starvation or a
+storm of reminders when acknowledgement is delayed. Accept a design only after tests show
+bounded, nonduplicative delivery across retries, restarts, long operations and compaction.
+This is independent of making notices terse in `NOTIFICATION_COMPACT_NOTICES`.
 
 ### `NOTIFICATION_COMPACT_NOTICES` — shared instructions and brief cursor hints
 

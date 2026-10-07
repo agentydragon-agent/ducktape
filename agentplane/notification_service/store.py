@@ -605,11 +605,19 @@ class Store:
             if row is not None:
                 await session.delete(row)
                 await session.flush()
+            # Both cursors are preparation-time snapshots; read from acknowledgement, not notice coverage.
             row = Notice(
                 inbox_id=inbox.id,
                 command_id=uuid4(),
                 through_cursor=inbox.last_cursor,
-                text=f"Agentplane automated notification: {inbox.last_cursor - start} new notifications through cursor {inbox.last_cursor}. Retrieve GET /v1/inboxes/{inbox.id}/entries from the notification service. Read does not acknowledge; explicitly acknowledge only the handled contiguous prefix.",
+                text=(
+                    f"Agentplane automated notification: {inbox.last_cursor - start} new notifications "
+                    f"through cursor {inbox.last_cursor} when this notice was prepared; newer entries may exist. "
+                    f"The inbox had acknowledged through cursor {inbox.acknowledged} when this notice was "
+                    f"prepared. Retrieve GET /v1/inboxes/{inbox.id}/entries?after_cursor={inbox.acknowledged}"
+                    "&limit=128 from the notification service; page after the last returned cursor. "
+                    "Read does not acknowledge; explicitly acknowledge only the handled contiguous prefix."
+                ),
                 attempted=False,
                 admitted=False,
                 confirmed=False,
