@@ -56,13 +56,17 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.public_coder_egress import NAMESPACE, SERVICE_ACCOUNT
 
 _NAMESPACE = "agentplane-staging"
-_GITHUB_READS_SET = "github-reads"
-_SANDBOX_SET = "sandbox-self"
-_HOME_ASSISTANT_READS_SET = "home-assistant-reads"
-_GMAIL_READS_SET = "gmail-reads"
-_GOOGLE_CALENDAR_READS_SET = "google-calendar-reads"
-_TANA_READS_SET = "tana-reads"
-_GROCY_SF_READS_SET = "grocy-sf-reads"
+# The reviewed read sets and sandbox use below are named because a launch preset binds them
+# (staging_config.py), and the module's own rule is that a name a preset refers to is exported and
+# lives beside the object that answers to it. They sat private while only the connector bindings
+# here used them.
+GITHUB_READS_SET = "github-reads"
+SANDBOX_SELF_SET = "sandbox-self"
+HOME_ASSISTANT_READS_SET = "home-assistant-reads"
+GMAIL_READS_SET = "gmail-reads"
+GOOGLE_CALENDAR_READS_SET = "google-calendar-reads"
+TANA_READS_SET = "tana-reads"
+GROCY_SF_READS_SET = "grocy-sf-reads"
 # The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
@@ -375,7 +379,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "github-reads",
         metadata=ApiObjectMetadata(
-            name=_GITHUB_READS_SET,
+            name=GITHUB_READS_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": "The reviewed read-only subset of GitHub MCP's default catalog; every other GitHub Action stays on the human path."
@@ -765,7 +769,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "sandbox-self",
         metadata=ApiObjectMetadata(
-            name=_SANDBOX_SET,
+            name=SANDBOX_SELF_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": (
@@ -783,7 +787,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "home-assistant-reads",
         metadata=ApiObjectMetadata(
-            name=_HOME_ASSISTANT_READS_SET,
+            name=HOME_ASSISTANT_READS_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": "The reviewed read-only subset of Home Assistant MCP's default catalog; every other Home Assistant Action stays on the human path."
@@ -798,7 +802,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "gmail-reads",
         metadata=ApiObjectMetadata(
-            name=_GMAIL_READS_SET,
+            name=GMAIL_READS_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": "The reviewed read-only subset of the Gmail MCP backend's catalog; every write stays on the human path."
@@ -810,7 +814,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "google-calendar-reads",
         metadata=ApiObjectMetadata(
-            name=_GOOGLE_CALENDAR_READS_SET,
+            name=GOOGLE_CALENDAR_READS_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": "The reviewed read-only subset of the Google Calendar MCP backend's catalog; create_event stays on the human path."
@@ -823,7 +827,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "tana-reads",
         metadata=ApiObjectMetadata(
-            name=_TANA_READS_SET,
+            name=TANA_READS_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": "The reviewed read-only subset of the Tana MCP backend's catalog, plus get_or_create_calendar_node; every other write and open_node stay on the human path."
@@ -835,7 +839,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "grocy-sf-reads",
         metadata=ApiObjectMetadata(
-            name=_GROCY_SF_READS_SET,
+            name=GROCY_SF_READS_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": "The reviewed read-only subset of the Grocy SF MCP backend's catalog; every write, open_product_stock included, stays on the human path."
@@ -878,14 +882,14 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
         subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
         policy_sets=[
-            _GITHUB_READS_SET,
+            GITHUB_READS_SET,
             GITHUB_IDENTITY_READS_SET,
-            _SANDBOX_SET,
-            _HOME_ASSISTANT_READS_SET,
-            _GMAIL_READS_SET,
-            _GOOGLE_CALENDAR_READS_SET,
-            _TANA_READS_SET,
-            _GROCY_SF_READS_SET,
+            SANDBOX_SELF_SET,
+            HOME_ASSISTANT_READS_SET,
+            GMAIL_READS_SET,
+            GOOGLE_CALENDAR_READS_SET,
+            TANA_READS_SET,
+            GROCY_SF_READS_SET,
             SSH_READS_SET,
         ],
     )
@@ -904,14 +908,14 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
         subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="haku-agent"),
         policy_sets=[
-            _GITHUB_READS_SET,
+            GITHUB_READS_SET,
             GITHUB_IDENTITY_READS_SET,
-            _SANDBOX_SET,
-            _HOME_ASSISTANT_READS_SET,
-            _GMAIL_READS_SET,
-            _GOOGLE_CALENDAR_READS_SET,
-            _TANA_READS_SET,
-            _GROCY_SF_READS_SET,
+            SANDBOX_SELF_SET,
+            HOME_ASSISTANT_READS_SET,
+            GMAIL_READS_SET,
+            GOOGLE_CALENDAR_READS_SET,
+            TANA_READS_SET,
+            GROCY_SF_READS_SET,
             SSH_READS_SET,
         ],
     )

@@ -3193,7 +3193,14 @@ data:
           - github-actions-logs
           - agentplane-testing
         action_policy_sets:
+          - github-reads
           - github-identity-reads
+          - sandbox-self
+          - home-assistant-reads
+          - gmail-reads
+          - google-calendar-reads
+          - tana-reads
+          - grocy-sf-reads
           - ssh-reads
           - ducktape-pr-failed-jobs
         kubernetes_grants:
