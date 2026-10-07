@@ -18,17 +18,17 @@ pytestmark = [pytest.mark.asyncio(loop_scope="session"), pytest.mark.parametrize
 
 
 @asynccontextmanager
-async def _scene(
-    visual: VisualHarness, name: str, color_scheme: Literal["light", "dark"], *, width: int, height: int
+async def _fixture(
+    visual: VisualHarness, fixture_id: str, color_scheme: Literal["light", "dark"], *, width: int, height: int
 ) -> AsyncIterator[VisualPage]:
     async with visual.open(
-        name,
+        fixture_id,
         viewport=Viewport(width=width, height=height, device_scale_factor=2),
         color_scheme=color_scheme,
-        window_globals={"__SCENE__": name, "__COLOR_SCHEME__": color_scheme},
+        window_globals={"__FIXTURE__": fixture_id, "__COLOR_SCHEME__": color_scheme},
     ) as view:
         await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context=name)
+        await view.check(context=fixture_id)
         yield view
 
 
@@ -59,7 +59,7 @@ async def _capture(view: VisualPage, name: str, color_scheme: str) -> None:
 
 
 async def test_console(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "console", color_scheme, width=1200, height=800) as view:
+    async with _fixture(visual, "console", color_scheme, width=1200, height=800) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
@@ -67,21 +67,21 @@ async def test_console(visual: VisualHarness, color_scheme: Literal["light", "da
 
 
 async def test_console_drawer(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "console-drawer", color_scheme, width=1200, height=800) as view:
+    async with _fixture(visual, "console", color_scheme, width=1200, height=800) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
         await _capture(view, "console-drawer", color_scheme)
 
 
 async def test_console_mobile(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "console-mobile", color_scheme, width=390, height=760) as view:
+    async with _fixture(visual, "console", color_scheme, width=390, height=760) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
         await _capture(view, "console-mobile", color_scheme)
 
 
 async def test_not_found(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "not-found", color_scheme, width=900, height=600) as view:
+    async with _fixture(visual, "not-found", color_scheme, width=900, height=600) as view:
         await view.page.wait_for_selector(":text('Page not found')", state="attached")
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
@@ -90,13 +90,13 @@ async def test_not_found(visual: VisualHarness, color_scheme: Literal["light", "
 
 
 async def test_approvals_embed(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "approvals-embed", color_scheme, width=560, height=820) as view:
+    async with _fixture(visual, "approvals-embed", color_scheme, width=560, height=820) as view:
         await view.page.wait_for_selector("button:has-text('Approve')", state="attached")
         await _capture(view, "approvals-embed", color_scheme)
 
 
 async def test_settings(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "settings", color_scheme, width=1200, height=1000) as view:
+    async with _fixture(visual, "settings", color_scheme, width=1200, height=1000) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
@@ -104,7 +104,7 @@ async def test_settings(visual: VisualHarness, color_scheme: Literal["light", "d
 
 
 async def test_settings_mobile(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "settings-mobile", color_scheme, width=390, height=760) as view:
+    async with _fixture(visual, "settings", color_scheme, width=390, height=760) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
@@ -112,7 +112,7 @@ async def test_settings_mobile(visual: VisualHarness, color_scheme: Literal["lig
 
 
 async def test_settings_agents(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "settings-agents", color_scheme, width=1200, height=1000) as view:
+    async with _fixture(visual, "settings", color_scheme, width=1200, height=1000) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.locator("[role='tab']:has-text('Agents')").click()
@@ -124,7 +124,7 @@ async def test_settings_agents(visual: VisualHarness, color_scheme: Literal["lig
 
 
 async def test_settings_grants(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "settings-grants", color_scheme, width=1200, height=1000) as view:
+    async with _fixture(visual, "settings", color_scheme, width=1200, height=1000) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.locator("[role='tab']:has-text('Grants')").click()
@@ -136,7 +136,7 @@ async def test_settings_grants(visual: VisualHarness, color_scheme: Literal["lig
 
 
 async def test_settings_grants_history(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "settings-grants-history", color_scheme, width=1200, height=1000) as view:
+    async with _fixture(visual, "settings", color_scheme, width=1200, height=1000) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.locator("[role='tab']:has-text('Grants')").click()
@@ -150,7 +150,7 @@ async def test_settings_grants_history(visual: VisualHarness, color_scheme: Lite
 
 
 async def test_settings_grants_revoke(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "settings-grants-revoke", color_scheme, width=1200, height=1000) as view:
+    async with _fixture(visual, "settings", color_scheme, width=1200, height=1000) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.locator("[role='tab']:has-text('Grants')").click()
@@ -164,7 +164,7 @@ async def test_settings_grants_revoke(visual: VisualHarness, color_scheme: Liter
 
 
 async def test_settings_notifications(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "settings-notifications", color_scheme, width=1200, height=1000) as view:
+    async with _fixture(visual, "settings", color_scheme, width=1200, height=1000) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.locator("[role='tab']:has-text('Notifications')").click()
@@ -178,7 +178,7 @@ async def test_settings_notifications(visual: VisualHarness, color_scheme: Liter
 
 
 async def test_settings_system(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "settings-system", color_scheme, width=1200, height=1000) as view:
+    async with _fixture(visual, "settings", color_scheme, width=1200, height=1000) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.locator("[role='tab']:has-text('System')").click()
@@ -190,7 +190,7 @@ async def test_settings_system(visual: VisualHarness, color_scheme: Literal["lig
 
 
 async def test_agent_enrollment(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "agent-enrollment", color_scheme, width=1200, height=900) as view:
+    async with _fixture(visual, "agent-enrollment", color_scheme, width=1200, height=900) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
@@ -198,7 +198,7 @@ async def test_agent_enrollment(visual: VisualHarness, color_scheme: Literal["li
 
 
 async def test_agent_enrollment_reconnect(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "agent-enrollment-reconnect", color_scheme, width=1200, height=900) as view:
+    async with _fixture(visual, "agent-enrollment-reconnect", color_scheme, width=1200, height=900) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
@@ -206,7 +206,7 @@ async def test_agent_enrollment_reconnect(visual: VisualHarness, color_scheme: L
 
 
 async def test_agent_enrollment_mobile(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "agent-enrollment-mobile", color_scheme, width=390, height=760) as view:
+    async with _fixture(visual, "agent-enrollment", color_scheme, width=390, height=760) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
@@ -214,7 +214,7 @@ async def test_agent_enrollment_mobile(visual: VisualHarness, color_scheme: Lite
 
 
 async def test_history(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "history", color_scheme, width=1200, height=1500) as view:
+    async with _fixture(visual, "history", color_scheme, width=1200, height=1500) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.locator("[aria-label='Full'] >> nth=0").click()
@@ -228,7 +228,7 @@ async def test_history(visual: VisualHarness, color_scheme: Literal["light", "da
 
 
 async def test_history_auto_approved(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "history-auto-approved", color_scheme, width=1200, height=1500) as view:
+    async with _fixture(visual, "history", color_scheme, width=1200, height=1500) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.locator("[aria-label='Show auto-approved']").click()
@@ -239,7 +239,7 @@ async def test_history_auto_approved(visual: VisualHarness, color_scheme: Litera
 
 
 async def test_history_paged(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "history-paged", color_scheme, width=1200, height=900) as view:
+    async with _fixture(visual, "history-paged", color_scheme, width=1200, height=900) as view:
         await view.page.wait_for_selector("button:has-text('Load older calls')", state="attached")
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
@@ -251,7 +251,7 @@ async def test_history_paged(visual: VisualHarness, color_scheme: Literal["light
 
 
 async def test_sync_current(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "sync-current", color_scheme, width=600, height=420) as view:
+    async with _fixture(visual, "sync-current", color_scheme, width=600, height=420) as view:
         await view.page.locator("[aria-label='Up to date']").click()
         await view.page.wait_for_selector("[aria-label='Sync status']", state="visible")
         await _park_pointer(view)
@@ -259,7 +259,7 @@ async def test_sync_current(visual: VisualHarness, color_scheme: Literal["light"
 
 
 async def test_sync_syncing(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "sync-syncing", color_scheme, width=600, height=420) as view:
+    async with _fixture(visual, "sync-syncing", color_scheme, width=600, height=420) as view:
         await view.page.locator("[aria-label='Syncing']").click()
         await view.page.wait_for_selector("[aria-label='Sync status']", state="visible")
         await _park_pointer(view)
@@ -267,7 +267,7 @@ async def test_sync_syncing(visual: VisualHarness, color_scheme: Literal["light"
 
 
 async def test_sync_error(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "sync-error", color_scheme, width=600, height=420) as view:
+    async with _fixture(visual, "sync-error", color_scheme, width=600, height=420) as view:
         await view.page.locator("[aria-label='Sync error']").click()
         await view.page.wait_for_selector("[aria-label='Sync status']", state="visible")
         await _park_pointer(view)
@@ -275,7 +275,7 @@ async def test_sync_error(visual: VisualHarness, color_scheme: Literal["light", 
 
 
 async def test_session_expiring(visual: VisualHarness, color_scheme: Literal["light", "dark"]) -> None:
-    async with _scene(visual, "session-expiring", color_scheme, width=600, height=420) as view:
+    async with _fixture(visual, "session-expiring", color_scheme, width=600, height=420) as view:
         await view.page.locator("[aria-label='Session expiring soon']").click()
         await view.page.wait_for_selector("[aria-label='Console session']", state="visible")
         await _park_pointer(view)

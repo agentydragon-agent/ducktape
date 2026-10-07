@@ -1,5 +1,5 @@
 // Full-page screenshot harness for Haku Console. The production shell is rendered with mocked
-// API data; the sweep's request fence answers the real iframe request with an unmistakable striped
+// API data; the test's request fence answers the real iframe request with an unmistakable striped
 // Haku UI document (mock_haku_ui.html) so layout overlap is visible in the resulting image.
 import "./mock_api";
 
@@ -20,7 +20,7 @@ const noopNavigate = (_view: ConsoleNavigationView) => {};
 
 const ENROLLMENT_ID = "10000000-0000-4000-8000-000000000001";
 
-function ConsoleScene({ view, reconnect = false }: { view: ConsoleView; reconnect?: boolean }) {
+function ConsoleFixture({ view, reconnect = false }: { view: ConsoleView; reconnect?: boolean }) {
   return (
     <AgentNamesProvider>
       <HakuUiEmbed
@@ -67,7 +67,7 @@ const chromeProps: ShellChromeProps = {
   onReauthenticate: noop,
 };
 
-function IndicatorScene({ state }: { state: "current" | "syncing" | "error" }) {
+function IndicatorFixture({ state }: { state: "current" | "syncing" | "error" }) {
   return (
     <div className="haku-console-shell">
       <ShellChrome
@@ -82,7 +82,7 @@ function IndicatorScene({ state }: { state: "current" | "syncing" | "error" }) {
 }
 
 // The rail's session warning, which only appears inside the last few minutes of the session.
-function SessionExpiringScene() {
+function SessionExpiringFixture() {
   return (
     <div className="haku-console-shell">
       <ShellChrome {...chromeProps} sessionExpiresAt={new Date(Date.now() + 4 * 60_000)} sessionExpiringSoon />
@@ -91,50 +91,44 @@ function SessionExpiringScene() {
   );
 }
 
-function sceneElement(scene: string) {
-  switch (scene) {
+function fixtureElement(fixture: string) {
+  switch (fixture) {
     case "approvals-embed":
       return <ApprovalsEmbedPage />;
     case "settings":
-    case "settings-mobile":
-    case "settings-agents":
-    case "settings-grants":
-    case "settings-grants-history":
-    case "settings-grants-revoke":
-    case "settings-notifications":
-    case "settings-system":
-      return <ConsoleScene view="settings" />;
+      return <ConsoleFixture view="settings" />;
     case "agent-enrollment":
-    case "agent-enrollment-mobile":
-      return <ConsoleScene view="agentEnrollment" />;
+      return <ConsoleFixture view="agentEnrollment" />;
     case "agent-enrollment-reconnect":
-      return <ConsoleScene view="agentEnrollment" reconnect />;
+      return <ConsoleFixture view="agentEnrollment" reconnect />;
     case "history":
-    case "history-auto-approved":
     case "history-paged":
-      return <ConsoleScene view="toolCalls" />;
+      return <ConsoleFixture view="toolCalls" />;
     case "sync-current":
-      return <IndicatorScene state="current" />;
+      return <IndicatorFixture state="current" />;
     case "sync-syncing":
-      return <IndicatorScene state="syncing" />;
+      return <IndicatorFixture state="syncing" />;
     case "sync-error":
-      return <IndicatorScene state="error" />;
+      return <IndicatorFixture state="error" />;
     case "session-expiring":
-      return <SessionExpiringScene />;
+      return <SessionExpiringFixture />;
     case "not-found":
-      return <ConsoleScene view="notFound" />;
+      return <ConsoleFixture view="notFound" />;
+    case "console":
+      return <ConsoleFixture view="embed" />;
     default:
-      return <ConsoleScene view="embed" />;
+      throw new Error(`Unknown Haku fixture ${fixture}`);
   }
 }
 
-const scene = (window as unknown as { __SCENE__?: string }).__SCENE__ ?? "console";
+const fixture = (window as unknown as { __FIXTURE__?: string }).__FIXTURE__;
+if (!fixture) throw new Error("Missing Haku fixture");
 const colorScheme = (window as unknown as { __COLOR_SCHEME__?: "light" | "dark" }).__COLOR_SCHEME__ ?? "light";
 const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");
 createRoot(container).render(
   <MantineProvider forceColorScheme={colorScheme} theme={hakuTheme}>
     <Notifications position="top-right" />
-    {sceneElement(scene)}
+    {fixtureElement(fixture)}
   </MantineProvider>
 );

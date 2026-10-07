@@ -19,7 +19,7 @@ function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
-const scene = (window as unknown as { __SCENE__?: string }).__SCENE__;
+const fixture = (window as unknown as { __FIXTURE__?: string }).__FIXTURE__;
 
 async function respond(input: RequestInfo | URL, init: RequestInit | undefined, url: string): Promise<Response | null> {
   if (url.includes("/api/grants")) return jsonResponse(SAMPLE_GRANTS);
@@ -137,7 +137,7 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
     // Repeated after filtering, so the page is deep enough under the default `auto_approved=false`
     // the history view sends.
     const ledger =
-      scene === "history-paged"
+      fixture === "history-paged"
         ? Array.from({ length: 26 }, (_unused, index) => ({
             ...matching[index % matching.length],
             tool_call_id: `tc_paged_${index}`,

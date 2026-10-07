@@ -639,20 +639,19 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
     new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 
   if (url.pathname === "/api/status") {
-    const page = new URLSearchParams(window.location.search).get("page") ?? "";
-    return Promise.resolve(json(page.includes("_paired") ? pairedStatus : unpairedStatus));
+    return Promise.resolve(json(fixture === "sync-paired" ? pairedStatus : unpairedStatus));
   }
   if (url.pathname === "/api/pairing") return Promise.resolve(json({ authorization_url: "https://claude.ai/code" }));
   if (url.pathname === "/api/pairing/complete") return Promise.resolve(json(pairedStatus));
   if (url.pathname === "/api/sync") return Promise.resolve(new Response(null, { status: 202 }));
   if (url.pathname === "/v1/code/sessions") {
-    if (scenario.startsWith("SessionMarkdown"))
+    if (fixture === "markdown")
       return Promise.resolve(json({ data: [markdownSession], next_cursor: null, resume_token: null }));
     return Promise.resolve(
       json(
-        scenario.startsWith("SessionNoisySidebar")
+        fixture === "sidebar"
           ? { data: sidebarSessions, next_cursor: null, resume_token: null }
-          : scenario.startsWith("SessionNarrationVisibility")
+          : fixture === "narration"
             ? {
                 data: [
                   { ...narrationSession, git_branch: "feature/narration-fixture", repo_path: "~/code/sample-format" },
@@ -660,18 +659,17 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
                 next_cursor: null,
                 resume_token: null,
               }
-            : scenario.startsWith("SessionCompletedActivity")
+            : fixture === "completed-activity"
               ? { data: [noisySession], next_cursor: null, resume_token: null }
-              : scenario.startsWith("SessionNoisy")
+              : fixture === "noisy"
                 ? { data: [noisySession], next_cursor: null, resume_token: null }
                 : sessionPage
       )
     );
   }
   if (/^\/v1\/code\/sessions\/[^/]+\/events$/.test(url.pathname)) {
-    const page = new URLSearchParams(window.location.search).get("page") ?? "";
-    if (page.startsWith("SessionMarkdown")) return Promise.resolve(json(markdownEventPage));
-    if (page.startsWith("SessionLatestFirst")) {
+    if (fixture === "markdown") return Promise.resolve(json(markdownEventPage));
+    if (fixture === "history") {
       const cursor = url.searchParams.get("cursor");
       return Promise.resolve(
         json(
@@ -681,7 +679,7 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
         )
       );
     }
-    if (page.startsWith("SessionCompletedActivity")) {
+    if (fixture === "completed-activity") {
       return Promise.resolve(
         json({
           data: longCommandActivitySessionEvents,
@@ -691,7 +689,7 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
         })
       );
     }
-    if (page.startsWith("SessionNarrationVisibility")) {
+    if (fixture === "narration") {
       return Promise.resolve(
         json({
           data: narrationSessionEvents,
@@ -701,7 +699,7 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
         })
       );
     }
-    if (page.startsWith("SessionNoisy"))
+    if (fixture === "noisy" || fixture === "sidebar")
       return Promise.resolve(
         json({
           data: noisySessionEvents,
@@ -710,17 +708,17 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
           last_id: noisySessionEvents.at(-1)?.event_id,
         })
       );
-    const events = page.startsWith("SessionReadFileResult")
+    const events = fixture === "file-result"
       ? readFileEventPage
-      : page.startsWith("SessionToolResult")
+      : fixture === "tool-result"
         ? toolResultEventPage
-        : page.startsWith("SessionSubagent")
+        : fixture === "subagent"
           ? subagentEventPage
-          : page.startsWith("SessionPeerMessage")
+          : fixture === "peer-message"
             ? peerMessageEventPage
-            : page.startsWith("SessionPeerHold")
+            : fixture === "peer-hold"
               ? peerHoldEventPage
-              : page.startsWith("SessionLocalCommandRows")
+              : fixture === "local-commands"
                 ? localCommandEventPage
                 : eventPage;
     return Promise.resolve(json(events));
@@ -732,14 +730,17 @@ window.fetch = mockFetch;
 
 const root = document.getElementById("app");
 if (!root) throw new Error("Visual test harness is missing #app");
-const scenario = new URLSearchParams(window.location.search).get("page") ?? "";
+const fixture = new URLSearchParams(window.location.search).get("page");
+if (!["sync-paired", "sync", "markdown", "history", "completed-activity", "narration", "sidebar", "noisy", "file-result", "tool-result", "subagent", "peer-message", "peer-hold", "local-commands", "viewer"].includes(fixture ?? "")) {
+  throw new Error(`Unknown session fixture ${fixture}`);
+}
 try {
   window.localStorage.removeItem("claude-session-sidebar-visible");
   window.localStorage.removeItem("claude-session-sidebar-width");
 } catch {
   // The visual harness starts with its default sidebar state when storage is unavailable.
 }
-const pathname = scenario.startsWith("SessionSync") ? "/sync" : "/sessions";
+const pathname = fixture === "sync" || fixture === "sync-paired" ? "/sync" : "/sessions";
 
 // Expected fixture data only. Python owns interactions, layout assertions and capture readiness.
 Object.assign(window, {
