@@ -1252,8 +1252,8 @@ filegroup(
 agentplane_visual_test(
     name = "visual_scenes",
     src = "test_visual_scenes.py",
-    title = "Agentplane: mounted views",
     shard_count = 2,
+    title = "Agentplane: mounted views",
 )
 
 agentplane_visual_test(
@@ -1265,8 +1265,8 @@ agentplane_visual_test(
 agentplane_visual_test(
     name = "visual_history",
     src = "test_visual_history.py",
-    title = "Agentplane: history",
     shard_count = 2,
+    title = "Agentplane: history",
 )
 
 agentplane_visual_test(
