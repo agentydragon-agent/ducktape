@@ -1537,8 +1537,6 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
         await offline_ingester.close()
 
 
-
-
 async def test_command_archive_wait_uses_configured_budget(bridge: RunnerBridge, event_logs: EventLogStore) -> None:
     thread = await event_logs.open(
         SANDBOX,
@@ -1567,9 +1565,7 @@ async def test_command_budget_covers_runner_rpc(
         await asyncio.Event().wait()
 
     monkeypatch.setattr(bridge, "_command", stalled_command)
-    command = command_pb2.Command(
-        command_id="pending-runner", interrupt_turn=command_pb2.InterruptTurn(turn_id="turn")
-    )
+    command = command_pb2.Command(command_id="pending-runner", interrupt_turn=command_pb2.InterruptTurn(turn_id="turn"))
     with pytest.raises(RunnerAdmissionTimeoutError, match="outcome uncertain"):
         await bridge.command(thread, command)
 

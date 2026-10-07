@@ -46,12 +46,15 @@ class Resources:
     runner_grpc_channel_options: dict[str, int | str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if min(
-            self.admission_timeout_s,
-            self.command_admission_timeout_s,
-            self.follow_lease_s,
-            self.lifecycle_timeout_s,
-        ) <= 0:
+        if (
+            min(
+                self.admission_timeout_s,
+                self.command_admission_timeout_s,
+                self.follow_lease_s,
+                self.lifecycle_timeout_s,
+            )
+            <= 0
+        ):
             raise ValueError("timeouts must be positive")
         if not self.caller_accounts:
             raise ValueError("at least one service caller is required")
