@@ -19,9 +19,9 @@ reconnect/replay from durable state rather than process-local memory. A single-r
 is an explicit temporary operational constraint, never an implicit correctness assumption.
 
 **Immediate operator priority:** `THREAD_READ_POLICY` — enable explicitly scoped
-ServiceAccount access to selected Thread history. Design the identity and authorization
-boundary first; this is independent of hosted Threads, bootstrap orchestration, and
-future harness-capability research.
+ServiceAccount access to selected Thread history. Design it alongside
+`SANDBOX_COMPARTMENT_BOUNDARY`: app read filters cannot isolate co-resident sessions
+sharing a filesystem and ServiceAccount. Neither requires the hosted runtime pivot.
 
 Proposed execution order for the Thread correctness/UI track:
 
@@ -92,6 +92,9 @@ flowchart TB
     HARNESS_PLUGINS["Unranked candidate<br/>project plugins and skill packages<br/>source trust and capability grants"]:::future
     HARNESS_PROMPT_SUGGESTIONS["Optional, lowest estimated win<br/>Claude prompt suggestions<br/>measure UX before enabling"]:::future
     THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
+    SANDBOX_COMPARTMENT_BOUNDARY["Priority trust-boundary decision<br/>co-resident Threads share filesystem and SA<br/>no false compartment isolation"]:::decision
+    THREAD_PORTABLE_STATE["Deferred portability design<br/>preserve native session and runner journal<br/>outside disposable Sandbox storage"]:::decision
+    THREAD_ON_DEMAND_RUNTIME["Deferred runtime lifecycle<br/>new Sandbox on activity/notice<br/>restore and resume a durable Thread"]:::future
     HOSTED_THREAD_SURFACES["Deferred design<br/>read and control surfaces for a hosted Thread<br/>beyond today's Sandbox-bound view"]:::future
     THREAD_READ_POLICY["Priority design<br/>explicit SA access to selected Thread history<br/>evaluate Thread compartments"]:::active
     CROSS_THREAD_DELIVERY["Deferred design<br/>agents send to other Threads<br/>command vs notification inbox"]:::decision
@@ -129,6 +132,9 @@ flowchart TB
     NO_MANUAL_REFRESH["Planned principle<br/>no page in the app needs a Refresh button<br/>push (WS or SSE) everywhere, not just Sandboxes/Actions"]:::future
 
     THREAD_OUTLIVES_SANDBOX --> AG
+    THREAD_OUTLIVES_SANDBOX --> THREAD_ON_DEMAND_RUNTIME
+    THREAD_PORTABLE_STATE --> THREAD_ON_DEMAND_RUNTIME
+    THREAD_EVENT_CONTINUITY --> THREAD_ON_DEMAND_RUNTIME
     HOSTED_THREAD_SURFACES --> AG
     THREAD_READ_POLICY --> AG
     PC_EGRESS_CREDENTIALS --> PC_EGRESS
@@ -772,8 +778,9 @@ the same runner session under the same Thread.
 **Identity/storage cutover:** implement
 [one high-water mark per Event log](../docs/thread_layering.md#one-event-high-water-mark-per-log-across-harness-sessions):
 app-minted Thread identity, explicit incarnation association, and a retained runner journal on
-the landed exclusive writer fence. Thread owns its static Sandbox; association rows do not
-duplicate it. App and browser checkpoints refer to the runner's sequence. Native recovery remains
+the landed exclusive writer fence. For the current mode, preserve the static Sandbox association without
+encoding it as an immutable property of Thread identity; portable runtimes may
+attach a future Sandbox to the same Thread. App and browser checkpoints refer to the runner's sequence. Native recovery remains
 separately evidence-gated.
 
 A successor reopens the journal; it cannot replace missing state with “app cursor + 1.”
@@ -802,6 +809,61 @@ app admission policy. No automatic cross-successor replay is implied.
 **Deferred design:** today a Thread is bound to the Sandbox that runs it. A hosted Thread outlives
 one, which is a durability and ownership question about the Thread record itself, separable from
 what any surface shows of it.
+
+### `SANDBOX_COMPARTMENT_BOUNDARY` — do not mistake Thread ACLs for isolation
+
+**Priority trust-boundary decision alongside `THREAD_READ_POLICY`:** multiple runner sessions
+in one Sandbox share a filesystem and Sandbox ServiceAccount (including its grants, mounts,
+and secrets). Threads in distinct compartments cannot safely share that Sandbox merely
+because app/archive reads are filtered: either session can inspect the other's workspace.
+Conservatively require one compartment/trust domain per Sandbox (or one Thread per Sandbox)
+until stronger isolation is proved. Even matching compartments do not by themselves prove
+that differently privileged sessions may share credentials or working files.
+
+Decide where the Sandbox compartment is assigned and enforced on Open, including direct
+Sandbox Service callers: app owns durable Thread classification and grants; Sandbox Service
+must reject a launch incompatible with the current Sandbox trust domain rather than trusting
+an arbitrary client-supplied label. A launch preset may supply an initial value, not become
+a persistent Agent type. For existing co-resident Threads with mixed intended audiences,
+default to no ServiceAccount read exposure and require reviewed reclassification or a new
+Sandbox; do not silently merge their histories. Test mismatch, concurrent Open, same-name
+Sandbox replacement, shared workspace/SA access, and historical archives after deletion.
+
+### `THREAD_PORTABLE_STATE` — durable state beyond a Sandbox volume
+
+**Deferred portability design:** the app's archived Event/transcript history can outlive a
+Sandbox, but native Claude/Codex history, runner journal, workspace files, and resume
+metadata currently depend on runner storage inside the Sandbox lifecycle. An archive of
+rendered Events is not enough to reconstruct a native session or safely replay tool effects.
+Inventory the exact artifacts and version constraints for both harnesses and decide an
+owned, versioned export/snapshot and restore contract for a stable Thread identity. Quiesce
+and fence the old writer, copy a verifiable complete prefix and native state before
+destructive storage removal, and define explicit unavailable/unknown outcomes on partial
+snapshots. Retained artifacts must not include reusable Pod/ServiceAccount credentials
+or silently widen their future access. A migration may intentionally leave legacy
+Threads read-only or require an opt-in destructive transition, but must not claim
+seamless resume from display history.
+Keep this separate from `SANDBOX_LIFECYCLE_DURABILITY` (archive before deletion).
+
+### `THREAD_ON_DEMAND_RUNTIME` — disposable Sandbox for a durable Thread
+
+**Deferred lifecycle after portable-state evidence:** provision a fresh, correctly scoped
+Sandbox and runner when a prompt or authorized notification arrives for a durable Thread;
+restore native and runner state, attach under one exclusive writer fence, and resume the
+same logical conversation. After idle shutdown, keep the Thread, permissions, archived
+Events, and restoration artifacts without retaining its old Sandbox CR/Pod as identity.
+Specify whether queued input is accepted before a runner exists (`COMMAND_QUEUE_DECISION`),
+wakeup deduplication, startup/bootstrap once for the new Sandbox, image selection/rollback,
+expiry/cost, and behavior when native resume is impossible. Current notification inboxes
+are UID-pinned to a Sandbox/session and retire after its removal; a deleted-Sandbox
+Thread needs a new durable address and delivery authority, not a claim that those inboxes
+already wake it. Test crashes and replica races
+through suspension, deletion, reprovisioning, and notification wakeup.
+
+This is not a prerequisite for near-term `RUNNER_IMAGE_ROLLOUT`: first test the simpler
+pause/patch/restart-with-the-same-storage route for updating an existing Sandbox image.
+The runtime pivot may later supersede that operational workflow without invalidating
+stable Thread IDs, archived history, or compartment grants.
 
 ### `HOSTED_THREAD_SURFACES` — read and control for a hosted Thread
 
@@ -837,6 +899,11 @@ reclassification should be operator-authorized and audited, with any wider discl
 reviewed explicitly. Use another Thread rather than mixing unrelated confidentiality
 scopes inside one transcript. Decide whether one compartment per Thread suffices before
 adding multi-label OR semantics that could unexpectedly widen access.
+
+**Trust-boundary gate:** `SANDBOX_COMPARTMENT_BOUNDARY` must prevent distinct
+compartments from silently co-residing in a shared Sandbox before scoped read grants
+can be advertised as confidentiality isolation. App archive authorization alone cannot
+protect runner-local files or Sandbox credentials.
 
 **Design gate:** choose who creates compartments, assigns/reclassifies Threads, grants
 scoped verbs to ServiceAccounts, and revokes them; pin SA identity and replacement
