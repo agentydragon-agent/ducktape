@@ -1845,6 +1845,74 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         await page.unroute_all(behavior="wait")
 
 
+async def test_lost_runner_receipt_reconciles_from_thread_without_retry(thread_browser: ThreadBrowser) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    receipts: asyncio.Queue[APIResponse] = asyncio.Queue()
+
+    async def lose_receipt(route: Route) -> None:
+        receipt = await route.fetch()
+        receipts.put_nowait(receipt)
+        await route.fulfill(status=504, content_type="application/json", body='{"detail":"outcome uncertain"}')
+
+    await page.route("**/threads/*/commands", lose_receipt, times=1)
+    composer = message_composer(page)
+    await composer.fill("Test late admission from feed")
+    await composer.press("Enter")
+    async with asyncio.timeout(15):
+        receipt = await receipts.get()
+        original = await source.commands.get()
+    assert receipt.status == 200
+    admitted = json_format.Parse(await receipt.text(), event_log_pb2.EventEntry())
+    assert admitted.event.command_admitted.command == original
+    (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+    assert admitted in await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
+    await expect_pending_message_bubble(page, original.submit_input.text)
+    await expect(page.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_have_count(0)
+    await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
+    await page.reload()
+    await expect_pending_message_bubble(page, original.submit_input.text)
+    assert source.commands.empty()
+
+
+async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(thread_browser: ThreadBrowser) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    requests: asyncio.Queue[command_pb2.Command] = asyncio.Queue()
+
+    async def lose_receipt(route: Route) -> None:
+        assert route.request.post_data is not None
+        requests.put_nowait(json_format.Parse(route.request.post_data, command_pb2.Command()))
+        await route.fulfill(status=504, content_type="application/json", body='{"detail":"outcome uncertain"}')
+
+    await page.route("**/threads/*/commands", lose_receipt, times=1)
+    composer = message_composer(page)
+    await composer.fill("Test uncertain admission")
+    await composer.press("Enter")
+    async with asyncio.timeout(15):
+        original = await requests.get()
+    bubble = page.locator(f'[data-command-id="{original.command_id}"]')
+    await expect(bubble.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_be_visible()
+    await expect(bubble.get_by_text("Input failed", exact=False)).to_have_count(0)
+    async with page.expect_request("**/threads/*/commands") as retried:
+        await bubble.get_by_role("button", name="Retry", exact=True).click()
+    retry = await retried.value
+    assert retry.post_data is not None
+    assert json_format.Parse(retry.post_data, command_pb2.Command()) == original
+    async with asyncio.timeout(15):
+        assert await source.commands.get() == original
+    await expect_pending_message_bubble(page, original.submit_input.text)
+    (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+    archived = await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
+    assert any(
+        entry.event.HasField("command_admitted") and entry.event.command_admitted.command == original
+        for entry in archived
+    )
+    await expect(bubble.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_have_count(0)
+
+
 async def click_evidence(scope: Locator) -> None:
     """Click the Evidence toggle under `scope` the way a reader reaches it: it shows while its item is hovered."""
     toggle = scope.locator(".agentplane-evidence-toggle")
@@ -1895,7 +1963,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
             drop_reply.set()
         pending = page.get_by_role("region", name="Input messages")
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
-        await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
+        await expect(pending.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_be_visible()
         await expect(page.locator('.agentplane-user-bubble[data-message-phase="local"]')).to_have_count(1)
 
         # Reload abandons the held Electric response. The new document delivers the same local
@@ -2027,7 +2095,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
         pending = page.get_by_role("region", name="Input messages")
-        await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
+        await expect(pending.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_be_visible()
 
         # Interrupt real shape delivery. The published Electric client must retry its own
         # handle/offset, without a document reload or an Agentplane event replay reducer.
@@ -2043,7 +2111,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
             assert (await app.replay_held()).cursor >= 5
         assert await document.evaluate("original => original === document")
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
-        await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
+        await expect(pending.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_be_visible()
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
 
         app.release_replay()

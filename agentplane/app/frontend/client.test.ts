@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
+import { create } from "@bufbuild/protobuf";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, threadObservations, displayableError, httpError } from "./client";
+import { CommandSchema } from "../../protocol/command_pb";
+
+import { api, command, CommandSubmissionRefused, threadObservations, displayableError, httpError } from "./client";
 import { restoreRouteAfterLogin } from "./operator_login";
 
 afterEach(() => {
@@ -71,4 +74,47 @@ it("on a 401 sends the browser to log in once and never hands the response back 
   const afterLogin = { hash: "" };
   restoreRouteAfterLogin(afterLogin);
   expect(afterLogin.hash).toBe("#/mcp-servers");
+});
+
+const input = create(CommandSchema, {
+  commandId: "immutable-command",
+  operation: { case: "submitInput", value: { text: "keep this input" } },
+});
+
+it.each([504, 502, 408, 429])("treats HTTP %i without a command receipt as unconfirmed", async (status) => {
+  const middleware = { onRequest: () => Response.json({ detail: "deadline" }, { status }) };
+  api.use(middleware);
+  try {
+    await expect(command("thread", input)).rejects.toThrow("Command admission unconfirmed");
+  } finally {
+    api.eject(middleware);
+  }
+});
+
+it.each([409, 422, 403])("recognizes explicit HTTP %i command rejection", async (status) => {
+  const middleware = { onRequest: () => Response.json({ detail: "refused" }, { status }) };
+  api.use(middleware);
+  try {
+    await expect(command("thread", input)).rejects.toBeInstanceOf(CommandSubmissionRefused);
+  } finally {
+    api.eject(middleware);
+  }
+});
+
+it("treats a lost transport reply as unconfirmed without changing the submitted command", async () => {
+  const requests: Request[] = [];
+  const middleware = {
+    onRequest({ request }: { request: Request }) {
+      requests.push(request);
+      throw new TypeError("connection lost");
+    },
+  };
+  api.use(middleware);
+  try {
+    await expect(command("thread", input)).rejects.toThrow("Command admission unconfirmed");
+    expect(requests).toHaveLength(1);
+    expect(await requests[0].json()).toMatchObject({ commandId: input.commandId });
+  } finally {
+    api.eject(middleware);
+  }
 });

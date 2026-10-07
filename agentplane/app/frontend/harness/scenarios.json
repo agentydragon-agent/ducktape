@@ -1357,7 +1357,7 @@
     "pendingCommands": "mixed",
     "commandAdmissionTimedOut": true,
     "readySelectors": [
-      ":text(\"runner did not admit the command\")",
+      ":text(\"Admission unconfirmed · checking Thread history\")",
       "[data-thread-anchor=\"16\"]",
       ".agentplane-user-bubble[data-message-phase=\"local\"]"
     ],

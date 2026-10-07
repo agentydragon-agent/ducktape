@@ -2,7 +2,7 @@ import { Button, Paper, Stack, Text } from "@mantine/core";
 import { type Command } from "../../../protocol/command_pb";
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { command, displayableError } from "../client";
+import { command, CommandSubmissionRefused, displayableError } from "../client";
 import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
@@ -10,14 +10,19 @@ import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], dismissedCommandIds: [], error: null };
 
-export function pruneCommandErrors(errors: Map<string, string>, commandIds: ReadonlySet<string>): Map<string, string> {
+export interface CommandIssue {
+  kind: "refused" | "unconfirmed";
+  message: string;
+}
+
+export function pruneCommandErrors<T>(errors: Map<string, T>, commandIds: ReadonlySet<string>): Map<string, T> {
   if (Array.from(errors.keys()).every((id) => commandIds.has(id))) return errors;
   return new Map(Array.from(errors).filter(([id]) => commandIds.has(id)));
 }
 
 interface ProjectedCommands {
   local: LocalCommandSnapshot;
-  errors: ReadonlyMap<string, string>;
+  errors: ReadonlyMap<string, CommandIssue>;
   submissionError: string | null;
   submit: (value: Command) => boolean;
   deliver: (value: LocalCommand) => Promise<void>;
@@ -27,7 +32,7 @@ interface ProjectedCommands {
 export function useProjectedCommands(threadId: string, entities: ThreadEntity[]): ProjectedCommands {
   const store = useMemo(() => new LocalCommands(threadId), [threadId]);
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
-  const [errors, setErrors] = useState(new Map<string, string>());
+  const [errors, setErrors] = useState(new Map<string, CommandIssue>());
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const active = useRef(new Set<string>());
   useEffect(() => {
@@ -57,7 +62,12 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
         });
       } catch (reason) {
         if (store.getSnapshot().commands.some((command) => command.command.commandId === id))
-          setErrors((previous) => new Map(previous).set(id, displayableError(reason)));
+          setErrors((previous) =>
+            new Map(previous).set(id, {
+              kind: reason instanceof CommandSubmissionRefused ? "refused" : "unconfirmed",
+              message: displayableError(reason),
+            })
+          );
       } finally {
         active.current.delete(id);
       }
@@ -99,7 +109,7 @@ export function SelectedCommandOutcomes({
 }: {
   commands: LocalCommand[];
   store: LocalCommands;
-  errors: ReadonlyMap<string, string>;
+  errors: ReadonlyMap<string, CommandIssue>;
   deliver: (value: LocalCommand) => Promise<void>;
 }): JSX.Element | null {
   const controls = commands.filter((value) => value.command.operation.case !== "submitInput");
@@ -118,7 +128,7 @@ export function PendingInputMessages({
 }: {
   commands: LocalCommand[];
   entities: ThreadEntity[];
-  errors: ReadonlyMap<string, string>;
+  errors: ReadonlyMap<string, CommandIssue>;
   store: LocalCommands;
   deliver: (value: LocalCommand) => Promise<void>;
 }): JSX.Element | null {
@@ -159,6 +169,7 @@ export function PendingInputMessages({
         const id = value.command.commandId;
         const row = byId.get(id);
         const outcome = row && "outcome" in row.state ? row.state.outcome : null;
+        const issue = row ? undefined : errors.get(id);
         const admitted = row !== undefined || value.admission !== null;
         const failed = outcome === "failed";
         const noop = outcome === "noop";
@@ -180,10 +191,13 @@ export function PendingInputMessages({
                     ? undefined
                     : admitted
                       ? "Saved · awaiting effect"
-                      : "Saved locally · awaiting admission"
+                      : issue?.kind === "unconfirmed"
+                        ? "Admission unconfirmed · checking Thread history"
+                        : "Saved locally · awaiting admission"
             }
             statusColor={failed ? "red" : "dimmed"}
-            error={errors.get(id)}
+            error={issue?.kind === "refused" ? issue.message : undefined}
+            note={issue?.kind === "unconfirmed" ? issue.message : undefined}
             action={
               failed || noop
                 ? { label: "Dismiss", onClick: () => store.dismiss(id) }
@@ -223,7 +237,7 @@ function SelectedCommandRows({
   rows: ThreadEntity[];
   commands: LocalCommand[];
   store: LocalCommands;
-  errors: ReadonlyMap<string, string>;
+  errors: ReadonlyMap<string, CommandIssue>;
   deliver: (value: LocalCommand) => Promise<void>;
 }): JSX.Element {
   useEffect(() => {
@@ -257,7 +271,13 @@ function SelectedCommandRows({
               </>
             ) : (
               <>
-                <Text size="sm">{admitted ? "Saved · awaiting effect" : "Saved locally · awaiting admission"}</Text>
+                <Text size="sm">
+                  {admitted
+                    ? "Saved · awaiting effect"
+                    : errors.get(value.command.commandId)?.kind === "unconfirmed"
+                      ? "Admission unconfirmed · checking Thread history"
+                      : "Saved locally · awaiting admission"}
+                </Text>
                 {value.command.operation.case === "changeModel" && (
                   <Text>Change model to {value.command.operation.value.model}</Text>
                 )}
@@ -266,7 +286,12 @@ function SelectedCommandRows({
                 )}
                 {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
                 {!admitted && errors.get(value.command.commandId) && (
-                  <Text c="red">{errors.get(value.command.commandId)}</Text>
+                  <Text
+                    c={errors.get(value.command.commandId)?.kind === "refused" ? "red" : "dimmed"}
+                    role={errors.get(value.command.commandId)?.kind === "refused" ? "alert" : undefined}
+                  >
+                    {errors.get(value.command.commandId)?.message}
+                  </Text>
                 )}
                 {!admitted && <Button onClick={() => void deliver(value)}>Retry</Button>}
               </>

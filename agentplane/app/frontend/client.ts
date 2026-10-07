@@ -307,16 +307,38 @@ export async function models(): Promise<ModelCatalog> {
   return data as ModelCatalog;
 }
 
+/** An explicit 4xx command rejection: unlike a lost reply, this is not an admission receipt. */
+export class CommandSubmissionRefused extends Error {}
+
 /** The runner's exact durable CommandAdmitted receipt; the app archive may still be catching up.
  * Replaying the same immutable command id/payload is safe after a lost response.
  */
 export async function command(threadId: string, message: Command): Promise<EventEntry> {
-  const { data, error } = await api.POST("/threads/{thread_id}/commands", {
-    params: { path: { thread_id: threadId } },
-    body: toJson(CommandSchema, message) as JsonObject,
-  });
-  if (error) throw new Error(displayableError(error));
-  return fromJson(EventEntrySchema, data as JsonValue);
+  let result;
+  try {
+    result = await api.POST("/threads/{thread_id}/commands", {
+      params: { path: { thread_id: threadId } },
+      body: toJson(CommandSchema, message) as JsonObject,
+    });
+  } catch (cause) {
+    // A transport failure gives no proof that the app or runner did not admit the command.
+    throw new Error(`Command admission unconfirmed: ${displayableError(cause)}`, { cause });
+  }
+  const { data, error, response } = result;
+  if (error) {
+    const message = displayableError(error);
+    // A lost server reply, timeout or transient error can happen after runner admission.
+    // Treat only an explicit, non-timeout client rejection as a refusal.
+    if (response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status)) {
+      throw new CommandSubmissionRefused(message);
+    }
+    throw new Error(`Command admission unconfirmed: ${message}`);
+  }
+  try {
+    return fromJson(EventEntrySchema, data as JsonValue);
+  } catch (cause) {
+    throw new Error(`Command receipt could not be verified: ${displayableError(cause)}`, { cause });
+  }
 }
 
 /**
