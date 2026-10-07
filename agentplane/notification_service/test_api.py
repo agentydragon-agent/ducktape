@@ -5,6 +5,7 @@ from unittest.mock import create_autospec
 from uuid import uuid4
 
 import httpx
+import pytest
 import pytest_bazel
 
 from agentplane.notification_service.api import authenticated_caller, create_app
@@ -59,7 +60,9 @@ async def test_subscription_patch_renews_without_pause(store: Store) -> None:
         assert "paused" not in app.openapi()["components"]["schemas"][model]["properties"]
 
 
-async def test_lifespan_owns_workers_and_readiness_tracks_failure_and_shutdown(store: Store) -> None:
+async def test_lifespan_owns_workers_and_readiness_tracks_failure_and_shutdown(
+    store: Store, caplog: pytest.LogCaptureFixture
+) -> None:
     service = create_autospec(Service, instance=True)
     service.github = None
     service.store = store
@@ -67,6 +70,7 @@ async def test_lifespan_owns_workers_and_readiness_tracks_failure_and_shutdown(s
     fail = asyncio.Event()
     failed = asyncio.Event()
     park = asyncio.Event()
+    private_message = "delivery secret should not appear in logs"
     started: set[int] = set()
     stopped: set[int] = set()
 
@@ -77,7 +81,7 @@ async def test_lifespan_owns_workers_and_readiness_tracks_failure_and_shutdown(s
         try:
             if index == 0:
                 await fail.wait()
-                raise RuntimeError("worker failed")
+                raise RuntimeError(private_message)
             await park.wait()
         finally:
             stopped.add(index)
@@ -97,11 +101,34 @@ async def test_lifespan_owns_workers_and_readiness_tracks_failure_and_shutdown(s
             assert (await client.get("/readyz")).status_code == 200
             fail.set()
             await failed.wait()
+            await asyncio.sleep(0)  # Let the task completion callback report the failure.
             assert (await client.get("/readyz")).status_code == 503
-            assert (await client.get("/healthz")).status_code == 200
+            assert (await client.get("/healthz")).status_code == 503
+            assert "notification worker notifications-0 failed: RuntimeError" in caplog.text
+            assert "raise RuntimeError(private_message)" in caplog.text
+            assert private_message not in caplog.text
         assert stopped == started
         assert not store.wakeups.listener.connected
         assert (await client.get("/readyz")).status_code == 503
+        assert not any("notifications-1" in record.message for record in caplog.records)
+
+
+async def test_worker_return_is_fatal_without_a_traceback(store: Store, caplog: pytest.LogCaptureFixture) -> None:
+    service = create_autospec(Service, instance=True)
+    service.store = store
+    returned = asyncio.Event()
+
+    async def run() -> None:
+        returned.set()
+
+    service.run.side_effect = run
+    app = create_app(service, create_autospec(WorkloadPrincipalResolver, instance=True))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://notifications.test") as client:
+        async with app.router.lifespan_context(app):
+            await returned.wait()
+            await asyncio.sleep(0)
+            assert (await client.get("/healthz")).status_code == 503
+            assert "notification worker notifications-0 stopped unexpectedly" in caplog.text
 
 
 if __name__ == "__main__":
