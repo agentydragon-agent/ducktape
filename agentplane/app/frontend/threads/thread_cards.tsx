@@ -177,7 +177,11 @@ export function UserInputBubble({
               {error}
             </Text>
           )}
-          {note && <Text size="xs" c="dimmed">{note}</Text>}
+          {note && (
+            <Text size="xs" c="dimmed">
+              {note}
+            </Text>
+          )}
           {action && (
             <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
               {action.label}
