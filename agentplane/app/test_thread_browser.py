@@ -1643,8 +1643,8 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
     reply_finished = asyncio.Event()
 
     async def hold_reply(route: Route) -> None:
-        # This is a real response from the app after PostgreSQL admission commit. Only its
-        # delivery to this browser is withheld; independent Electric synchronization continues.
+        # This is the runner's durable receipt. Only delivery to this browser is withheld;
+        # independent app archival and Electric synchronization continue.
         reply_started.set()
         try:
             replies.put_nowait(await route.fetch())
@@ -1665,8 +1665,8 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
         assert admission.event.command_admitted.command == command
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-        assert admission in await thread_browser.event_logs.events(thread.id, limit=100)
         await expect_pending_message_bubble(page, command.submit_input.text)
+        assert admission in await thread_browser.event_logs.events(thread.id, limit=100)
 
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
