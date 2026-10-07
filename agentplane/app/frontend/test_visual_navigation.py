@@ -3,6 +3,7 @@
 import re
 
 import pytest
+import pytest_bazel
 from playwright.async_api import expect
 
 from agentplane.app.frontend.visual_assertions import _assert_phone_composer_layout
@@ -132,3 +133,7 @@ async def test_composer_more_menu(scene: str, visual: VisualHarness) -> None:
         await expect(page.get_by_role("menu")).to_be_visible()
         await expect(page.locator('[data-thread-anchor="34"]')).to_be_attached()
         await capture_scene(view, scene)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

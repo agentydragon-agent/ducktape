@@ -159,8 +159,9 @@ async def test_history_tail_and_prepend_anchor(visual: VisualHarness, scene: str
             await wait_for_stable(page)
             original = await thinking.element_handle()
             top = await thinking.evaluate("element => element.getBoundingClientRect().top")
-            await page.get_by_role("button", name="Load older events").click()
-            await expect(page.locator('[data-history-sequences~="1"]')).to_be_attached()
+            # Loading older history must not scroll the reader to the off-screen load control.
+            await page.get_by_role("button", name="Load older events").dispatch_event("click")
+            await expect(page.locator('[data-history-sequences~="1"]').first).to_be_attached()
             await wait_for_stable(page)
             assert await thinking.evaluate("(element, original) => element === original", original)
             await expect(thinking).to_have_attribute("open", "")

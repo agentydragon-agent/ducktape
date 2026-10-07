@@ -1,6 +1,7 @@
 """Agentplane disclosures visual behavior tests."""
 
 import pytest
+import pytest_bazel
 from playwright.async_api import expect
 
 from agentplane.app.frontend.visual_assertions import (
@@ -234,3 +235,7 @@ async def test_disclosure_control_reaches_card_edges(
             await control.hover(position={"x": 5, "y": 2})
             assert await control.evaluate("el => el.matches(':hover')")
         await capture_scene(view, scene, output_name=f"disclosure-{state}-{viewport_name}")
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

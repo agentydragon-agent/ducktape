@@ -4,6 +4,7 @@ import re
 from textwrap import dedent
 
 import pytest
+import pytest_bazel
 from playwright.async_api import expect
 
 from agentplane.app.frontend.visual_assertions import (
@@ -435,3 +436,7 @@ async def test_expanded_shell_output_sticks_while_scrolling(scene: str, visual: 
         )
         await wait_for_stable(page)
         await capture_scene(view, scene)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

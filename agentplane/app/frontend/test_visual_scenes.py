@@ -1,6 +1,7 @@
 """Agentplane render-only checkpoints; interactions live in the feature tests."""
 
 import pytest
+import pytest_bazel
 
 from agentplane.app.frontend.visual_pages import capture_scene, open_scene
 from util.testing.visual_capture import VisualHarness
@@ -81,3 +82,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 async def test_scene(visual: VisualHarness, scene: str) -> None:
     async with open_scene(visual, scene) as view:
         await capture_scene(view, scene)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

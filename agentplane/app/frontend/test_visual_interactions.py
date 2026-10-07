@@ -17,4 +17,5 @@ if __name__ == "__main__":
         "test_visual_policies.py",
         "test_visual_navigation.py",
     ]
-    pytest_bazel.main([*sys.argv[1:], __file__, *(str(Path(__file__).with_name(name)) for name in modules)])
+    sys.argv.extend([__file__, *(str(Path(__file__).with_name(name)) for name in modules)])
+    pytest_bazel.main()
