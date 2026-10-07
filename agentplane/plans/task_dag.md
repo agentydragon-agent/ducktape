@@ -92,6 +92,7 @@ flowchart TB
     HARNESS_PLUGINS["Unranked candidate<br/>project plugins and skill packages<br/>source trust and capability grants"]:::future
     HARNESS_PROMPT_SUGGESTIONS["Optional, lowest estimated win<br/>Claude prompt suggestions<br/>measure UX before enabling"]:::future
     THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
+    THREAD_ARCHIVE_OWNERSHIP["Deferred service boundary<br/>move Thread archive and read API out of app<br/>durable beyond Sandbox lifecycle"]:::decision
     SANDBOX_COMPARTMENT_BOUNDARY["Priority trust-boundary decision<br/>co-resident Threads share filesystem and SA<br/>no false compartment isolation"]:::decision
     THREAD_PORTABLE_STATE["Deferred portability design<br/>preserve native session and runner journal<br/>outside disposable Sandbox storage"]:::decision
     THREAD_ON_DEMAND_RUNTIME["Deferred runtime lifecycle<br/>new Sandbox on activity/notice<br/>restore and resume a durable Thread"]:::future
@@ -810,6 +811,34 @@ app admission policy. No automatic cross-successor replay is implied.
 one, which is a durability and ownership question about the Thread record itself, separable from
 what any surface shows of it.
 
+### `THREAD_ARCHIVE_OWNERSHIP` — Thread history outside the UI app
+
+**Deferred service-boundary decision:** move durable Thread identity, ingested runner Event
+prefix, folded views, and the authorized read/follow API out of the integration app so
+agents can address a service-owned Thread history API directly. Sandbox Service is a
+plausible home because it opens runner sessions and owns runner reachability, but it
+currently owns Kubernetes intent and has no archive database; do not confuse historical
+Thread storage with the lifetime of a Sandbox CR, Pod, or PVC. Compare an archive
+component within Sandbox Service to an independently deployable Thread/history service;
+choose boundaries by durable ownership and least privilege, not by today's endpoint name.
+
+The runner's journal remains authoritative for admission and Events until safely copied;
+a PostgreSQL archive/projection must still survive deleted Sandboxes and have a fenced,
+replayable ingester and stable Thread IDs/cursors. Co-locate Thread read grants with the
+new durable read authority; direct ServiceAccount requests require independently verified
+identity and per-Thread authorization, while browser requests can retain the app as UI
+facade only if its delegation is authenticated, scoped, and not a trusted arbitrary header.
+Moving the archive does not by itself make native history or workspace files portable.
+
+**Migration gate:** define the one archive writer and a staged, observable transfer of
+existing Threads, Events, folds, grants, feeds, and cursor/high-water state. No app and
+service replicas may both claim archive ownership; pin old/new read behavior, revocation,
+operator access, and restart/lag cases. If a legacy conversion is destructive, make its
+loss explicit and deliberate rather than silently presenting incomplete histories as
+resumable. Split implementation into independently testable owner/ingestion/read/cutover
+slices after choosing the contract. Immediate `THREAD_READ_POLICY` must work in the
+current app first, with semantics portable to the eventual archive owner.
+
 ### `SANDBOX_COMPARTMENT_BOUNDARY` — do not mistake Thread ACLs for isolation
 
 **Priority trust-boundary decision alongside `THREAD_READ_POLICY`:** multiple runner sessions
@@ -916,8 +945,8 @@ can see _only_ authorized Threads. Test selected versus other compartments, arch
 and deleted Sandboxes, two replicas, reclassification, and revocation during SSE.
 Co-design the grant vocabulary with future `CROSS_THREAD_DELIVERY` and
 `THREAD_CREATE_POLICY`: **read does not imply send or create**. Do not block the
-first read implementation on choosing command versus mailbox delivery or a hosted
-Thread lifecycle.
+first read implementation on choosing command versus mailbox delivery, a hosted
+Thread lifecycle, or a later `THREAD_ARCHIVE_OWNERSHIP` move.
 
 ### `CROSS_THREAD_DELIVERY` — send a message to another agent's Thread
 
