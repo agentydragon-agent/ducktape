@@ -51,9 +51,6 @@ Replace the notification source's five-second Action-history polling in a separa
 
 ## Deferred decisions and follow-ups
 
-- Brief cursor-only notices backed by shared instructions, conditional on Claude/Codex mock-LLM
-  compaction/resume evidence: [`NOTIFICATION_COMPACT_NOTICES`](task_dag.md#notification_compact_notices--shared-instructions-and-brief-cursor-hints).
-
 - Home Assistant entity/event subscriptions:
   [`HOME_ASSISTANT_NOTIFICATIONS`](task_dag.md#home_assistant_notifications--entity-and-event-subscriptions).
 - Extract genuinely shared source wiring as concrete implementations accumulate, not a speculative

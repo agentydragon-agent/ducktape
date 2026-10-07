@@ -68,7 +68,6 @@ flowchart TB
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
     HARNESS_AUTO_COMPACTION_PROOF["Future harness acceptance<br/>automatic compaction<br/>standing instructions on next request"]:::future
-    NOTIFICATION_COMPACT_NOTICES["Deferred design<br/>brief notices and shared instructions<br/>Claude/Codex compaction evidence"]:::future
     NOTIFICATION_NOTICE_PACING["Incremental improvement<br/>stage-aware notice pacing<br/>avoid redundant busy-turn notices"]:::future
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
     HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
@@ -847,8 +846,7 @@ precise delivery time if it depends on a harness event or the runner being offli
 Compare optional lifecycle/hook signals only if simple stage-aware timers leave a measurable
 problem; hooks are not guaranteed pre-sample events. Native queued-input update/withdrawal
 needs explicit too-late outcomes and must not cancel other coalesced inputs. Do not require LLM
-proxy interception, which could cover subagents or unrelated requests. Keep this separate from
-making notices terse in `NOTIFICATION_COMPACT_NOTICES`.
+proxy interception, which could cover subagents or unrelated requests. Keep this separate from notice wording and presentation.
 
 ### `HARNESS_AUTO_COMPACTION_PROOF` — exercise non-manual compaction
 
@@ -857,32 +855,8 @@ deterministically trigger harness-initiated automatic compaction in runner-match
 Codex, where supported. Prove the boundary and inspect the first following ordinary model
 request and resume for instructions. The native explicit-compaction tests establish the current
 working assumption that standing instructions survive; they do not directly test automatic
-compaction or the runner's exact constructed instructions. Do not block shorter notices or a
-frontend compaction control on this optional coverage.
-
-### `NOTIFICATION_COMPACT_NOTICES` — shared instructions and brief cursor hints
-
-**Deferred design; wire format TBD:** put the stable notification-service contract in
-runner-supplied standing instructions once: how to GET entries after the acknowledged cursor,
-page after the last returned cursor, distinguish read from acknowledgement, and explicitly
-acknowledge only the handled contiguous prefix. A notice should carry only per-delivery data,
-such as the inbox ID, acknowledgement cursor observed when it was prepared, covered-through
-cursor, and optionally new-entry count. For example:
-`<agentplane-notification>{"inbox":"<uuid>","acked_at_preparation":12,"through_at_preparation":47}</agentplane-notification>`.
-Those cursors are snapshots, not claims that 47 is still the latest or that the ack remains 12.
-Do not repeat the GET/ack procedure in every notice. This example is not a protocol commitment
-or a provenance/authentication mechanism.
-
-The passing native post-compaction and resume model-request tests for both harnesses are
-sufficient for the current decision to rely on standing instructions surviving compaction.
-This is an accepted working assumption, not a claim that automatic compaction or the runner's
-exact instructions were exercised. Before removing guidance from notices, put the retrieval
-and acknowledgement contract in runner-supplied standing instructions and test that a short
-hint still leads to inbox retrieval and explicit acknowledgement of only the handled
-contiguous prefix. If the behavior fails, retain self-contained notices or add reinjection;
-no production LLM-proxy interception is required. Coordinate with `NOTIFICATION_PRESENTATION`
-without treating a textual tag as trusted origin metadata or making frontend work a
-prerequisite.
+compaction or the runner's exact constructed instructions. Do not block a frontend compaction
+control on this optional coverage.
 
 ### `GITHUB_DELIVERY_RECOVERY` — remaining live reliability acceptance
 
