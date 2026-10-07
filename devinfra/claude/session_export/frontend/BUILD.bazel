@@ -341,9 +341,8 @@ py_visual_test(
         "harness/index.html",
         ":visual_harness_css",
     ],
-    env = {"DEBUG": "pw:api,pw:browser"},
     harness = ":visual_harness_js",
-    shard_count = 2,
+    shard_count = 4,
     test_deps = [
         "//util/testing:page_capture",
         "//util/testing:viewports",
