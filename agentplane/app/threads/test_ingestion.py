@@ -335,11 +335,20 @@ async def test_feed_attachment_and_terminal_state_survive_the_owner(
     ended = await replica.event_logs.feed_state(thread)
     assert ended is not None
     assert isinstance(ended.end, FeedEnd)
+    # Runner-confirmed Open/Resume clears only the old normal EOF before background
+    # ingestion copies the resumed prefix. Never pretend the archive is caught up.
+    await event_logs.resume_pending(thread)
+    pending = await replica.event_logs.feed_state(thread)
+    assert pending is not None
+    assert pending.end is None
+    assert pending.attached == attached
     await ingestion.set_attached(thread, attached, lease=lease)
     await ingestion.end_feed(thread, lease=lease, error="test runner refused attachment")
     failed = await replica.event_logs.feed_state(thread)
     assert failed is not None
     assert failed.end == FeedError("test runner refused attachment")
+    await event_logs.resume_pending(thread)
+    assert await replica.event_logs.feed_state(thread) == failed
     await ingestion.release(lease)
     with pytest.raises(IngestionLeaseLostError):
         await ingestion.set_attached(thread, attached, lease=lease)

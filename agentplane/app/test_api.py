@@ -625,7 +625,6 @@ def test_a_runner_that_does_not_answer_is_a_503(
                     event_logs=event_logs,
                     content=content,
                     ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion),
-                    thread_changes=database_updates.changes[Channel.THREADS],
                 ),
                 store,
                 TEST_MODELS,
@@ -676,13 +675,7 @@ async def test_a_runner_that_never_answers_open_is_a_504_and_releases_its_stream
             ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
             app = create_app(
                 inventory,
-                RunnerBridge(
-                    runners=runners,
-                    event_logs=event_logs,
-                    content=content,
-                    ingester=ingester,
-                    thread_changes=database_updates.changes[Channel.THREADS],
-                ),
+                RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester),
                 store,
                 TEST_MODELS,
                 egress,

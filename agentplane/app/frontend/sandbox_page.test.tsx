@@ -75,6 +75,7 @@ afterEach(async () => {
   container.remove();
   vi.useRealTimers();
   live.snapshot.threads = [];
+  sessionStorage.clear();
   (live.snapshot.sandbox as SandboxView).binding = null;
   (live.snapshot.sandbox as SandboxView).kubernetes_grants = [];
   (live.snapshot.sandbox as SandboxView).kubernetes_grants_ready = true;
@@ -117,6 +118,18 @@ async function render(
     }
     if (path === "/egress/policies" || /^\/sandboxes\/(startup-test|other-test)\/egress\/decisions$/.test(path)) {
       return Promise.resolve(Response.json([]));
+    }
+    if (path === "/threads" && request.method === "GET") {
+      const url = new URL(request.url);
+      return Promise.resolve(
+        Response.json(
+          live.snapshot.threads.filter(
+            (thread) =>
+              thread.sandbox === url.searchParams.get("sandbox") &&
+              thread.session_id === url.searchParams.get("session_id")
+          )
+        )
+      );
     }
     if (/^\/sandboxes\/(startup-test|other-test)\/sessions/.test(path)) return sessions(request);
     if (/^\/threads\/[^/]+\/(un)?archive$/.test(path)) return threadActions(request);
@@ -343,9 +356,80 @@ it("shows creation progress, prevents duplicate clicks, and restores the button 
   await act(async () => newSession().click());
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   await act(async () => fail(Response.json({ detail: "session refused" }, { status: 422 })));
-  expect(newSession().disabled).toBe(false);
+  expect(newSession().disabled).toBe(true);
   expect(container.textContent).toContain("session refused");
+  expect(container.textContent).toContain("Retry same session");
   expect(onOpenThread).not.toHaveBeenCalled();
+});
+
+function button(label: string): HTMLButtonElement {
+  const found = [...container.querySelectorAll("button")].find((node) => node.textContent?.includes(label));
+  if (!found) throw new Error(`Missing button ${label}`);
+  return found;
+}
+
+it("retries a lost Open with its original identity and payload despite changed form values", async () => {
+  const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
+    Promise.resolve(
+      request.method === "GET" ? Response.json([]) : Response.json({ detail: "connection lost" }, { status: 503 })
+    )
+  );
+  await render(sessions);
+  await act(async () => newSession().click());
+  const first = await postedBody(sessions);
+  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(first.session_id);
+  await act(async () => {
+    const input = labeledInput("Working directory");
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    if (!setter) throw new Error("HTMLInputElement.value has no setter");
+    setter.call(input, "/different/{session_id}");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(labeledInput("Working directory").value).toBe("/different/{session_id}");
+  await act(async () => button("Retry same session").click());
+  const requests = sessions.mock.calls.filter(([request]) => request.method === "POST");
+  expect(requests).toHaveLength(2);
+  expect(await requests[1][0].json()).toEqual(first);
+  expect(newSession().disabled).toBe(true);
+});
+
+it("recovers the original Open mapping after a lost response without sending a second Open", async () => {
+  const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
+    Promise.resolve(
+      request.method === "GET" ? Response.json([]) : Response.json({ detail: "connection lost" }, { status: 503 })
+    )
+  );
+  const onOpenThread = await render(sessions);
+  await act(async () => newSession().click());
+  const original = await postedBody(sessions);
+  live.snapshot.threads = [thread({ id: "recovered", session_id: original.session_id })];
+  await act(async () => button("Check for Thread").click());
+  expect(onOpenThread).toHaveBeenCalledWith("recovered");
+  expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
+  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
+});
+
+it("reload keeps only the Open ID and requires an explicit decision instead of minting a new one", async () => {
+  const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
+    Promise.resolve(
+      request.method === "GET" ? Response.json([]) : Response.json({ detail: "connection lost" }, { status: 503 })
+    )
+  );
+  await render(sessions);
+  await act(async () => newSession().click());
+  const original = await postedBody(sessions);
+  await act(async () => root.unmount());
+  container.remove();
+  await render(sessions);
+  expect(container.textContent).toContain(original.session_id);
+  expect(container.textContent).toContain("original specification and setup script are unavailable");
+  expect(newSession().disabled).toBe(true);
+  expect(container.textContent).not.toContain("Retry same session");
+  await act(async () => button("Check for Thread").click());
+  expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
+  live.snapshot.threads = [thread({ id: "found-after-reload", session_id: original.session_id })];
+  await act(async () => button("Check for Thread").click());
+  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
 });
 
 it("hides an archived thread's session by default, reveals it via Show archived, and unarchives it", async () => {

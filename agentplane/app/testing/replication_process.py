@@ -271,13 +271,7 @@ async def _serve(
         inventory = endpoint.client()
         runners = SandboxSessions(index, inventory)
         ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
-        bridge = RunnerBridge(
-            runners=runners,
-            event_logs=event_logs,
-            content=content,
-            ingester=ingester,
-            thread_changes=database_updates.changes[Channel.THREADS],
-        )
+        bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
         async with (
             httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
             httpx.AsyncClient(

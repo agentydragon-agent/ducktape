@@ -54,7 +54,20 @@ import {
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { StaleNotice } from "./stream_status";
 import { TopbarTitle } from "./topbar";
-import { HarnessState, SessionSpecSchema, SetupState, type SessionSummary } from "../../runner/protocol_pb";
+import {
+  HarnessState,
+  SessionSpecSchema,
+  SetupState,
+  type SessionSpec,
+  type SessionSummary,
+} from "../../runner/protocol_pb";
+
+// Persist only the retry identity, never instructions or setup scripts (which can contain secrets).
+function pendingOpenKey(sandbox: string): string {
+  return `agentplane:pending-open:${sandbox}`;
+}
+
+type PendingOpen = { sessionId: string; spec?: SessionSpec; setupScript?: string };
 
 function setupLabel(state: SetupState): string {
   switch (state) {
@@ -263,6 +276,15 @@ export function SandboxPage({
   const [error, setError] = useState<string | null>(null);
   const [sessionList, setSessionList] = useState<"loading" | "waiting" | "ready" | { error: string }>("loading");
   const [creatingSession, setCreatingSession] = useState(false);
+  const [pendingOpen, setPendingOpen] = useState<PendingOpen | null>(() => {
+    const sessionId = sessionStorage.getItem(pendingOpenKey(name));
+    return sessionId ? { sessionId } : null;
+  });
+  function rememberOpen(attempt: PendingOpen | null): void {
+    if (attempt) sessionStorage.setItem(pendingOpenKey(name), attempt.sessionId);
+    else sessionStorage.removeItem(pendingOpenKey(name));
+    setPendingOpen(attempt);
+  }
   const [effort, setEffort] = useState("low");
   const [instructions, setInstructions] = useState("");
   const [cwdTemplate, setCwdTemplate] = useState("/state/workspaces/{session_id}");
@@ -412,26 +434,64 @@ export function SandboxPage({
   }
 
   async function createSession(): Promise<void> {
-    if (!sandbox || !model || creatingSession) return;
+    if (!sandbox || !model || creatingSession || pendingOpen) return;
+    const sessionId = `s-${crypto.randomUUID()}`;
+    const attempt: PendingOpen = {
+      sessionId,
+      spec: fromJson(SessionSpecSchema, {
+        harness,
+        cwd: cwdTemplate.replaceAll("{session_id}", sessionId),
+        model,
+        reasoningEffort: effort,
+        instructions,
+      } as JsonValue),
+      setupScript,
+    };
+    // Record the ID *before* sending Open. A lost response or reload cannot mint another
+    // session implicitly. Keep the original request in memory for exact same-tab retries.
+    rememberOpen(attempt);
+    await retryOpen(attempt);
+  }
+
+  async function retryOpen(attempt: PendingOpen): Promise<void> {
+    if (creatingSession) return;
     setCreatingSession(true);
     setError(null);
-    // The operator does not pick a session id; the client mints one fresh for each attempt so a
-    // retry after failure never collides with the one that just failed.
-    const sessionId = `s-${crypto.randomUUID()}`;
     try {
-      await openSession(
-        name,
-        sessionId,
-        fromJson(SessionSpecSchema, {
-          harness,
-          cwd: cwdTemplate.replaceAll("{session_id}", sessionId),
-          model,
-          reasoningEffort: effort,
-          instructions,
-        } as JsonValue),
-        setupScript
-      );
-      await openThread(sessionId);
+      // A previous Open may have succeeded despite a lost response. Prefer its mapping.
+      if (await findThread(name, attempt.sessionId)) {
+        await openThread(attempt.sessionId);
+        return;
+      }
+      if (!attempt.spec) {
+        setError(
+          "The original Open request is unavailable after a reload. Check for its Thread again later, or explicitly discard this attempt."
+        );
+        return;
+      }
+      await openSession(name, attempt.sessionId, attempt.spec, attempt.setupScript);
+      await openThread(attempt.sessionId);
+    } catch (reason: unknown) {
+      setError(displayableError(reason));
+    } finally {
+      setCreatingSession(false);
+    }
+  }
+
+  async function checkPendingOpen(): Promise<void> {
+    if (!pendingOpen || creatingSession) return;
+    setCreatingSession(true);
+    setError(null);
+    try {
+      const thread = await findThread(name, pendingOpen.sessionId);
+      if (thread) {
+        rememberOpen(null);
+        onOpenThread(thread.id);
+      } else {
+        setError(
+          `No Thread record yet for ${pendingOpen.sessionId}. The runner may still be processing Open; check again later. Discarding this attempt can create a separate session.`
+        );
+      }
     } catch (reason: unknown) {
       setError(displayableError(reason));
     } finally {
@@ -443,6 +503,7 @@ export function SandboxPage({
     try {
       const thread = threadBySession[sessionId] ?? (await findThread(name, sessionId));
       if (!thread) throw new Error(`Thread metadata is not available for session ${sessionId}`);
+      if (sessionStorage.getItem(pendingOpenKey(name)) === sessionId) rememberOpen(null);
       onOpenThread(thread.id);
     } catch (reason: unknown) {
       setError(displayableError(reason));
@@ -563,11 +624,43 @@ export function SandboxPage({
               <Button
                 onClick={() => void createSession()}
                 loading={creatingSession}
-                disabled={!ready || sessionList !== "ready" || !model}
+                disabled={!ready || sessionList !== "ready" || !model || !!pendingOpen}
               >
                 {creatingSession ? "Creating session…" : "New session"}
               </Button>
             </Group>
+            {pendingOpen && (
+              <Stack gap="xs">
+                <Text size="sm" role="status">
+                  Open for {pendingOpen.sessionId} may have succeeded. Do not start another session until you have
+                  checked this attempt.{" "}
+                  {pendingOpen.spec
+                    ? "Retry sends the same ID, specification, and setup script, even if you edit the form."
+                    : "After a reload the original specification and setup script are unavailable; only the ID was saved."}
+                </Text>
+                <Group gap="xs">
+                  {pendingOpen.spec && (
+                    <Button disabled={creatingSession} onClick={() => void retryOpen(pendingOpen)}>
+                      Retry same session
+                    </Button>
+                  )}
+                  <Button disabled={creatingSession} variant="light" onClick={() => void checkPendingOpen()}>
+                    Check for Thread
+                  </Button>
+                  <Button
+                    disabled={creatingSession}
+                    variant="subtle"
+                    color="red"
+                    onClick={() => {
+                      rememberOpen(null);
+                      setError(null);
+                    }}
+                  >
+                    Discard attempt and allow a new session
+                  </Button>
+                </Group>
+              </Stack>
+            )}
             <Textarea
               label="Standing instructions"
               description={defaultsLabel ? "Inherited from this sandbox; editable for this thread" : undefined}

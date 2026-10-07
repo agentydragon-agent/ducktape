@@ -97,6 +97,18 @@ class EventLogStore:
                 )
             ).one()
 
+    async def resume_pending(self, thread_id: UUID) -> None:
+        """A runner-confirmed restart supersedes a normal terminal feed, not a replay error.
+
+        The ingester still owns the archived cursor and the next attached snapshot; this only
+        prevents an SSE reader from mistaking the previous incarnation's end for the new one.
+        """
+        async with self._sessions.begin() as session:
+            state = await session.get(FeedState, thread_id, with_for_update=True)
+            if state is not None and state.end == {}:
+                state.end = None
+                await notify(session, Channel.THREADS)
+
     async def find(self, sandbox: str, session_id: str) -> UUID | None:
         async with self._sessions() as session:
             return (

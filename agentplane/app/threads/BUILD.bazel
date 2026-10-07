@@ -146,7 +146,6 @@ py_library(
     deps = [
         ":ingestion",
         ":sessions",
-        "//agentplane/app:changes",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:content",
         "//agentplane/protocol:command_pb2",

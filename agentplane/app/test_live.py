@@ -23,7 +23,7 @@ from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnav
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import stored_login
 from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
@@ -314,7 +314,6 @@ def app(
         event_logs=event_logs,
         content=content,
         ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
-        thread_changes=database_updates.changes[Channel.THREADS],
     )
     return create_app(
         inventory,

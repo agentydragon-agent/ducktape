@@ -12,7 +12,7 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.live import LiveIndex
 from agentplane.app.threads import ingestion as ingestion_module
 from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
@@ -78,13 +78,7 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
     async with authenticated_service(cluster, runner.port, tmp_path / "service-token") as remote:
         directory = SandboxSessions(live_index, remote)
         ingester = Ingester(runners=directory, event_logs=event_logs, ingestion=ingestion)
-        bridge = RunnerBridge(
-            runners=directory,
-            event_logs=event_logs,
-            content=content,
-            ingester=ingester,
-            thread_changes=database_updates.changes[Channel.THREADS],
-        )
+        bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content, ingester=ingester)
         try:
             with pytest.raises(MalformedMessageError):
                 await bridge.open_session(
