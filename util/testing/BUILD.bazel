@@ -314,3 +314,46 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "visual_capture",
+    visibility = ["//visibility:public"],
+    srcs = ["visual_capture.py"],
+    deps = [
+        ":frontend_visual",
+        ":page_capture",
+        ":visual_review",
+        ":visual_scenarios",
+        "//util/bazel:runfiles",
+        "@pypi//more_itertools",
+        "@pypi//playwright",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "visual_fixtures",
+    visibility = ["//visibility:public"],
+    srcs = ["visual_fixtures.py"],
+    deps = [
+        ":undeclared_outputs",
+        ":visual_capture",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_visual_capture",
+    srcs = ["test_visual_capture.py"],
+    deps = [
+        ":visual_capture",
+        ":visual_scenarios",
+        "//:conftest",
+        "//util:playwright",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

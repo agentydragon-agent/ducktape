@@ -17,7 +17,9 @@ pytest_plugins = ("util.playwright",)
 @pytest.fixture
 def harness(playwright: Playwright, tmp_path: Path) -> VisualHarness:
     bundle = tmp_path / "harness.js"
-    bundle.write_text("document.querySelector('button').onclick = () => document.querySelector('#shot').textContent = 'Opened';")
+    bundle.write_text(
+        "document.querySelector('button').onclick = () => document.querySelector('#shot').textContent = 'Opened';"
+    )
     (tmp_path / "index.html").write_text(
         "<!doctype html><style>body { margin: 0 } #shot { width: 100px; height: 40px }</style>"
         "<div id='app'><button>Open</button><div id='shot'>Closed</div></div><script src='./harness.js'></script>"
@@ -61,14 +63,19 @@ async def test_ambiguous_crop_fails_before_publication(harness: VisualHarness) -
 async def test_no_capture_can_hide_a_page_error(harness: VisualHarness) -> None:
     with pytest.raises(AssertionError, match="deliberate crash"):
         async with harness.open("plain") as view:
-            await view.page.evaluate("() => window.dispatchEvent(new ErrorEvent('error', {message: 'deliberate crash', error: new Error('deliberate crash')}))")
+            await view.page.evaluate(
+                "() => window.dispatchEvent(new ErrorEvent('error', {message: 'deliberate crash', error: new Error('deliberate crash')}))"
+            )
 
 
 async def test_external_request_fails_before_publication(harness: VisualHarness) -> None:
-    with pytest.raises(AssertionError, match="requests escaped"):
+    async def escape() -> None:
         async with harness.open("plain") as view:
             await view.page.evaluate("() => fetch('https://escaped.test/').catch(() => {})")
             await view.capture("escaped")
+
+    with pytest.raises(AssertionError, match="requests escaped"):
+        await escape()
     assert not harness.output_dir.exists()
 
 

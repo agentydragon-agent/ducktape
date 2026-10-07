@@ -30,75 +30,35 @@ before it or on which shard it landed.
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlencode
 
 import pytest
 import pytest_asyncio
 import pytest_bazel
 from more_itertools import one
-from playwright.async_api import Page, Playwright, Route, async_playwright
-from pydantic import JsonValue, TypeAdapter
+from playwright.async_api import Page, Playwright, async_playwright
+from pydantic import TypeAdapter
 
 from util.bazel.runfiles import get_required_path
-from util.testing.frontend_visual import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.page_capture import (
     WAIT_TIMEOUT_MS,
-    DevtoolsViewport,
     PageErrors,
-    RequestFence,
     assert_network_settled,
-    screenshot_element,
     wait_for_stable,
 )
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_review import upsert_review_asset
 from util.testing.visual_scenarios import Scenario, load_scenarios
-from util.visual_review import VisualReviewAsset
-
-# One event loop for the whole sweep, so one Playwright driver serves every scenario.
-pytestmark = pytest.mark.asyncio(loop_scope="session")
-
-# `document.fonts.check` is true for a family no `@font-face` declares, so on its own it passes when the
-# stylesheet declaring the font never arrived (or the name is misspelled) and the page renders in a fallback.
-# A face loads only once laid-out text uses it, so this is asked of a mounted, painted scene, after
-# `document.fonts.ready` has covered a load that frame started.
-_FONT_STATUS_JS = """async family => {
-    await document.fonts.ready;
-    const declared = Array.from(document.fonts).some((face) => face.family.replace(/^["']|["']$/g, "") === family);
-    if (!declared) return "undeclared";
-    return document.fonts.check(`16px "${family}"`) ? "loaded" : "unloaded";
-}"""
-
+from util.testing.visual_capture import HarnessConfig, InlinePage, VisualHarness, inline_page_html as inline_page_html
 
 _PATHS_BY_URL = TypeAdapter(dict[str, str])
 
-
-@dataclass(frozen=True)
-class InlinePage:
-    """What a harness loaded with `set_content` is assembled from, besides the bundle."""
-
-    stylesheet_paths: tuple[Path, ...]
-    base_href: str | None
-    # None: loaded with `set_content`, into a page of no origin. A URL: the fence answers the navigation to it
-    # with the document, so the page has that origin and what hangs on one (storage, a cross-origin frame).
-    url: str | None = None
-
-    @classmethod
-    def from_env(cls) -> InlinePage:
-        """What `py_visual_test(inline_page = True)` sets: runfiles paths (`rlocationpath`) of the stylesheets, space-separated."""
-        return cls(
-            stylesheet_paths=tuple(get_required_path(path) for path in os.environ["STYLESHEET_PATHS"].split()),
-            base_href=os.environ.get("BASE_HREF"),
-            url=os.environ.get("PAGE_URL"),
-        )
-
+# One event loop for the whole sweep, so one Playwright driver serves every scenario.
+pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 @dataclass(frozen=True)
 class SweepConfig:
@@ -149,52 +109,12 @@ class SweepConfig:
         )
 
 
-def inline_page_html(page: InlinePage, *, bundle_script: str, window_globals: Mapping[str, JsonValue] | None) -> str:
-    """The document `set_content` loads: stylesheets, then `window_globals`, then the bundle.
-
-    The animation-pinning CSS goes in with the stylesheets so it is in effect before anything mounts.
-    """
-    css = "".join(path.read_text(encoding="utf-8") for path in page.stylesheet_paths) + DISABLE_ANIMATIONS_CSS
-    assignments = "".join(f"window.{name}={_script_literal(value)};" for name, value in (window_globals or {}).items())
-    return (
-        "<!doctype html><html><head><meta charset='utf-8'>"
-        + (f"<base href='{page.base_href}'>" if page.base_href else "")
-        + f"<style>{css}</style></head><body><div id='app'></div>"
-        + f"<script>{assignments}</script><script>{bundle_script}</script></body></html>"
-    )
-
-
-def _script_literal(value: JsonValue) -> str:
-    # `<` is escaped so a string value cannot close the script element.
-    return json.dumps(value).replace("<", "\\u003c")
-
-
 def _check_scene_selection(scenario_name: str, scenario: Scenario, *, config: SweepConfig) -> None:
     """A scenario names its scene the way its harness page is told: by query for a file, by globals for an inline page."""
     if config.inline_page is None and scenario.window_globals is not None:
         raise ValueError(f"{scenario_name}: windowGlobals reach only an inline page, and this harness is a file")
     if config.inline_page is not None and scenario.query is not None:
         raise ValueError(f"{scenario_name}: an inline page has no URL for a query; name the scene by windowGlobals")
-
-
-async def _fulfill_html(route: Route, html: str) -> None:
-    await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html)
-
-
-async def _load_harness(
-    page: Page, scenario_name: str, scenario: Scenario, *, config: SweepConfig, timeout_ms: int
-) -> None:
-    if (inline_page := config.inline_page) is None:
-        query = {"page": scenario_name} if scenario.query is None else scenario.query
-        await page.goto(f"{config.harness_url}?{urlencode(query)}", wait_until="networkidle", timeout=timeout_ms)
-    else:
-        html = inline_page_html(inline_page, bundle_script=config.bundle_script, window_globals=scenario.window_globals)
-        if inline_page.url is None:
-            await page.set_content(html, wait_until="load", timeout=timeout_ms)
-        else:
-            # Registered after the fence's catch-all, so it answers first.
-            await page.route(inline_page.url, lambda route: _fulfill_html(route, html))
-            await page.goto(inline_page.url, wait_until="load", timeout=timeout_ms)
 
 
 async def _wait_for_selectors(
@@ -223,37 +143,22 @@ async def capture_scenario(
     """Render one scenario on its own browser; raise, naming it, if it is not healthy."""
     output_name = scenario.output_name or scenario_name
     _check_scene_selection(scenario_name, scenario, config=config)
-    async with await deterministic_browser_context(
+    harness = VisualHarness(
         playwright,
-        viewport={"width": scenario.viewport.width, "height": scenario.viewport.height},
-        frozen_now_ms=FROZEN_NOW_MS,
-        color_scheme=scenario.color_scheme,
-        device_scale_factor=scenario.viewport.device_scale_factor,
-        has_touch=scenario.viewport.has_touch,
-        # A file:// harness page needs file access to reach its own bundle.
-        extra_args=["--allow-file-access-from-files"] if config.inline_page is None else [],
-    ) as context:
-        page = await context.new_page()
-        devtools_viewport = (
-            await DevtoolsViewport.attach(
-                page,
-                width=scenario.viewport.width,
-                height=scenario.viewport.height,
-                device_scale_factor=scenario.viewport.device_scale_factor,
-            )
-            if config.devtools_viewport
-            else None
-        )
-        page_errors = PageErrors(page)
-        # The harness is entirely local (a file:// page or an in-memory one, bundled fixtures), so
-        # nothing may reach the network.
-        fence = RequestFence(
-            (lambda request: request.url.startswith("file://")) if config.inline_page is None else (lambda _: False),
-            served_documents={url: path.read_text(encoding="utf-8") for url, path in config.served_documents.items()},
-        )
-        await fence.install(page)
-
-        await _load_harness(page, scenario_name, scenario, config=config, timeout_ms=timeout_ms)
+        HarnessConfig(
+            harness_path=config.harness_path, title=config.title,
+            expected_font_family=config.expected_font_family, output_suffix=config.output_suffix,
+            inline_page=config.inline_page, devtools_viewport=config.devtools_viewport,
+            served_documents=config.served_documents,
+        ),
+        output_dir,
+    )
+    async with harness.open(
+        scenario_name, viewport=scenario.viewport, color_scheme=scenario.color_scheme,
+        query=scenario.query, window_globals=scenario.window_globals,
+    ) as view:
+        page = view.page
+        page_errors = view.errors
         await _wait_for_selectors(
             page,
             page_errors,
@@ -269,12 +174,6 @@ async def capture_scenario(
             )
         # Last, so fonts, images and paint settle around whatever the scene's own conditions let in.
         await wait_for_stable(page)
-        # Only assert a named font when the app declares one. Generic family resolution is owned by the
-        # deterministic browser profile, and must not be emulated with test CSS.
-        if config.expected_font_family:
-            font_status = await page.evaluate(_FONT_STATUS_JS, config.expected_font_family)
-            if font_status != "loaded":
-                raise AssertionError(f"{output_name}: {config.expected_font_family} font did not load ({font_status})")
         if drive is not None:
             await assert_network_settled(page, context=output_name, timeout_ms=timeout_ms)
             await drive(page)
@@ -311,20 +210,10 @@ async def capture_scenario(
             )
             await wait_for_stable(page)
         await assert_network_settled(page, context=output_name, timeout_ms=timeout_ms)
-        fence.assert_none_escaped(context=output_name)
-        page_errors.assert_none(context=output_name)
-
-        # Viewport captures preserve clipping instead of expanding to fit an overflowing app.
-        if not scenario.capture_viewport:
-            screenshot = await screenshot_element(page, scenario.element, context=output_name)
-        elif devtools_viewport:
-            screenshot = await devtools_viewport.screenshot()
-        else:
-            screenshot = await page.screenshot()
-
-    asset = VisualReviewAsset(path=f"{output_name}{config.output_suffix}.png", label=scenario.label or output_name)
-    (output_dir / asset.path).write_bytes(screenshot)
-    upsert_review_asset(output_dir, title=config.title, asset=asset)
+        await view.capture(
+            output_name, label=scenario.label,
+            target=None if scenario.capture_viewport else page.locator(scenario.element),
+        )
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:

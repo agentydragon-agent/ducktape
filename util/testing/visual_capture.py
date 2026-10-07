@@ -22,8 +22,13 @@ from pydantic import JsonValue, TypeAdapter
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.page_capture import (
-    WAIT_TIMEOUT_MS, DevtoolsViewport, PageErrors, RequestFence,
-    assert_network_settled, screenshot_locator, wait_for_stable,
+    WAIT_TIMEOUT_MS,
+    DevtoolsViewport,
+    PageErrors,
+    RequestFence,
+    assert_network_settled,
+    screenshot_locator,
+    wait_for_stable,
 )
 from util.testing.visual_review import publish_review_png
 from util.testing.visual_scenarios import Viewport
@@ -185,8 +190,11 @@ class VisualPage:
             screenshot = await self.page.screenshot(full_page=full_page, scale=scale)
         await self.check(context=name)
         return publish_review_png(
-            screenshot, output_dir=self.output_dir, title=self.title,
-            name=f"{name}{self.output_suffix}.png", label=label or name,
+            screenshot,
+            output_dir=self.output_dir,
+            title=self.title,
+            name=f"{name}{self.output_suffix}.png",
+            label=label or name,
         )
 
 
@@ -213,8 +221,11 @@ class VisualHarness:
         if config.inline_page is not None and query is not None:
             raise ValueError("an inline harness is selected by window globals, not query")
         async with await deterministic_browser_context(
-            self.playwright, viewport=viewport.size, frozen_now_ms=frozen_now_ms,
-            color_scheme=color_scheme, device_scale_factor=viewport.device_scale_factor,
+            self.playwright,
+            viewport=viewport.size,
+            frozen_now_ms=frozen_now_ms,
+            color_scheme=color_scheme,
+            device_scale_factor=viewport.device_scale_factor,
             has_touch=viewport.has_touch,
             extra_args=["--allow-file-access-from-files"] if config.inline_page is None else [],
         ) as context:
@@ -222,17 +233,27 @@ class VisualHarness:
             page.set_default_timeout(WAIT_TIMEOUT_MS)
             devtools = (
                 await DevtoolsViewport.attach(
-                    page, width=viewport.width, height=viewport.height,
-                    device_scale_factor=viewport.device_scale_factor,
-                ) if config.devtools_viewport else None
+                    page, width=viewport.width, height=viewport.height, device_scale_factor=viewport.device_scale_factor
+                )
+                if config.devtools_viewport
+                else None
             )
             fence = RequestFence(
-                (lambda request: request.url.startswith("file://")) if config.inline_page is None else (lambda _: False),
-                served_documents={url: path.read_text(encoding="utf-8") for url, path in config.served_documents.items()},
+                (lambda request: request.url.startswith("file://"))
+                if config.inline_page is None
+                else (lambda _: False),
+                served_documents={
+                    url: path.read_text(encoding="utf-8") for url, path in config.served_documents.items()
+                },
             )
             view = VisualPage(
-                page, output_dir=self.output_dir, title=config.title, output_suffix=config.output_suffix,
-                fence=fence, devtools_viewport=devtools, expected_font_family=config.expected_font_family,
+                page,
+                output_dir=self.output_dir,
+                title=config.title,
+                output_suffix=config.output_suffix,
+                fence=fence,
+                devtools_viewport=devtools,
+                expected_font_family=config.expected_font_family,
             )
             await fence.install(page)
             if config.inline_page is None:
@@ -241,10 +262,13 @@ class VisualHarness:
                     wait_until="networkidle",
                 )
             else:
-                html = inline_page_html(config.inline_page, bundle_script=config.bundle_script, window_globals=window_globals)
+                html = inline_page_html(
+                    config.inline_page, bundle_script=config.bundle_script, window_globals=window_globals
+                )
                 if config.inline_page.url is None:
                     await page.set_content(html, wait_until="load")
                 else:
+
                     async def fulfill(route: Route) -> None:
                         await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html)
 
