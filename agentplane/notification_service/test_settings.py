@@ -6,7 +6,12 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from agentplane.notification_service.settings import CONFIG_FILE_ENV, NoticeDebounceSettings, SandboxServiceSettings, Settings
+from agentplane.notification_service.settings import (
+    CONFIG_FILE_ENV,
+    NoticeDebounceSettings,
+    SandboxServiceSettings,
+    Settings,
+)
 
 
 def test_yaml_settings_and_nested_environment_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
