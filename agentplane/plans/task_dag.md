@@ -94,6 +94,8 @@ flowchart TB
     THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
     HOSTED_THREAD_SURFACES["Deferred design<br/>read and control surfaces for a hosted Thread<br/>beyond today's Sandbox-bound view"]:::future
     THREAD_READ_POLICY["Priority design<br/>explicit SA access to selected Thread history<br/>start with per-Thread grants"]:::active
+    CROSS_THREAD_DELIVERY["Deferred design<br/>agents send to other Threads<br/>command vs notification inbox"]:::decision
+    THREAD_CREATE_POLICY["Deferred design<br/>SA-authorized Thread creation<br/>scoped Sandbox and stable identity"]:::decision
     AG["Capstone<br/>hosted Agent and Thread model<br/>lifecycle, surfaces and read policy together"]:::milestone
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_RBAC["Managed Kubernetes access<br/>catalog choices and SA bindings<br/>live acceptance pending; see #8596"]:::active
@@ -831,12 +833,44 @@ Threads; a read-only guard is not isolation if another route can return history 
 the Thread. Test selected versus other Threads, list/search leaks, archived and deleted
 Sandboxes, two replicas, revocation during SSE/replay, and role changes. Broader tag or
 collection selectors, including future Threads, are a later explicit policy decision;
-do not couple the first slice to the hosted-Thread lifecycle or UI.
+do not couple the first slice to the hosted-Thread lifecycle or UI. Co-design the grant
+vocabulary with future `CROSS_THREAD_DELIVERY` and `THREAD_CREATE_POLICY`: **read does not
+imply send or create**, and those capabilities do not block this first read-only slice.
+
+### `CROSS_THREAD_DELIVERY` — send a message to another agent's Thread
+
+**Deferred design, distinct from read access:** decide whether an agent's message is a Thread
+command (requiring a reachable runner, a stable command ID, runner admission, and eventual
+Thread history) or a durable peer notification to its inbox (delivery/acknowledgement rather
+than a user command). They may serve different use cases; do not label an inbox receipt as
+command execution or silently turn a notice into a user turn. The Notifications Service
+today has source subscriptions and inboxes pinned to a Sandbox UID and runner session ID,
+not a generic cross-agent send API or an inbox owned by a stable Thread ID.
+
+Specify sender provenance, recipient opt-in, per-target send grants, scope across Sandbox
+replacement/Thread succession, payload limits, duplicate/lost-response recovery, abuse
+controls, and what happens while the runner is offline. Resolve who owns a mailbox after
+its Sandbox or session disappears. A read grant alone never authorizes sending, receiving
+on another agent's behalf, or acknowledging its inbox. Design the authorization vocabulary
+with `THREAD_READ_POLICY` without delaying its first read-only implementation.
+
+### `THREAD_CREATE_POLICY` — create a Thread as a ServiceAccount caller
+
+**Deferred design, separate from reading or sending:** specify which ServiceAccount may
+open a Thread in which current Sandbox, and whether creating a new Sandbox is a separate
+capability. Require explicit target scope and stable client-chosen session identity; do
+not infer create authority from read grants, shared Sandbox names, or a caller's ability
+to send notifications. Specify caller ownership, accepted spec/defaults, quota/abuse
+limits, retry after a lost Open response, and Thread visibility to the creator. Keep the
+current runner/Open receipt and app mapping distinct from any future durable app-owned
+pending-Thread workflow (`NEWTHREAD_DURABLE`). Co-design grant representation and audit
+with `THREAD_READ_POLICY`, but let that narrow read work proceed independently.
 
 ### `AG` — hosted Agent and Thread model
 
-**Capstone** over the three above. It carries the claim that the hosted model exists, and nothing
-of its own.
+**Capstone** over `THREAD_OUTLIVES_SANDBOX`, `HOSTED_THREAD_SURFACES`, and
+`THREAD_READ_POLICY`. It carries the claim that the hosted model exists, and nothing
+of its own; deferred peer-send and Thread-create policy are separate capabilities.
 
 ### `DT` — driver-provided declarations and background control
 
