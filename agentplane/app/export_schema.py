@@ -45,6 +45,10 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
         namespace="schema",
         token_file=Path("/schema-unused-token"),
         command_admission_timeout_s=None,
+        # Schema export never makes an RPC; these are inert placeholder arguments, not runtime defaults.
+        request_timeout_s=1,
+        lifecycle_timeout_s=1,
+        follow_timeout_s=1,
     )
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
     engine = connect("postgresql+asyncpg://schema@localhost/schema")

@@ -36,15 +36,20 @@ sandbox_service:
     assert settings.sandbox_service.target == "sandboxes:8080"
     assert settings.sandbox_service.token_file == Path("/tokens/sandboxes")
     assert settings.sandbox_service.command_admission_timeout_s == 20
+    assert settings.sandbox_service.request_timeout_s == 5
+    assert settings.sandbox_service.lifecycle_timeout_s == 310
+    assert settings.sandbox_service.follow_timeout_s == 960
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_ACTIONS__URL", "http://overridden-actions")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__TARGET", "overridden-sandboxes:8080")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_NOTICE_DEBOUNCE__QUIET_SECONDS", "0")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__COMMAND_ADMISSION_TIMEOUT_S", "22")
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__REQUEST_TIMEOUT_S", "7")
     settings = Settings(_cli_parse_args=False)
     assert settings.notice_debounce == NoticeDebounceSettings(quiet_seconds=0, max_wait_seconds=15)
     assert settings.actions.url == "http://overridden-actions"
     assert settings.sandbox_service.target == "overridden-sandboxes:8080"
     assert settings.sandbox_service.command_admission_timeout_s == 22
+    assert settings.sandbox_service.request_timeout_s == 7
     assert settings.sandbox_service.token_file == Path("/tokens/sandboxes")
     with config.open("a") as file:
         file.write("unknown_setting: true\n")
@@ -76,6 +81,15 @@ def test_invalid_command_admission_timeout(timeout: float) -> None:
     with pytest.raises(ValidationError):
         SandboxServiceSettings(
             target="sandboxes:8080", token_file=Path("/tokens/sandboxes"), command_admission_timeout_s=timeout
+        )
+
+
+@pytest.mark.parametrize("name", ["request_timeout_s", "lifecycle_timeout_s", "follow_timeout_s"])
+@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
+def test_invalid_sandbox_service_deadline(name: str, timeout: float) -> None:
+    with pytest.raises(ValidationError):
+        SandboxServiceSettings.model_validate(
+            {"target": "sandboxes:8080", "token_file": "/tokens/sandboxes", name: timeout}
         )
 
 

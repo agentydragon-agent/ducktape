@@ -30,7 +30,9 @@ async def serve(settings: Settings) -> None:
         settings.sandbox_service.target,
         namespace=settings.namespace,
         token_file=settings.sandbox_service.token_file,
-        request_timeout_s=5,
+        request_timeout_s=settings.sandbox_service.request_timeout_s,
+        lifecycle_timeout_s=settings.sandbox_service.lifecycle_timeout_s,
+        follow_timeout_s=settings.sandbox_service.follow_timeout_s,
         command_admission_timeout_s=settings.sandbox_service.command_admission_timeout_s,
         channel_options=settings.sandbox_service.grpc_channel_options,
     )

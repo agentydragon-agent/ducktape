@@ -565,7 +565,13 @@ async def test_bare_service_eof_is_not_native_closure(tmp_path: Path) -> None:
     token_file = tmp_path / "token"
     token_file.write_text(TOKEN)
     client = SandboxServiceClient(
-        f"127.0.0.1:{port}", namespace=SANDBOX_NAMESPACE, token_file=token_file, command_admission_timeout_s=20
+        f"127.0.0.1:{port}",
+        namespace=SANDBOX_NAMESPACE,
+        token_file=token_file,
+        command_admission_timeout_s=20,
+        request_timeout_s=20,
+        lifecycle_timeout_s=310,
+        follow_timeout_s=960,
     )
     try:
         attachment = await client.runner(DESTINATION).attach("session")

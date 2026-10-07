@@ -187,9 +187,13 @@ class Settings(AppSettingsConfig):
     )
     sandbox_service_target: str = Field(min_length=1)
     sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
+    sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
+    sandbox_service_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
+    sandbox_service_follow_timeout_s: float = Field(default=960, gt=0, allow_inf_nan=False)
     sandbox_service_command_admission_timeout_s: float = Field(
         default=20,
         gt=0,
+        allow_inf_nan=False,
         description="Seconds the app waits for the Sandbox Service to return the runner's durable "
         "command admission receipt. Keep above its runner_admission_ack_timeout_s setting.",
     )
@@ -279,6 +283,9 @@ async def async_main(settings: Settings) -> None:
             namespace=settings.sandbox_namespace,
             token_file=settings.sandbox_service_token_file,
             command_admission_timeout_s=settings.sandbox_service_command_admission_timeout_s,
+            request_timeout_s=settings.sandbox_service_request_timeout_s,
+            lifecycle_timeout_s=settings.sandbox_service_lifecycle_timeout_s,
+            follow_timeout_s=settings.sandbox_service_follow_timeout_s,
             channel_options=settings.sandbox_service_grpc_channel_options,
         )
         egress = EgressAccess(EgressReader(namespace=settings.namespace, custom_objects=custom_objects), inventory)

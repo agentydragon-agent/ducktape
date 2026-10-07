@@ -32,6 +32,9 @@ async def service_client(resources: Resources, token_file: Path) -> AsyncIterato
             namespace=resources.destinations.inventory.namespace,
             token_file=token_file,
             command_admission_timeout_s=resources.runner_admission_ack_timeout_s + 10,
+            request_timeout_s=20,
+            lifecycle_timeout_s=310,
+            follow_timeout_s=960,
         )
         try:
             yield client
