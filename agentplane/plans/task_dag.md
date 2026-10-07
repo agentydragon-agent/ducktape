@@ -62,6 +62,7 @@ flowchart TB
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
     NOTIFICATION_WORKER_ISOLATION["Reliability follow-up<br/>separate notification HTTP and delivery workers<br/>independent failure domains"]:::future
+    NOTIFICATION_STALE_INBOX_RETIRE["Reliability follow-up<br/>auto-retire inboxes for deleted Sandboxes<br/>stop futile retries, retain history"]:::future
     HARNESS_AUTO_COMPACTION_PROOF["Future harness acceptance<br/>automatic compaction<br/>standing instructions on next request"]:::future
     NOTIFICATION_NOTICE_PACING["Incremental improvement<br/>stage-aware notice pacing<br/>avoid redundant busy-turn notices"]:::future
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
@@ -782,6 +783,24 @@ resume due inboxes across replicas without concurrent ownership, with errors vis
 age/backlog monitored. Exercise independent rollouts and worker-only failure/restart without
 restarting or draining healthy HTTP pods. Diagnose any current worker crash separately; this
 split is not its root-cause fix.
+
+### `NOTIFICATION_STALE_INBOX_RETIRE` — retire inboxes for deleted Sandboxes
+
+**Planned cleanup:** an inbox can outlive its UID-pinned Sandbox. Workers currently reject its
+missing destination, then re-claim the non-retired inbox on its next deadline; this produces
+repeated `DestinationRejectedError` logs and can leave undeliverable entries queued forever.
+Automatically retire inboxes only when authoritative Sandbox inventory proves that the pinned
+Sandbox is gone or its name now belongs to a different UID. Cancel their subscriptions and stop
+retrying, while retaining entries and notice evidence under the existing retirement/retention
+contract. Do not acknowledge unread entries, mint replacement commands, or silently rebind an
+inbox to a replacement Sandbox. A suspended Sandbox is not deleted; transient inventory or
+Sandbox Service failures must remain retryable, not trigger retirement.
+
+**Acceptance:** test deletion with both covered and uncovered entries, name reuse with a new
+UID, suspension, and transient lookup failures. Prove a stale inbox stops claiming/retrying
+across worker replicas, retained entries remain inspectable until normal expiry, and a new
+Sandbox's inbox is unaffected. Make the retirement reason visible in diagnostics without
+logging notification payloads.
 
 ### `NOTIFICATION_ACTION_FEED` — remove idle Action-history polling
 
