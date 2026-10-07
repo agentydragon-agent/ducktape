@@ -73,7 +73,8 @@ class RunnerBridge:
             raise MalformedMessageError(f"invalid session overrides: {error}") from error
         # The app mapping is durable before we answer. Runner history copies independently;
         # an archive lag is not an Open failure.
-        await self._event_logs.open(sandbox, session_id, attached.spec)
+        thread_id = await self._event_logs.open(sandbox, session_id, attached.spec)
+        await self._event_logs.resume_pending(thread_id)
         await self._ingester.start()
         return attached
 
@@ -106,6 +107,7 @@ class RunnerBridge:
         attached = await self._runners.client(runner_session.sandbox).resume(runner_session.session_id)
         # The Thread mapping already exists. Do not make runner Resume depend on archive
         # catch-up; its feed exposes that later, and a stale view remains non-authoritative.
+        await self._event_logs.resume_pending(thread_id)
         await self._ingester.start()
         return attached
 

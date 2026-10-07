@@ -119,7 +119,18 @@ async function render(
     if (path === "/egress/policies" || /^\/sandboxes\/(startup-test|other-test)\/egress\/decisions$/.test(path)) {
       return Promise.resolve(Response.json([]));
     }
-    if (path === "/threads" && request.method === "GET") return Promise.resolve(Response.json(live.snapshot.threads));
+    if (path === "/threads" && request.method === "GET") {
+      const url = new URL(request.url);
+      return Promise.resolve(
+        Response.json(
+          live.snapshot.threads.filter(
+            (thread) =>
+              thread.sandbox === url.searchParams.get("sandbox") &&
+              thread.session_id === url.searchParams.get("session_id")
+          )
+        )
+      );
+    }
     if (/^\/sandboxes\/(startup-test|other-test)\/sessions/.test(path)) return sessions(request);
     if (/^\/threads\/[^/]+\/(un)?archive$/.test(path)) return threadActions(request);
     throw new Error(`Unexpected request: ${request.method} ${path}`);
