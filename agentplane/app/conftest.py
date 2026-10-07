@@ -233,7 +233,6 @@ def bridge(
         event_logs=event_logs,
         content=content,
         ingester=ingester,
-        thread_changes=database_updates.changes[Channel.THREADS],
     )
 
 

@@ -314,7 +314,6 @@ def app(
         event_logs=event_logs,
         content=content,
         ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
-        thread_changes=database_updates.changes[Channel.THREADS],
     )
     return create_app(
         inventory,

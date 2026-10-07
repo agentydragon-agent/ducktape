@@ -83,7 +83,6 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
             event_logs=event_logs,
             content=content,
             ingester=ingester,
-            thread_changes=database_updates.changes[Channel.THREADS],
         )
         try:
             with pytest.raises(MalformedMessageError):

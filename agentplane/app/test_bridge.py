@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import httpx
@@ -181,7 +182,6 @@ async def app_url(
         event_logs=event_logs,
         content=content,
         ingester=ingester,
-        thread_changes=database_updates.changes[Channel.THREADS],
     )
     app = create_app(
         inventory,
@@ -1150,14 +1150,12 @@ async def replicas(
         event_logs=event_logs,
         content=content,
         ingester=owner_ingester,
-        thread_changes=database_updates.changes[Channel.THREADS],
     )
     survivor = RunnerBridge(
         runners=survivor_runners,
         event_logs=survivor_event_logs,
         content=ContentStore(replica_engine),
         ingester=survivor_ingester,
-        thread_changes=replica_updates.changes[Channel.THREADS],
     )
     try:
         async with replica_updates.listener.listen():
@@ -1247,7 +1245,6 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
                 event_logs=replica_event_logs,
                 content=ContentStore(replica_engine),
                 ingester=survivor_ingester,
-                thread_changes=replica_updates.changes[Channel.THREADS],
             )
             try:
                 await survivor_ingester.start()
@@ -1515,7 +1512,6 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
         event_logs=event_logs,
         content=content,
         ingester=offline_ingester,
-        thread_changes=database_updates.changes[Channel.THREADS],
     )
     try:
         # A lost HTTP response is retryable from the committed Thread prefix even after the
@@ -1532,6 +1528,40 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
             assert (await next_message(lines)).event == "end"
     finally:
         await offline_ingester.close()
+
+
+async def test_open_and_resume_reply_before_archive_catches_up(
+    local_runners: SandboxSessions,
+    event_logs: EventLogStore,
+    content: ContentStore,
+    ingestion: Ingestion,
+    spec: protocol_pb2.SessionSpec,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runner receipts and a committed Thread mapping suffice; copying the feed is independent."""
+    ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
+    # Simulate stalled ingestion without delaying the runner itself.
+    monkeypatch.setattr(ingester, "start", AsyncMock())
+    bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=ingester)
+    opened = await asyncio.wait_for(bridge.open_session(SANDBOX, SESSION, spec), timeout=10)
+    thread_id = await event_logs.find(SANDBOX, SESSION)
+    assert thread_id is not None
+    assert opened.last_cursor > 0
+    assert await event_logs.last_cursor(thread_id) == 0
+
+    await bridge.command(
+        thread_id,
+        command_pb2.Command(command_id="stop-before-archive", stop_runner_session=command_pb2.StopRunnerSession()),
+    )
+    resumed = await asyncio.wait_for(
+        bridge.resume_thread(
+            thread_id, expected_harness=protocol_pb2.Harness.Name(spec.harness), expected_cwd=spec.cwd
+        ),
+        timeout=10,
+    )
+    assert resumed.session_id == SESSION
+    assert resumed.last_cursor > opened.last_cursor
+    assert await event_logs.last_cursor(thread_id) == 0
 
 
 if __name__ == "__main__":

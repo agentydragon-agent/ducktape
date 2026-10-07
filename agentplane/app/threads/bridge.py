@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Annotated
 from uuid import UUID
 
@@ -10,7 +9,6 @@ from fastapi import APIRouter, Depends, Request, status
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.app.changes import Changes
 from agentplane.app.threads.events.event_log import EventLogStore, FeedError, ThreadNotFoundError
 from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
@@ -51,13 +49,11 @@ class RunnerBridge:
         event_logs: EventLogStore,
         content: ContentStore,
         ingester: Ingester,
-        thread_changes: Changes,
     ) -> None:
         self._runners = runners
         self._event_logs = event_logs
         self._content = content
         self._ingester = ingester
-        self._thread_changes = thread_changes
 
     async def list_sessions(self, sandbox: str) -> list[protocol_pb2.SessionSummary]:
         return await self._runners.client(sandbox).list_sessions()
@@ -80,23 +76,10 @@ class RunnerBridge:
             )
         except (ValueError, ParseError) as error:
             raise MalformedMessageError(f"invalid session overrides: {error}") from error
-        return await self._archive_open(sandbox, session_id, attached)
-
-    async def _archive_open(
-        self, sandbox: str, session_id: str, attached: protocol_pb2.Attached
-    ) -> protocol_pb2.Attached:
-        thread_id = await self._event_logs.open(sandbox, session_id, attached.spec)
+        # The app mapping is durable before we answer. Runner history copies independently;
+        # an archive lag is not an Open failure.
+        await self._event_logs.open(sandbox, session_id, attached.spec)
         await self._ingester.start()
-        # In particular, do not return a resumed session while the database still says its
-        # previous harness ended. Commands remain runner-first; this only synchronizes Open.
-        waiter = asyncio.Event()
-        with self._thread_changes.subscribe(waiter):
-            async with asyncio.timeout(15):
-                while True:
-                    waiter.clear()
-                    if await self._event_logs.last_cursor(thread_id) >= attached.last_cursor:
-                        break
-                    await waiter.wait()
         return attached
 
     async def resume_thread(
@@ -126,7 +109,10 @@ class RunnerBridge:
         if protocol_pb2.Harness.Name(summary.spec.harness) != expected_harness or summary.spec.cwd != expected_cwd:
             raise RunnerError("runner's retained session spec does not match this Thread's harness and workspace")
         attached = await self._runners.client(runner_session.sandbox).resume(runner_session.session_id)
-        return await self._archive_open(runner_session.sandbox, runner_session.session_id, attached)
+        # The Thread mapping already exists. Do not make runner Resume depend on archive
+        # catch-up; its feed exposes that later, and a stale view remains non-authoritative.
+        await self._ingester.start()
+        return attached
 
     async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """Return the runner's durable receipt; the app archive can catch up later.

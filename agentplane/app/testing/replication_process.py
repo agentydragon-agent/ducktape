@@ -276,7 +276,6 @@ async def _serve(
             event_logs=event_logs,
             content=content,
             ingester=ingester,
-            thread_changes=database_updates.changes[Channel.THREADS],
         )
         async with (
             httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,

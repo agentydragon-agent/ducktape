@@ -314,7 +314,6 @@ async def async_main(settings: Settings) -> None:
             event_logs=event_logs,
             content=content,
             ingester=ingester,
-            thread_changes=database_updates.changes[Channel.THREADS],
         )
 
         operator_actions = (

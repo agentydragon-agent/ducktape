@@ -63,7 +63,6 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
             event_logs=event_logs,
             content=content,
             ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
-            thread_changes=database_updates.changes[Channel.THREADS],
         ),
         ThreadStore(engine),
         ModelCatalog(
