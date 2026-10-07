@@ -170,8 +170,6 @@ def command(
         # --safe-mode blocks plugins and hooks from adding their prompt/tool bulk; it also disables the
         # hooks a client registers at initialize. --setting-sources= below still keeps plugins out.
         *(["--include-hook-events"] if hooks else ["--safe-mode"]),
-        # This disables skills and slash commands, removing their catalog from the prompt.
-        *([] if slash_commands else ["--disable-slash-commands"]),
         # This suppresses the optional prompt_suggestion frame after each turn.
         "--prompt-suggestions=false",
         # An empty source list ignores user, project, and local settings files.
@@ -197,6 +195,9 @@ def command(
         "--model",
         model,
     ]
+    # Most captures omit the skills/slash catalog; the compaction probe needs /compact.
+    if not slash_commands:
+        result.append("--disable-slash-commands")
     if resume_id:
         result.extend(["--resume", resume_id])
     if session_id:
