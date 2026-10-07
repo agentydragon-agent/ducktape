@@ -123,12 +123,14 @@ async def test_worker_return_is_fatal_without_a_traceback(store: Store, caplog: 
 
     service.run.side_effect = run
     app = create_app(service, create_autospec(WorkloadPrincipalResolver, instance=True))
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://notifications.test") as client:
-        async with app.router.lifespan_context(app):
-            await returned.wait()
-            await asyncio.sleep(0)
-            assert (await client.get("/healthz")).status_code == 503
-            assert "notification worker notifications-0 stopped unexpectedly" in caplog.text
+    async with (
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://notifications.test") as client,
+        app.router.lifespan_context(app),
+    ):
+        await returned.wait()
+        await asyncio.sleep(0)
+        assert (await client.get("/healthz")).status_code == 503
+        assert "notification worker notifications-0 stopped unexpectedly" in caplog.text
 
 
 if __name__ == "__main__":
