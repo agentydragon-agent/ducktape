@@ -1341,9 +1341,11 @@ async def test_expanded_command_uses_heading_to_collapse(
 ) -> None:
     async def drive(page: Page) -> None:
         await _open_tool_run(page)
-        command = page.locator(".agentplane-clamped-block[data-label='Command']").filter(
-            has=page.get_by_role("button", name=re.compile(r"^Show all"))
-        ).first
+        command = (
+            page.locator(".agentplane-clamped-block[data-label='Command']")
+            .filter(has=page.get_by_role("button", name=re.compile(r"^Show all")))
+            .first
+        )
         await expect(command).to_be_attached()
         await command.get_by_role("button", name=re.compile(r"^Show all")).click()
         heading = command.locator(".agentplane-clamped-disclosure .agentplane-disclosure-heading")
