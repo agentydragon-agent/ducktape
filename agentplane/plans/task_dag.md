@@ -105,7 +105,7 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Deferred combined UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox selected, Thread fields editable"]:::future
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
-    ADMISSION_DEADLINE_BUDGET["P1 reported failure<br/>submission waits bound on archive lag<br/>four coupled 15 s budgets, one setting"]:::active
+    ADMISSION_DEADLINE_BUDGET["P1 partially landed<br/>submission budgets split and configurable<br/>defaults still unmeasured; measure ingest lag"]:::active
     ADMISSION_UNCERTAIN_OUTCOME["Planned correctness<br/>unconfirmed submission reconciles<br/>not a failed send"]:::future
     COMMAND_DISPATCHED_EVENT["Missing observation<br/>runner handed the command to the harness<br/>journal-only today; needs an Event"]:::future
     SUBMISSION_STAGE_INDICATOR["Planned UI<br/>staged submission indicator<br/>which of five stages, not two strings"]:::future
@@ -562,33 +562,22 @@ sequence. Review them for independently useful changes to salvage into appropria
 slices; do not stack new work on their deferred queue design. Preserve the runner's
 own journal in either option.
 
-### `ADMISSION_DEADLINE_BUDGET` — one submission budget, bounded by ingest lag rather than failure
+### `ADMISSION_DEADLINE_BUDGET` — set the submission budgets from measured ingest lag
 
-**P1, reported against deployed staging:** submitting a message can answer
-`admission of command '…' was not confirmed within 15 seconds; outcome uncertain` after the runner
-already took the command. Four independent 15-second budgets gate one submission, and only moving
-them together helps:
+Each submission wait has its own named, validated setting that states what it gates:
+`request_timeout_s`, `command_admission_timeout_s` and `stream_write_timeout_s` on the Sandbox
+Service (see `API.md`, "Server configuration and cutover"), and `command_admission_timeout_s`,
+`session_archive_timeout_s`, `admission_reread_s` plus `sandbox_service_command_timeout_s` on the app
+(`AGENTPLANE_*`). Submission defaults to 300 s, so a slow admission on a local model is no longer
+reported as a failure whose command is running anyway.
 
-- `agentplane/app/threads/bridge.py` `COMMAND_ADMISSION_S`, the wait in `_wait_for_admission`. It is
-  not a runner round trip: it polls `ContentStore.admitted_command`, so it ends when the Ingester has
-  copied the runner's `CommandAdmitted` into the app archive — ingest lag, longest on a Thread whose
-  stream is busy delivering `TextDelta`/`ToolOutputDelta` for the turn already in progress.
-- The same file's `_archive_open`, which inlines its own 15 s wait for the Ingester to reach the
-  runner's `attached.last_cursor` on Open and Resume.
-- `agentplane/sandbox_service/main.py` `admission_timeout_s`, which `grpc_api.py` applies both as the
-  generic request deadline, as the `admit_running_command` budget and as the per-write timeout inside
-  `FollowSession`. It is one field doing three unrelated jobs, and its `le=60` makes the target below
-  unconfigurable.
-- `agentplane/app/frontend/client.ts` `COMMAND_TIMEOUT_MS`, a browser abort documented as sitting above
-  the server's sequential waits, so it inherits their size.
-
-Split submission out of `admission_timeout_s` — the SSE write timeout should stay short and the
-submit budget should not be its side effect — thread one named setting through the app and the
-Sandbox Service instead of four constants, and keep the browser abort above the server bound.
-Set it generously: a Codex harness inserts a steer only at an opportunity inside the turn, and on a
-local model that gap is long, workload-dependent and routinely dwarfs 15 seconds. Five minutes is
-the starting value, not a measured one; measure ingest lag on a busy Thread rather than guessing
-again.
+**The number is still a guess, and that is the remaining work.** 300 s is the reported failure's
+starting point, not a measurement. Measure ingest lag on a busy Thread (a turn already streaming
+`TextDelta`/`ToolOutputDelta` when a steer arrives) and set `command_admission_timeout_s` from the
+tail rather than from intuition. Then check that `agentplane/app/frontend/client.ts`
+`COMMAND_TIMEOUT_MS` still sits above it: that browser ceiling cannot read the deployed setting, so
+it is raised by hand alongside the default and carries the same unmeasured risk until the bound is
+published to the client.
 
 ### `ADMISSION_UNCERTAIN_OUTCOME` — an unconfirmed submission reconciles instead of failing
 
@@ -600,8 +589,9 @@ failed send while the command may already be admitted and running. Turn the time
 non-terminal state: keep watching the archive for that immutable command, resolve through the
 Thread's existing push feed when it lands, and make any retry replay the same command —
 `RunnerBridge.command` already short-circuits on an archived admission, so no new recovery path is
-needed. Only an explicit runner refusal is a failure. Land after `ADMISSION_DEADLINE_BUDGET` so the
-reconciliation window is not simply a longer error message.
+needed. Only an explicit runner refusal is a failure. `ADMISSION_DEADLINE_BUDGET` made the deadline
+configurable rather than wrong, so this must not amount to a longer error message: an unconfirmed
+submission reconciles.
 
 ### `COMMAND_DISPATCHED_EVENT` — make "the runner sent this to the harness" an observation
 

@@ -994,7 +994,7 @@ async def test_command_admission_timeout_is_not_an_internal_server_error(
         async def timed_out(
             _bridge: RunnerBridge, _thread_id: UUID, _command: command_pb2.Command
         ) -> event_log_pb2.EventEntry:
-            raise RunnerAdmissionTimeoutError("timed-out-command")
+            raise RunnerAdmissionTimeoutError("timed-out-command", 0.01)
 
         monkeypatch.setattr(RunnerBridge, "command", timed_out)
         response = await http.post(
@@ -1045,7 +1045,8 @@ async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_no
     )
     monkeypatch.setattr(content, "admitted_command", observed_lookup)
     monkeypatch.setattr("agentplane.app.threads.ingestion.notify", drop_notification)
-    monkeypatch.setattr("agentplane.app.threads.bridge.ADMISSION_REREAD_S", 0.01)
+    # The reread period is a bridge setting now, not a module constant: patch the instance.
+    monkeypatch.setattr(bridge, "_admission_reread_s", 0.01)
     admission = asyncio.create_task(bridge._wait_for_admission(thread, command))
     try:
         async with asyncio.timeout(10):

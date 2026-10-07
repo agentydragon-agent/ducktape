@@ -84,16 +84,23 @@ class SandboxServiceClient:
         namespace: str,
         token_file: Path,
         request_timeout_s: float = 20,
+        command_timeout_s: float = 310,
         lifecycle_timeout_s: float = 310,
         follow_timeout_s: float = 960,
         channel_options: Mapping[str, int | str] | None = None,
     ) -> None:
-        if min(request_timeout_s, lifecycle_timeout_s, follow_timeout_s) <= 0:
+        if min(request_timeout_s, command_timeout_s, lifecycle_timeout_s, follow_timeout_s) <= 0:
             raise ValueError("timeouts must be positive")
         self.target = target
         self.namespace = namespace
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
+        # SubmitCommand's deadline, and the only one here longer than a transport timeout because it
+        # is the only request that stays open for something a harness controls: the runner's admission
+        # receipt. Size it from the server's own admission budget plus a margin, so the server's
+        # deadline is what reports a reason and this one only catches a lost response. A short value
+        # here cancels a submission the server is still correctly waiting on.
+        self.command_timeout_s = command_timeout_s
         self.lifecycle_timeout_s = lifecycle_timeout_s
         self.follow_timeout_s = follow_timeout_s
         self._channel_options = channel_options
@@ -219,6 +226,7 @@ class Runner:
                 command=command,
                 follow=event_log_pb2.Follow(after_cursor=after_cursor),
             ),
+            timeout_s=self.service.command_timeout_s,
         )
         if not receipt.event.HasField("command_admitted") or receipt.event.command_admitted.command != command:
             raise ConnectionError("Sandbox Service did not return the exact command admission")

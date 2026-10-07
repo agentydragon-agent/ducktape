@@ -207,6 +207,44 @@ class Settings(AppSettingsConfig):
         description="Watch lifetime; every kind the live stream pushes is relisted this often, and a "
         "kind that misses several cycles is what the stream reports as stale.",
     )
+    # Submission waits, split because each gates a different thing. Three of them were one hardcoded
+    # 15 seconds, which reported a slow-but-healthy submission on a local model as a failure whose
+    # command was running anyway, and raising one necessarily raised the others. Each description says
+    # what its deadline covers, because "did not finish in time" is only actionable once you know what
+    # it was waiting for. Runtime-only, like `resync_seconds`: an operator sets these with
+    # `AGENTPLANE_*`, not through the cdk8s-rendered app config file, so the rendered manifests do not
+    # change and the defaults are what deployments get unless they say otherwise.
+    command_admission_timeout_s: float = Field(
+        default=300,
+        gt=0,
+        description="Seconds a Thread command submission waits for the matching CommandAdmitted to appear "
+        "in the app archive: the runner's admission receipt plus the Ingester copying it, never the "
+        "harness acting on the input. A Codex harness takes a steer only at an opportunity inside the "
+        "turn, so a local model puts this minutes away routinely. Expiry means uncertain, not rejected.",
+    )
+    session_archive_timeout_s: float = Field(
+        default=60,
+        gt=0,
+        description="Seconds Open and Resume wait for the app archive to reach the cursor the runner "
+        "reported as attached, so a resumed Thread is never served against a database that still says its "
+        "previous harness ended. Only bytes already in the runner's log have to arrive, so this is shorter "
+        "than command_admission_timeout_s, which also waits on a harness.",
+    )
+    admission_reread_s: float = Field(
+        default=2,
+        gt=0,
+        description="Seconds between durable rereads of the archived admission while a submission waits. "
+        "LISTEN/NOTIFY only wakes that reread, so this bounds what a lost notification costs and says "
+        "nothing about how long a submission may take.",
+    )
+    sandbox_service_command_timeout_s: float = Field(
+        default=310,
+        gt=0,
+        description="Deadline this app puts on the Sandbox Service SubmitCommand call, which stays open "
+        "for the runner's admission receipt. Keep it above the Sandbox Service's own "
+        "command_admission_timeout_s so the server is what reports a reason; a shorter value here cancels "
+        "a submission the server is still correctly waiting on. The two settings are raised together.",
+    )
     token_audience: str = Field(
         default="agentplane",
         description="Audience a Kubernetes token must carry to authenticate here, so none is replayable.",
@@ -272,6 +310,7 @@ async def async_main(settings: Settings) -> None:
             settings.sandbox_service_target,
             namespace=settings.sandbox_namespace,
             token_file=settings.sandbox_service_token_file,
+            command_timeout_s=settings.sandbox_service_command_timeout_s,
             channel_options=settings.sandbox_service_grpc_channel_options,
         )
         egress = EgressAccess(EgressReader(namespace=settings.namespace, custom_objects=custom_objects), inventory)
@@ -301,6 +340,9 @@ async def async_main(settings: Settings) -> None:
             content=content,
             ingester=ingester,
             thread_changes=database_updates.changes[Channel.THREADS],
+            command_admission_timeout_s=settings.command_admission_timeout_s,
+            session_archive_timeout_s=settings.session_archive_timeout_s,
+            admission_reread_s=settings.admission_reread_s,
         )
 
         operator_actions = (

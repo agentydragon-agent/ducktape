@@ -142,7 +142,12 @@ def resources(cluster: Cluster, peer: Peer) -> Resources:
         caller_accounts=frozenset({OWNER}),
         platform_instructions="Test guidance",
         follow_lease_s=0.5,
-        admission_timeout_s=1,
+        # These tests answer a scripted runner promptly, so every wait is short here. Naming all three
+        # is the point: they are separate settings now, and a test that wants one of them long says so
+        # itself rather than inheriting it from an unrelated knob.
+        request_timeout_s=1,
+        command_admission_timeout_s=1,
+        stream_write_timeout_s=1,
     )
 
 
@@ -191,8 +196,8 @@ async def test_admission_is_exact_native_evidence(remote: SandboxServiceClient, 
 async def test_idle_follow_renews_with_ok_status_not_native_end(
     resources: Resources, token_file: Path, peer: Peer
 ) -> None:
-    # Longer than admission/write deadlines: idle native reads must not use those deadlines.
-    async with service_client(replace(resources, admission_timeout_s=0.2, follow_lease_s=0.6), token_file) as remote:
+    # Longer than the stream write deadline: idle native reads must not use that deadline.
+    async with service_client(replace(resources, stream_write_timeout_s=0.2, follow_lease_s=0.6), token_file) as remote:
         async with asyncio.timeout(8):
             call = remote.stub.FollowSession(
                 protocol_pb2.FollowSessionRequest(
@@ -215,7 +220,7 @@ async def test_idle_follow_renews_with_ok_status_not_native_end(
 async def test_stalled_downstream_write_expires_before_follow_renewal(
     resources: Resources, token_file: Path, peer: Peer
 ) -> None:
-    async with service_client(replace(resources, admission_timeout_s=1, follow_lease_s=30), token_file) as remote:
+    async with service_client(replace(resources, stream_write_timeout_s=1, follow_lease_s=30), token_file) as remote:
         async with asyncio.timeout(8):
             attachment = await remote.runner(DESTINATION).attach("session")
             connection = await peer.attachments.get()

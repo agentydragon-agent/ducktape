@@ -23,8 +23,23 @@ from agentplane.runner.errors import RunnerError
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
-COMMAND_ADMISSION_S = 15
-ADMISSION_REREAD_S = 2
+# Defaults for the waits a submission pays. Each is a `Settings` field, so a deployment changes it
+# without a code change; these are only what an unconfigured app uses.
+#
+# `command_admission_timeout_s` bounds waiting for the Ingester to copy the runner's already-written
+# CommandAdmitted into the app archive. It is not a runner round trip, and not a proxy for the
+# harness having taken the input: a Codex harness inserts a steer only at an opportunity inside the
+# turn, so on a local model both the admission and its ingest can run minutes behind the request.
+# Too short turns a healthy slow submission into a reported failure whose command is running anyway.
+DEFAULT_COMMAND_ADMISSION_S = 300.0
+# `session_archive_timeout_s` bounds the same copy for Open and Resume: waiting for the archive to
+# reach the cursor the runner reported as attached, so a resumed Thread is never served while the
+# database still says its previous harness ended. Shorter than the submission wait on purpose --
+# nothing has to happen in a harness first, only the copy of bytes already in the runner's log.
+DEFAULT_SESSION_ARCHIVE_S = 60.0
+# `admission_reread_s` is the fallback poll period behind LISTEN/NOTIFY: notifications only wake a
+# durable reread, so this bounds what a lost notification costs, not how long a submission may take.
+DEFAULT_ADMISSION_REREAD_S = 2.0
 
 
 class MalformedMessageError(Exception):
@@ -34,9 +49,12 @@ class MalformedMessageError(Exception):
 class RunnerAdmissionTimeoutError(Exception):
     """Command admission was not confirmed before the deadline; its outcome is uncertain."""
 
-    def __init__(self, command_id: str) -> None:
+    def __init__(self, command_id: str, timeout_s: float) -> None:
+        # The configured bound is in the message because it is now configured: an operator reading
+        # this needs to know which budget expired, not that some number of seconds passed.
         super().__init__(
-            f"admission of command {command_id!r} was not confirmed within {COMMAND_ADMISSION_S} seconds; outcome uncertain"
+            f"admission of command {command_id!r} was not confirmed within {timeout_s:g} seconds; "
+            "outcome uncertain: the runner may already have taken it"
         )
 
 
@@ -58,8 +76,16 @@ class RunnerBridge:
         content: ContentStore,
         ingester: Ingester,
         thread_changes: Changes,
+        command_admission_timeout_s: float = DEFAULT_COMMAND_ADMISSION_S,
+        session_archive_timeout_s: float = DEFAULT_SESSION_ARCHIVE_S,
+        admission_reread_s: float = DEFAULT_ADMISSION_REREAD_S,
     ) -> None:
+        if min(command_admission_timeout_s, session_archive_timeout_s, admission_reread_s) <= 0:
+            raise ValueError("archive wait budgets must be positive")
         self._runners = runners
+        self._command_admission_timeout_s = command_admission_timeout_s
+        self._session_archive_timeout_s = session_archive_timeout_s
+        self._admission_reread_s = admission_reread_s
         self._event_logs = event_logs
         self._content = content
         self._ingester = ingester
@@ -97,7 +123,7 @@ class RunnerBridge:
         # previous harness ended. Commands remain runner-first; this only synchronizes Open.
         waiter = asyncio.Event()
         with self._thread_changes.subscribe(waiter):
-            async with asyncio.timeout(15):
+            async with asyncio.timeout(self._session_archive_timeout_s):
                 while True:
                     waiter.clear()
                     if await self._event_logs.last_cursor(thread_id) >= attached.last_cursor:
@@ -156,7 +182,7 @@ class RunnerBridge:
             )
             return await self._wait_for_admission(thread_id, command)
         except TimeoutError as error:
-            raise RunnerAdmissionTimeoutError(command.command_id) from error
+            raise RunnerAdmissionTimeoutError(command.command_id, self._command_admission_timeout_s) from error
 
     async def _command(self, sandbox: str, session_id: str, command: command_pb2.Command, *, after_cursor: int) -> None:
         await self._runners.client(sandbox).command(session_id, command, after_cursor=after_cursor)
@@ -165,7 +191,7 @@ class RunnerBridge:
         """Wait for the ingester's committed prefix, never for a native command effect."""
         waiter = asyncio.Event()
         with self._thread_changes.subscribe(waiter):
-            async with asyncio.timeout(COMMAND_ADMISSION_S):
+            async with asyncio.timeout(self._command_admission_timeout_s):
                 while True:
                     if admitted := await self._content.admitted_command(thread_id, command):
                         return admitted
@@ -178,7 +204,7 @@ class RunnerBridge:
                     # while this app is attached, a bounded durable reread still finds the
                     # committed runner admission without asking the runner to repeat it.
                     with contextlib.suppress(TimeoutError):
-                        async with asyncio.timeout(ADMISSION_REREAD_S):
+                        async with asyncio.timeout(self._admission_reread_s):
                             await waiter.wait()
 
 

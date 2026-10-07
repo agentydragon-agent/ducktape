@@ -308,12 +308,17 @@ export async function models(): Promise<ModelCatalog> {
 }
 
 /**
- * Above the server's own bound: two sequential `COMMAND_ADMISSION_S` (15 s) waits, for runner
- * admission and then for its archive copy (`agentplane/app/threads/bridge.py`). The
- * clock also runs while the browser queues the request for a free connection, so a queued or hung
- * request surfaces as a failed attempt rather than waiting silently forever.
+ * A coarse ceiling, not a tuned budget: it stays above the server's own submission bound so this
+ * abort only ever catches a request that never got an answer, never a healthy slow one. The server
+ * waits `command_admission_timeout_s` (default 300 s, `agentplane/app/threads/bridge.py`) for the
+ * admission receipt plus its archive copy, and a Codex harness on a local model can take minutes to
+ * offer a turn opportunity at all. The clock also runs while the browser queues for a connection.
+ *
+ * Known soft coupling: the browser cannot read the deployed setting, so raising that setting above
+ * ~5.5 minutes means raising this constant in the same change. Publishing the bound to the client is
+ * the fix, and is deliberately out of scope here.
  */
-const COMMAND_TIMEOUT_MS = 45_000;
+const COMMAND_TIMEOUT_MS = 360_000;
 
 /**
  * The saved command boundary: this is the exact archived CommandAdmitted EventEntry, not a

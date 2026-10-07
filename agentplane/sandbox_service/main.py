@@ -44,7 +44,28 @@ class Settings(BaseSettings):
     kubernetes_cluster_binding_cleanup: bool = False
     token_audience: str = "agentplane-sandbox-service"
     runner_port: int = Field(default=7000, ge=1, le=65535)
-    admission_timeout_s: float = Field(default=15, gt=0, le=60)
+    request_timeout_s: float = Field(
+        default=15,
+        gt=0,
+        description="Seconds for one unary request: TokenReview, destination resolution, and the runner "
+        "attach that opens a follow. Transport-shaped, so it stays short regardless of how slow a "
+        "harness is to admit work.",
+    )
+    command_admission_timeout_s: float = Field(
+        default=300,
+        gt=0,
+        description="Seconds SubmitCommand waits for the runner to prove it committed the whole Command. "
+        "Not the harness acting on it, and not a transport bound: a Codex harness admits a steer only at "
+        "an opportunity inside the turn, so on a local model this is routinely minutes and must not be "
+        "sized like an RPC. Expiring it does not prove rejection -- the command may already be committed.",
+    )
+    stream_write_timeout_s: float = Field(
+        default=15,
+        gt=0,
+        description="Seconds for one write to a downstream session-log follower. Bounds a stalled "
+        "consumer: a reader that stops draining cancels the runner attachment within this long, so it "
+        "cannot pin an attachment for the length of a command budget.",
+    )
     follow_lease_s: float = Field(default=900, gt=0, le=900)
     runner_grpc_channel_options: dict[str, int | str] = Field(
         default_factory=dict,
@@ -122,7 +143,9 @@ async def serve(settings: Settings) -> None:
         resources = Resources(
             principals=principals,
             destinations=DestinationResolver(inventory, core, settings.runner_port),
-            admission_timeout_s=settings.admission_timeout_s,
+            request_timeout_s=settings.request_timeout_s,
+            command_admission_timeout_s=settings.command_admission_timeout_s,
+            stream_write_timeout_s=settings.stream_write_timeout_s,
             follow_lease_s=settings.follow_lease_s,
             caller_accounts=settings.caller_accounts,
             platform_instructions=platform_instructions,

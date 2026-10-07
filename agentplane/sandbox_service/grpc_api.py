@@ -39,13 +39,35 @@ class Resources:
     provisioning: Provisioning
     caller_accounts: frozenset[ServiceAccountRef]
     platform_instructions: str
-    admission_timeout_s: float = 15
+    # Three waits that shared one field until now: a unary request, a command-admission receipt, and
+    # one downstream stream write. Sharing meant raising the command-admission budget also raised how
+    # long a stalled stream consumer could pin an attachment, the opposite of what that shorter bound
+    # exists for. `lifecycle_timeout_s` and `follow_lease_s` below were always separate.
+    #
+    # `request_timeout_s`: one unary round trip -- TokenReview, destination resolution, and the
+    # runner attach that opens a follow. Transport-shaped, so it stays short.
+    request_timeout_s: float = 15
+    # `command_admission_timeout_s`: how long SubmitCommand waits for the runner to prove it
+    # committed the whole Command (see `admit_running_command`), not for the harness to act on it.
+    # Long on purpose: a Codex harness admits a steer only at an opportunity inside the turn, and a
+    # local model's turn boundary can be minutes away. The command may still be committed when this
+    # expires -- API.md, "Errors and uncertain outcomes".
+    command_admission_timeout_s: float = 300
+    # `stream_write_timeout_s`: one write to a downstream follower. Bounds a stalled consumer, so a
+    # blocked reader cancels the attachment promptly instead of holding it open.
+    stream_write_timeout_s: float = 15
     follow_lease_s: float = 900
     lifecycle_timeout_s: float = 300
     runner_grpc_channel_options: dict[str, int | str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if min(self.admission_timeout_s, self.follow_lease_s, self.lifecycle_timeout_s) <= 0:
+        if min(
+            self.request_timeout_s,
+            self.command_admission_timeout_s,
+            self.stream_write_timeout_s,
+            self.follow_lease_s,
+            self.lifecycle_timeout_s,
+        ) <= 0:
             raise ValueError("timeouts must be positive")
         if not self.caller_accounts:
             raise ValueError("at least one service caller is required")
@@ -105,7 +127,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     async def request(
         self, context: grpc.aio.ServicerContext, *, timeout_s: float | None = None
     ) -> AsyncIterator[None]:
-        async with errors(context), asyncio.timeout(timeout_s or self.resources.admission_timeout_s):
+        async with errors(context), asyncio.timeout(timeout_s or self.resources.request_timeout_s):
             await self.resources.authenticate(context)
             yield
 
@@ -256,7 +278,10 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     async def SubmitCommand(
         self, request: protocol_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
     ) -> event_log_pb2.EventEntry:
-        async with self.request(context):
+        # The handler's whole budget is the admission budget: `request()` wraps the receipt wait, so
+        # leaving it on the short transport deadline would cap the admission budget at it and keep the
+        # failure this split exists to remove.
+        async with self.request(context, timeout_s=self.resources.command_admission_timeout_s):
             destination = request.destination
             if (
                 not destination.session_id
@@ -270,7 +295,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     destination.session_id,
                     request.command,
                     after_cursor=request.follow.after_cursor,
-                    timeout_s=self.resources.admission_timeout_s,
+                    timeout_s=self.resources.command_admission_timeout_s,
                 )
 
     # mypy-protobuf omits aio's supported writer-style streaming handlers. Explicit writes are
@@ -281,7 +306,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     ) -> None:
         # Explicit writes keep flow-control stalls inside our deadline and finally blocks.
         async with errors(context):
-            async with asyncio.timeout(self.resources.admission_timeout_s):
+            async with asyncio.timeout(self.resources.request_timeout_s):
                 await self.resources.authenticate(context)
                 destination = request.destination
                 if not destination.session_id:
@@ -289,11 +314,11 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 endpoint = await self.resources.destinations.resolve(destination.sandbox)
             client = self._runner_client(endpoint.target)
             try:
-                async with asyncio.timeout(self.resources.admission_timeout_s):
+                async with asyncio.timeout(self.resources.request_timeout_s):
                     attachment = await client.attach(destination.session_id, after_cursor=request.follow.after_cursor)
                 try:
                     deadline = asyncio.get_running_loop().time() + self.resources.follow_lease_s
-                    async with asyncio.timeout(self.resources.admission_timeout_s):
+                    async with asyncio.timeout(self.resources.stream_write_timeout_s):
                         await context.write(protocol_pb2.FollowSessionResponse(attached=attachment.attached))
                     while True:
                         # Idle runners may stay quiet for the whole lease. Only writes have
@@ -310,9 +335,9 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                         except StreamClosedError:
                             terminal = protocol_pb2.FollowSessionResponse(ended=Empty())
                             break
-                        async with asyncio.timeout(self.resources.admission_timeout_s):
+                        async with asyncio.timeout(self.resources.stream_write_timeout_s):
                             await context.write(protocol_pb2.FollowSessionResponse(entry=entry))
-                    async with asyncio.timeout(self.resources.admission_timeout_s):
+                    async with asyncio.timeout(self.resources.stream_write_timeout_s):
                         await context.write(terminal)
                 finally:
                     attachment.cancel()

@@ -1924,7 +1924,9 @@ data:
     kubernetes_cluster_binding_cleanup: false
     token_audience: agentplane-sandbox-service
     runner_port: 7000
-    admission_timeout_s: 15
+    request_timeout_s: 15
+    command_admission_timeout_s: 300
+    stream_write_timeout_s: 15
     follow_lease_s: 900
     runner_grpc_channel_options:
       grpc.max_receive_message_length: 33554432

@@ -116,9 +116,9 @@ remain failures, never session termination. The app retries these from the same 
 and for authorization denial (rate-limited). Invalid history remains a durable feed failure.
 
 Healthy idle follows last until renewal. Each downstream write, including the terminal observation,
-is separately bounded by `admission_timeout_s`, so a stalled consumer cannot pin an attachment for
-15 minutes. Every exit cancels the runner attachment and closes its channel. There is no unbounded
-fan-out queue.
+is separately bounded by `stream_write_timeout_s`, so a stalled consumer cannot pin an attachment for
+the length of a follow lease. Every exit cancels the runner attachment and closes its channel. There
+is no unbounded fan-out queue.
 
 The service retains no additional session-log archive. Runner logs are durable on the state volume,
 but reading them requires a reachable runner. Clients needing retention independent of that volume
@@ -148,13 +148,32 @@ kebab-case CLI flags. Required settings are `sandbox_namespace` and
 `token_audience` defaults to `agentplane-sandbox-service`. Kubernetes access is in-cluster unless `kubeconfig` is supplied.
 
 `port` defaults to 8080 for gRPC. `health_port` defaults to 8081 for unauthenticated HTTP `/healthz`;
-it is liveness, not proof that Kubernetes or a particular destination is ready. Admission requests
-are bounded by `admission_timeout_s` (default 15); management by `lifecycle_timeout_s` (default 300);
-follow leases by `follow_lease_s` (default and configured maximum 900 seconds / 15 minutes).
+it is liveness, not proof that Kubernetes or a particular destination is ready. Four settings bound
+four different waits, and only `command_admission_timeout_s` is sized by anything other than the
+transport:
+
+- `request_timeout_s` (default 15) bounds one unary round trip: TokenReview, destination resolution,
+  and the runner attach that opens a follow.
+- `command_admission_timeout_s` (default 300) bounds `SubmitCommand` waiting for the runner to prove
+  it committed the whole Command. This is the one wait that outlasts the transport, because it ends on
+  the runner's admission receipt rather than on a network answer, and a Codex harness admits a steer
+  only at an opportunity inside the turn. A local model routinely puts that minutes away, so a value
+  sized like an RPC reports a healthy slow submission as a failure whose command is running anyway.
+  Expiry is still uncertain, never rejection: see "Errors and uncertain outcomes".
+- `stream_write_timeout_s` (default 15) bounds one write to a downstream follower, so a stalled
+  consumer releases its attachment promptly.
+- `lifecycle_timeout_s` (default 300) bounds management operations, and `follow_lease_s` (default and
+  configured maximum 900 seconds / 15 minutes) the follow lease.
+
 The client whole-follow safety deadline defaults to 960 seconds / 16 minutes; initial attachment
-still uses the short request timeout. Renewal repeats TokenReview and destination admission; it
-is not in-stream reauthentication or a lease derived from the token's exact expiry. The app's
-30-second database ingestion-ownership lease is independently renewed without closing follows.
+still uses the short request timeout. Its `SubmitCommand` deadline, default 310 seconds, is the one
+caller-side timeout longer than a transport round trip, because that call stays open for the
+admission receipt; keep it above `command_admission_timeout_s` so this service is what reports a
+reason, and raise the two together. The app's own value is
+`AGENTPLANE_SANDBOX_SERVICE_COMMAND_TIMEOUT_S`. Renewal repeats TokenReview and destination
+admission; it is not in-stream reauthentication or a lease derived from the token's exact expiry.
+The app's 30-second database ingestion-ownership lease is independently renewed without closing
+follows.
 Runner RPC authentication/TLS remains a separate TODO.
 
 Deployment must grant the service the appropriate Kubernetes/TokenReview/provisioning permissions,
