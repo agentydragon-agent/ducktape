@@ -286,8 +286,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         )
                     ).status_code == 404
                     ack = await agent.put(
-                        f"/v1/inboxes/{inbox_id}/acknowledgement",
-                        json={"through_cursor": page["entries"][0]["cursor"]},
+                        f"/v1/inboxes/{inbox_id}/acknowledgement", json={"through_cursor": page["entries"][0]["cursor"]}
                     )
                     assert ack.json()["acknowledged"] == 1
                     remaining = await agent.get(
