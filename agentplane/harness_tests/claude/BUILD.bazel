@@ -216,9 +216,9 @@ py_test(
         "@platforms//os:linux",
     ],
     deps = [
+        ":anthropic_sse",
         ":conftest",
         ":harness",
-        ":anthropic_sse",
         ":messages",
         "//:conftest",
         "//agentplane/harness_tests:conftest",

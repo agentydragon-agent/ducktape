@@ -235,8 +235,8 @@ py_test(
     deps = [
         ":conftest",
         ":harness",
-        ":responses_sse",
         ":responses",
+        ":responses_sse",
         "//:conftest",
         "//agentplane/harness_tests:conftest",
         "//agentplane/native/codex:wire",
