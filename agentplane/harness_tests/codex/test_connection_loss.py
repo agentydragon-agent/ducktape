@@ -6,8 +6,8 @@ import pytest_bazel
 
 from agentplane.harness_tests.codex import frames, responses_sse as sse
 from agentplane.harness_tests.codex.harness import MODEL, CodexHarness
-from agentplane.harness_tests.model_endpoint import JsonResponse
 from agentplane.harness_tests.codex.responses import OpenAIResponses
+from agentplane.harness_tests.model_endpoint import JsonResponse
 from agentplane.native.codex import wire
 from agentplane.native.codex.scenarios import MAX_RETRIES
 
@@ -112,9 +112,7 @@ async def test_http_502_exhaustion_is_terminal_but_next_input_succeeds(
             async with await openai_responses.await_next_request() as exchange:
                 assert exchange.request.messages("user")[-1].text == "Reply with exactly: HTTP_FAILURE"
                 await exchange.respond(
-                    JsonResponse(
-                        b'{"error":{"type":"server_error","message":"scripted upstream failure"}}', status=502
-                    )
+                    JsonResponse(b'{"error":{"type":"server_error","message":"scripted upstream failure"}}', status=502)
                 )
             if attempt < MAX_RETRIES:
                 assert (await first.error()).params.will_retry

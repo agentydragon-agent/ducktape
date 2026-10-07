@@ -6,8 +6,8 @@ import pytest_bazel
 
 from agentplane.harness_tests.claude import anthropic_sse as sse, frames
 from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
-from agentplane.harness_tests.model_endpoint import JsonResponse
 from agentplane.harness_tests.claude.messages import AnthropicMessages
+from agentplane.harness_tests.model_endpoint import JsonResponse
 from agentplane.native.claude.scenarios import MAX_RETRIES
 
 

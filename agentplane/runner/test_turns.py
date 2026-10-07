@@ -198,9 +198,10 @@ async def test_model_http_error_through_runner(
         success = await session.until(events.turn_completed)
         assert success.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
         assert success.event.turn_completed.turn_id != failed.event.turn_completed.turn_id
-        assert [entry.event.command_admitted.command.command_id for entry in events.of_kind(session.seen, "command_admitted")] == [
-            "first-input", "second-input"
-        ]
+        assert [
+            entry.event.command_admitted.command.command_id
+            for entry in events.of_kind(session.seen, "command_admitted")
+        ] == ["first-input", "second-input"]
         events.assert_contiguous(session.seen)
         events.assert_sourced(session.seen)
 

@@ -489,7 +489,9 @@ async def test_http_error_is_archived_as_failed_turn_and_follow_up_succeeds(
             assert request.user_texts[-1] == "Reply with exactly: HTTP_ERROR"
             await model.http_error(request)
         failed = await _stored_events(
-            http, thread_id, until="turnCompleted",
+            http,
+            thread_id,
+            until="turnCompleted",
             matches=lambda entries: _has_turn_status(entries, "TURN_STATUS_FAILED"),
         )
         assert [
@@ -510,9 +512,13 @@ async def test_http_error_is_archived_as_failed_turn_and_follow_up_succeeds(
         assert request.user_texts[-1] == "Reply with exactly: AFTER_HTTP_ERROR_OK"
         await model.reply(request, Text("AFTER_HTTP_ERROR_OK"))
         recovered = await _stored_events(
-            http, thread_id, until="turnCompleted",
-            matches=lambda entries: _has_turn_status(entries, "TURN_STATUS_COMPLETED")
-            and sum("turnCompleted" in entry["event"] for entry in entries) == 2,
+            http,
+            thread_id,
+            until="turnCompleted",
+            matches=lambda entries: (
+                _has_turn_status(entries, "TURN_STATUS_COMPLETED")
+                and sum("turnCompleted" in entry["event"] for entry in entries) == 2
+            ),
         )
         assert [
             entry["event"]["commandAdmitted"]["command"]["commandId"]
