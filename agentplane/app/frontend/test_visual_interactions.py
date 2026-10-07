@@ -1348,7 +1348,12 @@ async def test_expanded_command_uses_heading_to_collapse(
         )
         await expect(command).to_be_attached()
         await command.get_by_role("button", name=re.compile(r"^Show all")).click()
-        heading = command.locator(".agentplane-clamped-disclosure .agentplane-disclosure-heading")
+        # The Show all control disappears after expansion, so use the expanded
+        # block rather than a locator that keeps filtering for Show all.
+        heading = page.locator(
+            ".agentplane-clamped-block[data-label='Command'][data-expanded='true'] "
+            ".agentplane-clamped-disclosure .agentplane-disclosure-heading"
+        ).first
         await expect(heading.locator("button")).to_have_count(1)
         await expect(heading.get_by_role("button", name="Command", expanded=True)).to_be_visible()
         await _focus(page, heading)

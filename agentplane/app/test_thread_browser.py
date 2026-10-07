@@ -1276,7 +1276,7 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
     await call.locator(".agentplane-disclosure-summary").first.click()
     command = call.locator('.agentplane-clamped-block[data-label="Command"]')
     show_all = command.get_by_role("button", name="Show all 24 lines", exact=True)
-    collapse = command.get_by_role("button", name="Collapse Command", exact=True)
+    collapse = command.get_by_role("button", name="Command", exact=True)
     await read_at(page, show_all, 0.3)
     editor = await command.locator(".cm-editor").element_handle()
     assert editor is not None
