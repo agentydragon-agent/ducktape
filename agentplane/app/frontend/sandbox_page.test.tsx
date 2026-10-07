@@ -369,9 +369,12 @@ it("retries a lost Open with its original identity and payload despite changed f
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(first.session_id);
   await act(async () => {
     const input = labeledInput("Working directory");
-    input.value = "/different/{session_id}";
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    if (!setter) throw new Error("HTMLInputElement.value has no setter");
+    setter.call(input, "/different/{session_id}");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  expect(labeledInput("Working directory").value).toBe("/different/{session_id}");
   await act(async () => button("Retry same session").click());
   const requests = sessions.mock.calls.filter(([request]) => request.method === "POST");
   expect(requests).toHaveLength(2);
