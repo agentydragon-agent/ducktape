@@ -57,6 +57,7 @@ async def serve(settings: Settings) -> None:
                     sandboxes,
                     github,
                     notice_debounce=settings.notice_debounce,
+                    stale_confirmation_s=settings.stale_inbox_confirmation_s,
                 ),
                 principals,
             )

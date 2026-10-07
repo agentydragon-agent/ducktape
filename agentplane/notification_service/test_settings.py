@@ -37,6 +37,7 @@ sandbox_service:
     assert settings.sandbox_service.token_file == Path("/tokens/sandboxes")
     assert settings.sandbox_service.command_admission_timeout_s == 20
     assert settings.sandbox_service.request_timeout_s == 5
+    assert settings.stale_inbox_confirmation_s == 30
     assert settings.sandbox_service.lifecycle_timeout_s == 310
     assert settings.sandbox_service.follow_timeout_s == 960
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_ACTIONS__URL", "http://overridden-actions")
@@ -90,6 +91,20 @@ def test_invalid_sandbox_service_deadline(name: str, timeout: float) -> None:
     with pytest.raises(ValidationError):
         SandboxServiceSettings.model_validate(
             {"target": "sandboxes:8080", "token_file": "/tokens/sandboxes", name: timeout}
+        )
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
+def test_invalid_stale_confirmation_timeout(timeout: float) -> None:
+    with pytest.raises(ValidationError):
+        Settings.model_validate(
+            {
+                "database_url": "postgresql://unused",
+                "namespace": "test",
+                "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
+                "sandbox_service": {"target": "sandboxes:8080", "token_file": "/tokens/sandboxes"},
+                "stale_inbox_confirmation_s": timeout,
+            }
         )
 
 

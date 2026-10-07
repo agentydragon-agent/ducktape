@@ -310,11 +310,45 @@ class Store:
             inbox.retired = True
             inbox.updated_at = datetime.now(UTC)
             inbox.claim = None
+            inbox.next_attempt = None
             await session.execute(
                 update(Subscription)
                 .where(Subscription.inbox_id == inbox_id, ~Subscription.cancelled)
                 .values(cancelled=True, version=Subscription.version + 1)
             )
+
+    async def observe_stale(self, claim: Inbox, reason: str, confirmation_s: float) -> bool:
+        """Release this claim with a durable recheck, or retire a confirmed stale incarnation."""
+        async with self.sessions.begin() as session:
+            row = await self.fenced(session, claim)
+            now = datetime.now(UTC)
+            if row.stale_check_at is None:
+                row.stale_check_at = now + timedelta(seconds=confirmation_s)
+            elif row.stale_check_at <= now:
+                row.retired = True
+                row.updated_at = now
+                row.next_attempt = None
+                row.claim = None
+                row.claim_until = now
+                row.delivery_error = f"destination retired: {reason}"
+                await session.execute(
+                    update(Subscription)
+                    .where(Subscription.inbox_id == row.id, ~Subscription.cancelled)
+                    .values(cancelled=True, version=Subscription.version + 1)
+                )
+                await notify(session)
+                return True
+            row.next_attempt = row.stale_check_at
+            row.claim_until = now
+            row.delivery_error = f"destination pending retirement: {reason}"
+            await notify(session)
+            return False
+
+    async def clear_stale(self, claim: Inbox) -> None:
+        if claim.stale_check_at is not None:
+            async with self.sessions.begin() as session:
+                row = await self.fenced(session, claim)
+                row.stale_check_at = None
 
     async def claim(self) -> Inbox | None:
         async with self.sessions.begin() as session:
@@ -369,6 +403,9 @@ class Store:
             row.next_attempt = min(deadlines) if deadlines else None
             if error is not None and row.next_attempt is not None:
                 row.next_attempt = max(row.next_attempt, now + timedelta(seconds=5))
+            if row.stale_check_at is not None:
+                # A transient lookup failure must not confirm staleness or spin before the recheck.
+                row.next_attempt = max(row.stale_check_at, now + timedelta(seconds=5) if error is not None else now)
             await notify(session)
 
     async def get_next_work_at(self) -> datetime | None:

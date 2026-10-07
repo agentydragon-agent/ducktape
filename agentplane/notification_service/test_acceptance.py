@@ -119,7 +119,13 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 ) as remote,
             ):
                 source = Actions(action_http, token_file)
-                service = Service(store, source, remote, notice_debounce=NoticeDebounceSettings(quiet_seconds=0))
+                service = Service(
+                    store,
+                    source,
+                    remote,
+                    notice_debounce=NoticeDebounceSettings(quiet_seconds=0),
+                    stale_confirmation_s=30,
+                )
                 api = create_app(service, resolver)
                 async with httpx.AsyncClient(
                     transport=httpx.ASGITransport(app=api),
@@ -277,7 +283,13 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     assert "acknowledgement" not in notices[0]
                     await model.reply(notice_request, Text("Notifications received"))
                     # A fresh service object has no in-memory delivery state to lean on.
-                    recovered = Service(Store(engine), source, remote, notice_debounce=service.notice_debounce)
+                    recovered = Service(
+                        Store(engine),
+                        source,
+                        remote,
+                        notice_debounce=service.notice_debounce,
+                        stale_confirmation_s=service.stale_confirmation_s,
+                    )
                     inbox_id = UUID(hint["inbox_id"])
                     page = None
                     for _ in range(10):

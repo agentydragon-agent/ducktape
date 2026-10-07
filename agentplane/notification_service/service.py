@@ -35,6 +35,16 @@ class DestinationRejectedError(Exception):
     pass
 
 
+class OwnerMismatchError(DestinationRejectedError):
+    pass
+
+
+class StaleDestinationError(DestinationRejectedError):
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+
 class Service:
     def __init__(
         self,
@@ -44,10 +54,12 @@ class Service:
         github: GitHub | None = None,
         *,
         notice_debounce: NoticeDebounceSettings,
+        stale_confirmation_s: float,
     ) -> None:
         self.store, self.actions, self.sandboxes = store, actions, sandboxes
         self.github = github
         self.notice_debounce = notice_debounce
+        self.stale_confirmation_s = stale_confirmation_s
 
     async def runner(self, owner: ServiceAccountRef, destination: DestinationRef) -> Runner:
         if destination.namespace != self.sandboxes.namespace:
@@ -55,11 +67,11 @@ class Service:
         try:
             sandbox = await self.sandboxes.get(destination.name)
         except SandboxNotFoundError as error:
-            raise DestinationRejectedError from error
-        if sandbox.uid != destination.uid or sandbox.service_account != ServiceAccount(
-            namespace=owner.namespace, name=owner.name
-        ):
-            raise DestinationRejectedError
+            raise StaleDestinationError("not_found") from error
+        if sandbox.uid != destination.uid:
+            raise StaleDestinationError("uid_changed")
+        if sandbox.service_account != ServiceAccount(namespace=owner.namespace, name=owner.name):
+            raise OwnerMismatchError
         return self.sandboxes.runner(
             SandboxDestination(sandbox=destination.name, sandbox_uid=destination.uid, owner=sandbox.service_account)
         )
@@ -167,11 +179,13 @@ class Service:
             if claim.delivery_error and claim.delivery_error.startswith("invalid history")
             else None
         )
+        stale_observed = False
         try:
             # Leave ten seconds for fenced state recording; a stale worker can do no further commits.
             async with asyncio.timeout(20):
                 owner = ServiceAccountRef(namespace=claim.owner_namespace, name=claim.owner_name)
                 runner = await self.runner(owner, DestinationRef.model_validate(claim.destination_ref))
+                await self.store.clear_stale(claim)
                 source = await self.store.source(claim)
                 if source is not None:
                     try:
@@ -209,6 +223,17 @@ class Service:
                 notice = await self.prepare_notice(claim)
                 if notice is not None and error is None:
                     await self.deliver(claim, runner, notice)
+        except StaleDestinationError as failure:
+            with suppress(ClaimLostError):
+                retired = await self.store.observe_stale(claim, failure.reason, self.stale_confirmation_s)
+                if retired:
+                    logger.info("retired stale notification inbox: inbox=%s reason=%s", claim.id, failure.reason)
+            stale_observed = True
+        except OwnerMismatchError:
+            with suppress(ClaimLostError):
+                await self.store.clear_stale(claim)
+            error = "OwnerMismatchError"
+            logger.warning("notification delivery unavailable: inbox=%s cause=%s", claim.id, error)
         except ConflictError as failure:
             error = f"invalid history: {failure}"
         except ClaimLostError:
@@ -225,8 +250,9 @@ class Service:
             error = error or type(failure).__name__
             logger.warning("notification delivery unavailable: inbox=%s cause=%s", claim.id, error)
         finally:
-            with suppress(ClaimLostError):
-                await self.store.release(claim, error, notice_due_at=await self.get_notice_due_at(claim))
+            if not stale_observed:
+                with suppress(ClaimLostError):
+                    await self.store.release(claim, error, notice_due_at=await self.get_notice_due_at(claim))
         return True
 
     async def run(self) -> None:
