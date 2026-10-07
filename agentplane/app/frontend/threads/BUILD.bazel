@@ -20,6 +20,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:json_view",
     ],
 )
@@ -129,6 +130,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:actions_affordance",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:sandbox_status",
         "//agentplane/app/frontend:status_mark",
@@ -185,6 +187,7 @@ ts_library(
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app/frontend:disclosure",
     ],
 )
 
@@ -229,6 +232,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app/frontend:disclosure",
     ],
 )
 

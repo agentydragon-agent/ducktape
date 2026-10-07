@@ -26,7 +26,8 @@ async function drawn(node: ReactNode | null): Promise<HTMLDivElement> {
 /** The labels of the output streams shown, in order, with each one's text. */
 function streams(container: HTMLElement): Array<[string, string]> {
   return [...container.querySelectorAll(".agentplane-code-block-block")].map((block) => [
-    block.closest("[data-clamped]")?.parentElement?.previousElementSibling?.textContent ?? "",
+    block.closest(".agentplane-output-disclosure")?.querySelector(".agentplane-output-label")?.textContent?.trim() ??
+      "",
     [...block.querySelectorAll(".cm-line")].map((line) => line.textContent ?? "").join("\n"),
   ]);
 }
@@ -60,7 +61,7 @@ describe("ssh exec result", () => {
     const badge = container.querySelector(".mantine-Badge-root");
     expect(badge?.textContent).toBe("Exit 0");
     expect(badge?.getAttribute("style")).toContain("green");
-    expect(streams(container)).toEqual([["stdout", "test-output"]]);
+    expect(streams(container)).toEqual([["stdout · 1 line", "test-output"]]);
   });
 
   it("marks a failing exit code, and shows what the command wrote to stderr", async () => {
@@ -71,14 +72,14 @@ describe("ssh exec result", () => {
     expect(badge?.textContent).toBe("Exit 2");
     expect(badge?.getAttribute("style")).toContain("red");
     expect(streams(container)).toEqual([
-      ["stdout", "test-output"],
-      ["stderr", "test-error"],
+      ["stdout · 1 line", "test-output"],
+      ["stderr · 1 line", "test-error"],
     ]);
   });
 
   it("marks a stream the server truncated", async () => {
     const container = await drawn(renderResultPreview(execResultPreview, { ...VALUE, stdout_truncated: true }));
-    expect(streams(container)).toEqual([["stdout · truncated by the server", "test-output"]]);
+    expect(streams(container)).toEqual([["stdout · 1 line · truncated by the server", "test-output"]]);
   });
 
   it("clips a stream taller than its cap behind a button that shows all of it", async () => {
@@ -88,7 +89,14 @@ describe("ssh exec result", () => {
     expect(container.querySelector('[data-clamped="true"]')).not.toBeNull();
     await act(async () => showAll?.click());
     expect(container.querySelector('[data-clamped="true"]')).toBeNull();
-    expect(container.textContent).toContain("Show less");
+    const outputDisclosure = container.querySelector<HTMLButtonElement>(
+      ".agentplane-output-disclosure .agentplane-disclosure-summary"
+    );
+    expect(outputDisclosure?.getAttribute("aria-expanded")).toBe("true");
+    await act(async () => outputDisclosure?.click());
+    expect(outputDisclosure?.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => outputDisclosure?.click());
+    expect(outputDisclosure?.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("says how many lines a clipped stream has", async () => {

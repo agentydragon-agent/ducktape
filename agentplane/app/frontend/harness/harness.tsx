@@ -27,6 +27,7 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
+import { DisclosureVisual } from "./disclosure_visual";
 import { SCENARIOS, type Scenario } from "./scenario";
 import { LocalCommands } from "../threads/local_commands";
 import { streamRegistry } from "../stream_status";
@@ -995,7 +996,17 @@ function command(
   );
 }
 
-function standardRows(threadId: string, longReasoningPreview: boolean): Record<string, unknown>[] {
+const LONG_REASONING_BODY = Array.from(
+  { length: 18 },
+  (_, index) =>
+    `Pass ${index + 1}: I compare the stored body with the event projection, check each boundary for lost formatting, and keep the complete note available as ordinary Markdown. This section is deliberately long to exercise scrolling inside one disclosure.`
+).join("\n\n");
+
+function standardRows(
+  threadId: string,
+  longReasoningPreview: boolean,
+  longReasoningBody: boolean
+): Record<string, unknown>[] {
   const rows = [
     viewState(34, "turn-visual"),
     entity(
@@ -1019,11 +1030,13 @@ function standardRows(threadId: string, longReasoningPreview: boolean): Record<s
       20,
       "r-1",
       ItemKind.REASONING,
-      longReasoningPreview
-        ? "I will compare the projected row with its source payload. **The streamed body must retain its Markdown formatting** while the one-line preview clips what does not fit. I will verify the fetch path and expanded content before changing behavior. ".repeat(
-            2
-          )
-        : "I will inspect the repository structure, compare **the relevant implementation and tests**, then confirm which path preserves the existing behavior before proposing a change.",
+      longReasoningBody
+        ? LONG_REASONING_BODY
+        : longReasoningPreview
+          ? "I will compare the projected row with its source payload. **The streamed body must retain its Markdown formatting** while the one-line preview clips what does not fit. I will verify the fetch path and expanded content before changing behavior. ".repeat(
+              2
+            )
+          : "I will inspect the repository structure, compare **the relevant implementation and tests**, then confirm which path preserves the existing behavior before proposing a change.",
       { threadId }
     ),
     item(28, "m-1", ItemKind.ASSISTANT_TEXT, "I found the project files and the relevant tests.", { threadId }),
@@ -1358,7 +1371,8 @@ function codeFenceRows(threadId: string): Record<string, unknown>[] {
 function standaloneReasoningRows(
   threadId: string,
   longPreview: boolean,
-  codeFence: boolean
+  codeFence: boolean,
+  longBody: boolean
 ): Record<string, unknown>[] {
   const reasoning = codeFence
     ? [
@@ -1373,9 +1387,11 @@ function standaloneReasoningRows(
         "",
         "The complete implementation remains available when expanded.",
       ].join("\n")
-    : longPreview
-      ? "Weighing whether to **add a retry** or fix the root cause first. The latest results point toward the projection path, so I should verify it before changing client behavior."
-      : "Weighing which path to try next.";
+    : longBody
+      ? LONG_REASONING_BODY
+      : longPreview
+        ? "Weighing whether to **add a retry** or fix the root cause first. The latest results point toward the projection path, so I should verify it before changing client behavior."
+        : "Weighing which path to try next.";
   const rows = [
     viewState(24, null),
     entity(
@@ -1592,10 +1608,11 @@ function threadEntityRows(threadId: string): Record<string, unknown>[] {
     return standaloneReasoningRows(
       threadId,
       scenario.longReasoningPreview ?? false,
-      scenario.reasoningCodeFence ?? false
+      scenario.reasoningCodeFence ?? false,
+      scenario.longReasoningBody ?? false
     );
   if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
-  return standardRows(threadId, scenario.longReasoningPreview ?? false);
+  return standardRows(threadId, scenario.longReasoningPreview ?? false, scenario.longReasoningBody ?? false);
 }
 
 function threadScope(threadId: string): Record<string, string> {
@@ -2292,11 +2309,12 @@ if (scenario.openDebug) {
       item.click();
       if (scenario.openDebug !== "stderr") return;
       const expandStderr = new MutationObserver(() => {
-        const row = document.querySelector<HTMLDetailsElement>('[data-debug-observation="31"]');
-        if (!row) return;
+        const control = document.querySelector<HTMLButtonElement>(
+          '[data-debug-observation="31"] .agentplane-disclosure-summary'
+        );
+        if (!control) return;
         expandStderr.disconnect();
-        row.open = true;
-        row.dispatchEvent(new Event("toggle", { bubbles: true }));
+        control.click();
       });
       expandStderr.observe(document, { childList: true, subtree: true });
     });
@@ -2318,25 +2336,22 @@ if (scenario.openMoreMenu) {
 }
 
 /** Opens the folded tool-call run, whose steps mount only once it is open. */
-function openRun(summaries: HTMLElement[]): void {
-  summaries
+function openRun(controls: HTMLButtonElement[]): void {
+  controls
     .find(
-      (candidate) =>
-        candidate.textContent?.includes("tool call") &&
-        candidate.parentElement instanceof HTMLDetailsElement &&
-        !candidate.parentElement.open
+      (candidate) => candidate.textContent?.includes("tool call") && candidate.getAttribute("aria-expanded") !== "true"
     )
     ?.click();
 }
 
 if (scenario.openReasoning) {
   const openReasoning = new MutationObserver(() => {
-    const summaries = [...document.querySelectorAll("summary")];
-    const step = [...document.querySelectorAll<HTMLElement>("details.agentplane-step-details > summary")].find(
+    const controls = [...document.querySelectorAll<HTMLButtonElement>(".agentplane-disclosure-summary")];
+    const step = controls.find(
       (candidate) => candidate.querySelector(".agentplane-step-title")?.textContent === "Reasoning"
     );
     if (!step) {
-      openRun(summaries);
+      openRun(controls);
       return;
     }
     openReasoning.disconnect();
@@ -2347,7 +2362,7 @@ if (scenario.openReasoning) {
 
 if (scenario.openSetup) {
   const openSetup = new MutationObserver(() => {
-    const summary = [...document.querySelectorAll("summary")].find((candidate) =>
+    const summary = [...document.querySelectorAll<HTMLElement>(".agentplane-disclosure-summary")].find((candidate) =>
       candidate.textContent?.includes("Thread setup complete")
     );
     if (!summary) return;
@@ -2359,11 +2374,11 @@ if (scenario.openSetup) {
 
 /** Opens each folded tool-call line inside the run, which mounts only once the run is open. */
 function openToolLines(): void {
-  for (const step of document.querySelectorAll<HTMLElement>("details.agentplane-step-details > summary")) {
-    const details = step.parentElement;
+  for (const step of document.querySelectorAll<HTMLButtonElement>(
+    ".agentplane-step-details .agentplane-disclosure-summary"
+  )) {
     if (
-      details instanceof HTMLDetailsElement &&
-      !details.open &&
+      step.getAttribute("aria-expanded") !== "true" &&
       step.querySelector(".agentplane-step-title")?.textContent !== "Reasoning"
     )
       step.click();
@@ -2372,16 +2387,16 @@ function openToolLines(): void {
 
 if (scenario.openRun) {
   const openFoldedRun = new MutationObserver(() => {
-    const summaries = [...document.querySelectorAll("summary")];
-    openRun(summaries);
-    if (document.querySelector("details.agentplane-step-details")) openFoldedRun.disconnect();
+    const controls = [...document.querySelectorAll<HTMLButtonElement>(".agentplane-disclosure-summary")];
+    openRun(controls);
+    if (document.querySelector(".agentplane-step-details")) openFoldedRun.disconnect();
   });
   openFoldedRun.observe(document, { childList: true, subtree: true });
 }
 
 if (scenario.openToolPayloads) {
   const openToolPayloads = new MutationObserver(() => {
-    openRun([...document.querySelectorAll("summary")]);
+    openRun([...document.querySelectorAll<HTMLButtonElement>(".agentplane-disclosure-summary")]);
     openToolLines();
   });
   openToolPayloads.observe(document, { childList: true, subtree: true });
@@ -2389,13 +2404,11 @@ if (scenario.openToolPayloads) {
 
 if (scenario.openRecoveryDetails) {
   const openRecovery = new MutationObserver(() => {
-    const summaries = [...document.querySelectorAll("summary")];
-    openRun(summaries);
-    for (const summary of summaries) {
-      const details = summary.parentElement;
+    const controls = [...document.querySelectorAll<HTMLButtonElement>(".agentplane-disclosure-summary")];
+    openRun(controls);
+    for (const summary of controls) {
       if (
-        details instanceof HTMLDetailsElement &&
-        !details.open &&
+        summary.getAttribute("aria-expanded") !== "true" &&
         summary.textContent?.includes("not retained in model context")
       ) {
         summary.click();
@@ -2416,6 +2429,32 @@ if (scenario.openEvidence) {
     button.click();
   });
   openEvidence.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openClampedBlocks) {
+  const openClamped = () => {
+    const unopened = [
+      ...document.querySelectorAll<HTMLButtonElement>(".agentplane-clamped-block button[aria-expanded='false']"),
+    ];
+    for (const button of unopened) button.click();
+    const toolLines = [
+      ...document.querySelectorAll<HTMLButtonElement>(".agentplane-step-details .agentplane-disclosure-summary"),
+    ];
+    const loading = document.querySelector(".agentplane-step-details [aria-busy='true']");
+    if (
+      unopened.length === 0 &&
+      toolLines.length > 0 &&
+      toolLines.every((button) => button.getAttribute("aria-expanded") === "true") &&
+      !loading
+    ) {
+      openClampedBlocks.disconnect();
+    }
+  };
+  // Tool arguments and output bodies load independently. Keep watching after the first block opens
+  // so a later payload is expanded too.
+  const openClampedBlocks = new MutationObserver(openClamped);
+  openClampedBlocks.observe(document, { childList: true, subtree: true });
+  openClamped();
 }
 
 if (scenario.preselectReconnect) {
@@ -2523,13 +2562,13 @@ if (scenario.openMobileSidebar) {
   });
   openMobileSidebar.observe(document, { childList: true, subtree: true });
 }
-window.location.hash = scenario.route;
+if (!scenario.disclosureVisual) window.location.hash = scenario.route;
 
 const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");
 createRoot(container).render(
   <ThemeProvider>
-    <App />
+    {scenario.disclosureVisual ? <DisclosureVisual stage={scenario.disclosureVisual} /> : <App />}
   </ThemeProvider>
 );
 

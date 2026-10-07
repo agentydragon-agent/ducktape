@@ -1,6 +1,6 @@
 import { ActionIcon, Box, Button, Flex, Group, Menu, Paper, Select, Stack, Text, Textarea } from "@mantine/core";
 import { create } from "@bufbuild/protobuf";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import IconArrowDown from "@tabler/icons-react/dist/esm/icons/IconArrowDown.mjs";
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
@@ -57,6 +57,7 @@ import { historyTrace, LayoutSettle, type FollowReason } from "./history_trace";
 import { rememberRowHeight, rememberedRowHeight } from "./history_sizes";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "../thread_status_indicator";
+import { DISCLOSURE_STICKY_Z_INDEX } from "../disclosure";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
 import { sandboxReady, sandboxSummary } from "../sandbox_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
@@ -68,6 +69,8 @@ import {
   type ThreadTabTitleStatus,
 } from "../tab_metadata";
 import "./projected_session.css";
+
+type ReadingAnchor = { key: string; offset: number; target?: HTMLElement };
 
 /** A run of tool calls and reasoning steps, folded behind its summary until opened. */
 function CollapsibleRows({
@@ -146,8 +149,8 @@ function LifecycleGroupView({
     <CollapsibleRows
       id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:lifecycle`}
       summary={
-        // Unlike RunView's inline-flex Flex, a plain Text defaults to a block <p> -- inside
-        // <summary>, that wraps the label to its own line below the disclosure triangle.
+        // Unlike RunView's inline-flex Flex, a plain Text defaults to a block <p> -- inside the
+        // Accordion control's flex label, that wraps below the disclosure chevron.
         <Text span size="xs" c="dimmed">
           {summarizeLifecycleGroup(entities)}
         </Text>
@@ -274,7 +277,12 @@ function VirtualizedHistory({
   const restorationSize = useRef<number | null>(null);
   const previousCount = useRef(rows.length);
   const previousFirstKey = useRef<string | null>(null);
-  const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
+  const readingAnchor = useRef<ReadingAnchor | null>(null);
+  // Keep a nested sticky row rendered while collapsing it can shrink the row out of the
+  // virtual window. A later scroll gesture releases it.
+  const [stickyAnchorKey, setStickyAnchorKey] = useState<string | null>(null);
+  const [stickyAnchorRevision, setStickyAnchorRevision] = useState(0);
+  const stickyAnchorPending = useRef<string | null>(null);
   // Widened around a just-landed older page so every one of its rows mounts and measures in the
   // same pass, rather than progressively as scrolling reveals more of it -- each of *those* later
   // corrections is itself a visible, uncalled-for jump (see restoreAnchor/restoringScroll below).
@@ -286,6 +294,15 @@ function VirtualizedHistory({
   // stream into it, but gains a new first step when older history loads into it.
   const anchorIndex = (key: string): number =>
     rows.findIndex((row) => row.entities.some((entity) => `${entity.entityKind}:${entity.entityId}` === key));
+  const stickyAnchorIndex = stickyAnchorKey === null ? -1 : anchorIndex(stickyAnchorKey);
+  const rangeExtractor = useCallback(
+    (range: Parameters<typeof defaultRangeExtractor>[0]) => {
+      const indexes = defaultRangeExtractor(range);
+      if (stickyAnchorIndex < 0 || indexes.includes(stickyAnchorIndex)) return indexes;
+      return [...indexes, stickyAnchorIndex].sort((left, right) => left - right);
+    },
+    [stickyAnchorIndex]
+  );
   const anchorElement = (key: string): HTMLElement | null => {
     const index = anchorIndex(key);
     if (index < 0) return null;
@@ -329,7 +346,14 @@ function VirtualizedHistory({
       // A programmatic return to the old bottom can be delivered after a card grows. Preserve
       // it before restoring a stale reader anchor, while an explicit user gesture owns its scroll,
       // as does a restoration still settling.
-      if (captureNextScroll.current || restoringScroll() || element.scrollTop === clickedAt.current) return false;
+      if (
+        captureNextScroll.current ||
+        restoringScroll() ||
+        readingAnchor.current?.target?.isConnected ||
+        element.scrollTop === clickedAt.current
+      ) {
+        return false;
+      }
       if (!recentBottoms.current.some((bottom) => Math.abs(element.scrollTop - bottom) <= 2)) return false;
       setFollowing(true, "returned-to-previous-bottom");
       cancelRestoration();
@@ -344,7 +368,8 @@ function VirtualizedHistory({
     if (!anchor || !element || restoringAnchor.current !== anchor.key) return null;
     const row = anchorElement(anchor.key);
     if (!row) return null;
-    const correction = row.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
+    const anchorTarget = anchor.target?.isConnected ? anchor.target : row;
+    const correction = anchorTarget.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
     element.scrollTop += correction;
     return correction;
   }
@@ -359,6 +384,7 @@ function VirtualizedHistory({
       return height;
     },
     getItemKey: (index) => rowKey(rows[index]),
+    rangeExtractor,
     measureElement: (element) => {
       const measured = element.getBoundingClientRect().height;
       const row = rows[Number(element.getAttribute("data-index"))];
@@ -411,6 +437,10 @@ function VirtualizedHistory({
   // instance hook in the pinned virtual-core version, rather than an option.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
   const expectUserScroll = () => {
+    setStickyAnchorKey(null);
+    if (readingAnchor.current?.target) {
+      readingAnchor.current = { key: readingAnchor.current.key, offset: readingAnchor.current.offset };
+    }
     if (captureNextScroll.current) return;
     captureNextScroll.current = true;
     scrolledSinceInput.current = false;
@@ -432,22 +462,57 @@ function VirtualizedHistory({
       history.loadOlder();
   });
   const captureReadingAnchor = useCallback(
-    (element: HTMLDivElement) => {
+    (element: HTMLDivElement, clickedTarget?: HTMLElement) => {
       const viewportTop = element.getBoundingClientRect().top;
       const first = [...element.querySelectorAll<HTMLElement>("[data-thread-anchor]")].find(
         (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
       );
-      const firstRow = first
-        ? rows.find((row) => row.entities[0].cursor.toString() === first.dataset.threadAnchor)
+      const clickedRow = clickedTarget?.closest<HTMLElement>("[data-thread-anchor]");
+      const anchorRowElement = clickedRow ?? first;
+      const anchorRow = anchorRowElement
+        ? rows.find((row) => row.entities[0].cursor.toString() === anchorRowElement.dataset.threadAnchor)
         : undefined;
-      if (first && firstRow) {
-        readingAnchor.current = { key: rowKey(firstRow), offset: first.getBoundingClientRect().top - viewportTop };
-        historyTrace.record({ kind: "anchor", ...readingAnchor.current });
+      const clickedHeading = clickedTarget?.closest<HTMLElement>(".agentplane-disclosure-heading");
+      const stickyTop = clickedHeading ? Number.parseFloat(getComputedStyle(clickedHeading).top) : Number.NaN;
+      const headingOffset = clickedHeading ? clickedHeading.getBoundingClientRect().top - viewportTop : Number.NaN;
+      const clickedHeadingIsSticky = Number.isFinite(stickyTop) && Math.abs(headingOffset - stickyTop) <= 2;
+      const anchorTarget =
+        clickedTarget && clickedRow?.contains(clickedTarget) && clickedHeadingIsSticky
+          ? clickedTarget
+          : anchorRowElement;
+      if (anchorRowElement && anchorRow && anchorTarget) {
+        const anchor = {
+          key: rowKey(anchorRow),
+          offset: anchorTarget.getBoundingClientRect().top - viewportTop,
+          ...(anchorTarget !== anchorRowElement ? { target: anchorTarget } : {}),
+        };
+        readingAnchor.current = anchor;
+        if (clickedTarget) stickyAnchorPending.current = clickedHeadingIsSticky ? anchor.key : null;
+        historyTrace.record({ kind: "anchor", key: anchor.key, offset: anchor.offset });
       }
     },
     [rows]
   );
-  const restoreAnchor = useEffectEvent((anchor: { key: string; offset: number }, awaitMeasurement = false) => {
+  useLayoutEffect(() => {
+    const anchor = readingAnchor.current;
+    const element = viewport.current;
+    const target = anchor?.target;
+    if (!anchor || anchor.key !== stickyAnchorKey || !element || !target?.isConnected) return;
+
+    // A nested disclosure can shrink its containing virtual row past the scroll position. Restore
+    // its sticky control in this commit, before the browser paints it clamped by that row's bottom.
+    cancelRestoration();
+    restoringAnchor.current = anchor.key;
+    const correction = target.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
+    element.scrollTop += correction;
+    restorationFrame.current = requestAnimationFrame(() => {
+      if (restoringAnchor.current === anchor.key) restoringAnchor.current = null;
+      restorationFrame.current = null;
+      publishMode();
+    });
+    publishMode();
+  }, [cancelRestoration, publishMode, stickyAnchorKey, stickyAnchorRevision]);
+  const restoreAnchor = useEffectEvent((anchor: ReadingAnchor, awaitMeasurement = false) => {
     const index = anchorIndex(anchor.key);
     if (index < 0) return;
     cancelRestoration();
@@ -457,7 +522,8 @@ function VirtualizedHistory({
       const element = viewport.current;
       const row = anchorElement(anchor.key);
       if (!element || !row) return null;
-      const currentOffset = row.getBoundingClientRect().top - element.getBoundingClientRect().top;
+      const anchorTarget = anchor.target?.isConnected ? anchor.target : row;
+      const currentOffset = anchorTarget.getBoundingClientRect().top - element.getBoundingClientRect().top;
       const correction = currentOffset - anchor.offset;
       element.scrollTop += correction;
       return correction;
@@ -600,6 +666,7 @@ function VirtualizedHistory({
     const element = viewport.current;
     if (!element) return;
     setFollowing(true, "jump-to-latest");
+    setStickyAnchorKey(null);
     clickedAt.current = null;
     cancelRestoration();
     element.scrollTop = element.scrollHeight;
@@ -687,12 +754,14 @@ function VirtualizedHistory({
         // following, and adopts the place as it stands before the row moves. A history that does
         // not scroll has no place to lose, and goes on following as it grows.
         const element = event.currentTarget;
-        if (!(event.target instanceof Element) || !event.target.closest("summary, [aria-expanded]")) return;
+        if (!(event.target instanceof Element)) return;
+        const clickedTarget = event.target.closest<HTMLElement>("[aria-expanded]");
+        if (!clickedTarget) return;
         if (element.scrollHeight > element.clientHeight) {
           setFollowing(false, "disclosure-click");
           clickedAt.current = element.scrollTop;
         }
-        captureReadingAnchor(element);
+        captureReadingAnchor(element, clickedTarget);
         historyTrace.record({
           kind: "click",
           scrollTop: element.scrollTop,
@@ -700,10 +769,19 @@ function VirtualizedHistory({
           clientHeight: element.clientHeight,
         });
       }}
-      onClick={revealEvidenceOnTap}
+      onClick={(event) => {
+        revealEvidenceOnTap(event);
+        const key = stickyAnchorPending.current;
+        stickyAnchorPending.current = null;
+        if (key === null) return;
+        setStickyAnchorKey(key);
+        setStickyAnchorRevision((revision) => revision + 1);
+      }}
       onScroll={(event) => {
         const element = event.currentTarget;
-        if (element.scrollTop !== clickedAt.current) clickedAt.current = null;
+        // A disclosure's anchor restoration can emit scroll after the click handler ends. Keep
+        // the click guard through those programmatic corrections; only a later user gesture clears it.
+        if (captureNextScroll.current && element.scrollTop !== clickedAt.current) clickedAt.current = null;
         const followed = followPreviousBottom(element);
         recentBottoms.current = [element.scrollHeight - element.clientHeight];
         historyTrace.record({
@@ -772,11 +850,12 @@ function VirtualizedHistory({
               data-thread-anchor={row.entities[0].cursor.toString()}
               ref={virtualizer.measureElement}
               style={{
+                // Keep rows in scroll-content coordinates so sticky disclosure descendants track
+                // the viewport instead of moving with a per-row transform.
                 position: "absolute",
-                top: 0,
+                top: item.start,
                 left: 0,
                 width: "100%",
-                transform: `translateY(${item.start}px)`,
                 paddingBottom: 4,
               }}
             >
@@ -798,7 +877,7 @@ function VirtualizedHistory({
             position: "sticky",
             bottom: 0,
             height: 0,
-            zIndex: 1,
+            zIndex: DISCLOSURE_STICKY_Z_INDEX + 1,
             display: "flex",
             justifyContent: "center",
             alignItems: "flex-end",

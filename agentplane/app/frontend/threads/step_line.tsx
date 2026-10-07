@@ -1,6 +1,8 @@
 import { Text } from "@mantine/core";
 import type { JSX, ReactNode, Ref } from "react";
 
+import { Disclosure } from "../disclosure";
+
 /** How a step stands, as its title shows it while the step is folded. A streaming step breathes; an
  * incomplete one, which nothing is working on, does not. */
 export type StepMark = "failed" | "streaming" | "incomplete";
@@ -37,8 +39,7 @@ export function StepLine({
   trailing?: ReactNode;
   /** Beside the line, outside its disclosure. */
   aside?: ReactNode;
-  /** Controls for the disclosed content, at the end of the line while it is open. Outside the
-   * summary, so using one does not toggle the disclosure. */
+  /** Controls that change the disclosed content, kept outside the sticky summary. */
   controls?: ReactNode;
   expandable: boolean;
   open: boolean;
@@ -62,22 +63,24 @@ export function StepLine({
       {trailing && <span className="agentplane-step-trailing">{trailing}</span>}
     </div>
   );
+  const openControls = expandable && open && controls && <div className="agentplane-step-controls">{controls}</div>;
   return (
     <div className="agentplane-step-row">
       {expandable ? (
-        <details
+        <Disclosure
           className="agentplane-step-details"
+          dividerBoundary
           open={open}
-          onToggle={(event) => onOpenChange(event.currentTarget.open)}
+          onOpenChange={onOpenChange}
+          summary={summary}
         >
-          <summary>{summary}</summary>
-          {open && children}
-        </details>
+          {openControls}
+          {children}
+        </Disclosure>
       ) : (
         <div className="agentplane-step-static">{summary}</div>
       )}
       {aside}
-      {expandable && open && controls && <div className="agentplane-step-controls">{controls}</div>}
     </div>
   );
 }

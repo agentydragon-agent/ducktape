@@ -2,10 +2,11 @@
 // harness's own shell tool calls: the command as highlighted shell, and its output as text, each
 // capped in height with the rest one click away.
 import { Stack, Text } from "@mantine/core";
-import type { JSX } from "react";
+import { type JSX, useState } from "react";
 
 import { ClampedBlock, lineCount } from "./clamped_block";
 import { CodeBlock } from "./code_block";
+import { Disclosure } from "./disclosure";
 import { HighlightedText } from "./json_view";
 
 export const COMMAND_MAX_HEIGHT_REM = 10;
@@ -33,7 +34,12 @@ export function CommandCallView({
     <Stack gap={4}>
       {description && <Text size="sm">{description}</Text>}
       {target && <CodeBlock text={target} presentation="label" />}
-      <ClampedBlock maxHeightRem={COMMAND_MAX_HEIGHT_REM} lines={lineCount(command)} expansion={expansion}>
+      <ClampedBlock
+        maxHeightRem={COMMAND_MAX_HEIGHT_REM}
+        lines={lineCount(command)}
+        label="Command"
+        expansion={expansion}
+      >
         <CodeBlock text={command} language="bash" />
       </ClampedBlock>
       {notes.map((note) => (
@@ -52,27 +58,50 @@ export function OutputBlock({
   note,
   text,
   expansion,
+  disclosure,
 }: {
   name: string;
   note?: string;
   text: string;
   expansion?: Expansion;
+  /** Retain the nested output disclosure while a tool row leaves the DOM. */
+  disclosure?: Expansion;
 }): JSX.Element {
+  const localDisclosure = useState(true);
+  const [open, setOpen] = disclosure ?? localDisclosure;
+  const lines = lineCount(text);
+
   return (
-    <div>
-      <Text size="xs" c="dimmed" mb={4}>
-        {name}
-        {note && (
-          <Text span size="xs" c="orange">
-            {" "}
-            · {note}
+    <Disclosure
+      className="agentplane-output-disclosure"
+      summary={
+        <Text className="agentplane-output-label" size="xs" c="dimmed">
+          {name}
+          <Text span size="xs" c="dimmed">
+            {` · ${lines} ${lines === 1 ? "line" : "lines"}`}
           </Text>
-        )}
-      </Text>
-      <ClampedBlock maxHeightRem={OUTPUT_MAX_HEIGHT_REM} lines={lineCount(text)} expansion={expansion}>
+          {note && (
+            <Text span size="xs" c="orange">
+              {" "}
+              · {note}
+            </Text>
+          )}
+        </Text>
+      }
+      open={open}
+      onOpenChange={setOpen}
+      keepMounted
+    >
+      <ClampedBlock
+        maxHeightRem={OUTPUT_MAX_HEIGHT_REM}
+        lines={lines}
+        label={name}
+        expansion={expansion}
+        stickyCollapse={false}
+      >
         {/* A final newline ends the last line rather than starting an empty one. */}
         <HighlightedText text={text.replace(/\n$/, "")} />
       </ClampedBlock>
-    </div>
+    </Disclosure>
   );
 }

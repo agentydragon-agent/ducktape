@@ -8,7 +8,25 @@
 
 import table from "./scenarios.json";
 
+export type DisclosureVisualStage =
+  | "collapsed"
+  | "short-expanded"
+  | "long-top"
+  | "long-scrolled"
+  | "after-disclosure"
+  | "nested-parent-only-scrolled"
+  | "nested-child-scrolled"
+  | "nested-after-child"
+  | "nested-after-outer"
+  | "nested-wrapped-headings"
+  | "nested-before-output"
+  | "nested-expanded-output"
+  | "nested-after-output"
+  | "nested-output-collapsed";
+
 export interface Scenario {
+  /** Mount the isolated shared-disclosure phone scene instead of the full app. */
+  disclosureVisual?: DisclosureVisualStage;
   /** Offer Codex only while retaining existing Claude threads. */
   claudePaused?: boolean;
   /**
@@ -122,6 +140,10 @@ export interface Scenario {
   unfinishedReasoning?: boolean;
   /** Give reasoning enough Markdown to exercise a clipped inline preview and disclosure. */
   longReasoningPreview?: boolean;
+  /** Give an expanded reasoning disclosure enough body content to scroll past its original header. */
+  longReasoningBody?: boolean;
+  /** Expand the clamped command/output blocks in the thread fixture. */
+  openClampedBlocks?: boolean;
   pendingCommands?: "mixed" | "controls" | "outcomes";
   /** Answer a command POST as the app does when a runner misses its admission deadline. Without
    * this it stays unanswered, like one queued behind the browser's connection limit. */

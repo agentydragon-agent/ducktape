@@ -9,6 +9,7 @@ import {
   type ArchivedObservationEntry,
   type ObservationPage,
 } from "../client";
+import { Disclosure } from "../disclosure";
 import { JsonView } from "../json_view";
 
 type PageRequest = { before?: string; after?: string };
@@ -49,16 +50,18 @@ function Observation({
 }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   return (
-    <details
-      data-debug-observation={observation.cursor}
+    <Disclosure
+      dataAttributes={{ "data-debug-observation": observation.cursor }}
       open={expanded}
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
+      onOpenChange={setExpanded}
+      summary={
+        <>
+          Observation {observation.cursor} · {observation.kind}
+        </>
+      }
     >
-      <summary>
-        Observation {observation.cursor} · {observation.kind}
-      </summary>
-      {expanded && <ObservationEntry threadId={threadId} cursor={observation.cursor} />}
-    </details>
+      <ObservationEntry threadId={threadId} cursor={observation.cursor} />
+    </Disclosure>
   );
 }
 
@@ -167,11 +170,9 @@ export function useOpenChronologicalDebug(): (cursor?: string) => void {
   return open;
 }
 
-/** Sits at the right of an observation's own row (its raw-frames disclosure summary, or the plain
+/** Sits at the right of an observation's own row (its raw-frames disclosure control, or the plain
  * text standing in for one) rather than as a separate full-row link below it. A native `title`, not
- * a Mantine `Tooltip`, matches `EvidenceToggle`'s reasoning in `thread_evidence.tsx`. Guards
- * against the default action when it renders inside a `<summary>`: without `preventDefault`, the
- * click would also toggle the enclosing `<details>`. */
+ * a Mantine `Tooltip`, matches `EvidenceToggle`'s reasoning in `thread_evidence.tsx`. */
 export function ChronologicalDebugIcon({ observationCursor }: { observationCursor: string }): JSX.Element {
   const open = useOpenChronologicalDebug();
   return (

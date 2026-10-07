@@ -35,8 +35,26 @@ describe("ClampedBlock", () => {
     expect(container.querySelector('[data-clamped="true"]')).toBeNull();
     expect(control(container, "Show all")).toBeUndefined();
 
-    await act(async () => control(container, "Show less")?.click());
+    expect(control(container, "Collapse Expanded content")).toBeDefined();
+    expect(container.querySelector(".agentplane-clamped-disclosure")?.textContent).toContain("test-content");
+    await act(async () => control(container, "Collapse Expanded content")?.click());
     expect(container.querySelector('[data-clamped="true"]')).not.toBeNull();
+  });
+
+  it("keeps an existing heading in normal flow until it becomes a sticky collapse row", async () => {
+    contentHeight(1000);
+    const container = await mount(
+      <ClampedBlock maxHeightRem={10} label="Output" header={<span className="agentplane-output-label">Output</span>}>
+        test-content
+      </ClampedBlock>
+    );
+    expect(container.querySelector(".agentplane-output-label")?.textContent).toBe("Output");
+    expect(container.querySelector(".agentplane-clamped-disclosure")).toBeNull();
+    await act(async () => control(container, "Show all")?.click());
+    expect(container.querySelector(".agentplane-clamped-disclosure .agentplane-output-label")?.textContent).toBe(
+      "Output"
+    );
+    expect(control(container, "Collapse Output")).toBeDefined();
   });
 
   it("says how many lines it hides, when told", async () => {
@@ -85,7 +103,7 @@ describe("ClampedBlock", () => {
     }
     const container = await mount(<Retained />);
     expect(container.querySelector('[data-clamped="true"]')).toBeNull();
-    expect(control(container, "Show less")).toBeDefined();
+    expect(control(container, "Collapse Expanded content")).toBeDefined();
   });
 });
 

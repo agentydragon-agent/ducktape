@@ -98,15 +98,11 @@ function EvidenceFrames(props: { threadId: string; entity: ThreadEntity; observa
   return (
     <RetainedDisclosure
       id={id}
-      summary={
-        // Inline content, not a `Group`: a block-level child of `<summary>` (a flex container
-        // included) starts on the line below the disclosure marker.
-        <>
-          <span>Observation {props.observationCursor} raw frames</span>
-          <span className="agentplane-evidence-frames-debug">
-            <ChronologicalDebugIcon observationCursor={props.observationCursor} />
-          </span>
-        </>
+      summary={<span>Observation {props.observationCursor} raw frames</span>}
+      summaryAside={
+        <span className="agentplane-evidence-frames-debug">
+          <ChronologicalDebugIcon observationCursor={props.observationCursor} />
+        </span>
       }
     >
       <EvidenceFramesPage key={id} {...props} />
@@ -232,5 +228,18 @@ export function revealEvidenceOnTap(event: MouseEvent<HTMLElement>): void {
 export function EvidencePanel({ threadId, entity }: { threadId: string; entity: ThreadEntity }): JSX.Element {
   const id = evidenceDisclosure(entity);
   const [open] = useRetainedDisclosure(id);
-  return open ? <EvidencePageView key={id} threadId={threadId} entity={entity} /> : <></>;
+  return open ? (
+    <RetainedDisclosure
+      id={id}
+      summary={
+        <Text size="xs" c="dimmed">
+          Evidence
+        </Text>
+      }
+    >
+      <EvidencePageView key={id} threadId={threadId} entity={entity} />
+    </RetainedDisclosure>
+  ) : (
+    <></>
+  );
 }
