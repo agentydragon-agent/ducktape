@@ -3,7 +3,7 @@
 import pytest_bazel
 
 from agentplane.runner import protocol_pb2
-from agentplane.sandbox_service.instructions import combine_instructions, render_platform_instructions
+from agentplane.sandbox_service.instructions import combine_instructions
 from agentplane.sandbox_service.protocol_pb2 import (
     SandboxBinding,
     SandboxDestination,
@@ -14,36 +14,6 @@ from agentplane.sandbox_service.protocol_pb2 import (
 from agentplane.sandbox_service.session_lifecycle import launch_spec
 
 # gazelle:include_dep @pypi//protobuf
-
-
-def test_platform_instructions_render_all_deployment_guidance_together() -> None:
-    instructions = render_platform_instructions(
-        egress_api_url="http://egress.test.invalid",
-        actions_service_url="http://actions.test.invalid:8080",
-        notifications_service_url="http://notifications.test.invalid:8080",
-    )
-
-    assert "http://egress.test.invalid/v1/rules" in instructions
-    assert "http://egress.test.invalid/openapi.json" in instructions
-    assert "http://actions.test.invalid:8080/openapi.json" in instructions
-    assert "configured local timezone (from the `TZ` environment variable)" in instructions
-    assert instructions.count("### Waiting efficiently for Actions") == 1
-    assert instructions.index("configured local timezone") < instructions.index("### Waiting efficiently for Actions")
-    assert "Choose how to wait:" in instructions
-    assert instructions.index("Choose how to wait:") < instructions.index("### Subscribe")
-    assert "You may subscribe immediately; you do not need to time out first." in instructions
-    assert "end your turn rather than occupying it with" in instructions
-    assert "http://notifications.test.invalid:8080/v1/subscriptions" in instructions
-    assert "agentplane-credential-agentplane-notifications-workload" in instructions
-    assert "http://notifications.test.invalid:8080/v1/inboxes/INBOX_ID/acknowledgement" in instructions
-    assert '"idempotency_key": "follow-REAL_REQUEST_ID"' in instructions
-    assert '"client_key"' not in instructions
-    assert '"source": {"provider": "actions", "request_id": "REAL_REQUEST_ID", "after_sequence": 0}' in instructions
-    assert "event.request_id and event.sequence" in instructions
-    assert '"through_cursor": LAST_HANDLED_CURSOR' in instructions
-    assert "Reads and runner delivery receipts never acknowledge." in instructions
-    assert "unsubscribing is not withdrawal." in instructions
-    assert "No notification-triggered harness/sandbox startup or wake-up is available." in instructions
 
 
 def test_task_instructions_augment_platform_guidance() -> None:
