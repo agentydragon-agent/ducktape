@@ -20,9 +20,6 @@ is an explicit temporary operational constraint, never an implicit correctness a
 
 Proposed execution order for the Thread correctness/UI track:
 
-- **P1, remaining error work:** HTTP-error behavior and app archive/UI evidence
-  (`LLM_ERROR_SURFACE`). Native resume/recovery remains on the board but is excluded
-  from this dispatch batch.
 - **P1, reported against deployed staging:** command-submission deadlines
   (`ADMISSION_DEADLINE_BUDGET`, then `ADMISSION_UNCERTAIN_OUTCOME`). The staged submission
   indicator (`SUBMISSION_STAGE_INDICATOR`) follows them and shares its test changes with
@@ -30,10 +27,6 @@ Proposed execution order for the Thread correctness/UI track:
 - **Targeted hosted Haku acceptance:** verify a fresh Haku Thread has its per-Thread
   checkout (`THREAD_WORKSPACE_BOOTSTRAP`, [#8695](https://github.com/agentydragon/ducktape/issues/8695)).
   This no longer gates the rest of the Thread correctness work.
-- **P1, next harness correctness check:** force native compaction and verify standing
-  instructions in subsequent Claude/Codex model requests (`HARNESS_COMPACTION_INSTRUCTIONS`).
-  Share the compaction trigger/fixtures with the future frontend control; this proof does not
-  wait on UI work.
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
 - **Unranked future harness capabilities:** project skills and commands, web search, visual input,
@@ -71,8 +64,7 @@ flowchart TB
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
-    HARNESS_COMPACTION_INSTRUCTIONS["P1 harness acceptance<br/>trigger native compaction<br/>verify post-compact instructions"]:::active
-    NOTIFICATION_COMPACT_NOTICES["Deferred design<br/>brief notices and shared instructions<br/>Claude/Codex compaction evidence"]:::future
+    HARNESS_AUTO_COMPACTION_PROOF["Future harness acceptance<br/>automatic compaction<br/>standing instructions on next request"]:::future
     NOTIFICATION_NOTICE_PACING["Incremental improvement<br/>stage-aware notice pacing<br/>avoid redundant busy-turn notices"]:::future
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
     HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
@@ -93,7 +85,7 @@ flowchart TB
     HARNESS_PROMPT_SUGGESTIONS["Optional, lowest estimated win<br/>Claude prompt suggestions<br/>measure UX before enabling"]:::future
     THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
     HOSTED_THREAD_SURFACES["Deferred design<br/>read and control surfaces for a hosted Thread<br/>beyond today's Sandbox-bound view"]:::future
-    CROSS_IDENTITY_READ_POLICY["Deferred decision<br/>explicit policy for reading across Identities<br/>what cross-Identity delivery waits on"]:::decision
+    THREAD_READ_POLICY["Deferred design<br/>explicit ServiceAccount access to Thread history<br/>specific IDs or reviewed selectors"]:::decision
     AG["Capstone<br/>hosted Agent and Thread model<br/>lifecycle, surfaces and read policy together"]:::milestone
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_RBAC["Managed Kubernetes access<br/>catalog choices and SA bindings<br/>live acceptance pending; see #8596"]:::active
@@ -105,7 +97,7 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Deferred combined UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox selected, Thread fields editable"]:::future
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
-    ADMISSION_DEADLINE_BUDGET["P1 partially landed<br/>submission budgets split and configurable<br/>defaults still unmeasured; measure ingest lag"]:::active
+    ADMISSION_DEADLINE_BUDGET["P1 reported failure<br/>submission waits bound on archive lag<br/>four coupled 15 s budgets, one setting"]:::active
     ADMISSION_UNCERTAIN_OUTCOME["Planned correctness<br/>unconfirmed submission reconciles<br/>not a failed send"]:::future
     COMMAND_DISPATCHED_EVENT["Missing observation<br/>runner handed the command to the harness<br/>journal-only today; needs an Event"]:::future
     SUBMISSION_STAGE_INDICATOR["Planned UI<br/>staged submission indicator<br/>which of five stages, not two strings"]:::future
@@ -117,7 +109,6 @@ flowchart TB
     SANDBOX_VM_ISOLATION["Deferred provider integration<br/>selectable KubeVirt environments<br/>production service, gateway and lifecycle proof"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
-    LLM_ERROR_SURFACE["P1 remaining correctness<br/>HTTP model errors and app archive/UI<br/>terminal status and safe evidence"]:::active
     THREAD_WORKSPACE_BOOTSTRAP["Targeted Haku acceptance<br/>fresh hosted Thread checkout<br/>per-Thread cwd; #8695"]:::future
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
@@ -128,10 +119,8 @@ flowchart TB
 
     THREAD_OUTLIVES_SANDBOX --> AG
     HOSTED_THREAD_SURFACES --> AG
-    CROSS_IDENTITY_READ_POLICY --> AG
+    THREAD_READ_POLICY --> AG
     PC_EGRESS_CREDENTIALS --> PC_EGRESS
-    HARNESS_COMPACTION_INSTRUCTIONS --> NOTIFICATION_COMPACT_NOTICES
-    HARNESS_COMPACTION_INSTRUCTIONS --> HARNESS_MANUAL_COMPACTION
 
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_SKILLS
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_WEB_SEARCH
@@ -310,22 +299,6 @@ Role-versus-bundle representation belongs to `KUBERNETES_RBAC_POLICIES`. Respect
 ownership: an account's bindings must not fight a reconciler for the same objects.
 
 ## Named gates and acceptance evidence
-
-### `LLM_ERROR_SURFACE` — HTTP failures through runner, archive and UI
-
-**P1 remaining, independent of any particular 502 cause:** use scripted Claude and Codex
-model endpoints to pin HTTP errors before content, including native retry/exhaustion behavior
-as applicable and a later successful turn. Extend native-backed runner tests if HTTP failure
-normalization differs from the now-covered connection-loss cases. Assert request/response
-and safe diagnostic evidence; process loss is separate, and native retries must not become
-app-issued replacement commands.
-
-Verify app archival/replay preserves terminal status and available safe diagnostic/native
-evidence without turning an admitted or confirmed input into an unsaved command. Exercise
-normal/Raw views, reload and a later successful input with a native-backed source. Do not
-attribute an opaque harness error to LiteLLM, egress or a vendor without evidence, invent
-retryability guarantees, or create a parallel error protocol. Any future retry control must
-distinguish same-command delivery retry from requesting a new model turn.
 
 ### `THREAD_WORKSPACE_BOOTSTRAP` — make Thread cwd and bootstrap ownership coherent
 
@@ -562,22 +535,33 @@ sequence. Review them for independently useful changes to salvage into appropria
 slices; do not stack new work on their deferred queue design. Preserve the runner's
 own journal in either option.
 
-### `ADMISSION_DEADLINE_BUDGET` — set the submission budgets from measured ingest lag
+### `ADMISSION_DEADLINE_BUDGET` — one submission budget, bounded by ingest lag rather than failure
 
-Each submission wait has its own named, validated setting that states what it gates:
-`request_timeout_s`, `command_admission_timeout_s` and `stream_write_timeout_s` on the Sandbox
-Service (see `API.md`, "Server configuration and cutover"), and `command_admission_timeout_s`,
-`session_archive_timeout_s`, `admission_reread_s` plus `sandbox_service_command_timeout_s` on the app
-(`AGENTPLANE_*`). Submission defaults to 300 s, so a slow admission on a local model is no longer
-reported as a failure whose command is running anyway.
+**P1, reported against deployed staging:** submitting a message can answer
+`admission of command '…' was not confirmed within 15 seconds; outcome uncertain` after the runner
+already took the command. Four independent 15-second budgets gate one submission, and only moving
+them together helps:
 
-**The number is still a guess, and that is the remaining work.** 300 s is the reported failure's
-starting point, not a measurement. Measure ingest lag on a busy Thread (a turn already streaming
-`TextDelta`/`ToolOutputDelta` when a steer arrives) and set `command_admission_timeout_s` from the
-tail rather than from intuition. Then check that `agentplane/app/frontend/client.ts`
-`COMMAND_TIMEOUT_MS` still sits above it: that browser ceiling cannot read the deployed setting, so
-it is raised by hand alongside the default and carries the same unmeasured risk until the bound is
-published to the client.
+- `agentplane/app/threads/bridge.py` `COMMAND_ADMISSION_S`, the wait in `_wait_for_admission`. It is
+  not a runner round trip: it polls `ContentStore.admitted_command`, so it ends when the Ingester has
+  copied the runner's `CommandAdmitted` into the app archive — ingest lag, longest on a Thread whose
+  stream is busy delivering `TextDelta`/`ToolOutputDelta` for the turn already in progress.
+- The same file's `_archive_open`, which inlines its own 15 s wait for the Ingester to reach the
+  runner's `attached.last_cursor` on Open and Resume.
+- `agentplane/sandbox_service/main.py` `admission_timeout_s`, which `grpc_api.py` applies both as the
+  generic request deadline, as the `admit_running_command` budget and as the per-write timeout inside
+  `FollowSession`. It is one field doing three unrelated jobs, and its `le=60` makes the target below
+  unconfigurable.
+- `agentplane/app/frontend/client.ts` `COMMAND_TIMEOUT_MS`, a browser abort documented as sitting above
+  the server's sequential waits, so it inherits their size.
+
+Split submission out of `admission_timeout_s` — the SSE write timeout should stay short and the
+submit budget should not be its side effect — thread one named setting through the app and the
+Sandbox Service instead of four constants, and keep the browser abort above the server bound.
+Set it generously: a Codex harness inserts a steer only at an opportunity inside the turn, and on a
+local model that gap is long, workload-dependent and routinely dwarfs 15 seconds. Five minutes is
+the starting value, not a measured one; measure ingest lag on a busy Thread rather than guessing
+again.
 
 ### `ADMISSION_UNCERTAIN_OUTCOME` — an unconfirmed submission reconciles instead of failing
 
@@ -589,9 +573,8 @@ failed send while the command may already be admitted and running. Turn the time
 non-terminal state: keep watching the archive for that immutable command, resolve through the
 Thread's existing push feed when it lands, and make any retry replay the same command —
 `RunnerBridge.command` already short-circuits on an archived admission, so no new recovery path is
-needed. Only an explicit runner refusal is a failure. `ADMISSION_DEADLINE_BUDGET` made the deadline
-configurable rather than wrong, so this must not amount to a longer error message: an unconfirmed
-submission reconciles.
+needed. Only an explicit runner refusal is a failure. Land after `ADMISSION_DEADLINE_BUDGET` so the
+reconciliation window is not simply a longer error message.
 
 ### `COMMAND_DISPATCHED_EVENT` — make "the runner sent this to the harness" an observation
 
@@ -754,12 +737,30 @@ view the derived read model serves. Separate from the lifecycle: a Thread can ou
 before anything new reads it that way, and these surfaces can be designed against a Thread that
 does not yet.
 
-### `CROSS_IDENTITY_READ_POLICY` — an explicit policy for reading across Identities
+### `THREAD_READ_POLICY` — explicit ServiceAccount grants for Thread history
 
-**Deferred decision:** what one Identity may read of another's Threads, stated explicitly rather
-than left to whatever a query happens to reach. Future cross-Identity notification delivery needs
-this policy, not the hosted lifecycle or surfaces. The [subscriptions v1](notifications.md) uses authenticated ServiceAccount authority and
-explicit runner-session scope; it does not require app Thread ownership or cross-account delivery policy.
+**Design first; no grant model selected:** a logical agent may run as a ServiceAccount in
+independent Threads over time and should be able to find and read authorized prior history,
+including after a Sandbox or runner session changes. Do not infer read authority merely from
+sharing a Sandbox, a label, a similarly named agent, or a previously used credential. Specify
+which identity owns a Thread and how a caller's ServiceAccount obtains read authority through
+an explicit, inspectable, revocable policy.
+
+Compare grants scoped to specific Thread IDs with broader reviewed scopes (for example an
+operator-assigned tag or collection of Threads). Define who may assign or change selectors,
+whether existing and future Threads match, what a retag does to access, and how grants survive
+ServiceAccount replacement without silently sharing another agent's history. Distinguish
+Thread identity from runner session/incarnation IDs, and bound list/search/discovery as well as
+raw Event/transcript reads so listing cannot leak inaccessible history. Decide what the agent
+can see versus what an operator can see, the authority for API and archive reads, revocation
+and audit behavior, and tests for same-agent history, cross-agent denial, selector changes and
+replay. Treat cross-Identity reads as a deliberate policy choice, not a side effect of queries.
+
+This design can proceed independently of a hosted-Thread lifecycle or UI. Future cross-Identity
+notification delivery needs its read policy, but [subscriptions v1](notifications.md) retains
+its authenticated ServiceAccount authority and explicit runner-session scope; it does not
+require app Thread ownership or cross-account delivery policy. Do not commit to a tag-based
+schema or implement broad reads before the authority model is reviewed.
 
 ### `AG` — hosted Agent and Thread model
 
@@ -825,42 +826,17 @@ precise delivery time if it depends on a harness event or the runner being offli
 Compare optional lifecycle/hook signals only if simple stage-aware timers leave a measurable
 problem; hooks are not guaranteed pre-sample events. Native queued-input update/withdrawal
 needs explicit too-late outcomes and must not cancel other coalesced inputs. Do not require LLM
-proxy interception, which could cover subagents or unrelated requests. Keep this separate from
-making notices terse in `NOTIFICATION_COMPACT_NOTICES`.
+proxy interception, which could cover subagents or unrelated requests. Keep this separate from notice wording and presentation.
 
-### `HARNESS_COMPACTION_INSTRUCTIONS` — trigger compaction and prove standing instructions survive
+### `HARNESS_AUTO_COMPACTION_PROOF` — exercise non-manual compaction
 
-**P1 harness correctness acceptance:** add a reproducible native compaction trigger and mock-LLM
-capture for both runner-matched Claude and Codex. Supply distinctive Agentplane standing
-instructions; force real harness compaction, then inspect the actual subsequent LLM request(s),
-not just the initial runner handshake, a harness callback, or its final answer. Check which
-instructions persist across automatic and explicitly triggered compaction where supported, and
-across resume after compaction; test a continued turn with a short inbox hint to expose loss of
-retrieval/acknowledgement guidance. Record harness/version-specific behavior rather than assuming
-that a compacted summary or a hook restores instructions. If instructions can be lost, specify
-and test reinjection or retain self-contained notices until fixed.
-
-Build the trigger and evidence fixtures to be reusable by `HARNESS_MANUAL_COMPACTION`: Codex's
-`thread/compact/start` is inventoried but untested, while Claude's compaction path needs native
-capability verification. This task pins the native operation and post-compaction model context;
-the separate frontend control covers authorized user requests and their UI lifecycle. Neither
-requires LLM proxy interception in production. Gate shortening notices in
-`NOTIFICATION_COMPACT_NOTICES` on this proof.
-
-### `NOTIFICATION_COMPACT_NOTICES` — shared instructions and brief cursor hints
-
-**Deferred design; wire format TBD:** put retrieval/explicit-acknowledgement instructions in shared
-agent instructions once, then consider brief notices such as
-`<agentplane-notification>{"inbox":"<uuid>","new_cursor":47}</agentplane-notification>`.
-This example is not a protocol commitment or a provenance/authentication mechanism.
-
-Before removing self-contained guidance, prove that agents retain or regain the shared instructions
-through context compaction and session resume. Use mock-LLM tests exercising compaction with **both
-Claude and Codex**: after compaction, a compact notice must still lead to correct inbox retrieval and
-explicit acknowledgement of only the handled contiguous prefix. Inspect the actual model context,
-not just initial prompt construction. Define reinjection/fallback if guidance can be lost; retain
-self-contained notices until that evidence exists. Coordinate with `NOTIFICATION_PRESENTATION`,
-without treating a textual tag as trusted origin metadata or making frontend work a prerequisite.
+**Optional regression coverage, not a prerequisite for relying on standing instructions:**
+deterministically trigger harness-initiated automatic compaction in runner-matched Claude and
+Codex, where supported. Prove the boundary and inspect the first following ordinary model
+request and resume for instructions. The native explicit-compaction tests establish the current
+working assumption that standing instructions survive; they do not directly test automatic
+compaction or the runner's exact constructed instructions. Do not block a frontend compaction
+control on this optional coverage.
 
 ### `GITHUB_DELIVERY_RECOVERY` — remaining live reliability acceptance
 
@@ -1137,8 +1113,8 @@ admission from actual start/completion/failure using runner evidence, including 
 Preserve Thread/session identity and the durable transcript/Event archive: compacting model context
 is not deleting conversation history. Acceptance covers a real frontend request, native compaction,
 continued conversation and retained shared instructions for each supported harness, plus failure and
-reconnect behavior. Reuse the native trigger and post-compaction evidence from
-`HARNESS_COMPACTION_INSTRUCTIONS`; those tests do not need to wait for the frontend control.
+reconnect behavior. Reuse the native triggers and post-compaction evidence from the harness
+tests; the frontend control does not need a separate instruction-retention proof first.
 Implementation and UI details remain open.
 
 ### `CONTROL_STATE` — dynamic runtime control acceptance
