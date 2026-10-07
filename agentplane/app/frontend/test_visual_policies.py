@@ -19,6 +19,8 @@ from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, Viewport
 from util.testing.visual_capture import VisualHarness
 
+# gazelle:include_dep //util/testing:visual_fixtures
+pytest_plugins = ("util.testing.visual_fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 

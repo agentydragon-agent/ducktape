@@ -46,7 +46,8 @@ if __name__ == "__main__":
 
 Pass `test_module`, `test_srcs`, direct `test_deps`, bundled `harness`, `assets` and
 `title` to `py_visual_test`. Exclude macro-owned test sources from Gazelle so it does
-not create a second test target. Shared helper modules remain Gazelle-managed.
+not create a second test target. Prefer one test source per target; put shared helpers in
+Gazelle-managed libraries rather than loading sibling test modules into one runner.
 
 `visual.open()` can load a harness without any fixture ID. For harnesses with callable
 setup APIs, configure the mocks and mount the component from Python before asserting
