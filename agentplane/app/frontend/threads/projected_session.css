@@ -70,6 +70,20 @@
   line-height: 1.4;
 }
 
+/* Disclosure's general 2.75rem touch target and label padding are right for a standalone
+   heading, but add a blank band around every folded step in an already expanded run.
+   Keep the opened step's normal heading size, and only tighten these nested closed controls. */
+.agentplane-run-steps .agentplane-step-details .agentplane-disclosure-heading[data-expanded="false"]
+  > .agentplane-disclosure-summary {
+  min-height: 1.5rem;
+  padding-block: 0;
+}
+
+.agentplane-run-steps .agentplane-step-details .agentplane-disclosure-heading[data-expanded="false"]
+  .agentplane-disclosure-summary-content {
+  padding-block: 0;
+}
+
 /* A run packs its one-line steps together, but an opened one is a card, and keeps the room between
    cards when another step follows it. Below the card, so opening it does not move its top edge. */
 .agentplane-run-steps > [data-open="true"]:not(:last-child) {
