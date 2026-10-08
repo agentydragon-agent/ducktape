@@ -19,6 +19,7 @@ from agentplane.postgres.listener import PostgresListener
 
 CHANNEL = "agentplane_action_updates"
 PUSH_CHANNEL = "agentplane_push_updates"
+CONNECTIONS_CHANNEL = "agentplane_connection_updates"
 logger = logging.getLogger(__name__)
 
 
@@ -48,9 +49,10 @@ class ActionUpdates:
         self._subscribers: dict[UUID, set[asyncio.Event]] = {}
         self._all_subscribers: set[asyncio.Event] = set()
         self._push_subscribers: set[asyncio.Event] = set()
+        self._connection_subscribers: set[asyncio.Event] = set()
         self.listener = PostgresListener(
             make_url(database_url),
-            channels=(CHANNEL, PUSH_CHANNEL),
+            channels=(CHANNEL, PUSH_CHANNEL, CONNECTIONS_CHANNEL),
             application_name="agentplane-action-updates",
             notified=self._notified,
             invalidated=self._wake_all,
@@ -87,9 +89,22 @@ class ActionUpdates:
         finally:
             self._push_subscribers.discard(subscription.changed)
 
+    @contextmanager
+    def subscribe_connections(self) -> Iterator[ActionSubscription]:
+        subscription = ActionSubscription(self.listener)
+        self._connection_subscribers.add(subscription.changed)
+        try:
+            yield subscription
+        finally:
+            self._connection_subscribers.discard(subscription.changed)
+
     def _notified(self, channel: str, payload: object) -> None:
         if channel == PUSH_CHANNEL:
             for changed in self._push_subscribers:
+                changed.set()
+            return
+        if channel == CONNECTIONS_CHANNEL:
+            for changed in self._connection_subscribers:
                 changed.set()
             return
         for changed in self._all_subscribers:
@@ -109,6 +124,8 @@ class ActionUpdates:
 
     def _wake_all(self) -> None:
         for changed in self._push_subscribers:
+            changed.set()
+        for changed in self._connection_subscribers:
             changed.set()
         for subscribers in self._subscribers.values():
             for changed in subscribers:

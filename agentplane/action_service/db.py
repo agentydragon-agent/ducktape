@@ -59,7 +59,7 @@ from agentplane.action_service.models import (
     Verdict,
     operator_or_none,
 )
-from agentplane.action_service.updates import CHANNEL
+from agentplane.action_service.updates import CHANNEL, CONNECTIONS_CHANNEL
 from agentplane.subjects import ServiceAccountRef
 
 # SQLAlchemy loads asyncpg from the URL scheme; Gazelle cannot infer that runtime dependency.
@@ -126,6 +126,15 @@ class ConnectionGrantRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+@event.listens_for(ConnectionRow, "after_insert")
+@event.listens_for(ConnectionRow, "after_update")
+@event.listens_for(ConnectionGrantRow, "after_insert")
+@event.listens_for(ConnectionGrantRow, "after_update")
+def _notify_connection(_mapper: Mapper[object], connection: Connection, _row: object) -> None:
+    # This listener sees every canonical inventory mutation, including OAuth adapter writes.
+    connection.execute(select(func.pg_notify(CONNECTIONS_CHANNEL, "")))
 
 
 class ActionRequestRow(Base):

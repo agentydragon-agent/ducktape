@@ -105,6 +105,16 @@ async def test_connections_settings_modal_connections(view: VisualPage, app: Age
     await view.capture(target=view.page.locator("#app"))
 
 
+async def test_oauth_clients_update_while_settings_stays_open(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/")
+    page = view.page
+    await page.get_by_role("button", name="Settings").click()
+    await expect(page.get_by_text("Claude desktop")).to_be_visible()
+    await app.publish_connection_rename()
+    await expect(page.get_by_text("Updated OAuth client")).to_be_visible()
+    await view.capture(name="oauth_clients_live_rename")
+
+
 @pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_connections_settings_modal_connections_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")

@@ -105,6 +105,9 @@ class AgentplaneFixture:
     async def publish_push_browser(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.publishPushBrowser()")
 
+    async def publish_connection_rename(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.publishConnectionRename()")
+
     async def set_notification_status_unavailable(self, unavailable: bool) -> None:
         await self.page.evaluate(
             "unavailable => window.agentplaneVisual.setNotificationStatusUnavailable(unavailable)", unavailable
