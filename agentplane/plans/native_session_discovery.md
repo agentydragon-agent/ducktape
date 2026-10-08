@@ -532,8 +532,9 @@ Use the existing runner storage and journal authority, not a new execution/messa
    projection checkpoint and registry revision, and record destination-event work for the existing
    journal writer. Allocate the child's journal identity here; a repeated source frame finds the same
    descriptor. The publication work is an outbox for projection, not a harness-command queue.
-3. Append derived events idempotently by `(owner evidence reference, destination logical ID,
-   projection kind/index)`, then mark that work published. Journal append must support recovery
+3. Append derived events idempotently by
+   `(owner evidence reference, destination logical ID, projection kind/index)`, then mark that work
+   published. Journal append must support recovery
    of that key before acknowledging publication; an outbox alone does not prevent duplicates.
    A client may briefly see a declared child with no projected content yet, never a reference to
    nonexistent raw evidence. Child events carry qualified cross-log evidence references.
