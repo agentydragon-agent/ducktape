@@ -32,7 +32,7 @@ async def close_fake_api_clients() -> None:
 # What the test template carries, and what every Sandbox the inventory creates must copy.
 POD_TEMPLATE: dict[str, Any] = {
     "metadata": {"labels": {"app.kubernetes.io/name": "agentplane-test-runner"}},
-    "spec": {"containers": [{"name": "runner", "image": "registry.test/agentplane-runner:test"}]},
+    "spec": {"containers": [{"name": "runner", "image": "registry.test/runner:test"}]},
 }
 VOLUME_CLAIM_TEMPLATES: list[dict[str, Any]] = [
     {"metadata": {"name": "state"}, "spec": {"resources": {"requests": {"storage": "1Gi"}}}}
@@ -387,7 +387,7 @@ def pod(name: str, *, phase: str, ready: bool, ip: str | None, waiting_reason: s
             container_statuses=[
                 k8s_client.V1ContainerStatus(
                     name="runner",
-                    image="registry.test/agentplane-runner:test",
+                    image="registry.test/runner:test",
                     image_id="",
                     ready=ready,
                     restart_count=0,

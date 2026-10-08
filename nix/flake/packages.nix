@@ -110,15 +110,28 @@ ducktapePkgs
   agentplane-sandbox-build-image = import ../../agentplane/images/build.nix { inherit pkgs; };
   # agentplane's runner image: the sandbox image plus the released runner wheel and nixpkgs'
   # Claude Code and Codex (agentplane/runner/image.nix).
-  # Build: nix build .#agentplane-runner-image
+  # Build: nix build .#runner-image
   # Load:  docker load < result
   agentplane-runner = import ../../agentplane/runner/package.nix {
     inherit pkgsUnstable;
     wheel = artifacts.agentplane-runner;
   };
-  agentplane-runner-image = import ../../agentplane/runner/image.nix {
+  runner-image = import ../../agentplane/runner/image.nix {
     inherit pkgs pkgsUnstable;
     runner = self.packages.${system}.agentplane-runner;
+  };
+  # Shared by the image and its Nix check, so validation cannot drift to another tool list.
+  runner-ducktape-tools = pkgs.buildEnv {
+    name = "runner-ducktape-tools";
+    paths = preCommitPackages ++ [ ducktapePkgs.gazelle ];
+    pathsToLink = [ "/bin" ];
+  };
+  # Same runner and harnesses, with the shared repository hook/build clients preinstalled.
+  runner-ducktape-image = import ../../agentplane/runner/image.nix {
+    inherit pkgs pkgsUnstable;
+    runner = self.packages.${system}.agentplane-runner;
+    name = "runner-ducktape";
+    extraPaths = [ self.packages.${system}.runner-ducktape-tools ];
   };
   # KubeVirt's NixOS guest packaged as a containerDisk; publish through the dedicated workflow.
   agentplane-runner-vm-container-disk = import ../../agentplane/runner/container-disk.nix {

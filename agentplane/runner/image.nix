@@ -1,7 +1,7 @@
 # The runner image: the sandbox image's definition (<../images/sandbox.nix>) plus the runner,
 # installed from its released wheel (the `agentplane-runner` pin in nix/artifact-pins.json), and
-# nixpkgs' Claude Code and Codex. Published as agentplane-runner by
-# .github/workflows/agentplane-runner-image.yml and run by the agentplane-runner SandboxTemplate
+# nixpkgs' Claude Code and Codex. Published as runner by
+# .github/workflows/agentplane-runner-image.yml and run by the runner SandboxTemplate
 # (cluster/cdk8s/agentplane/app.py), which names the harnesses by their /bin paths here.
 #
 # The runner's Python and both harnesses come from nixos-unstable: the wheel's generated protobuf
@@ -11,20 +11,22 @@
 # nothing runs a turn through this image before it publishes: after a change that moves the
 # runner pin or either harness, run //agentplane/acceptance against the deployment.
 #
-# Build:  nix build .#agentplane-runner-image
+# Build:  nix build .#runner-image
 # Load:   docker load < result
 {
   pkgs,
   pkgsUnstable,
   runner,
+  name ? "runner",
+  extraPaths ? [ ],
 }:
 import ../images/sandbox.nix {
-  inherit pkgs;
-  name = "agentplane-runner";
+  inherit pkgs name;
   extraPaths = [
     runner
     pkgsUnstable.claude-code
     pkgsUnstable.codex
-  ];
+  ]
+  ++ extraPaths;
   extraConfig.Entrypoint = [ "/bin/agentplane-runner" ];
 }

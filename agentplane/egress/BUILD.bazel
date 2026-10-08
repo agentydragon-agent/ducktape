@@ -293,7 +293,7 @@ py_binary(
 
 # The sidecar image on debian slim as user 1000: the relay alone, no CA bundle, since it terminates
 # no TLS. Published as agentplane-egress-sidecar (devinfra/ci/image_targets.json) and run next to
-# the runner by the agentplane-runner SandboxTemplate (cluster/k8s/agentplane-staging).
+# the runner by the runner SandboxTemplate (cluster/k8s/agentplane-staging).
 aspect_py_binary(
     name = "sidecar_image_bin",
     main = "sidecar.py",

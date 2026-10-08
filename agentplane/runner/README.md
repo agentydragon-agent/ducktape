@@ -146,3 +146,21 @@ The current Claude message's block map and unconfirmed inputs remain in memory.
 The Python `RunnerClient` tracks its consumed cursor without retaining every received event.
 Tests that inspect an attachment's complete `seen` history explicitly enable
 `capture_history=True`; application clients use the bounded default.
+
+## Ducktape development image
+
+`nix build .#runner-ducktape-image` builds the opt-in `runner-ducktape` container. It reuses
+this runner, both harnesses, and the sandbox substrate, adding `preCommitPackages` from the
+shared flake tool definitions and the repo-configured Gazelle. This includes `bb`, `bbr`,
+Bazelisk, pre-commit and the pinned formatters without duplicating their package/version list.
+The generic image is `runner` (`nix build .#runner-image`); `runner-ducktape` adds tools
+without changing the runner executable or internal service-account/network-policy identities.
+
+`nix build .#checks.x86_64-linux.runner-ducktape-tools` exercises representative repository
+hooks in a sandboxed Nix derivation, using the exact tool closure included in the image. The
+image workflow runs that check and a thin non-root container smoke test for the assembled
+filesystem, entrypoint and tool availability. These prove local tooling, not authenticated BuildBuddy execution;
+a deployed sandbox must separately prove the normal proxy/CA/credential route for `bbr`.
+No credentials are embedded in the image. Builds/tests should use RBE; adding tools does not
+isolate their processes or memory from the harness. VM-backed resource/process isolation remains
+separate work under `SANDBOX_VM_ISOLATION`.

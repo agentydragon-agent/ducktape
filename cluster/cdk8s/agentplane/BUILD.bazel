@@ -399,6 +399,7 @@ py_library(
     name = "staging_config",
     srcs = ["staging_config.py"],
     data = [
+        "ducktape_container_instructions.md",
         "finance_agent_instructions.md",
         "finance_agent_thread_setup.sh",
         "haku_thread_setup.sh",
@@ -475,6 +476,7 @@ py_library(
     deps = [
         ":actions",
         ":actions_staging_policies",
+        ":app",
         ":chart",
         ":command_sandbox",
         ":egress_credentials",

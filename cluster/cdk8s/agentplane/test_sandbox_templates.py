@@ -7,6 +7,7 @@ without it, so a template renamed, dropped or left undescribed here would take i
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from typing import Any
 
 import pytest
@@ -52,7 +53,7 @@ def test_all_sandbox_workloads_use_shared_environment_defaults(
         timezone = next(item for item in workload["env"] if item["name"] == "TZ")
         assert timezone["value"] == "America/Los_Angeles"
 
-    runner = next(template for template in templates if template["metadata"]["name"] == "agentplane-runner")
+    runner = next(template for template in templates if template["metadata"]["name"] == "runner")
     args = runner["spec"]["podTemplate"]["spec"]["containers"][0]["args"]
     assert any(args[index : index + 2] == ["--harness-env", "TZ"] for index in range(len(args) - 1))
     # TZDIR's value belongs to the sandbox image, but a harness child starts from only what the
@@ -80,6 +81,29 @@ def test_sandbox_sidecars_project_the_notifications_audience(
                 namespace,
                 template["metadata"]["name"],
             )
+
+
+def test_ducktape_template_is_staging_only_and_changes_only_image(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    for namespace, docs in agentplane_manifests.items():
+        templates = {doc["metadata"]["name"]: doc for doc in docs if doc["kind"] == "SandboxTemplate"}
+        app_config = one(
+            doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
+        )
+        presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
+        if namespace != "agentplane-staging":
+            assert "runner-ducktape" not in templates
+            assert "public-coder-ducktape" not in presets
+            continue
+        assert presets["public-coder-ducktape"]["template"] == "runner-ducktape"
+        generic = templates["runner"]["spec"]
+        specialized = deepcopy(templates["runner-ducktape"]["spec"])
+        container = specialized["podTemplate"]["spec"]["containers"][0]
+        assert container["image"] == "git.allegedly.works/ducktape-ci/runner-ducktape:unset"
+        container["image"] = generic["podTemplate"]["spec"]["containers"][0]["image"]
+        # Security context, resources, sidecar, labels, env, storage and command stay identical.
+        assert specialized == generic
 
 
 if __name__ == "__main__":
