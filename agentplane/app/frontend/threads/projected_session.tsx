@@ -60,6 +60,7 @@ import { ThreadStatusIndicator } from "../thread_status_indicator";
 import { DISCLOSURE_STICKY_Z_INDEX } from "../disclosure";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
 import { sandboxReady, sandboxSummary } from "../sandbox_status";
+import { NotificationStatus } from "../notification_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import { installThreadFavicon } from "../thread_favicon";
 import {
@@ -1151,6 +1152,7 @@ function ProjectedSessionBody({
             )}
           </Group>
           <TopbarActions>
+            <NotificationStatus sandbox={thread.sandbox} sessionId={thread.session_id} />
             <Menu position="bottom-end" withArrow shadow="md">
               <Menu.Target>
                 <ActionIcon size="sm" variant="subtle" color="gray" aria-label="More">

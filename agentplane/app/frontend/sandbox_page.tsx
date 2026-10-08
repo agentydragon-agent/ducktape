@@ -1,3 +1,4 @@
+import { NotificationStatus } from "./notification_status";
 import {
   ActionIcon,
   Badge,
@@ -545,6 +546,7 @@ export function SandboxPage({
         </Button>
         {sandbox && (
           <Group gap="xs" ml="auto" wrap="nowrap">
+            <NotificationStatus sandbox={name} />
             <SuspendResume sandbox={sandbox} onAct={(action) => void act(action)} />
             <DeleteButton sandbox={sandbox} onDelete={() => setConfirmingDelete(true)} />
           </Group>

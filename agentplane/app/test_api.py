@@ -1172,3 +1172,10 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+def test_notification_diagnostics_require_operator_login(client: TestClient) -> None:
+    # Workload authentication of the app is not operator authorization to inspect another inbox.
+    response = client.get("/sandboxes/ready-sandbox/notifications")
+    assert response.status_code == 403
+    assert response.json() == {"detail": "operator login required"}

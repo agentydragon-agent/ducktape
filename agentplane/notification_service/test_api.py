@@ -135,3 +135,50 @@ async def test_worker_return_is_fatal_without_a_traceback(store: Store, caplog: 
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+async def test_operator_status_is_read_only_and_uid_pinned(store: Store) -> None:
+    from types import SimpleNamespace
+
+    from agentplane.notification_service.models import SubscriptionView
+    from agentplane.notification_service.settings import NoticeDebounceSettings
+    from agentplane.action_service.models import ActionEventView, ActionState
+    from datetime import UTC, datetime
+
+    service = create_autospec(Service, instance=True)
+    service.store = store
+    service.sandboxes = SimpleNamespace(namespace="test")
+    service.operator_reader_account = "app"
+    service.notice_debounce = NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=120)
+    app = create_app(service, create_autospec(WorkloadPrincipalResolver, instance=True))
+    principal = PRINCIPAL
+    app.dependency_overrides[authenticated_caller] = lambda: principal
+    subscription: SubscriptionView = await store.subscribe(
+        PRINCIPAL,
+        Subscribe(
+            destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
+            session_id="session", idempotency_key="status",
+            source=ActionsSource(provider="actions", request_id=uuid4()),
+        ),
+    )
+    claim = await store.claim()
+    assert claim is not None
+    source = await store.source(claim)
+    assert source is not None
+    await store.record(claim, source, [ActionEventView(sequence=1, state=ActionState.DECISION_PENDING, at=datetime.now(UTC))])
+    url = "/operator/v1/sandboxes/test/sandbox/notifications"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://notifications.test") as client:
+        assert (await client.get(url, params={"uid": "sandbox-uid"})).status_code == 403
+        app.dependency_overrides[authenticated_caller] = lambda: WorkloadPrincipal(
+            "test", "app", "system:serviceaccount:test:app", "app-pod", "pod-uid"
+        )
+        assert (await client.get(url, params={"uid": "another-uid"})).json()["inboxes"] == []
+        response = await client.get(url, params={"uid": "sandbox-uid"})
+        assert response.status_code == 200
+        inbox = response.json()["inboxes"][0]
+        assert inbox["unannounced_count"] == 1
+        assert inbox["pending_acknowledgement_count"] == 1
+        assert inbox["subscriptions"][0]["id"] == str(subscription.id)
+        assert inbox["notice_wait_reason"] == "debouncing"
+        assert "payload" not in str(response.json())
+        assert (await client.get("/v1/inboxes")).json() == []  # App identity gets no agent inbox authority.

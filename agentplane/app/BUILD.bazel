@@ -58,6 +58,7 @@ py_library(
         ":sandbox_models",
         ":shutdown",
         "//agentplane:subjects",
+        "//agentplane/notification_service:models",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:client",
         "//agentplane/action_service:connections",

@@ -1,3 +1,4 @@
+# gazelle:exclude test_visual_notifications.py
 # gazelle:exclude test_visual_disclosures.py
 # gazelle:exclude test_visual_history.py
 # gazelle:exclude test_visual_policies.py
@@ -877,6 +878,18 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "notification_status",
+    srcs = ["notification_status.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "sandbox_page",
     srcs = [
         "sandbox_page.tsx",
@@ -889,6 +902,7 @@ ts_library(
     deps = [
         ":actions_policy",
         ":client",
+        ":notification_status",
         ":egress",
         ":json_view",
         ":lifecycle",
@@ -1260,6 +1274,12 @@ agentplane_visual_test(
     name = "visual_disclosures",
     src = "test_visual_disclosures.py",
     title = "Agentplane: disclosures",
+)
+
+agentplane_visual_test(
+    name = "visual_notifications",
+    src = "test_visual_notifications.py",
+    title = "Agentplane: notification diagnostics",
 )
 
 agentplane_visual_test(

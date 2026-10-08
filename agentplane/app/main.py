@@ -186,6 +186,8 @@ class Settings(AppSettingsConfig):
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
     )
     sandbox_service_target: str = Field(min_length=1)
+    notifications_url: str | None = None
+    notifications_token_file: Path | None = None
     sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
     sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     sandbox_service_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
@@ -271,6 +273,7 @@ async def async_main(settings: Settings) -> None:
             else "http://disabled.invalid",
             timeout=10,
         ) as actions_http,
+        httpx.AsyncClient(base_url=settings.notifications_url or "http://disabled.invalid", timeout=5) as notifications_http,
         httpx.AsyncClient(base_url=settings.egress_admin_url, timeout=settings.egress_admin_timeout) as admin_http,
         httpx.AsyncClient(
             base_url=settings.electric_url or "http://disabled.invalid", timeout=httpx.Timeout(65, connect=5)
@@ -345,6 +348,8 @@ async def async_main(settings: Settings) -> None:
             content=content,
             database_updates=database_updates,
             operator_sessions=OperatorSessionStore(engine),
+            notifications_http=notifications_http if settings.notifications_url else None,
+            notifications_token_file=settings.notifications_token_file,
         )
         worker = await asyncio.to_thread(Path(get_required_path(SERVICE_WORKER)).read_bytes)
 

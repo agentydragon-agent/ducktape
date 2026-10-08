@@ -58,6 +58,7 @@ async def serve(settings: Settings) -> None:
                     github,
                     notice_debounce=settings.notice_debounce,
                     stale_confirmation_s=settings.stale_inbox_confirmation_s,
+                    operator_reader_account=settings.operator_reader_account,
                 ),
                 principals,
             )

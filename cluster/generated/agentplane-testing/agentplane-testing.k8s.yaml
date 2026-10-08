@@ -2500,6 +2500,8 @@ spec:
             - --namespace=agentplane-testing
             - --sandbox-namespace=agentplane-testing
             - --sandbox-service-target=agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
+            - --notifications-url=http://agentplane-notifications.agentplane-testing.svc.cluster.local:8080
+            - --notifications-token-file=/var/run/secrets/agentplane-notifications/token
             - --host=0.0.0.0
             - --port=8080
           env:
@@ -2598,6 +2600,9 @@ spec:
               readOnly: true
             - mountPath: /var/run/secrets/agentplane-sandbox-service
               name: sandbox-service-token
+              readOnly: true
+            - mountPath: /var/run/secrets/agentplane-notifications
+              name: notifications-token
               readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
@@ -2698,6 +2703,14 @@ spec:
                   audience: agentplane-sandbox-service
                   expirationSeconds: 3600
                   path: token
+        - name: notifications-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-notifications
+                  expirationSeconds: 3600
+                  path: token
+
 ---
 apiVersion: v1
 kind: Service
@@ -2812,6 +2825,14 @@ spec:
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-sandbox-service
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-notifications
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
         - ports:
@@ -3767,6 +3788,7 @@ data:
   settings.yaml: |
     namespace: agentplane-testing
     token_audience: agentplane-notifications
+    operator_reader_account: agentplane-app
     notice_debounce:
       quiet_seconds: 60
       max_wait_seconds: 120
@@ -3864,6 +3886,15 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

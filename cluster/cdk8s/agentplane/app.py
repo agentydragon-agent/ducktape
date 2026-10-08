@@ -58,7 +58,7 @@ from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import actions, database, egress, electric, llm_ingress, sandbox_pod, sandbox_service
+from cluster.cdk8s.agentplane import actions, database, egress, electric, llm_ingress, sandbox_pod, sandbox_service, notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -274,6 +274,8 @@ class App(Construct):
                 # runner ServiceAccount out of here.
                 sandbox_namespace=namespace,
                 sandbox_service_target=f"{sandbox_service.service(namespace).fqdn}:{sandbox_service.service(namespace).pod_port}",
+                notifications_url=f"http://{notifications.service(namespace).fqdn}:{notifications.service(namespace).port.number}",
+                notifications_token_file="/var/run/secrets/agentplane-notifications/token",
                 host="0.0.0.0",
                 port=self.service.pod_port,
             ),
@@ -316,6 +318,22 @@ class App(Construct):
                     read_only=True,
                 ),
             )
+        )
+
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/volumes/-",
+                k8s.Volume(name="notifications-token", projected=k8s.ProjectedVolumeSource(sources=[
+                    k8s.VolumeProjection(service_account_token=k8s.ServiceAccountTokenProjection(
+                        audience=notifications.TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
+                    ))
+                ])),
+            )
+        )
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add("/spec/template/spec/containers/0/volumeMounts/-", k8s.VolumeMount(
+                name="notifications-token", mount_path="/var/run/secrets/agentplane-notifications", read_only=True
+            ))
         )
 
         # With the database (cnpg_conventions R5). Unlike llm-ingress/egress, the app
@@ -384,6 +402,7 @@ class App(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 *self._oidc_egress_rules(),
                 sandbox_service.service(namespace).egress(),
+                notifications.service(namespace).egress(),
                 egress.admin(namespace).egress(),
                 # Separate BFF/operator transport boundary. The Action Service
                 # still requires its own configured operator authenticator;

@@ -109,3 +109,30 @@ class InboxPage(Model):
 
 class Acknowledge(Model):
     through_cursor: int = Field(ge=0, le=2**63 - 1)
+
+
+class SubscriptionStatus(Model):
+    id: UUID
+    source: Source
+    cancelled: bool
+    expires_at: datetime
+    error: str | None
+    next_source_check_at: datetime | None
+
+
+class InboxStatus(Model):
+    inbox: InboxView
+    notice: NoticeView | None
+    subscriptions: list[SubscriptionStatus]
+    unannounced_count: int
+    pending_acknowledgement_count: int
+    notice_due_at: datetime | None
+    quiet_until: datetime | None
+    max_wait_at: datetime | None
+    notice_wait_reason: str | None
+    next_work_at: datetime | None
+
+
+class SandboxNotificationStatus(Model):
+    observed_at: datetime
+    inboxes: list[InboxStatus]
