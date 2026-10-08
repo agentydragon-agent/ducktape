@@ -294,8 +294,7 @@ async def sandbox_notifications(inventory: Inventory, request: Request, name: st
 
 @router.get("/{name}/notifications/stream")
 async def sandbox_notifications_stream(
-    inventory: Inventory, request: Request, name: str,
-    shutdown: Shutdown, updates: Updates,
+    inventory: Inventory, request: Request, name: str, shutdown: Shutdown, updates: Updates
 ) -> StreamingResponse:
     """Operator-only SSE proxy; scope the upstream by the current Sandbox incarnation UID."""
     if request.app.state.oidc is None or request_session(request).login is None:
@@ -315,7 +314,9 @@ async def sandbox_notifications_stream(
     async def body() -> AsyncIterator[bytes]:
         try:
             async with client.stream(
-                "GET", upstream, params={"uid": sandbox.uid},
+                "GET",
+                upstream,
+                params={"uid": sandbox.uid},
                 headers={"Authorization": f"Bearer {token_file.read_text().strip()}"},
                 timeout=httpx.Timeout(None, connect=5),
             ) as response:
@@ -324,7 +325,7 @@ async def sandbox_notifications_stream(
                     if await request.is_disconnected():
                         return
                     yield chunk
-        except (httpx.HTTPError, OSError):
+        except httpx.HTTPError, OSError:
             logger.warning("Notification stream interrupted", exc_info=True)
 
     return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})

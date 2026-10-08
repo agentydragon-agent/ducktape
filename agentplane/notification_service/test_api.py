@@ -206,7 +206,8 @@ async def test_status_stream_replays_snapshot_and_follows_committed_changes(stor
                 PRINCIPAL,
                 Subscribe(
                     destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
-                    session_id="stream", idempotency_key="stream",
+                    session_id="stream",
+                    idempotency_key="stream",
                     source=ActionsSource(provider="actions", request_id=uuid4()),
                 ),
             )

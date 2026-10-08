@@ -112,7 +112,9 @@ export function NotificationStatus({
               </Text>
             )}
             {!data && connection.phase === "connecting" && <Text>Loading notification status…</Text>}
-            {!data && connection.phase === "reconnecting" && <Text role="status">Reconnecting to notification status…</Text>}
+            {!data && connection.phase === "reconnecting" && (
+              <Text role="status">Reconnecting to notification status…</Text>
+            )}
             {error && (
               <Text role="alert" c="red">
                 {error}

@@ -2420,21 +2420,28 @@ class HarnessEventSource extends EventTarget {
         this.drop();
         return;
       }
-      const route = routes.find(([method, pattern]) => method === "GET" && pattern.test(`/sandboxes/${notification[1]}/notifications`));
+      const route = routes.find(
+        ([method, pattern]) => method === "GET" && pattern.test(`/sandboxes/${notification[1]}/notifications`)
+      );
       const match = `/sandboxes/${notification[1]}/notifications`.match(route?.[1] ?? /$^/);
       if (!route || !match) throw new Error("Missing notifications fixture");
-      const snapshot = route[2](match, url.searchParams, undefined, undefined) as { inboxes: Array<{
-        inbox: { last_cursor: number };
-        unannounced_count: number;
-        pending_acknowledgement_count: number;
-        pending_entries: Array<{ cursor: number; created_at: string; provider: string; summary: string }>;
-      }> };
+      const snapshot = route[2](match, url.searchParams, undefined, undefined) as {
+        inboxes: Array<{
+          inbox: { last_cursor: number };
+          unannounced_count: number;
+          pending_acknowledgement_count: number;
+          pending_entries: Array<{ cursor: number; created_at: string; provider: string; summary: string }>;
+        }>;
+      };
       if (notificationExtraEntry && snapshot.inboxes[0]) {
         snapshot.inboxes[0].inbox.last_cursor = 10;
         snapshot.inboxes[0].unannounced_count += 1;
         snapshot.inboxes[0].pending_acknowledgement_count += 1;
         snapshot.inboxes[0].pending_entries.push({
-          cursor: 10, created_at: ago(0), provider: "github", summary: "GitHub workflow_run · completed",
+          cursor: 10,
+          created_at: ago(0),
+          provider: "github",
+          summary: "GitHub workflow_run · completed",
         });
       }
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));

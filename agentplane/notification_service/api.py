@@ -1,12 +1,12 @@
 """Workload-authenticated HTTP surface; no implicit current session and no destructive reads."""
 
 import asyncio
-import logging
 import json
-from datetime import UTC, datetime
+import logging
 import traceback
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
+from datetime import UTC, datetime
 from typing import Annotated, cast
 from uuid import UUID
 
@@ -91,7 +91,9 @@ def _authorize_sandbox_status(namespace: str, caller: WorkloadPrincipal, service
 
 async def _sandbox_status(service: Service, namespace: str, name: str, uid: str) -> SandboxNotificationStatus:
     return await service.store.sandbox_status(
-        namespace, name, uid,
+        namespace,
+        name,
+        uid,
         quiet_seconds=service.notice_debounce.quiet_seconds,
         max_wait_seconds=service.notice_debounce.max_wait_seconds,
     )
@@ -122,16 +124,17 @@ async def sandbox_status_frames(service: Service, namespace: str, name: str, uid
                 last = key
             now = datetime.now(UTC)
             deadlines = [
-                deadline for item in status.inboxes for deadline in (
+                deadline
+                for item in status.inboxes
+                for deadline in (
                     item.notice_due_at,
                     *(sub.expires_at for sub in item.subscriptions if not sub.cancelled),
-                ) if deadline is not None and deadline > status.observed_at
+                )
+                if deadline is not None and deadline > status.observed_at
             ]
             delay = max(0, (min(deadlines) - now).total_seconds()) if deadlines else None
-            try:
+            with suppress(TimeoutError):
                 await asyncio.wait_for(changed.wait(), timeout=delay)
-            except TimeoutError:
-                pass
 
 
 @router.get("/operator/v1/sandboxes/{namespace}/{name}/notifications/stream")
@@ -141,7 +144,8 @@ async def sandbox_notifications_stream(
     _authorize_sandbox_status(namespace, caller, service)
     return StreamingResponse(
         sandbox_status_frames(service, namespace, name, uid),
-        media_type="text/event-stream", headers={"Cache-Control": "no-cache"},
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache"},
     )
 
 
