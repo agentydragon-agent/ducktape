@@ -116,7 +116,7 @@ async def test_reservation_is_stable_across_retries_and_replicas(engine: AsyncEn
         key: str = "open-1",
         caller_name: str = "app",
         sandbox_uid: UUID = uid,
-        payload: bytes = b"spec"
+        payload: bytes = b"spec",
     ) -> OpenReservation:
         return await store.reserve(
             caller_namespace="testing",
