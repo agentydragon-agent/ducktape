@@ -72,6 +72,5 @@ def preview_screenshots(name, entry, fixtures, deps, visibility = None):
         inline_page = True,
         stylesheets = ["//haku/console/frontend:styles_css"],
         base_href = "https://haku-console.test/",
-        output_suffix = "",
         visibility = visibility,
     )

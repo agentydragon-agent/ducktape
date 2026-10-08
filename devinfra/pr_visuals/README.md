@@ -26,9 +26,12 @@ review with an older result.
 
 Use one of the shared harnesses and it's automatic:
 
-- Python scenario sweep (`py_visual_test`): `util/testing/visual_sweep.py` does the
-  same for every row of the target's `scenarios.json`.
-- Python (`py_test`): call
+- Python browser tests (`py_visual_test`, or `py_test` with a real server): call
+  `VisualPage.capture()` from `util.testing.visual_capture`. Each capture writes a
+  PNG and registers it in `visual-review.json`. Tests own setup, readiness,
+  interactions, and capture checkpoints; see
+  <../../util/testing/frontend_visual/README.md>.
+- Other Python image producers (`py_test`): call
   `util.testing.visual_review.retain_review_asset(png, title=..., label=...)`
   once per rendered case — it copies the PNG into undeclared outputs and
   accumulates the manifest.

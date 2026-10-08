@@ -257,14 +257,13 @@ py_visual_test(
     ],
     env = {"FIXTURE_CATALOG": "$(rlocationpath :scenes_json)"},
     harness = ":screenshot_bundle_js",
-    # Keeps the published names (<name>.png), so PR visual review compares each shot with its baseline.
-    output_suffix = "",
     test_deps = [
         "//util/bazel:runfiles",
         "//util/testing:viewports",
         "//util/testing:visual_capture",
         "@pypi//playwright",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
     test_module = "aiquota.frontend.test_visual",

@@ -67,8 +67,8 @@ an unnamed harness and closes its isolated browser context after the test. App-s
 fixtures can depend on it to prepare reusable state without hiding test interactions.
 
 With `view`, `await view.capture()` derives the PNG name from the pytest function and
-parameter IDs. Use readable parameter IDs; do not wire a parallel `image_name` column
-just to identify each case. The `capture_name` fixture exposes this same identity to
+parameter IDs, followed by `.png`. Use readable parameter IDs; do not wire a parallel
+`image_name` column just to identify each case. The `capture_name` fixture exposes this same identity to
 harnesses that need their own page-opening fixture. Pass it as `visual.open(capture_name=...)`
 to use unnamed capture there too. It never selects fixture data or app behavior.
 

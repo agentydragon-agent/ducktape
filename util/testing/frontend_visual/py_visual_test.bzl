@@ -11,7 +11,6 @@ def py_visual_test(
         fonts = None,
         font_family = None,
         devtools_viewport = False,
-        output_suffix = None,
         inline_page = False,
         stylesheets = [],
         base_href = None,
@@ -48,8 +47,6 @@ def py_visual_test(
         visual_env["EXPECTED_FONT_FAMILY"] = font_family
     if devtools_viewport:
         visual_env["DEVTOOLS_VIEWPORT"] = "1"
-    if output_suffix != None:
-        visual_env["OUTPUT_SUFFIX"] = output_suffix
     if inline_page:
         visual_env["INLINE_PAGE"] = "1"
         visual_env["STYLESHEET_PATHS"] = " ".join(["$(rlocationpath %s)" % sheet for sheet in stylesheets])
