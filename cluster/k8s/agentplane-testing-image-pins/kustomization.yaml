@@ -10,7 +10,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-migrate
     newTag: devel-20261006052220-5d765a8 # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261008215514-01df238 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20261008224132-b0e1636 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20261005095527-52c67c3 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   # Initial publication on devel supplies the tag through Flux image automation.
@@ -21,7 +21,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
     newTag: devel-20261008224128-b0e1636 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate
-    newTag: devel-20261008215426-01df238 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
+    newTag: devel-20261008224156-b0e1636 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture
     newTag: devel-20261006064326-bd856fc # {"$imagepolicy": "flux-system:agentplane-oauth-fixture:tag"}
   # Bootstrap only: keep rollout suspended until CI publishes and automation pins a real tag.
