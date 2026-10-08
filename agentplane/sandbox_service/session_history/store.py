@@ -68,12 +68,7 @@ class Store:
                 raise HistoryConflictError(f"session {session_id} has a different runner locator")
 
     async def register(
-        self,
-        *,
-        sandbox_namespace: str,
-        sandbox_name: str,
-        sandbox_uid: UUID,
-        runner_session_id: str,
+        self, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID, runner_session_id: str
     ) -> UUID:
         """Get or mint a stable Session UUID for this physical runner locator.
 

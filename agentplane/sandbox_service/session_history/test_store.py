@@ -91,13 +91,18 @@ async def test_two_replica_writers_serialize_on_history_row(engine: AsyncEngine)
 async def test_registration_is_stable_across_retries_and_replicas(engine: AsyncEngine) -> None:
     left, right = Store(engine), Store(engine)
     uid = uuid4()
-    locator = dict(sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1")
-    first, second = await asyncio.gather(left.register(**locator), right.register(**locator))
+
+    async def register(store: Store, sandbox_uid: UUID, runner_session_id: str = "s-1") -> UUID:
+        return await store.register(
+            sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=sandbox_uid, runner_session_id=runner_session_id
+        )
+
+    first, second = await asyncio.gather(register(left, uid), register(right, uid))
     assert first == second
-    assert await Store(engine).register(**locator) == first
+    assert await register(Store(engine), uid) == first
     assert await left.read(first) == (0, [])
-    assert await left.register(**(locator | {"sandbox_uid": uuid4()})) != first
-    assert await left.register(**(locator | {"runner_session_id": "s-2"})) != first
+    assert await register(left, uuid4()) != first
+    assert await register(left, uid, "s-2") != first
 
 
 @pytest.mark.asyncio
@@ -105,22 +110,17 @@ async def test_registration_reuses_imported_history_and_rejects_identity_collisi
     store = Store(engine)
     session_id, uid = uuid4(), uuid4()
     await store.open(
-        session_id,
-        sandbox_namespace="testing",
-        sandbox_name="worker",
-        sandbox_uid=uid,
-        runner_session_id="s-1",
+        session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1"
     )
-    assert await store.register(
-        sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1"
-    ) == session_id
+    assert (
+        await store.register(
+            sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1"
+        )
+        == session_id
+    )
     with pytest.raises(HistoryConflictError, match="belongs to another"):
         await store.open(
-            uuid4(),
-            sandbox_namespace="testing",
-            sandbox_name="worker",
-            sandbox_uid=uid,
-            runner_session_id="s-1",
+            uuid4(), sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1"
         )
     # A nullable legacy UID must not permit another ID for the same legacy locator.
     await opened(store, uuid4())
