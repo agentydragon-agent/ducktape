@@ -163,8 +163,8 @@ class CodexRun:
             raise
         return self
 
-    async def __aexit__(self, *args: object) -> None:
-        await self._native().__aexit__(*args)
+    async def __aexit__(self, exc_type: type[BaseException] | None, *args: object) -> None:
+        await self._native().__aexit__(exc_type, *args)
 
     def _native(self) -> AsyncNativeProcess:
         if self._process is None:
