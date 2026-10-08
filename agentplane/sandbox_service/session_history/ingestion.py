@@ -23,7 +23,9 @@ from agentplane.sandbox_service.session_history.store import HistoryConflictErro
 logger = logging.getLogger(__name__)
 
 
-async def copy_confirmed_prefix(store: Store, locator: HistoryLocator, runner: RunnerClient, *, batch_size: int = 128) -> int:
+async def copy_confirmed_prefix(
+    store: Store, locator: HistoryLocator, runner: RunnerClient, *, batch_size: int = 128
+) -> int:
     """Copy the prefix published at attach time; never start or resume a native harness.
 
     No speculative read or cursor advancement: only the exact published EventEntry
@@ -84,9 +86,7 @@ class HistoryIngester:
         if view.uid != str(locator.sandbox_uid):
             return  # old incarnation; never bind its journal to a replacement Pod
         destination = SandboxDestination(
-            sandbox=locator.sandbox_name,
-            sandbox_uid=str(locator.sandbox_uid),
-            owner=view.service_account,
+            sandbox=locator.sandbox_name, sandbox_uid=str(locator.sandbox_uid), owner=view.service_account
         )
         endpoint = await self.destinations.resolve(destination)
         channel = grpc.aio.insecure_channel(
@@ -114,7 +114,7 @@ class HistoryIngester:
             async with limit:
                 try:
                     await self.copy_one(locator)
-                except (SandboxNotFoundError, DestinationUnavailableError):
+                except SandboxNotFoundError, DestinationUnavailableError:
                     return  # suspended or deleted: retain the existing prefix
                 except asyncio.CancelledError:
                     raise
@@ -140,6 +140,6 @@ class HistoryIngester:
                 await self.cycle()
             except asyncio.CancelledError:
                 raise
-            except (SQLAlchemyError, k8s_client.ApiException):
+            except SQLAlchemyError, k8s_client.ApiException:
                 logger.exception("Session history discovery failed")
             await asyncio.sleep(self.interval_s)
