@@ -70,6 +70,8 @@ py_test(
         ":driver",
         ":wire",
         "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

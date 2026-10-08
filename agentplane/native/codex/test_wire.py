@@ -4,9 +4,12 @@ serde quirk on the way out."""
 from __future__ import annotations
 
 import json
+from copy import deepcopy
+from typing import Any
 
 import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
 from agentplane.native.codex import driver, wire
 
@@ -72,6 +75,45 @@ def test_thread_start_names_developer_instructions_only_when_it_has_them() -> No
     )
     assert instructed["params"]["developerInstructions"] == "Stand by."
     assert instructed["params"]["baseInstructions"] == driver.BASE_INSTRUCTIONS
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        {"method": "turn/completed", "params": {"threadId": "t", "turn": {"status": "completed"}}},
+        {"method": "item/completed", "params": {"threadId": "t", "turnId": "u", "item": []}},
+        {"id": "r", "error": {"code": "not-an-integer", "message": "bad"}},
+    ],
+)
+def test_malformed_known_frames_do_not_fall_back_to_unknown(frame: dict[str, Any]) -> None:
+    original = deepcopy(frame)
+    with pytest.raises(ValidationError):
+        wire.parse_frame(frame)
+    assert frame == original
+
+
+def test_future_notification_retains_opaque_params() -> None:
+    raw: dict[str, Any] = {"method": "future/notification", "params": {"parts": [1, {"text": "opaque"}], "state": None}}
+    original = deepcopy(raw)
+    parsed = wire.parse_frame(raw)
+    assert isinstance(parsed, wire.UnknownNotification)
+    assert parsed.params == raw["params"]
+    assert raw == original
+
+
+def test_extra_fields_on_known_frames_do_not_break_consumed_fields() -> None:
+    raw: dict[str, Any] = {
+        "method": "turn/completed",
+        "params": {"threadId": "t", "turn": {"id": "u", "status": "completed", "future_nested": [1, 2]}},
+        "future_envelope": {"opaque": True},
+    }
+    original = deepcopy(raw)
+    parsed = wire.parse_frame(raw)
+    assert isinstance(parsed, wire.TurnCompleted)
+    assert parsed.params.turn.id == "u"
+    # The transport retains the original frame; the typed model only promises
+    # the fields its consumers read, not lossless serialization of known types.
+    assert raw == original
 
 
 if __name__ == "__main__":

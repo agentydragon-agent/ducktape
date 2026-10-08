@@ -99,6 +99,9 @@ class AgentplaneFixture:
     async def paginate_action_history(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.paginateActionHistory()")
 
+    async def publish_notification_change(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.publishNotificationChange()")
+
     async def set_notification_status_unavailable(self, unavailable: bool) -> None:
         await self.page.evaluate(
             "unavailable => window.agentplaneVisual.setNotificationStatusUnavailable(unavailable)", unavailable
