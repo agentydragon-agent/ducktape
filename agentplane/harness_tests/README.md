@@ -44,11 +44,10 @@ listed in <../native/docs/protocol_roster.md>.
 The subagent cases in each `test_tools.py` opt into native delegation and script a child tool
 round trip. Claude also exercises `SendMessage` to a completed child and a `TaskOutput` read
 of its follow-up result. The [test matrix](../plans/native_subagent_sessions.md) tracks their precise coverage
-and the remaining discovery, forwarding, concurrency, cancellation, and recovery cases. These tests
+and the remaining discovery, forwarding, concurrency, cancellation, and recovery cases. Its
+[active burndown](../plans/native_subagent_sessions.md#active-hardening-burndown) tracks shared-fixture
+cleanup and the next work; native subsession implementation is deferred. These tests
 do not enable subagents in production or implement a shared session model.
-
-The [hardening burndown](../plans/harness_hardening.md) tracks shared-fixture cleanup and the next
-reconnect, correlation, interruption and recovery work. Native subsession implementation is deferred.
 
 ## When a binary pin changes
 

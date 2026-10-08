@@ -9,6 +9,62 @@ not a change to its product priority or an implementation of session discovery.
 The passing initial scenarios support the [harness-declared logical sessions proposal](native_session_discovery.md).
 That plan sketches read-only discovery without treating the unmeasured matrix rows as implemented.
 
+## Active hardening burndown
+
+Native subsession implementation is **deferred** while session-event ownership moves into Sandbox
+Service. The [discovery proposal](native_session_discovery.md) remains a design, not an implementation
+commitment. Near-term work extends this characterization suite and its shared fixtures; it does not
+add a session authority or event store. The automatic current-versus-candidate upgrade lane is excluded.
+
+### Landed foundation
+
+- **Initialization correlation (#9461):** unrelated results cannot satisfy Claude initialization;
+  pipe-peer interleaving and real-CLI failed-resume tests cover the distinction. General input/result
+  correlation remains open.
+- **Root identity timing (#9459):** explicit/minted Claude IDs with and without input; the no-input
+  observation is bounded to 250 ms, not proof of indefinitely absent startup traffic.
+- **Parser compatibility (#9458):** known-frame extensions, opaque unknown payloads and malformed
+  known shapes. Typed projections are not lossless raw-frame round trips.
+- **RemoteIO conformance (#9454):** shared HTTP fixture, authentication, malformed input, epochs and
+  cursors. This is an experimental peer, not a production RemoteIO service.
+- **Exceptional process cleanup (#9455):** assertion/cancellation, descendants and trace retention;
+  successful exit remains graceful and deliberate `crash()` remains parent-only.
+
+### In review
+
+- **Relocation (#9457):** move RemoteIO to `agentplane/harness_tests/x/claude_remote_io/`. Its
+  prerequisites #9454 and #9461 have merged; require green CI on the synchronized relocation-only diff.
+- **Fixture refactor (#9464):** remove five failure-only crash wrappers in Claude subagent and
+  RemoteIO stdio tests. Preserve explicit crash checkpoints and protocol assertions; use shared
+  exceptional cleanup. Draft until #9457 merges, the remaining diff is cleanup-only, and native
+  cleanup, Claude tool and relocated stdio tests pass. This does not finish all setup deduplication.
+
+### Next work and acceptance
+
+1. **Codex v2 live reconnect:** disconnect only the client during an active turn and after completion.
+   Capture identity, history and lifecycle evidence on reconnect without submitting work as a status
+   query. Independent of relocation and the session-event migration.
+2. **Input correlation and interrupt races:** script overlapping inputs and interleaved results for
+   both harnesses; attribute each completion. Synchronize interrupt-before-start, active and completion
+   boundaries. Reproduce and diagnose the observed Codex input-during-turn race.
+3. **Root crash/resume and side-effect replay:** extend existing recovery tests with active/queued
+   input fate and observable side-effect counts. Establish whether a completed tool effect repeats.
+4. **Protocol contracts and diagnostics:** consolidate evidenced guarantees beside native APIs; retain
+   raw traces, pending model exchanges and the failing boundary without masking the original failure.
+5. **Duplicate-command retry:** lose a bridge reply, retry the same identity and assert execution count
+   and retained result. Coordinate with the session-event migration owner; do not add another queue.
+6. **Synchronization and backpressure:** replace avoidable sleeps with frame/request barriers; exercise
+   large frames and slow readers for integrity, ordering, cancellation and bounded teardown.
+7. **Permissions and configuration:** correlate permission allow/deny, interruption and recovery;
+   verify model/configuration changes against subsequent requests, including rejection and active turns.
+8. **RemoteIO provenance and hydration:** distinguish input/control/background results and characterize
+   history, epochs and cursors across reconnect/restart. Missing/unloaded tasks are not completed tasks;
+   read-only recovery must not secretly reactivate them.
+
+These extend existing coverage below. Mark a task complete only after its focused PR merges with
+passing relevant real-binary tests and repository checks on the latest head. Keep dependent PRs draft
+with explicit merge conditions. Use the evidence rules below rather than maintaining a second matrix.
+
 ## Proposed ownership
 
 The runner reports which native sessions exist, their observed lifecycle, and their parent/child
@@ -50,7 +106,8 @@ For each case:
 The current pins in `MODULE.bazel` are Claude Code `2.1.252` and Codex `0.157.0`. The tests inherit
 those pins; the older Claude observations in the protocol roster are not evidence for the new pin.
 Codex's initial test explicitly exercises `features.multi_agent` and the `multi_agent_v1` namespace.
-Its `multi_agent_v2` feature is a separate configuration to characterize, not an interchangeable alias.
+Its `multi_agent_v2` feature is a separate configuration, characterized in the
+[discovery extension](#codex-multi-agent-v2-discovery-extension), not an interchangeable alias.
 
 ## Matrix
 
@@ -101,7 +158,7 @@ that the recipient consumed the message. Characterize these separately under the
   scope, and feature gates. An entry in a tool roster does not prove that it enumerates all native
   children. Keep cross-session/remote messaging outside these same-harness loopback scenarios.
 
-### Resume and child fate (planned)
+### Resume and child fate: coverage and gaps
 
 Expand S10/S11 for both harnesses. The passing Claude `SendMessage` scenario reactivates a
 completed child within the same live harness; it does not establish recovery after parent exit.

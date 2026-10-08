@@ -1,7 +1,7 @@
 # Harness-declared logical sessions
 
 Status: **proposed; implementation deferred** while session-event ownership moves into Sandbox
-Service. Near-term work is tracked in the [harness hardening burndown](harness_hardening.md).
+Service. Near-term work is tracked in the [characterization plan’s active burndown](native_subagent_sessions.md#active-hardening-burndown).
 
 Evidence is grounded in the passing characterization tests from
 [PR #9435](https://github.com/agentydragon/ducktape/pull/9435), the Claude 2.1.292
