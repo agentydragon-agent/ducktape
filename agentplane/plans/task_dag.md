@@ -141,6 +141,7 @@ flowchart TB
     THREAD_OUTLIVES_SANDBOX --> AG
     SANDBOX_COMPARTMENT_BOUNDARY --> THREAD_READ_POLICY
     THREAD_ARCHIVE_OWNERSHIP --> THREAD_READ_POLICY
+    RUNNER_IMAGE_ROLLOUT --> THREAD_EVENT_CONTINUITY
     THREAD_EVENT_CONTINUITY --> APP_ALEMBIC_SQUASH
     THREAD_ARCHIVE_OWNERSHIP --> APP_ALEMBIC_SQUASH
     THREAD_OUTLIVES_SANDBOX --> THREAD_ON_DEMAND_RUNTIME
@@ -817,6 +818,9 @@ manual recovery sequence is possible by quiescing or pausing the Sandbox, patchi
 stored image, and resuming it; make the eventual workflow smoother than hand-editing CRs.
 Specify writer fencing, interruption handling, and rollback, then verify that an existing
 Thread resumes on the fixed image without losing state or repeating side effects.
+This is a prerequisite for a live `THREAD_EVENT_CONTINUITY` runner/protocol cutover
+that keeps existing Threads resumable; it does not require portable state or renaming
+their runner storage. A brief pause is acceptable, not an untested zero-downtime handoff.
 
 ### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
 
@@ -858,8 +862,10 @@ the canonical UUID as the runner Session ID as well. Inventory and back up exist
 associations before a one-off import; validate that both harnesses can resume against
 their unchanged state and that the archived Event prefixes match. Remove transitional
 import code after cutover, not the durable association needed to address legacy
-storage. A future multi-Session Thread requires a separate explicit model, not a
-delay to the one-to-one design.
+storage. Existing running Threads also need the `RUNNER_IMAGE_ROLLOUT` pause/patch/
+resume path before a runner/protocol upgrade; an archive mapping alone does not
+upgrade the runner in an existing Sandbox. A future multi-Session Thread requires a
+separate explicit model, not a delay to the one-to-one design.
 
 **Identity/storage cutover:** implement
 [one high-water mark per Event log](../docs/thread_layering.md#one-event-high-water-mark-per-log-across-harness-sessions):
