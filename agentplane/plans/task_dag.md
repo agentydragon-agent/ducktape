@@ -13,15 +13,15 @@ not this backlog. See the [Action Service specification](../action_service/SPEC.
 
 All Agentplane components and their acceptance contracts are multi-replica by default. Durable
 state belongs to its authority: runner SQLite for admitted commands and Events, PostgreSQL for
-the app archive and Action Service, and Kubernetes for Sandbox intent. Cross-replica change fanout uses
+the app Event log and Action Service, and Kubernetes for Sandbox intent. Cross-replica change fanout uses
 the authority's notification/watch mechanism (PostgreSQL `NOTIFY` for Action Service state), with
 reconnect/replay from durable state rather than process-local memory. A single-replica deployment
 is an explicit temporary operational constraint, never an implicit correctness assumption.
 
 **Immediate operator priority:** `THREAD_READ_POLICY_DESIGN` — specify scoped
 ServiceAccount access to selected Session history and derived Thread views now. Ship
-`THREAD_READ_POLICY` only after `THREAD_ARCHIVE_OWNERSHIP` provides an acyclic,
-durable archive source and `SANDBOX_COMPARTMENT_BOUNDARY` prevents co-resident
+`THREAD_READ_POLICY` only after `SESSION_HISTORY_OWNERSHIP` provides an acyclic,
+durable Session Event history source and `SANDBOX_COMPARTMENT_BOUNDARY` prevents co-resident
 sessions from crossing trust domains. None requires the hosted runtime pivot.
 
 Proposed execution order for the Thread correctness/UI track:
@@ -93,13 +93,13 @@ flowchart TB
     HARNESS_PLUGINS["Unranked candidate<br/>project plugins and skill packages<br/>source trust and capability grants"]:::future
     HARNESS_PROMPT_SUGGESTIONS["Optional, lowest estimated win<br/>Claude prompt suggestions<br/>measure UX before enabling"]:::future
     THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
-    THREAD_ARCHIVE_PLACEMENT["Archive ownership decision<br/>Sandbox Service component or independent history service<br/>no backend-to-app dependency"]:::decision
-    THREAD_ARCHIVE_STORE["Durable raw Event store<br/>one log identity, replayable prefix and cursor<br/>survives Sandbox deletion"]:::future
-    THREAD_ARCHIVE_BACKFILL["One-off history import<br/>app raw prefixes and legacy runner locator mapping<br/>validate IDs, cursors and coverage"]:::future
-    THREAD_ARCHIVE_INGEST["Live archive ingester<br/>runner replay, exact duplicates and fencing<br/>independent of fold projection"]:::future
-    THREAD_ARCHIVE_UI_CUTOVER["App projection cutover<br/>consume archive replay, track fold lag<br/>retire app archive writes and SA bypass"]:::future
-    THREAD_ARCHIVE_OWNERSHIP["Capstone<br/>single durable Session Event archive authority<br/>app is a consumer, not a backend source"]:::milestone
-    APP_ALEMBIC_SQUASH["One-off app schema cleanup<br/>new baseline after identity/archive cutover<br/>stamp each deployed database before pruning"]:::future
+    SESSION_HISTORY_PLACEMENT["History ownership decision<br/>Sandbox Service component or independent history service<br/>no backend-to-app dependency"]:::decision
+    SESSION_HISTORY_STORE["Durable raw Event store<br/>one log identity, replayable prefix and cursor<br/>survives Sandbox deletion"]:::future
+    SESSION_HISTORY_BACKFILL["One-off history import<br/>app raw prefixes and legacy runner locator mapping<br/>validate IDs, cursors and coverage"]:::future
+    SESSION_HISTORY_INGEST["Live history ingester<br/>runner replay, exact duplicates and fencing<br/>independent of fold projection"]:::future
+    SESSION_HISTORY_UI_CUTOVER["App projection cutover<br/>consume history replay, track fold lag<br/>retire app raw Event writes and SA bypass"]:::future
+    SESSION_HISTORY_OWNERSHIP["Capstone<br/>single durable Session Event history authority<br/>app is a consumer, not a backend source"]:::milestone
+    APP_ALEMBIC_SQUASH["One-off app schema cleanup<br/>new baseline after identity/history cutover<br/>stamp each deployed database before pruning"]:::future
     SANDBOX_COMPARTMENT_DESIGN["Trust-boundary decision<br/>Sandbox compartment assignment and enforcement<br/>shared filesystem and SA"]:::decision
     SANDBOX_COMPARTMENT_BOUNDARY["Enforce Sandbox trust domain<br/>reject incompatible Open and replacement<br/>no false cross-compartment isolation"]:::future
     RUNNER_STATE_BOUNDARY_RETHINK["Deferred architecture question<br/>should runner own a database at all?<br/>thin harness adapter vs durable journal"]:::decision
@@ -114,7 +114,7 @@ flowchart TB
     THREAD_ON_DEMAND_RUNTIME["Deferred runtime lifecycle<br/>new Sandbox on activity/notice<br/>restore and resume a durable Thread"]:::future
     HOSTED_THREAD_SURFACES["Deferred design<br/>read and control surfaces for a hosted Thread<br/>beyond today's Sandbox-bound view"]:::future
     THREAD_READ_POLICY_DESIGN["Immediate policy design<br/>compartments, grants and revocation<br/>read distinct from send and create"]:::active
-    THREAD_READ_POLICY["Scoped read implementation<br/>enforce SA grants at archive boundary<br/>list, raw, evidence and feeds"]:::future
+    THREAD_READ_POLICY["Scoped read implementation<br/>enforce SA grants at history boundary<br/>list, raw, evidence and feeds"]:::future
     CROSS_THREAD_DELIVERY["Deferred design<br/>agents send to other Threads<br/>command vs notification inbox"]:::decision
     THREAD_CREATE_POLICY["Deferred design<br/>SA-authorized Thread creation<br/>scoped Sandbox and stable identity"]:::decision
     AG["Capstone<br/>hosted Agent and Thread model<br/>lifecycle, surfaces and read policy together"]:::milestone
@@ -138,7 +138,7 @@ flowchart TB
     CLAUDE_FRESH_RESUME_CACHE_SPIKE["Independent Claude spike<br/>fresh-process resume from copied native state<br/>prefix/reasoning and cache evidence"]:::future
     CODEX_FRESH_RESUME_CACHE_SPIKE["Independent Codex spike<br/>fresh-process resume from copied native state<br/>prefix/reasoning and cache evidence"]:::future
     CODEX_RECOVERY_PROTOCOL["Deferred interoperability follow-up<br/>Codex reconciliation via documented app-server APIs<br/>replace private rollout inspection"]:::future
-    SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
+    SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>copy Event history before managed storage deletion"]:::future
     RUNNER_IMAGE_UPGRADE_PROOF["Image upgrade evidence<br/>pause, patch CR image, resume on same storage<br/>both harnesses and rollback"]:::decision
     RUNNER_IMAGE_ROLLOUT["Supported operator workflow<br/>upgrade image of an existing Sandbox<br/>preserve Thread state and resume safely"]:::future
     SANDBOX_VM_ISOLATION["Deferred provider integration<br/>selectable KubeVirt environments<br/>production service, gateway and lifecycle proof"]:::future
@@ -157,26 +157,26 @@ flowchart TB
     SANDBOX_COMPARTMENT_DESIGN --> SANDBOX_COMPARTMENT_BOUNDARY
     SANDBOX_COMPARTMENT_BOUNDARY --> THREAD_READ_POLICY
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
-    THREAD_ARCHIVE_PLACEMENT --> THREAD_ARCHIVE_STORE
-    THREAD_ARCHIVE_STORE --> THREAD_ARCHIVE_BACKFILL
-    THREAD_ARCHIVE_STORE --> THREAD_ARCHIVE_INGEST
-    THREAD_ARCHIVE_BACKFILL --> THREAD_ARCHIVE_UI_CUTOVER
-    THREAD_ARCHIVE_INGEST --> THREAD_ARCHIVE_UI_CUTOVER
-    THREAD_ARCHIVE_UI_CUTOVER --> THREAD_ARCHIVE_OWNERSHIP
+    SESSION_HISTORY_PLACEMENT --> SESSION_HISTORY_STORE
+    SESSION_HISTORY_STORE --> SESSION_HISTORY_BACKFILL
+    SESSION_HISTORY_STORE --> SESSION_HISTORY_INGEST
+    SESSION_HISTORY_BACKFILL --> SESSION_HISTORY_UI_CUTOVER
+    SESSION_HISTORY_INGEST --> SESSION_HISTORY_UI_CUTOVER
+    SESSION_HISTORY_UI_CUTOVER --> SESSION_HISTORY_OWNERSHIP
     RUNNER_STATE_BOUNDARY_RETHINK --> RUNNER_OUTBOUND_CUTOVER
     RUNNER_OUTBOUND_CHANNEL --> RUNNER_OUTBOUND_CUTOVER
     CLAUDE_OFFLINE_CATCHUP --> RUNNER_OUTBOUND_CUTOVER
     CODEX_OFFLINE_CATCHUP --> RUNNER_OUTBOUND_CUTOVER
     RUNNER_CENTRAL_ADMISSION --> RUNNER_OUTBOUND_CUTOVER
     RUNNER_IMAGE_ROLLOUT --> RUNNER_OUTBOUND_CUTOVER
-    THREAD_ARCHIVE_OWNERSHIP --> RUNNER_OUTBOUND_CUTOVER
-    THREAD_ARCHIVE_OWNERSHIP --> THREAD_READ_POLICY
-    THREAD_ARCHIVE_OWNERSHIP --> THREAD_EVENT_CONTINUITY
+    SESSION_HISTORY_OWNERSHIP --> RUNNER_OUTBOUND_CUTOVER
+    SESSION_HISTORY_OWNERSHIP --> THREAD_READ_POLICY
+    SESSION_HISTORY_OWNERSHIP --> THREAD_EVENT_CONTINUITY
     RUNNER_IMAGE_UPGRADE_PROOF --> RUNNER_IMAGE_ROLLOUT
     RUNNER_IMAGE_ROLLOUT --> THREAD_EVENT_CONTINUITY
     THREAD_IDENTITY_NEW --> THREAD_EVENT_CONTINUITY
     THREAD_EVENT_CONTINUITY --> APP_ALEMBIC_SQUASH
-    THREAD_ARCHIVE_OWNERSHIP --> APP_ALEMBIC_SQUASH
+    SESSION_HISTORY_OWNERSHIP --> APP_ALEMBIC_SQUASH
     THREAD_OUTLIVES_SANDBOX --> THREAD_ON_DEMAND_RUNTIME
     THREAD_PORTABLE_STATE --> THREAD_ON_DEMAND_RUNTIME
     THREAD_PORTABLE_STATE --> CLAUDE_PORTABLE_STATE
@@ -223,7 +223,7 @@ flowchart TB
 The Thread correctness/UI track is independent of Action Service milestones.
 Its authority and failure contracts are in
 [Thread, runner, and harness layering](../docs/thread_layering.md).
-The current slice uses the runner's command queue: make runner admission, app archival,
+The current slice uses the runner's command queue: make runner admission, app Event-log replication,
 pending-command UI, and reconnect reliable. Accepting commands while no runner is
 available is deferred under `COMMAND_QUEUE_DECISION`, along with the app outbox and
 combined-start workflow. Normal replay and controls do not depend on that later choice.
@@ -375,7 +375,7 @@ as a separate “Setup stderr” block. A Git clone then fills the transcript wi
 “Cloning into ...” and “Updating files: N%” blocks rather than showing one progressing operation.
 Group consecutive setup output for the same setup run and stream into a live setup widget; render
 carriage-return and newline progress sensibly, including distinct clone steps, and expose an
-expandable raw stdout/stderr log for diagnostics. Preserve original archived events and ordering;
+expandable raw stdout/stderr log for diagnostics. Preserve original retained Events and ordering;
 do not silently hide warnings, nonzero exit status, or interrupted setup. On reconnect/replay,
 rebuild the same widget without duplicating chunks, and leave a useful final summary when setup
 finishes. Test incremental arrival, interleaved stdout/stderr, failure, and replay using the
@@ -656,7 +656,7 @@ Sandbox Service currently awaits the runner's `Initialize` _terminal result_ for
 the Sandbox binding's bootstrap script **before** Open/Attach. The runner retains
 script identity, ordered output, and result, but Sandbox Service has no independent
 authorized bootstrap start/status/progress API. Thus the Open RPC can remain open
-for the duration of a long script despite no longer waiting for the app archive.
+for the duration of a long script despite no longer waiting for the app Event log.
 
 **Decided invariant: one bootstrap attempt per Sandbox, never a retry mechanism.**
 Today `Initialize` replays success but an identical later call re-executes a failed
@@ -809,7 +809,7 @@ assertions are the acceptance criterion here; do not require a live-provider usa
 probe or treat cache misses from one real invocation as proof of a changed prefix.
 Record byte/structural differences and the exact artifact inventory rather than
 inferring eligibility from a rendered transcript. Do not manufacture old reasoning
-content from an app Event archive.
+content from an app Event history.
 
 - **`CLAUDE_FRESH_RESUME_CACHE_SPIKE`:** test Claude Code's native saved-session resume
   into a fresh CLI process with both unchanged local state and a copied-state target.
@@ -832,12 +832,12 @@ investigation.
 
 **Planned lifecycle correctness:** verify the actual runner state mount, native artifacts,
 graceful shutdown, and explicit native resume across Pod replacement. Implement
-[archive-before-deletion](../docs/thread_layering.md#storage-loss-and-sandbox-lifecycle)
+[history-before-deletion](../docs/thread_layering.md#storage-loss-and-sandbox-lifecycle)
 with quiesced writers and the final runner prefix copied before managed storage removal.
 
 Acceptance covers suspended/resumed Sandboxes, app downtime during suspension,
 unreachable runners at deletion, and incomplete recovery state. Storage inspection
-and native evidence can proceed independently; full archive-preservation acceptance
+and native evidence can proceed independently; full history-preservation acceptance
 requires Event durability and app replication. Gate lifecycle automation on its own
 evidence without blocking ordinary messaging and UI work.
 
@@ -889,7 +889,7 @@ require copying a harness's state to new storage.
 
 ### `THREAD_EVENT_CONTINUITY` — identity/storage cutover capstone
 
-Depends on new-ID creation, the imported legacy association in the new archive,
+Depends on new-ID creation, the imported legacy association in the new history store,
 and the proven supported runner image rollout. Do not claim a live cutover complete
 until existing Threads resume on a compatible image with the same native state and
 Event prefix; these pieces can be built and reviewed independently.
@@ -916,10 +916,10 @@ state or native directories, workspace paths, or notification destinations. Pres
 source IDs, Event prefixes/cursors, and current Thread URLs. For new histories, use
 the canonical UUID as the runner Session ID as well. Inventory and back up existing
 associations before a one-off import; validate that both harnesses can resume against
-their unchanged state and that the archived Event prefixes match. Remove transitional
+their unchanged state and that the stored Event prefixes match. Remove transitional
 import code after cutover, not the durable association needed to address legacy
 storage. Existing running Threads also need the `RUNNER_IMAGE_ROLLOUT` pause/patch/
-resume path before a runner/protocol upgrade; an archive mapping alone does not
+resume path before a runner/protocol upgrade; an history mapping alone does not
 upgrade the runner in an existing Sandbox. A future multi-Session Thread requires a
 separate explicit model, not a delay to the one-to-one design.
 
@@ -937,7 +937,7 @@ Test runner replacement, fenced old writers, native resume, and unavailable reco
 state. Change protocol, runner storage, app routes, tests, and specification atomically.
 New protocols need no general backwards-compatibility layer, but the one-off
 association import must preserve existing histories, source IDs/cursors, and URLs.
-Quiesce/fence old writers for the archive ownership cutover, back up databases and
+Quiesce/fence old writers for the history ownership cutover, back up databases and
 volumes, verify imported mappings and Event prefixes, then resume and check both
 harnesses before removing the one-off import code. Keep migration evidence and a
 rollback procedure. Do not rekey native state or require copied-volume portability
@@ -967,7 +967,7 @@ what any surface shows of it.
 
 ### `APP_ALEMBIC_SQUASH` — consolidate the final integration-app schema
 
-**After identity and archive cutovers:** the integration app has 17 Alembic revisions
+**After identity and history cutovers:** the integration app has 17 Alembic revisions
 and a deployed `alembic_version_app` stamp. Once all target databases have reached
 the final schema and passed the one-off data migration, create a new baseline from
 the final models and transactionally stamp each verified database at that baseline
@@ -978,15 +978,15 @@ remove the transitional stamp/import machinery and obsolete revisions, while ret
 the migration runbook and rollback backups. Action Service and other Alembic histories
 are independent; this task does not silently squash them.
 
-### `THREAD_ARCHIVE_PLACEMENT` — choose the durable history authority
+### `SESSION_HISTORY_PLACEMENT` — choose the durable history authority
 
-Decide between an archive component in Sandbox Service and an independent history
+Decide between a history component in Sandbox Service and an independent history
 service, with no Sandbox Service → app runtime dependency. Choose raw Event, source
 identity and cursor contracts, retention beyond Sandbox/PVC deletion, and where
 canonical IDs and compartment/grant state reside. UI fold placement is independent.
 This is a design decision; it does not itself transfer a row or authorize SA reads.
 
-### `THREAD_ARCHIVE_STORE` — retained raw Event prefix and replay
+### `SESSION_HISTORY_STORE` — retained raw Event prefix and replay
 
 Implement the selected authority's durable store and raw read/follow contract for
 operator/service consumers. Validate source identity, sequence and exact duplicates,
@@ -994,7 +994,7 @@ reject conflicting payloads, and expose the retained contiguous cursor even if a
 fold fails. The store must survive Sandbox deletion. SA-scoped history reads remain
 gated on `THREAD_READ_POLICY`, not merely on the existence of an endpoint.
 
-### `THREAD_ARCHIVE_BACKFILL` — one-way import of existing histories
+### `SESSION_HISTORY_BACKFILL` — one-way import of existing histories
 
 Inventory, back up and import app-held raw Event prefixes, old public UUIDs and the
 `(sandbox, runner session_id)` locators, plus source and feed checkpoints. Verify
@@ -1003,7 +1003,7 @@ native files or directories. Preserve existing Thread URLs; include a way to bri
 Events arriving between snapshot and cutover. The importer reads app-held data once;
 there is no Sandbox Service → app runtime query or permanent migration shim.
 
-### `THREAD_ARCHIVE_INGEST` — live runner-to-archive copying
+### `SESSION_HISTORY_INGEST` — live runner-to-history copying
 
 Follow/replay runner Events into the new authority with per-log concurrency/fencing
 or validated idempotency under multiple replicas. Persist ingestion checkpoints
@@ -1011,15 +1011,15 @@ independently of UI fold transactions. Define outage catch-up, source changes,
 conflicting duplicates, and the cutover fence; shadow comparison is not permission
 for two independent authorities to publish different histories.
 
-### `THREAD_ARCHIVE_UI_CUTOVER` — consume the archive from the app
+### `SESSION_HISTORY_UI_CUTOVER` — consume retained history from the app
 
-Switch app UI folds to replay from the new archive with their own epoch/checkpoint,
-explicit lag/error and native evidence links. Retire the app's archive writes and
+Switch app UI folds to replay from the new history store with their own epoch/checkpoint,
+explicit lag/error and native evidence links. Retire the app's raw Event writes and
 its direct SA transcript-read bypass; it may keep rebuildable fold rows and operator
 metadata. Verify restarts, deleted Sandboxes and caught-up prefixes before removing
-the old app archive authority. Do not expose SA reads until the policy gate passes.
+the old app Event log authority. Do not expose SA reads until the policy gate passes.
 
-### `THREAD_ARCHIVE_OWNERSHIP` — archive cutover capstone
+### `SESSION_HISTORY_OWNERSHIP` — history cutover capstone
 
 Only after the store, one-way backfill, live ingester and app-consumer cutover are
 verified is the app no longer the raw Event authority. The service-boundary design
@@ -1030,55 +1030,55 @@ and its authorized raw read/follow API out of the integration app so agents can 
 retained history through Sandbox Service. This does **not** require Thread folds or operator UI metadata to move out of the app;
 canonical Session/Thread associations must be available in the history authority. Sandbox Service is a plausible
 home because it opens runner sessions and owns runner reachability, but it currently
-owns Kubernetes intent and has no archive database; historical Event storage must
-outlive a Sandbox CR, Pod, or PVC. Compare an archive component within Sandbox Service
+owns Kubernetes intent and has no history database; historical Event storage must
+outlive a Sandbox CR, Pod, or PVC. Compare a history component within Sandbox Service
 to an independently deployable history service; choose by durable ownership and least
 privilege, not by today's endpoint names. `FollowSession` is a runner stream, not a
-retained-archive read after Sandbox deletion.
+retained-history read after Sandbox deletion.
 
 The runner's journal remains authoritative for admission and Event publication; the
-archive stores an independently replayable, contiguous copied prefix. Today the app
+history store holds an independently replayable, contiguous copied prefix. Today the app
 copies each batch **and** advances its fold in one database transaction. That coupling
 is an implementation choice, not a requirement of append-only Event ingestion. The
-archive ingester can commit an Event batch and its own checkpoint independently of
+history ingester can commit an Event batch and its own checkpoint independently of
 a fold projector. Replay from either the live runner while its journal exists or the
-retained archive after deletion allows the fold to catch up or rebuild. Validate
+retained history after deletion allows the fold to catch up or rebuild. Validate
 source identity, cursor order and exact-payload duplicate replay; reject conflicting
 entries rather than silently overwriting them. If folding fails, retain and expose the
-raw prefix and explicit fold lag/error; do not stall archive ingestion just because a
+raw prefix and explicit fold lag/error; do not stall history ingestion just because a
 projection cannot interpret an Event. Each projector commits its own epoch/checkpoint
 with its derived rows, and fold views must never claim to cover a later raw cursor.
 
 **Fold placement remains open:** folds could stay in the app as rebuildable,
 platform-independent UI-friendly projections (retaining links to richer native/debug
-evidence), or move alongside the archive if agent readers need the normalized view
+evidence), or move alongside the history store if agent readers need the normalized view
 there. A shared, versioned fold implementation need not dictate where its materialized
 rows live. Either choice requires a documented replay, lag, error, native-link and
-authorization contract once archive and fold commits are decoupled. For the first
+authorization contract once history and fold commits are decoupled. For the first
 agent-facing cutover, serve the retained raw Session Events through Sandbox Service;
 keep the app's existing folds for its UI, with no agent-facing folded-read requirement
 and no duplicate projector. One `read` grant covers both folded and raw/native
 representations of the same history **when** a folded agent route is introduced.
 If that route is added while folds remain app-only, do not have Sandbox Service fetch
-them from the app: materialize an agent-facing projection from the archived Events
+them from the app: materialize an agent-facing projection from the retained Events
 independently or defer the route. Keep canonical classification and grants in the
-archive authority, with the durable Session/Thread association available without
+history authority, with the durable Session/Thread association available without
 querying the app. An independent history service upstream of both the app and
 Sandbox Service is another acyclic option. Do not trust
-an arbitrary forwarded caller header. Moving the Event archive does not itself make
+an arbitrary forwarded caller header. Moving the Event history does not itself make
 native harness state portable.
 
-**Migration gate:** define one durable archive authority and a staged, observable
+**Migration gate:** define one durable history authority and a staged, observable
 transfer of existing Session Event prefixes, canonical IDs and legacy mappings, grants,
 feeds, and cursor/high-water state. Multiple ingester replicas can cooperate only
 with per-log claim/fencing or validated idempotent replay; there must not be two
-independent archive owners. Transfer fold rows/checkpoints only if fold ownership
-moves; otherwise point the app projector at the new replayable archive feed. Pin
+independent history owners. Transfer fold rows/checkpoints only if fold ownership
+moves; otherwise point the app projector at the new replayable history feed. Pin
 revocation, operator access, restart, lag, and deleted-Sandbox behavior. If a legacy
 conversion is destructive, make its loss explicit rather than claiming incomplete
 histories are resumable. Split owner/ingestion/read/cutover into independently testable
 slices above. Design `THREAD_READ_POLICY_DESIGN` in parallel, but do not expose SA transcript
-reads through Sandbox Service until its source is an independent, durable archive:
+reads through Sandbox Service until its source is an independent, durable history store:
 not an app-backed broker and not the live runner's `FollowSession`. Backfill existing
 app-held histories through a one-way migration, never a runtime service-to-app read.
 Block direct SA reads of app history rather than retaining a bypass of the new grants.
@@ -1087,7 +1087,7 @@ Block direct SA reads of app history rather than retaining a bypass of the new g
 
 Decide where a Sandbox trust domain is assigned, how it relates to a Thread's durable
 compartment and grants, and what happens to legacy mixed-compartment Sandboxes. Shared
-filesystem and ServiceAccount credentials mean an archive ACL alone cannot enforce
+filesystem and ServiceAccount credentials mean an history ACL alone cannot enforce
 isolation. Record the rule before implementation; do not rely on launch presets as
 enduring authorization.
 
@@ -1096,7 +1096,7 @@ enduring authorization.
 **Enforcement after `SANDBOX_COMPARTMENT_DESIGN`:** multiple runner sessions
 in one Sandbox share a filesystem and Sandbox ServiceAccount (including its grants, mounts,
 and secrets). Threads in distinct compartments cannot safely share that Sandbox merely
-because app/archive reads are filtered: either session can inspect the other's workspace.
+because app/history reads are filtered: either session can inspect the other's workspace.
 Conservatively require one compartment/trust domain per Sandbox (or one Thread per Sandbox)
 until stronger isolation is proved. Even matching compartments do not by themselves prove
 that differently privileged sessions may share credentials or working files.
@@ -1109,7 +1109,7 @@ may supply an initial value, not become a persistent Agent type. For existing
 co-resident Threads with mixed intended audiences, default to no ServiceAccount read
 exposure and require reviewed reclassification or a new Sandbox; do not silently
 merge their histories. Test mismatch, concurrent Open, same-name
-Sandbox replacement, shared workspace/SA access, and historical archives after deletion.
+Sandbox replacement, shared workspace/SA access, and retained histories after deletion.
 
 ### `RUNNER_STATE_BOUNDARY_RETHINK` — should the runner own durable state?
 
@@ -1146,10 +1146,10 @@ writer fencing across restarts/replicas, recovery after disconnect, and runner-o
 operation. Keep harness-specific mechanics behind an adapter without forcing the
 service to understand native frames. Pin failure modes and migration/rollback costs,
 including existing Threads and their PVCs, before choosing either design. This
-investigation does **not** block the near-term archive, same-storage image rollout or
+investigation does **not** block the near-term history extraction, same-storage image rollout or
 identity cutovers, which must preserve today's runner journal contract until a
 replacement is designed and proved. Do not silently discard state or assume the
-archive alone can replace native resume or command recovery.
+history alone can replace native resume or command recovery.
 
 ### `RUNNER_OUTBOUND_CHANNEL` — worker-initiated transport
 
@@ -1177,7 +1177,7 @@ Specify and implement central command identity, acceptance, idempotency, deliver
 and acknowledgement under lost replies and worker replacement, without relying on
 the runner SQLite journal as the source of accepted commands. Define whether offline
 submission is rejected or durably queued, and distinguish receipt, dispatch and native
-effect. Use the selected archive authority for raw Event prefixes without creating a
+effect. Use the selected history authority for raw Event prefixes without creating a
 second independent Event log; retain writer fencing and exact replay.
 
 ### `RUNNER_OUTBOUND_CUTOVER` — migrate to thin, outbound-connected adapters
@@ -1185,20 +1185,20 @@ second independent Event log; retain writer fencing and exact replay.
 **Deferred migration direction:** after the runner-state boundary decision, prove
 the outbound channel, each harness's offline catch-up and central admission
 independently.
-Cut over existing Sandboxes only with a tested image rollout and a durable archive
+Cut over existing Sandboxes only with a tested image rollout and a durable history store
 already able to reconcile their Event prefixes. Preserve old runner IDs and native
 files; verify pending commands, exact Event cursors and rollback across worker/server
 crashes before retiring runner-side journal state where its guarantees have actually
-moved. This is not required for scoped agent reads, archive extraction, or same-storage
+moved. This is not required for scoped agent reads, history extraction, or same-storage
 image upgrades. Native harness storage may still live on Sandbox PVCs; this migration
 targets the **additional** Agentplane runner database and inbound control path, not
 native-session portability or zero downtime.
 
 ### `THREAD_PORTABLE_STATE` — durable state beyond a Sandbox volume
 
-**Deferred portability design:** the app's archived Event/transcript history can outlive a
+**Deferred portability design:** the app's retained Event/transcript history can outlive a
 Sandbox, but native Claude/Codex history, runner journal, workspace files, and resume
-metadata currently depend on runner storage inside the Sandbox lifecycle. An archive of
+metadata currently depend on runner storage inside the Sandbox lifecycle. A retained history of
 rendered Events is not enough to reconstruct a native session or safely replay tool effects.
 
 **Restore authority question (preferred direction):** retain or copy a bounded, version-compatible
@@ -1226,7 +1226,7 @@ seamless resume from display history.
 apply this shared contract only after their respective fresh-process cache-eligibility
 spikes establish support. Neither harness gates the other's implementation. An
 unsupported harness remains on retained storage; do not claim portable resume for it.
-Keep the shared contract separate from `SANDBOX_LIFECYCLE_DURABILITY` (archive before
+Keep the shared contract separate from `SANDBOX_LIFECYCLE_DURABILITY` (history copied before
 deletion), which must be complete before a disposable runtime removes managed storage.
 
 ### `THREAD_ON_DEMAND_RUNTIME` — disposable Sandbox for a durable Thread
@@ -1250,7 +1250,7 @@ than replaying a display transcript.
 This is not a prerequisite for near-term `RUNNER_IMAGE_ROLLOUT`: first test the simpler
 pause/patch/restart-with-the-same-storage route for updating an existing Sandbox image.
 The runtime pivot may later supersede that operational workflow without invalidating
-stable Thread IDs, archived history, or compartment grants.
+stable Thread IDs, retained history, or compartment grants.
 
 ### `HOSTED_THREAD_SURFACES` — read and control for a hosted Thread
 
@@ -1264,12 +1264,12 @@ does not yet.
 Specify the compartment/explicit-ID grant vocabulary and authorized assignment,
 reclassification, revocation and caller identity semantics. Inventory list, raw,
 evidence and stream routes plus app SA bypasses; separate read from future send/create.
-This design can proceed now, independent of archive migration and enforcement. No
+This design can proceed now, independent of history migration and enforcement. No
 agent-facing history read is shipped by this design node alone.
 
 ### `THREAD_READ_POLICY` — enforce scoped ServiceAccount Thread reads
 
-**Implementation after design/archive/isolation gates:** today `TokenReviewer`
+**Implementation after design/history/isolation gates:** today `TokenReviewer`
 admits named ServiceAccount subjects, but the app's `require_caller` router
 dependency does not apply per-Thread authorization.
 An admitted token can read the full Thread list and raw Events, not just its own history.
@@ -1300,7 +1300,7 @@ adding multi-label OR semantics that could unexpectedly widen access.
 
 **Trust-boundary gate:** `SANDBOX_COMPARTMENT_BOUNDARY` must prevent distinct
 compartments from silently co-residing in a shared Sandbox before scoped read grants
-can be advertised as confidentiality isolation. App archive authorization alone cannot
+can be advertised as confidentiality isolation. App Event-log authorization alone cannot
 protect runner-local files or Sandbox credentials.
 
 **Design gate:** choose who creates compartments, assigns/reclassifies Threads, grants
@@ -1315,7 +1315,7 @@ and deleted Sandboxes, two replicas, reclassification, and revocation during SSE
 Co-design the grant vocabulary with future `CROSS_THREAD_DELIVERY` and
 `THREAD_CREATE_POLICY`: **read does not imply send or create**. Do not block the
 first read implementation on choosing command versus mailbox delivery, a hosted
-Thread lifecycle, or whether UI folds move with the durable Session Event archive.
+Thread lifecycle, or whether UI folds move with the durable Session Event history.
 
 ### `CROSS_THREAD_DELIVERY` — send a message to another agent's Thread
 
@@ -1721,7 +1721,7 @@ Thread UI, through the existing authorized app → Sandbox Service → runner co
 Claude and Codex support and busy-turn behavior separately; show unsupported/unavailable states
 rather than pretending a generic summarization prompt is native compaction. Distinguish request
 admission from actual start/completion/failure using runner evidence, including reconnect/replay.
-Preserve Thread/session identity and the durable transcript/Event archive: compacting model context
+Preserve Thread/session identity and the durable transcript/Event history: compacting model context
 is not deleting conversation history. Acceptance covers a real frontend request, native compaction,
 continued conversation and retained shared instructions for each supported harness, plus failure and
 reconnect behavior. Reuse the native triggers and post-compaction evidence from the harness

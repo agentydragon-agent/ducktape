@@ -68,7 +68,7 @@ received. Mocked-LLM tests observe a further boundary and establish what native 
 actually prove. See [native harness evidence](harness_evidence.md).
 
 The normal conversation view reads the materialized Thread projection through the implemented
-[conversation-view sync](thread_view_sync.md). The exact archive remains available for replay and
+[conversation-view sync](thread_view_sync.md). The exact Event log remains available for replay and
 Raw evidence; the projection does not change runner Events or command admission.
 
 | Representation                       | Authority and identity                                                                                                                                             | Ordering                                                                                            |
@@ -96,7 +96,7 @@ not another Session. Runner restart tests verify the identical ID and contiguous
 Event prefix after crash and SIGTERM; the Sandbox suspend/resume acceptance exercises
 both harnesses after Pod replacement. For the one-Thread-per-Session model, adopt one
 globally unique stable ID for the logical Session and its Thread view. Sharing an ID
-does not give a live Session caller permission to read the archive; Sandbox, process,
+does not give a live Session caller permission to read the retained Event log; Sandbox, process,
 and native harness identities remain separate. A portable runtime may retain this
 ID across Sandboxes only if it restores the same fenced journal and native state;
 separate copied-state tests gate that claim. For existing histories, keep the
@@ -198,14 +198,14 @@ must be re-established. Verify the actual template's state mount and harness art
 
 Managed deletion needs an explicit preservation rule: quiesce writers, drain output,
 and copy the final durable runner prefix before releasing its storage. If the runner
-is unreachable, retain the storage or explicitly report an incomplete archive.
+is unreachable, retain the storage or explicitly report an incomplete Event history.
 Externally deleting the only remaining storage while the app is behind cannot carry
 a no-loss guarantee. A Thread's archived page still displays the history the app has.
 
 ## Queue placement decision
 
 **Current implementation slice:** require a reachable runner for submission and
-make runner admission, app archival, replay, and UI state trustworthy first. Retain
+make runner admission, app Event-log replication, replay, and UI state trustworthy first. Retain
 the app outbox as a deferred option for “submit while unavailable,” including combined
 Sandbox + Thread + first input. Its additional availability promise remains a future
 product decision.
@@ -216,7 +216,7 @@ runner's native recovery obligations.
 
 |                                       | Runner admission first                                     | App outbox before runner admission                                                      |
 | ------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Earliest server promise               | Runner admission archived by app                           | App command transaction commits                                                         |
+| Earliest server promise               | Runner admission retained by app                           | App command transaction commits                                                         |
 | Runner unavailable                    | Preserve draft, show unavailable; no server-queued command | App owns delivery and shows waiting for runner                                          |
 | Tab closes after saved confirmation   | Runner continues; app has the input                        | Reconciler continues even if no runner exists yet                                       |
 | Authoritative pending runner commands | Fold `CommandAdmitted` and outcomes                        | Same runner fold, plus app commands without observed runner admission                   |
@@ -251,7 +251,7 @@ after their first use. HTTP/SSE carry the same generated payload in protobuf JSO
 Attachment setup is omitted where a stream is already open: each new gRPC attachment
 starts with `Open` and receives `Attached` before commands/replay. The app's command
 relay and its independent ingester may use different attachments.
-Thread URLs and HTTP command responses containing the exact archived admission are implemented.
+Thread URLs and HTTP command responses containing the exact retained admission are implemented.
 The `thread_id` selector on runner `Open` remains proposed; current `Open` only selects
 `session_id`. Native sketches omit unrelated request fields.
 
@@ -261,7 +261,7 @@ The browser retains a command id and payload before sending. The app relays it t
 runner; the product reports “saved” after the contiguous PostgreSQL copy contains the
 runner's `CommandAdmitted` for that exact command. Since that Event contains the full
 command, the saved input and pending controls survive reload and Sandbox deletion
-without an app delivery queue. The current bridge implements this archived-admission response
+without an app delivery queue. The current bridge implements this retained-admission response
 boundary; browser-local recovery and pending presentation are separate acceptance work.
 
 A timeout preserves the browser's local submission as “awaiting saved confirmation.”
@@ -527,8 +527,8 @@ The normal view loads selected assembled state and follows it through Electric. 
 loaded on demand, while the browser store retains loaded rows and bodies until the Thread closes;
 bounded browser-cache retention is a deferred desire (D6), not an acceptance gate. Commands keep
 their runner-first admission semantics. Operational snapshots keep their own provenance. No second
-command queue or authoritative Event sequence is introduced. The exact runner archive remains
-available; optional archive-retention changes require a separate, explicit contract.
+command queue or authoritative Event sequence is introduced. The exact runner Event journal remains
+available; optional history-retention changes require a separate, explicit contract.
 
 ## Required harness-loss and Sandbox lifecycle cross-check
 
@@ -543,7 +543,7 @@ available; optional archive-retention changes require a separate, explicit contr
 | Queued input interrupted                    | Each input is confirmed, dropped with evidence, or demonstrably retained for later processing; no inferred queue fate                                  |
 | Long tool interrupted                       | Pin partial output, process abortion, tool result, and the fate of queued inputs on the next prompt, separately per harness                            |
 | App/browser reconnect                       | Competing ingesters, stale lease owner, lost wakeup, reload after lost submit response, and replay/live handoff converge on the same durable prefix    |
-| Suspend/resume and deletion                 | Real state mount survives intended Pod replacement; native resume is evidenced; final archive is copied before managed storage removal                 |
+| Suspend/resume and deletion                 | Real state mount survives intended Pod replacement; native resume is evidenced; final Event history is copied before managed storage removal                 |
 | Writer replacement                          | Fence old runner, continue the same Event journal, preserve native references; missing journal cannot be replaced by an app checkpoint                 |
 | Normal/Raw UI                               | Streaming, grouped inputs, admission without effect, failed/no-op, suspended/deleted Sandbox, local unconfirmed submission, and additive native detail |
 
@@ -571,8 +571,8 @@ SQLite owns crash recovery; no custom JSONL repair or old-format import remains.
 The [current runner specification](../runner/SPEC.md) exposes a session-scoped SQLite
 journal with atomic command/Event commits and publication after the storage fence.
 The target runner Thread identity/cursor change and native crash recovery need implementation
-and integration evidence. Canonical Thread pages replay the archived prefix without a live runner;
-the app's saved-response boundary waits for archived admission, not command effect. An app outbox is a separate decision about accepting work
+and integration evidence. Canonical Thread pages replay the retained Event prefix without a live runner;
+the app's saved-response boundary waits for retained admission, not command effect. An app outbox is a separate decision about accepting work
 before the runner can; it does not satisfy those gates by existing.
 
 No cross-harness transcript portability, inferred native effects, or old-protocol
