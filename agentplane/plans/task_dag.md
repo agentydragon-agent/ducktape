@@ -1104,23 +1104,27 @@ Sandbox replacement, shared workspace/SA access, and historical archives after d
 **Deferred design question, not a decided refactor:** today each Sandbox runner stores
 its command journal and Event log in SQLite on Sandbox-attached storage alongside
 native harness artifacts. A bulk runner-state schema migration or move off those
-volumes could require inspecting and migrating each Sandbox PVC individually. Ask whether a runner should instead
+volumes could require inspecting and migrating each Sandbox PVC individually.
+Ask whether a runner should instead
 be a thin, mostly stateless adapter that launches/controls a harness and carries its
 protocol traffic to Sandbox Service (or an independent history/command authority),
 with durable command admission, Event ordering, and replay outside each runner PVC.
 The native harness may still require persistent files; removing runner SQLite does
 not by itself make Claude/Codex state or workspaces portable.
 
-Use Claude Code's RemoteIO worker protocol as one concrete comparison: the recent
-client-protocol debundle in the sibling `agentydragon/gaffer-private` repository
-informs [the existing `CLAUDE_REMOTE_IO_EVAL`](claude_remote_io.md), which examines
-SSE command delivery, worker epochs, delivery receipts, uploaded Events, and internal
-transcript hydration. Ask where a server for such a protocol must put durable state
-and how it recovers from disconnects without a database in each runner. A debundled
-**client** protocol does not prove how Claude's server actually persists commands,
-Events, or native state, or that RemoteIO is appropriate for Codex. Keep transport
-adoption and runner state ownership as separate decisions; share evidence, not an
-assumed implementation or an artificial DAG dependency.
+Treat Claude Code's RemoteIO worker protocol as the **leading candidate for the
+Claude side**, not merely an arbitrary comparison. The client-protocol debundle in
+the sibling `agentydragon/gaffer-private` repository informs [the existing
+`CLAUDE_REMOTE_IO_EVAL`](claude_remote_io.md): SSE command delivery, worker epochs,
+delivery receipts, uploaded Events, and internal transcript hydration. If Claude
+uses this with its own infrastructure, that is strong prior evidence for the wire
+shape; start by implementing a small compatible server and testing it rather than
+inventing a competing Claude transport. We need not discover Claude's private
+server storage design first. We **do** need to provide our own durable admission,
+acknowledgement, replay and recovery guarantees at the chosen authority, and confirm
+interop with the pinned CLI. This does not by itself settle the Codex adapter or
+whether the general runner owns a database. Share the evaluation evidence without
+making transport adoption a hard dependency for the boundary decision.
 
 Examine whether the current boundary — a harness-neutral runner ↔ Sandbox Service
 protocol — has pushed persistence and harness-independent recovery into the runner
