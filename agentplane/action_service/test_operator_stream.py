@@ -18,7 +18,7 @@ from agentplane.action_service.updates import ActionSubscription
 async def test_snapshot_stream_rechecks_at_computed_expiry() -> None:
     subscription = Mock(spec=ActionSubscription)
     subscription.changed = asyncio.Event()
-    expiry = datetime.now(UTC) + timedelta(milliseconds=50)
+    expiry: datetime | None = datetime.now(UTC) + timedelta(milliseconds=50)
     snapshots = 0
 
     @contextmanager
