@@ -75,9 +75,11 @@ async def test_sandbox_notifications_mobile_menu(view: VisualPage, app: Agentpla
     page = view.page
     await expect(page.get_by_role("button", name="Notifications")).to_have_count(0)
     await page.get_by_role("button", name="More Sandbox actions").click()
+    await expect(page.get_by_role("menuitem", name="Notifications")).to_be_visible()
+    await view.capture(name="sandbox_notifications_mobile_menu")
     await page.get_by_role("menuitem", name="Notifications").click()
     await expect(page.get_by_text("Session s-2")).to_be_visible()
-    await view.capture()
+    await view.capture(name="sandbox_notifications_mobile_drawer")
 
 
 if __name__ == "__main__":
