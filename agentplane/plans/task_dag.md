@@ -1111,6 +1111,17 @@ with durable command admission, Event ordering, and replay outside each runner P
 The native harness may still require persistent files; removing runner SQLite does
 not by itself make Claude/Codex state or workspaces portable.
 
+Use Claude Code's RemoteIO worker protocol as one concrete comparison: the recent
+client-protocol debundle in the sibling `agentydragon/gaffer-private` repository
+informs [the existing `CLAUDE_REMOTE_IO_EVAL`](claude_remote_io.md), which examines
+SSE command delivery, worker epochs, delivery receipts, uploaded Events, and internal
+transcript hydration. Ask where a server for such a protocol must put durable state
+and how it recovers from disconnects without a database in each runner. A debundled
+**client** protocol does not prove how Claude's server actually persists commands,
+Events, or native state, or that RemoteIO is appropriate for Codex. Keep transport
+adoption and runner state ownership as separate decisions; share evidence, not an
+assumed implementation or an artificial DAG dependency.
+
 Examine whether the current boundary — a harness-neutral runner ↔ Sandbox Service
 protocol — has pushed persistence and harness-independent recovery into the runner
 unnecessarily. Compare per-runner storage with a central durable authority for
