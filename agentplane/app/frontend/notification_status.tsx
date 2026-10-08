@@ -1,5 +1,5 @@
 /** Read-only operator projection: curated entry summaries, no raw provider payloads or acknowledgement controls. */
-import { Accordion, Badge, Divider, Drawer, Group, Paper, ScrollArea, Stack, Text } from "@mantine/core";
+import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Stack, Text } from "@mantine/core";
 import { useEffect, useState, type JSX } from "react";
 
 import { fetchWithLogin } from "./client";
@@ -154,13 +154,18 @@ export function NotificationStatus({
                   <Stack gap="xs">
                     <Group justify="space-between">
                       <Text fw={600}>Session {inbox.session_id}</Text>
-                      {inbox.retired && <Badge color="gray">Retired</Badge>}
+                      {inbox.retired && (
+                        <Text size="xs" c="dimmed">
+                          Retired
+                        </Text>
+                      )}
                     </Group>
                     <Group gap="xs">
-                      <Badge color={unannounced_count ? "blue" : "gray"}>{unannounced_count} awaiting notice</Badge>
-                      <Badge color={pending_acknowledgement_count ? "yellow" : "gray"}>
-                        {pending_acknowledgement_count} not acknowledged
-                      </Badge>
+                      <Text size="sm">{unannounced_count} awaiting notice</Text>
+                      <Text size="sm" c="dimmed">
+                        ·
+                      </Text>
+                      <Text size="sm">{pending_acknowledgement_count} not acknowledged</Text>
                     </Group>
                     {notice && (
                       <Text size="sm">

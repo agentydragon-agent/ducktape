@@ -17,6 +17,7 @@ async def test_thread_notifications(view: VisualPage, app: AgentplaneFixture) ->
     page = view.page
     await page.get_by_role("button", name="Notifications").click()
     await expect(page.get_by_text("2 awaiting notice")).to_be_visible()
+    await expect(page.get_by_role("dialog").locator(".mantine-Badge-root")).to_have_count(0)
     await expect(page.get_by_text("GitHub check_run · completed · success", exact=False)).to_be_visible()
     await expect(page.get_by_text("Notice covered through #7 · awaiting notice below")).to_be_visible()
     await expect(page.get_by_text("Inbox diagnostics")).to_be_visible()
