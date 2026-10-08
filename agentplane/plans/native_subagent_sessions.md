@@ -212,16 +212,16 @@ on the existing Codex **0.157.0** pin: `features.multi_agent=true` and
 methods; this extension specifically changes the **multi-agent feature/tool surface** from
 `multi_agent_v1` to `collaboration`. It is not a production adapter or pin change.
 
-| Case                           | Assertions / evidence                                                                                                               | Status                                          |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| Root creation                  | `thread/start` mints ID; root has no parent; loaded enumeration includes it                                                         | Added, awaiting CI                              |
-| Native child launch            | `collaboration.spawn_agent`, task name and `fork_turns=none`; completed spawn item's receiver ID agrees with child model-request ID | Added, awaiting CI                              |
-| Live child snapshot            | `thread/read` identifies parent and shared session tree, active status; paginated loaded enumeration includes root and child        | Added, awaiting CI                              |
-| Completed child, clean restart | Await native completed turn, restart server, resume root, enumerate and read historical child without resuming it                   | Added, awaiting CI                              |
-| Completed child, crash         | Same read-only recovery after killing the server                                                                                    | Added, awaiting CI                              |
-| Active child, crash            | Hold model request unanswered, kill server, observe request closure; recover identity/history without child reactivation            | Added, awaiting CI                              |
-| Live client reconnect          | Retain server process, reconnect a separate client, compare enumeration and subscriptions                                           | Planned; stdio process restart is not this case |
-| Alternate context/ancestry     | Context fork, concurrent children, grandchild, explicit child attachment and input                                                  | Planned                                         |
+| Case                           | Assertions / evidence                                                                                                             | Status                                          |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Root creation                  | `thread/start` mints ID; root has no parent; loaded enumeration includes it                                                       | Added, awaiting CI                              |
+| Native child launch            | `collaboration.spawn_agent`, task name and `fork_turns=none`; `subAgentActivity.agentThreadId` agrees with child model-request ID | Added, awaiting CI                              |
+| Live child snapshot            | `thread/read` identifies parent and shared session tree, active status; paginated loaded enumeration includes root and child      | Added, awaiting CI                              |
+| Completed child, clean restart | Await native completed turn, restart server, resume root, enumerate and read historical child without resuming it                 | Added, awaiting CI                              |
+| Completed child, crash         | Same read-only recovery after killing the server                                                                                  | Added, awaiting CI                              |
+| Active child, crash            | Hold model request unanswered, kill server, observe request closure; recover identity/history without child reactivation          | Added, awaiting CI                              |
+| Live client reconnect          | Retain server process, reconnect a separate client, compare enumeration and subscriptions                                         | Planned; stdio process restart is not this case |
+| Alternate context/ancestry     | Context fork, concurrent children, grandchild, explicit child attachment and input                                                | Planned                                         |
 
 The recovery probes query `thread/loaded/list`, `thread/list` with an explicit subagent
 source filter, and `thread/read(includeTurns=true)`. They assert that reading the child does
@@ -235,3 +235,12 @@ child killed with the process, retain and inspect the historical status rather t
 `notLoaded` as stopped/completed. The first probe asserts absence of the never-produced
 child answer, not an invented terminal fate. Follow-up assertions should pin the actual
 recovered status once the first wire capture is available.
+
+The first CI capture (`6975829c`) confirms v2 emits `item/completed` with
+`item.type=subAgentActivity`, `kind=started`, `agentThreadId`, and
+`agentPath=/root/probe`; the enclosing `params.threadId` identifies the parent.
+The v1 `senderThreadId` / `receiverThreadIds` shape does not apply to this item.
+The capture also contains child `agentMessage` output under the child's own thread ID
+and a parent-stream `subAgentActivity(kind=completed)`. Live read assertions reached
+shared session-tree identity and completed child history, but the incorrect v1-shaped
+assertion stopped the first run before recovery. Recovery expectations remain unverified.

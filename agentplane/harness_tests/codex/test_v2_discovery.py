@@ -32,7 +32,9 @@ async def rpc(process: AsyncNativeProcess, method: str, **params: Any) -> dict[s
     request = ProbeRequest(id=str(uuid4()), method=method, params=params)
     receipt = await process.request(request, matches=lambda frame: frame.get("id") == request.id)
     assert "error" not in receipt.frame, receipt.frame
-    return receipt.frame["result"]
+    result = receipt.frame["result"]
+    assert isinstance(result, dict)
+    return result
 
 
 @asynccontextmanager
@@ -155,13 +157,19 @@ async def test_v2_child_discovery_and_resume(
                     if scenario == "crash-completed":
                         assert await process.crash() < 0
             spawn_items = [
-                frame["params"]["item"]
+                frame["params"]
                 for frame in process.stdout_frames()
                 if frame.get("method") == "item/completed" and frame["params"]["item"]["id"] == "call_v2_spawn"
             ]
             (spawn,) = spawn_items
-            assert spawn["senderThreadId"] == root_id
-            assert spawn["receiverThreadIds"] == [child_id]
+            assert spawn["threadId"] == root_id
+            assert spawn["item"] == {
+                "type": "subAgentActivity",
+                "id": "call_v2_spawn",
+                "kind": "started",
+                "agentThreadId": child_id,
+                "agentPath": "/root/probe",
+            }
         async with server(codex, openai_responses, "resumed") as resumed:
             assert await listed(resumed, "thread/loaded/list") == []
             restored = (await rpc(resumed, "thread/resume", threadId=root_id, excludeTurns=True))["thread"]
