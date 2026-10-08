@@ -64,7 +64,17 @@ def endpoint_labels(namespace: str, name: str) -> dict[str, str]:
 def egress_via_gateway(*server_names: str, port: int = 443) -> CiliumNetworkPolicySpecEgress:
     """A public origin the hostNetwork Gateway serves. It resolves to node IPs, which FQDN and
     CIDR selectors cannot match with the cluster's Cilium configuration; TLS SNI narrows the
-    node:443 rule to that origin, and TLS stays end-to-end (no terminatingTLS secret, no MITM)."""
+    node:443 rule to that origin, and TLS stays end-to-end (no terminatingTLS secret, no MITM).
+
+    **Never on an endpoint that also gets open egress on `port`.** `serverNames` is an L7 rule and
+    Cilium enforces L7 per port on the endpoint, over the merge of every policy selecting it: one
+    pinned rule makes the union of the `serverNames` lists in scope decide *all* node-IP HTTPS that
+    endpoint makes, so any open `toEntities: [world, remote-node, host]:443` rule beside it stops
+    being open for every name not listed here. `fleet_rules.https_egress_sni_conflicts` refuses the
+    pair at synth. A workload that needs both -- agentplane's own egress proxy -- pins per backend
+    port instead, or fences names in its own application-level allowlist.
+    cluster/docs/cilium_network_policy.md section "An SNI rule decides port 443 for every policy
+    that selects the same Pod"."""
     return EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[port], server_names=server_names)
 
 
