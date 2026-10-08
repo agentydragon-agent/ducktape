@@ -1,5 +1,6 @@
 """Sandbox lifecycle gateway; history schema migrates before Pod startup."""
 
+from pathlib import Path
 from typing import cast
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -23,7 +24,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.sandbox_service.instructions import render_platform_instructions
+from agentplane.sandbox_service.instructions import combine_instructions, render_platform_instructions
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.sandbox_service.main import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
@@ -45,6 +46,9 @@ NAME = "agentplane-sandbox-service"
 TOKEN_AUDIENCE = "agentplane-sandbox-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-service"
+KUBERNETES_ADMIN_INSTRUCTIONS = (
+    Path(__file__).with_name("kubernetes_admin_instructions.md").read_text(encoding="utf-8").strip()
+)
 
 
 def service(namespace: str) -> ServiceRef:
@@ -70,10 +74,13 @@ class SandboxService(Construct):
             sandbox_namespace=env.namespace,
             caller_accounts=frozenset({manager, ServiceAccountRef(namespace=env.namespace, name=notifications.NAME)}),
             token_audience=TOKEN_AUDIENCE,
-            platform_instructions=render_platform_instructions(
-                egress_api_url=f"http://{egress.agent_api(env.namespace).fqdn}",
-                actions_service_url=f"http://{actions_service.fqdn}:{actions_service.port.number}",
-                notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
+            platform_instructions=combine_instructions(
+                render_platform_instructions(
+                    egress_api_url=f"http://{egress.agent_api(env.namespace).fqdn}",
+                    actions_service_url=f"http://{actions_service.fqdn}:{actions_service.port.number}",
+                    notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
+                ),
+                KUBERNETES_ADMIN_INSTRUCTIONS,
             ),
             default_egress_policies=env.app_config.default_egress_policies,
             kubernetes_grants=env.app_config.kubernetes_grants,
