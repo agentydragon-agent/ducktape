@@ -178,8 +178,11 @@ async def test_v2_child_discovery_and_resume(
             # No turn/start, followup_task, child resume, or model-driven status query:
             # measure persisted discovery separately from lazy child reactivation.
             children = await listed(resumed, "thread/list", sourceKinds=["subAgent"], modelProviders=[])
-            assert child_id in {thread["id"] for thread in children}
+            assert children == []
+            descendants = await listed(resumed, "thread/list", parentThreadId=root_id, modelProviders=[])
             recovered = (await rpc(resumed, "thread/read", threadId=child_id, includeTurns=True))["thread"]
+            (codex.logs / "recovery.json").write_text(json.dumps(recovered, indent=2) + "\n")
+            assert child_id in {thread["id"] for thread in descendants}
             assert recovered["parentThreadId"] == root_id
             assert recovered["sessionId"] == root["sessionId"]
             assert recovered["status"]["type"] == "notLoaded"
@@ -190,9 +193,7 @@ async def test_v2_child_discovery_and_resume(
                 assert "V2_CHILD_DONE" in json.dumps(recovered["turns"])
             else:
                 assert "V2_CHILD_DONE" not in json.dumps(recovered["turns"])
-            # Retain the exact historical status for active-crash characterization;
-            # notLoaded by itself is not evidence of completion or cancellation.
-            (codex.logs / "recovery.json").write_text(json.dumps(recovered, indent=2) + "\n")
+            # notLoaded alone is not evidence of completion or cancellation.
             with pytest.raises(TimeoutError):
                 async with asyncio.timeout(0.25):
                     await openai_responses.await_next_request()

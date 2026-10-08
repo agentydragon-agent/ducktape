@@ -244,3 +244,11 @@ The capture also contains child `agentMessage` output under the child's own thre
 and a parent-stream `subAgentActivity(kind=completed)`. Live read assertions reached
 shared session-tree identity and completed child history, but the incorrect v1-shaped
 assertion stopped the first run before recovery. Recovery expectations remain unverified.
+
+On `4ffb8a5f`, all three cases resume the root with only that root in loaded enumeration,
+but a broad `thread/list(sourceKinds=["subAgent"], modelProviders=[])` returns no rows.
+That query is not sufficient to establish missing child identity or lost history. The next
+probe pins the empty result, additionally queries the explicit `parentThreadId` relation,
+and directly reads the previously observed child ID. Both responses remain in the native
+trace; the recovery snapshot is written before asserting the relation-query result.
+The broad-filter observation does not yet establish whether relation discovery succeeds.
