@@ -49,15 +49,7 @@ class SourceHealth(StrEnum):
     ACCESS_ERROR = "access_error"
 
 
-class SubscriptionHealthEvent(Model):
-    provider: Literal["notifications"]
-    subscription_id: UUID
-    sequence: int = Field(ge=1)
-    health: SourceHealth
-
-
-type EventIdentity = Annotated[ActionsEvent | GitHubEvent | SubscriptionHealthEvent, Field(discriminator="provider")]
-
+type EventIdentity = Annotated[ActionsEvent | GitHubEvent, Field(discriminator="provider")]
 
 class Subscribe(Model):
     destination_ref: DestinationRef

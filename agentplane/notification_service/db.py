@@ -77,7 +77,6 @@ class Subscription(Base):
     next_attempt: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None]
     health: Mapped[str] = mapped_column(default="healthy")
-    health_sequence: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
 class Entry(Base):

@@ -23,7 +23,6 @@ from agentplane.notification_service.models import (
     DestinationRef,
     SourceHealth,
     Subscribe,
-    SubscriptionHealthEvent,
     SubscriptionUpdate,
 )
 from agentplane.notification_service.store import ClaimLostError, ConflictError, NotFoundError, Store
@@ -392,69 +391,58 @@ async def test_retention_gap_is_visible_and_replay_keeps_tombstone(store: Store)
     assert (await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)).inbox.last_cursor == 3
 
 
-async def test_health_transitions_are_durable_and_do_not_repeat(store: Store, engine: AsyncEngine) -> None:
+@pytest.mark.parametrize("existing_events", [False, True])
+async def test_health_is_durable_introspection_without_inbox_events(
+    store: Store, engine: AsyncEngine, existing_events: bool
+) -> None:
     subscription = await store.subscribe(PRINCIPAL, BODY)
     claim = await store.claim()
     assert claim is not None
     source = await store.source(claim)
     assert source is not None
-    assert (await store.subscription(PRINCIPAL.account, subscription.id)).health == SourceHealth.HEALTHY
-    await store.source_failed(claim, source, "HTTP 429", 120)
-    # Another worker/process seeing the same failure changes the deadline, not the transition identity.
+    if existing_events:
+        await store.record(claim, source, events())
+        assert await store.notice(claim) is not None
+    before = await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
     recovered = Store(engine)
-    await recovered.source_failed(claim, source, "HTTP 429", 300)
-    page = await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
-    assert len(page.entries) == 1
-    assert page.entries[0].event == SubscriptionHealthEvent(
-        provider="notifications", subscription_id=subscription.id, sequence=1, health=SourceHealth.BACKING_OFF
-    )
-    notice = await recovered.notice(claim)
-    assert notice is not None
-    assert notice.through_cursor == 1
-    assert page.entries[0].subscriptions == [subscription.id]
-    assert page.inbox.acknowledged == 0
-    # Details can change without generating another health notice. The current view is authoritative.
-    view = await recovered.subscription(PRINCIPAL.account, subscription.id)
-    assert view.retry_at is not None
-    assert view.retry_at > datetime.now(UTC) + timedelta(seconds=290)
-    await recovered.source_failed(claim, source, "access revoked", health=SourceHealth.ACCESS_ERROR)
+    for health, error, delay in [
+        (SourceHealth.BACKING_OFF, "HTTP 429", 120),
+        (SourceHealth.BACKING_OFF, "HTTP 503", 300),
+        (SourceHealth.ACCESS_ERROR, "access revoked", 60),
+    ]:
+        await recovered.source_failed(claim, source, error, delay, health=health)
+        view = await recovered.subscription(PRINCIPAL.account, subscription.id)
+        assert (view.health, view.error) == (health, error)
+        assert view.retry_at is not None
+        assert view.retry_at > datetime.now(UTC) + timedelta(seconds=delay - 10)
+        assert await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before
+        await recovered.notice(claim)
+        assert await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before
     await recovered.record(claim, source, [])
-    await recovered.record(claim, source, [])
-    page = await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
-    assert [entry.event.sequence for entry in page.entries if isinstance(entry.event, SubscriptionHealthEvent)] == [
-        1,
-        2,
-        3,
-    ]
-    assert [entry.event.health for entry in page.entries if isinstance(entry.event, SubscriptionHealthEvent)] == [
-        SourceHealth.BACKING_OFF,
-        SourceHealth.ACCESS_ERROR,
-        SourceHealth.HEALTHY,
-    ]
     view = await recovered.subscription(PRINCIPAL.account, subscription.id)
     assert (view.health, view.error, view.retry_at) == (SourceHealth.HEALTHY, None, None)
+    assert await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before
     await recovered.change(PRINCIPAL.account, subscription.id, None)
     await recovered.source_failed(claim, source, "late response")
-    assert (await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)).entries == page.entries
+    assert (await recovered.subscription(PRINCIPAL.account, subscription.id)).health == SourceHealth.HEALTHY
+    assert await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before
 
 
-async def test_overlapping_sources_have_independent_health_sequences(store: Store) -> None:
+async def test_overlapping_sources_have_independent_current_health(store: Store) -> None:
     first = await store.subscribe(PRINCIPAL, BODY)
     second = await store.subscribe(PRINCIPAL, BODY.model_copy(update={"idempotency_key": "overlap"}))
     claim = await store.claim()
     assert claim is not None
-    for identity in [first.id, second.id]:
-        async with store.sessions() as session:
-            source = await session.get(Subscription, identity)
-        assert source is not None
-        await store.source_failed(claim, source, "HTTP 429")
-        await store.source_failed(claim, source, "HTTP 429")
+    async with store.sessions() as session:
+        source = await session.get(Subscription, first.id)
+    assert source is not None
+    await store.source_failed(claim, source, "HTTP 429")
+    assert (await store.subscription(PRINCIPAL.account, first.id)).health == SourceHealth.BACKING_OFF
+    assert (await store.subscription(PRINCIPAL.account, second.id)).health == SourceHealth.HEALTHY
     page = await store.read(PRINCIPAL.account, first.inbox_id, 0, 128)
-    assert len(page.entries) == 2
-    assert {
-        entry.event.subscription_id for entry in page.entries if isinstance(entry.event, SubscriptionHealthEvent)
-    } == {first.id, second.id}
-    assert all(entry.event.sequence == 1 for entry in page.entries if isinstance(entry.event, SubscriptionHealthEvent))
+    assert not page.entries
+    assert page.inbox.last_cursor == 0
+    assert await store.notice(claim) is None
 
 
 if __name__ == "__main__":

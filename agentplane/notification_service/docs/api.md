@@ -226,21 +226,16 @@ the debounce deadline. `next_work_at` is the worker's next scheduled inbox work,
 of notice delivery; `next_source_check_at` is only the individual subscription's reconciliation
 schedule. Offline runner states and event-dependent pacing have no guaranteed delivery time.
 
-## Subscription health transitions
+## Current subscription health
 
 `health` is `healthy`, `backing_off`, or `access_error`, independent of cancelled/expired lifecycle.
 It describes the last source-processing observation, not a guarantee of webhook coverage or runner
-availability. Source errors update the safe error and retry deadline; successful processing clears
-both. Access errors still retry so restoration can be discovered.
+availability. Subscription GET/list and the operator status stream expose the current health,
+safe error details and retry scheduling. Source failures update that state durably; successful
+processing clears the error and retry deadline. Access errors still retry so restoration can be
+discovered. Repeated errors can change the diagnostic details/deadline without changing health.
 
-Changes of health append `provider: notifications` entries transactionally with the subscription
-state. Identity is the subscription ID and a durable monotonic transition sequence; `event.health`
-names the new state and payload contains `error` and `retry_at`. Repeated failures or changed error
-text/deadlines within one health state do not append entries. Initial subscription creation does not
-announce a transition. Each overlapping subscription has its own health sequence. Cancellation,
-expiry and fenced stale workers cannot append new transitions. Entries use the ordinary inbox
-acknowledgement, debounce and runner delivery path; they never acknowledge themselves. A transition
-can be older than the current subscription view when an agent reads it.
-
-The operator stream exposes the same health beside lifecycle and retry scheduling. Filters still
-select lifecycle: a backing-off subscription is active but is labelled “backing off”, not “healthy”.
+Health changes never append inbox entries, advance inbox cursors or prepare agent notices. The
+inbox contains subscribed provider events, not service-health history. The frontend displays
+current health separately from lifecycle; a backing-off subscription remains active for filtering.
+Operational failure diagnostics belong in service logs.

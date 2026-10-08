@@ -26,7 +26,6 @@ from agentplane.notification_service.models import (
     SandboxNotificationStatus,
     SourceHealth,
     Subscribe,
-    SubscriptionHealthEvent,
     SubscriptionStatus,
     SubscriptionUpdate,
     SubscriptionView,
@@ -316,8 +315,6 @@ class Store:
                         summary = f"Action {event.request_id} · event {event.sequence}"
                         if isinstance(state, str):
                             summary += f" · {state[:80]}"
-                    elif isinstance(event, SubscriptionHealthEvent):
-                        summary = f"Subscription {event.subscription_id} · {event.health.value}"
                     else:
                         summary = f"GitHub {event.event.value}"
                         if event.action:
@@ -575,9 +572,8 @@ class Store:
             if row.cancelled or row.version != source.version or row.expires_at <= datetime.now(UTC):
                 return
             row.next_attempt = datetime.now(UTC) + timedelta(seconds=30 if error else 5)
-            await self.set_health(
-                session, inbox, row, SourceHealth.BACKING_OFF if error else SourceHealth.HEALTHY, error
-            )
+            row.health = SourceHealth.BACKING_OFF if error else SourceHealth.HEALTHY
+            row.error = error
             spec = Subscribe.model_validate(row.creation).source
             assert isinstance(spec, ActionsSource)
             assert row.actions_after_sequence is not None
@@ -618,25 +614,6 @@ class Store:
         if await session.get(Match, (subscription.id, existing.cursor)) is None:
             session.add(Match(subscription_id=subscription.id, cursor=existing.cursor))
 
-    async def set_health(
-        self, session: AsyncSession, inbox: Inbox, row: Subscription, health: SourceHealth, error: str | None
-    ) -> None:
-        row.error = error
-        if row.health == health:
-            return
-        row.health = health
-        row.health_sequence += 1
-        await self.append_event(
-            session,
-            inbox,
-            row,
-            SubscriptionHealthEvent(
-                provider="notifications", subscription_id=row.id, sequence=row.health_sequence, health=health
-            ),
-            {"error": error, "retry_at": row.next_attempt.isoformat() if error and row.next_attempt else None},
-        )
-        inbox.updated_at = datetime.now(UTC)
-
     async def source_failed(
         self,
         claim: Inbox,
@@ -647,12 +624,13 @@ class Store:
         health: SourceHealth = SourceHealth.BACKING_OFF,
     ) -> None:
         async with self.sessions.begin() as session:
-            inbox = await self.fenced(session, claim)
+            await self.fenced(session, claim)
             row = await session.get(Subscription, source.id)
             assert row is not None
             if not row.cancelled and row.version == source.version and row.expires_at > datetime.now(UTC):
                 row.next_attempt = datetime.now(UTC) + timedelta(seconds=retry_seconds)
-                await self.set_health(session, inbox, row, health, error)
+                row.health = health
+                row.error = error
                 await notify(session)
 
     async def ingest_github(
@@ -771,7 +749,8 @@ class Store:
                 await self.append_event(session, inbox, row, identity, delivery.payload)
             # An ingress commit during matching must not be overwritten by this worker's idle state.
             row.next_attempt = datetime.now(UTC) if more or row.generation != source.generation else None
-            await self.set_health(session, inbox, row, SourceHealth.HEALTHY, None)
+            row.health = SourceHealth.HEALTHY
+            row.error = None
             if matched:
                 inbox.updated_at = datetime.now(UTC)
             await notify(session)
