@@ -645,6 +645,12 @@ def test_open_lookup_reconciles_only_runner_confirmed_sessions(
     assert unconfirmed.json() == {"status": "unconfirmed", "session_id": public_id}
     assert client.get("/threads", params={"sandbox": "live", "session_id": public_id}).json() == []
 
+    result.failed = True
+    failed = client.get(path, params={"idempotency_key": "opaque-key"})
+    assert failed.json() == {"status": "failed", "session_id": public_id}
+    assert client.get("/threads", params={"sandbox": "live", "session_id": public_id}).json() == []
+
+    result.failed = False
     result.summary.CopyFrom(summary)
     for _ in range(2):  # Reconcile after a lost app mapping, then repeat idempotently.
         ready = client.get(path, params={"idempotency_key": "opaque-key"})
@@ -654,7 +660,7 @@ def test_open_lookup_reconciles_only_runner_confirmed_sessions(
     threads = client.get("/threads", params={"sandbox": "live", "session_id": public_id}).json()
     assert len(threads) == 1
     assert threads[0]["id"] == public_id
-    assert calls == ["opaque-key"] * 4
+    assert calls == ["opaque-key"] * 5
     assert client.get(path, params={"idempotency_key": ""}).status_code == 422
 
 

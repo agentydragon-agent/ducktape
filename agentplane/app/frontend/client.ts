@@ -279,7 +279,7 @@ export async function listSessions(sandbox: string): Promise<SessionSummary[]> {
   return data.map((row) => fromJson(SessionSummarySchema, row as JsonValue));
 }
 
-export type OpenStatus = { status: "absent" | "unconfirmed" | "ready"; session_id: string | null };
+export type OpenStatus = { status: "absent" | "unconfirmed" | "failed" | "ready"; session_id: string | null };
 
 export async function lookupOpen(sandbox: string, openKey: string): Promise<OpenStatus> {
   const { data, error } = await api.GET("/sandboxes/{name}/sessions/open", {

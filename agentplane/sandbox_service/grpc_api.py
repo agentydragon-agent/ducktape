@@ -369,14 +369,40 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             if public_id is None:
                 return protocol_pb2.LookupSessionResponse()
             result = protocol_pb2.LookupSessionResponse(session_id=str(public_id))
-            # DB reservation precedes runner Open. Never report an Open success based on
-            # the reservation alone (or mistake a stale Sandbox UID for this one).
+            # DB reservation precedes runner Open. Inventory includes sessions whose
+            # native handshake failed: a retained spec is not proof of a successful Open.
             async with self.runner(request.sandbox) as (client, _):
                 for summary in await client.list_sessions():
-                    if summary.session_id == f"r-{public_id}":
+                    if summary.session_id != f"r-{public_id}":
+                        continue
+                    if summary.setup_state in (runner_pb2.SETUP_STATE_FAILED, runner_pb2.SETUP_STATE_INTERRUPTED):
+                        result.failed = True
+                    elif summary.harness_state == runner_pb2.HARNESS_STATE_RUNNING:
                         result.summary.CopyFrom(summary)
+                    elif summary.last_cursor:
+                        # Observe the retained journal without a spec: this cannot restart
+                        # the harness or replay bootstrap. A stopped session may have
+                        # successfully run before stopping; an early exit may not.
+                        attachment = await client.attach(summary.session_id)
+                        try:
+                            while True:
+                                entry = await attachment.next_entry()
+                                kind = entry.event.WhichOneof("observation")
+                                if kind == "harness_started":
+                                    result.summary.CopyFrom(summary)
+                                    break
+                                if kind in ("harness_exited", "harness_launch_failed", "setup_interrupted") or (
+                                    kind == "setup_finished" and entry.event.setup_finished.exit_code != 0
+                                ):
+                                    result.failed = True
+                                    break
+                                if entry.cursor >= summary.last_cursor:
+                                    break
+                        finally:
+                            attachment.cancel()
+                    if result.HasField("summary"):
                         result.summary.session_id = str(public_id)
-                        break
+                    break
             return result
 
     @override
