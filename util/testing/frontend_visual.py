@@ -9,6 +9,7 @@ found in the runfiles, where `browser_launcher_assets` puts it.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import tempfile
@@ -54,6 +55,20 @@ def chromium_executable() -> str | None:
     return str(path) if (path := find_path("chrome_headless_shell/chrome-headless-shell")) else None
 
 
+def _font_pinned_profile() -> tempfile.TemporaryDirectory[str]:
+    user_data_parent = Path(os.environ.get("TEST_TMPDIR", tempfile.gettempdir()))
+    user_data_parent.mkdir(parents=True, exist_ok=True)
+    profile = tempfile.TemporaryDirectory(prefix="chrome-user-data-", dir=user_data_parent)
+    try:
+        user_data_dir = Path(profile.name)
+        (user_data_dir / "Default").mkdir()
+        (user_data_dir / "Default" / "Preferences").write_text(json.dumps(_FONT_PREFERENCES))
+    except OSError:
+        profile.cleanup()
+        raise
+    return profile
+
+
 @asynccontextmanager
 async def deterministic_browser_context(
     playwright: Playwright,
@@ -66,14 +81,10 @@ async def deterministic_browser_context(
     extra_args: Sequence[str] = (),
 ) -> AsyncIterator[BrowserContext]:
     """Own the browser and its font-pinned profile, including failed setup."""
-    user_data_parent = Path(os.environ.get("TEST_TMPDIR", tempfile.gettempdir()))
-    user_data_parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="chrome-user-data-", dir=user_data_parent) as profile:
-        user_data_dir = Path(profile)
-        (user_data_dir / "Default").mkdir()
-        (user_data_dir / "Default" / "Preferences").write_text(json.dumps(_FONT_PREFERENCES))
+    profile = await asyncio.to_thread(_font_pinned_profile)
+    try:
         async with await playwright.chromium.launch_persistent_context(
-            user_data_dir=profile,
+            user_data_dir=profile.name,
             headless=True,
             executable_path=chromium_executable(),
             args=[*DETERMINISTIC_BROWSER_ARGS, *extra_args],
@@ -87,6 +98,8 @@ async def deterministic_browser_context(
         ) as context:
             await context.add_init_script(frozen_clock_script(frozen_now_ms))
             yield context
+    finally:
+        await asyncio.to_thread(profile.cleanup)
 
 
 def frozen_clock_script(now_ms: int) -> str:

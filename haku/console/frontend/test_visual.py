@@ -65,7 +65,9 @@ def console_viewport() -> Viewport:
 async def console_view(
     visual: VisualHarness, color_scheme: Literal["light", "dark"], console_viewport: Viewport
 ) -> AsyncIterator[VisualPage]:
-    async with _fixture(visual, "console", color_scheme, width=console_viewport.width, height=console_viewport.height) as view:
+    async with _fixture(
+        visual, "console", color_scheme, width=console_viewport.width, height=console_viewport.height
+    ) as view:
         await _shell_ready(view)
         await _approvals_ready(view)
         yield view
@@ -85,7 +87,9 @@ def history_viewport() -> Viewport:
 async def history_view(
     visual: VisualHarness, color_scheme: Literal["light", "dark"], history_fixture: str, history_viewport: Viewport
 ) -> AsyncIterator[VisualPage]:
-    async with _fixture(visual, history_fixture, color_scheme, width=history_viewport.width, height=history_viewport.height) as view:
+    async with _fixture(
+        visual, history_fixture, color_scheme, width=history_viewport.width, height=history_viewport.height
+    ) as view:
         await _shell_ready(view)
         await _close_approvals(view)
         yield view
@@ -135,6 +139,7 @@ async def settings_view(
     ) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
+        await view.page.wait_for_selector("[aria-label='Loading Agents']", state="hidden")
         yield view
 
 
@@ -246,9 +251,7 @@ async def test_history_auto_approved(history_view: VisualPage, capture_name: str
 async def test_history_paged(history_view: VisualPage, capture_name: str) -> None:
     view = history_view
     await view.page.wait_for_selector("button:has-text('Load older calls')", state="attached")
-    await view.page.locator(".haku-page-scroll").evaluate(
-        "element => { element.scrollTop = element.scrollHeight; }"
-    )
+    await view.page.locator(".haku-page-scroll").evaluate("element => { element.scrollTop = element.scrollHeight; }")
     await view.capture(capture_name)
 
 

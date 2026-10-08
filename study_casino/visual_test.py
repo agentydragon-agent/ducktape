@@ -32,10 +32,10 @@ from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context, stability_style
 from util.testing.page_capture import wait_for_stable
-from util.testing.stable_capture import assert_repeatable_png
-from util.testing.visual_capture import VisualPage
 from util.testing.postgres_fixtures import start_postgres_container
+from util.testing.stable_capture import assert_repeatable_png
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.visual_capture import VisualPage
 from util.testing.visual_review import publish_review_png
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
@@ -161,8 +161,7 @@ def _post(origin: str, path: str, payload: dict) -> None:
     ids=["study", "casino_roulette", "casino_blackjack", "casino_slots", "prizes", "stats"],
 )
 async def test_casino_views_render(
-    playwright: Playwright, casino_server: str, viewport: ViewportSize,
-    query: str, visible_text: str, capture_name: str,
+    playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str, visible_text: str, capture_name: str
 ) -> None:
     # Two independently opened browsers, not two converged frames in one browser.
     frames = []
@@ -174,8 +173,7 @@ async def test_casino_views_render(
     output_dir = undeclared_outputs_dir()
     assert_repeatable_png(frames[0], frames[1], name=capture_name, diagnostics=output_dir)
     publish_review_png(
-        frames[0], output_dir=output_dir, title="Study Casino views",
-        name=f"{capture_name}.png", label=capture_name,
+        frames[0], output_dir=output_dir, title="Study Casino views", name=f"{capture_name}.png", label=capture_name
     )
 
 

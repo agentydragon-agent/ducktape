@@ -83,9 +83,7 @@ _TRANSACTION_VIEWPORTS = [(1280, 960), (390, 844), (320, 720)]
 @pytest.fixture
 async def page(playwright: Playwright) -> AsyncIterator[Page]:
     async with deterministic_browser_context(
-        playwright,
-        viewport={"width": 1280, "height": 960},
-        frozen_now_ms=_FROZEN_NOW_MS,
+        playwright, viewport={"width": 1280, "height": 960}, frozen_now_ms=_FROZEN_NOW_MS
     ) as context:
         yield await context.new_page()
 

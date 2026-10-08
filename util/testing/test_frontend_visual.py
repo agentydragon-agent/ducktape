@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -124,7 +126,7 @@ async def test_browser_and_profile_are_cleaned_up(
         ) as context:
             page = await context.new_page()
             pages.append(page)
-            assert len(list(tmp_path.glob("chrome-user-data-*"))) == 1
+            assert await asyncio.to_thread(lambda: len(list(tmp_path.glob("chrome-user-data-*")))) == 1
             if fail_in_body:
                 raise RuntimeError("test body failed")
 
@@ -133,8 +135,9 @@ async def test_browser_and_profile_are_cleaned_up(
             await use_browser()
     else:
         await use_browser()
-    assert pages and all(page.is_closed() for page in pages)
-    assert not list(tmp_path.glob("chrome-user-data-*"))
+    assert pages
+    assert all(page.is_closed() for page in pages)
+    assert not await asyncio.to_thread(lambda: list(tmp_path.glob("chrome-user-data-*")))
 
 
 @pytest.mark.parametrize("stage", ["launch", "initialization"])
@@ -151,11 +154,9 @@ async def test_failed_browser_setup_removes_profile(
         context.add_init_script.side_effect = RuntimeError("setup failed")
     monkeypatch.setattr(playwright.chromium, "launch_persistent_context", launch)
     with pytest.raises(RuntimeError, match="setup failed"):
-        async with deterministic_browser_context(
-            playwright, viewport={"width": 800, "height": 600}, frozen_now_ms=0
-        ):
+        async with deterministic_browser_context(playwright, viewport={"width": 800, "height": 600}, frozen_now_ms=0):
             raise AssertionError("failed setup must not yield a context")
-    assert not Path(launch.call_args.kwargs["user_data_dir"]).exists()
+    assert not await asyncio.to_thread(Path(launch.call_args.kwargs["user_data_dir"]).exists)
     if stage == "initialization":
         context.__aexit__.assert_awaited_once()
 
