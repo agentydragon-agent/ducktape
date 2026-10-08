@@ -3559,6 +3559,10 @@ spec:
       kind: Database
       name: notifications
       namespace: agentplane-testing
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: sandbox-service
+      namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
       name: agentplane-electric
@@ -3736,6 +3740,10 @@ spec:
     - apiVersion: postgresql.cnpg.io/v1
       kind: Database
       name: notifications
+      namespace: agentplane-staging
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: sandbox-service
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
