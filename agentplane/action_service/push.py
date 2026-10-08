@@ -19,14 +19,14 @@ from cryptography.hazmat.primitives import serialization
 from py_vapid import Vapid02
 from pydantic import BaseModel, Field, SecretStr
 from pywebpush import WebPusher
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql.elements import ColumnElement
 
 from agentplane.action_service.db import ActionRequestRow, PushDeliveryRow, PushSubscriptionRow
 from agentplane.action_service.models import ActionState, OperatorPrincipal
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import PUSH_CHANNEL, ActionUpdates
 
 logger = logging.getLogger(__name__)
 PUSH_TTL_SECONDS = 600
@@ -124,6 +124,7 @@ class PushSubscriptionStore:
             saved = await session.scalar(statement.returning(PushSubscriptionRow.endpoint))
             if saved is None:
                 raise ValueError("subscription belongs to another operator")
+            await session.execute(select(func.pg_notify(PUSH_CHANNEL, "")))
 
     async def list_for(self, operator: OperatorPrincipal) -> list[PushSubscriptionRow]:
         async with self._sessions() as session:
@@ -139,6 +140,7 @@ class PushSubscriptionStore:
             if row is None or (row.operator_issuer, row.operator_subject) != (operator.issuer, operator.subject):
                 return False
             await session.delete(row)
+            await session.execute(select(func.pg_notify(PUSH_CHANNEL, "")))
             return True
 
 
@@ -234,6 +236,7 @@ class ActionPushNotifier:
                 if result == "dead":
                     delivered = True
                     await session.delete(subscription)
+                    await session.execute(select(func.pg_notify(PUSH_CHANNEL, "")))
                 elif result == "sent":
                     delivered = True
                     await session.execute(

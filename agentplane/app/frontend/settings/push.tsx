@@ -1,5 +1,6 @@
 import { Button, Code, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState } from "react";
+import { followStream, type StreamConnection } from "../live_stream";
 
 type Device = { endpoint: string; user_agent: string | null; created_at: string };
 
@@ -25,6 +26,7 @@ export function PushSettings(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [current, setCurrent] = useState<string | null>(null);
+  const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -47,6 +49,13 @@ export function PushSettings(): JSX.Element {
     }
   }, []);
   useEffect(() => void refresh(), [refresh]);
+  useEffect(() => {
+    if (typeof EventSource === "undefined") return; // Non-browser unit test environment.
+    return followStream("/push/subscriptions/stream", {
+      events: { snapshot: (message) => setDevices(JSON.parse(message.data) as Device[]) },
+      onConnection: setConnection,
+    });
+  }, []);
 
   async function enable(): Promise<void> {
     setBusy(true);
@@ -138,9 +147,11 @@ export function PushSettings(): JSX.Element {
       >
         Register this browser
       </Button>
-      <Button variant="light" onClick={() => void refresh()} disabled={busy} loading={loading}>
-        Refresh notification settings
-      </Button>
+      {connection.phase === "reconnecting" && (
+        <Text role="status" c="dimmed" size="sm">
+          Connection lost; showing last registered browsers. Reconnecting…
+        </Text>
+      )}
       {devices.map((device) => (
         <Paper withBorder p="sm" key={device.endpoint}>
           <Group justify="space-between">

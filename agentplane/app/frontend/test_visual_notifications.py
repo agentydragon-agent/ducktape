@@ -12,6 +12,17 @@ pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.visua
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
+async def test_settings_push_registration_follows_other_browser(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/")
+    page = view.page
+    await page.get_by_role("button", name="Settings").click()
+    await page.get_by_role("tab", name="Notifications").click()
+    await expect(page.get_by_text("Second browser")).to_have_count(0)
+    await app.publish_push_browser()
+    await expect(page.get_by_text("Second browser")).to_be_visible()
+    await view.capture(name="settings_push_live_registration")
+
+
 async def test_thread_notifications(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
     page = view.page

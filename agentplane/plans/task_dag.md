@@ -461,9 +461,9 @@ boundary, separate from the deferred product capability profile in [Profiles](pr
 
 #### `NATIVE_SUBAGENT_THREADS` — adopt harness-native subagents as Threads
 
-The [characterization matrix](native_subagent_sessions.md) gates the shared session model. Passing
+The [characterization matrix](native_session_discovery.md#matrix) gates the shared session model. Passing
 scripted tests cover child creation/tool/completion and Claude continuation through `SendMessage`.
-The [harness-declared logical sessions proposal](native_session_discovery.md) sketches runner-owned
+The same plan’s [deferred design](native_session_discovery.md#proposed-shared-design) sketches runner-owned
 read-only discovery and its identity, attribution, and durability gates. Discovery is not implemented;
 independent control and native restart reconciliation remain evidence-gated follow-ups.
 
