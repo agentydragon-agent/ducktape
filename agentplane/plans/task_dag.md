@@ -910,6 +910,19 @@ Sandbox replacement, shared workspace/SA access, and historical archives after d
 Sandbox, but native Claude/Codex history, runner journal, workspace files, and resume
 metadata currently depend on runner storage inside the Sandbox lifecycle. An archive of
 rendered Events is not enough to reconstruct a native session or safely replay tool effects.
+
+**Restore authority question (preferred direction):** retain or copy a bounded, version-compatible
+snapshot of the native harness state (and separately the runner journal/workspace state),
+then asking the native harness to resume. Do not copy an entire home directory without
+inventorying credentials, paths, and per-Sandbox configuration. Reconstructing a new
+harness session from Agentplane's interpreted operations would make Agentplane the
+authority for harness-specific history, including opaque reasoning and tool outcomes;
+it could silently lose cacheable prefix fidelity or repeat side effects. Keep semantic
+reconstruction a separate, explicit design requiring native API support and evidence
+that exact resume semantics and cache behavior survive, not a fallback after snapshot
+restore fails. An unavailable or incompatible native snapshot means resume is unavailable
+for that Thread, not permission to synthesize a plausible transcript.
+
 Inventory the exact artifacts and version constraints for both harnesses and decide an
 owned, versioned export/snapshot and restore contract for a stable Thread identity. Quiesce
 and fence the old writer, copy a verifiable complete prefix and native state before
