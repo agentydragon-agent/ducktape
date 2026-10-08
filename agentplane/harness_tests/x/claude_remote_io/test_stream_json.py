@@ -36,57 +36,53 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
     )
     async with AnthropicMessages() as model:
         async with harness.start(model, subagents=True) as run:
-            try:
-                async with asyncio.timeout(45):
-                    prompt = await run.send("Delegate a child probe.")
+            async with asyncio.timeout(45):
+                prompt = await run.send("Delegate a child probe.")
+                async with await model.await_next_request() as exchange:
+                    assert exchange.request.texts("user")[-1] == "Delegate a child probe."
+                    assert "Agent" in exchange.request.tool_names
+                    assert "TaskOutput" not in exchange.request.tool_names
+                    await exchange.send(
+                        *sse.message_stream(
+                            [
+                                sse.ToolUse(
+                                    "toolu_stdio_child",
+                                    "Agent",
+                                    {
+                                        "description": "Same-version child probe",
+                                        "subagent_type": "general-purpose",
+                                        "prompt": "Reply STDIO_CHILD_DONE.",
+                                    },
+                                )
+                            ],
+                            model=MODEL,
+                        ).events
+                    )
+                async with await model.await_next_request() as first, await model.await_next_request() as second:
+                    parent, child = (first, second) if first.request.tool_results else (second, first)
+                    (launch,) = parent.request.tool_results
+                    assert launch.tool_use_id == "toolu_stdio_child"
+                    assert launch.is_error is False
+                    assert "Reply STDIO_CHILD_DONE." in "\n".join(child.request.texts("user"))
+                    await parent.send(*sse.message_stream([sse.Text("STDIO_PARENT_WAITING")], model=MODEL).events)
+                    await parent.close()
+                    initial = await prompt.result()
+                    assert initial.result == "STDIO_PARENT_WAITING"
+                    completed = run.events()
+                    if active:
+                        assert await run.crash() < 0
+                        await child.wait_client_closed()
+                    else:
+                        await child.send(*sse.message_stream([sse.Text("STDIO_CHILD_DONE")], model=MODEL).events)
+                if not active:
                     async with await model.await_next_request() as exchange:
-                        assert exchange.request.texts("user")[-1] == "Delegate a child probe."
-                        assert "Agent" in exchange.request.tool_names
-                        assert "TaskOutput" not in exchange.request.tool_names
+                        assert "STDIO_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
                         await exchange.send(
-                            *sse.message_stream(
-                                [
-                                    sse.ToolUse(
-                                        "toolu_stdio_child",
-                                        "Agent",
-                                        {
-                                            "description": "Same-version child probe",
-                                            "subagent_type": "general-purpose",
-                                            "prompt": "Reply STDIO_CHILD_DONE.",
-                                        },
-                                    )
-                                ],
-                                model=MODEL,
-                            ).events
+                            *sse.message_stream([sse.Text("STDIO_PARENT_DONE")], model=MODEL).events
                         )
-                    async with await model.await_next_request() as first, await model.await_next_request() as second:
-                        parent, child = (first, second) if first.request.tool_results else (second, first)
-                        (launch,) = parent.request.tool_results
-                        assert launch.tool_use_id == "toolu_stdio_child"
-                        assert launch.is_error is False
-                        assert "Reply STDIO_CHILD_DONE." in "\n".join(child.request.texts("user"))
-                        await parent.send(*sse.message_stream([sse.Text("STDIO_PARENT_WAITING")], model=MODEL).events)
-                        await parent.close()
-                        initial = await prompt.result()
-                        assert initial.result == "STDIO_PARENT_WAITING"
-                        completed = run.events()
-                        if active:
-                            assert await run.crash() < 0
-                            await child.wait_client_closed()
-                        else:
-                            await child.send(*sse.message_stream([sse.Text("STDIO_CHILD_DONE")], model=MODEL).events)
-                    if not active:
-                        async with await model.await_next_request() as exchange:
-                            assert "STDIO_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
-                            await exchange.send(
-                                *sse.message_stream([sse.Text("STDIO_PARENT_DONE")], model=MODEL).events
-                            )
-                        assert (await completed.result()).result == "STDIO_PARENT_DONE"
-                        if crash:
-                            assert await run.crash() < 0
-            except BaseException:
-                await run.crash()
-                raise
+                    assert (await completed.result()).result == "STDIO_PARENT_DONE"
+                    if crash:
+                        assert await run.crash() < 0
         captured = run.native_frames()
         (started,) = [frame for frame in captured if frame.get("subtype") == "task_started"]
         if active:
@@ -105,67 +101,63 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
                 for frame in captured
             )
         async with harness.start(model, subagents=True, resume_id=initial.session_id, initialize=False) as resumed:
-            try:
-                async with asyncio.timeout(45):
-                    # Keep background results independently observable while the
-                    # shared facade waits for the correlated initialization reply.
-                    automatic = resumed.events()
-                    reply = await resumed.initialize()
-                    assert isinstance(reply, wire.ControlResponseFrame)
-                    assert reply.response.subtype == "success"
-                    if active:
-                        notification_result = await automatic.result()
-                        assert not notification_result.is_error
-                        assert notification_result.result == ""
-                        assert notification_result.num_turns == 0
-                        events = resumed.events()
-                        while not any(
-                            frame.get("subtype") == "task_notification"
-                            for frame in resumed.native_frames()[len(captured) :]
-                        ):
-                            await events.next()
-                        (stopped,) = [
-                            frame
-                            for frame in resumed.native_frames()[len(captured) :]
-                            if frame.get("subtype") == "task_notification"
-                        ]
-                        assert stopped["task_id"] == started["task_id"]
-                        assert stopped["status"] == "stopped"
-                        assert "didn't finish before the previous session ended" in stopped["summary"]
-                    recovery = await resumed.send("Read the old child's result without restarting it.")
-                    async with await model.await_next_request() as exchange:
-                        if active:
-                            assert "STDIO_PARENT_WAITING" in exchange.request.texts("assistant")
-                        else:
-                            assert "STDIO_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
-                        assert "TaskOutput" not in exchange.request.tool_names
-                        await exchange.send(
-                            *sse.message_stream(
-                                [
-                                    sse.ToolUse(
-                                        "toolu_stdio_read",
-                                        "TaskOutput",
-                                        {"task_id": started["task_id"], "block": False},
-                                    )
-                                ],
-                                model=MODEL,
-                            ).events
-                        )
-                    async with await model.await_next_request() as exchange:
-                        (read,) = exchange.request.tool_results
-                        assert read.is_error is True
-                        assert "No such tool available: TaskOutput" in read.text
-                        await exchange.send(*sse.message_stream([sse.Text("STDIO_RESUMED")], model=MODEL).events)
-                    assert (await recovery.result()).result == "STDIO_RESUMED"
-                    notifications = [
+            async with asyncio.timeout(45):
+                # Keep background results independently observable while the
+                # shared facade waits for the correlated initialization reply.
+                automatic = resumed.events()
+                reply = await resumed.initialize()
+                assert isinstance(reply, wire.ControlResponseFrame)
+                assert reply.response.subtype == "success"
+                if active:
+                    notification_result = await automatic.result()
+                    assert not notification_result.is_error
+                    assert notification_result.result == ""
+                    assert notification_result.num_turns == 0
+                    events = resumed.events()
+                    while not any(
+                        frame.get("subtype") == "task_notification"
+                        for frame in resumed.native_frames()[len(captured) :]
+                    ):
+                        await events.next()
+                    (stopped,) = [
                         frame
                         for frame in resumed.native_frames()[len(captured) :]
                         if frame.get("subtype") == "task_notification"
                     ]
-                    assert len(notifications) == (1 if active else 0)
-            except BaseException:
-                await resumed.crash()
-                raise
+                    assert stopped["task_id"] == started["task_id"]
+                    assert stopped["status"] == "stopped"
+                    assert "didn't finish before the previous session ended" in stopped["summary"]
+                recovery = await resumed.send("Read the old child's result without restarting it.")
+                async with await model.await_next_request() as exchange:
+                    if active:
+                        assert "STDIO_PARENT_WAITING" in exchange.request.texts("assistant")
+                    else:
+                        assert "STDIO_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
+                    assert "TaskOutput" not in exchange.request.tool_names
+                    await exchange.send(
+                        *sse.message_stream(
+                            [
+                                sse.ToolUse(
+                                    "toolu_stdio_read",
+                                    "TaskOutput",
+                                    {"task_id": started["task_id"], "block": False},
+                                )
+                            ],
+                            model=MODEL,
+                        ).events
+                    )
+                async with await model.await_next_request() as exchange:
+                    (read,) = exchange.request.tool_results
+                    assert read.is_error is True
+                    assert "No such tool available: TaskOutput" in read.text
+                    await exchange.send(*sse.message_stream([sse.Text("STDIO_RESUMED")], model=MODEL).events)
+                assert (await recovery.result()).result == "STDIO_RESUMED"
+                notifications = [
+                    frame
+                    for frame in resumed.native_frames()[len(captured) :]
+                    if frame.get("subtype") == "task_notification"
+                ]
+                assert len(notifications) == (1 if active else 0)
 
 
 if __name__ == "__main__":
