@@ -115,17 +115,11 @@ async def serve_with_engine(settings: Settings, configuration: k8s_client.Config
             return {"status": "ok"}
 
         reconcile = asyncio.create_task(SandboxController(provisioning).run(), name="sandbox-provisioning")
-        history = (
-            asyncio.create_task(
-                HistoryIngester(
-                    history_store,
-                    resources.destinations,
-                    runner_grpc_channel_options=settings.runner_grpc_channel_options,
-                ).run(),
-                name="sandbox-session-history-ingestion",
-            )
-            if settings.history_ingestion_enabled
-            else None
+        history = asyncio.create_task(
+            HistoryIngester(
+                history_store, resources.destinations, runner_grpc_channel_options=settings.runner_grpc_channel_options
+            ).run(),
+            name="sandbox-session-history-ingestion",
         )
         try:
             await uvicorn.Server(
@@ -134,13 +128,11 @@ async def serve_with_engine(settings: Settings, configuration: k8s_client.Config
         finally:
             await server.stop(grace=5)
             reconcile.cancel()
-            if history is not None:
-                history.cancel()
+            history.cancel()
             with suppress(asyncio.CancelledError):
                 await reconcile
-            if history is not None:
-                with suppress(asyncio.CancelledError):
-                    await history
+            with suppress(asyncio.CancelledError):
+                await history
 
 
 def main() -> None:

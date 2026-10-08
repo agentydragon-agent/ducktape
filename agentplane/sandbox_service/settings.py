@@ -24,9 +24,6 @@ class Settings(BaseSettings):
 
     sandbox_namespace: str = Field(min_length=1)
     database_url: str | None = Field(default=None, min_length=1)
-    # Explicit shadow-mode gate. Enable only after the one-way existing-history
-    # import has been verified; the app remains the UI's raw Event authority.
-    history_ingestion_enabled: bool = False
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
     history_reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     platform_instructions: str = Field(min_length=1)
