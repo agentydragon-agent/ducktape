@@ -74,6 +74,7 @@ async def test_assertion_failure_reaps_process_group_and_retains_trace(tmp_path)
     process = AsyncNativeProcess(
         tmp_path, [sys.executable, "-c", HUNG_TREE], cwd=tmp_path, environment=dict(os.environ)
     )
+
     async def fail() -> None:
         async with process:
             assert await process.frames().next() == {"ready": True}
