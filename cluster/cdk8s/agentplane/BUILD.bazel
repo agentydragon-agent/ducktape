@@ -474,9 +474,9 @@ py_library(
     srcs = ["staging.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":app",
         ":actions",
         ":actions_staging_policies",
+        ":app",
         ":chart",
         ":command_sandbox",
         ":egress_credentials",

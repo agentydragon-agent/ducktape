@@ -454,9 +454,7 @@ class App(Construct):
 class RunnerTemplate(Construct):
     """Shared runner Pod and storage wiring; an image variant adds no authority or isolation."""
 
-    def __init__(
-        self, scope: Construct, id: str, env: Environment, *, name: str, image: str, description: str
-    ) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment, *, name: str, image: str, description: str) -> None:
         super().__init__(scope, id)
         self.env = env
         self._add_sandbox_template(name=name, image=image, description=description)
