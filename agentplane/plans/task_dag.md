@@ -733,36 +733,39 @@ returning the full transcript in a resume response; it does not replace this mig
 ### Fresh-process native resume and prefix-cache spikes
 
 These are separate **evidence questions per harness**, not automatic-recovery
-implementations or a promise that either vendor retains provider cache hits after
-process replacement. Start by extending `agentplane/acceptance/test_suspend_resume.py`:
-it already replaces the Sandbox Pod and verifies native resume plus retained context
-for Claude and Codex on the same Sandbox storage. Extend it with checks for stable
-identities and retained Event cursors, and instrument native prefix/reasoning continuity
-and measured cache reuse where observable (or use companion controlled harness tests
-for evidence the deployed path cannot expose). A copied-state target needs a separate
-variant/fixture because the current test reuses the Sandbox volume. Do not mistake a
-remembered marker or `resumed=True` for prefix identity, a cache hit, or portability
-across deleted storage. Use the pinned harness versions and a controlled,
-non-sensitive conversation containing a multi-turn prefix, tool interactions, and
-reasoning items where the upstream actually exposes them. Quiesce/kill the old process,
-copy only its documented or observed native session artifacts to a fresh harness
-process in a separate workspace/Sandbox, and issue
-native resume plus one new turn. Compare the actual outgoing model-request prefix with
-same-process continuation and a cold-start control, including opaque/cacheable reasoning
-state if observable. Record byte/structural differences rather than guessing from rendered
-transcripts. Measure provider-reported cache-read/creation tokens (or equivalent) at the
-same model and within the same cache TTL; distinguish an unobservable cache result from
-a demonstrated hit. Preserve redacted request/usage evidence and exact artifact inventory.
-Do not manufacture old reasoning content from an app Event archive.
+implementations. Extend ordinary Bazel targets in
+`agentplane/harness_tests/claude/test_turns.py` and
+`agentplane/harness_tests/codex/test_turns.py`: both already resume a real pinned
+harness in a fresh process against a mock model endpoint, and Codex asserts retained
+encrypted reasoning and prompt-cache key. Use `agentplane/runner/test_restart.py` for
+the runner-level writer/journal handoff when needed. No Sandbox Pod-level acceptance
+test is required for this native-state question; the existing
+`agentplane/acceptance/test_suspend_resume.py` tests same-volume lifecycle behavior,
+not transfer to new storage.
+
+For each harness, add a copied-state variant with an isolated new home/workspace and
+capture the model request at the mock endpoint. Use a controlled, non-sensitive
+multi-turn prefix with tool interactions and reasoning items where exposed. Stop the
+old process, copy only its documented or observed native session artifacts to the
+isolated test workspace, and issue native resume plus one new turn. Compare the actual
+outgoing model-request prefix with same-process continuation and a cold-start control,
+including opaque/cacheable reasoning state if observable. Record byte/structural
+differences rather than guessing from rendered transcripts. A mock response's
+cache-usage fields cannot prove a real provider cache hit: if cheap warm continuation
+requires that claim, run a separate, bounded real-provider usage probe at the same
+model and within the cache TTL, and distinguish unavailable metrics from a
+demonstrated hit. Preserve redacted request/usage evidence and exact artifact
+inventory. Do not manufacture old reasoning content from an app Event archive.
 
 - **`CLAUDE_FRESH_RESUME_CACHE_SPIKE`:** test Claude Code's native saved-session resume
   into a fresh CLI process with both unchanged local state and a copied-state target.
   Pin whether its continued request carries the same cacheable user/assistant/tool and
-  reasoning prefix, and whether Anthropic reports a cache hit versus full prefix creation.
+  reasoning prefix; test provider-reported cache hits separately from mock-model CI.
 - **`CODEX_FRESH_RESUME_CACHE_SPIKE`:** test Codex app-server's native thread resume in
   a fresh process with the same two state placements. Pin which persisted history and
-  reasoning/opaque items its continued request uses, and actual provider cache-usage
-  evidence; do not infer prefix equivalence from a successful `thread/resume` reply.
+  reasoning/opaque items its continued request uses; test actual provider cache usage
+  separately from mock-model CI. Do not infer prefix equivalence from a successful
+  `thread/resume` reply.
 
 A full cache miss, loss of reasoning continuity, or absent metrics is a **finding** for
 that harness, not a license to invent replay or bulldoze past a native limitation. If
