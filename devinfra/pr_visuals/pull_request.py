@@ -26,7 +26,5 @@ def find_reviewable_pull_request(*, repository: str, head: str, head_sha: str, t
     """
     with Github(auth=Auth.Token(token)) as github:
         pulls = github.get_repo(repository).get_pulls(state="all", head=head)
-        pull = only(
-            [pull for pull in pulls if pull.head.sha == head_sha and (pull.state == "open" or pull.merged)]
-        )
+        pull = only([pull for pull in pulls if pull.head.sha == head_sha and (pull.state == "open" or pull.merged)])
         return None if pull is None else PullRequestRef(number=pull.number, base_sha=pull.base.sha)

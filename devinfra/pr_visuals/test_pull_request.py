@@ -16,7 +16,11 @@ def _pull(
     number: int, *, head_sha: str = HEAD_SHA, base_sha: str = "b" * 40, state: str = "open", merged: bool = False
 ) -> SimpleNamespace:
     return SimpleNamespace(
-        number=number, head=SimpleNamespace(sha=head_sha), base=SimpleNamespace(sha=base_sha), state=state, merged=merged
+        number=number,
+        head=SimpleNamespace(sha=head_sha),
+        base=SimpleNamespace(sha=base_sha),
+        state=state,
+        merged=merged,
     )
 
 
@@ -43,7 +47,9 @@ class FakeGithub:
 def _find(monkeypatch: pytest.MonkeyPatch, pulls: list[SimpleNamespace]) -> tuple[PullRequestRef | None, FakeGithub]:
     github = FakeGithub(pulls)
     monkeypatch.setattr(pull_request, "Github", lambda **_kwargs: github)
-    found = find_reviewable_pull_request(repository="example/repo", head="fork-owner:topic", head_sha=HEAD_SHA, token="t")
+    found = find_reviewable_pull_request(
+        repository="example/repo", head="fork-owner:topic", head_sha=HEAD_SHA, token="t"
+    )
     return found, github
 
 
