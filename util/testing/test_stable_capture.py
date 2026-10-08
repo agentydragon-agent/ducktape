@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Page
 
-from util.testing.stable_capture import assert_repeatable_png, stable_full_page_png
+from util.testing.stable_capture import stable_full_page_png
 
 
 async def test_returns_only_after_two_consecutive_identical_frames(tmp_path: Path) -> None:
@@ -39,14 +39,6 @@ async def test_capture_deadline_retains_frames_before_a_stalled_screenshot(tmp_p
     with pytest.raises(AssertionError, match="scene: capture did not finish within 200ms"):
         await stable_full_page_png(page, name="scene", diagnostics=tmp_path, timeout_ms=200)
     assert _read_frames(tmp_path) == [b"first frame"]
-
-
-def test_fresh_render_comparison_only_writes_diagnostics_on_mismatch(tmp_path: Path) -> None:
-    assert_repeatable_png(b"same", b"same", name="repeat", diagnostics=tmp_path)
-    assert not list(tmp_path.iterdir())
-    with pytest.raises(AssertionError, match="repeat: fresh renders differ"):
-        assert_repeatable_png(b"first", b"second", name="repeat", diagnostics=tmp_path)
-    assert _read_frames(tmp_path) == [b"first", b"second"]
 
 
 def _read_frames(directory: Path) -> list[bytes]:

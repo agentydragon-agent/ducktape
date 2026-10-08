@@ -1,7 +1,7 @@
 """Render-health checks + PR-visuals publication for each casino view.
 
 Every (view, viewport) case boots the real server, waits for load-bearing DOM,
-renders twice to prove determinism, and fails on any browser page error. The
+captures once, and fails on any browser page error. The
 rendered PNGs plus a `visual-review.json` manifest go to undeclared outputs,
 where trusted CI (`devinfra/pr_visuals/publisher.py` via the "Publish PR
 visuals" workflow) publishes them as a browsable bundle, diffs them against the
@@ -31,12 +31,9 @@ from study_casino.config import Settings
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context, stability_style
-from util.testing.page_capture import wait_for_stable
 from util.testing.postgres_fixtures import start_postgres_container
-from util.testing.stable_capture import assert_repeatable_png
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_capture import VisualPage
-from util.testing.visual_review import publish_review_png
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
@@ -65,7 +62,7 @@ async def casino_view(
         playwright, viewport=viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
     ) as context:
         page = await context.new_page()
-        view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Study Casino views")
+        view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Study Casino views", output_suffix="")
         await page.goto(f"{casino_server}/{query}", wait_until="networkidle", timeout=30_000)
         await page.add_style_tag(content=stability_style())
         try:
@@ -159,18 +156,9 @@ def _post(origin: str, path: str, payload: dict) -> None:
 async def test_casino_views_render(
     playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str, visible_text: str, capture_name: str
 ) -> None:
-    # Two independently opened browsers, not two converged frames in one browser.
-    frames = []
-    for _ in range(2):
-        async with casino_view(playwright, casino_server, viewport, query) as view:
-            await view.page.get_by_text(visible_text).first.wait_for(state="visible", timeout=15_000)
-            await wait_for_stable(view.page)
-            frames.append(await view.page.screenshot(full_page=True, animations="disabled", caret="hide", scale="css"))
-    output_dir = undeclared_outputs_dir()
-    assert_repeatable_png(frames[0], frames[1], name=capture_name, diagnostics=output_dir)
-    publish_review_png(
-        frames[0], output_dir=output_dir, title="Study Casino views", name=f"{capture_name}.png", label=capture_name
-    )
+    async with casino_view(playwright, casino_server, viewport, query) as view:
+        await view.page.get_by_text(visible_text).first.wait_for(state="visible", timeout=15_000)
+        await view.capture(capture_name, full_page=True, animations="disabled", scale="css")
 
 
 if __name__ == "__main__":

@@ -37,9 +37,3 @@ def _write_frames(diagnostics: Path, name: str, frames: list[bytes]) -> None:
     for index, frame in enumerate(frames):
         (diagnostics / f"{name}.attempt{index}.png").write_bytes(frame)
 
-
-def assert_repeatable_png(first: bytes, second: bytes, *, name: str, diagnostics: Path) -> None:
-    """Compare independently rendered states; retain both images only on failure."""
-    if first != second:
-        _write_frames(diagnostics, name, [first, second])
-        raise AssertionError(f"{name}: fresh renders differ; inspect {diagnostics}")

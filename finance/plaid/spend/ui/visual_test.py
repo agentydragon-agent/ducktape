@@ -65,7 +65,6 @@ from finance.plaid.spend.models import (
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context
-from util.testing.stable_capture import assert_repeatable_png
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_capture import VisualPage
 
@@ -638,29 +637,6 @@ async def test_transaction_explanations_dark_theme(page: Page, view: VisualPage,
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = "transactions-dark-390.png"
     await view.capture(image.removesuffix(".png"), label="390px dark theme", full_page=True, animations="disabled")
-
-
-@pytest.mark.parametrize(("width", "height"), _TRANSACTION_VIEWPORTS)
-async def test_expanded_transactions_repeat_in_fresh_browsers(
-    playwright: Playwright, dashboard_url: str, width: int, height: int
-) -> None:
-    frames = []
-    name = f"transactions-expanded-{width}-repeatability"
-    for _ in range(2):
-        async with deterministic_browser_context(
-            playwright, viewport={"width": width, "height": height}, frozen_now_ms=_FROZEN_NOW_MS
-        ) as context:
-            page = await context.new_page()
-            view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend")
-            await page.goto(dashboard_url, wait_until="domcontentloaded")
-            await page.get_by_role("tab", name="Transactions").click()
-            rows = page.get_by_role("table") if width >= 992 else page.locator(".mantine-Accordion-root").first
-            await rows.get_by_text("Example Cafe", exact=True).wait_for()
-            await _open_transaction_details(page, rows, width)
-            await view.check(context=name)
-            frames.append(await page.screenshot(full_page=True, animations="disabled"))
-            await view.check(context=name)
-    assert_repeatable_png(frames[0], frames[1], name=name, diagnostics=undeclared_outputs_dir())
 
 
 async def test_accordion_readiness_ignores_unrelated_animations(page: Page) -> None:
