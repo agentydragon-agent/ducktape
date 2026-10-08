@@ -906,14 +906,17 @@ platform-independent UI-friendly projections (retaining links to richer native/d
 evidence), or move alongside the archive if agent readers need the normalized view
 there. A shared, versioned fold implementation need not dictate where its materialized
 rows live. Either choice requires a documented replay, lag, error, native-link and
-authorization contract once archive and fold commits are decoupled. One `read` grant
-covers both folded and raw/native representations of the same history. If agents need
-folded reads through Sandbox Service while folds remain app-only, do not have Sandbox
-Service fetch them from the app: either materialize an agent-facing projection from
-the archived Events independently or defer folded agent reads. Keep canonical
-classification and grants in the archive authority, with the durable Session/Thread
-association available there without querying the app. An independent history service
-upstream of both the app and Sandbox Service is another acyclic option. Do not trust
+authorization contract once archive and fold commits are decoupled. For the first
+agent-facing cutover, serve the retained raw Session Events through Sandbox Service;
+keep the app's existing folds for its UI, with no agent-facing folded-read requirement
+and no duplicate projector. One `read` grant covers both folded and raw/native
+representations of the same history **when** a folded agent route is introduced.
+If that route is added while folds remain app-only, do not have Sandbox Service fetch
+them from the app: materialize an agent-facing projection from the archived Events
+independently or defer the route. Keep canonical classification and grants in the
+archive authority, with the durable Session/Thread association available without
+querying the app. An independent history service upstream of both the app and
+Sandbox Service is another acyclic option. Do not trust
 an arbitrary forwarded caller header. Moving the Event archive does not itself make
 native harness state portable.
 
