@@ -69,8 +69,8 @@
       "sha256": "/ZWzyXZkg0HNtNYcX85JXHd1zumDUN4LA+OQjz1TSO8="
     },
     "skill-buildbuddy_api": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-buildbuddy_api-7b751a6df90e/buildbuddy_api.skill",
-      "sha256": "e3UabfkObD2fNGl/jHAKswKFa2YINBcHtSEWYNucQtA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-buildbuddy_api-c3643e62a269/buildbuddy_api.skill",
+      "sha256": "w2Q+YqJpt3vqq8IhdcMY5rlvhK0II6hLbXdZqpwPpWw="
     },
     "skill-cihealth": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cihealth-eea28084d226/cihealth.skill",
