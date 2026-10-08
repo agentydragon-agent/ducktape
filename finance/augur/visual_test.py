@@ -31,6 +31,7 @@ from finance.evidence.markets import Platform
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context, stability_style
+from util.testing.page_capture import wait_for_stable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_capture import VisualPage
 
@@ -46,7 +47,8 @@ FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
 
 
 async def _wait_for_product_chart_geometry(page: Page) -> None:
-    """Wait for ResizeObserver-fed chart coordinates to catch up with the visible SVG width."""
+    """Wait for font layout, then ResizeObserver-fed coordinates within the visible SVG width."""
+    await wait_for_stable(page)
     await page.wait_for_function(
         """
         () => {
@@ -121,7 +123,6 @@ async def _click_terminal_distribution_percentile(page: Page, *, percentile: flo
 
 async def _wait_for_product_page(page: Page) -> None:
     """Wait for the product surface's net-worth fan to render at non-zero height."""
-    await page.add_style_tag(content=stability_style())
     await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
     await page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
     await page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
@@ -145,7 +146,6 @@ async def _wait_for_product_page(page: Page) -> None:
         timeout=30_000,
     )
     assert await page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
-    await page.evaluate("() => document.fonts.ready.then(() => true)")
     await _wait_for_product_chart_geometry(page)
     await _wait_for_terminal_distribution_density(page, min_series=1)
 
@@ -215,7 +215,6 @@ async def _wait_for_property_panel(page: Page) -> None:
 
 async def _wait_for_distribution_failures(page: Page) -> None:
     """Inspect a stopped book without placing it in the terminal-wealth distribution."""
-    await page.add_style_tag(content=stability_style())
     await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
     await page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
     await _wait_for_terminal_distribution_density(page, min_series=1)
@@ -228,7 +227,6 @@ async def _wait_for_distribution_failures(page: Page) -> None:
     await page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
     assert await page.locator("[data-product-distribution-failed]").count() == 0
     assert await page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
-    await page.evaluate("() => document.fonts.ready.then(() => true)")
     await _wait_for_product_chart_geometry(page)
 
 
@@ -238,7 +236,6 @@ async def _wait_for_calibration_page(page: Page) -> None:
     The tab now auto-runs on load (no button), so the screenshot captures the scored-markets
     table and the issuer mark fan. Hermetic prices are served by the in-process server, so the
     auto-run resolves without touching the network."""
-    await page.add_style_tag(content=stability_style())
     await page.locator("[data-augur-surface='calibration']").wait_for(state="visible", timeout=30_000)
     await page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
     await page.locator("[data-augur-tab='calibration'][data-active]").wait_for(state="visible", timeout=30_000)
@@ -246,7 +243,6 @@ async def _wait_for_calibration_page(page: Page) -> None:
     await page.locator("[data-calibration-categorical-chart]").first.wait_for(state="visible", timeout=30_000)
     await page.locator("[data-calibration-mark-fan]").wait_for(state="visible", timeout=30_000)
     assert await page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
-    await page.evaluate("() => document.fonts.ready.then(() => true)")
 
 
 # A single Base scenario that buys the fixture property `location_a_property` and carries three
@@ -326,7 +322,6 @@ async def _wait_for_scenario_comparison(page: Page) -> None:
     """Wait for the multi-scenario overlay: the scenario bar, the editor spreadsheet with a Base +
     two variant columns (and the per-scenario "Property to buy" row), three scenario fans + legend,
     and the per-scenario comparison table."""
-    await page.add_style_tag(content=stability_style())
     await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
     await page.locator("[data-product-scenario-tabs]").wait_for(state="visible", timeout=30_000)
     await page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
@@ -346,7 +341,6 @@ async def _wait_for_scenario_comparison(page: Page) -> None:
     # The terminal-distribution chart overlays one dense line per variant (all three present).
     await _wait_for_terminal_distribution_density(page, min_series=3)
     assert await page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
-    await page.evaluate("() => document.fonts.ready.then(() => true)")
     await _wait_for_product_chart_geometry(page)
 
 
@@ -445,15 +439,20 @@ async def view(page: Page, capture_name: str) -> AsyncIterator[VisualPage]:
         view.errors.assert_none(context=capture_name)
 
 
+async def _open_page(page: Page, url: str) -> None:
+    await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+    await page.add_style_tag(content=stability_style())
+
+
 @pytest.fixture
 async def comparison_view(view: VisualPage, augur_server: str) -> VisualPage:
-    await view.page.goto(f"{augur_server}{_COMPARISON_URL}", wait_until="networkidle", timeout=60_000)
+    await _open_page(view.page, f"{augur_server}{_COMPARISON_URL}")
     await _wait_for_scenario_comparison(view.page)
     return view
 
 
 async def test_product_cash_runway(view: VisualPage, augur_server: str) -> None:
-    await view.page.goto(f"{augur_server}/product?n=32", wait_until="networkidle", timeout=60_000)
+    await _open_page(view.page, f"{augur_server}/product?n=32")
     await _wait_for_product_page(view.page)
     await _select_first_rollout(view.page)
     await _wait_for_product_chart_geometry(view.page)
@@ -462,7 +461,7 @@ async def test_product_cash_runway(view: VisualPage, augur_server: str) -> None:
 
 
 async def test_product_property_lifecycle(view: VisualPage, augur_server: str) -> None:
-    await view.page.goto(f"{augur_server}{_PROPERTY_LIFECYCLE_URL}", wait_until="networkidle", timeout=60_000)
+    await _open_page(view.page, f"{augur_server}{_PROPERTY_LIFECYCLE_URL}")
     await _wait_for_property_panel(view.page)
     await view.page.evaluate("() => window.scrollTo(0, 0)")
     await view.capture(full_page=True, animations="disabled", scale="css")
@@ -495,14 +494,14 @@ async def test_product_scenario_focus(comparison_view: VisualPage) -> None:
 
 
 async def test_product_distribution_failures(view: VisualPage, augur_server: str) -> None:
-    await view.page.goto(f"{augur_server}{_FAILURE_URL}", wait_until="networkidle", timeout=60_000)
+    await _open_page(view.page, f"{augur_server}{_FAILURE_URL}")
     await _wait_for_distribution_failures(view.page)
     await view.page.evaluate("() => window.scrollTo(0, 0)")
     await view.capture(full_page=True, animations="disabled", scale="css")
 
 
 async def test_calibration_page(view: VisualPage, augur_server: str) -> None:
-    await view.page.goto(f"{augur_server}/product?tab=calibration", wait_until="networkidle", timeout=60_000)
+    await _open_page(view.page, f"{augur_server}/product?tab=calibration")
     await _wait_for_calibration_page(view.page)
     await view.page.evaluate("() => window.scrollTo(0, 0)")
     await view.capture(full_page=True, animations="disabled", scale="css")
