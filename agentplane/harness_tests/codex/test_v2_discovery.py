@@ -51,19 +51,14 @@ async def server(codex: CodexHarness, model: OpenAIResponses, incarnation: str) 
             **scenarios.environment(endpoint=endpoint, token="test-key", codex_home=str(codex.codex_home)),
         },
     ) as process:
-        try:
-            await rpc(
-                process,
-                "initialize",
-                clientInfo={"name": "agentplane-v2-probe", "version": "0.1"},
-                capabilities={"experimentalApi": True},
-            )
-            await process.send(driver.initialized())
-            yield process
-        except BaseException:
-            if process.alive():
-                await process.crash()
-            raise
+        await rpc(
+            process,
+            "initialize",
+            clientInfo={"name": "agentplane-v2-probe", "version": "0.1"},
+            capabilities={"experimentalApi": True},
+        )
+        await process.send(driver.initialized())
+        yield process
 
 
 async def listed(process: AsyncNativeProcess, method: str, **params: Any) -> list[Any]:

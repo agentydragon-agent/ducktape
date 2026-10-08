@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import signal
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -110,7 +112,16 @@ class AsyncNativeProcess:
         self._stderr_task = asyncio.create_task(self._stderr())
         return self
 
-    async def __aexit__(self, *_: object) -> None:
+    async def __aexit__(self, exc_type: type[BaseException] | None, *_: object) -> None:
+        # A failed/cancelled test must not wait for a model request or tool that
+        # the test will never answer. Each fixture has its own process group.
+        # Keep ordinary successful exit graceful: recovery probes rely on it.
+        if exc_type is not None and self.alive():
+            assert self.process is not None
+            try:
+                os.killpg(self.process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass  # The process group exited between the liveness check and signal.
         await self.close()
 
     async def send(self, frame: BaseModel) -> None:

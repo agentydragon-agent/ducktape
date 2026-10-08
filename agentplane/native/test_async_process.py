@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
@@ -56,6 +57,74 @@ async def test_waiting_for_a_frame_reports_reader_failure(tmp_path) -> None:
     with pytest.raises(json.JSONDecodeError):
         async with AsyncNativeProcess(tmp_path, command, cwd=tmp_path, environment=dict(os.environ)) as process:
             await process.frames().next()
+
+
+HUNG_TREE = """
+import json
+import subprocess
+import sys
+import time
+subprocess.Popen([sys.executable, "-c", "import time; time.sleep(3600)"])
+print(json.dumps({"ready": True}), flush=True)
+time.sleep(3600)
+"""
+
+
+async def test_assertion_failure_reaps_process_group_and_retains_trace(tmp_path) -> None:
+    process = AsyncNativeProcess(
+        tmp_path, [sys.executable, "-c", HUNG_TREE], cwd=tmp_path, environment=dict(os.environ)
+    )
+    async with asyncio.timeout(5):
+        with pytest.raises(AssertionError, match="probe failed"):
+            async with process:
+                assert await process.frames().next() == {"ready": True}
+                raise AssertionError("probe failed")
+    assert not process.alive()
+    assert process.process is not None
+    assert process.process.returncode is not None and process.process.returncode < 0
+    assert process.stdout_frames() == [{"ready": True}]
+    # The descendant inherited stdout. Reaching here also proves that the
+    # reader drained to EOF rather than hanging on an abandoned descendant.
+
+
+async def test_cancellation_reaps_process_group_without_swallowing_cancel(tmp_path) -> None:
+    process = AsyncNativeProcess(
+        tmp_path, [sys.executable, "-c", HUNG_TREE], cwd=tmp_path, environment=dict(os.environ)
+    )
+    ready = asyncio.Event()
+
+    async def drive() -> None:
+        async with process:
+            assert await process.frames().next() == {"ready": True}
+            ready.set()
+            await asyncio.Event().wait()
+
+    async with asyncio.timeout(5):
+        task = asyncio.create_task(drive())
+        try:
+            await ready.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+    assert not process.alive()
+    assert process.stdout_frames() == [{"ready": True}]
+
+
+async def test_successful_exit_remains_graceful(tmp_path) -> None:
+    command = [
+        sys.executable,
+        "-c",
+        "import sys; print('{\"ready\": true}', flush=True); sys.stdin.read(); print('{\"closed\": true}', flush=True)",
+    ]
+    async with AsyncNativeProcess(tmp_path, command, cwd=tmp_path, environment=dict(os.environ)) as process:
+        assert await process.frames().next() == {"ready": True}
+    assert process.process is not None
+    assert process.process.returncode == 0
+    assert process.stdout_frames() == [{"ready": True}, {"closed": True}]
 
 
 if __name__ == "__main__":
