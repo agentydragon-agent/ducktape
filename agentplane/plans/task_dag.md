@@ -829,13 +829,14 @@ current container correctness work and ordinary Sandbox Service extraction.
 
 ### `THREAD_EVENT_CONTINUITY` — one runner-owned Thread Event log through harness resume
 
-**Deferred identity decision:** decide whether the app's `thread_id` and the runner's persistent
-`session_id` should share one stable identity. Carrying two IDs for one conversation across UI,
-HTTP, and resume paths can suggest that resuming creates a new session. A shared identity could make
-the conversation identity consistent end to end; separate IDs may still be right for the app's
-product identity versus the runner's storage/recovery ownership. Record the choice and its rationale
-in the identity cutover. This decision does not change the immediate rule: shutdown/resume reopens
-the same runner session under the same Thread.
+**Keep the identities distinct:** a Thread is the product conversation, archived Events,
+projection, and operator metadata; a runner Session is the execution/resume object in
+a Sandbox. A Thread's read authority and lifetime are not the authority or lifetime of
+a runner Session. Retain an explicit, durable Thread-to-Session association and source
+provenance rather than equating `thread_id` with `session_id`, even if today's mapping is
+one-to-one. Shutdown/resume on the same retained storage reopens the existing Session
+under the same Thread; a future disposable Sandbox may need a new Session association
+without replacing the Thread or pretending the old Session still exists.
 
 **Identity/storage cutover:** implement
 [one high-water mark per Event log](../docs/thread_layering.md#one-event-high-water-mark-per-log-across-harness-sessions):
@@ -910,8 +911,12 @@ revocation, operator access, and restart/lag cases. If a legacy conversion is
 destructive, make its loss explicit and deliberate rather than silently presenting
 incomplete histories as resumable. Split implementation into independently testable
 owner/ingestion/read/cutover slices after choosing the contract. Immediate
-`THREAD_READ_POLICY` must work in the current app first, with semantics portable to
-the eventual archive owner.
+`THREAD_READ_POLICY` can work while the app still owns the archive; its semantics must
+be portable to the eventual archive owner. If Sandbox Service exposes a Thread read API
+first, it must use an authorized durable archive source, not `FollowSession`: that RPC
+follows a runner Session and cannot serve a Thread retained after Sandbox deletion.
+Moving archive ownership first is a separate option. Neither path confers Thread-read
+authority from permission to inspect a Sandbox or Session.
 
 ### `SANDBOX_COMPARTMENT_BOUNDARY` — do not mistake Thread ACLs for isolation
 

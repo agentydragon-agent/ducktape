@@ -87,11 +87,14 @@ a “session”; it already spans process restarts. That existing name does not 
 the target product Thread/incarnation relationship. The identity cutover must make the
 mapping explicit without duplicating the log's static Sandbox on each association.
 
-TODO: consider unifying the durable runner session and product Thread identity. Resume already
-reuses the same session and native conversation; a new process is an incarnation, not a new
-session. Two names currently suggest a lifecycle distinction that does not exist. Resolve the
-identity/ownership boundary consistently rather than implying conversations transfer between
-harness types.
+The product Thread and the runner Session are distinct authorities even while today's
+association is one-to-one: a Thread is the durable archived conversation with its
+operator-set presentation, while a Session is the runner's execution/resume object
+inside a Sandbox. Do not equate their IDs or confer Thread-read authority merely from
+access to the current Session. Resume on retained Sandbox storage reuses the existing
+Session and native conversation; a fresh process is an incarnation, not a new Thread.
+A future portable Thread might associate with a new Session in a new Sandbox without
+losing its archive identity. Track that association and Event source explicitly.
 
 A runner's Event sequence goes into a Thread but is not itself the Thread. The app mints
 the Event log when it first sees a runner session and copies the runner's Events into it, along
