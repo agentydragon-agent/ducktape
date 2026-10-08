@@ -1,4 +1,4 @@
-import { Alert, Badge, Box, Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { Alert, Badge, Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
 import { type JSX, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { displayableError, mcpLinkageService, type McpLinkageService, type McpLinkageView } from "../client";
@@ -172,8 +172,7 @@ export function McpServers({
 
   return (
     <Stack>
-      <Group justify="space-between">
-        <Title order={2}>MCP servers</Title>
+      <Group justify="flex-end">
         <Button variant="light" loading={loading} disabled={busy !== null} onClick={() => void load()}>
           Refresh
         </Button>

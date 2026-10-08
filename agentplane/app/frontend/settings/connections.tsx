@@ -1,4 +1,4 @@
-import { Alert, Button, Group, Stack, Table, Text, Title } from "@mantine/core";
+import { Alert, Button, Group, Stack, Table, Text } from "@mantine/core";
 import { followStream, type StreamConnection } from "../live_stream";
 import { type JSX, useCallback, useEffect, useState } from "react";
 
@@ -99,9 +99,6 @@ export function Connections({ service = connectionService }: { service?: Connect
 
   return (
     <Stack>
-      <Group justify="space-between">
-        <Title order={2}>OAuth clients</Title>
-      </Group>
       <Text c="dimmed" size="sm">
         Named external clients and the ServiceAccount their most recent grant acts as. Unlink revokes authority without
         deleting history or stopping already claimed work; changing the bound ServiceAccount requires a fresh
