@@ -13,6 +13,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.grpc_options import grpc_channel_option_kvps
+from agentplane.protocol import event_log_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
@@ -40,7 +41,7 @@ async def copy_confirmed_prefix(
         if through < cursor:
             raise HistoryConflictError(f"runner history regressed below copied cursor {cursor}")
         while cursor < through:
-            batch = []
+            batch: list[event_log_pb2.EventEntry] = []
             while len(batch) < batch_size and cursor < through:
                 try:
                     entry = await attachment.next_entry()

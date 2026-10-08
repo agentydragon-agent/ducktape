@@ -447,6 +447,7 @@ py_library(
 
 py_test(
     name = "test_grpc_api",
+    size = "medium",
     srcs = ["test_grpc_api.py"],
     deps = [
         ":client",

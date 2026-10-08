@@ -28,6 +28,7 @@ py_library(
     deps = [
         ":store",
         "//agentplane:grpc_options",
+        "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:client",
         "//agentplane/runner:errors",
         "//agentplane/sandbox_service:destinations",
