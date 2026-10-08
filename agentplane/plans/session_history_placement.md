@@ -1,6 +1,6 @@
-# Session Event archive placement and first cutover
+# Session Event history placement and first cutover
 
-Status: **proposed implementation decision** for the raw-archive extraction. This is
+Status: **proposed implementation decision** for the raw-history extraction. This is
 not an implemented migration or a permission grant. The separate [task DAG](task_dag.md)
 ([expanded in #9411](https://github.com/agentydragon/ducktape/pull/9411)) tracks the
 store, one-off backfill, live ingestion, app cutover and scoped-read enforcement as
@@ -8,10 +8,10 @@ independently finishable work.
 
 ## Choice
 
-Put the durable raw Session Event archive **inside Sandbox Service**, backed by
+Put the durable raw Session Event history **inside Sandbox Service**, backed by
 service-owned PostgreSQL state. It is not a property of a Kubernetes Sandbox CR,
-runner PVC, or app database. A Session archive survives its Sandbox/Pod/PVC's deletion.
-Keep the archive component's storage schema, replay and read interfaces separate
+runner PVC, or app database. Session Event history survives its Sandbox/Pod/PVC's deletion.
+Keep the history component's storage schema, replay and read interfaces separate
 from the Kubernetes inventory/provisioning component so it could later be extracted
 to a standalone history service without changing public Session identity.
 
@@ -19,17 +19,17 @@ This is the smallest acyclic route to agent-facing reads: the app already calls
 Sandbox Service; Sandbox Service must never query the app at runtime. Agents should
 read retained histories via Sandbox Service after authorization. A separate service
 would add another ownership/authentication/delivery hop today, without a proven
-independent scaling or availability need. Revisit placement if archival ingestion,
+independent scaling or availability need. Revisit placement if history ingestion,
 retention or read load demonstrably needs a separate failure domain, or when central
 command admission calls for a different authority.
 
 ## Authority and data
 
 The runner currently owns admitting commands and publishing ordered Events from
-its SQLite journal. The archive copies a **contiguous, independently replayable raw
+its SQLite journal. The history copies a **contiguous, independently replayable raw
 prefix**; it must not invent a native command outcome or reconstruct native resume
-state from Thread folds. A durable Session ID names one archive, with source identity,
-exact Event payload, source sequence, archived cursor, and copied high-water mark.
+state from Thread folds. A durable Session ID names one history, with source identity,
+exact Event payload, source sequence, stored cursor, and copied high-water mark.
 Keep source/runner provenance so replay can reject a conflicting duplicate rather
 than overwrite it. Multiple Sandbox Service replicas require a per-log claim/fence
 or verified idempotency; no process-local ingestion owner is sufficient.
@@ -41,49 +41,49 @@ can use a single public Session/Thread UUID. Classification and eventual SA read
 grants belong with the durable history authority, not the live Sandbox or a preset;
 no agent-facing grants ship as part of the raw-store PR.
 
-Store only the archive's durable state in the new service database. Keep operator
+Store only the history's durable state in the new service database. Keep operator
 Thread presentation and UI-friendly folds in the app for the first cutover. The app
-consumes the archive replay/follow API with its **own** projection checkpoint and
-fold epoch; its fold transaction need not be the archive ingestion transaction.
+consumes the history replay/follow API with its **own** projection checkpoint and
+fold epoch; its fold transaction need not be the history ingestion transaction.
 An unrecognized Event or broken fold must not stop copying the raw prefix. Expose
 fold lag/error to authorized operators; never advertise a fold cursor newer than
-its archived raw prefix.
+its stored raw prefix.
 
 ## Cutover, one-way
 
-1. Add service-owned archive storage and internal/operator raw read/replay, without
+1. Add service-owned history storage and internal/operator raw read/replay, without
    opening an unscoped SA read surface or changing today's app writes.
 2. Back up/inventory app history and one-off import IDs, Event payloads, source
    sequences and checkpoints. Import deleted-Sandbox histories too. Compare exact
    prefixes, not merely row counts; the importer is a migration tool, **not** a
    runtime app API dependency.
-3. Start live runner-to-archive replay using validated duplicates or per-log
+3. Start live runner-to-history replay using validated duplicates or per-log
    fencing. While the app remains the public raw authority, compare both observed
    prefixes and fill any gap between the snapshot and runner updates. A runner
-   unavailable before its unarchived prefix is recovered is a cutover blocker, not
-   a reason to pretend the archive is complete.
+   unavailable before its uncopied prefix is recovered is a cutover blocker, not
+   a reason to pretend the history is complete.
 4. Quiesce/fence the old app ingester for the affected logs, reconcile its final
-   cursor against the new archive and elect the new archive as the sole raw owner.
-   Switch app UI folds to consuming archive Events; retire app raw writes and
+   cursor against the new history and elect the new history as the sole raw owner.
+   Switch app UI folds to consuming history Events; retire app raw writes and
    direct SA transcript reads. Do not leave two competing public authorities.
 5. Verify restart/replay, multiple replicas, exact-duplicate/conflict cases,
    fold failure and catch-up, old Thread URLs, and read-after-Sandbox-deletion.
    The app remains a composition client and an owner of its UI projections only.
 
 A cutover must have a backup and a recorded high-water mark. Rolling old app code
-back after it stops ingesting requires reconciling _new_ authoritative archive
+back after it stops ingesting requires reconciling _new_ authoritative history
 Events, not simply flipping traffic back to stale app tables. Remove one-off import
 code once completed, retaining the legacy **data association** needed for old
 runners. Never delete the existing Sandbox state or rename native directories to
 make a schema migration look simpler. Squash the app's historical Alembic revisions
-only after the identity/archive cutovers and all deployed stamps are verified.
+only after the identity/history cutovers and all deployed stamps are verified.
 
 ## Operational separation
 
-Archive failures must not make inventory and existing Sandbox lifecycle RPCs
-universally unready. Report failures and archive lag explicitly; separately gate
-archive read/ingestion where its database is unavailable. A runner may continue
+History failures must not make inventory and existing Sandbox lifecycle RPCs
+universally unready. Report failures and history lag explicitly; separately gate
+history read/ingestion where its database is unavailable. A runner may continue
 using its current journal while the service is down and replay after recovery.
 Moving command durability or switching the runner to an outbound connection is a
-separate later decision. A deleted Sandbox cannot be used as an archive lookup
+separate later decision. A deleted Sandbox cannot be used as a history lookup
 prerequisite, and app-backed broker reads are not a temporary implementation.
