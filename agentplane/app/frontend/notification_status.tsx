@@ -202,18 +202,24 @@ export function NotificationStatus({
                     )}
                     <Divider label="Entries after acknowledgement" />
                     {pending_entries.length === 0 && (
-                      <Text size="sm" c="dimmed">No retained unacknowledged entries</Text>
+                      <Text size="sm" c="dimmed">
+                        No retained unacknowledged entries
+                      </Text>
                     )}
                     {pending_entries.map((entry) => (
                       <Paper key={entry.cursor} withBorder p="xs">
                         <Text size="sm" style={{ overflowWrap: "anywhere" }}>
                           #{entry.cursor} · {entry.summary}
                         </Text>
-                        <Text size="xs" c="dimmed">{timestamp(entry.created_at)}</Text>
+                        <Text size="xs" c="dimmed">
+                          {timestamp(entry.created_at)}
+                        </Text>
                       </Paper>
                     ))}
                     {pending_entries_more && (
-                      <Text size="xs" c="dimmed">Showing the first 100 retained entries after acknowledgement; more entries remain.</Text>
+                      <Text size="xs" c="dimmed">
+                        Showing the first 100 retained entries after acknowledgement; more entries remain.
+                      </Text>
                     )}
                     <Divider label="Subscriptions" />
                     {subscriptions.length === 0 && (
