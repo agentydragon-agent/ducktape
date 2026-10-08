@@ -882,7 +882,7 @@ ts_library(
     srcs = ["notification_status.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
+        ":live_stream",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",

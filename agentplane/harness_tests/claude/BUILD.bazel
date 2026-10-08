@@ -241,3 +241,24 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_root_identity",
+    size = "medium",
+    srcs = ["test_root_identity.py"],
+    data = ["@claude_code_cli_linux_x64//:claude"],  # keep: pinned real CLI
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":anthropic_sse",
+        ":conftest",
+        ":harness",
+        ":messages",
+        "//:conftest",
+        "//agentplane/harness_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

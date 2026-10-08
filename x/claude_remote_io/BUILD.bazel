@@ -58,3 +58,15 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    deps = [
+        ":server",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

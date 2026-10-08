@@ -423,6 +423,7 @@ class Store:
                 raise ConflictError("cursor is beyond the committed prefix")
             inbox.acknowledged = max(inbox.acknowledged, through)
             inbox.updated_at = datetime.now(UTC)
+            await notify(session)
             return InboxView.model_validate(inbox)
 
     async def retire(self, owner: ServiceAccountRef, inbox_id: UUID) -> None:
@@ -439,6 +440,7 @@ class Store:
                 .where(Subscription.inbox_id == inbox_id, ~Subscription.cancelled)
                 .values(cancelled=True, version=Subscription.version + 1)
             )
+            await notify(session)
 
     async def observe_stale(self, claim: Inbox, reason: str, confirmation_s: float) -> bool:
         """Release this claim with a durable recheck, or retire a confirmed stale incarnation."""
@@ -584,6 +586,7 @@ class Store:
                 )
                 row.actions_after_sequence = event.sequence
             inbox.updated_at = datetime.now(UTC) if events else inbox.updated_at
+            await notify(session)
 
     async def append_event(
         self,
@@ -614,6 +617,7 @@ class Store:
             if not row.cancelled and row.version == source.version:
                 row.error = error
                 row.next_attempt = datetime.now(UTC) + timedelta(seconds=retry_seconds)
+                await notify(session)
 
     async def ingest_github(
         self,
@@ -734,6 +738,7 @@ class Store:
             row.error = None
             if matched:
                 inbox.updated_at = datetime.now(UTC)
+            await notify(session)
 
     async def get_pending_entry_times(self, claim: Inbox) -> tuple[datetime, datetime] | None:
         """Timestamp bounds of entries not yet covered, acknowledged or expired."""
@@ -788,6 +793,7 @@ class Store:
             )
             session.add(row)
             inbox.covered = inbox.last_cursor
+            await notify(session)
             return row
 
     async def checkpoint_before_attempt(self, claim: Inbox, notice: Notice, entry: event_log_pb2.EventEntry) -> None:
@@ -811,8 +817,10 @@ class Store:
             assert row.command_id == notice.command_id
             if not row.attempted and max(inbox.acknowledged, inbox.expired_through) >= row.through_cursor:
                 row.error = "suppressed: acknowledged before submission"
+                await notify(session)
                 return False
             row.attempted = True
+            await notify(session)
             return True
 
     async def receipt(self, claim: Inbox, notice: Notice, entry: event_log_pb2.EventEntry) -> None:
@@ -844,6 +852,7 @@ class Store:
             if event.HasField("command_noop") and event.command_noop.command_id == command_id:
                 row.error = "runner command was a no-op; not confirmed"
             row.runner_cursor, row.runner_entry = entry.cursor, wire
+            await notify(session)
 
     async def cleanup(self, after_id: UUID | None = None) -> UUID | None:
         async with self.sessions.begin() as session:
