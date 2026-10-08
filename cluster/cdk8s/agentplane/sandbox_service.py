@@ -1,4 +1,4 @@
-"""Independent sandbox lifecycle and runner-session gateway; no database or log archive."""
+"""Sandbox lifecycle gateway; history schema migrates before Pod startup."""
 
 from typing import cast
 
@@ -28,13 +28,15 @@ from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant
 from agentplane.sandbox_service.main import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import actions, egress, notifications
+from cluster.cdk8s.agentplane import actions, database, egress, notifications
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
@@ -96,6 +98,15 @@ class SandboxService(Construct):
             },
             path="/etc/agentplane-sandbox-service/config.yaml",
         )
+        # Like the other database-backed services, a migration failure blocks Pod
+        # startup, including existing lifecycle RPCs. The command has no retry loop.
+        migration_env = {
+            "AGENTPLANE_SANDBOX_SERVICE_HISTORY_DATABASE_URL": SecretRef(
+                namespace=env.namespace, name="postgres-sandbox-service"
+            )
+            .key("uri")
+            .env_value(self, "history-database")
+        }
         deployment = Deployment(
             self,
             "deployment",
@@ -109,6 +120,12 @@ class SandboxService(Construct):
             automount_service_account_token=True,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "images-creds"),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
+            init_containers=[
+                migrate_init_container(
+                    "git.allegedly.works/ducktape-ci/agentplane-sandbox-service-history-migrate:unset",
+                    env_variables=migration_env,
+                )
+            ],
         )
         container = deployment.add_container(
             name="sandbox-service",
@@ -145,6 +162,10 @@ class SandboxService(Construct):
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
+                EgressRule.to_endpoints(
+                    {"k8s:io.kubernetes.pod.namespace": env.namespace, "k8s:cnpg.io/cluster": "postgres"},
+                    database.POSTGRES_PORT,
+                ),
                 EgressRule.to_endpoints(
                     cilium.endpoint_labels(env.namespace, "agentplane-runner"), settings.runner_port
                 ),

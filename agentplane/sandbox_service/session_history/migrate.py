@@ -1,7 +1,7 @@
 """Migrate the Sandbox Service's independent Session Event history database.
 
-Run from the history migration image, never as an init container of the inventory
-service: history database availability must not gate existing lifecycle RPCs.
+Run from the history migration image as a Sandbox Service Deployment init container.
+A migration failure prevents the Pod from serving even existing lifecycle RPCs.
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict

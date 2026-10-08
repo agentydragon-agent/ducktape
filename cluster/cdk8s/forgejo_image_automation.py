@@ -53,6 +53,7 @@ IMAGES = (
     "agentplane-sandbox",
     "agentplane-sandbox-build",
     "agentplane-sandbox-service",
+    "agentplane-sandbox-service-history-migrate",
     "aiquota-api",
     "airlock",
     "attic-jwt-rotation",
