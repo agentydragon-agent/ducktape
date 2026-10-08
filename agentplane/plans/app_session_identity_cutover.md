@@ -11,7 +11,7 @@ separate existing-history backfill.
   before runner contact. Its idempotency key is only a retry identity, **not** a
   Session ID. The app may render an Event-log/Thread projection under the returned
   public UUID. Old Threads keep their UUIDs, `s-*` runner locators, URLs and feeds.
-- The browser should send a stable opaque Open key and the *original* overrides;
+- The browser should send a stable opaque Open key and the _original_ overrides;
   it must not invent a public Session ID. The app must call `CreateSession` and
   materialize the Thread idempotently if a response or app commit is lost.
 - `{session_id}` in a working-directory override must be expanded **after** the
