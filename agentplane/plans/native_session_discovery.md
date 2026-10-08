@@ -172,6 +172,42 @@ Root and child discovery then converge: both commit the same descriptor and decl
 only their cause, parent linkage, and capabilities differ. A child declaration has native delegation
 provenance rather than a client creation request, and does not allocate a new execution owner.
 
+### End-to-end: provision a sandbox and start its first session
+
+One common client flow can work for either harness. The operation names below are illustrative,
+not claims about the current API. The caller can be a UI backend, CLI, or another agent.
+
+1. **Client → Sandbox Service: `CreateSandbox`.** Supply a creation request ID, sandbox template,
+   and authorized workload configuration. The service authorizes and provisions the sandbox, then
+   returns a stable sandbox reference and a provisioning operation to follow. Allocated is not yet
+   ready: wait for the runner to become reachable and required sandbox initialization to succeed.
+2. **Client → Sandbox Service: `StartSession`.** Supply that sandbox reference, a session-creation
+   request ID, the harness/model/workspace/instructions spec, and optionally the initial input with
+   its own command ID. The service authorizes access, resolves the runner, and forwards the request;
+   it does not operate the harness itself.
+3. **Runner: durable acceptance.** Reserve the execution owner, native state directory, logical
+   session reference `S`, and journal the creation intent and any initial input before dispatch.
+   Return `S` in a starting/pending state and expose startup progress. Retrying the creation request
+   finds this attempt, not another launch. `S` is usable to track the attempt before it proves that
+   a native conversation exists.
+4. **Adapter ↔ harness: native creation.** Codex runs `initialize`, then `thread/start`, binds the
+   returned `thread.id`, and submits the saved input through `turn/start`. Claude can initialize in
+   stream-json mode, submit the saved input, and bind the ID from a session-bearing native frame.
+   Alternatively its adapter can preselect the ID through `--session-id` and wait for native
+   confirmation. These choices do not change the caller's flow or justify resending the input.
+5. **Runner → Sandbox Service → client: declaration and events.** Commit the qualified native-ID
+   binding and declare root `S` with no parent and the creation request as provenance. The client
+   continues using the same `S` for follow/attach and proven root commands; it need not address a
+   Codex thread ID or Claude conversation ID. Startup acceptance, native existence, input
+   confirmation, and work completion remain distinct facts.
+6. **If the harness delegates later:** native evidence declares child `S2`, with parent `S` and the
+   same execution owner. The child enters the same inventory with its proven coverage/capabilities;
+   Agentplane does not provision another sandbox or launch another process to recognize it.
+
+Creation failure remains inspectable through the pending attempt. The ambiguous native-creation
+crash window described above still applies; request deduplication does not make native creation or
+first-input delivery exactly once. No app database record is required for runner-side declaration.
+
 ## Proposed observation flow
 
 Names here are illustrative; implement them in the existing runner Event language, not a parallel
