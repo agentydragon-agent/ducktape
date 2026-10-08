@@ -56,6 +56,13 @@ The tests pin observed behavior of one build. After a bump, run the live probe i
 scripted expectations, and update the script. The probe's raw logs are the reference for that
 edit; they are never test inputs.
 
+## Cleanup ownership
+
+`AsyncNativeProcess` owns exceptional process-group cleanup and trace draining. Scripts let
+assertions and cancellation propagate through the harness context manager; they do not add
+failure-only `try`/`crash()` wrappers. Successful exit remains graceful. Explicit `crash()` calls
+are scenario steps for parent-process death and intentionally retain their distinct semantics.
+
 ## Gotchas
 
 - Every scripted message, item, and response carries a fresh id: both harnesses key their
