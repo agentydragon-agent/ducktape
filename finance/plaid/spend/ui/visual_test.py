@@ -17,7 +17,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from playwright.async_api import Page, Playwright, Route, expect
+from playwright.async_api import Locator, Page, Playwright, Route, expect
 
 from finance.plaid.spend.allowance import (
     AllOf,
@@ -86,6 +86,14 @@ async def page(playwright: Playwright) -> AsyncIterator[Page]:
 @pytest.fixture
 def view(page: Page) -> VisualPage:
     return VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend", output_suffix="")
+
+
+async def _expand_accordion(control: Locator) -> None:
+    await control.click()
+    await expect(control).to_have_attribute("aria-expanded", "true")
+    # These real-page tests run transitions rather than pinning them. Finish the
+    # outer expansion before opening a nested accordion or measuring a full page.
+    await control.page.wait_for_function("() => document.getAnimations().length === 0")
 
 
 @pytest.fixture(scope="module")
@@ -540,13 +548,13 @@ async def test_transaction_explanations_render(
         await rows.locator("tbody tr[data-transaction-row]").filter(has_text="UPS").click()
         await expect(rows.locator("tbody tr")).to_have_count(5)
     else:
-        await rows.get_by_role("button", name="UPS", exact=False).click()
+        await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))
     await rows.get_by_text("Required document shipping for a synthetic example.").wait_for()
     await expect(rows.get_by_text("Counterparties: Example Shipping", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("Example Shipping · merchant", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("Mandatory · outside allowance", exact=False)).to_have_count(1)
     await expect(rows.get_by_text("Card statement: Counted in card cycle", exact=False).first).to_be_attached()
-    await rows.get_by_role("button", name="Plaid source fields").click()
+    await _expand_accordion(rows.get_by_role("button", name="Plaid source fields"))
     await rows.get_by_text("Plaid amount (major units): 18.50", exact=True).wait_for()
     await expect(rows.get_by_text("Original description: EXAMPLE SHIPPING PAYMENT", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("City: Example City", exact=True)).to_have_count(1)
@@ -577,7 +585,7 @@ async def test_transaction_explanations_dark_theme(page: Page, view: VisualPage,
     await page.get_by_role("tab", name="Transactions").click()
     rows = page.locator(".mantine-Accordion-root")
     await rows.get_by_text("Example Cafe", exact=True).wait_for()
-    await rows.get_by_role("button", name="UPS", exact=False).click()
+    await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))
     await page.get_by_text("Required document shipping for a synthetic example.").wait_for()
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
