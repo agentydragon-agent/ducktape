@@ -134,8 +134,19 @@ async def test_reservation_is_stable_across_retries_and_replicas(engine: AsyncEn
     assert await reserve(Store(engine)) == first
     assert await left.read(first.session_id) == (0, [])  # no runner was contacted
     assert first.launch_spec == f"frozen {first.session_id}".encode()
-    assert await left.runner_id(first.session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid) == f"r-{first.session_id}"
-    assert await right.session_id(sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id=f"r-{first.session_id}") == first.session_id
+    assert (
+        await left.runner_id(first.session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid)
+        == f"r-{first.session_id}"
+    )
+    assert (
+        await right.session_id(
+            sandbox_namespace="testing",
+            sandbox_name="worker",
+            sandbox_uid=uid,
+            runner_session_id=f"r-{first.session_id}",
+        )
+        == first.session_id
+    )
     with pytest.raises(HistoryNotFoundError):
         await left.runner_id(first.session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uuid4())
     assert await store_retry_with_new_defaults(right, uid) == first

@@ -143,17 +143,16 @@ class Store:
             assert existing.launch_spec is not None
             return OpenReservation(existing.id, existing.launch_spec)
 
-    async def runner_id(
-        self, session_id: UUID, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID
-    ) -> str:
+    async def runner_id(self, session_id: UUID, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID) -> str:
         """Resolve a public Session ID only in its original Sandbox incarnation."""
         async with self._sessions() as session:
             row = await session.get(SessionHistory, session_id)
-            if row is None or (row.sandbox_namespace, row.sandbox_name, row.sandbox_uid) != (
-                sandbox_namespace,
-                sandbox_name,
-                sandbox_uid,
-            ) or row.runner_session_id is None:
+            if (
+                row is None
+                or (row.sandbox_namespace, row.sandbox_name, row.sandbox_uid)
+                != (sandbox_namespace, sandbox_name, sandbox_uid)
+                or row.runner_session_id is None
+            ):
                 raise HistoryNotFoundError(session_id)
             return row.runner_session_id
 

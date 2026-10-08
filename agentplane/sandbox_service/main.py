@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
@@ -27,6 +28,8 @@ from agentplane.sandbox_service.session_history.store import Store
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
+
+# gazelle:include_dep @pypi//asyncpg
 
 CONFIG_FILE_ENV = "AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE"
 
@@ -84,7 +87,6 @@ class Settings(BaseSettings):
 
 
 async def serve(settings: Settings) -> None:
-
     configuration = k8s_client.Configuration()
     if settings.kubeconfig is None:
         k8s_config.load_incluster_config(client_configuration=configuration)
@@ -92,7 +94,9 @@ async def serve(settings: Settings) -> None:
         await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
     if settings.history_database_url is None:
         raise ValueError("Session history database URL is required at runtime")
-    engine = create_async_engine(settings.history_database_url)
+    engine = create_async_engine(
+        make_url(settings.history_database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
+    )
     try:
         await serve_with_engine(settings, configuration, engine)
     finally:

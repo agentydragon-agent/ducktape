@@ -206,7 +206,9 @@ class Runner:
         )
         if setup_script is not None:
             request.setup_script = setup_script
-        return await self.service.unary(self.service.stub.CreateSession, request, timeout_s=self.service.lifecycle_timeout_s)
+        return await self.service.unary(
+            self.service.stub.CreateSession, request, timeout_s=self.service.lifecycle_timeout_s
+        )
 
     async def open(
         self, session_id: str, spec: dict[str, object], setup_script: str | None = None

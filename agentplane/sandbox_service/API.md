@@ -130,10 +130,11 @@ is separately bounded by `admission_timeout_s`, so a stalled consumer cannot pin
 15 minutes. Every exit cancels the runner attachment and closes its channel. There is no unbounded
 fan-out queue.
 
-The service retains no additional session-log archive. Runner logs are durable on the state volume,
-but reading them requires a reachable runner. Clients needing retention independent of that volume
-must archive events themselves. The app keeps its existing PostgreSQL archive and checkpoints as a
-client of service event following; migrating that archive is not a required follow-up.
+The service now has independent Session Event history storage for durable identity and future replay.
+`CreateSession` reserves a row but does **not** ingest runner Events yet. Runner logs remain on the
+state volume; the app currently retains its own Session Event copy and checkpoints. Backfilling
+existing Session Event history and moving Event ingestion/read authority into Sandbox Service are
+subsequent cutover work, not part of this Open RPC.
 
 ## Errors and uncertain outcomes
 

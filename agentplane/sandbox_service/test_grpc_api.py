@@ -5,9 +5,8 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
-from uuid import UUID
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import grpc
 import pytest
@@ -75,7 +74,9 @@ class Peer:
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         return runner_pb2.ListSessionsResponse(
-            sessions=[runner_pb2.SessionSummary(session_id=key, spec=value.spec) for key, value in self.opened_ids.items()]
+            sessions=[
+                runner_pb2.SessionSummary(session_id=key, spec=value.spec) for key, value in self.opened_ids.items()
+            ]
         )
 
     async def attach(
@@ -83,7 +84,8 @@ class Peer:
     ) -> AsyncIterator[runner_pb2.ServerMessage]:
         first = await anext(requests)
         connection = PeerAttachment(first.open)
-        self.opened_ids[first.open.session_id] = first.open
+        if first.open.HasField("spec"):
+            self.opened_ids[first.open.session_id] = first.open
         self.attachments.put_nowait(connection)
 
         async def consume() -> None:
@@ -130,7 +132,7 @@ async def peer() -> AsyncIterator[Peer]:
                         peer.attach,
                         request_deserializer=runner_pb2.ClientMessage.FromString,
                         response_serializer=runner_pb2.ServerMessage.SerializeToString,
-                    )
+                    ),
                 },
             )
         ]
@@ -199,7 +201,9 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
         assert [row.session_id for row in await runner.list_sessions()] == [public]
 
         # Simulate changed defaults/platform instructions after the original reply was lost.
-        async with service_client(replace(resources, history=Store(engine), platform_instructions="Changed guidance"), token_file) as retry:
+        async with service_client(
+            replace(resources, history=Store(engine), platform_instructions="Changed guidance"), token_file
+        ) as retry:
             again = await retry.runner(DESTINATION).create(idempotency_key="first-attempt", spec=overrides)
         second = await peer.attachments.get()
         assert again == created
@@ -218,6 +222,17 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
         assert attachment.attached.session_id == public
         attachment.cancel()
         await following.closed.wait()
+        command = command_pb2.Command(command_id="managed-command", submit_input=command_pb2.SubmitInput(text="hi"))
+        async with asyncio.TaskGroup() as tasks:
+            pending = tasks.create_task(runner.command(public, command, after_cursor=0))
+            admitted = await peer.attachments.get()
+            assert admitted.opened.session_id == f"r-{public}"
+            assert (await admitted.commands.get()).command == command
+            receipt = admission(command, 1)
+            admitted.responses.put_nowait(runner_pb2.ServerMessage(event_entry=receipt))
+            assert await pending == receipt
+        await admitted.closed.wait()
+
         assert await runner.resume(public) == created.attached
         resumed = await peer.attachments.get()
         assert resumed.opened.session_id == f"r-{public}"
