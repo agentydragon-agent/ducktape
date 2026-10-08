@@ -902,11 +902,11 @@ ts_library(
     deps = [
         ":actions_policy",
         ":client",
-        ":notification_status",
         ":egress",
         ":json_view",
         ":lifecycle",
         ":live",
+        ":notification_status",
         ":raw_switch",
         ":sandbox_status",
         ":status_mark",
