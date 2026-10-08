@@ -23,6 +23,8 @@ class RemoteIOServer:
         self.changed = asyncio.Condition()
         self.stopping = False
         self.connected = asyncio.Event()
+        self.stream_requests: list[web.Request] = []
+        self.stream_cursors: list[int] = []
         self.app = web.Application()
         self.app.router.add_route("*", SESSION_PATH + "/{tail:.*}", self.handle)
 
@@ -49,6 +51,15 @@ class RemoteIOServer:
         async with self.changed:
             await self.changed.wait_for(lambda: any(predicate(item) for item in self.uploads))
             return next(item for item in self.uploads if predicate(item))
+
+    async def reconnect(self) -> int:
+        async with self.changed:
+            previous = len(self.stream_requests)
+            for request in self.stream_requests:
+                if request.transport is not None:
+                    request.transport.close()
+            await self.changed.wait_for(lambda: len(self.stream_requests) > previous)
+            return self.stream_cursors[-1]
 
     async def close(self) -> None:
         async with self.changed:
@@ -93,7 +104,11 @@ class RemoteIOServer:
         response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
         await response.prepare(request)
         await response.write(b": connected\n\n")
-        self.connected.set()
+        async with self.changed:
+            self.stream_requests.append(request)
+            self.stream_cursors.append(cursor)
+            self.connected.set()
+            self.changed.notify_all()
 
         def ready() -> bool:
             return self.stopping or len(self.commands) > cursor

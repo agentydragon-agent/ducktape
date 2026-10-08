@@ -16,9 +16,11 @@ Bazel pin does not change Agentplane's runner or its `2.1.252` scripted baseline
 The round-trip probe passed against the real CLI on `ffb21bad` in
 [CI](https://github.com/agentydragon/ducktape/actions/runs/37757068286).
 The follow-up `bf5a8508` passed tests/build, lint, formatting, Gazelle and import checks.
-A child scenario now scripts an actual `Agent` launch, checks parent/task correlation, and asserts
-attributed child prose and completion uploads; this new scenario is awaiting CI evidence.
-Recovery and same-version comparison remain unimplemented. Source inspection
+The child scenario passed on `8671925f`: a real `Agent` launch yields `task_started` and
+`task_notification` with matching `task_id` and originating `tool_use_id`. Child assistant prose
+arrives with that call's `parent_tool_use_id` and the parent's `session_id`; the latter alone cannot
+identify children. A live-process SSE reconnect probe is awaiting CI evidence. Process recovery
+and same-version comparison remain unimplemented. Source inspection
 informs the candidate protocol; CI wire captures determine the actual contract.
 
 ```bash

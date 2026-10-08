@@ -72,9 +72,12 @@ async def finish_child(model: AnthropicMessages, peer: RemoteIOServer, session_i
     )
 
 
-@pytest.mark.parametrize("subagent", [False, True], ids=["single", "child"])
-async def test_remote_io_round_trip(tmp_path: Path, subagent: bool) -> None:
-    logs = undeclared_outputs_dir() / ("remote-io-child" if subagent else "remote-io-single")
+@pytest.mark.parametrize(
+    ("subagent", "reconnect"), [(False, False), (True, False), (False, True)], ids=["single", "child", "reconnect"]
+)
+async def test_remote_io_round_trip(tmp_path: Path, subagent: bool, reconnect: bool) -> None:
+    scenario = "child" if subagent else "reconnect" if reconnect else "single"
+    logs = undeclared_outputs_dir() / f"remote-io-{scenario}"
     logs.mkdir()
     peer = RemoteIOServer(logs / "http.jsonl")
     tls, certificate = make_tls(tmp_path)
@@ -204,6 +207,33 @@ async def test_remote_io_round_trip(tmp_path: Path, subagent: bool) -> None:
                                 and {"event_id": command_id, "status": "processed"} in upload["body"]["updates"]
                             )
                         )
+                        if reconnect:
+                            assert await peer.reconnect() == len(peer.commands)
+                            await peer.send(
+                                {
+                                    "type": "user",
+                                    "uuid": str(uuid4()),
+                                    "session_id": session_id,
+                                    "parent_tool_use_id": None,
+                                    "message": {"role": "user", "content": "Reply AFTER_RECONNECT."},
+                                }
+                            )
+                            async with await model.await_next_request() as exchange:
+                                assert "AFTER_RECONNECT" in exchange.request.texts("user")[-1]
+                                assert "REMOTE_IO_OK" in exchange.request.texts("assistant")
+                                await exchange.send(
+                                    *sse.message_stream([sse.Text("AFTER_RECONNECT")], model=MODEL).events
+                                )
+                            await peer.wait_for(
+                                lambda upload: any(
+                                    frame.get("result") == "AFTER_RECONNECT" for frame in uploaded_frames(upload)
+                                )
+                            )
+                            assert sum(
+                                frame.get("result") == "REMOTE_IO_OK"
+                                for upload in peer.uploads
+                                for frame in uploaded_frames(upload)
+                            ) == 1
                 finally:
                     if process.returncode is None:
                         process.kill()
