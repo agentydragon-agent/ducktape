@@ -128,7 +128,13 @@ async def test_remote_io_round_trip(tmp_path: Path) -> None:
                         await peer.wait_for(
                             lambda upload: (
                                 upload["path"] == "worker/events/delivery"
-                                and any(update["event_id"] == event_id for update in upload["body"]["updates"])
+                                and {"event_id": event_id, "status": "received"} in upload["body"]["updates"]
+                            )
+                        )
+                        await peer.wait_for(
+                            lambda upload: (
+                                upload["path"] == "worker/events/delivery"
+                                and {"event_id": command_id, "status": "processed"} in upload["body"]["updates"]
                             )
                         )
                 finally:

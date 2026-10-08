@@ -94,10 +94,14 @@ class RemoteIOServer:
         await response.prepare(request)
         await response.write(b": connected\n\n")
         self.connected.set()
+
+        def ready() -> bool:
+            return self.stopping or len(self.commands) > cursor
+
         try:
             while not self.stopping:
                 async with self.changed:
-                    await self.changed.wait_for(lambda cursor=cursor: self.stopping or len(self.commands) > cursor)
+                    await self.changed.wait_for(ready)
                     pending = self.commands[cursor:]
                 for event in pending:
                     data = json.dumps(event)

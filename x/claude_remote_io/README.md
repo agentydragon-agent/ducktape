@@ -13,9 +13,11 @@ Bazel pin does not change Agentplane's runner or its `2.1.252` scripted baseline
    covering completed and active children, duplicate delivery, and repeated side effects.
 5. Compare matching scenarios with `2.1.292` `stream-json` and recommend adoption only for measured gains.
 
-The first test implements the round-trip probe; **it is not yet verified**. Child discovery,
-recovery, and same-version comparison remain unimplemented. Source inspection informs the
-candidate protocol; CI wire captures determine the actual contract.
+The round-trip probe passed against the real CLI on `ffb21bad` in
+[CI](https://github.com/agentydragon/ducktape/actions/runs/37757068286).
+That build still failed a server type check; test success is not an all-green build claim.
+Child discovery, recovery, and same-version comparison remain unimplemented. Source inspection
+informs the candidate protocol; CI wire captures determine the actual contract.
 
 ```bash
 bbr test //x/claude_remote_io:test_interop
@@ -39,8 +41,17 @@ transport cutover. Do not import this experimental server into Agentplane servic
 
 ## Initial wire observation
 
-The first CI run reached initialization and a model request through the experimental server.
+CI verified initialization, a model request, assistant output and a successful result through the
+experimental server, with the expected native session ID.
 A user frame without origin metadata was rendered upstream as "Another Claude session sent a
 message", with a warning that a peer cannot grant escalation. The internal-event upload marked
 its origin as `peer` / `unknown`. The baseline asserts this behavior; it does not claim to submit
-an authenticated human-origin command. Output/completion assertions have not passed yet.
+an authenticated human-origin command.
+
+The capture distinguishes two identifiers in `/worker/events/delivery`: `received` uses the SSE
+envelope's `event_id`, while `processing` and `processed` use the user payload's `uuid`. They
+are deliberately different in the test. The captured terminal result has no `user_message_uuid`;
+receipts cannot simply be joined to it by assuming every lane uses the same ID. The baseline
+serializes one prompt, so it does not yet establish concurrent/coalesced-command correlation.
+A delivery receipt is not proof of model consumption; the separate model request and result
+assertions provide that evidence for this probe.
