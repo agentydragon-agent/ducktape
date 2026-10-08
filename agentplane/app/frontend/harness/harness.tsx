@@ -1776,6 +1776,7 @@ const MCP_GROUPS: ActionGroupView[] = [
 ];
 
 let notificationStatusUnavailable = false;
+let notificationExtraEntry = false;
 
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
@@ -2372,6 +2373,13 @@ function watch(): WatchHealth {
  * A stream a fixture drops goes back to `CONNECTING`, as a browser's does when the network drops,
  * and never reconnects. */
 class HarnessEventSource extends EventTarget {
+  static readonly sources = new Set<HarnessEventSource>();
+  static publishNotifications(): void {
+    for (const source of this.sources) {
+      if (source.url.includes("/notifications/stream") && source.readyState === this.OPEN)
+        source.serve(new URL(source.url, "http://harness"));
+    }
+  }
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 2;
@@ -2381,6 +2389,7 @@ class HarnessEventSource extends EventTarget {
   constructor(url: string) {
     super();
     this.url = url;
+    HarnessEventSource.sources.add(this);
     // After the view's listeners are attached, which happens right after construction.
     setTimeout(() => this.serve(new URL(url, "http://harness")), 0);
   }
@@ -2414,7 +2423,21 @@ class HarnessEventSource extends EventTarget {
       const route = routes.find(([method, pattern]) => method === "GET" && pattern.test(`/sandboxes/${notification[1]}/notifications`));
       const match = `/sandboxes/${notification[1]}/notifications`.match(route?.[1] ?? /$^/);
       if (!route || !match) throw new Error("Missing notifications fixture");
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(route[2](match, url.searchParams, undefined, undefined)) }));
+      const snapshot = route[2](match, url.searchParams, undefined, undefined) as { inboxes: Array<{
+        inbox: { last_cursor: number };
+        unannounced_count: number;
+        pending_acknowledgement_count: number;
+        pending_entries: Array<{ cursor: number; created_at: string; provider: string; summary: string }>;
+      }> };
+      if (notificationExtraEntry && snapshot.inboxes[0]) {
+        snapshot.inboxes[0].inbox.last_cursor = 10;
+        snapshot.inboxes[0].unannounced_count += 1;
+        snapshot.inboxes[0].pending_acknowledgement_count += 1;
+        snapshot.inboxes[0].pending_entries.push({
+          cursor: 10, created_at: ago(0), provider: "github", summary: "GitHub workflow_run · completed",
+        });
+      }
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
       return;
     }
     if (url.pathname === "/actions/stream") {
@@ -2442,6 +2465,7 @@ class HarnessEventSource extends EventTarget {
   }
 
   close(): void {
+    HarnessEventSource.sources.delete(this);
     this.readyState = HarnessEventSource.CLOSED;
   }
 }
@@ -2502,6 +2526,10 @@ const visualHarness = {
   },
   paginateActionHistory(): void {
     pageActionHistory = true;
+  },
+  publishNotificationChange(): void {
+    notificationExtraEntry = true;
+    HarnessEventSource.publishNotifications();
   },
   setNotificationStatusUnavailable(unavailable: boolean): void {
     notificationStatusUnavailable = unavailable;
