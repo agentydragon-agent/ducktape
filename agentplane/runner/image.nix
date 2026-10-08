@@ -26,6 +26,7 @@ import ../images/sandbox.nix {
     runner
     pkgsUnstable.claude-code
     pkgsUnstable.codex
-  ] ++ extraPaths;
+  ]
+  ++ extraPaths;
   extraConfig.Entrypoint = [ "/bin/agentplane-runner" ];
 }
