@@ -37,8 +37,19 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     service_pod = resource("Deployment", sandbox_service.NAME)["spec"]["template"]["spec"]
     assert service_pod["serviceAccountName"] == sandbox_service.NAME
     assert all("persistentVolumeClaim" not in volume for volume in service_pod.get("volumes", []))
-    assert not service_pod.get("initContainers"), (
-        "the independent service must not migrate or depend on the app database"
+    # Only the migration init container receives the new history database URL.
+    (migration,) = service_pod["initContainers"]
+    assert migration["name"] == "migrate"
+    assert migration["env"] == [
+        {
+            "name": "AGENTPLANE_SANDBOX_SERVICE_HISTORY_DATABASE_URL",
+            "valueFrom": {"secretKeyRef": {"name": "postgres-sandbox-service", "key": "uri"}},
+        }
+    ]
+    assert all(
+        variable["name"] != "AGENTPLANE_SANDBOX_SERVICE_HISTORY_DATABASE_URL"
+        for container in service_pod["containers"]
+        for variable in container.get("env", [])
     )
     for rule in resource("Role", app.NAME)["rules"]:
         assert set(rule["verbs"]) <= {"get", "list", "watch"}
