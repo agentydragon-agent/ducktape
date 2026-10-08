@@ -44,6 +44,7 @@ class Resources:
     platform_instructions: str
     runner_admission_ack_timeout_s: float
     history: Store | None = None
+    history_reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     admission_timeout_s: float = 15
     follow_lease_s: float = 900
     lifecycle_timeout_s: float = 300
@@ -62,6 +63,8 @@ class Resources:
             raise ValueError("timeouts must be positive")
         if not self.caller_accounts:
             raise ValueError("at least one service caller is required")
+        if not self.history_reader_accounts <= self.caller_accounts:
+            raise ValueError("history readers must be allowed service callers")
 
     async def authenticate(self, context: grpc.aio.ServicerContext) -> ServiceAccountRef:
         values = [value for key, value in (context.invocation_metadata() or ()) if key == "authorization"]
@@ -132,6 +135,26 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             yield client, endpoint
         finally:
             await client.close()
+
+    @override
+    async def ReadSessionEvents(
+        self, request: protocol_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.ReadSessionEventsResponse:
+        # A public Session UUID is not itself authority. Notifications and future
+        # agent callers admitted for lifecycle may not read transcripts here.
+        async with errors(context), asyncio.timeout(self.resources.admission_timeout_s):
+            caller = await self.resources.authenticate(context)
+            if caller not in self.resources.history_reader_accounts:
+                await context.abort(grpc.StatusCode.PERMISSION_DENIED, "session history reader not allowed")
+            if self.resources.history is None:
+                raise ConnectionError("history unavailable")
+            if not 1 <= request.limit <= 1000:
+                raise ValueError("invalid history page size")
+            session_id = UUID(request.session_id)
+            last_cursor, entries = await self.resources.history.read(
+                session_id, after_cursor=request.after_cursor, limit=request.limit
+            )
+            return protocol_pb2.ReadSessionEventsResponse(last_cursor=last_cursor, entries=entries)
 
     @override
     async def ListSandboxes(
