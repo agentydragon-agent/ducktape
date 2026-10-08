@@ -91,3 +91,16 @@ py_library(
         "@pypi//mcp_types",
     ],
 )
+
+py_test(
+    name = "test_facade",
+    srcs = ["test_facade.py"],
+    deps = [
+        ":facade",
+        ":wire",
+        "//:conftest",
+        "//agentplane/native:async_process",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
