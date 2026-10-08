@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 import pytest_bazel
 
 from agentplane.harness_tests.claude import anthropic_sse as sse, frames
@@ -221,8 +222,9 @@ async def test_subagent_tool_frames_are_correlated_with_the_parent_call(
     assert child_text["session_id"] == notification["session_id"]
 
 
+@pytest.mark.parametrize("resume_parent", [False, True])
 async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_result(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeHarness, anthropic_messages: AnthropicMessages, resume_parent: bool
 ) -> None:
     """A SendMessage receipt is not child completion; TaskOutput reads the later result."""
     async with claude.start(anthropic_messages, subagents=True) as run:
@@ -344,6 +346,40 @@ async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_
     assert read_result["retrieval_status"] == "success"
     assert read_result["task"]["task_id"] == agent_id
     assert read_result["task"]["status"] == "completed"
+
+    if resume_parent:
+        session_id = next(frame["session_id"] for frame in captured if frame.get("type") == "result")
+        async with claude.start(anthropic_messages, subagents=True, resume_id=session_id) as resumed:
+            try:
+                async with asyncio.timeout(45):
+                    recovery = await resumed.send("Read the earlier child's result without restarting it.")
+                    async with await anthropic_messages.await_next_request() as exchange:
+                        assert "CHILD_SECOND_DONE" in "\n".join(exchange.request.texts("user"))
+                        await exchange.send(
+                            *sse.message_stream(
+                                [
+                                    sse.ToolUse(
+                                        "toolu_read_after_resume",
+                                        "TaskOutput",
+                                        {"task_id": agent_id, "block": False},
+                                    )
+                                ],
+                                model=MODEL,
+                            ).events
+                        )
+                    async with await anthropic_messages.await_next_request() as exchange:
+                        (read,) = exchange.request.tool_results
+                        assert read.tool_use_id == "toolu_read_after_resume"
+                        assert read.is_error is True, read
+                        assert agent_id in read.text
+                        await exchange.send(*sse.message_stream([sse.Text("RESUME_PROBE_DONE")], model=MODEL).events)
+                    assert (await recovery.result()).result == "RESUME_PROBE_DONE"
+                    assert not [
+                        frame for frame in resumed.native_frames() if frame.get("subtype") == "task_notification"
+                    ]
+            except BaseException:
+                await resumed.crash()
+                raise
 
 
 if __name__ == "__main__":

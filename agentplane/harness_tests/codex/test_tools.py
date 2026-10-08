@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shlex
 
+import pytest
 import pytest_bazel
 
 from agentplane.harness_tests.codex import frames, responses_sse as sse
@@ -129,12 +130,13 @@ async def test_file_edit_round_trip_changes_the_workspace(
     ]
 
 
+@pytest.mark.parametrize("resume_parent", [False, True])
 async def test_subagent_spawn_and_wait_report_the_child_identity(
-    codex: CodexHarness, openai_responses: OpenAIResponses
+    codex: CodexHarness, openai_responses: OpenAIResponses, resume_parent: bool
 ) -> None:
     """Parent and child requests may interleave; route by native thread ID, not arrival order."""
     config: dict[str, object] = {"features.multi_agent": True, "features.multi_agent_v2": False}
-    async with codex.start(openai_responses, config=config) as run:
+    async with codex.start(openai_responses, config=config, persist=resume_parent) as run:
         turn = await run.start_turn("Delegate a shell probe to a child and wait for its result.")
         async with await openai_responses.await_next_request() as exchange:
             assert "multi_agent_v1" in exchange.request.tool_names
@@ -228,6 +230,39 @@ async def test_subagent_spawn_and_wait_report_the_child_identity(
         assert item["receiverThreadIds"] == [spawned_id]
     wait_item = next(item for item in completed if item["id"] == "call_wait_child")
     assert wait_item["agentsStates"][spawned_id] == {"status": "completed", "message": "CHILD_DONE"}
+
+    if resume_parent:
+        async with codex.start(openai_responses, resume_thread_id=run.thread_id) as resumed:
+            recovery = await resumed.start_turn("Query the earlier child's status without restarting it.")
+            async with await openai_responses.await_next_request() as exchange:
+                assert any("CHILD_DONE" in output.output for output in exchange.request.function_call_outputs)
+                await exchange.send(
+                    *sse.response_stream(
+                        [
+                            sse.FunctionCall(
+                                "call_wait_after_resume",
+                                "wait_agent",
+                                {"targets": [spawned_id], "timeout_ms": 1000},
+                                namespace="multi_agent_v1",
+                            )
+                        ],
+                        model=MODEL,
+                    ).events
+                )
+            async with await openai_responses.await_next_request() as exchange:
+                result = exchange.request.function_call_outputs[-1]
+                assert result.call_id == "call_wait_after_resume"
+                assert json.loads(result.output)["status"] == {spawned_id: "not_found"}, result
+                await exchange.send(*sse.response_stream([sse.Message("RESUME_PROBE_DONE")], model=MODEL).events)
+            assert (await recovery.completed()).params.turn.status is wire.TurnStatus.COMPLETED
+        recovered_waits = [
+            frame["params"]["item"]
+            for frame in resumed.native_frames()
+            if frame.get("method") == "item/completed" and frame["params"]["item"]["id"] == "call_wait_after_resume"
+        ]
+        (recovered_wait,) = recovered_waits
+        assert recovered_wait["receiverThreadIds"] == [spawned_id]
+        assert recovered_wait["agentsStates"][spawned_id]["status"] == "notFound"
 
 
 if __name__ == "__main__":

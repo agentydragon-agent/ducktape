@@ -136,6 +136,28 @@ ordinary parent-resume fixtures, preserving native storage while starting a new 
 model-side gates establish the stimulus, but assertions about discoverability use native wire data.
 Pin observed behavior per harness/configuration before advertising recovery capabilities.
 
+### Transport-specific recovery investigation
+
+Compare Claude `stream-json` with [`--sdk-url` RemoteIO](claude_remote_io.md), using the
+same binary version and interruption points. The RemoteIO plan's static findings concern
+`2.1.292`; they are not evidence of runner-pinned `2.1.252` behavior. Probe worker registration,
+reinitialization, child/task inventory, transcript hydration, terminal-event replay, and whether
+command delivery receipts expose anything about child execution. Keep server-supplied history
+separate from state recovered by the harness itself. No transport cutover is implied.
+
+Codex v1 and v2 require separate recovery probes. At tag `rust-v0.157.0`, upstream
+[`multi_agent_resume.rs`](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/core/tests/suite/multi_agent_resume.rs)
+and its restore tests exercise v2 durable child identities and lazy loading after root restart.
+This is source evidence for a promising path, not an app-server wire assertion or proof that the
+v1 baseline automatically restores its children. Characterize unloaded identity, historical outcome,
+and active execution separately; a loaded-thread list need not enumerate all known children.
+
+The parameterized completed-child scenarios now also probe a clean parent exit and fresh-process
+resume. They query `TaskOutput` or v1 `wait_agent` without reactivating the child and retain both
+native traces. Their initial expectations are missing task / not-found despite retained parent
+history; CI must establish or correct those expectations from native evidence. This does not yet
+cover crash recovery, active children, v2, or RemoteIO.
+
 ### Initial executable coverage
 
 The additions live in the existing tool-test targets, with their existing pinned-binary runfiles and

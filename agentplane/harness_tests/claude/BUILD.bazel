@@ -128,6 +128,7 @@ py_test(
         ":messages",
         "//:conftest",
         "//agentplane/harness_tests:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
