@@ -279,15 +279,26 @@ export async function listSessions(sandbox: string): Promise<SessionSummary[]> {
   return data.map((row) => fromJson(SessionSummarySchema, row as JsonValue));
 }
 
+export type OpenStatus = { status: "absent" | "unconfirmed" | "ready"; session_id: string | null };
+
+export async function lookupOpen(sandbox: string, openKey: string): Promise<OpenStatus> {
+  const { data, error } = await api.GET("/sandboxes/{name}/sessions/open", {
+    params: { path: { name: sandbox }, query: { idempotency_key: openKey } },
+  });
+  if (error) throw new Error(displayableError(error));
+  return data as OpenStatus;
+}
+
+/** Create once. On an ambiguous response, use lookupOpen; never re-run bootstrap implicitly. */
 export async function openSession(
   sandbox: string,
-  sessionId: string,
+  openKey: string,
   spec: SessionSpec,
   setupScript?: string
 ): Promise<Attached> {
   const { data, error } = await api.POST("/sandboxes/{name}/sessions", {
     params: { path: { name: sandbox } },
-    body: { session_id: sessionId, spec: toJson(SessionSpecSchema, spec) as JsonObject, setup_script: setupScript },
+    body: { idempotency_key: openKey, spec: toJson(SessionSpecSchema, spec) as JsonObject, setup_script: setupScript },
   });
   if (error) throw new Error(displayableError(error));
   return fromJson(AttachedSchema, data as JsonValue);

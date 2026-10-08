@@ -9,7 +9,7 @@ from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -41,6 +41,7 @@ from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service import protocol_pb2 as service_pb2
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.testing.backend import backend, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
@@ -589,6 +590,70 @@ def test_service_launch_failure_preserves_uncertainty(
         json={"session_id": "uncertain", "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "m"}},
     )
     assert response.status_code == status_code
+
+
+def test_create_session_uses_service_id_and_preserves_legacy_open(
+    client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    public_id = str(uuid4())
+    received: list[tuple[str, str, dict[str, object], str | None]] = []
+
+    async def create_session(
+        sandbox: str, idempotency_key: str, spec: dict[str, object], setup_script: str | None = None
+    ) -> protocol_pb2.Attached:
+        received.append((sandbox, idempotency_key, spec, setup_script))
+        return protocol_pb2.Attached(session_id=public_id)
+
+    monkeypatch.setattr(bridge, "create_session", create_session)
+    path = "/sandboxes/live/sessions"
+    created = client.post(path, json={
+        "idempotency_key": "open-key", "spec": {"cwd": "/w/{session_id}"}, "setup_script": "bootstrap",
+    })
+    assert created.status_code == 201, created.text
+    assert created.json()["sessionId"] == public_id
+    assert received == [("live", "open-key", {"cwd": "/w/{session_id}"}, "bootstrap")]
+    assert client.post(path, json={"idempotency_key": "open-key", "session_id": "legacy", "spec": {}}).status_code == 422
+
+
+def test_open_lookup_reconciles_only_runner_confirmed_sessions(
+    client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No reservation/runner confirmation means no Thread; a confirmed one repairs lost app writes."""
+    public_id = str(uuid4())
+    summary = protocol_pb2.SessionSummary(
+        session_id=public_id,
+        spec=protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="m", instructions="secret"),
+    )
+    result = service_pb2.LookupSessionResponse()
+    calls: list[str] = []
+
+    async def lookup(*, idempotency_key: str) -> service_pb2.LookupSessionResponse:
+        calls.append(idempotency_key)
+        return result
+
+    monkeypatch.setattr(bridge._runners, "client", lambda name: SimpleNamespace(lookup=lookup))
+    path = "/sandboxes/live/sessions/open"
+    absent = client.get(path, params={"idempotency_key": "opaque-key"})
+    assert absent.status_code == 200
+    assert absent.json() == {"status": "absent", "session_id": None}
+    assert client.get("/threads", params={"sandbox": "live", "session_id": public_id}).json() == []
+
+    result.session_id = public_id
+    unconfirmed = client.get(path, params={"idempotency_key": "opaque-key"})
+    assert unconfirmed.json() == {"status": "unconfirmed", "session_id": public_id}
+    assert client.get("/threads", params={"sandbox": "live", "session_id": public_id}).json() == []
+
+    result.summary.CopyFrom(summary)
+    for _ in range(2):  # Reconcile after a lost app mapping, then repeat idempotently.
+        ready = client.get(path, params={"idempotency_key": "opaque-key"})
+        assert ready.status_code == 200, ready.text
+        assert ready.json() == {"status": "ready", "session_id": public_id}
+        assert "secret" not in ready.text
+    threads = client.get("/threads", params={"sandbox": "live", "session_id": public_id}).json()
+    assert len(threads) == 1
+    assert threads[0]["id"] == public_id
+    assert calls == ["opaque-key"] * 4
+    assert client.get(path, params={"idempotency_key": ""}).status_code == 422
 
 
 def test_a_runner_that_does_not_answer_is_a_503(

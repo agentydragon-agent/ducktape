@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
@@ -40,6 +40,11 @@ class NewSession(BaseModel):
     session_id: str | None = None  # legacy Open callers; not accepted with an idempotency key
     idempotency_key: str | None = None
     setup_script: str | None = Field(default=None, max_length=65_536)
+
+
+class OpenStatus(BaseModel):
+    status: Literal["absent", "unconfirmed", "ready"]
+    session_id: str | None = None
 
 
 class RunnerBridge:
@@ -98,6 +103,24 @@ class RunnerBridge:
         attached = protocol_pb2.Attached()
         attached.CopyFrom(created.attached)
         return attached
+
+    async def lookup_session(self, sandbox: str, idempotency_key: str) -> OpenStatus:
+        """Reconcile a lost Open without replaying its potentially secret-bearing inputs.
+
+        A reservation is not proof the runner accepted Open; only inventory permits a
+        Thread projection. Never return the summary (which includes the frozen spec).
+        """
+        result = await self._runners.client(sandbox).lookup(idempotency_key=idempotency_key)
+        if not result.session_id:
+            return OpenStatus(status="absent")
+        if not result.HasField("summary"):
+            return OpenStatus(status="unconfirmed", session_id=result.session_id)
+        thread_id = await self._event_logs.open(sandbox, result.session_id, result.summary.spec)
+        if thread_id != UUID(result.session_id):
+            raise RunnerError("service Session ID conflicts with the retained Thread identity")
+        await self._event_logs.resume_pending(thread_id)
+        await self._ingester.start()
+        return OpenStatus(status="ready", session_id=result.session_id)
 
     async def resume_thread(
         self, thread_id: UUID, *, expected_harness: str, expected_cwd: str
@@ -206,3 +229,10 @@ async def open_session(bridge: Bridge, name: str, body: NewSession) -> dict[str,
         assert body.session_id is not None
         attached = await bridge.open_session(name, body.session_id, body.spec, body.setup_script)
     return MessageToDict(attached)
+
+
+@router.get("/open", response_model=OpenStatus)
+async def lookup_session(bridge: Bridge, name: str, idempotency_key: str) -> OpenStatus:
+    if not idempotency_key or len(idempotency_key) > 128:
+        raise MalformedMessageError("Open key is required and must not exceed 128 characters")
+    return await bridge.lookup_session(name, idempotency_key)
