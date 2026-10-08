@@ -36,6 +36,7 @@ class ClaudeHarness:
         driver_tools: mcp.DriverMcpServer | None = None,
         initialize: bool = True,
         model: str = MODEL,
+        subagents: bool = False,
     ) -> async_run.ClaudeRun:
         # Launched as it ships: the RBE worker's glibc userland is the supported test environment.
         # `hooks` drops `--safe-mode` (which would otherwise disable them) for `--include-hook-events`.
@@ -47,6 +48,7 @@ class ClaudeHarness:
             replay_user_messages=replay_user_messages,
             hooks=hooks,
             slash_commands=slash_commands,
+            tools=(*scenarios.TOOLS, "Agent") if subagents else scenarios.TOOLS,
         )
         environment = {
             **self.base_environment,

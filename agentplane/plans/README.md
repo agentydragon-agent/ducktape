@@ -15,6 +15,8 @@ execution sequence. This is a priority decision, not a technical dependency.
 
 ## Open plans and gates
 
+- [Native subagent sessions](native_subagent_sessions.md) — characterization matrix and initial scripted
+  harness tests before choosing shared runner session semantics
 - [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (eviction, pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
 - [Task DAG](task_dag.md) — remaining work and proposed priorities, including unranked future
   harness-capability candidates, deployed acceptance, UI/history, and native recovery

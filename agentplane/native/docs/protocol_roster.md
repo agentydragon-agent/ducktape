@@ -55,7 +55,7 @@ Driver: `agentplane/native/claude/{driver,scenarios,async_run}.py`. Every test e
 | Streaming        | `stream_event` (`--include-partial-messages`): `content_block_start/stop`, deltas                                       | yes, `frames.assert_tool_lifecycles`                                | Text deltas not asserted individually                                                                                                                                            |
 | Thinking         | `thinking` blocks in `assistant`; signature echoed upstream                                                             | yes, `test_parallel_shell_tools_report_both_streams_and_exit_codes` | Thinking stays on; `--thinking`, `--max-thinking-tokens` hidden flags, `MAX_THINKING_TOKENS` (inferred) untested                                                                 |
 | Progress         | `tool_progress` (`elapsed_time_seconds`, `heartbeat`), `tool_use_summary` (inferred)                                    | no                                                                  | Long-running tool liveness                                                                                                                                                       |
-| Subagents        | `Task`/`Agent` tool, `parent_tool_use_id`, `--forward-subagent-text`, `--agents`, `system` `task_*` subtypes (inferred) | no                                                                  | Deliberately excluded; see below. Subagent prose reaches the client only with `initialize.forwardSubagentText`; by default only its tool frames are forwarded (observed 2.1.220) |
+| Subagents        | `Task`/`Agent` tool, `parent_tool_use_id`, `--forward-subagent-text`, `--agents`, `system` `task_*` subtypes (inferred) | partial, `test_subagent_tool_frames_are_correlated_with_the_parent_call` | Opt-in tool round-trip test; see the matrix below. Subagent prose reaches the client only with `initialize.forwardSubagentText`; by default only its tool frames are forwarded (observed 2.1.220) |
 | Background tasks | `background_tasks` subtype, `system` `background_tasks_changed` (inferred)                                              | no                                                                  |                                                                                                                                                                                  |
 
 ### Approvals and permissions
@@ -156,7 +156,7 @@ id keeps the classic `exec_command` function-call shape the tests assert.
 | MCP                       | `mcpServerStatus/list`, `mcpServer/tool/call`, `mcpServer/resource/read`, `config/mcpServer/reload`, `mcpToolCall` item | no                                                               |                                                                                                                                                                            |
 | Filesystem API            | `fs/{readFile,writeFile,createDirectory,getMetadata,readDirectory,remove,copy,watch,unwatch}`, `fs/changed`             | no                                                               | Client-side file access through the server                                                                                                                                 |
 | Plan                      | `turn/plan/updated`, `item/plan/delta`, `plan` item                                                                     | no                                                               |                                                                                                                                                                            |
-| Web / image / collab      | `webSearch`, `imageView`, `imageGeneration`, `collabAgentToolCall`, `subAgentActivity` items                            | no                                                               | Off; see below                                                                                                                                                             |
+| Web / image / collab      | `webSearch`, `imageView`, `imageGeneration`, `collabAgentToolCall`, `subAgentActivity` items                            | no                                                               | Off by default; opt-in collaboration test below                                                                                                                                                             |
 
 ### Approvals and permissions
 
@@ -243,8 +243,11 @@ the scenario under test; a bridge that turns any of these on must widen the rost
 - **MCP servers**: Claude `--strict-mcp-config` with no `--mcp-config`; Codex none configured. Tool
   rosters must stay the fixed lists the tests assert (`Bash,Edit,Read`; `exec_command`, `write_stdin`,
   `request_user_input`, `get_goal`, `create_goal`, `update_goal`).
-- **Multi-agent / subagents**: Claude `--tools` omits `Task`; Codex `features.multi_agent = false`.
-  `parent_tool_use_id` and `subAgentActivity` stay unexercised.
+- **Multi-agent / subagents**: Default scenarios omit Claude `Agent`/`Task` and set Codex
+  `features.multi_agent = false`. The opt-in cases in each harness's `test_tools.py` exercise one
+  child tool round trip; the [characterization matrix](../../plans/native_subagent_sessions.md)
+  tracks the remaining discovery, forwarding, and recovery coverage.
+  `parent_tool_use_id` is asserted; `subAgentActivity` remains unexercised.
 - **Web search and image viewing**: Codex `web_search = "disabled"`, `features.view_image = false`;
   Claude `--tools` omits `WebSearch`, `WebFetch`.
 - **Code mode**: avoided by using a model id outside Codex's catalog (`MODEL = "agentplane-test-model"`);

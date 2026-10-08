@@ -154,6 +154,7 @@ def command(
     effort: str | None = None,
     hooks: bool = False,
     slash_commands: bool = False,
+    tools: tuple[str, ...] = TOOLS,
 ) -> list[str]:
     """`session_id` fixes a fresh session's id; with `resume_id` the resumed session keeps its own.
 
@@ -183,7 +184,7 @@ def command(
         SESSION_NAME,
         # Retain only the tools the scenarios exercise, not Claude's full tool catalog.
         "--tools",
-        ",".join(TOOLS),
+        ",".join(tools),
         "--output-format",
         "stream-json",
         "--verbose",
