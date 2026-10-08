@@ -114,6 +114,8 @@
           url = "https://github.com/astral-sh/ruff/releases/download/0.16.7/ruff-x86_64-unknown-linux-gnu.tar.gz";
           hash = "sha256-c4lMe3yaU/1m7XFes6HsZQd/MWMo43cFepi9t/y6AyY=";
         };
+        nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+        buildInputs = [ pkgs.stdenv.cc.cc.lib ];
         dontBuild = true;
         dontConfigure = true;
         dontCheck = true;
