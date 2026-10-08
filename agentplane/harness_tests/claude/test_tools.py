@@ -306,8 +306,7 @@ async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_
             async with await anthropic_messages.await_next_request() as exchange:
                 assert "CHILD_SECOND_DONE" in "\n".join(exchange.request.texts("user"))
                 stream = sse.message_stream(
-                    [sse.ToolUse("toolu_read_child", "TaskOutput", {"task_id": agent_id, "block": False})],
-                    model=MODEL,
+                    [sse.ToolUse("toolu_read_child", "TaskOutput", {"task_id": agent_id, "block": False})], model=MODEL
                 )
                 await exchange.send(*stream.events)
 

@@ -77,9 +77,7 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
                 if not active:
                     async with await model.await_next_request() as exchange:
                         assert "STDIO_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
-                        await exchange.send(
-                            *sse.message_stream([sse.Text("STDIO_PARENT_DONE")], model=MODEL).events
-                        )
+                        await exchange.send(*sse.message_stream([sse.Text("STDIO_PARENT_DONE")], model=MODEL).events)
                     assert (await completed.result()).result == "STDIO_PARENT_DONE"
                     if crash:
                         assert await run.crash() < 0
@@ -138,9 +136,7 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
                         *sse.message_stream(
                             [
                                 sse.ToolUse(
-                                    "toolu_stdio_read",
-                                    "TaskOutput",
-                                    {"task_id": started["task_id"], "block": False},
+                                    "toolu_stdio_read", "TaskOutput", {"task_id": started["task_id"], "block": False}
                                 )
                             ],
                             model=MODEL,
