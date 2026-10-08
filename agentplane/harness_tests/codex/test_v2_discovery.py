@@ -157,8 +157,7 @@ async def test_v2_child_discovery_and_resume(
             spawn_items = [
                 frame["params"]["item"]
                 for frame in process.stdout_frames()
-                if frame.get("method") == "item/completed"
-                and frame["params"]["item"]["id"] == "call_v2_spawn"
+                if frame.get("method") == "item/completed" and frame["params"]["item"]["id"] == "call_v2_spawn"
             ]
             (spawn,) = spawn_items
             assert spawn["senderThreadId"] == root_id

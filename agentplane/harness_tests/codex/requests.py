@@ -63,7 +63,9 @@ class Reasoning(BaseModel):
     encrypted_content: str | None = None
 
 
-InputItem = Annotated[InputMessage | AgentMessage | FunctionCall | FunctionCallOutput | Reasoning, Field(discriminator="type")]
+InputItem = Annotated[
+    InputMessage | AgentMessage | FunctionCall | FunctionCallOutput | Reasoning, Field(discriminator="type")
+]
 
 
 class Tool(BaseModel):

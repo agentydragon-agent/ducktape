@@ -204,7 +204,6 @@ exists; do not replace the real-binary tests with adapter mocks. Keep read-only 
 from independently controlling children, and do not manufacture a complete transcript from a parent
 summary.
 
-
 ## Codex multi-agent v2 discovery extension
 
 `//agentplane/harness_tests/codex:test_v2_discovery` adds a separate configuration matrix
@@ -213,16 +212,16 @@ on the existing Codex **0.157.0** pin: `features.multi_agent=true` and
 methods; this extension specifically changes the **multi-agent feature/tool surface** from
 `multi_agent_v1` to `collaboration`. It is not a production adapter or pin change.
 
-| Case | Assertions / evidence | Status |
-| --- | --- | --- |
-| Root creation | `thread/start` mints ID; root has no parent; loaded enumeration includes it | Added, awaiting CI |
-| Native child launch | `collaboration.spawn_agent`, task name and `fork_turns=none`; completed spawn item's receiver ID agrees with child model-request ID | Added, awaiting CI |
-| Live child snapshot | `thread/read` identifies parent and shared session tree, active status; paginated loaded enumeration includes root and child | Added, awaiting CI |
-| Completed child, clean restart | Await native completed turn, restart server, resume root, enumerate and read historical child without resuming it | Added, awaiting CI |
-| Completed child, crash | Same read-only recovery after killing the server | Added, awaiting CI |
-| Active child, crash | Hold model request unanswered, kill server, observe request closure; recover identity/history without child reactivation | Added, awaiting CI |
-| Live client reconnect | Retain server process, reconnect a separate client, compare enumeration and subscriptions | Planned; stdio process restart is not this case |
-| Alternate context/ancestry | Context fork, concurrent children, grandchild, explicit child attachment and input | Planned |
+| Case                           | Assertions / evidence                                                                                                               | Status                                          |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Root creation                  | `thread/start` mints ID; root has no parent; loaded enumeration includes it                                                         | Added, awaiting CI                              |
+| Native child launch            | `collaboration.spawn_agent`, task name and `fork_turns=none`; completed spawn item's receiver ID agrees with child model-request ID | Added, awaiting CI                              |
+| Live child snapshot            | `thread/read` identifies parent and shared session tree, active status; paginated loaded enumeration includes root and child        | Added, awaiting CI                              |
+| Completed child, clean restart | Await native completed turn, restart server, resume root, enumerate and read historical child without resuming it                   | Added, awaiting CI                              |
+| Completed child, crash         | Same read-only recovery after killing the server                                                                                    | Added, awaiting CI                              |
+| Active child, crash            | Hold model request unanswered, kill server, observe request closure; recover identity/history without child reactivation            | Added, awaiting CI                              |
+| Live client reconnect          | Retain server process, reconnect a separate client, compare enumeration and subscriptions                                           | Planned; stdio process restart is not this case |
+| Alternate context/ancestry     | Context fork, concurrent children, grandchild, explicit child attachment and input                                                  | Planned                                         |
 
 The recovery probes query `thread/loaded/list`, `thread/list` with an explicit subagent
 source filter, and `thread/read(includeTurns=true)`. They assert that reading the child does
