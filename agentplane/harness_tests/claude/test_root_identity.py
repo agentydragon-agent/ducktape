@@ -47,9 +47,7 @@ async def test_fresh_root_identity_timing(
                     assert result.session_id == requested_id
                 session_frames = [frame for frame in run.native_frames() if frame.get("session_id")]
                 assert {frame["session_id"] for frame in session_frames} == {result.session_id}
-                (claude.logs / "identity-after-input.json").write_text(
-                    json.dumps(session_frames[0], indent=2) + "\n"
-                )
+                (claude.logs / "identity-after-input.json").write_text(json.dumps(session_frames[0], indent=2) + "\n")
     # Native logs include graceful no-input shutdown as well; a post-shutdown
     # result must not retroactively be described as an initialization declaration.
 
