@@ -39,6 +39,7 @@ import {
   summarizeLifecycleGroup,
   summarizeRun,
   summarizeSetup,
+  setupProgress,
   type HistoryRow,
 } from "./history_rows";
 import { LiveStatus, useRequiredSandboxesLive, useRequiredThreadsLive } from "../live";
@@ -178,9 +179,16 @@ function SetupView({
     <CollapsibleRows
       id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:setup`}
       summary={
-        <Text span size="xs" c="dimmed">
-          {summarizeSetup(entities)}
-        </Text>
+        <Box component="span" style={{ display: "grid", gap: 2 }}>
+          <Text span size="xs" c="dimmed">
+            {summarizeSetup(entities)}
+          </Text>
+          {setupProgress(entities).map((line, index) => (
+            <Text span size="xs" lineClamp={1} key={index} style={{ overflowWrap: "anywhere" }}>
+              {line}
+            </Text>
+          ))}
+        </Box>
       }
       threadId={threadId}
       entities={entities}

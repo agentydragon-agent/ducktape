@@ -2,7 +2,7 @@ import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
 import { EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
-import { historyRows, rowKey, summarizeLifecycleGroup, summarizeRun, summarizeSetup } from "./history_rows";
+import { historyRows, rowKey, summarizeLifecycleGroup, summarizeRun, summarizeSetup, setupProgress } from "./history_rows";
 import { testEntity, testItem } from "./thread_entity_fixture";
 import type { ThreadEntity } from "./thread_sync";
 
@@ -96,6 +96,50 @@ describe("historyRows", () => {
     expect(historyRows(segments)[0]?.entities).toEqual(segments.slice(0, 3));
     expect(summarizeSetup(segments.slice(0, 2))).toBe("Thread setup running");
     expect(summarizeSetup(segments.slice(0, 3))).toBe("Thread setup failed (exit 7)");
+  });
+});
+
+describe("setupProgress", () => {
+  const started = lifecycleItem(1, "setup_started", { case: "setupStarted", value: {} });
+  const output = (cursor: number, channel: "stdout" | "stderr", bytes: Uint8Array) =>
+    lifecycleItem(cursor, "setup_output", {
+      case: "setupOutput",
+      value: { stream: { case: channel, value: bytes } },
+    });
+  const bytes = (text: string) => new TextEncoder().encode(text);
+
+  it("overwrites carriage-return progress across chunks, preserves other steps and replays deterministically", () => {
+    const partial = [
+      started,
+      output(2, "stderr", bytes("Cloning into repo...\r\nUpdating files: 10%\r")),
+      output(3, "stdout", bytes("Preparing workspace\n")),
+      output(4, "stderr", bytes("Updating files: 90%\rUpdating files: 100%\n")),
+    ];
+    expect(setupProgress(partial.slice(0, 2))).toEqual(["Cloning into repo...", "Updating files: 10%"]);
+    expect(setupProgress(partial)).toEqual([
+      "Cloning into repo...",
+      "Preparing workspace",
+      "Updating files: 100%",
+    ]);
+    const finished = [...partial, lifecycleItem(5, "setup_finished", { case: "setupFinished", value: { exitCode: 7 } })];
+    expect(setupProgress(finished)).toEqual(setupProgress(partial));
+    expect(summarizeSetup(finished)).toBe("Thread setup failed (exit 7)");
+    expect(historyRows(finished)[0]?.entities).toEqual(finished); // Raw evidence remains available on expansion.
+  });
+
+  it("keeps stdout and stderr UTF-8 decoders independent across event boundaries", () => {
+    const euro = bytes("€");
+    const partial = [
+      started,
+      output(2, "stderr", euro.slice(0, 1)),
+      output(3, "stdout", bytes("Ready\n")),
+      output(4, "stderr", euro.slice(1)),
+    ];
+    expect(setupProgress(partial)).toEqual(["Ready", "€"]);
+    expect(setupProgress([...partial, lifecycleItem(5, "setup_interrupted", { case: "setupInterrupted", value: {} })])).toEqual([
+      "Ready",
+      "€",
+    ]);
   });
 });
 

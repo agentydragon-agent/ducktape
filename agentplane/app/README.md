@@ -159,7 +159,11 @@ by ID, so an outcome stays visible however far the thread has moved on. Every la
 held row arrives on the shape's live log, which the browser follows over SSE. Text and tool
 arguments render as far as their references' chunk counts, while reasoning, tool output and
 associated debug frames are read on demand. Local authored intent, unsent drafts and
-viewport/disclosure state remain separate from the synchronized rows. See
+viewport/disclosure state remain separate from the synchronized rows. The Thread history
+coalesces consecutive setup observations into one disclosure: its summary shows the latest
+bounded stdout/stderr progress lines (carriage-return updates replace the current line), then
+the exit/interruption outcome. Expanding retains the original ordered, unmodified setup events;
+reconnect rebuilds the same preview from archived events rather than a separate progress feed. See
 [the sync design](../docs/thread_view_sync.md) for query, revision and memory contracts and the
 remaining acceptance gates.
 

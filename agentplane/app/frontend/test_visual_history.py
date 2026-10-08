@@ -233,6 +233,18 @@ async def test_debug_history_stderr_disclosure(view: VisualPage, app: Agentplane
     await view.capture()
 
 
+async def test_thread_setup_progress(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.thread_setup_running()
+    await app.mount_thread(IDLE_THREAD)
+    await view.check(context="fixture ready")
+    page = view.page
+    setup = page.locator(".agentplane-disclosure-summary").filter(has_text="Thread setup running")
+    await expect(setup.get_by_text("Cloning into project...")).to_be_visible()
+    await expect(setup.get_by_text("Updating files: 100%")).to_be_visible()
+    await expect(setup.get_by_text("Updating files: 10%")).to_have_count(0)
+    await view.capture(name="thread_setup_live_progress")
+
+
 async def test_thread_setup_output(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.thread_setup()
     await app.mount_thread(IDLE_THREAD)
@@ -242,6 +254,7 @@ async def test_thread_setup_output(view: VisualPage, app: AgentplaneFixture) -> 
     await setup.click()
     await expect(setup).to_have_attribute("aria-expanded", "true")
     await expect(page.get_by_text("Setup stdout")).to_be_visible()
+    await expect(page.get_by_text("Setup stderr", exact=True).first).to_be_visible()
     await view.capture()
 
 

@@ -143,6 +143,9 @@ class AgentplaneFixture:
     async def thread_setup(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.threadSetup()")
 
+    async def thread_setup_running(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.threadSetupRunning()")
+
     async def shell_calls(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.shellCalls()")
 
