@@ -1,7 +1,9 @@
 import json
 import subprocess
 import sys
+import urllib.request
 from datetime import timedelta
+from io import BytesIO
 from pathlib import Path
 from uuid import UUID
 
@@ -11,8 +13,10 @@ import pytest_bazel
 from devinfra.pr_visuals.determinism import (
     Findings,
     Observation,
+    Observations,
     Render,
     analyze,
+    load_manifest,
     main,
     observe,
     observe_targets,
@@ -20,6 +24,7 @@ from devinfra.pr_visuals.determinism import (
     run_once,
     visual_fleet,
 )
+from util.visual_review import VisualReviewAsset, VisualReviewManifest
 
 
 def _listing(by_invocation: dict[str, list[dict[str, str]]]):
@@ -31,66 +36,157 @@ def _listing(by_invocation: dict[str, list[dict[str, str]]]):
     return fake_run
 
 
-def _png(label: str, name: str, uri: str) -> dict[str, str]:
+def _artifact(label: str, name: str, uri: str) -> dict[str, str]:
     return {"label": label, "name": f"test.outputs/{name}", "uri": uri}
 
 
-def test_a_render_with_one_digest_across_runs_is_reproducible() -> None:
-    """The whole point: same bytes every run means one content-addressed URI every run."""
-    artifacts = [_png("//ui:visual", "list.png", "bytestream://same")]
-    observations = observe(
-        ["run-1", "run-2", "run-3"],
-        bbapi=Path("bbapi"),
-        run=_listing({"run-1": artifacts, "run-2": artifacts, "run-3": artifacts}),
-    )
+def _manifest(*names: str) -> VisualReviewManifest:
+    return VisualReviewManifest(title="Test UI", assets=[VisualReviewAsset(path=name, label=name) for name in names])
 
-    assert observations == {
-        Render("//ui:visual", "list.png"): Observation(by_digest={"bytestream://same": ["run-1", "run-2", "run-3"]})
+
+@pytest.mark.parametrize(
+    ("uris", "drifted", "missing"),
+    [
+        pytest.param(["same", "same", "same"], False, False, id="stable"),
+        pytest.param(["same", "same", "different"], True, False, id="drift"),
+        pytest.param(["same", None, "same"], False, True, id="missing-in-one-run"),
+        pytest.param([None, None, None], False, True, id="declared-but-never-produced"),
+    ],
+)
+def test_review_assets_require_identical_bytes_in_every_run(
+    uris: list[str | None], drifted: bool, missing: bool
+) -> None:
+    listings = {
+        f"run-{i}": [_artifact("//ui:visual", "visual-review.json", "manifest")]
+        + ([] if uri is None else [_artifact("//ui:visual", "list.png", uri)])
+        for i, uri in enumerate(uris)
     }
-    assert analyze(observations, runs=3) == Findings(drifted=[], missing=[])
-
-
-def test_a_render_that_drifts_in_one_run_of_three_is_caught() -> None:
-    """The case two runs can miss: a race that fires intermittently."""
-    stable = _png("//ui:visual", "list.png", "bytestream://same")
     observations = observe(
-        ["run-1", "run-2", "run-3"],
-        bbapi=Path("bbapi"),
-        run=_listing(
-            {"run-1": [stable], "run-2": [stable], "run-3": [_png("//ui:visual", "list.png", "bytestream://drifted")]}
-        ),
+        list(listings), bbapi=Path("bbapi"), run=_listing(listings), read_manifest=lambda _: _manifest("list.png")
     )
-
-    drifted = Render("//ui:visual", "list.png")
-    assert analyze(observations, runs=3) == Findings(drifted=[drifted], missing=[])
-    # Which run produced which bytes: the reader downloads one of each and diffs them.
-    assert observations[drifted].by_digest == {
-        "bytestream://same": ["run-1", "run-2"],
-        "bytestream://drifted": ["run-3"],
-    }
-    assert "list.png" in report(observations, ["run-1", "run-2", "run-3"], {})
+    render = Render("//ui:visual", "list.png")
+    assert analyze(observations.review, runs=3) == Findings(
+        drifted=[render] if drifted else [], missing=[render] if missing else []
+    )
+    assert observations.review[render].runs_present == sum(uri is not None for uri in uris)
+    assert observations.diagnostics == {}
 
 
-def test_a_render_missing_from_some_runs_is_its_own_finding() -> None:
-    """Comparing digests over only the runs that produced it would call this stable."""
+def test_unpublished_pngs_are_diagnostics_and_other_outputs_are_ignored() -> None:
     observations = observe(
         ["run-1", "run-2"],
         bbapi=Path("bbapi"),
-        run=_listing({"run-1": [_png("//ui:visual", "flaky.png", "bytestream://a")], "run-2": []}),
+        run=_listing({
+            "run-1": [_artifact("//ui:visual", "loading.png", "first"), _artifact("//ui:visual", "trace.zip", "trace")],
+            "run-2": [_artifact("//ui:visual", "loading.png", "second")],
+        }),
+        read_manifest=lambda _: pytest.fail("no manifest was listed"),
     )
+    assert observations.review == {}
+    assert observations.diagnostics == {
+        Render("//ui:visual", "loading.png"): Observation(by_digest={"first": ["run-1"], "second": ["run-2"]})
+    }
+    diagnostic_section = report(observations, ["run-1", "run-2"], {}).split("## Diagnostic PNGs")[1]
+    assert "loading.png" in diagnostic_section
 
-    flaky = Render("//ui:visual", "flaky.png")
-    assert analyze(observations, runs=2) == Findings(drifted=[], missing=[flaky])
-    assert observations[flaky].runs_present == 1
-    assert "flaky.png" in report(observations, ["run-1", "run-2"], {})
+
+@pytest.mark.parametrize("name", ["loading.png", "failure.debug.png", "list.png"])
+def test_manifest_membership_not_filename_decides_what_is_reviewed(name: str) -> None:
+    observations = observe(
+        ["run-1", "run-2"],
+        bbapi=Path("bbapi"),
+        run=_listing({
+            invocation: [_artifact("//ui:visual", "visual-review.json", "manifest"), _artifact("//ui:visual", name, invocation)]
+            for invocation in ("run-1", "run-2")
+        }),
+        read_manifest=lambda _: _manifest(name),
+    )
+    assert analyze(observations.review, runs=2).drifted == [Render("//ui:visual", name)]
+    assert observations.diagnostics == {}
 
 
-def test_non_png_outputs_are_not_renders() -> None:
-    """The manifest is republished every run and its digest legitimately varies."""
-    manifest = {"label": "//ui:visual", "name": "test.outputs/visual-review.json", "uri": "bytestream://manifest"}
-    observations = observe(["run-1"], bbapi=Path("bbapi"), run=_listing({"run-1": [manifest]}))
+@pytest.mark.parametrize("second_manifest", [[], [_artifact("//ui:visual", "visual-review.json", "other")]])
+def test_a_png_without_its_own_runs_declaration_is_missing(second_manifest: list[dict[str, str]]) -> None:
+    png = _artifact("//ui:visual", "list.png", "same")
+    manifests = {"first": _manifest("list.png"), "other": _manifest("other.png")}
+    observations = observe(
+        ["run-1", "run-2"],
+        bbapi=Path("bbapi"),
+        run=_listing({
+            "run-1": [_artifact("//ui:visual", "visual-review.json", "first"), png],
+            "run-2": [*second_manifest, png],
+        }),
+        read_manifest=manifests.__getitem__,
+    )
+    render = Render("//ui:visual", "list.png")
+    assert render in analyze(observations.review, runs=2).missing
+    assert observations.review[render].runs_present == 1
 
-    assert observations == {}
+
+def test_shard_manifests_are_unioned_without_counting_duplicate_outputs_as_runs() -> None:
+    first = _artifact("//ui:visual", "list.png", "same")
+    second = _artifact("//ui:visual", "detail.png", "detail")
+    manifests = {"first": _manifest("list.png"), "second": _manifest("detail.png")}
+    manifest_artifacts = [_artifact("//ui:visual", "visual-review.json", uri) for uri in manifests]
+    observations = observe(
+        ["run-1", "run-2"],
+        bbapi=Path("bbapi"),
+        run=_listing({"run-1": [*manifest_artifacts, first, first, second], "run-2": [*manifest_artifacts, second]}),
+        read_manifest=manifests.__getitem__,
+    )
+    assert analyze(observations.review, runs=2) == Findings(drifted=[], missing=[Render("//ui:visual", "list.png")])
+    assert observations.review[Render("//ui:visual", "list.png")].runs_present == 1
+    assert observations.review[Render("//ui:visual", "detail.png")].runs_present == 2
+
+
+def test_conflicting_outputs_in_one_run_do_not_hide_a_missing_run() -> None:
+    observations = {
+        Render("//ui:visual", "list.png"): Observation(by_digest={"first": ["run-1"], "second": ["run-1"]})
+    }
+    render = Render("//ui:visual", "list.png")
+    assert analyze(observations, runs=2) == Findings(drifted=[render], missing=[render])
+
+
+def test_manifest_is_read_directly_from_the_listed_cas_uri(monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = _manifest("loading.png")
+    monkeypatch.setenv("BUILDBUDDY_API_KEY", "test-key")
+
+    def fetch(request: urllib.request.Request, *, timeout: int) -> BytesIO:
+        assert request.full_url == "https://app.buildbuddy.io/file/download?bytestream_url=bytestream%3A%2F%2Fmanifest"
+        assert request.get_header("X-buildbuddy-api-key") == "test-key"
+        assert timeout > 0
+        return BytesIO(manifest.model_dump_json(by_alias=True).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fetch)
+    assert load_manifest("bytestream://manifest") == manifest
+
+
+def test_unreadable_manifest_is_not_silently_treated_as_diagnostic() -> None:
+    def fail(_uri: str) -> VisualReviewManifest:
+        raise OSError("manifest unavailable")
+
+    with pytest.raises(OSError):
+        observe(
+            ["run-1"],
+            bbapi=Path("bbapi"),
+            run=_listing({"run-1": [_artifact("//ui:visual", "visual-review.json", "manifest")]}),
+            read_manifest=fail,
+        )
+
+
+def test_manifest_membership_is_scoped_to_its_target() -> None:
+    observations = observe(
+        ["run-1"],
+        bbapi=Path("bbapi"),
+        run=_listing({"run-1": [
+            _artifact("//ui:visual", "visual-review.json", "manifest"),
+            _artifact("//ui:visual", "list.png", "review"),
+            _artifact("//other:browser", "list.png", "diagnostic"),
+        ]}),
+        read_manifest=lambda _: _manifest("list.png"),
+    )
+    assert set(observations.review) == {Render("//ui:visual", "list.png")}
+    assert set(observations.diagnostics) == {Render("//other:browser", "list.png")}
 
 
 def test_run_once_hands_the_invocation_id_to_bbr_rather_than_reading_it_back() -> None:
@@ -101,10 +197,11 @@ def test_run_once_hands_the_invocation_id_to_bbr_rather_than_reading_it_back() -
         seen.append([str(part) for part in command])
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    invocation = run_once(["//props/frontend:visual"], bbr=Path("bbr"), run=fake_run)
+    execution = run_once(["//props/frontend:visual"], bbr=Path("bbr"), run=fake_run)
 
-    assert f"--invocation_id={invocation}" in seen[0]
-    assert UUID(invocation).version == 4
+    assert f"--invocation_id={execution.invocation}" in seen[0]
+    assert UUID(execution.invocation).version == 4
+    assert execution.returncode == 0
     # Without both, a later run replays the first run's result and every scene looks stable.
     assert "--nocache_test_results" in seen[0]
     assert "--noremote_accept_cached" in seen[0]
@@ -228,7 +325,7 @@ def test_a_target_that_did_not_pass_says_so_in_the_report() -> None:
         return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
 
     summary = report(
-        {}, ["run-1", "run-2"], observe_targets(["run-1", "run-2"], ["//ui:visual"], bbapi=Path("bbapi"), run=fake_run)
+        Observations(review={}, diagnostics={}), ["run-1", "run-2"], observe_targets(["run-1", "run-2"], ["//ui:visual"], bbapi=Path("bbapi"), run=fake_run)
     )
 
     assert "FLAKY, PASSED" in summary
@@ -244,21 +341,29 @@ def _exit_status() -> int | str | None:
 
 
 @pytest.mark.parametrize(
-    ("published_uris", "exit_code"),
+    ("published_uris", "publish", "status", "returncode", "exit_code"),
     [
-        pytest.param(["same", "same", "same"], None, id="reproducible"),
-        pytest.param(["first", "second", "third"], 1, id="drifted"),
-        pytest.param([None, "same", "same"], 1, id="missing from one run"),
+        pytest.param(["same", "same", "same"], True, "PASSED", 0, None, id="stable-review-drifting-diagnostics"),
+        pytest.param(["first", "second", "third"], True, "PASSED", 0, 1, id="drifted-review"),
+        pytest.param([None, "same", "same"], True, "PASSED", 0, 1, id="missing-review"),
+        pytest.param([None, None, None], True, "PASSED", 0, 1, id="never-produced-review"),
+        pytest.param([None, None, None], False, "PASSED", 0, None, id="diagnostics-only"),
+        pytest.param(["same", "same", "same"], True, "FAILED", 0, 1, id="failed-test-with-stable-review"),
+        pytest.param([None, None, None], False, "FAILED", 0, 1, id="failed-diagnostic-only-test"),
+        pytest.param(["same", "same", "same"], True, "FLAKY", 0, 1, id="flaky-test"),
+        pytest.param(["same", "same", "same"], True, "PASSED", 1, 1, id="bbr-failure-with-artifacts"),
+        pytest.param([None, None, None], False, None, 1, 1, id="build-failure-without-test-results"),
+        pytest.param([None, None, None], False, None, 0, 1, id="no-test-results"),
     ],
 )
-def test_the_exit_status_says_whether_every_render_was_reproducible(
-    monkeypatch: pytest.MonkeyPatch, published_uris: list[str | None], exit_code: int | None
+def test_exit_status_preserves_review_and_test_failures_but_not_diagnostic_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    published_uris: list[str | None],
+    publish: bool,
+    status: str | None,
+    returncode: int,
+    exit_code: int | None,
 ) -> None:
-    """A scheduled sweep reports on this status alone; the markdown only says which renders.
-
-    `published_uris` is what each run, in order, published for the one render: its content-addressed
-    URI, or `None` for a run that published nothing.
-    """
     invocations: list[str] = []
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -266,16 +371,26 @@ def test_the_exit_status_says_whether_every_render_was_reproducible(
         match [str(part) for part in command]:
             case ["bbr", "test", flag, *_]:
                 invocations.append(flag.removeprefix("--invocation_id="))
+                return subprocess.CompletedProcess(command, returncode, "", "")
             case ["bbapi", "artifact", "list", invocation, "--json"]:
                 uri = published_uris[invocations.index(invocation)]
-                payload = [] if uri is None else [_png("//ui:visual", "list.png", f"bytestream://{uri}")]
-            case ["bbapi", "target", _, "--json"]:
-                payload = {"targetGroups": [{"targets": [_test_row("//ui:visual", seconds=9.0)]}]}
+                artifacts = [_artifact("//ui:visual", "loading.png", invocation)]
+                if invocation == invocations[0]:
+                    artifacts.append(_artifact("//ui:visual", "transient.png", "first-run-only"))
+                if publish:
+                    artifacts.append(_artifact("//ui:visual", "visual-review.json", "manifest"))
+                if uri is not None:
+                    artifacts.append(_artifact("//ui:visual", "list.png", uri))
+                payload = artifacts
+            case ["bbapi", "target", _, "--json", *_]:
+                targets = [] if status is None else [_test_row("//ui:visual", status=status, seconds=9.0)]
+                payload = {"targetGroups": [{"targets": targets}]}
             case other:
                 raise AssertionError(f"unexpected command {other}")
         return subprocess.CompletedProcess(command, 0, json.dumps(payload) if payload is not None else "", "")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("devinfra.pr_visuals.determinism.load_manifest", lambda _: _manifest("list.png"))
     monkeypatch.setattr(sys, "argv", ["determinism", "--runs", str(len(published_uris)), "//ui:visual"])
 
     assert _exit_status() == exit_code
