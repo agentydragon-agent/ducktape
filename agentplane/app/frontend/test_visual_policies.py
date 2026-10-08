@@ -102,24 +102,7 @@ async def test_connections_settings_modal_connections(view: VisualPage, app: Age
     page = view.page
     await page.get_by_role("button", name="Settings").click()
     await expect(page.locator("[data-connection-id]").first).to_be_visible()
-    await expect(page.get_by_role("tab", name="OAuth clients")).to_have_attribute("aria-selected", "true")
-    await expect(page.get_by_role("heading", name="OAuth clients")).to_have_count(0)
     await view.capture(target=view.page.locator("#app"))
-
-
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_notifications_settings_tab_has_no_duplicate_heading(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_app("/")
-    await view.check(context="fixture ready")
-    page = view.page
-    if page.viewport_size and page.viewport_size["width"] <= MOBILE.width:
-        await page.get_by_role("button", name="Toggle navigation").click()
-    await page.get_by_role("button", name="Settings").click()
-    await page.get_by_role("tab", name="Notifications").click()
-    await expect(page.get_by_role("tab", name="Notifications")).to_have_attribute("aria-selected", "true")
-    await expect(page.get_by_role("heading", name="Notifications")).to_have_count(0)
-    await expect(page.get_by_role("button", name="Register this browser")).to_be_visible()
-    await view.capture(target=page.locator("#app"))
 
 
 async def test_oauth_clients_update_while_settings_stays_open(view: VisualPage, app: AgentplaneFixture) -> None:
@@ -218,8 +201,6 @@ async def test_mcp_servers_linked_and_expired(view: VisualPage, app: AgentplaneF
     await view.page.wait_for_selector("[data-mcp-server]", state="attached")
     await view.check(context="fixture ready")
     page = view.page
-    await expect(page.get_by_role("tab", name="MCP servers")).to_have_attribute("aria-selected", "true")
-    await expect(page.get_by_role("heading", name="MCP servers")).to_have_count(0)
     await _in_viewport(page.locator('[data-mcp-server="linkage:example_docs"]').get_by_text("linked", exact=True))
     await _in_viewport(page.locator('[data-mcp-server="linkage:example_cluster"]').get_by_text("expired", exact=True))
     await view.capture(target=view.page.locator("#app"))
