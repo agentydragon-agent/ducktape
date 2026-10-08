@@ -5,7 +5,7 @@ The migration is owned by Sandbox Service. No app tables or app-issued identitie
 
 from uuid import UUID
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, LargeBinary, String
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, LargeBinary, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -15,7 +15,20 @@ class Base(DeclarativeBase):
 
 class SessionHistory(Base):
     __tablename__ = "session_history"
-    __table_args__ = (CheckConstraint("last_cursor >= 0", name="history_last_cursor_nonnegative"),)
+    __table_args__ = (
+        CheckConstraint("last_cursor >= 0", name="history_last_cursor_nonnegative"),
+        # Imported histories may lack a UID. NULLS NOT DISTINCT also fences retries
+        # of those legacy locators; namespaces and names prevent unrelated collisions.
+        Index(
+            "ux_history_runner_locator",
+            "sandbox_namespace",
+            "sandbox_name",
+            "sandbox_uid",
+            "runner_session_id",
+            unique=True,
+            postgresql_nulls_not_distinct=True,
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     sandbox_namespace: Mapped[str] = mapped_column(String)

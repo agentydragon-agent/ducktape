@@ -1,6 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
-exports_files(["0001_session_history.py"])
+exports_files(["0001_session_history.py", "0002_unique_runner_locator.py"])
 
 py_library(
     name = "0001_session_history",
@@ -9,4 +9,10 @@ py_library(
         "@pypi//alembic",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "0002_unique_runner_locator",
+    srcs = ["0002_unique_runner_locator.py"],
+    deps = ["@pypi//alembic"],
 )

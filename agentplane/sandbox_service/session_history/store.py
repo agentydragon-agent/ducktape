@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -54,10 +54,11 @@ class Store:
                     source_id=None,
                     last_cursor=0,
                 )
-                .on_conflict_do_nothing(index_elements=[SessionHistory.id])
+                .on_conflict_do_nothing()
             )
             row = await session.get(SessionHistory, session_id)
-            assert row is not None
+            if row is None:
+                raise HistoryConflictError(f"runner locator already belongs to another session, not {session_id}")
             if (row.sandbox_namespace, row.sandbox_name, row.sandbox_uid, row.runner_session_id) != (
                 sandbox_namespace,
                 sandbox_name,
@@ -65,6 +66,56 @@ class Store:
                 runner_session_id,
             ):
                 raise HistoryConflictError(f"session {session_id} has a different runner locator")
+
+    async def register(
+        self,
+        *,
+        sandbox_namespace: str,
+        sandbox_name: str,
+        sandbox_uid: UUID,
+        runner_session_id: str,
+    ) -> UUID:
+        """Get or mint a stable Session UUID for this physical runner locator.
+
+        The locator constraint arbitrates concurrent replicas and a response-lost retry.
+        Legacy imports can instead use `open` to preserve their existing public UUID.
+        """
+        async with self._sessions.begin() as session:
+            candidate = uuid4()
+            created = await session.scalar(
+                insert(SessionHistory)
+                .values(
+                    id=candidate,
+                    sandbox_namespace=sandbox_namespace,
+                    sandbox_name=sandbox_name,
+                    sandbox_uid=sandbox_uid,
+                    runner_session_id=runner_session_id,
+                    source_id=None,
+                    last_cursor=0,
+                )
+                .on_conflict_do_nothing(
+                    index_elements=[
+                        SessionHistory.sandbox_namespace,
+                        SessionHistory.sandbox_name,
+                        SessionHistory.sandbox_uid,
+                        SessionHistory.runner_session_id,
+                    ]
+                )
+                .returning(SessionHistory.id)
+            )
+            if created is not None:
+                return created
+            result = await session.scalar(
+                select(SessionHistory.id).where(
+                    SessionHistory.sandbox_namespace == sandbox_namespace,
+                    SessionHistory.sandbox_name == sandbox_name,
+                    SessionHistory.sandbox_uid == sandbox_uid,
+                    SessionHistory.runner_session_id == runner_session_id,
+                )
+            )
+            if result is None:
+                raise HistoryConflictError("runner locator is not registered")
+            return result
 
     async def append(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> int:
         """Replay exact duplicates or extend the prefix; serialize concurrent writers by Session ID.
