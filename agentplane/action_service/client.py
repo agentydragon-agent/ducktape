@@ -187,9 +187,7 @@ class OperatorActionServiceClient(_BearerClient):
     ) -> AsyncIterator[AsyncIterator[bytes]]:
         """Operator SSE open/check/close, with a fresh exchanged token for each open."""
         token = await self._tokens.token()
-        request = self._http.build_request(
-            "GET", path, params=params, headers={"Authorization": f"Bearer {token}"}
-        )
+        request = self._http.build_request("GET", path, params=params, headers={"Authorization": f"Bearer {token}"})
         response = await self._http.send(request, stream=True)
         try:
             response.raise_for_status()

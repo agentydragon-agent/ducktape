@@ -721,7 +721,9 @@ def _operator_resource_stream(
 async def push_subscriptions_stream(
     request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions
 ) -> StreamingResponse:
-    return _operator_resource_stream(request, shutdown, updates, sessions, client.stream_push_subscriptions, "Push settings")
+    return _operator_resource_stream(
+        request, shutdown, updates, sessions, client.stream_push_subscriptions, "Push settings"
+    )
 
 
 @push_router.post("/subscriptions", status_code=204)
