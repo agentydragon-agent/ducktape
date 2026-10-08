@@ -216,13 +216,6 @@ class Runner:
             protocol_pb2.LookupSessionRequest(sandbox=self.destination, idempotency_key=idempotency_key),
         )
 
-    async def retry_reserved(self, *, idempotency_key: str) -> protocol_pb2.CreateSessionResponse:
-        return await self.service.unary(
-            self.service.stub.RetryReservedSession,
-            protocol_pb2.LookupSessionRequest(sandbox=self.destination, idempotency_key=idempotency_key),
-            timeout_s=self.service.lifecycle_timeout_s,
-        )
-
     async def open(
         self, session_id: str, spec: dict[str, object], setup_script: str | None = None
     ) -> runner_pb2.Attached:
