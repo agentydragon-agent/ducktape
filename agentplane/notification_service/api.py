@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import traceback
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from typing import Annotated, cast
@@ -107,7 +107,7 @@ async def sandbox_notifications(
     return await _sandbox_status(service, namespace, name, uid)
 
 
-async def sandbox_status_frames(service: Service, namespace: str, name: str, uid: str) -> AsyncIterator[bytes]:
+async def sandbox_status_frames(service: Service, namespace: str, name: str, uid: str) -> AsyncGenerator[bytes]:
     """Subscribe before the first snapshot; NOTIFY invalidates, canonical rows are the source."""
     with service.store.wakeups.subscribe() as changed:
         listener = service.store.wakeups.listener
