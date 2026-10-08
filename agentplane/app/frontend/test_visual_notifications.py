@@ -46,19 +46,22 @@ async def test_subscription_filter_shows_cancelled_only_on_request(view: VisualP
     await app.mount_thread(IDLE_THREAD)
     page = view.page
     await page.get_by_role("button", name="Notifications").click()
-    await expect(page.get_by_text("Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · active")).to_be_visible()
+    await expect(page.get_by_text("Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · healthy")).to_be_visible()
     cancelled = page.get_by_text("agentydragon/ducktape · pull_request 42 · cancelled")
     await expect(cancelled).to_have_count(0)
 
     await page.get_by_role("combobox", name="Show subscriptions").click()
     await page.get_by_role("option", name="All", exact=True).click()
     await expect(cancelled).to_be_visible()
+    await expect(page.get_by_text("owner/repo · pull_request 1 · backing off")).to_be_visible()
+    await expect(page.get_by_text("owner/repo · pull_request 2 · access error")).to_be_visible()
+    await page.get_by_text("owner/repo · pull_request 2 · access error").scroll_into_view_if_needed()
     await view.capture(name="notification_subscriptions_all")
 
     await page.get_by_role("combobox", name="Show subscriptions").click()
     await page.get_by_role("option", name="Cancelled", exact=True).click()
     await expect(cancelled).to_be_visible()
-    await expect(page.get_by_text("Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · active")).to_have_count(0)
+    await expect(page.get_by_text("Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · healthy")).to_have_count(0)
 
 
 async def test_notification_drawer_updates_without_reopening(view: VisualPage, app: AgentplaneFixture) -> None:

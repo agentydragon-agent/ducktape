@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.notification_service.api import authenticated_caller, create_app
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.db import GitHubDelivery, Inbox, Subscription
-from agentplane.notification_service.models import DestinationRef, Subscribe, SubscriptionUpdate
+from agentplane.notification_service.models import DestinationRef, SourceHealth, Subscribe, SubscriptionHealthEvent, SubscriptionUpdate
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, NoticeDebounceSettings, Settings
 from agentplane.notification_service.sources.actions import Actions
@@ -418,7 +418,10 @@ async def test_rate_limit_retry_survives_ingress_and_restart(
         assert view.retry_at == retry_at
         assert f"subscription={sub.id}" in caplog.text
         assert "retry_seconds=120" in caplog.text
-        assert not (await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).entries
+        page = await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
+        assert len(page.entries) == 1
+        assert isinstance(page.entries[0].event, SubscriptionHealthEvent)
+        assert page.entries[0].event.health == SourceHealth.BACKING_OFF
 
         requests = len(upstream.requests)
         await ingest(github, store, comment())
@@ -449,8 +452,10 @@ async def test_rate_limit_retry_survives_ingress_and_restart(
     assert view.error is None
     assert view.retry_at is None
     page = await recovered.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
-    assert len(page.entries) == 2
-    assert all(entry.payload == comment() for entry in page.entries)
+    health = [entry.event.health for entry in page.entries if isinstance(entry.event, SubscriptionHealthEvent)]
+    assert health == [SourceHealth.BACKING_OFF, SourceHealth.HEALTHY]
+    assert len(page.entries) == 4
+    assert all(entry.payload == comment() for entry in page.entries if not isinstance(entry.event, SubscriptionHealthEvent))
     assert page.inbox.acknowledged == 0
 
 

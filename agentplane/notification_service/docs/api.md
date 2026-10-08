@@ -225,3 +225,22 @@ previous notice awaits confirmation or a delivery error needs retry, the waiting
 the debounce deadline. `next_work_at` is the worker's next scheduled inbox work, **not** a promise
 of notice delivery; `next_source_check_at` is only the individual subscription's reconciliation
 schedule. Offline runner states and event-dependent pacing have no guaranteed delivery time.
+
+## Subscription health transitions
+
+`health` is `healthy`, `backing_off`, or `access_error`, independent of cancelled/expired lifecycle.
+It describes the last source-processing observation, not a guarantee of webhook coverage or runner
+availability. Source errors update the safe error and retry deadline; successful processing clears
+both. Access errors still retry so restoration can be discovered.
+
+Changes of health append `provider: notifications` entries transactionally with the subscription
+state. Identity is the subscription ID and a durable monotonic transition sequence; `event.health`
+names the new state and payload contains `error` and `retry_at`. Repeated failures or changed error
+text/deadlines within one health state do not append entries. Initial subscription creation does not
+announce a transition. Each overlapping subscription has its own health sequence. Cancellation,
+expiry and fenced stale workers cannot append new transitions. Entries use the ordinary inbox
+acknowledgement, debounce and runner delivery path; they never acknowledge themselves. A transition
+can be older than the current subscription view when an agent reads it.
+
+The operator stream exposes the same health beside lifecycle and retry scheduling. Filters still
+select lifecycle: a backing-off subscription is active but is labelled “backing off”, not “healthy”.

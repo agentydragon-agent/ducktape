@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.notification_service.db import Inbox, Notice
-from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionView
+from agentplane.notification_service.models import ActionsSource, DestinationRef, SourceHealth, Subscribe, SubscriptionView
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import Actions, SourceNotOwnedError
 from agentplane.notification_service.sources.github import GitHub, GitHubRetryError, GitHubUnavailableError
@@ -220,7 +220,17 @@ class Service:
                             )
                         )
                         retry_seconds = failure.retry_seconds if isinstance(failure, GitHubRetryError) else 60
-                        await self.store.source_failed(claim, source, source_error, retry_seconds)
+                        await self.store.source_failed(
+                            claim,
+                            source,
+                            source_error,
+                            retry_seconds,
+                            health=(
+                                SourceHealth.ACCESS_ERROR
+                                if isinstance(failure, (GitHubUnavailableError, SourceNotOwnedError))
+                                else SourceHealth.BACKING_OFF
+                            ),
+                        )
                         logger.warning(
                             "notification source retry: inbox=%s subscription=%s cause=%s retry_seconds=%s",
                             claim.id,

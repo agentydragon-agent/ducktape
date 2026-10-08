@@ -1,6 +1,7 @@
 """Agent-facing HTTP models. Source content remains provider-defined."""
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -42,7 +43,20 @@ class ActionsEvent(Model):
     sequence: int = Field(ge=1)
 
 
-type EventIdentity = Annotated[ActionsEvent | GitHubEvent, Field(discriminator="provider")]
+class SourceHealth(StrEnum):
+    HEALTHY = "healthy"
+    BACKING_OFF = "backing_off"
+    ACCESS_ERROR = "access_error"
+
+
+class SubscriptionHealthEvent(Model):
+    provider: Literal["notifications"]
+    subscription_id: UUID
+    sequence: int = Field(ge=1)
+    health: SourceHealth
+
+
+type EventIdentity = Annotated[ActionsEvent | GitHubEvent | SubscriptionHealthEvent, Field(discriminator="provider")]
 
 
 class Subscribe(Model):
@@ -70,6 +84,7 @@ class SubscriptionView(Model):
     version: int
     cancelled: bool
     expires_at: datetime
+    health: SourceHealth
     error: str | None
     retry_at: datetime | None
 
@@ -117,6 +132,7 @@ class SubscriptionStatus(Model):
     source: Source
     cancelled: bool
     expires_at: datetime
+    health: SourceHealth
     error: str | None
     next_source_check_at: datetime | None
 
