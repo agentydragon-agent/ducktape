@@ -197,11 +197,11 @@ async def test_status_stream_replays_snapshot_and_follows_committed_changes(stor
     service = create_autospec(Service, instance=True)
     service.store = store
     service.notice_debounce = NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=120)
-    frames = sandbox_status_frames(service, "test", "sandbox", "sandbox-uid")
-    try:
-        initial = await asyncio.wait_for(anext(frames), 5)
-        assert b'"inboxes": []' in initial
-        async with store.wakeups.listener.listen():
+    async with store.wakeups.listener.listen():
+        frames = sandbox_status_frames(service, "test", "sandbox", "sandbox-uid")
+        try:
+            initial = await asyncio.wait_for(anext(frames), 5)
+            assert b'"inboxes": []' in initial
             sub = await store.subscribe(
                 PRINCIPAL,
                 Subscribe(
@@ -216,8 +216,8 @@ async def test_status_stream_replays_snapshot_and_follows_committed_changes(stor
             await store.change(PRINCIPAL.account, sub.id, None)
             cancelled = await asyncio.wait_for(anext(frames), 5)
             assert b'"cancelled": true' in cancelled
-    finally:
-        await frames.aclose()
+        finally:
+            await frames.aclose()
 
 
 if __name__ == "__main__":

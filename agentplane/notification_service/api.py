@@ -110,8 +110,10 @@ async def sandbox_notifications(
 async def sandbox_status_frames(service: Service, namespace: str, name: str, uid: str) -> AsyncIterator[bytes]:
     """Subscribe before the first snapshot; NOTIFY invalidates, canonical rows are the source."""
     with service.store.wakeups.subscribe() as changed:
+        listener = service.store.wakeups.listener
+        generation = listener.generation
         last: str | None = None
-        while True:
+        while listener.connected and listener.generation == generation:
             changed.clear()
             status = await _sandbox_status(service, namespace, name, uid)
             payload = status.model_dump(mode="json")
