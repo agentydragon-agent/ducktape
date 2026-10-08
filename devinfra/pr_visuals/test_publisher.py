@@ -644,7 +644,7 @@ def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: checks.append(kwargs))
     _forbid(
         monkeypatch,
-        "find_open_pull_request",
+        "find_reviewable_pull_request",
         "upsert_pull_request_comment",
         "refresh_stale_pull_request_comment",
         "write_baseline_pointers",
@@ -748,14 +748,29 @@ def test_a_pr_run_publishes_to_the_pr_its_head_ref_finds(
         return PullRequestRef(number=8733, base_sha=base_sha)
 
     candidate, bucket = _publish_one_visual_target(monkeypatch, tmp_path)
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.find_open_pull_request", find)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.find_reviewable_pull_request", find)
     _forbid(monkeypatch, "write_baseline_pointers")
 
     main()
 
-    assert [(lookup["head"], lookup["head_sha"]) for lookup in lookups] == [(PR_HEAD_REF, HEAD_SHA)]
+    assert [(lookup["head"], lookup["head_sha"]) for lookup in lookups] == [(PR_HEAD_REF, HEAD_SHA)] * 2
     assert [comment["pull_request"] for comment in publisher_run.comments] == [8733]
     assert bucket.requested[0] == f"commits/{base_sha}/tests/{candidate.slug}/metadata.json"
+    assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
+
+
+@pytest.mark.parametrize("current", [None, PullRequestRef(number=9999, base_sha="c" * 40)])
+def test_a_pr_that_changes_during_publication_does_not_get_a_stale_comment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun, current: PullRequestRef | None
+) -> None:
+    _publish_one_visual_target(monkeypatch, tmp_path)
+    lookups = iter([PullRequestRef(number=8733, base_sha="c" * 40), current])
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.find_reviewable_pull_request", lambda **_kwargs: next(lookups))
+    _forbid(monkeypatch, "write_baseline_pointers")
+
+    main()
+
+    assert publisher_run.comments == []
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
 
 
@@ -767,7 +782,7 @@ def test_a_devel_push_run_advances_the_baseline_pointers_and_looks_up_no_pr(
     monkeypatch.setattr(
         "devinfra.pr_visuals.publisher.write_baseline_pointers", lambda slugs, **_kwargs: pointers.append(slugs)
     )
-    _forbid(monkeypatch, "find_open_pull_request")
+    _forbid(monkeypatch, "find_reviewable_pull_request")
     monkeypatch.setattr("sys.argv", _publisher_argv(tmp_path / "work"))
 
     main()
@@ -780,7 +795,7 @@ def test_a_devel_push_run_advances_the_baseline_pointers_and_looks_up_no_pr(
 def test_a_pr_run_whose_commit_is_no_longer_a_pr_head_only_closes_its_check(
     monkeypatch: pytest.MonkeyPatch, publisher_run: PublisherRun
 ) -> None:
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.find_open_pull_request", lambda **_kwargs: None)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.find_reviewable_pull_request", lambda **_kwargs: None)
     _forbid(monkeypatch, "download_visual_tests", "refresh_stale_pull_request_comment", "write_baseline_pointers")
 
     main()
@@ -795,7 +810,7 @@ def test_a_failed_pr_lookup_fails_the_check_instead_of_leaving_it_in_progress(
     def ambiguous(**_kwargs: str) -> NoReturn:
         raise ValueError("Expected exactly one item in iterable, but got two")
 
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.find_open_pull_request", ambiguous)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.find_reviewable_pull_request", ambiguous)
     _forbid(monkeypatch, "download_visual_tests", "write_baseline_pointers")
 
     with pytest.raises(ValueError, match="Expected exactly one"):

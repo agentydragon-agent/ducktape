@@ -30,7 +30,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 from devinfra.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import ListedArtifact, Runner, list_ci_artifacts
 from devinfra.pr_visuals.check_run import upsert_check_run
-from devinfra.pr_visuals.pull_request import find_open_pull_request
+from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
 from util.visual_diff import compare_pngs
 from util.visual_review import MANIFEST_NAME, VisualReviewAsset, VisualReviewManifest
 
@@ -1045,11 +1045,11 @@ def main() -> None:
     base_sha: str | None = None
     try:
         if args.pull_request_head:
-            found = find_open_pull_request(
+            found = find_reviewable_pull_request(
                 repository=args.repository, head=args.pull_request_head, head_sha=args.sha, token=github_token
             )
             if found is None:
-                summary = "This commit is no longer the head of an open pull request; nothing to review."
+                summary = "No open or merged pull request has this head commit; nothing to review."
                 print(summary)
                 return
             pull_request, base_sha = found.number, found.base_sha
@@ -1145,6 +1145,14 @@ def main() -> None:
         conclusion = "failure"
         raise
     finally:
+        if pull_request is not None and (comment_body is not None or refresh_stale_comment_body is not None):
+            # Rendering/uploading may outlast another push or PR closure. Recheck
+            # before replacing the singleton comment; immutable bundles stay useful.
+            current = find_reviewable_pull_request(
+                repository=args.repository, head=args.pull_request_head, head_sha=args.sha, token=github_token
+            )
+            if current is None or current.number != pull_request:
+                pull_request = None
         if comment_body is not None and pull_request is not None:
             upsert_pull_request_comment(
                 repository=args.repository, pull_request=pull_request, body=comment_body, token=github_token
