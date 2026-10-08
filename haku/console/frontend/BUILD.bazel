@@ -986,9 +986,6 @@ py_visual_test(
     size = "medium",
     harness = ":screenshot_harness_js",
     inline_page = True,
-    # Keeps the published names (<scene>-<scheme>.png), so PR visual review compares each shot with its
-    # baseline.
-    output_suffix = "",
     # The shell reads `localStorage`, frames another origin and parses its own location, and the mock
     # fetch parses relative `/api/…` URLs it never sends: it needs the origin of a real page.
     page_url = "https://haku-console.test/",

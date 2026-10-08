@@ -89,7 +89,7 @@ async def page(playwright: Playwright) -> AsyncIterator[Page]:
 
 @pytest.fixture
 def view(page: Page) -> VisualPage:
-    return VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend", output_suffix="")
+    return VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend")
 
 
 async def _expand_accordion(control: Locator) -> None:

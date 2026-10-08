@@ -73,7 +73,6 @@ class HarnessConfig:
     harness_path: Path
     title: str
     expected_font_family: str | None
-    output_suffix: str
     # None: the harness is the `file://` page beside its bundle.
     inline_page: InlinePage | None = None
     devtools_viewport: bool = False
@@ -87,7 +86,6 @@ class HarnessConfig:
             harness_path=get_required_path(os.environ["HARNESS_PATH"]),
             title=os.environ["VISUAL_TITLE"],
             expected_font_family=os.environ.get("EXPECTED_FONT_FAMILY"),
-            output_suffix=os.environ.get("OUTPUT_SUFFIX", "-actual"),
             inline_page=InlinePage.from_env() if os.environ.get("INLINE_PAGE") else None,
             devtools_viewport=bool(os.environ.get("DEVTOOLS_VIEWPORT")),
             served_documents={
@@ -144,7 +142,6 @@ class VisualPage:
         *,
         output_dir: Path,
         title: str,
-        output_suffix: str = "-actual",
         fence: RequestFence | None = None,
         devtools_viewport: DevtoolsViewport | None = None,
         expected_font_family: str | None = None,
@@ -154,7 +151,6 @@ class VisualPage:
         self.errors = PageErrors(page)
         self.output_dir = output_dir
         self.title = title
-        self.output_suffix = output_suffix
         self.fence = fence
         self.devtools_viewport = devtools_viewport
         self.expected_font_family = expected_font_family
@@ -201,7 +197,7 @@ class VisualPage:
             screenshot,
             output_dir=self.output_dir,
             title=self.title,
-            name=f"{name}{self.output_suffix}.png",
+            name=f"{name}.png",
             label=label or name,
         )
 
@@ -260,7 +256,6 @@ class VisualHarness:
                 page,
                 output_dir=self.output_dir,
                 title=config.title,
-                output_suffix=config.output_suffix,
                 fence=fence,
                 devtools_viewport=devtools,
                 expected_font_family=config.expected_font_family,
@@ -272,7 +267,7 @@ class VisualHarness:
                 url = config.harness_url
                 if parameters:
                     url += f"?{urlencode(parameters)}"
-                await page.goto(url, wait_until="networkidle")
+                await page.goto(url, wait_until="domcontentloaded")
             else:
                 html = inline_page_html(
                     config.inline_page, bundle_script=config.bundle_script, window_globals=window_globals

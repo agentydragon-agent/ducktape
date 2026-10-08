@@ -19,7 +19,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import AsyncIterator, Iterator
-from contextlib import asynccontextmanager
 
 import pytest
 import pytest_bazel
@@ -54,16 +53,18 @@ MOBILE_VIEWPORT: ViewportSize = {"width": 390, "height": 844}
 FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
 
 
-@asynccontextmanager
-async def casino_view(
-    playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str
+@pytest.fixture
+async def view(
+    playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str, capture_name: str
 ) -> AsyncIterator[VisualPage]:
     async with deterministic_browser_context(
         playwright, viewport=viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
     ) as context:
         page = await context.new_page()
-        view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Study Casino views", output_suffix="")
-        await page.goto(f"{casino_server}/{query}", wait_until="networkidle", timeout=30_000)
+        view = VisualPage(
+            page, output_dir=undeclared_outputs_dir(), title="Study Casino views", capture_name=capture_name
+        )
+        await page.goto(f"{casino_server}/{query}", wait_until="domcontentloaded", timeout=30_000)
         try:
             yield view
         finally:
@@ -152,12 +153,9 @@ def _post(origin: str, path: str, payload: dict) -> None:
     ],
     ids=["study", "casino_roulette", "casino_blackjack", "casino_slots", "prizes", "stats"],
 )
-async def test_casino_views_render(
-    playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str, visible_text: str, capture_name: str
-) -> None:
-    async with casino_view(playwright, casino_server, viewport, query) as view:
-        await view.page.get_by_text(visible_text).first.wait_for(state="visible", timeout=15_000)
-        await view.capture(capture_name, full_page=True, animations="disabled", scale="css")
+async def test_casino_views_render(view: VisualPage, visible_text: str) -> None:
+    await view.page.get_by_text(visible_text).first.wait_for(state="visible", timeout=15_000)
+    await view.capture(full_page=True, animations="disabled", scale="css")
 
 
 if __name__ == "__main__":

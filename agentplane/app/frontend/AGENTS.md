@@ -14,7 +14,7 @@ the real pixels, not a specific mechanism for getting there:
   writes to the test's
   undeclared outputs (`buildbuddy_api` skill: `bbapi artifact list <invocation-id>` for the exact
   name, passed to `view.capture()`, then `bbapi artifact download <invocation-id>
-"<name>-actual.png"`), then view it. A failure in another shard: `bbapi target log <invocation-id>
+"<name>.png"`), then view it. A failure in another shard: `bbapi target log <invocation-id>
 //agentplane/app/frontend:visual_history --failed`.
 
 A local interactive browser session (running the app, clicking through it by hand) is neither

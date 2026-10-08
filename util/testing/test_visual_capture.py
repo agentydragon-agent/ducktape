@@ -27,7 +27,7 @@ def harness(playwright: Playwright, tmp_path: Path) -> VisualHarness:
     )
     return VisualHarness(
         playwright,
-        HarnessConfig(harness_path=bundle, title="API test", expected_font_family=None, output_suffix="-actual"),
+        HarnessConfig(harness_path=bundle, title="API test", expected_font_family=None),
         tmp_path / "out",
     )
 
@@ -39,9 +39,9 @@ async def test_test_owns_interaction_and_capture(harness: VisualHarness) -> None
         await view.page.get_by_role("button", name="Open").click()
         await expect(view.page.locator("#shot")).to_have_text("Opened")
         path = await view.capture(target=view.page.locator("#shot"), label="Opened panel")
-    assert path.name == "opened-actual.png"
+    assert path.name == "opened.png"
     manifest = json.loads((harness.output_dir / "visual-review.json").read_text())
-    assert manifest["assets"] == [{"path": "opened-actual.png", "label": "Opened panel"}]
+    assert manifest["assets"] == [{"path": "opened.png", "label": "Opened panel"}]
 
 
 async def test_multiple_checkpoints_have_distinct_outputs(harness: VisualHarness) -> None:

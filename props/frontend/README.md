@@ -33,7 +33,7 @@ bazel test //props/frontend:visual
 bazel test //props/frontend:visual --test_filter=DefinitionDetail
 ```
 
-Add a component fixture to `tests/harness/harness.tsx` and a Python test in `test_visual.py` that selects and captures it. Rendered `*-actual.png` files land in `TEST_UNDECLARED_OUTPUTS_DIR` for manual inspection.
+Add a component fixture to `tests/harness/harness.tsx` and a Python test in `test_visual.py` that selects and captures it. Rendered `*.png` files land in `TEST_UNDECLARED_OUTPUTS_DIR` for manual inspection.
 
 ## Issue overlay colors
 

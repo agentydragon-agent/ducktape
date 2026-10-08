@@ -164,8 +164,8 @@ invocation contains the actual `bazel test` results, targets, and artifacts.
 
 When no match is found, the CLI prints available labels as hints, and the names that would
 match if `-` and `_` were alike. Names are what the test wrote, not what you would derive from
-a target or a scenario (a visual scenario's PNG is `test.outputs/<outputName>-actual.png`, where
-the outputName is hyphenated for some scenarios and not for others), so `bbapi artifact list`
+a target or a scenario (visual captures use `test.outputs/<capture_name>.png`, with
+pytest case IDs or an explicit checkpoint name), so `bbapi artifact list`
 first beats guessing.
 
 ### Sharded, repeated and retried tests

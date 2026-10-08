@@ -426,16 +426,10 @@ async def page(playwright: Playwright) -> AsyncIterator[Page]:
 
 @pytest.fixture
 async def view(page: Page, capture_name: str) -> AsyncIterator[VisualPage]:
-    view = VisualPage(
-        page, output_dir=undeclared_outputs_dir(), title="Augur pages", capture_name=capture_name, output_suffix=""
-    )
+    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Augur pages", capture_name=capture_name)
     try:
         yield view
     finally:
-        # Readiness failures still leave a diagnostic screenshot and DOM.
-        if not (view.output_dir / f"{capture_name}.png").exists():
-            await page.screenshot(path=str(view.output_dir / f"{capture_name}.debug.png"), full_page=True)
-            (view.output_dir / f"{capture_name}.debug.html").write_text((await page.content())[:5000])
         view.errors.assert_none(context=capture_name)
 
 
@@ -446,60 +440,57 @@ async def comparison_view(view: VisualPage, augur_server: str) -> VisualPage:
     return view
 
 
+async def _capture_page(view: VisualPage) -> None:
+    await view.page.evaluate("() => window.scrollTo(0, 0)")
+    await view.capture(full_page=True, animations="disabled", scale="css")
+
+
 async def test_product_cash_runway(view: VisualPage, augur_server: str) -> None:
     await view.page.goto(f"{augur_server}/product?n=32", wait_until="domcontentloaded", timeout=60_000)
     await _wait_for_product_page(view.page)
     await _select_first_rollout(view.page)
     await _wait_for_product_chart_geometry(view.page)
-    await view.page.evaluate("() => window.scrollTo(0, 0)")
-    await view.capture(full_page=True, animations="disabled", scale="css")
+    await _capture_page(view)
 
 
 async def test_product_property_lifecycle(view: VisualPage, augur_server: str) -> None:
     await view.page.goto(f"{augur_server}{_PROPERTY_LIFECYCLE_URL}", wait_until="domcontentloaded", timeout=60_000)
     await _wait_for_property_panel(view.page)
-    await view.page.evaluate("() => window.scrollTo(0, 0)")
-    await view.capture(full_page=True, animations="disabled", scale="css")
+    await _capture_page(view)
 
 
 async def test_product_scenario_comparison(comparison_view: VisualPage) -> None:
-    await comparison_view.page.evaluate("() => window.scrollTo(0, 0)")
-    await comparison_view.capture(full_page=True, animations="disabled", scale="css")
+    await _capture_page(comparison_view)
 
 
 async def test_product_distribution_multi(comparison_view: VisualPage) -> None:
     await _select_rollout_from_distribution(comparison_view.page)
     await _wait_for_product_chart_geometry(comparison_view.page)
-    await comparison_view.page.evaluate("() => window.scrollTo(0, 0)")
-    await comparison_view.capture(full_page=True, animations="disabled", scale="css")
+    await _capture_page(comparison_view)
 
 
 async def test_product_scenario_candles(comparison_view: VisualPage) -> None:
     await _show_candles(comparison_view.page)
     await _wait_for_product_chart_geometry(comparison_view.page)
-    await comparison_view.page.evaluate("() => window.scrollTo(0, 0)")
-    await comparison_view.capture(full_page=True, animations="disabled", scale="css")
+    await _capture_page(comparison_view)
 
 
 async def test_product_scenario_focus(comparison_view: VisualPage) -> None:
     await _focus_active_scenario(comparison_view.page)
     await _wait_for_product_chart_geometry(comparison_view.page)
-    await comparison_view.page.evaluate("() => window.scrollTo(0, 0)")
-    await comparison_view.capture(full_page=True, animations="disabled", scale="css")
+    await _capture_page(comparison_view)
 
 
 async def test_product_distribution_failures(view: VisualPage, augur_server: str) -> None:
     await view.page.goto(f"{augur_server}{_FAILURE_URL}", wait_until="domcontentloaded", timeout=60_000)
     await _wait_for_distribution_failures(view.page)
-    await view.page.evaluate("() => window.scrollTo(0, 0)")
-    await view.capture(full_page=True, animations="disabled", scale="css")
+    await _capture_page(view)
 
 
 async def test_calibration_page(view: VisualPage, augur_server: str) -> None:
     await view.page.goto(f"{augur_server}/product?tab=calibration", wait_until="domcontentloaded", timeout=60_000)
     await _wait_for_calibration_page(view.page)
-    await view.page.evaluate("() => window.scrollTo(0, 0)")
-    await view.capture(full_page=True, animations="disabled", scale="css")
+    await _capture_page(view)
 
 
 if __name__ == "__main__":

@@ -177,6 +177,7 @@ py_visual_test(
         "//util/testing:visual_capture",
         "@pypi//playwright",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
     test_module = "airlock.frontend.test_visual",
