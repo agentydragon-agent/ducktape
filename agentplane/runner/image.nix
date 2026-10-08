@@ -17,14 +17,15 @@
   pkgs,
   pkgsUnstable,
   runner,
+  name ? "agentplane-runner",
+  extraPaths ? [ ],
 }:
 import ../images/sandbox.nix {
-  inherit pkgs;
-  name = "agentplane-runner";
+  inherit pkgs name;
   extraPaths = [
     runner
     pkgsUnstable.claude-code
     pkgsUnstable.codex
-  ];
+  ] ++ extraPaths;
   extraConfig.Entrypoint = [ "/bin/agentplane-runner" ];
 }

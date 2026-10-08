@@ -120,6 +120,13 @@ ducktapePkgs
     inherit pkgs pkgsUnstable;
     runner = self.packages.${system}.agentplane-runner;
   };
+  # Same runner and harnesses, with the shared repository hook/build clients preinstalled.
+  runner-ducktape-image = import ../../agentplane/runner/image.nix {
+    inherit pkgs pkgsUnstable;
+    runner = self.packages.${system}.agentplane-runner;
+    name = "runner-ducktape";
+    extraPaths = preCommitPackages ++ [ ducktapePkgs.gazelle ];
+  };
   # KubeVirt's NixOS guest packaged as a containerDisk; publish through the dedicated workflow.
   agentplane-runner-vm-container-disk = import ../../agentplane/runner/container-disk.nix {
     inherit pkgs self;

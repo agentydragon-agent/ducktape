@@ -14,6 +14,9 @@ on:
       - "nix/artifact-pins.json"
       - "flake.lock"
       - "nix/flake/packages.nix"
+      - "nix/flake/devtools.nix"
+      - "nix/packages/**"
+      - "agentplane/runner/ducktape_image_smoke.sh"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-image.yml"
       - ".github/workflows/nix-image.yml"
@@ -25,11 +28,14 @@ on:
       - ".github/workflows/agentplane-runner-image.yml"
       - ".github/workflows/nix-image.yml"
       - "agentplane/images/sandbox.nix"
+      - "agentplane/runner/ducktape_image_smoke.sh"
       - "agentplane/runner/image.nix"
       - "flake.lock"
       - "nix/artifact-pins.json"
+      - "nix/flake/devtools.nix"
       - "nix/flake/packages.nix"
       - "nix/lib/nix-ld-image.nix"
+      - "nix/packages/**"
       # keep-sorted end
   workflow_dispatch:
 
@@ -42,21 +48,17 @@ permissions:
 
 jobs:
   image:
+    strategy:
+      matrix:
+        variant: [agentplane-runner, runner-ducktape]
     uses: ./.github/workflows/nix-image.yml
     with:
-      attr: agentplane-runner-image
-      image: git.allegedly.works/ducktape-ci/agentplane-runner
+      attr: ${{ matrix.variant }}-image
+      image: git.allegedly.works/ducktape-ci/${{ matrix.variant }}
       registry: forgejo
       attic: true
       # Starts each executable the runner SandboxTemplate names, once, as the image's own user.
       # Nothing here runs a turn: that is //agentplane/acceptance, run by hand after a bump.
-      smoke: |
-        loaded="$(docker load -i "$(readlink -f result)")"
-        printf '%s\n' "$loaded"
-        image="$(printf '%s\n' "$loaded" | sed -n -e 's/^Loaded image: //p' -e 's/^Loaded image ID: //p' | tail -n 1)"
-        test -n "$image"
-        docker run --rm "$image" --help
-        docker run --rm --entrypoint /bin/claude "$image" --version
-        docker run --rm --entrypoint /bin/codex "$image" --version
+      smoke: bash agentplane/runner/ducktape_image_smoke.sh "${{ matrix.variant }}"
     secrets:
       SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
