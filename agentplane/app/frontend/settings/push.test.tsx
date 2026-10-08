@@ -7,13 +7,13 @@ import { PushSettings } from "./push";
 
 it("updates registered browsers from the stream without a refresh button", async () => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  let stream!: EventTarget;
+  const streams: EventTarget[] = [];
   class Source extends EventTarget {
     static readonly CLOSED = 2;
     readyState = 1;
     constructor(readonly url: string) {
       super();
-      stream = this;
+      streams.push(this);
     }
     close() {
       this.readyState = Source.CLOSED;
@@ -37,7 +37,7 @@ it("updates registered browsers from the stream without a refresh button", async
     );
     expect(container.textContent).not.toContain("Refresh notification settings");
     await act(async () =>
-      stream.dispatchEvent(
+      streams[0]!.dispatchEvent(
         new MessageEvent("snapshot", {
           data: JSON.stringify([
             {
