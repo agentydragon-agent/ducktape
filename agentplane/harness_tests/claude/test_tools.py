@@ -158,8 +158,7 @@ async def test_subagent_tool_frames_are_correlated_with_the_parent_call(
                     assert (await prompt.result()).result == "PARENT_WAITING"
                     completion = run.events()
                     stream = sse.message_stream(
-                        [sse.ToolUse("toolu_child_shell", "Bash", {"command": "printf CHILD_TOOL_OUTPUT"})],
-                        model=MODEL,
+                        [sse.ToolUse("toolu_child_shell", "Bash", {"command": "printf CHILD_TOOL_OUTPUT"})], model=MODEL
                     )
                     await child.send(*stream.events)
 
@@ -210,8 +209,17 @@ async def test_subagent_tool_frames_are_correlated_with_the_parent_call(
     assert notification["task_id"] == task["task_id"]
     assert notification["tool_use_id"] == "toolu_spawn_child"
     assert notification["status"] == "completed"
-    # Default forwarding exposes child tools, not the child's prose as a standalone assistant message.
-    assert "CHILD_DONE" not in frames.assistant_texts(captured)
+    # 2.1.252 forwards completed child prose even without an explicit forwarding opt-in.
+    child_text_frames = [
+        frame
+        for frame in captured
+        if frame.get("type") == "assistant"
+        and any(block.get("text") == "CHILD_DONE" for block in frame["message"]["content"])
+    ]
+    (child_text,) = child_text_frames
+    assert child_text["parent_tool_use_id"] == "toolu_spawn_child"
+    assert child_text["session_id"] == notification["session_id"]
+
 
 if __name__ == "__main__":
     pytest_bazel.main()
