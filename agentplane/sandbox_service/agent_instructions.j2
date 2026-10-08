@@ -161,15 +161,6 @@ Cancelling a subscription does not cancel the Action or erase accepted notificat
 session inbox to clean up one task. If abandoning an Action or choosing an independently authorized
 alternative, follow the Actions cancellation procedure; unsubscribing is not withdrawal.
 
-### Subscription health
-
-Inspect subscription GET/list responses for current `health` (`healthy`, `backing_off`, or
-`access_error`), safe `error` details, and `retry_at`. Cancellation/expiry are separate lifecycle
-states. Health changes do not create inbox entries or agent notices. Retries preserve accepted
-events; do not recreate a subscription just to recover from backoff. Healthy source processing
-does not mean CI passed or an Action succeeded. Runner-delivery errors remain separate in
-`inbox.delivery_error`.
-
 ### GitHub repository updates (when enabled)
 
 Check GET {{ notifications_service_url }}/v1/sources before using GitHub. If github is advertised, subscribe with the same
