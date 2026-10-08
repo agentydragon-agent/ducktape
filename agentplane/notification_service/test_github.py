@@ -28,12 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.notification_service.api import authenticated_caller, create_app
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.db import GitHubDelivery, Inbox, Subscription
-from agentplane.notification_service.models import (
-    DestinationRef,
-    SourceHealth,
-    Subscribe,
-    SubscriptionUpdate,
-)
+from agentplane.notification_service.models import DestinationRef, SourceHealth, Subscribe, SubscriptionUpdate
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, NoticeDebounceSettings, Settings
 from agentplane.notification_service.sources.actions import Actions

@@ -51,6 +51,7 @@ class SourceHealth(StrEnum):
 
 type EventIdentity = Annotated[ActionsEvent | GitHubEvent, Field(discriminator="provider")]
 
+
 class Subscribe(Model):
     destination_ref: DestinationRef
     session_id: str = Field(min_length=1, max_length=200)
