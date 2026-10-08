@@ -139,6 +139,7 @@ py_library(
         ":mcp_frontend",
         ":mcp_linkage",
         ":models",
+        ":operator_stream",
         ":oauth",
         ":policy_informer",
         ":policy_view",
@@ -589,6 +590,15 @@ py_test(
         "@pypi//alembic",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "operator_stream",
+    srcs = ["operator_stream.py"],
+    deps = [
+        ":updates",
+        "@pypi//fastapi",
     ],
 )
 
