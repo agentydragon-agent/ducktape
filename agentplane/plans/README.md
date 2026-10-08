@@ -33,8 +33,6 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [Subscriptions and notifications](notifications.md) — standalone service design: SA-authorized session scope,
   explicit inbox acknowledgement, shipped Actions/GitHub delivery, remaining reliability acceptance,
   and deferred Kubernetes monitoring, automatic following and wake
-- [Push mechanism](push_mechanism.md) — remaining push/subscription design for
-  `NO_MANUAL_REFRESH`'s Settings tabs; the Actions attention drawer shipped in PR #8618
 
 ## Implemented contracts
 
