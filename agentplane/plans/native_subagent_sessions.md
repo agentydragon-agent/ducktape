@@ -252,3 +252,17 @@ probe pins the empty result, additionally queries the explicit `parentThreadId` 
 and directly reads the previously observed child ID. Both responses remain in the native
 trace; the recovery snapshot is written before asserting the relation-query result.
 The broad-filter observation does not yet establish whether relation discovery succeeds.
+
+The follow-up capture (`fba86abb`) reaches relation enumeration and direct history reads:
+`thread/list(parentThreadId=...)` includes the original child, and its direct read retains
+`parentThreadId` plus the source's `/root/probe` path. All three children read as
+`status.type=notLoaded`. Completed-child history retains the answer and a `completed` turn;
+the active-crash child has an `interrupted` historical turn with no `completedAt` timestamp
+and no answer. This is historical interruption evidence, distinct from runtime load status.
+
+The same capture exposes a loaded/unloaded identity distinction: while live, the child read
+shares the root's `sessionId`; after restart, its unloaded read reports `sessionId` equal to
+the child thread ID. Do not use that field alone as a durable tree key. Original child ID,
+`parentThreadId`, and source ancestry remain the relation evidence. The preceding assertion
+that `sessionId` always equals the root was incorrect; the updated test pins the observed
+change. Full-suite acceptance, including the final no-model-request check, still awaits CI.

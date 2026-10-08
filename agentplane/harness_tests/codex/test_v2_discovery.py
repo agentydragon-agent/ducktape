@@ -184,7 +184,9 @@ async def test_v2_child_discovery_and_resume(
             (codex.logs / "recovery.json").write_text(json.dumps(recovered, indent=2) + "\n")
             assert child_id in {thread["id"] for thread in descendants}
             assert recovered["parentThreadId"] == root_id
-            assert recovered["sessionId"] == root["sessionId"]
+            # Loaded children share the root session ID, but an unloaded read
+            # reports the child ID. Parent linkage is the durable tree evidence.
+            assert recovered["sessionId"] == child_id
             assert recovered["status"]["type"] == "notLoaded"
             assert child_id not in loaded_before
             assert await listed(resumed, "thread/loaded/list") == loaded_before
@@ -192,6 +194,8 @@ async def test_v2_child_discovery_and_resume(
                 assert recovered["turns"][-1]["status"] == "completed"
                 assert "V2_CHILD_DONE" in json.dumps(recovered["turns"])
             else:
+                assert recovered["turns"][-1]["status"] == "interrupted"
+                assert recovered["turns"][-1]["completedAt"] is None
                 assert "V2_CHILD_DONE" not in json.dumps(recovered["turns"])
             # notLoaded alone is not evidence of completion or cancellation.
             with pytest.raises(TimeoutError):
