@@ -4,8 +4,12 @@ inside frames as they do in upstream requests."""
 from __future__ import annotations
 
 import json
+from copy import deepcopy
+from typing import Any
 
+import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
 from agentplane.native.claude import driver, wire
 from agentplane.native.claude.blocks import ToolResultBlock, ToolUseBlock, UnknownBlock, blocks_of
@@ -140,6 +144,56 @@ def test_initialize_names_only_the_options_it_was_given() -> None:
     assert hooked["request"] == {"subtype": "initialize", "hooks": {"Stop": [{"hookCallbackIds": ["cb-1"]}]}}
     instructed = json.loads(driver.initialize(instructions="Stand by.").model_dump_json(by_alias=True))
     assert instructed["request"] == {"subtype": "initialize", "appendSystemPrompt": "Stand by."}
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        {"type": "control_response", "response": {"subtype": "success"}},
+        {"type": "assistant", "message": {"id": "m", "content": [{"type": "text", "text": []}]}},
+        {"type": "stream_event", "event": {"type": "content_block_delta", "index": "invalid"}},
+    ],
+)
+def test_malformed_known_frames_do_not_fall_back_to_unknown(frame: dict[str, Any]) -> None:
+    original = deepcopy(frame)
+    with pytest.raises(ValidationError):
+        wire.parse_frame(frame)
+    assert frame == original
+
+
+def test_future_delta_retains_nested_payload_without_mutating_raw_frame() -> None:
+    raw: dict[str, Any] = {
+        "type": "stream_event",
+        "session_id": "s",
+        "uuid": "u",
+        "event": {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "future_delta", "payload": {"parts": [1, {"text": "opaque"}]}},
+        },
+    }
+    original = deepcopy(raw)
+    parsed = wire.parse_frame(raw)
+    assert isinstance(parsed, wire.StreamEventFrame)
+    assert isinstance(parsed.event, wire.ContentBlockDelta)
+    assert isinstance(parsed.event.delta, wire.UnknownDelta)
+    assert parsed.event.delta.model_dump() == raw["event"]["delta"]
+    assert raw == original
+
+
+def test_extra_fields_on_known_frames_do_not_break_consumed_fields() -> None:
+    raw: dict[str, Any] = {
+        "type": "control_response",
+        "response": {"subtype": "success", "request_id": "r", "future_nested": [1, 2]},
+        "future_envelope": {"opaque": True},
+    }
+    original = deepcopy(raw)
+    parsed = wire.parse_frame(raw)
+    assert isinstance(parsed, wire.ControlResponseFrame)
+    assert parsed.response.request_id == "r"
+    # Typed known models need not retain extras: the unchanged raw transport
+    # record is the lossless evidence, not a round trip through model_dump().
+    assert raw == original
 
 
 if __name__ == "__main__":
