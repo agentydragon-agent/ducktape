@@ -40,7 +40,7 @@ Sandbox afterward. This is an evidence test, **not** a supported image-upgrade A
 It does not prove safe handling of a command in flight or all crash windows.
 
 Run it explicitly with `AGENTPLANE_ACCEPTANCE_UPGRADE_IMAGE` set to a published,
-version-compatible `@sha256:` runner image *different from* the tested deployment's
+version-compatible `@sha256:` runner image _different from_ the tested deployment's
 current image. The existing acceptance URL/identity and kubeconfig must target the
 same deployment; the kubeconfig must allow `get`/`patch` of `sandboxes.agents.x-k8s.io`
 and `get` of Pods in the acceptance namespace. Check the chosen image's provenance
