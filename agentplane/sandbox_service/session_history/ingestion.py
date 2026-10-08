@@ -21,6 +21,9 @@ from agentplane.sandbox_service.models import OperatingMode, SandboxNotFoundErro
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
 from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryLocator, Store
 
+# Generated stubs require the protobuf runtime as a direct mypy dependency.
+# gazelle:include_dep @pypi//protobuf
+
 logger = logging.getLogger(__name__)
 
 
