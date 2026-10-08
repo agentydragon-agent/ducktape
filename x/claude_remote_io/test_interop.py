@@ -71,7 +71,9 @@ async def finish_child(model: AnthropicMessages, peer: RemoteIOServer, session_i
         if frame.get("parent_tool_use_id") == "toolu_remote_child"
     )
 
-    return notification["task_id"]
+    task_id = notification["task_id"]
+    assert isinstance(task_id, str)
+    return task_id
 
 
 @pytest.mark.parametrize("scenario", ["single", "child", "reconnect", "completed-child-crash"])
@@ -277,6 +279,7 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                             )
                             async with await model.await_next_request() as exchange:
                                 assert "REMOTE_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
+                                assert "TaskOutput" not in exchange.request.tool_names
                                 await exchange.send(
                                     *sse.message_stream(
                                         [
@@ -291,7 +294,7 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                                 (read,) = exchange.request.tool_results
                                 assert read.tool_use_id == "toolu_after_crash"
                                 assert read.is_error is True, read
-                                assert agent_id in read.text
+                                assert "No such tool available: TaskOutput" in read.text
                                 await exchange.send(*sse.message_stream([sse.Text("AFTER_CRASH")], model=MODEL).events)
                             await peer.wait_for(
                                 lambda upload: (

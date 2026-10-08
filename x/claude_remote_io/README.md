@@ -26,8 +26,12 @@ result during the tested continuation.
 The completed-child crash probe is awaiting CI evidence. It kills the parent after child completion,
 retains native files, increments the worker epoch, and starts `--resume` with no server-provided
 history. The fixture drops already-settled inbound commands at that explicit boundary; this is
-not a general replay policy or server-durability test. The probe asks whether local parent history
-survives and whether `TaskOutput` can recover the prior child's fate without reactivating it.
+not a general replay policy or server-durability test. The first crash capture retained the completed child's result in parent model history. However,
+`TaskOutput` is absent from this configuration's roster despite the explicit tool allowlist;
+invoking it returns `No such tool available: TaskOutput`. That is an unavailable query route,
+not a missing-child observation. The revised probe pins that error and tests notification absence
+through the resume/input/query sequence without reactivating the child. It does not establish
+whether another route can recover the child's fate.
 Clean exit, active-child crash, server hydration, and same-version comparison remain unimplemented. Source inspection
 informs the candidate protocol; CI wire captures determine the actual contract.
 
