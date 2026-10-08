@@ -1,26 +1,9 @@
 # Notification Service: remaining work
 
-Actions and GitHub sources are shipped. Staging App **5188971** is enabled and the operator has
-installed it on all their repositories. Real branch CI events and a PR comment were verified through
-inbox and harness on 2026-10-04; see the [acceptance record](../notification_service/docs/staging_github_acceptance.md)
-for evidence and limits. Basic implementation, provisioning and live delivery are no longer pending.
-
-The read-only Thread/Sandbox notification diagnostics view shipped in
-[#9436](https://github.com/agentydragon/ducktape/pull/9436). It shows subscriptions, notice timing,
-and bounded summaries of unacknowledged entries, with the notice-coverage boundary in the entry
-list. Operator reads neither acknowledge entries nor expose raw provider payloads.
-
-The [service README](../notification_service/README.md), HTTP OpenAPI and source discovery document
-implemented behavior. The [task DAG](task_dag.md) owns work status and dependencies; this file tracks
-remaining acceptance and deferred decisions.
-
-## Registration and credential preparation
-
-Registration, credentials, staging ingress and installation are complete. The environment-wide
-**agentplane-staging** App is distinct from the MCP OAuth App. Any authenticated agent can currently
-subscribe to App-accessible repositories, including private ones; this shared access policy remains
-intentional. Operator confirmation of installation on all repositories is not a per-repository audit.
-See [App setup](../notification_service/README.md#github-app-setup) for configuration.
+The [task DAG](task_dag.md) owns outstanding work and dependencies. This file records only
+remaining acceptance and future decisions. For implemented behavior and deployment, see the
+[service README](../notification_service/README.md), [App notification diagnostics](../app/README.md#notification-diagnostics),
+and the [staging acceptance record](../notification_service/docs/staging_github_acceptance.md).
 
 ## Remaining live verification
 
