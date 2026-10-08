@@ -5,16 +5,6 @@ from jinja2 import StrictUndefined, Template
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 PLATFORM_INSTRUCTIONS_TEMPLATE = "agentplane/sandbox_service/agent_instructions.j2"
-KUBERNETES_ADMIN_INSTRUCTIONS_TEMPLATE = "agentplane/sandbox_service/kubernetes_admin_instructions.j2"
-
-
-def render_kubernetes_admin_instructions(*, actions_service_url: str) -> str:
-    """Construct shared, deployment-scoped guidance for privileged Kubernetes diagnostics."""
-    template = Template(
-        get_required_path(own_repo_rlocation(KUBERNETES_ADMIN_INSTRUCTIONS_TEMPLATE)).read_text(encoding="utf-8"),
-        undefined=StrictUndefined,
-    )
-    return str(template.render(actions_service_url=actions_service_url)).strip()
 
 
 def render_platform_instructions(
@@ -30,7 +20,6 @@ def render_platform_instructions(
             egress_api_url=egress_api_url,
             actions_service_url=actions_service_url,
             notifications_service_url=notifications_service_url,
-            kubernetes_admin_instructions=render_kubernetes_admin_instructions(actions_service_url=actions_service_url),
         )
     ).strip()
 

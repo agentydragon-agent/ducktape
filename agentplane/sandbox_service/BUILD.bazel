@@ -163,10 +163,7 @@ py_binary(
 py_library(
     name = "instructions",
     srcs = ["instructions.py"],
-    data = [
-        "agent_instructions.j2",
-        "kubernetes_admin_instructions.j2",
-    ],  # explicit deployment config renders these shared instruction templates
+    data = ["agent_instructions.j2"],
     visibility = [
         "//agentplane/notification_service:__pkg__",
         "//cluster/cdk8s/agentplane:__subpackages__",

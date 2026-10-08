@@ -53,7 +53,7 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     backend_config = yaml.safe_load(resource("ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
     # The Sandbox Service supplies this platform block to every harness/preset in both environments.
     platform = backend_config["platform_instructions"]
-    assert platform.count("### Kubernetes admin Actions for operations outside your own RBAC") == 1
+    assert platform.count(sandbox_service.KUBERNETES_ADMIN_INSTRUCTIONS) == 1
     assert "kubernetes_admin" in platform
     assert "pods_exec" in platform
     assert f"http://agentplane-actions.{namespace}.svc.cluster.local:8080/v1/action-groups" in platform
