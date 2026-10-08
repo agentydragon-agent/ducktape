@@ -1,7 +1,7 @@
 """Render-health checks + PR-visuals publication for representative Augur URLs.
 
 Each case boots the real dev server (hermetic prices), drives the page through
-its `wait_ready` DOM/geometry assertions (the real regression net), and fails on
+its DOM/geometry assertions (the real regression net), and fails on
 any uncaught page error. The rendered PNGs plus a `visual-review.json` manifest
 go to undeclared outputs, where trusted CI (`devinfra/pr_visuals/publisher.py`)
 publishes them for review.
@@ -13,12 +13,9 @@ devinfra/pr_visuals/plans/goldens_to_pr_visuals.md).
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections import defaultdict
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
-from dataclasses import dataclass, field
-from pathlib import Path
+from collections.abc import AsyncIterator, Iterator
 from urllib.parse import urlencode
 
 import pytest
@@ -34,25 +31,16 @@ from finance.evidence.markets import Platform
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context, stability_style
-from util.testing.page_capture import PageErrors
+from util.testing.visual_capture import VisualPage
 from util.testing.stable_capture import stable_full_page_png
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_review import retain_review_asset
+from util.testing.visual_review import publish_review_png
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
+# gazelle:include_dep //util/testing:visual_fixtures
 
-pytest_plugins = ("util.playwright",)
-
-
-@dataclass(frozen=True)
-class VisualCase:
-    name: str
-    path: str
-    wait_ready: Callable[[Page], Awaitable[None]]
-    # Optional interaction to run after the page is ready but before screenshot (e.g. clicking a
-    # rollout sliver to expand the events panel). Mutating callable; receives the live `Page`.
-    interact: Callable[[Page], Awaitable[None]] | None = field(default=None)
+pytest_plugins = ("util.playwright", "util.testing.visual_fixtures")
 
 
 SCREENSHOT_VIEWPORT: ViewportSize = {"width": 1280, "height": 1000}
@@ -401,38 +389,6 @@ async def _focus_active_scenario(page: Page) -> None:
     await _select_first_rollout(page)
 
 
-VISUAL_CASES = (
-    VisualCase(
-        name="product_cash_runway",
-        path="/product?n=32",
-        wait_ready=_wait_for_product_page,
-        interact=_select_first_rollout,
-    ),
-    VisualCase(name="product_property_lifecycle", path=_PROPERTY_LIFECYCLE_URL, wait_ready=_wait_for_property_panel),
-    VisualCase(name="product_scenario_comparison", path=_COMPARISON_URL, wait_ready=_wait_for_scenario_comparison),
-    VisualCase(
-        name="product_distribution_multi",
-        path=_COMPARISON_URL,
-        wait_ready=_wait_for_scenario_comparison,
-        interact=_select_rollout_from_distribution,
-    ),
-    VisualCase(
-        name="product_scenario_candles",
-        path=_COMPARISON_URL,
-        wait_ready=_wait_for_scenario_comparison,
-        interact=_show_candles,
-    ),
-    VisualCase(
-        name="product_scenario_focus",
-        path=_COMPARISON_URL,
-        wait_ready=_wait_for_scenario_comparison,
-        interact=_focus_active_scenario,
-    ),
-    VisualCase(name="product_distribution_failures", path=_FAILURE_URL, wait_ready=_wait_for_distribution_failures),
-    VisualCase(name="calibration_page", path="/product?tab=calibration", wait_ready=_wait_for_calibration_page),
-)
-
-
 @pytest.fixture(scope="module")
 def hermetic_prices() -> dict[Platform, dict[str, float]]:
     """A fixed live price for every market in the example catalog.
@@ -477,49 +433,90 @@ async def page(playwright: Playwright) -> AsyncIterator[Page]:
 
 
 @pytest.fixture
-def page_errors(page: Page) -> PageErrors:
-    return PageErrors(page)
-
-
-async def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Path:
-    # Pin the `sticky top-0` header to the top of the full-page capture: Playwright paints a
-    # sticky element at its last on-screen position, so a mid-page scroll (e.g. after a rollout
-    # interaction) would otherwise leave the header floating over the middle of the screenshot.
-    await page.evaluate("() => window.scrollTo(0, 0)")
-    png = await stable_full_page_png(page, name=target_path.stem, diagnostics=undeclared_outputs_dir())
-    await asyncio.to_thread(target_path.write_bytes, png)
-    return target_path
-
-
-async def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path) -> Path:
-    await page.goto(f"{origin}{case.path}", wait_until="networkidle", timeout=60_000)
+async def view(page: Page, capture_name: str) -> AsyncIterator[VisualPage]:
+    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Augur pages", capture_name=capture_name)
     try:
-        await case.wait_ready(page)
-    except Exception:
-        debug_dir = undeclared_outputs_dir()
-        await page.screenshot(path=str(debug_dir / f"{case.name}.debug.png"), full_page=True)
-        dom = await page.content()
-        (debug_dir / f"{case.name}.debug.html").write_text(dom[:5000])
-        (debug_dir / f"{case.name}.debug.txt").write_text(f"URL: {page.url}")
-        raise
-    await page.goto(page.url, wait_until="networkidle", timeout=60_000)
-    await case.wait_ready(page)
-    if case.interact is not None:
-        await case.interact(page)
-        await _wait_for_product_chart_geometry(page)
-    return await _take_stable_full_page_screenshot(page, out_dir / f"{case.name}.png")
+        yield view
+    finally:
+        # Readiness failures still leave a screenshot and DOM beside convergence diagnostics.
+        if not (view.output_dir / f"{capture_name}.png").exists():
+            await page.screenshot(path=str(view.output_dir / f"{capture_name}.debug.png"), full_page=True)
+            (view.output_dir / f"{capture_name}.debug.html").write_text((await page.content())[:5000])
+        view.errors.assert_none(context=capture_name)
 
 
-@pytest.mark.parametrize("case", VISUAL_CASES, ids=[case.name for case in VISUAL_CASES])
-async def test_augur_pages_render(
-    page: Page, page_errors: PageErrors, augur_server: str, tmp_path: Path, case: VisualCase
-) -> None:
-    rendered = await _render_case(page, augur_server, case, tmp_path)
-    page_errors.assert_none(context=case.name)
+@pytest.fixture
+async def comparison_view(view: VisualPage, augur_server: str) -> VisualPage:
+    await view.page.goto(f"{augur_server}{_COMPARISON_URL}", wait_until="networkidle", timeout=60_000)
+    await _wait_for_scenario_comparison(view.page)
+    return view
 
-    # Retain the render + visual-review manifest for the PR visual-review
-    # publisher (devinfra/pr_visuals/publisher.py) — the pixel-review path.
-    retain_review_asset(rendered, title="Augur pages", label=case.name.replace("_", " "), name=f"{case.name}.png")
+
+async def _capture(view: VisualPage) -> None:
+    assert view.capture_name is not None
+    await view.check(context=view.capture_name)
+    png = await stable_full_page_png(view.page, name=view.capture_name, diagnostics=view.output_dir)
+    await view.check(context=view.capture_name)
+    publish_review_png(
+        png, output_dir=view.output_dir, title=view.title, name=f"{view.capture_name}.png",
+        label=view.capture_name.replace("_", " "),
+    )
+
+
+async def test_product_cash_runway(view: VisualPage, augur_server: str) -> None:
+    await view.page.goto(f"{augur_server}/product?n=32", wait_until="networkidle", timeout=60_000)
+    await _wait_for_product_page(view.page)
+    await _select_first_rollout(view.page)
+    await _wait_for_product_chart_geometry(view.page)
+    await view.page.evaluate("() => window.scrollTo(0, 0)")
+    await _capture(view)
+
+
+async def test_product_property_lifecycle(view: VisualPage, augur_server: str) -> None:
+    await view.page.goto(f"{augur_server}{_PROPERTY_LIFECYCLE_URL}", wait_until="networkidle", timeout=60_000)
+    await _wait_for_property_panel(view.page)
+    await view.page.evaluate("() => window.scrollTo(0, 0)")
+    await _capture(view)
+
+
+async def test_product_scenario_comparison(comparison_view: VisualPage) -> None:
+    await comparison_view.page.evaluate("() => window.scrollTo(0, 0)")
+    await _capture(comparison_view)
+
+
+async def test_product_distribution_multi(comparison_view: VisualPage) -> None:
+    await _select_rollout_from_distribution(comparison_view.page)
+    await _wait_for_product_chart_geometry(comparison_view.page)
+    await comparison_view.page.evaluate("() => window.scrollTo(0, 0)")
+    await _capture(comparison_view)
+
+
+async def test_product_scenario_candles(comparison_view: VisualPage) -> None:
+    await _show_candles(comparison_view.page)
+    await _wait_for_product_chart_geometry(comparison_view.page)
+    await comparison_view.page.evaluate("() => window.scrollTo(0, 0)")
+    await _capture(comparison_view)
+
+
+async def test_product_scenario_focus(comparison_view: VisualPage) -> None:
+    await _focus_active_scenario(comparison_view.page)
+    await _wait_for_product_chart_geometry(comparison_view.page)
+    await comparison_view.page.evaluate("() => window.scrollTo(0, 0)")
+    await _capture(comparison_view)
+
+
+async def test_product_distribution_failures(view: VisualPage, augur_server: str) -> None:
+    await view.page.goto(f"{augur_server}{_FAILURE_URL}", wait_until="networkidle", timeout=60_000)
+    await _wait_for_distribution_failures(view.page)
+    await view.page.evaluate("() => window.scrollTo(0, 0)")
+    await _capture(view)
+
+
+async def test_calibration_page(view: VisualPage, augur_server: str) -> None:
+    await view.page.goto(f"{augur_server}/product?tab=calibration", wait_until="networkidle", timeout=60_000)
+    await _wait_for_calibration_page(view.page)
+    await view.page.evaluate("() => window.scrollTo(0, 0)")
+    await _capture(view)
 
 
 if __name__ == "__main__":

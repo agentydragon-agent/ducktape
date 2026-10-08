@@ -34,15 +34,13 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-from PIL import Image
 from testcontainers.core.container import DockerContainer
 
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_fixture_data
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
-from util.testing.gnome import GnomeSession, crop_panel_menu
+from util.testing.gnome import GnomeSession, capture_panel_menu
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_review import retain_review_asset
 
 logger = logging.getLogger(__name__)
 
@@ -139,37 +137,22 @@ def undeclared_dir() -> Path:
 
 
 @pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)
-def test_render(
-    render_session: tuple[GnomeSession, Path], undeclared_dir: Path, tmp_path: Path, fixture_name: str
-) -> None:
-    container, container_out_dir = render_session
-    out_name = f"{fixture_name}.png"
-    fixture_in_container = f"/fixtures/{fixture_name}.json"
-    out_in_container = f"/out/{out_name}"
-
+def test_render(render_session: tuple[GnomeSession, Path], undeclared_dir: Path, fixture_name: str) -> None:
+    session, output_dir = render_session
     try:
-        # Defensively close in case a previous test left the menu open.
-        container.close_menu()
-        container.reload(fixture_in_container)
-        geom = container.open_menu()
-        container.screenshot(out_in_container)
-        container.close_menu()
+        session.close_menu()
+        session.reload(f"/fixtures/{fixture_name}.json")
+        geometry = session.open_menu()
+        try:
+            capture_panel_menu(
+                session, output_dir, geometry=geometry, name=f"{fixture_name}.png",
+                title="AI quota GNOME extension", label=fixture_name.replace("_", " "),
+            )
+        finally:
+            session.close_menu()
     except (TimeoutError, RuntimeError) as e:
-        container.save_log(undeclared_dir / f"{fixture_name}.shell.log")
+        session.save_log(undeclared_dir / f"{fixture_name}.shell.log")
         pytest.fail(f"{fixture_name}: {e}")
-
-    full_path = container_out_dir / out_name
-    assert full_path.exists(), f"scrot did not produce {full_path}"
-
-    cropped = crop_panel_menu(Image.open(full_path), geom)
-    actual_path = tmp_path / f"{fixture_name}.cropped.png"
-    cropped.save(actual_path)
-
-    # Retain the render + visual-review manifest for the PR visual-review
-    # publisher (devinfra/pr_visuals/publisher.py) — the pixel-review path.
-    retain_review_asset(
-        actual_path, title="AI quota GNOME extension", label=fixture_name.replace("_", " "), name=out_name
-    )
 
 
 if __name__ == "__main__":

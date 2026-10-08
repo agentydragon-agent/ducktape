@@ -1,9 +1,12 @@
 """Session viewer behavior and screenshot checkpoints driven by Playwright."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Literal
 
 import pytest
 import pytest_bazel
+import pytest_asyncio
 from playwright.async_api import Locator, Page, expect
 
 from util.testing.page_capture import wait_for_stable
@@ -23,10 +26,41 @@ _PHONE = Viewport(width=420, height=900)
 _TRANSCRIPT = '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
 
 
-async def _capture(view: VisualPage, image_name: str) -> None:
+@asynccontextmanager
+async def _fixture(
+    visual: VisualHarness, fixture_id: str, *, viewport: Viewport, capture_name: str,
+    color_scheme: Literal["light", "dark"] = "light",
+) -> AsyncIterator[VisualPage]:
+    async with visual.open(fixture_id, viewport=viewport, color_scheme=color_scheme, capture_name=capture_name) as view:
+        await expect(view.page.locator("#app > *").first).to_be_attached()
+        await view.check(context="fixture ready")
+        yield view
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def noisy_view(visual: VisualHarness, viewport: Viewport, capture_name: str) -> AsyncIterator[VisualPage]:
+    async with _fixture(visual, "noisy", viewport=viewport, capture_name=capture_name) as view:
+        await _noisy_ready(view.page)
+        yield view
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def history_view(visual: VisualHarness, viewport: Viewport, capture_name: str) -> AsyncIterator[VisualPage]:
+    async with _fixture(visual, "history", viewport=viewport, capture_name=capture_name) as view:
+        yield view
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def sidebar_view(visual: VisualHarness, viewport: Viewport, capture_name: str) -> AsyncIterator[VisualPage]:
+    async with _fixture(visual, "sidebar", viewport=viewport, capture_name=capture_name) as view:
+        await _noisy_ready(view.page)
+        yield view
+
+
+async def _capture(view: VisualPage) -> None:
     # Keep hover states out of layout checkpoints.
     await view.page.mouse.move(0, 0)
-    await view.capture(image_name, target=view.page.locator("#app"))
+    await view.capture(target=view.page.locator("#app"))
 
 
 async def _scroll_into_view(target: Locator) -> None:
@@ -80,12 +114,10 @@ async def _expect_compact_event_timeline(page: Page) -> Locator:
     return strips
 
 
-@pytest.mark.parametrize("screen", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 @pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
-async def test_completed_activity(visual: VisualHarness, screen: Viewport, expanded: bool, capture_name: str) -> None:
-    async with visual.open("completed-activity", viewport=screen, capture_name=capture_name) as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
+async def test_completed_activity(visual: VisualHarness, viewport: Viewport, capture_name: str, expanded: bool) -> None:
+    async with _fixture(visual, 'completed-activity', viewport=viewport, capture_name=capture_name) as view:
         fixture = await view.page.evaluate("window.__visualFixture__")
         activity = view.page.locator('[data-fold-kind="activity"]').filter(
             has=view.page.locator("summary").filter(has_text=fixture["longCommandActivityTitle"])
@@ -100,14 +132,12 @@ async def test_completed_activity(visual: VisualHarness, screen: Viewport, expan
             await expect(activity.locator("[data-activity-title]")).to_be_visible()
             await expect(activity.locator("[data-activity-detail]")).to_be_visible()
         await _scroll_into_view(activity)
-        await _capture(view, capture_name)
+        await _capture(view)
 
 
-@pytest.mark.parametrize(("screen", "image_name"), [(_DESKTOP, "SessionMarkdown"), (_PHONE, "SessionMarkdown_mobile")])
-async def test_markdown_is_sanitized(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("markdown", viewport=screen, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
+@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+async def test_markdown_is_sanitized(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
+    async with _fixture(visual, 'markdown', viewport=viewport, capture_name=capture_name) as view:
         page = view.page
         for selector in (
             '[aria-label="Session history"]',
@@ -126,340 +156,240 @@ async def test_markdown_is_sanitized(visual: VisualHarness, screen: Viewport, im
             "links => links.some(link => /^(javascript|data):/i.test(link.getAttribute('href') ?? ''))"
         )
         assert await page.evaluate("window.__sessionMarkdownFixtureExecuted === undefined")
-        await _capture(view, image_name)
+        await _capture(view)
 
 
-@pytest.mark.parametrize(
-    ("screen", "image_name"), [(_DESKTOP, "SessionNarrationVisibility"), (_PHONE, "SessionNarrationVisibility_mobile")]
-)
-async def test_narration_is_visible(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("narration", viewport=screen, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
+@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+async def test_narration_is_visible(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
+    async with _fixture(visual, 'narration', viewport=viewport, capture_name=capture_name) as view:
         narration = view.page.locator('[data-fold-kind="narration"]')
         await expect(narration).to_be_visible()
         await _scroll_into_view(narration)
-        await _capture(view, image_name)
+        await _capture(view)
 
 
-async def test_history_opens_at_tail(visual: VisualHarness) -> None:
-    async with visual.open("history", viewport=_DESKTOP, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        page = view.page
-        await page.wait_for_function(
-            "() => {\n                const viewport = document.querySelector('[aria-label=\"Session transcript\"] .mantine-ScrollArea-viewport');\n                const latest = document.querySelector('[data-history-sequences~=\"17\"]');\n                if (!viewport || !latest || viewport.scrollHeight <= viewport.clientHeight) return false;\n                const box = viewport.getBoundingClientRect(), card = latest.getBoundingClientRect();\n                return Math.abs(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight) <= 1\n                    && card.bottom > box.top && card.top < box.bottom;\n            }"
-        )
-        await _capture(view, "SessionLatestFirstTail")
+async def test_history_opens_at_tail(history_view: VisualPage) -> None:
+    page = history_view.page
+    await page.wait_for_function(
+        "() => {\n                const viewport = document.querySelector('[aria-label=\"Session transcript\"] .mantine-ScrollArea-viewport');\n                const latest = document.querySelector('[data-history-sequences~=\"17\"]');\n                if (!viewport || !latest || viewport.scrollHeight <= viewport.clientHeight) return false;\n                const box = viewport.getBoundingClientRect(), card = latest.getBoundingClientRect();\n                return Math.abs(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight) <= 1\n                    && card.bottom > box.top && card.top < box.bottom;\n            }"
+    )
+    await _capture(history_view)
 
 
-async def test_loading_older_history_preserves_anchor(visual: VisualHarness) -> None:
-    async with visual.open("history", viewport=_DESKTOP, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        page = view.page
-        await page.wait_for_function(
-            "() => {\n                const viewport = document.querySelector('[aria-label=\"Session transcript\"] .mantine-ScrollArea-viewport');\n                const latest = document.querySelector('[data-history-sequences~=\"17\"]');\n                if (!viewport || !latest || viewport.scrollHeight <= viewport.clientHeight) return false;\n                const box = viewport.getBoundingClientRect(), card = latest.getBoundingClientRect();\n                return Math.abs(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight) <= 1\n                    && card.bottom > box.top && card.top < box.bottom;\n            }"
-        )
-        thinking = page.locator('details[aria-label="Thinking"]')
-        await expect(thinking).to_be_attached()
-        await thinking.evaluate(
-            "element => {\n                    const viewport = document.querySelector('[aria-label=\"Session transcript\"] .mantine-ScrollArea-viewport');\n                    viewport.scrollTop += element.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 100;\n                    viewport.dispatchEvent(new Event('scroll'));\n                }"
-        )
-        await thinking.locator("summary").click()
-        await wait_for_stable(page)
-        original = await thinking.element_handle()
-        top = await thinking.evaluate("element => element.getBoundingClientRect().top")
-        # Loading older history must not scroll the reader to the off-screen load control.
-        await page.get_by_role("button", name="Load older events").dispatch_event("click")
-        await expect(page.locator('[data-history-sequences~="1"]').first).to_be_attached()
-        await wait_for_stable(page)
-        assert await thinking.evaluate("(element, original) => element === original", original)
-        await expect(thinking).to_have_attribute("open", "")
-        await expect(page.get_by_role("button", name="Load older events")).to_have_count(0)
-        assert abs(await thinking.evaluate("element => element.getBoundingClientRect().top") - top) <= 1.5
-        await _capture(view, "SessionLatestFirstAnchor")
+async def test_loading_older_history_preserves_anchor(history_view: VisualPage) -> None:
+    page = history_view.page
+    await page.wait_for_function(
+        "() => {\n                const viewport = document.querySelector('[aria-label=\"Session transcript\"] .mantine-ScrollArea-viewport');\n                const latest = document.querySelector('[data-history-sequences~=\"17\"]');\n                if (!viewport || !latest || viewport.scrollHeight <= viewport.clientHeight) return false;\n                const box = viewport.getBoundingClientRect(), card = latest.getBoundingClientRect();\n                return Math.abs(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight) <= 1\n                    && card.bottom > box.top && card.top < box.bottom;\n            }"
+    )
+    thinking = page.locator('details[aria-label="Thinking"]')
+    await expect(thinking).to_be_attached()
+    await thinking.evaluate(
+        "element => {\n                    const viewport = document.querySelector('[aria-label=\"Session transcript\"] .mantine-ScrollArea-viewport');\n                    viewport.scrollTop += element.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 100;\n                    viewport.dispatchEvent(new Event('scroll'));\n                }"
+    )
+    await thinking.locator("summary").click()
+    await wait_for_stable(page)
+    original = await thinking.element_handle()
+    top = await thinking.evaluate("element => element.getBoundingClientRect().top")
+    # Loading older history must not scroll the reader to the off-screen load control.
+    await page.get_by_role("button", name="Load older events").dispatch_event("click")
+    await expect(page.locator('[data-history-sequences~="1"]').first).to_be_attached()
+    await wait_for_stable(page)
+    assert await thinking.evaluate("(element, original) => element === original", original)
+    await expect(thinking).to_have_attribute("open", "")
+    await expect(page.get_by_role("button", name="Load older events")).to_have_count(0)
+    assert abs(await thinking.evaluate("element => element.getBoundingClientRect().top") - top) <= 1.5
+    await _capture(history_view)
 
 
-@pytest.mark.parametrize(("screen", "image_name"), [(_DESKTOP, "SessionNoisy"), (_PHONE, "SessionNoisy_mobile")])
-async def test_noisy_history(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("noisy", viewport=screen, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        page = view.page
-        await expect(page.locator('[data-message-role="assistant"]').first).to_be_attached()
-        await _noisy_ready(page)
-        await _capture(view, image_name)
+@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+async def test_noisy_history(noisy_view: VisualPage) -> None:
+    page = noisy_view.page
+    await _capture(noisy_view)
 
 
-async def test_noisy_history_thinking(visual: VisualHarness) -> None:
-    async with visual.open("noisy", viewport=_DESKTOP, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        page = view.page
-        await expect(page.locator('[data-message-role="assistant"]').first).to_be_attached()
-        await _noisy_ready(page)
-        await page.locator('[data-tool-group-toggle][aria-expanded="false"]').first.click()
-        thinking = page.locator('[data-fold-kind="thinking"]').first
-        await thinking.locator("summary").click()
-        await _scroll_into_view(thinking)
-        await _capture(view, "SessionNoisyThinking")
+async def test_noisy_history_thinking(noisy_view: VisualPage) -> None:
+    page = noisy_view.page
+    await page.locator('[data-tool-group-toggle][aria-expanded="false"]').first.click()
+    thinking = page.locator('[data-fold-kind="thinking"]').first
+    await thinking.locator("summary").click()
+    await _scroll_into_view(thinking)
+    await _capture(noisy_view)
 
 
-async def test_noisy_raw_events(visual: VisualHarness) -> None:
-    async with visual.open("noisy", viewport=_DESKTOP, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        page = view.page
-        await expect(page.locator('[data-message-role="assistant"]').first).to_be_attached()
-        await page.get_by_role("button", name="Show raw event stream").click()
-        rows = page.locator("[data-raw-event]")
-        await expect(rows.first).to_be_attached()
-        await expect(rows).to_have_count(await page.evaluate("window.__visualFixture__.noisyEventCount"))
-        await page.locator(_TRANSCRIPT).evaluate("element => { element.scrollTop = 0; }")
-        await _capture(view, "SessionNoisyRaw")
+async def test_noisy_raw_events(noisy_view: VisualPage) -> None:
+    page = noisy_view.page
+    await page.get_by_role("button", name="Show raw event stream").click()
+    rows = page.locator("[data-raw-event]")
+    await expect(rows.first).to_be_attached()
+    await expect(rows).to_have_count(await page.evaluate("window.__visualFixture__.noisyEventCount"))
+    await page.locator(_TRANSCRIPT).evaluate("element => { element.scrollTop = 0; }")
+    await _capture(noisy_view)
 
 
-@pytest.mark.parametrize(
-    ("screen", "image_name"), [(_DESKTOP, "SessionNoisyHook"), (_PHONE, "SessionNoisyHook_mobile")]
-)
-async def test_noisy_hook_filter(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("noisy", viewport=screen, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        page = view.page
-        await expect(page.locator('[data-message-role="assistant"]').first).to_be_attached()
-        await page.get_by_role("button", name="Show raw event stream").click()
-        rows = page.locator("[data-raw-event]")
-        await expect(rows.first).to_be_attached()
-        await page.get_by_label("Event kind").select_option("system · hook_response")
-        await expect(rows.first).to_be_attached()
-        await expect(rows.filter(has_not_text="hook_response")).to_have_count(0)
-        await rows.first.locator("summary").click()
-        await _scroll_into_view(rows.first)
-        await expect(page.locator("[data-event-json]")).to_be_attached()
-        await _capture(view, image_name)
+@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+async def test_noisy_hook_filter(noisy_view: VisualPage) -> None:
+    page = noisy_view.page
+    await page.get_by_role("button", name="Show raw event stream").click()
+    rows = page.locator("[data-raw-event]")
+    await expect(rows.first).to_be_attached()
+    await page.get_by_label("Event kind").select_option("system · hook_response")
+    await expect(rows.first).to_be_attached()
+    await expect(rows.filter(has_not_text="hook_response")).to_have_count(0)
+    await rows.first.locator("summary").click()
+    await _scroll_into_view(rows.first)
+    await expect(page.locator("[data-event-json]")).to_be_attached()
+    await _capture(noisy_view)
 
 
-async def test_sidebar_open(visual: VisualHarness) -> None:
-    async with visual.open("sidebar", viewport=_DESKTOP, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        page = view.page
-        await _noisy_ready(page)
-        await expect(page.locator('button[aria-controls="session-sidebar"]')).to_have_attribute("aria-expanded", "true")
-        await _capture(view, "SessionNoisySidebar")
+async def test_sidebar_open(sidebar_view: VisualPage) -> None:
+    page = sidebar_view.page
+    await expect(page.locator('button[aria-controls="session-sidebar"]')).to_have_attribute("aria-expanded", "true")
+    await _capture(sidebar_view)
 
 
-async def test_sidebar_collapsed(visual: VisualHarness) -> None:
-    async with visual.open("sidebar", viewport=_DESKTOP, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        page = view.page
-        await _noisy_ready(page)
-        toggle = page.locator('button[aria-controls="session-sidebar"]')
-        await toggle.click()
-        await expect(toggle).to_have_attribute("aria-expanded", "false")
-        await _capture(view, "SessionNoisySidebarCollapsed")
+async def test_sidebar_collapsed(sidebar_view: VisualPage) -> None:
+    page = sidebar_view.page
+    toggle = page.locator('button[aria-controls="session-sidebar"]')
+    await toggle.click()
+    await expect(toggle).to_have_attribute("aria-expanded", "false")
+    await _capture(sidebar_view)
 
 
-async def test_sidebar_resized(visual: VisualHarness) -> None:
-    async with visual.open("sidebar", viewport=_DESKTOP, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        page = view.page
-        await _noisy_ready(page)
-        separator = page.locator("[data-session-sidebar-resizer]")
-        await separator.press("End")
-        maximum = await separator.get_attribute("aria-valuemax")
-        assert maximum is not None
-        await expect(separator).to_have_attribute("aria-valuenow", maximum)
-        # Capture the resized layout, not the keyboard focus outline on its drag handle.
-        await separator.blur()
-        await _capture(view, "SessionNoisySidebarWide")
+async def test_sidebar_resized(sidebar_view: VisualPage) -> None:
+    page = sidebar_view.page
+    separator = page.locator("[data-session-sidebar-resizer]")
+    await separator.press("End")
+    maximum = await separator.get_attribute("aria-valuemax")
+    assert maximum is not None
+    await expect(separator).to_have_attribute("aria-valuenow", maximum)
+    # Capture the resized layout, not the keyboard focus outline on its drag handle.
+    await separator.blur()
+    await _capture(sidebar_view)
 
 
-async def test_sidebar_mobile_drawer(visual: VisualHarness) -> None:
-    async with visual.open("sidebar", viewport=_PHONE, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        page = view.page
-        await _noisy_ready(page)
-        await page.locator('button[aria-controls="session-sidebar-mobile"]').press("Enter")
-        await expect(page.locator(".mantine-Drawer-root #session-sidebar-mobile")).to_be_visible()
-        await expect(page.locator(".mantine-Drawer-content")).to_have_css("opacity", "1")
-        await page.wait_for_function(
-            "() => document.querySelector('.mantine-Drawer-root').getAnimations({ subtree: true }).length === 0"
-        )
-        await expect(page.locator(".mantine-Drawer-close")).to_be_focused()
-        await _capture(view, "SessionNoisySidebar_mobile")
+@pytest.mark.parametrize('viewport', [_PHONE], ids=['mobile'])
+async def test_sidebar_mobile_drawer(sidebar_view: VisualPage) -> None:
+    page = sidebar_view.page
+    await page.locator('button[aria-controls="session-sidebar-mobile"]').press("Enter")
+    await expect(page.locator(".mantine-Drawer-root #session-sidebar-mobile")).to_be_visible()
+    await expect(page.locator(".mantine-Drawer-content")).to_have_css("opacity", "1")
+    await page.wait_for_function(
+        "() => document.querySelector('.mantine-Drawer-root').getAnimations({ subtree: true }).length === 0"
+    )
+    await expect(page.locator(".mantine-Drawer-close")).to_be_focused()
+    await _capture(sidebar_view)
 
 
-@pytest.mark.parametrize(
-    ("screen", "image_name"), [(_DESKTOP, "SessionNoisyTimeline"), (_PHONE, "SessionNoisyTimeline_mobile")]
-)
-async def test_event_timeline_collapsed(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("noisy", viewport=screen, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        page = view.page
-        await _noisy_ready(page)
-        strips = await _expect_compact_event_timeline(page)
-        await _scroll_into_view(strips.first)
-        await _capture(view, image_name)
+@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+async def test_event_timeline_collapsed(noisy_view: VisualPage) -> None:
+    page = noisy_view.page
+    strips = await _expect_compact_event_timeline(page)
+    await _scroll_into_view(strips.first)
+    await _capture(noisy_view)
 
 
-@pytest.mark.parametrize(
-    ("screen", "image_name"),
-    [(_DESKTOP, "SessionNoisyTimelineExpanded"), (_PHONE, "SessionNoisyTimelineExpanded_mobile")],
-)
-async def test_event_timeline_expanded(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("noisy", viewport=screen, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        page = view.page
-        await _noisy_ready(page)
-        strips = await _expect_compact_event_timeline(page)
-        await strips.first.locator("[data-event-dot]").first.click()
-        await strips.first.locator("[data-raw-event] summary").first.click()
-        await expect(strips.first.locator("[data-event-json]")).to_be_attached()
-        await _scroll_into_view(strips.first)
-        await _capture(view, image_name)
+@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+async def test_event_timeline_expanded(noisy_view: VisualPage) -> None:
+    page = noisy_view.page
+    strips = await _expect_compact_event_timeline(page)
+    await strips.first.locator("[data-event-dot]").first.click()
+    await strips.first.locator("[data-raw-event] summary").first.click()
+    await expect(strips.first.locator("[data-event-json]")).to_be_attached()
+    await _scroll_into_view(strips.first)
+    await _capture(noisy_view)
 
 
-async def test_activity_disclosures_collapsed(visual: VisualHarness) -> None:
-    async with visual.open("noisy", viewport=_DESKTOP, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        page = view.page
-        await _noisy_ready(page)
-        group = page.locator('[data-fold-kind="tool-group"]').first
-        await expect(group).to_be_attached()
-        assert await group.evaluate("element => element.getBoundingClientRect().height") <= 28
-        await expect(group.locator('[data-fold-kind="tool-run"]')).to_have_count(0)
-        await _scroll_into_view(group)
-        await _capture(view, "SessionNoisyActivity")
+async def test_activity_disclosures_collapsed(noisy_view: VisualPage) -> None:
+    page = noisy_view.page
+    group = page.locator('[data-fold-kind="tool-group"]').first
+    await expect(group).to_be_attached()
+    assert await group.evaluate("element => element.getBoundingClientRect().height") <= 28
+    await expect(group.locator('[data-fold-kind="tool-run"]')).to_have_count(0)
+    await _scroll_into_view(group)
+    await _capture(noisy_view)
 
 
-@pytest.mark.parametrize(
-    ("screen", "image_name"),
-    [(_DESKTOP, "SessionNoisyActivityExpanded"), (_PHONE, "SessionNoisyActivityExpanded_mobile")],
-)
-async def test_activity_disclosures_expanded(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("noisy", viewport=screen, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
-        page = view.page
-        await _noisy_ready(page)
-        group = page.locator('[data-fold-kind="tool-group"]').first
-        await expect(group).to_be_attached()
-        assert await group.evaluate("element => element.getBoundingClientRect().height") <= 28
-        await expect(group.locator('[data-fold-kind="tool-run"]')).to_have_count(0)
-        await _click_right_edge(page, group.locator("[data-tool-group-toggle]"))
-        await _click_right_edge(page, group.locator("[data-tool-run-toggle]").first)
-        await expect(group.locator("[data-tool-file-preview]")).to_be_attached()
-        await _scroll_into_view(group)
-        await _capture(view, image_name)
+@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+async def test_activity_disclosures_expanded(noisy_view: VisualPage) -> None:
+    page = noisy_view.page
+    group = page.locator('[data-fold-kind="tool-group"]').first
+    await expect(group).to_be_attached()
+    assert await group.evaluate("element => element.getBoundingClientRect().height") <= 28
+    await expect(group.locator('[data-fold-kind="tool-run"]')).to_have_count(0)
+    await _click_right_edge(page, group.locator("[data-tool-group-toggle]"))
+    await _click_right_edge(page, group.locator("[data-tool-run-toggle]").first)
+    await expect(group.locator("[data-tool-file-preview]")).to_be_attached()
+    await _scroll_into_view(group)
+    await _capture(noisy_view)
 
 
-@pytest.mark.parametrize(
-    ("screen", "theme", "image_name"),
-    [
-        (_DESKTOP, "light", "SessionViewer"),
-        (_DESKTOP, "dark", "SessionViewer_dark"),
-        (_PHONE, "light", "SessionViewer_mobile"),
-    ],
-)
-async def test_session_viewer(
-    visual: VisualHarness, screen: Viewport, theme: Literal["light", "dark"], image_name: str
-) -> None:
-    async with visual.open("viewer", viewport=screen, color_scheme=theme) as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
+@pytest.mark.parametrize(('viewport', 'color_scheme'), [(_DESKTOP, 'light'), (_DESKTOP, 'dark'), (_PHONE, 'light')], ids=['desktop-light', 'desktop-dark', 'mobile-light'])
+async def test_session_viewer(visual: VisualHarness, viewport: Viewport, capture_name: str, color_scheme: Literal["light", "dark"]) -> None:
+    async with _fixture(visual, 'viewer', viewport=viewport, capture_name=capture_name, color_scheme=color_scheme) as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="tool-run"][data-tool-count="5"]')).to_be_attached()
         await expect(view.page.locator("[data-tool-run-toggle]").first).to_be_attached()
-        await _capture(view, image_name)
+        await _capture(view)
 
 
-@pytest.mark.parametrize(
-    ("screen", "image_name"), [(_DESKTOP, "SessionToolResult"), (_PHONE, "SessionToolResult_mobile")]
-)
-async def test_session_tool_result(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("tool-result", viewport=screen, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
+@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+async def test_session_tool_result(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
+    async with _fixture(visual, 'tool-result', viewport=viewport, capture_name=capture_name) as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-tool-name="Read"]')).to_be_attached()
         await expect(view.page.locator("[data-tool-output-image]")).to_be_attached()
-        await _capture(view, image_name)
+        await _capture(view)
 
 
-@pytest.mark.parametrize(
-    ("screen", "image_name"), [(_DESKTOP, "SessionReadFileResult"), (_PHONE, "SessionReadFileResult_mobile")]
-)
-async def test_session_read_file_result(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("file-result", viewport=screen, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
+@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+async def test_session_read_file_result(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
+    async with _fixture(visual, 'file-result', viewport=viewport, capture_name=capture_name) as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-tool-file-path="src/session-viewer.ts"]')).to_be_attached()
         await expect(view.page.locator("[data-tool-file-preview]")).to_be_attached()
-        await _capture(view, image_name)
+        await _capture(view)
 
 
-@pytest.mark.parametrize(("screen", "image_name"), [(_DESKTOP, "SessionSubagent"), (_PHONE, "SessionSubagent_mobile")])
-async def test_session_subagent(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("subagent", viewport=screen, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
+@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+async def test_session_subagent(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
+    async with _fixture(visual, 'subagent', viewport=viewport, capture_name=capture_name) as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-subagent-activity][data-subagent-tool-count="2"]')).to_be_attached()
         await expect(view.page.locator('[data-subagent-latest-tool="Grep"]')).to_be_attached()
-        await _capture(view, image_name)
+        await _capture(view)
 
 
-@pytest.mark.parametrize(("screen", "image_name"), [(_DESKTOP, "SessionPeerHold"), (_PHONE, "SessionPeerHold_mobile")])
-async def test_session_peer_hold(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("peer-hold", viewport=screen, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
+@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+async def test_session_peer_hold(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
+    async with _fixture(visual, 'peer-hold', viewport=viewport, capture_name=capture_name) as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="peer-message"][data-peer-from="plan-agent"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="peer-hold"][data-peer-state="held"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="peer-hold"][data-peer-state="dropped"]')).to_be_attached()
-        await _capture(view, image_name)
+        await _capture(view)
 
 
-@pytest.mark.parametrize(
-    ("screen", "image_name"), [(_DESKTOP, "SessionPeerMessage"), (_PHONE, "SessionPeerMessage_mobile")]
-)
-async def test_session_peer_message(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("peer-message", viewport=screen, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
+@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+async def test_session_peer_message(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
+    async with _fixture(visual, 'peer-message', viewport=viewport, capture_name=capture_name) as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(
             view.page.locator(
                 '[data-fold-kind="peer-message"][data-peer-from="review-agent"][data-peer-handback="true"]'
             )
         ).to_be_attached()
-        await _capture(view, image_name)
+        await _capture(view)
 
 
-@pytest.mark.parametrize(
-    ("screen", "image_name"), [(_DESKTOP, "SessionLocalCommandRows"), (_PHONE, "SessionLocalCommandRows_mobile")]
-)
-async def test_session_local_command_rows(visual: VisualHarness, screen: Viewport, image_name: str) -> None:
-    async with visual.open("local-commands", viewport=screen, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
+@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+async def test_session_local_command_rows(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
+    async with _fixture(visual, 'local-commands', viewport=viewport, capture_name=capture_name) as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(
             view.page.locator('[data-fold-kind="context"][data-context-model="claude-sonnet-4-5"]')
@@ -467,31 +397,22 @@ async def test_session_local_command_rows(visual: VisualHarness, screen: Viewpor
         await expect(view.page.locator('[data-fold-kind="stats"][data-stats-state="data"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="usage"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="status"]')).to_be_attached()
-        await _capture(view, image_name)
+        await _capture(view)
 
 
-async def test_session_sync_unpaired(visual: VisualHarness) -> None:
-    async with visual.open("sync", viewport=_DESKTOP, color_scheme="light") as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
+async def test_session_sync_unpaired(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
+    async with _fixture(visual, 'sync', viewport=viewport, capture_name=capture_name) as view:
         await expect(view.page.locator("#overview-heading")).to_be_attached()
         await expect(view.page.locator("#pairing-heading")).to_be_attached()
-        await _capture(view, "SessionSync")
+        await _capture(view)
 
 
-@pytest.mark.parametrize(
-    ("screen", "theme", "image_name"),
-    [(_DESKTOP, "dark", "SessionSync_paired_dark"), (_PHONE, "light", "SessionSync_paired_mobile")],
-)
-async def test_session_sync_paired(
-    visual: VisualHarness, screen: Viewport, theme: Literal["light", "dark"], image_name: str
-) -> None:
-    async with visual.open("sync-paired", viewport=screen, color_scheme=theme) as view:
-        await expect(view.page.locator("#app > *").first).to_be_attached()
-        await view.check(context="fixture ready")
+@pytest.mark.parametrize(('viewport', 'color_scheme'), [(_DESKTOP, 'dark'), (_PHONE, 'light')], ids=['desktop-dark', 'mobile-light'])
+async def test_session_sync_paired(visual: VisualHarness, viewport: Viewport, capture_name: str, color_scheme: Literal["light", "dark"]) -> None:
+    async with _fixture(visual, 'sync-paired', viewport=viewport, capture_name=capture_name, color_scheme=color_scheme) as view:
         await expect(view.page.locator("#overview-heading")).to_be_attached()
         await expect(view.page.locator("#pairing-heading")).to_be_attached()
-        await _capture(view, image_name)
+        await _capture(view)
 
 
 if __name__ == "__main__":

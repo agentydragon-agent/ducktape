@@ -12,18 +12,17 @@ import ast
 import json
 import zipfile
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 import pytest_bazel
-from PIL import Image
 from testcontainers.core.container import DockerContainer
 
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
-from util.testing.gnome import GnomeSession, crop_panel_menu
+from util.testing.gnome import GnomeSession, capture_panel_menu
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_review import retain_review_asset
 
 _GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gnome-shell-test:pinned")
 _EXTENSION_ZIP = "_main/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
@@ -102,11 +101,11 @@ def render_session(
         yield session, output_dir
 
 
-def _panel_label(container: GnomeSession) -> str:
-    output = container.call("GetPanelLabel").decode().strip()
+def _string_reply(reply: bytes) -> str:
+    output = reply.decode().strip()
     parsed = ast.literal_eval(output)
     if not isinstance(parsed, tuple) or len(parsed) != 1 or not isinstance(parsed[0], str):
-        raise RuntimeError(f"GetPanelLabel returned an unexpected value: {output!r}")
+        raise RuntimeError(f"Unexpected D-Bus string reply: {output!r}")
     return parsed[0]
 
 
@@ -117,57 +116,71 @@ def _assert_no_plaid_extension_error(container: GnomeSession) -> None:
         raise AssertionError(f"GNOME logged a Plaid Spend extension error during default startup:\n{log}")
 
 
+@contextmanager
+def _menu(session: GnomeSession, fixture_name: str, expected_label: str) -> Iterator[tuple[int, int, int, int]]:
+    session.close_menu()
+    session.reload(f"/fixtures/{fixture_name}.json")
+    assert _string_reply(session.call("GetPanelLabel")) == expected_label
+    geometry = session.open_menu()
+    try:
+        yield geometry
+    finally:
+        session.close_menu()
+
+
+def _allowance_menu_text(session: GnomeSession) -> str:
+    menu_text = _string_reply(session.call("GetMenuText"))
+    assert "Synthetic card" not in menu_text
+    assert "Check a purchase / dashboard" in menu_text
+    return menu_text
+
+
+def _capture(session: GnomeSession, output_dir: Path, geometry: tuple[int, int, int, int], name: str) -> None:
+    capture_panel_menu(
+        session, output_dir, geometry=geometry, name=f"{name}.png",
+        title="Plaid Spend GNOME extension", label=name.replace("_", " "),
+    )
+
+
 @pytest.mark.parametrize(
     ("fixture_name", "expected_label"),
-    [
-        ("ready_two_cards", "$149 !"),
-        ("authentication_required", "Sign in"),
-        ("offline", "Offline"),
-        ("allowance_paced", "Flex $200 !"),
-        ("allowance_warming", "Flex $700"),
-        ("allowance_exhausted", "Flex -<$1 !!"),
-    ],
+    [("ready_two_cards", "$149 !"), ("authentication_required", "Sign in"), ("offline", "Offline")],
 )
-def test_render(
-    render_session: tuple[GnomeSession, Path], tmp_path: Path, fixture_name: str, expected_label: str
-) -> None:
-    container, output_dir = render_session
-    image_name = f"{fixture_name}.png"
-    fixture_path = f"/fixtures/{fixture_name}.json"
-    output_path = f"/out/{image_name}"
+def test_card_status(render_session: tuple[GnomeSession, Path], fixture_name: str, expected_label: str) -> None:
+    session, output_dir = render_session
+    with _menu(session, fixture_name, expected_label) as geometry:
+        _capture(session, output_dir, geometry, fixture_name)
 
-    container.close_menu()
-    container.reload(fixture_path)
-    assert _panel_label(container) == expected_label
-    menu_geometry = container.open_menu()
-    if fixture_name.startswith("allowance_"):
-        menu_text = ast.literal_eval(container.call("GetMenuText").decode().strip())[0]
-        assert "Synthetic card" not in menu_text
-        assert "Check a purchase / dashboard" in menu_text
-        if fixture_name == "allowance_paced":
-            assert "7d $28/day" in menu_text
-            assert "30d $18/day" in menu_text
-            assert "Leash ~$23/day" in menu_text
-            assert "7d unmatched 3 ($12)" in menu_text
-            assert "Sync " in menu_text
-            assert "View updated" not in menu_text
-            assert "sustainability target" not in menu_text
-            assert "past pace is not opening debt" not in menu_text
-        if fixture_name == "allowance_warming":
-            assert "Pace warming up" in menu_text
-            assert "7d n/a" in menu_text
-        if fixture_name == "allowance_exhausted":
-            assert "Exhausted" in menu_text
-    container.screenshot(output_path)
-    container.close_menu()
 
-    full_path = output_dir / image_name
-    assert full_path.is_file(), f"scrot did not produce {full_path}"
-    actual_path = tmp_path / f"{fixture_name}.cropped.png"
-    crop_panel_menu(Image.open(full_path), menu_geometry).save(actual_path)
-    retain_review_asset(
-        actual_path, title="Plaid Spend GNOME extension", label=fixture_name.replace("_", " "), name=image_name
-    )
+def test_allowance_paced(render_session: tuple[GnomeSession, Path]) -> None:
+    session, output_dir = render_session
+    with _menu(session, "allowance_paced", "Flex $200 !") as geometry:
+        menu_text = _allowance_menu_text(session)
+        assert "7d $28/day" in menu_text
+        assert "30d $18/day" in menu_text
+        assert "Leash ~$23/day" in menu_text
+        assert "7d unmatched 3 ($12)" in menu_text
+        assert "Sync " in menu_text
+        assert "View updated" not in menu_text
+        assert "sustainability target" not in menu_text
+        assert "past pace is not opening debt" not in menu_text
+        _capture(session, output_dir, geometry, "allowance_paced")
+
+
+def test_allowance_warming(render_session: tuple[GnomeSession, Path]) -> None:
+    session, output_dir = render_session
+    with _menu(session, "allowance_warming", "Flex $700") as geometry:
+        menu_text = _allowance_menu_text(session)
+        assert "Pace warming up" in menu_text
+        assert "7d n/a" in menu_text
+        _capture(session, output_dir, geometry, "allowance_warming")
+
+
+def test_allowance_exhausted(render_session: tuple[GnomeSession, Path]) -> None:
+    session, output_dir = render_session
+    with _menu(session, "allowance_exhausted", "Flex -<$1 !!") as geometry:
+        assert "Exhausted" in _allowance_menu_text(session)
+        _capture(session, output_dir, geometry, "allowance_exhausted")
 
 
 if __name__ == "__main__":

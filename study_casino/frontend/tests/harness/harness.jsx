@@ -13,7 +13,6 @@ import { SessionAwardToast } from "../../StudyView.jsx";
 import { ChangelogModal } from "../../ChangelogModal.jsx";
 import { COLORS } from "../../shared.jsx";
 import { casinoSync } from "../../sync.js";
-import SCENARIOS from "./scenarios.json";
 
 // The visual sweep freezes the wall clock via an init script before this
 // bundle runs, so Date.now() *is* the frozen instant — reading it here keeps
@@ -146,10 +145,6 @@ function seedActiveSession(minutesAgo) {
   );
 }
 
-// One entry per scenario, keyed as scenarios.json keys them: each seeds whatever state its scene
-// needs and returns the tree to mount. A record rather than a switch so the scene set is data the
-// check below can compare -- and so an unrecognised name fails instead of quietly rendering the
-// main page, which a typo used to do.
 const SCENES = {
   main_page: () => {
     casinoSync.state.set(BASE_STATE);
@@ -175,7 +170,6 @@ const SCENES = {
   },
   // The #shot box shrink-wraps the toast (plus a little padding for its shadow), so the PNG is
   // just the toast on its felt backdrop — not however much of the viewport the test asks for, so
-  // scenarios.json leaves this scenario the default viewport.
   session_award: () => (
     <Standalone>
       <div id="shot" style={{ display: "inline-block", padding: 16 }}>
@@ -184,7 +178,7 @@ const SCENES = {
     </Standalone>
   ),
   // ChangelogModal is a real `position: fixed; inset: 0` overlay in production, so its extent is
-  // genuinely the viewport -- scenarios.json captures it via #app, not #shot, and it seeds no sync
+  // genuinely the viewport; capture #app, not #shot. It seeds no sync
   // state to wait on.
   changelog: () => (
     <Standalone>
@@ -193,23 +187,11 @@ const SCENES = {
   ),
 };
 
-// scenarios.json is what the sweep renders; SCENES is what this harness can build. A name in one
-// and not the other is a scene never captured, or one the runner asks for and cannot get.
-const declared = Object.keys(SCENARIOS);
-const buildable = Object.keys(SCENES);
-const missing = declared.filter((name) => !buildable.includes(name));
-const unswept = buildable.filter((name) => !declared.includes(name));
-if (missing.length || unswept.length) {
-  throw new Error(
-    `scenarios.json and harness scenes disagree: ${JSON.stringify({ missingFromHarness: missing, missingFromScenarios: unswept })}`
-  );
-}
-
 const page = new URLSearchParams(window.location.search).get("page") || "main_page";
 const scene = SCENES[page];
 if (scene === undefined) throw new Error(`unknown harness scenario ${page}`);
 const element = scene();
-// The full-app scenes in scenarios.json wait for `[data-testid="sync-banner-offline"]`, the state
+// The full-app tests wait for `[data-testid="sync-banner-offline"]`, the state
 // this settles into. Importing `casinoSync` also constructs the module-level singleton, which runs
 // its own startup fetches against the 503 stub above; their result lands after mount and is the
 // last change the page makes, replacing the `ok` status seeded here with `offline` (the header's
