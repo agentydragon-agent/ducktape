@@ -1,8 +1,11 @@
 # Python visual tests
 
-Visual tests are ordinary async pytest tests. They load a fixture, perform Playwright
-interactions, assert the result, then call the shared screenshot API. There is no
-JSON/jq instruction interpreter and no browser-side test driver.
+Visual tests are ordinary async pytest tests that load a fixture and call the shared
+screenshot API, optionally driving Playwright interactions and asserting behavior. A
+mount-and-capture test is useful on its own: published before/after images in GitHub PR
+comments let reviewers see what a UI change looks like. Readiness checks help capture the
+intended state; behavioral assertions are additional coverage, not a prerequisite.
+There is no JSON/jq instruction interpreter and no browser-side test driver.
 
 ## Responsibilities
 
