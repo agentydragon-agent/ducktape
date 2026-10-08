@@ -4,5 +4,6 @@ resources:
   - agentplane-staging.k8s.yaml
   - web-push-vapid.sops.yaml
   - github-app.sops.yaml
+  - session-history-backfill.yaml
 components:
   - image-pins
