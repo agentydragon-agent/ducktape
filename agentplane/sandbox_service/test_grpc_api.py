@@ -239,6 +239,49 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
         await resumed.closed.wait()
 
 
+async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
+    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
+) -> None:
+    store = Store(engine)
+    async with service_client(replace(resources, history=store), token_file) as remote:
+        runner = remote.runner(DESTINATION)
+        assert not (await runner.lookup(idempotency_key="lookup-key")).session_id
+        reserved = await store.reserve(
+            caller_namespace=OWNER.namespace,
+            caller_name=OWNER.name,
+            sandbox_namespace=SANDBOX_NAMESPACE,
+            sandbox_name=SANDBOX,
+            sandbox_uid=UUID(SANDBOX_UID),
+            open_key="lookup-key",
+            open_request=b"original inputs remain private",
+            launch_spec=lambda _: b"private launch",
+        )
+        pending = await runner.lookup(idempotency_key="lookup-key")
+        assert pending.session_id == str(reserved.session_id)
+        assert not pending.HasField("summary")  # reservation alone is not an Open success
+        with pytest.raises(ServiceError) as wrong_incarnation:
+            await remote.runner(
+                SandboxDestination(owner=DESTINATION.owner, sandbox=SANDBOX, sandbox_uid=str(uuid4()))
+            ).lookup(idempotency_key="lookup-key")
+        assert wrong_incarnation.value.code == grpc.StatusCode.NOT_FOUND
+        assert not (await runner.lookup(idempotency_key="other-key")).session_id
+        with pytest.raises(ServiceError) as invalid:
+            await runner.lookup(idempotency_key="")
+        assert invalid.value.code == grpc.StatusCode.INVALID_ARGUMENT
+
+        created = await runner.create(
+            idempotency_key="confirmed-key",
+            spec={"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state"},
+        )
+        await (await peer.attachments.get()).closed.wait()
+        confirmed = await runner.lookup(idempotency_key="confirmed-key")
+        assert confirmed.session_id == created.session_id
+        assert confirmed.HasField("summary")
+        assert confirmed.summary.session_id == created.session_id
+        assert confirmed.summary.spec.model == "test-model"
+        assert f"r-{created.session_id}" not in str(confirmed)
+
+
 async def test_managed_open_lost_response_uses_same_reservation(
     resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
 ) -> None:

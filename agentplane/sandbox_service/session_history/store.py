@@ -144,6 +144,34 @@ class Store:
             assert existing.launch_spec is not None
             return OpenReservation(existing.id, existing.launch_spec)
 
+    async def lookup_open(
+        self,
+        *,
+        caller_namespace: str,
+        caller_name: str,
+        sandbox_namespace: str,
+        sandbox_name: str,
+        sandbox_uid: UUID,
+        open_key: str,
+    ) -> UUID | None:
+        """Return only the public ID, scoped identically to a reservation; never return stored specs."""
+        if not all((caller_namespace, caller_name, sandbox_namespace, sandbox_name, open_key)):
+            raise ValueError("caller, sandbox, and Open idempotency key are required")
+        async with self._sessions() as session:
+            return cast(
+                UUID | None,
+                await session.scalar(
+                    select(SessionHistory.id).where(
+                        SessionHistory.caller_namespace == caller_namespace,
+                        SessionHistory.caller_name == caller_name,
+                        SessionHistory.sandbox_namespace == sandbox_namespace,
+                        SessionHistory.sandbox_name == sandbox_name,
+                        SessionHistory.sandbox_uid == sandbox_uid,
+                        SessionHistory.open_key == open_key,
+                    )
+                ),
+            )
+
     async def runner_id(self, session_id: UUID, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID) -> str:
         """Resolve a public Session ID only in its original Sandbox incarnation."""
         async with self._sessions() as session:

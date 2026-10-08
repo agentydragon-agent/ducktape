@@ -29,6 +29,8 @@ service SandboxService {
   rpc OpenSession(OpenSessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
   // Service-owned Session identity. The key is only for an explicit Open retry.
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  // Read-only reconciliation by the original caller, sandbox incarnation and Open key.
+  rpc LookupSession(LookupSessionRequest) returns (LookupSessionResponse);
   rpc ResumeSession(SessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
   // Returns the original matching CommandAdmitted entry, not command completion.
   rpc SubmitCommand(SubmitCommandRequest) returns (ducktape.agentplane.protocol.v1.EventEntry);
@@ -81,6 +83,19 @@ message CreateSessionResponse {
   // Durable service ID (UUID), NOT the runner or harness session ID.
   string session_id = 1;
   ducktape.agentplane.runner.v1.Attached attached = 2;
+}
+
+message LookupSessionRequest {
+  SandboxDestination sandbox = 1;
+  string idempotency_key = 2;
+}
+
+message LookupSessionResponse {
+  // Empty when no reservation exists for this exact caller, Sandbox UID and key.
+  string session_id = 1;
+  // Only set once the runner inventories the session; a reservation alone is not an Open success.
+  // This is app-facing only and may contain the frozen spec: never forward it to the browser.
+  ducktape.agentplane.runner.v1.SessionSummary summary = 2;
 }
 
 // Internal frozen launch snapshot, committed before contacting the runner.

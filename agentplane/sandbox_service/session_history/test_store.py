@@ -158,6 +158,15 @@ async def test_reservation_is_stable_across_retries_and_replicas(engine: AsyncEn
     assert await reserve(right) == first  # a bad retry does not change the reservation
     with pytest.raises(ValueError, match="required"):
         await reserve(left, key="")
+    lookup = dict(
+        caller_namespace="testing", caller_name="app", sandbox_namespace="testing", sandbox_name="worker",
+        sandbox_uid=uid, open_key="open-1",
+    )
+    assert await right.lookup_open(**lookup) == first.session_id
+    assert await right.lookup_open(**(lookup | {"caller_name": "not-this-caller"})) is None
+    assert await right.lookup_open(**(lookup | {"sandbox_uid": uuid4()})) is None
+    assert await right.lookup_open(**(lookup | {"open_key": "absent"})) is None
+
 
 
 @pytest.mark.asyncio
