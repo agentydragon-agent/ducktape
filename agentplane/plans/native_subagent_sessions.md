@@ -101,6 +101,41 @@ that the recipient consumed the message. Characterize these separately under the
   scope, and feature gates. An entry in a tool roster does not prove that it enumerates all native
   children. Keep cross-session/remote messaging outside these same-harness loopback scenarios.
 
+### Resume and child fate (planned)
+
+Expand S10/S11 for both harnesses. The passing Claude `SendMessage` scenario reactivates a
+completed child within the same live harness; it does not establish recovery after parent exit.
+Distinguish client reattachment to a live owner, runner restart with retained journals, clean parent
+harness exit followed by native resume, and parent crash followed by native resume. Record which
+processes and native storage survive each case; these are not equivalent forms of resume.
+
+For each applicable boundary, gate interruption with the child running (held at a model request or
+tool), completed before its notification is consumed, completed after notification consumption,
+failed, or cancelled. Include a pending follow-up message. Exercise conversational children and
+non-conversation background tasks separately where supported; a task ID alone does not establish
+a resumable conversation. Unsupported stimuli need evidence, not a fabricated terminal event.
+
+Retain native traces from both process incarnations and answer:
+
+- **Rediscovery:** does resume enumerate or redeclare children/tasks, with stable IDs and parent
+  links? Is the inventory complete, historical, or only active? Can a previously known ID be queried?
+- **Fate and timing:** is completion, failure, cancellation, continued execution, automatic restart,
+  or unknown fate visible during handshake, after the first genuine input, through history, or only
+  through an explicit query? Record each route separately. Parent model memory of a result is not
+  independent runner-visible lifecycle evidence.
+- **Delivery:** are terminal notifications replayed, omitted, or duplicated? Can the runner recover
+  a result whose notification it missed? Does a queued message survive, disappear, or get delivered
+  again, and what proves consumption rather than acceptance?
+- **Execution:** does native resume restart child work, replace its ID, or replay a tool side effect?
+  Use synthetic execution markers to distinguish retained history from fresh work. Do not send a
+  follow-up merely to discover fate without recording that it can itself reactivate the child.
+
+Use bounded phases: observe resume without input, then a genuine scripted parent input, then any
+advertised status/history query. Negative observations apply only to that phase and route. Reuse
+ordinary parent-resume fixtures, preserving native storage while starting a new harness process;
+model-side gates establish the stimulus, but assertions about discoverability use native wire data.
+Pin observed behavior per harness/configuration before advertising recovery capabilities.
+
 ### Initial executable coverage
 
 The additions live in the existing tool-test targets, with their existing pinned-binary runfiles and

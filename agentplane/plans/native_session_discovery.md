@@ -327,6 +327,20 @@ claim remote/native execution stopped unless the harness proves it. On runner re
 retained inventory without launching anything; on explicit native resume, reconcile only what the
 native protocol can establish. Absence from a partial snapshot is not proof of deletion.
 
+The [resume/fate characterization](native_subagent_sessions.md#resume-and-child-fate-planned)
+must distinguish live reattachment, runner replay, clean native resume, and crash recovery. For each
+child, retain the last observed work outcome separately from current availability and the evidence
+that supports reconciliation. Report whether fate can be recovered automatically, only after input,
+or via an explicit query; a remembered parent summary is not a new child lifecycle observation.
+Deduplicate replayed terminal notifications without hiding a genuinely new work episode. A missing
+notification, an empty partial inventory, or a not-found response does not establish successful
+completion or cancellation. Preserve unknown fate when the native protocol cannot resolve it.
+
+Do not automatically rerun unresolved work or use a child-message operation as a status probe:
+reactivation may execute work again. Characterize native resume's own automatic restart behavior
+and side-effect replay before offering it as recovery. Read-only acceptance must cover retained
+outcomes with unknown current availability; stronger fate reconciliation remains test-gated.
+
 Independent child input, interruption, native resume, nested ancestry, enumeration, and new identity
 scope reconciliation remain gated by the matrix. Do not enable parent-injected tool calls as a hidden
 implementation of a supposedly independent child command.
