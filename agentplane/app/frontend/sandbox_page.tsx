@@ -60,7 +60,6 @@ import {
   HarnessState,
   SessionSpecSchema,
   SetupState,
-  type SessionSpec,
   type SessionSummary,
 } from "../../runner/protocol_pb";
 
@@ -492,7 +491,7 @@ export function SandboxPage({
     try {
       const thread = threadBySession[sessionId] ?? (await findThread(name, sessionId));
       if (!thread) throw new Error(`Thread metadata is not available for session ${sessionId}`);
-      if (resolvedOpenKey && pendingOpen?.openKey === resolvedOpenKey) rememberOpen(null);
+      if (resolvedOpenKey && sessionStorage.getItem(pendingOpenKey(name)) === resolvedOpenKey) rememberOpen(null);
       onOpenThread(thread.id);
     } catch (reason: unknown) {
       setError(displayableError(reason));
