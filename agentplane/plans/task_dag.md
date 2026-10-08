@@ -29,8 +29,8 @@ Proposed execution order for the Thread correctness/UI track:
 - **Thread UI:** the staged submission indicator (`SUBMISSION_STAGE_INDICATOR`) follows
   `COMMAND_DISPATCHED_EVENT` and shares its test changes with
   [#9063](https://github.com/agentydragon/ducktape/issues/9063).
-- **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
-  and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
+- **P2:** driver-hosted tools (`DT`). This does not block the current API-level
+  acceptance closure.
 - **Unranked future harness capabilities:** project skills and commands, web search,
   file/image uploads, visual input, MCP Tasks interoperability research, native subagents,
   interactive controls, project hooks/plugins, prompt suggestions, and a Claude RemoteIO
@@ -70,7 +70,6 @@ flowchart TB
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
     NOTIFICATION_ACTION_FEED["Deferred optimization<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
     NOTIFICATION_WORKER_ISOLATION["Deferred reliability refactor<br/>separate notification HTTP and delivery workers<br/>independent failure domains"]:::future
-    HARNESS_AUTO_COMPACTION_PROOF["Future harness acceptance<br/>automatic compaction<br/>standing instructions on next request"]:::future
     NOTIFICATION_NOTICE_PACING["Incremental improvement<br/>stage-aware notice pacing<br/>avoid redundant busy-turn notices"]:::future
     HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
     NOTIFICATION_SOURCE_WIRING["Conditional future refactor<br/>extract shared source wiring<br/>from concrete implementations"]:::future
@@ -144,7 +143,6 @@ flowchart TB
     THREAD_EVENT_CONTINUITY["Identity cutover capstone<br/>legacy mapping plus new IDs, one runner journal<br/>exclusive writer across incarnations"]:::milestone
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_SETUP_PROGRESS["P2 Thread UI<br/>coalesce live setup stdout/stderr<br/>progress widget with raw detail"]:::future
-    CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
     THREAD_OUTBOX_CUTOVER["Deferred cutover<br/>all product commands via app outbox if chosen<br/>no competing relay path"]:::future
@@ -378,24 +376,6 @@ do not silently hide warnings, nonzero exit status, or interrupted setup. On rec
 rebuild the same widget without duplicating chunks, and leave a useful final summary when setup
 finishes. Test incremental arrival, interleaved stdout/stderr, failure, and replay using the
 existing Thread event feed. This is presentation work, not a new setup protocol.
-
-### `CLUSTER_BROWSER_ACCEPTANCE` — browser-driven acceptance in the cluster
-
-**P2:** run a real browser from a controlled cluster devbox or dedicated test workload
-against the deployed frontend, app, runner, and real Claude/Codex harnesses. Exercise
-operator login, manual Sandbox/Thread creation, composer submission, pending-to-effective
-controls, normal/Raw views, and reload/reconnect through visible buttons and fields.
-Assert behavior and durable command/Event evidence; screenshots alone are not a pass.
-Capture screenshots and sanitized traces at meaningful transitions and on failure.
-
-Reuse the existing browser fixtures and acceptance setup where appropriate. The
-deterministic real-Chromium transport suite in [the app README](../app/README.md#replica-safe-runner-delivery)
-already covers gated failure/reconnect cases, but its scripted runner is not deployed
-native-harness evidence. Keep both layers. Resolve the Bazel/browser runner, cluster
-identity/network access, and safe artifact-capture boundary explicitly; never capture
-credentials, login form contents, OAuth state, or unrelated user Threads. Clean up only
-resources the run owns. Cover tail-first history, and combined start once it lands, without
-making this P2 suite a prerequisite of either.
 
 ### Unranked future harness capabilities
 
@@ -1442,16 +1422,6 @@ Compare optional lifecycle/hook signals only if simple stage-aware timers leave 
 problem; hooks are not guaranteed pre-sample events. Native queued-input update/withdrawal
 needs explicit too-late outcomes and must not cancel other coalesced inputs. Do not require LLM
 proxy interception, which could cover subagents or unrelated requests. Keep this separate from notice wording and presentation.
-
-### `HARNESS_AUTO_COMPACTION_PROOF` — exercise non-manual compaction
-
-**Optional regression coverage, not a prerequisite for relying on standing instructions:**
-deterministically trigger harness-initiated automatic compaction in runner-matched Claude and
-Codex, where supported. Prove the boundary and inspect the first following ordinary model
-request and resume for instructions. The native explicit-compaction tests establish the current
-working assumption that standing instructions survive; they do not directly test automatic
-compaction or the runner's exact constructed instructions. Do not block a frontend compaction
-control on this optional coverage.
 
 ### `HOME_ASSISTANT_NOTIFICATIONS` — entity and event subscriptions
 
