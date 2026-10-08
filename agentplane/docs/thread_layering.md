@@ -99,10 +99,12 @@ globally unique stable ID for the logical Session and its Thread view. Sharing a
 does not give a live Session caller permission to read the archive; Sandbox, process,
 and native harness identities remain separate. A portable runtime may retain this
 ID across Sandboxes only if it restores the same fenced journal and native state;
-separate copied-state tests gate that claim. Converting today's distinct UUID and
-sandbox-scoped string IDs requires an explicit legacy mapping/state migration. A
-future multi-Session Thread would need a new explicit model rather than overloading
-this one-to-one identity.
+separate copied-state tests gate that claim. For existing histories, keep the
+app UUID as the canonical public ID and import its association to the existing
+`(sandbox, runner session_id)` into the durable history authority. That runner ID remains the physical storage/runtime locator: its
+native files, directories, and workspace paths need no rekey. New histories can use
+the canonical UUID as their runner Session ID. A future multi-Session Thread would
+need a new explicit model rather than overloading this one-to-one identity.
 
 A runner's Event sequence goes into a Thread but is not itself the Thread. The app mints
 the Event log when it first sees a runner session and copies the runner's Events into it, along

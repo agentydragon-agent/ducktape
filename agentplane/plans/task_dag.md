@@ -94,7 +94,6 @@ flowchart TB
     HARNESS_PROMPT_SUGGESTIONS["Optional, lowest estimated win<br/>Claude prompt suggestions<br/>measure UX before enabling"]:::future
     THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
     THREAD_ARCHIVE_OWNERSHIP["Deferred service boundary<br/>move Session Event archive/read out of app<br/>Thread folds remain a separate choice"]:::decision
-    SESSION_ID_REKEY_PROOF["Identity migration gate<br/>inventory legacy references; copied-state rekey<br/>prove Claude and Codex still resume"]:::decision
     APP_ALEMBIC_SQUASH["One-off app schema cleanup<br/>new baseline after identity/archive cutover<br/>stamp each deployed database before pruning"]:::future
     SANDBOX_COMPARTMENT_BOUNDARY["Priority trust-boundary decision<br/>co-resident Threads share filesystem and SA<br/>no false compartment isolation"]:::decision
     THREAD_PORTABLE_STATE["Deferred shared portability contract<br/>snapshot, fence, and restore runner/native state<br/>outside disposable Sandbox storage"]:::decision
@@ -142,7 +141,6 @@ flowchart TB
     THREAD_OUTLIVES_SANDBOX --> AG
     SANDBOX_COMPARTMENT_BOUNDARY --> THREAD_READ_POLICY
     THREAD_ARCHIVE_OWNERSHIP --> THREAD_READ_POLICY
-    SESSION_ID_REKEY_PROOF --> THREAD_EVENT_CONTINUITY
     THREAD_EVENT_CONTINUITY --> APP_ALEMBIC_SQUASH
     THREAD_ARCHIVE_OWNERSHIP --> APP_ALEMBIC_SQUASH
     THREAD_OUTLIVES_SANDBOX --> THREAD_ON_DEMAND_RUNTIME
@@ -850,17 +848,18 @@ identities remain separate. A future disposable Sandbox restores that same logic
 Session ID only if it restores and fences its complete runner journal and native state;
 portable-state/cache tests gate that additional claim, not the shared-ID choice.
 Today runner `session_id` is a client-chosen string scoped by Sandbox, while the app
-mints a distinct UUID Thread ID on first sight. Prefer a **one-off legacy migration**
-that preserves current Thread URLs and archive IDs, but only after
-`SESSION_ID_REKEY_PROOF`: inventory app Event and fold rows, runner state/native directory
-names, SessionSpec cwd/workspace paths, notification inbox/subscription destinations,
-and other durable references. Dry-run the proposed rekey from copied volumes and
-app/notification database snapshots and prove **both** harnesses resume the same
-journal, source ID and prefix without lost files or unintended side effects. A
-PostgreSQL primary-key update alone is not a Session migration. If the proof fails,
-explicitly choose a retained legacy alias or a reviewed destructive legacy cutover;
-do not silently corrupt native state to remove a mapping. A future multi-Session
-Thread requires a separate explicit model, not a delay to the one-to-one design.
+mints a distinct UUID Thread ID on first sight. For existing histories, retain the
+app UUID as the canonical public Session/Thread ID and import the association to the
+existing `(sandbox, runner session_id)` as durable data in the new history authority.
+The runner ID remains the internal storage/runtime locator: **do not rename** runner
+state or native directories, workspace paths, or notification destinations. Preserve
+source IDs, Event prefixes/cursors, and current Thread URLs. For new histories, use
+the canonical UUID as the runner Session ID as well. Inventory and back up existing
+associations before a one-off import; validate that both harnesses can resume against
+their unchanged state and that the archived Event prefixes match. Remove transitional
+import code after cutover, not the durable association needed to address legacy
+storage. A future multi-Session Thread requires a separate explicit model, not a
+delay to the one-to-one design.
 
 **Identity/storage cutover:** implement
 [one high-water mark per Event log](../docs/thread_layering.md#one-event-high-water-mark-per-log-across-harness-sessions):
@@ -874,12 +873,13 @@ separately evidence-gated.
 A successor reopens the journal; it cannot replace missing state with “app cursor + 1.”
 Test runner replacement, fenced old writers, native resume, and unavailable recovery
 state. Change protocol, runner storage, app routes, tests, and specification atomically.
-New protocols need no general backwards-compatibility layer, but the chosen one-off
-legacy rekey must preserve the specifically accepted existing histories and URLs.
-Quiesce/fence old writers, back up databases and volumes, verify source IDs/cursors,
-perform the controlled migration, then resume and check both harnesses before removing
-the one-off code. Keep migration evidence and a rollback procedure, not a permanent
-legacy rekey path unless the rekey proves unsafe.
+New protocols need no general backwards-compatibility layer, but the one-off
+association import must preserve existing histories, source IDs/cursors, and URLs.
+Quiesce/fence old writers for the archive ownership cutover, back up databases and
+volumes, verify imported mappings and Event prefixes, then resume and check both
+harnesses before removing the one-off import code. Keep migration evidence and a
+rollback procedure. Do not rekey native state or require copied-volume portability
+proof for this same-storage identity cutover; portability has separate gates.
 
 Replay of an existing single-session Thread can improve independently; multiple
 incarnations must not ship by inventing a second Event counter. This item does not
@@ -912,7 +912,7 @@ the final models and transactionally stamp each verified database at that baseli
 under the existing migration lock. Test both a fresh database and a real copy of an
 old-head database; do not delete historical revisions while any deployment could
 still start from their stamp. After every environment is confirmed at the new baseline,
-remove the transitional stamp/rekey machinery and obsolete revisions, while retaining
+remove the transitional stamp/import machinery and obsolete revisions, while retaining
 the migration runbook and rollback backups. Action Service and other Alembic histories
 are independent; this task does not silently squash them.
 
