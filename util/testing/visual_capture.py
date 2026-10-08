@@ -194,11 +194,7 @@ class VisualPage:
             screenshot = await self.page.screenshot(full_page=full_page, scale=scale, animations=animations)
         await self.check(context=name)
         return publish_review_png(
-            screenshot,
-            output_dir=self.output_dir,
-            title=self.title,
-            name=f"{name}.png",
-            label=label or name,
+            screenshot, output_dir=self.output_dir, title=self.title, name=f"{name}.png", label=label or name
         )
 
 

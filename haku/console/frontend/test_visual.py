@@ -140,7 +140,9 @@ async def test_not_found(visual: VisualHarness, color_scheme: Literal["light", "
 async def test_approvals_embed(
     visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str
 ) -> None:
-    async with _fixture(visual, "approvals-embed", color_scheme, width=560, height=820, capture_name=capture_name) as view:
+    async with _fixture(
+        visual, "approvals-embed", color_scheme, width=560, height=820, capture_name=capture_name
+    ) as view:
         await view.page.wait_for_selector("button:has-text('Approve')", state="attached")
         await _approvals_ready(view)
         await view.capture()
@@ -223,7 +225,9 @@ async def test_settings_grants_revoke(settings_view: VisualPage) -> None:
 async def test_agent_enrollment(
     visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str
 ) -> None:
-    async with _fixture(visual, "agent-enrollment", color_scheme, width=1200, height=900, capture_name=capture_name) as view:
+    async with _fixture(
+        visual, "agent-enrollment", color_scheme, width=1200, height=900, capture_name=capture_name
+    ) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
@@ -247,7 +251,9 @@ async def test_agent_enrollment_reconnect(
 async def test_agent_enrollment_mobile(
     visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str
 ) -> None:
-    async with _fixture(visual, "agent-enrollment", color_scheme, width=390, height=760, capture_name=capture_name) as view:
+    async with _fixture(
+        visual, "agent-enrollment", color_scheme, width=390, height=760, capture_name=capture_name
+    ) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
@@ -301,7 +307,9 @@ async def test_sync_status(
 async def test_session_expiring(
     visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str
 ) -> None:
-    async with _fixture(visual, "session-expiring", color_scheme, width=600, height=420, capture_name=capture_name) as view:
+    async with _fixture(
+        visual, "session-expiring", color_scheme, width=600, height=420, capture_name=capture_name
+    ) as view:
         await view.page.locator("[aria-label='Session expiring soon']").click()
         await view.page.wait_for_selector("[aria-label='Console session']", state="visible")
         await _park_pointer(view)

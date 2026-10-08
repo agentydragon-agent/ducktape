@@ -26,9 +26,7 @@ def harness(playwright: Playwright, tmp_path: Path) -> VisualHarness:
         "<div id='app'><button>Open</button><div id='shot'>Closed</div></div><script src='./harness.js'></script>"
     )
     return VisualHarness(
-        playwright,
-        HarnessConfig(harness_path=bundle, title="API test", expected_font_family=None),
-        tmp_path / "out",
+        playwright, HarnessConfig(harness_path=bundle, title="API test", expected_font_family=None), tmp_path / "out"
     )
 
 
