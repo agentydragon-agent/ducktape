@@ -118,8 +118,12 @@ async def test_nested_parent_sticks_before_child(view: VisualPage, app: Agentpla
 @pytest.mark.parametrize("wrapped_headings", [False, True], ids=["short", "wrapped"])
 async def test_nested_headings_stack(view: VisualPage, app: AgentplaneFixture, wrapped_headings: bool) -> None:
     await app.mount_disclosure(nested=True, wrapped_headings=wrapped_headings)
-    await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading[data-expanded='true']", state="attached")
-    await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading[data-expanded='true']", state="attached")
+    await view.page.wait_for_selector(
+        ".demo-outer .agentplane-disclosure-heading[data-expanded='true']", state="attached"
+    )
+    await view.page.wait_for_selector(
+        ".demo-inner .agentplane-disclosure-heading[data-expanded='true']", state="attached"
+    )
     await view.check(context="fixture ready")
     page = view.page
     outer_height = await _height(page, _OUTER)

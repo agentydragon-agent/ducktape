@@ -31,9 +31,9 @@ from finance.evidence.markets import Platform
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context, stability_style
-from util.testing.visual_capture import VisualPage
 from util.testing.stable_capture import stable_full_page_png
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.visual_capture import VisualPage
 from util.testing.visual_review import publish_review_png
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
@@ -458,7 +458,10 @@ async def _capture(view: VisualPage) -> None:
     png = await stable_full_page_png(view.page, name=view.capture_name, diagnostics=view.output_dir)
     await view.check(context=view.capture_name)
     publish_review_png(
-        png, output_dir=view.output_dir, title=view.title, name=f"{view.capture_name}.png",
+        png,
+        output_dir=view.output_dir,
+        title=view.title,
+        name=f"{view.capture_name}.png",
         label=view.capture_name.replace("_", " "),
     )
 

@@ -5,8 +5,8 @@ from contextlib import asynccontextmanager
 from typing import Literal
 
 import pytest
-import pytest_bazel
 import pytest_asyncio
+import pytest_bazel
 from playwright.async_api import Locator, Page, expect
 
 from util.testing.page_capture import wait_for_stable
@@ -28,7 +28,11 @@ _TRANSCRIPT = '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
 
 @asynccontextmanager
 async def _fixture(
-    visual: VisualHarness, fixture_id: str, *, viewport: Viewport, capture_name: str,
+    visual: VisualHarness,
+    fixture_id: str,
+    *,
+    viewport: Viewport,
+    capture_name: str,
     color_scheme: Literal["light", "dark"] = "light",
 ) -> AsyncIterator[VisualPage]:
     async with visual.open(fixture_id, viewport=viewport, color_scheme=color_scheme, capture_name=capture_name) as view:
@@ -117,7 +121,7 @@ async def _expect_compact_event_timeline(page: Page) -> Locator:
 @pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 @pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
 async def test_completed_activity(visual: VisualHarness, viewport: Viewport, capture_name: str, expanded: bool) -> None:
-    async with _fixture(visual, 'completed-activity', viewport=viewport, capture_name=capture_name) as view:
+    async with _fixture(visual, "completed-activity", viewport=viewport, capture_name=capture_name) as view:
         fixture = await view.page.evaluate("window.__visualFixture__")
         activity = view.page.locator('[data-fold-kind="activity"]').filter(
             has=view.page.locator("summary").filter(has_text=fixture["longCommandActivityTitle"])
@@ -135,9 +139,9 @@ async def test_completed_activity(visual: VisualHarness, viewport: Viewport, cap
         await _capture(view)
 
 
-@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 async def test_markdown_is_sanitized(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
-    async with _fixture(visual, 'markdown', viewport=viewport, capture_name=capture_name) as view:
+    async with _fixture(visual, "markdown", viewport=viewport, capture_name=capture_name) as view:
         page = view.page
         for selector in (
             '[aria-label="Session history"]',
@@ -159,9 +163,9 @@ async def test_markdown_is_sanitized(visual: VisualHarness, viewport: Viewport, 
         await _capture(view)
 
 
-@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 async def test_narration_is_visible(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
-    async with _fixture(visual, 'narration', viewport=viewport, capture_name=capture_name) as view:
+    async with _fixture(visual, "narration", viewport=viewport, capture_name=capture_name) as view:
         narration = view.page.locator('[data-fold-kind="narration"]')
         await expect(narration).to_be_visible()
         await _scroll_into_view(narration)
@@ -201,9 +205,8 @@ async def test_loading_older_history_preserves_anchor(history_view: VisualPage) 
     await _capture(history_view)
 
 
-@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 async def test_noisy_history(noisy_view: VisualPage) -> None:
-    page = noisy_view.page
     await _capture(noisy_view)
 
 
@@ -226,7 +229,7 @@ async def test_noisy_raw_events(noisy_view: VisualPage) -> None:
     await _capture(noisy_view)
 
 
-@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 async def test_noisy_hook_filter(noisy_view: VisualPage) -> None:
     page = noisy_view.page
     await page.get_by_role("button", name="Show raw event stream").click()
@@ -267,7 +270,7 @@ async def test_sidebar_resized(sidebar_view: VisualPage) -> None:
     await _capture(sidebar_view)
 
 
-@pytest.mark.parametrize('viewport', [_PHONE], ids=['mobile'])
+@pytest.mark.parametrize("viewport", [_PHONE], ids=["mobile"])
 async def test_sidebar_mobile_drawer(sidebar_view: VisualPage) -> None:
     page = sidebar_view.page
     await page.locator('button[aria-controls="session-sidebar-mobile"]').press("Enter")
@@ -280,7 +283,7 @@ async def test_sidebar_mobile_drawer(sidebar_view: VisualPage) -> None:
     await _capture(sidebar_view)
 
 
-@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 async def test_event_timeline_collapsed(noisy_view: VisualPage) -> None:
     page = noisy_view.page
     strips = await _expect_compact_event_timeline(page)
@@ -288,7 +291,7 @@ async def test_event_timeline_collapsed(noisy_view: VisualPage) -> None:
     await _capture(noisy_view)
 
 
-@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 async def test_event_timeline_expanded(noisy_view: VisualPage) -> None:
     page = noisy_view.page
     strips = await _expect_compact_event_timeline(page)
@@ -309,7 +312,7 @@ async def test_activity_disclosures_collapsed(noisy_view: VisualPage) -> None:
     await _capture(noisy_view)
 
 
-@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 async def test_activity_disclosures_expanded(noisy_view: VisualPage) -> None:
     page = noisy_view.page
     group = page.locator('[data-fold-kind="tool-group"]').first
@@ -323,18 +326,26 @@ async def test_activity_disclosures_expanded(noisy_view: VisualPage) -> None:
     await _capture(noisy_view)
 
 
-@pytest.mark.parametrize(('viewport', 'color_scheme'), [(_DESKTOP, 'light'), (_DESKTOP, 'dark'), (_PHONE, 'light')], ids=['desktop-light', 'desktop-dark', 'mobile-light'])
-async def test_session_viewer(visual: VisualHarness, viewport: Viewport, capture_name: str, color_scheme: Literal["light", "dark"]) -> None:
-    async with _fixture(visual, 'viewer', viewport=viewport, capture_name=capture_name, color_scheme=color_scheme) as view:
+@pytest.mark.parametrize(
+    ("viewport", "color_scheme"),
+    [(_DESKTOP, "light"), (_DESKTOP, "dark"), (_PHONE, "light")],
+    ids=["desktop-light", "desktop-dark", "mobile-light"],
+)
+async def test_session_viewer(
+    visual: VisualHarness, viewport: Viewport, capture_name: str, color_scheme: Literal["light", "dark"]
+) -> None:
+    async with _fixture(
+        visual, "viewer", viewport=viewport, capture_name=capture_name, color_scheme=color_scheme
+    ) as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="tool-run"][data-tool-count="5"]')).to_be_attached()
         await expect(view.page.locator("[data-tool-run-toggle]").first).to_be_attached()
         await _capture(view)
 
 
-@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 async def test_session_tool_result(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
-    async with _fixture(visual, 'tool-result', viewport=viewport, capture_name=capture_name) as view:
+    async with _fixture(visual, "tool-result", viewport=viewport, capture_name=capture_name) as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
@@ -343,9 +354,9 @@ async def test_session_tool_result(visual: VisualHarness, viewport: Viewport, ca
         await _capture(view)
 
 
-@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 async def test_session_read_file_result(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
-    async with _fixture(visual, 'file-result', viewport=viewport, capture_name=capture_name) as view:
+    async with _fixture(visual, "file-result", viewport=viewport, capture_name=capture_name) as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
@@ -354,9 +365,9 @@ async def test_session_read_file_result(visual: VisualHarness, viewport: Viewpor
         await _capture(view)
 
 
-@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 async def test_session_subagent(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
-    async with _fixture(visual, 'subagent', viewport=viewport, capture_name=capture_name) as view:
+    async with _fixture(visual, "subagent", viewport=viewport, capture_name=capture_name) as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
@@ -365,9 +376,9 @@ async def test_session_subagent(visual: VisualHarness, viewport: Viewport, captu
         await _capture(view)
 
 
-@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 async def test_session_peer_hold(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
-    async with _fixture(visual, 'peer-hold', viewport=viewport, capture_name=capture_name) as view:
+    async with _fixture(visual, "peer-hold", viewport=viewport, capture_name=capture_name) as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="peer-message"][data-peer-from="plan-agent"]')).to_be_attached()
         await expect(view.page.locator('[data-fold-kind="peer-hold"][data-peer-state="held"]')).to_be_attached()
@@ -375,9 +386,9 @@ async def test_session_peer_hold(visual: VisualHarness, viewport: Viewport, capt
         await _capture(view)
 
 
-@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 async def test_session_peer_message(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
-    async with _fixture(visual, 'peer-message', viewport=viewport, capture_name=capture_name) as view:
+    async with _fixture(visual, "peer-message", viewport=viewport, capture_name=capture_name) as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(
             view.page.locator(
@@ -387,9 +398,9 @@ async def test_session_peer_message(visual: VisualHarness, viewport: Viewport, c
         await _capture(view)
 
 
-@pytest.mark.parametrize('viewport', [_DESKTOP, _PHONE], ids=['desktop', 'mobile'])
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
 async def test_session_local_command_rows(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
-    async with _fixture(visual, 'local-commands', viewport=viewport, capture_name=capture_name) as view:
+    async with _fixture(visual, "local-commands", viewport=viewport, capture_name=capture_name) as view:
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
         await expect(
             view.page.locator('[data-fold-kind="context"][data-context-model="claude-sonnet-4-5"]')
@@ -401,15 +412,21 @@ async def test_session_local_command_rows(visual: VisualHarness, viewport: Viewp
 
 
 async def test_session_sync_unpaired(visual: VisualHarness, viewport: Viewport, capture_name: str) -> None:
-    async with _fixture(visual, 'sync', viewport=viewport, capture_name=capture_name) as view:
+    async with _fixture(visual, "sync", viewport=viewport, capture_name=capture_name) as view:
         await expect(view.page.locator("#overview-heading")).to_be_attached()
         await expect(view.page.locator("#pairing-heading")).to_be_attached()
         await _capture(view)
 
 
-@pytest.mark.parametrize(('viewport', 'color_scheme'), [(_DESKTOP, 'dark'), (_PHONE, 'light')], ids=['desktop-dark', 'mobile-light'])
-async def test_session_sync_paired(visual: VisualHarness, viewport: Viewport, capture_name: str, color_scheme: Literal["light", "dark"]) -> None:
-    async with _fixture(visual, 'sync-paired', viewport=viewport, capture_name=capture_name, color_scheme=color_scheme) as view:
+@pytest.mark.parametrize(
+    ("viewport", "color_scheme"), [(_DESKTOP, "dark"), (_PHONE, "light")], ids=["desktop-dark", "mobile-light"]
+)
+async def test_session_sync_paired(
+    visual: VisualHarness, viewport: Viewport, capture_name: str, color_scheme: Literal["light", "dark"]
+) -> None:
+    async with _fixture(
+        visual, "sync-paired", viewport=viewport, capture_name=capture_name, color_scheme=color_scheme
+    ) as view:
         await expect(view.page.locator("#overview-heading")).to_be_attached()
         await expect(view.page.locator("#pairing-heading")).to_be_attached()
         await _capture(view)

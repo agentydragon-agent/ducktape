@@ -309,6 +309,8 @@ py_library(
     srcs = ["gnome.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":undeclared_outputs",
+        ":visual_review",
         "@pypi//docker",
         "@pypi//pillow",
     ],

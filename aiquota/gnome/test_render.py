@@ -145,8 +145,12 @@ def test_render(render_session: tuple[GnomeSession, Path], undeclared_dir: Path,
         geometry = session.open_menu()
         try:
             capture_panel_menu(
-                session, output_dir, geometry=geometry, name=f"{fixture_name}.png",
-                title="AI quota GNOME extension", label=fixture_name.replace("_", " "),
+                session,
+                output_dir,
+                geometry=geometry,
+                name=f"{fixture_name}.png",
+                title="AI quota GNOME extension",
+                label=fixture_name.replace("_", " "),
             )
         finally:
             session.close_menu()

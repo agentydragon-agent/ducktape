@@ -49,8 +49,6 @@ py_test(
         "//util/bazel:runfiles",
         "//util/testing:gnome",
         "//util/testing:undeclared_outputs",
-        "//util/testing:visual_review",
-        "@pypi//pillow",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//testcontainers",

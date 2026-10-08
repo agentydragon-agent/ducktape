@@ -137,8 +137,12 @@ def _allowance_menu_text(session: GnomeSession) -> str:
 
 def _capture(session: GnomeSession, output_dir: Path, geometry: tuple[int, int, int, int], name: str) -> None:
     capture_panel_menu(
-        session, output_dir, geometry=geometry, name=f"{name}.png",
-        title="Plaid Spend GNOME extension", label=name.replace("_", " "),
+        session,
+        output_dir,
+        geometry=geometry,
+        name=f"{name}.png",
+        title="Plaid Spend GNOME extension",
+        label=name.replace("_", " "),
     )
 
 

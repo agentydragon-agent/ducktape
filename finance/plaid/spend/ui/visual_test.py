@@ -404,34 +404,36 @@ def dashboard_url() -> Iterator[str]:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
-async def test_spending_decision_render(page: Page, view: VisualPage, dashboard_url: str, width: int, height: int) -> None:
+async def test_spending_decision_render(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_text("$200", exact=True).wait_for()
-    await expect(page.get_by_role('heading', name='Flexible spending', level=1)).to_have_count(1)
-    await expect(page.get_by_role('alert').get_by_text('2 charges ($15) need review')).to_have_count(1)
-    await expect(page.get_by_role('heading', name='Can I afford this?')).to_have_count(1)
-    await expect(page.get_by_text('7 days', exact=True)).to_have_count(1)
+    await expect(page.get_by_role("heading", name="Flexible spending", level=1)).to_have_count(1)
+    await expect(page.get_by_role("alert").get_by_text("2 charges ($15) need review")).to_have_count(1)
+    await expect(page.get_by_role("heading", name="Can I afford this?")).to_have_count(1)
+    await expect(page.get_by_text("7 days", exact=True)).to_have_count(1)
     await expect(page.locator('span[title="$12.50"]').first).to_be_attached()
     await expect(page.locator('span[title="$200.00"]').first).to_be_attached()
-    await expect(page.get_by_text('30 days', exact=True)).to_have_count(1)
-    await expect(page.get_by_text('$13 / day', exact=True)).to_have_count(1)
-    await expect(page.get_by_text('Below provisional leash', exact=True)).to_have_count(1)
-    await expect(page.get_by_text('Unmatched in selected window: 2 ($3)', exact=False)).to_have_count(1)
-    await expect(page.get_by_text('$75', exact=True)).to_have_count(1)
-    await expect(page.get_by_text('Provisional card total since', exact=False)).to_have_count(1)
-    await expect(page.get_by_text('Includes purchases outside the allowance', exact=False)).to_have_count(1)
+    await expect(page.get_by_text("30 days", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("$13 / day", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Below provisional leash", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Unmatched in selected window: 2 ($3)", exact=False)).to_have_count(1)
+    await expect(page.get_by_text("$75", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Provisional card total since", exact=False)).to_have_count(1)
+    await expect(page.get_by_text("Includes purchases outside the allowance", exact=False)).to_have_count(1)
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     normal = f"dashboard-{width}.png"
     await view.capture(normal.removesuffix(".png"), label=f"{width}px available", full_page=True, animations="disabled")
     await page.get_by_label("Hypothetical flexible purchase").fill("250")
     await page.get_by_text("Over allowance", exact=True).last.wait_for()
-    await expect(page.get_by_text('-$50', exact=True)).to_have_count(1)
-    await expect(page.get_by_text('$175 short before', exact=False)).to_have_count(1)
+    await expect(page.get_by_text("-$50", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("$175 short before", exact=False)).to_have_count(1)
     view.errors.assert_none(context="Spend")
     await page.get_by_label("Hypothetical flexible purchase").fill("200.01")
-    await expect(page.get_by_text('-<$1', exact=True)).to_have_count(1)
+    await expect(page.get_by_text("-<$1", exact=True)).to_have_count(1)
     await expect(page.locator('span[title="-$0.01"]')).to_have_count(1)
     exceeded = f"dashboard-{width}-purchase.png"
     await view.capture(
@@ -441,12 +443,14 @@ async def test_spending_decision_render(page: Page, view: VisualPage, dashboard_
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
-async def test_spending_decision_dark_theme(page: Page, view: VisualPage, dashboard_url: str, width: int, height: int) -> None:
+async def test_spending_decision_dark_theme(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
     await page.emulate_media(color_scheme="dark")
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_role("heading", name="Where you stand").wait_for()
-    await expect(page.locator('html')).to_have_attribute('data-mantine-color-scheme', 'dark')
+    await expect(page.locator("html")).to_have_attribute("data-mantine-color-scheme", "dark")
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     initial = f"dashboard-dark-{width}.png"
@@ -479,12 +483,12 @@ async def test_new_allowance_has_no_fake_zero_pace(page: Page, view: VisualPage,
     await page.route("**/api/v1/view", serve_warmup)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_text("Not enough data", exact=True).wait_for()
-    await expect(page.get_by_text('Pace warming up', exact=True)).to_have_count(1)
-    await expect(page.get_by_text('Warming up', exact=True)).to_have_count(1)
-    await expect(page.get_by_text('$700', exact=True).first).to_be_attached()
+    await expect(page.get_by_text("Pace warming up", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Warming up", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("$700", exact=True).first).to_be_attached()
     await page.get_by_label("Hypothetical flexible purchase").fill("10")
-    await expect(page.get_by_text('$690', exact=True)).to_have_count(1)
-    await expect(page.get_by_text('Pace estimate warming up', exact=False)).to_have_count(1)
+    await expect(page.get_by_text("$690", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Pace estimate warming up", exact=False)).to_have_count(1)
     image = "dashboard-warmup.png"
     await view.capture(
         image.removesuffix(".png"), label="New allowance warming up", full_page=True, animations="disabled"
@@ -493,13 +497,15 @@ async def test_new_allowance_has_no_fake_zero_pace(page: Page, view: VisualPage,
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
-async def test_review_rule_configuration_render(page: Page, view: VisualPage, dashboard_url: str, width: int, height: int) -> None:
+async def test_review_rule_configuration_render(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_role("tab", name="Configuration").click()
     await page.get_by_text("Unverified credit; inspect the earlier purchase before netting it.").wait_for()
-    await expect(page.get_by_text('Review', exact=True)).to_have_count(1)
-    await expect(page.get_by_text('Amount is negative AND (Transaction name starts with', exact=False)).to_have_count(1)
+    await expect(page.get_by_text("Review", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Amount is negative AND (Transaction name starts with", exact=False)).to_have_count(1)
     view.errors.assert_none(context="Spend")
     image = f"configuration-review-{width}.png"
     await view.capture(
@@ -509,19 +515,21 @@ async def test_review_rule_configuration_render(page: Page, view: VisualPage, da
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844), (320, 720)])
-async def test_transaction_explanations_render(page: Page, view: VisualPage, dashboard_url: str, width: int, height: int) -> None:
+async def test_transaction_explanations_render(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_role("tab", name="Transactions").click()
     rows = page.get_by_role("table") if width >= 992 else page.locator(".mantine-Accordion-root").first
     await rows.get_by_text("Example Cafe", exact=True).wait_for()
-    await expect(page.get_by_role('heading', name='Transactions', level=1)).to_have_count(1)
-    await expect(rows.get_by_text('Refund held', exact=True)).to_have_count(1)
-    await expect(rows.get_by_text('Document shipping', exact=True)).to_have_count(1)
-    await expect(rows.get_by_text('Holiday travel', exact=True)).to_have_count(1)
-    await expect(page.get_by_text('1 · $15', exact=True)).to_have_count(1)
+    await expect(page.get_by_role("heading", name="Transactions", level=1)).to_have_count(1)
+    await expect(rows.get_by_text("Refund held", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Document shipping", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Holiday travel", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("1 · $15", exact=True)).to_have_count(1)
     if width >= 992:
-        await expect(rows.locator('tbody tr')).to_have_count(4)
+        await expect(rows.locator("tbody tr")).to_have_count(4)
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = f"transactions-{width}.png"
@@ -530,20 +538,20 @@ async def test_transaction_explanations_render(page: Page, view: VisualPage, das
     await page.get_by_text("Allowance bridge", exact=True).wait_for()
     if width >= 992:
         await rows.locator("tbody tr[data-transaction-row]").filter(has_text="UPS").click()
-        await expect(rows.locator('tbody tr')).to_have_count(5)
+        await expect(rows.locator("tbody tr")).to_have_count(5)
     else:
         await rows.get_by_role("button", name="UPS", exact=False).click()
     await rows.get_by_text("Required document shipping for a synthetic example.").wait_for()
-    await expect(rows.get_by_text('Counterparties: Example Shipping', exact=True)).to_have_count(1)
-    await expect(rows.get_by_text('Example Shipping · merchant', exact=True)).to_have_count(1)
-    await expect(rows.get_by_text('Mandatory · outside allowance', exact=False)).to_have_count(1)
-    await expect(rows.get_by_text('Card statement: Counted in card cycle', exact=False).first).to_be_attached()
+    await expect(rows.get_by_text("Counterparties: Example Shipping", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Example Shipping · merchant", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Mandatory · outside allowance", exact=False)).to_have_count(1)
+    await expect(rows.get_by_text("Card statement: Counted in card cycle", exact=False).first).to_be_attached()
     await rows.get_by_role("button", name="Plaid source fields").click()
     await rows.get_by_text("Plaid amount (major units): 18.50", exact=True).wait_for()
-    await expect(rows.get_by_text('Original description: EXAMPLE SHIPPING PAYMENT', exact=True)).to_have_count(1)
-    await expect(rows.get_by_text('City: Example City', exact=True)).to_have_count(1)
-    await expect(rows.get_by_text('Reference number: synthetic-reference', exact=True)).to_have_count(1)
-    await expect(rows.get_by_text('Personal detail: TRANSPORTATION_SHIPPING', exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Original description: EXAMPLE SHIPPING PAYMENT", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("City: Example City", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Reference number: synthetic-reference", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Personal detail: TRANSPORTATION_SHIPPING", exact=True)).to_have_count(1)
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     expanded = f"transactions-expanded-{width}.png"
@@ -552,8 +560,8 @@ async def test_transaction_explanations_render(page: Page, view: VisualPage, das
     )
     await page.get_by_text("Review", exact=True).click()
     await page.get_by_text("Showing 2 of 4", exact=True).wait_for()
-    await expect(rows.get_by_text('UPS', exact=True)).to_have_count(0)
-    await expect(rows.get_by_text('Confirm the purchase before netting this refund.')).not_to_be_visible()
+    await expect(rows.get_by_text("UPS", exact=True)).to_have_count(0)
+    await expect(rows.get_by_text("Confirm the purchase before netting this refund.")).not_to_be_visible()
     view.errors.assert_none(context="Spend")
     review = f"transactions-review-{width}.png"
     await view.capture(

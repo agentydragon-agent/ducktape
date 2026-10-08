@@ -151,8 +151,7 @@ def crop_panel_menu(full: Image.Image, geometry: tuple[int, int, int, int]) -> I
 
 
 def capture_panel_menu(
-    session: GnomeSession, output_dir: Path, *, geometry: tuple[int, int, int, int],
-    name: str, title: str, label: str,
+    session: GnomeSession, output_dir: Path, *, geometry: tuple[int, int, int, int], name: str, title: str, label: str
 ) -> Path:
     """Capture and publish the panel/menu crop; output_dir is mounted at /out."""
     session.screenshot(f"/out/{name}")
