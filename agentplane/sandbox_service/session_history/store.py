@@ -32,9 +32,38 @@ class OpenReservation:
     launch_spec: bytes
 
 
+@dataclass(frozen=True)
+class HistoryLocator:
+    session_id: UUID
+    sandbox_name: str
+    sandbox_uid: UUID
+    runner_session_id: str
+
+
 class Store:
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def runnable_locators(self, namespace: str, sandbox_names: list[str]) -> list[HistoryLocator]:
+        """Only current-Sandbox locators; deleted/Suspended histories remain retained."""
+        if not sandbox_names:
+            return []
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(SessionHistory).where(
+                        SessionHistory.sandbox_namespace == namespace,
+                        SessionHistory.sandbox_name.in_(sandbox_names),
+                        SessionHistory.sandbox_uid.is_not(None),
+                        SessionHistory.runner_session_id.is_not(None),
+                    )
+                )
+            ).all()
+            return [
+                HistoryLocator(row.id, row.sandbox_name, row.sandbox_uid, row.runner_session_id)
+                for row in rows
+                if row.sandbox_uid is not None and row.runner_session_id is not None
+            ]
 
     async def open(
         self,

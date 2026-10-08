@@ -1911,6 +1911,7 @@ metadata:
 data:
   config.yaml: |
     sandbox_namespace: agentplane-staging
+    history_ingestion_enabled: false
     caller_accounts:
       - namespace: agentplane-staging
         name: agentplane-app
