@@ -1,5 +1,5 @@
 /** Read-only operator projection: curated entry summaries, no raw provider payloads or acknowledgement controls. */
-import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Stack, Text } from "@mantine/core";
+import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Select, Stack, Text } from "@mantine/core";
 import { useEffect, useState, type JSX } from "react";
 
 import { followStream, type StreamConnection } from "./live_stream";
@@ -48,6 +48,13 @@ type Inbox = {
   next_work_at: string | null;
 };
 type Status = { observed_at: string; inboxes: Inbox[] };
+type SubscriptionState = "active" | "expired" | "cancelled";
+type SubscriptionFilter = "not-cancelled" | SubscriptionState | "all";
+
+function subscriptionState(sub: Subscription, observedAt: string): SubscriptionState {
+  if (sub.cancelled) return "cancelled";
+  return new Date(sub.expires_at).getTime() <= new Date(observedAt).getTime() ? "expired" : "active";
+}
 
 function sourceLabel(source: Source): string {
   if (source.provider === "actions") return `Action ${source.request_id}`;
@@ -76,6 +83,7 @@ export function NotificationStatus({
   onClose: () => void;
 }): JSX.Element {
   const [data, setData] = useState<Status | null>(null);
+  const [subscriptionFilter, setSubscriptionFilter] = useState<SubscriptionFilter>("not-cancelled");
   const [error, setError] = useState<string | null>(null);
   const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
   useEffect(() => {
@@ -96,7 +104,19 @@ export function NotificationStatus({
       onConnection: setConnection,
     });
   }, [opened, sandbox]);
-  const inboxes = data?.inboxes.filter(({ inbox }) => !sessionId || inbox.session_id === sessionId) ?? [];
+  const inboxes =
+    data?.inboxes
+      .filter(({ inbox }) => !sessionId || inbox.session_id === sessionId)
+      .map((status) => ({
+        ...status,
+        subscriptions: status.subscriptions.filter((sub) => {
+          const state = subscriptionState(sub, data.observed_at);
+          return (
+            subscriptionFilter === "all" ||
+            (subscriptionFilter === "not-cancelled" ? state !== "cancelled" : state === subscriptionFilter)
+          );
+        }),
+      })) ?? [];
   return (
     <>
       <Drawer opened={opened} onClose={onClose} title={`Notifications · ${sandbox}`} position="right" size="lg">
@@ -121,6 +141,30 @@ export function NotificationStatus({
                 {data ? " · showing last snapshot" : ""}
               </Text>
             )}
+            <Select
+              label="Show subscriptions"
+              value={subscriptionFilter}
+              onChange={(value) => {
+                if (
+                  value === "not-cancelled" ||
+                  value === "active" ||
+                  value === "expired" ||
+                  value === "cancelled" ||
+                  value === "all"
+                )
+                  setSubscriptionFilter(value);
+              }}
+              data={[
+                { value: "not-cancelled", label: "Not cancelled" },
+                { value: "active", label: "Active" },
+                { value: "expired", label: "Expired" },
+                { value: "cancelled", label: "Cancelled" },
+                { value: "all", label: "All" },
+              ]}
+              size="sm"
+              w={200}
+              allowDeselect={false}
+            />
             {data && inboxes.length === 0 && (
               <Text>No inbox for {sessionId ? "this runner session" : "this Sandbox incarnation"}.</Text>
             )}
@@ -220,19 +264,14 @@ export function NotificationStatus({
                     <Divider label="Subscriptions" />
                     {subscriptions.length === 0 && (
                       <Text size="sm" c="dimmed">
-                        No subscriptions
+                        No subscriptions to show
                       </Text>
                     )}
                     {subscriptions.map((sub) => (
                       <Stack gap={2} key={sub.id}>
                         <Text size="sm">
                           {sourceLabel(sub.source)} ·{" "}
-                          {sub.cancelled
-                            ? "cancelled"
-                            : new Date(sub.expires_at).getTime() <=
-                                new Date(data?.observed_at ?? sub.expires_at).getTime()
-                              ? "expired"
-                              : "active"}
+                          {subscriptionState(sub, data?.observed_at ?? sub.expires_at)}
                         </Text>
                         <Text size="xs" c="dimmed">
                           Expires {timestamp(sub.expires_at)}

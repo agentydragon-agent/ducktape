@@ -42,6 +42,25 @@ async def test_thread_notifications(view: VisualPage, app: AgentplaneFixture) ->
     await view.capture(name="thread_notifications_diagnostics")
 
 
+async def test_subscription_filter_shows_cancelled_only_on_request(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+    await page.get_by_role("button", name="Notifications").click()
+    await expect(page.get_by_text("Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · active")).to_be_visible()
+    cancelled = page.get_by_text("agentydragon/ducktape · pull_request 42 · cancelled")
+    await expect(cancelled).to_have_count(0)
+
+    await page.get_by_role("textbox", name="Show subscriptions").click()
+    await page.get_by_role("option", name="All", exact=True).click()
+    await expect(cancelled).to_be_visible()
+    await view.capture(name="notification_subscriptions_all")
+
+    await page.get_by_role("textbox", name="Show subscriptions").click()
+    await page.get_by_role("option", name="Cancelled", exact=True).click()
+    await expect(cancelled).to_be_visible()
+    await expect(page.get_by_text("Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · active")).to_have_count(0)
+
+
 async def test_notification_drawer_updates_without_reopening(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
     page = view.page
