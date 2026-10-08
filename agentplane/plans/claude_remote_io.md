@@ -24,6 +24,13 @@ Give Claude an HTTPS `--sdk-url` whose host passes its ordinary CLI allowlist an
 
 The proxy has no runner-session inventory and the existing network boundary lets Sandbox Service, not the central proxy, reach the runner control port ([Sandbox Service API](../sandbox_service/API.md#authentication-and-destinations)). The proposed bridge therefore routes through a narrow Sandbox Service endpoint to the runner that owns the session. Sandbox Service resolves the authenticated source Pod to its exact Sandbox/VM incarnation and checks the session destination; the runner remains the only command/Event and native transcript authority. Define explicit authentication between proxy, service, and runner. Do not treat a client-provided session ID, host header, forwarded identity header, or arbitrary bearer as proof of ownership. The bridge must also work when the integration app is unavailable ([service boundary](../docs/service_boundaries.md)).
 
+This bridge assumes the **current** runner-owned command/Event journal. The separate
+[runner state-boundary question](task_dag.md)
+asks whether RemoteIO could instead terminate at a durable service authority, leaving
+the Sandbox runner as a thinner harness adapter. Reuse the RemoteIO wire evidence for
+that option; do not infer Claude's private server persistence scheme from the client
+protocol, or require its discovery before prototyping a compatible service.
+
 A runner-local interception shim is a fallback if the central route cannot be implemented without weakening those boundaries. It would need its own TLS identity and a reliable route for all other egress, so evaluate that cost rather than assuming it is free. The [KubeVirt plan](kubevirt_environments.md#proxy-outside-the-guest) puts the runner behind a guest/Pod boundary; prove the chosen path for both the existing Pod environment and any VM profile before enabling it there.
 
 ## Runner transport and evidence

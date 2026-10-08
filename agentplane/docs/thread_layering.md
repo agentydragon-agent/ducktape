@@ -87,11 +87,24 @@ a “session”; it already spans process restarts. That existing name does not 
 the target product Thread/incarnation relationship. The identity cutover must make the
 mapping explicit without duplicating the log's static Sandbox on each association.
 
-TODO: consider unifying the durable runner session and product Thread identity. Resume already
-reuses the same session and native conversation; a new process is an incarnation, not a new
-session. Two names currently suggest a lifecycle distinction that does not exist. Resolve the
-identity/ownership boundary consistently rather than implying conversations transfer between
-harness types.
+A Thread is a view/fold of one durable logical Session's Event log, with its own
+operator-set presentation; it is not a second execution source. Today the app mints
+a UUID for its Event-log/Thread view on first sight of a runner Session identified by
+`(sandbox, session_id)`. A suspend/resume on retained storage reuses that Session ID,
+native conversation, and Event sequence; a fresh harness process is an incarnation,
+not another Session. Runner restart tests verify the identical ID and contiguous
+Event prefix after crash and SIGTERM; the Sandbox suspend/resume acceptance exercises
+both harnesses after Pod replacement. For the one-Thread-per-Session model, adopt one
+globally unique stable ID for the logical Session and its Thread view. Sharing an ID
+does not give a live Session caller permission to read the archive; Sandbox, process,
+and native harness identities remain separate. A portable runtime may retain this
+ID across Sandboxes only if it restores the same fenced journal and native state;
+separate copied-state tests gate that claim. For existing histories, keep the
+app UUID as the canonical public ID and import its association to the existing
+`(sandbox, runner session_id)` into the durable history authority. That runner ID remains the physical storage/runtime locator: its
+native files, directories, and workspace paths need no rekey. New histories can use
+the canonical UUID as their runner Session ID. A future multi-Session Thread would
+need a new explicit model rather than overloading this one-to-one identity.
 
 A runner's Event sequence goes into a Thread but is not itself the Thread. The app mints
 the Event log when it first sees a runner session and copies the runner's Events into it, along
