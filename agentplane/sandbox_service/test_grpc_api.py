@@ -195,6 +195,7 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
         assert str(UUID(public)) == public
         assert created.attached.session_id == public
         assert first.opened.session_id == f"r-{public}"
+        assert first.opened.spec.cwd == f"/state/{public}"
         assert public in first.opened.spec.instructions
         assert created.attached.session_id != first.opened.session_id
         await first.closed.wait()

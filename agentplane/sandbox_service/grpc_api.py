@@ -300,9 +300,14 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
 
                 def freeze(session_id: UUID) -> bytes:
                     destination = protocol_pb2.SessionDestination(sandbox=request.sandbox, session_id=str(session_id))
+                    # CreateSession callers cannot know the public ID before Open. Resolve
+                    # workspace templates only after reservation, and freeze the result.
+                    effective_overrides = dict(overrides)
+                    if isinstance(cwd := effective_overrides.get("cwd"), str):
+                        effective_overrides["cwd"] = cwd.replace("{session_id}", str(session_id))
                     spec = session_lifecycle.launch_spec(
                         destination,
-                        overrides,
+                        effective_overrides,
                         binding=endpoint.binding,
                         platform_instructions=self.resources.platform_instructions,
                         sandbox_namespace=self.resources.destinations.inventory.namespace,
