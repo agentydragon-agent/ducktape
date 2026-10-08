@@ -69,7 +69,7 @@ def rate_limit_delay(headers: httpx.Headers, now: float) -> int:
     elif retry_after:
         try:
             deadline = parsedate_to_datetime(retry_after)
-        except (ValueError, OverflowError):
+        except ValueError, OverflowError:
             pass
         else:
             if deadline.tzinfo is not None:
