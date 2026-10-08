@@ -539,6 +539,13 @@ connection; none depends on the process which accepted the write. Notification l
 streams explicitly. Reconnection obtains an authoritative snapshot rather than treating NOTIFY
 as a durable log. Operator bearer authorization is rechecked on updates and keepalives.
 
+The operator-only `/v1/operator/mcp-servers/stream` follows committed linkage/token-state
+changes on every replica, and sends a fresh snapshot when a linked token expires without a write.
+`/v1/operator/action-groups/stream` follows the local MCP supervisor's catalog/health transitions;
+health is replica-local, not an invented cluster aggregate. Both use the snapshot/authorization
+recheck loop above. The app proxies them separately, and the MCP Settings tab joins their latest
+snapshots by group key/server ID rather than coupling their change rates.
+
 The optional `web_push` configuration enables browser subscription storage and background delivery:
 
 - `private_key_pem`: stable VAPID private key, supplied through deployment secret management;

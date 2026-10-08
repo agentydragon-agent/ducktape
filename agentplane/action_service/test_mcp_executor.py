@@ -111,6 +111,8 @@ async def test_start_mirrors_tool_catalog_into_the_action_group() -> None:
 
     group = _group()
     executor = McpActionGroupExecutor(GROUP_KEY, group, mcp)
+    observed: list[tuple[str, bool]] = []
+    executor.on_health_change = lambda: observed.append((executor._health.state.value, group.available))
     await executor.start()
     await wait_available(executor._group)
     try:
@@ -120,8 +122,11 @@ async def test_start_mirrors_tool_catalog_into_the_action_group() -> None:
         assert group.actions["add"].title == "Add numbers"
         assert group.actions["add"].annotations == ToolAnnotations(read_only_hint=True)
         assert group.available is True
+        assert ("available", True) in observed
+        assert ("discovering", False) in observed
     finally:
         await executor.close()
+    assert observed[-1] == ("stopped", False)
 
 
 async def test_explicit_refresh_picks_up_added_removed_and_changed_tools() -> None:

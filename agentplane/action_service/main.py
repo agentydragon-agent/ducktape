@@ -280,7 +280,10 @@ async def async_main(settings: Settings) -> None:
             core_v1=CoreV1Api(api),
             exec_runner=KubernetesWebSocketExecRunner(configuration),
         )
-        executors = await stack.enter_async_context(running_executor(catalog, mcp_linkage, sandboxes))
+        updates = ActionUpdates(settings.database_url)
+        executors = await stack.enter_async_context(
+            running_executor(catalog, mcp_linkage, sandboxes, on_health_change=updates.wake_mcp_health)
+        )
         push_notifier: ActionPushNotifier | None = None
         if settings.web_push is not None:
             push_notifier = ActionPushNotifier(
@@ -336,7 +339,7 @@ async def async_main(settings: Settings) -> None:
             callers=policy_index,
             reader_accounts=settings.reader_accounts,
             connections=connections,
-            updates=ActionUpdates(settings.database_url),
+            updates=updates,
             enrollments=enrollments if oauth is not None else None,
             oauth=oauth,
             push_identity=PushIdentity(settings.web_push) if settings.web_push is not None else None,

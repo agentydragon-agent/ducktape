@@ -15,6 +15,7 @@ afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
   }
+  vi.unstubAllGlobals();
 });
 
 async function render(
@@ -36,12 +37,6 @@ async function render(
     )
   );
   return container;
-}
-
-function refresh(container: HTMLElement): HTMLButtonElement {
-  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "Refresh");
-  if (!button) throw new Error("Missing Refresh");
-  return button;
 }
 
 function pendingList(): { promise: Promise<McpLinkageView[]>; resolve: (rows: McpLinkageView[]) => void } {
@@ -92,7 +87,6 @@ it.each([
   await act(async () => clicked.click());
   expect(container.querySelectorAll("button[data-loading]")).toHaveLength(1);
   expect(clicked.hasAttribute("data-loading")).toBe(true);
-  expect(refresh(container).hasAttribute("data-loading")).toBe(false);
   expect(buttons.every((button) => button.disabled)).toBe(true);
   expect(service[method]).toHaveBeenCalledWith(...args);
 
@@ -107,12 +101,10 @@ it("does not claim an empty inventory until the pending request succeeds", async
   const container = await render(() => response.promise);
   expect(container.querySelector('[role="status"]')?.textContent).toContain("Loading MCP servers");
   expect(container.textContent).not.toContain("No MCP servers are configured");
-  expect(refresh(container).disabled).toBe(true);
 
   await act(async () => response.resolve([]));
   expect(container.querySelector('[role="status"]')).toBeNull();
   expect(container.textContent).toContain("No MCP servers are configured");
-  expect(refresh(container).disabled).toBe(false);
 });
 
 it("stays loading until both the linkage and group fetches resolve", async () => {
@@ -132,51 +124,81 @@ it("stays loading until both the linkage and group fetches resolve", async () =>
   expect(container.querySelector('[role="status"]')).toBeNull();
 });
 
-it("shows a failed load as an error, then clears it while retrying", async () => {
-  const retry = pendingList();
-  const list = vi.fn<McpLinkageService["list"]>().mockRejectedValueOnce(new Error("Service unavailable"));
-  list.mockImplementationOnce(() => retry.promise);
-  const container = await render(list);
-  expect(container.textContent).toContain("Service unavailable");
+it("renders independent linkage and health snapshots, then updates either without a refresh button", async () => {
+  const sources = new Map<string, Source>();
+  class Source extends EventTarget {
+    static readonly CLOSED = 2;
+    readyState = 1;
+    constructor(readonly url: string) {
+      super();
+      sources.set(url, this);
+    }
+    close() {
+      this.readyState = Source.CLOSED;
+    }
+  }
+  vi.stubGlobal("EventSource", Source);
+  const list = vi.fn(async () => []);
+  const groups = vi.fn(async () => []);
+  const container = await render(list, {}, groups);
+  const publish = async (path: string, value: unknown) => {
+    await act(async () =>
+      sources.get(path)?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(value) }))
+    );
+  };
+  expect(container.textContent).toContain("Loading MCP servers");
   expect(container.textContent).not.toContain("No MCP servers are configured");
-  expect(container.querySelector('[role="status"]')).toBeNull();
-
-  await act(async () => refresh(container).click());
-  expect(container.textContent).not.toContain("Service unavailable");
-  expect(container.textContent).not.toContain("No MCP servers are configured");
-  expect(container.querySelector('[role="status"]')).not.toBeNull();
-
-  await act(async () => retry.resolve([]));
-  expect(container.textContent).toContain("No MCP servers are configured");
-  expect(container.querySelector('[role="status"]')).toBeNull();
-});
-
-it("keeps the last inventory visible while refreshing", async () => {
-  const response = pendingList();
-  const list = vi.fn<McpLinkageService["list"]>().mockResolvedValueOnce([
+  await publish("/mcp-servers/stream", [
     {
-      server_id: "example-mcp",
+      server_id: "example",
       server_url: "https://mcp.example.test",
-      status: "unlinked",
-      revision: 0,
+      status: "linked",
+      revision: 1,
       scopes: [],
       expires_at: null,
       linked_at: null,
       linked_by: null,
     },
   ]);
-  list.mockImplementationOnce(() => response.promise);
-  const container = await render(list);
-  expect(container.textContent).toContain("example-mcp");
-
-  await act(async () => refresh(container).click());
-  expect(container.textContent).toContain("example-mcp");
-  expect(container.querySelector('[role="status"]')).not.toBeNull();
-  expect(container.textContent).not.toContain("No MCP servers are configured");
-
-  await act(async () => response.resolve([]));
-  expect(container.textContent).not.toContain("example-mcp");
-  expect(container.textContent).toContain("No MCP servers are configured");
+  expect(container.textContent).toContain("Loading MCP servers");
+  await publish("/action-groups/stream", [
+    {
+      key: "example",
+      title: "Example",
+      description: "",
+      executor_kind: "mcp",
+      executor_description: "Example",
+      available: true,
+      health: { state: "available", reason: null, detail: null, failures: 0, retry_at: null, last_discovery_at: null },
+      actions: [],
+    },
+  ]);
+  expect(container.textContent).toContain("OAuth linklinked");
+  expect(container.textContent).toContain("Connectionavailable");
+  await publish("/action-groups/stream", [
+    {
+      key: "example",
+      title: "Example",
+      description: "",
+      executor_kind: "mcp",
+      executor_description: "Example",
+      available: false,
+      health: {
+        state: "disconnected",
+        reason: "connect_failed",
+        detail: "Connection refused",
+        failures: 1,
+        retry_at: null,
+        last_discovery_at: null,
+      },
+      actions: [],
+    },
+  ]);
+  expect(container.textContent).toContain("Connectionconnect_failed");
+  expect(container.textContent).toContain("Connection refused");
+  expect(container.textContent).not.toContain("Refresh");
+  expect(list).not.toHaveBeenCalled();
+  expect(groups).not.toHaveBeenCalled();
 });
 
 it("shows a bearer-auth group with a live health badge and no link/disconnect buttons", async () => {

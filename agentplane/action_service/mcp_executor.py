@@ -204,6 +204,7 @@ class McpActionGroupExecutor(Executor):
         self._draining = False
         self._health = McpHealth()
         self._group.health = self._health
+        self.on_health_change: Callable[[], None] = lambda: None
         self._available_since: float | None = None
         self._backoff = wait_random_exponential(multiplier=1, min=0.1, max=30)
         self._retry = RetryCallState(Retrying(), None, (), {})
@@ -284,6 +285,7 @@ class McpActionGroupExecutor(Executor):
                 "the supervisor task was cancelled" if error is None else self._failure_detail(error),
             )
             self._health.state = McpLifecycle.STOPPED
+            self.on_health_change()
             logger.error("MCP supervisor stopped unexpectedly for %s", self._group_key)
 
     def begin_drain(self) -> None:
@@ -293,6 +295,7 @@ class McpActionGroupExecutor(Executor):
         self._mark_unavailable()
         self._health.state = McpLifecycle.DRAINING
         self._health.retry_at = None
+        self.on_health_change()
         self._tool_list_changed.set()
         if self._supervisor is not None:
             # The supervisor does not own the lifetime of published connections.
@@ -315,6 +318,7 @@ class McpActionGroupExecutor(Executor):
             self._linkage.unsubscribe_changes(self._linkage_server_id, self._linkage_changed)
             self._linkage_changed = None
         self._health.state = McpLifecycle.STOPPED
+        self.on_health_change()
 
     async def _close_connection(self, connection: _Connection) -> None:
         try:
@@ -346,6 +350,7 @@ class McpActionGroupExecutor(Executor):
 
     async def _connect_client(self) -> None:
         self._health.state = McpLifecycle.CONNECTING
+        self.on_health_change()
         client = Client[Any](
             self._transport_factory(),
             init_timeout=self._lifecycle_timeout,
@@ -390,6 +395,7 @@ class McpActionGroupExecutor(Executor):
                 self._retry.attempt_number = self._health.failures
                 delay = timedelta(seconds=self._backoff(self._retry))
                 self._health.retry_at = datetime.now(UTC) + delay
+                self.on_health_change()
                 logger.warning("MCP group %s unavailable: %s; retry scheduled", self._group_key, self._health.reason)
                 await self._wait_for_wakeup(delay)
 
@@ -476,6 +482,7 @@ class McpActionGroupExecutor(Executor):
             self._available_since = now
         if now - self._available_since >= STABLE_SUCCESS.total_seconds():
             self._health.failures = 0
+        self.on_health_change()
 
     def _mark_unavailable(self, reason: McpUnavailableReason | None = None, detail: str | None = None) -> None:
         if (
@@ -490,6 +497,7 @@ class McpActionGroupExecutor(Executor):
         # Bounded: a backend chooses this text.
         self._health.detail = None if detail is None else detail[:_DETAIL_LIMIT]
         self._available_since = None
+        self.on_health_change()
 
     def _session_failed(self, connection: _Connection, error: BaseException) -> None:
         connection.failed = True
@@ -509,6 +517,7 @@ class McpActionGroupExecutor(Executor):
         if connection is None or self._draining:
             return
         self._health.state = McpLifecycle.DISCOVERING
+        self.on_health_change()
         try:
             async with asyncio.timeout(self._lifecycle_timeout.total_seconds()):
                 actions = await self._discover_catalog(connection.client)
@@ -520,6 +529,7 @@ class McpActionGroupExecutor(Executor):
         except Exception as error:
             self._session_failed(connection, error)
             self._health.reason = McpUnavailableReason.DISCOVERY_FAILED
+            self.on_health_change()
         else:
             if self._connection is connection and not connection.failed:
                 self._publish_catalog(actions)

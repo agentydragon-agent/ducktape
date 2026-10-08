@@ -7,6 +7,7 @@ state after every commit; reconnect sends a fresh snapshot rather than relying o
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractContextManager
+from datetime import UTC, datetime
 
 from fastapi.responses import StreamingResponse
 
@@ -19,6 +20,7 @@ def snapshot_stream(
     authorized: Callable[[], Awaitable[bool]],
     *,
     changed_event: bool = False,
+    refresh_at: Callable[[], datetime | None] | None = None,
 ) -> StreamingResponse:
     async def body() -> AsyncIterator[bytes]:
         with subscribe() as subscription:
@@ -33,9 +35,15 @@ def snapshot_stream(
                 yield b"event: snapshot\ndata: " + snapshot + b"\n\n"
                 while not changed.is_set():
                     try:
-                        async with asyncio.timeout(5):
+                        deadline = refresh_at() if refresh_at is not None else None
+                        timeout = 5.0
+                        if deadline is not None:
+                            timeout = min(timeout, max(0.0, (deadline - datetime.now(UTC)).total_seconds()))
+                        async with asyncio.timeout(timeout):
                             await changed.wait()
                     except TimeoutError:
+                        if deadline is not None and datetime.now(UTC) >= deadline:
+                            break  # A computed state (e.g. token expiry) changed without a database write.
                         subscription.check_available()
                         if not await authorized():
                             return

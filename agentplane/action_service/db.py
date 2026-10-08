@@ -59,7 +59,7 @@ from agentplane.action_service.models import (
     Verdict,
     operator_or_none,
 )
-from agentplane.action_service.updates import CHANNEL, CONNECTIONS_CHANNEL
+from agentplane.action_service.updates import CHANNEL, CONNECTIONS_CHANNEL, MCP_LINKAGE_CHANNEL
 from agentplane.subjects import ServiceAccountRef
 
 # SQLAlchemy loads asyncpg from the URL scheme; Gazelle cannot infer that runtime dependency.
@@ -350,6 +350,17 @@ class McpOAuthTokenStateRow(Base):
     refresh_failure_action: Mapped[str | None] = mapped_column(Text)
     refresh_failure_error: Mapped[str | None] = mapped_column(Text)
     refresh_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+@event.listens_for(McpServerLinkageRow, "after_insert")
+@event.listens_for(McpServerLinkageRow, "after_update")
+@event.listens_for(McpServerLinkageRow, "after_delete")
+@event.listens_for(McpOAuthTokenStateRow, "after_insert")
+@event.listens_for(McpOAuthTokenStateRow, "after_update")
+@event.listens_for(McpOAuthTokenStateRow, "after_delete")
+def _notify_mcp_linkage(_mapper: Mapper[object], connection: Connection, _row: object) -> None:
+    # PostgreSQL delivers this only on commit, to stream readers on every Action Service replica.
+    connection.execute(select(func.pg_notify(MCP_LINKAGE_CHANNEL, "")))
 
 
 class McpLinkageFlowRow(Base):

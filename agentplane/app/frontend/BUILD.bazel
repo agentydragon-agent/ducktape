@@ -517,6 +517,7 @@ ts_library(
     deps = [
         ":actions_client",
         ":client",
+        ":live_stream",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
