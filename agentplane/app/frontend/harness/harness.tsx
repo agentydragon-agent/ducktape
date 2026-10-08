@@ -2405,6 +2405,18 @@ class HarnessEventSource extends EventTarget {
       return;
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
+    const notification = url.pathname.match(/^\/sandboxes\/([^/]+)\/notifications\/stream$/);
+    if (notification) {
+      if (notificationStatusUnavailable) {
+        this.drop();
+        return;
+      }
+      const route = routes.find(([method, pattern]) => method === "GET" && pattern.test(`/sandboxes/${notification[1]}/notifications`));
+      const match = `/sandboxes/${notification[1]}/notifications`.match(route?.[1] ?? /$^/);
+      if (!route || !match) throw new Error("Missing notifications fixture");
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(route[2](match, url.searchParams, undefined, undefined)) }));
+      return;
+    }
     if (url.pathname === "/actions/stream") {
       const pending = includePendingActions ? ACTIONS.filter((request) => request.state === "decision_pending") : [];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(pending) }));

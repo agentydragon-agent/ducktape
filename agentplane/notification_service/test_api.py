@@ -11,7 +11,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.action_service.models import ActionEventView, ActionState
-from agentplane.notification_service.api import authenticated_caller, create_app
+from agentplane.notification_service.api import authenticated_caller, create_app, sandbox_status_frames
 from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionView
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings
@@ -167,6 +167,7 @@ async def test_operator_status_is_read_only_and_uid_pinned(store: Store) -> None
         transport=httpx.ASGITransport(app=app), base_url="http://notifications.test"
     ) as client:
         assert (await client.get(url, params={"uid": "sandbox-uid"})).status_code == 403
+        assert (await client.get(url + "/stream", params={"uid": "sandbox-uid"})).status_code == 403
         app.dependency_overrides[authenticated_caller] = lambda: WorkloadPrincipal(
             "test", "app", "system:serviceaccount:test:app", "app-pod", "pod-uid"
         )
@@ -190,6 +191,32 @@ async def test_operator_status_is_read_only_and_uid_pinned(store: Store) -> None
         assert inbox["notice_wait_reason"] == "debouncing"
         assert "payload" not in str(response.json())
         assert (await client.get("/v1/inboxes")).json() == []  # App identity gets no agent inbox authority.
+
+
+async def test_status_stream_replays_snapshot_and_follows_committed_changes(store: Store) -> None:
+    service = create_autospec(Service, instance=True)
+    service.store = store
+    service.notice_debounce = NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=120)
+    frames = sandbox_status_frames(service, "test", "sandbox", "sandbox-uid")
+    try:
+        initial = await asyncio.wait_for(anext(frames), 5)
+        assert b'"inboxes": []' in initial
+        async with store.wakeups.listener.listen():
+            sub = await store.subscribe(
+                PRINCIPAL,
+                Subscribe(
+                    destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
+                    session_id="stream", idempotency_key="stream",
+                    source=ActionsSource(provider="actions", request_id=uuid4()),
+                ),
+            )
+            updated = await asyncio.wait_for(anext(frames), 5)
+            assert str(sub.inbox_id).encode() in updated
+            await store.change(PRINCIPAL.account, sub.id, None)
+            cancelled = await asyncio.wait_for(anext(frames), 5)
+            assert b'"cancelled": true' in cancelled
+    finally:
+        await frames.aclose()
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Stack, Text } from "@mantine/core";
 import { useEffect, useState, type JSX } from "react";
 
-import { fetchWithLogin } from "./client";
+import { followStream, type StreamConnection } from "./live_stream";
 
 type Source = {
   provider: string;
@@ -77,38 +77,24 @@ export function NotificationStatus({
 }): JSX.Element {
   const [data, setData] = useState<Status | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
   useEffect(() => {
     if (!opened) return;
     setData(null);
     setError(null);
-    const abort = new AbortController();
-    async function refresh(): Promise<void> {
-      setLoading(true);
-      try {
-        const response = await fetchWithLogin(`/sandboxes/${encodeURIComponent(sandbox)}/notifications`, {
-          signal: abort.signal,
-        });
-        if (!response.ok)
-          throw new Error(response.status === 503 ? "Notification service unavailable" : `Status ${response.status}`);
-        const snapshot = (await response.json()) as Status;
-        if (!abort.signal.aborted) {
-          setData(snapshot);
-          setError(null);
-        }
-      } catch (failure) {
-        if (!abort.signal.aborted)
-          setError(failure instanceof Error ? failure.message : "Unable to load notifications");
-      } finally {
-        if (!abort.signal.aborted) setLoading(false);
-      }
-    }
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 15000);
-    return () => {
-      abort.abort();
-      window.clearInterval(timer);
-    };
+    return followStream(`/sandboxes/${encodeURIComponent(sandbox)}/notifications/stream`, {
+      events: {
+        snapshot: (message) => {
+          try {
+            setData(JSON.parse(message.data) as Status);
+            setError(null);
+          } catch {
+            setError("Invalid notification status snapshot");
+          }
+        },
+      },
+      onConnection: setConnection,
+    });
   }, [opened, sandbox]);
   const inboxes = data?.inboxes.filter(({ inbox }) => !sessionId || inbox.session_id === sessionId) ?? [];
   return (
@@ -122,10 +108,11 @@ export function NotificationStatus({
             {data && (
               <Text size="xs" c="dimmed">
                 Snapshot: {timestamp(data.observed_at)}
-                {loading ? " · refreshing" : ""}
+                {connection.phase !== "live" ? " · disconnected; showing last snapshot" : ""}
               </Text>
             )}
-            {!data && loading && <Text>Loading notification status…</Text>}
+            {!data && connection.phase === "connecting" && <Text>Loading notification status…</Text>}
+            {!data && connection.phase === "reconnecting" && <Text role="status">Reconnecting to notification status…</Text>}
             {error && (
               <Text role="alert" c="red">
                 {error}

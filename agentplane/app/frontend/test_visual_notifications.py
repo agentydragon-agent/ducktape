@@ -57,7 +57,7 @@ async def test_notification_service_reconnect(view: VisualPage, app: AgentplaneF
     await app.mount_thread(IDLE_THREAD)
     page = view.page
     await page.get_by_role("button", name="Notifications").click()
-    await expect(page.get_by_role("alert")).to_contain_text("Notification service unavailable")
+    await expect(page.get_by_text("Reconnecting to notification status…")).to_be_visible()
     await view.capture(name="notification_status_unavailable")
     await app.set_notification_status_unavailable(False)
     await page.keyboard.press("Escape")

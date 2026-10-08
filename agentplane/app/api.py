@@ -292,6 +292,44 @@ async def sandbox_notifications(inventory: Inventory, request: Request, name: st
     return SandboxNotificationStatus.model_validate(response.json())
 
 
+@router.get("/{name}/notifications/stream")
+async def sandbox_notifications_stream(
+    inventory: Inventory, request: Request, name: str,
+    shutdown: Shutdown, updates: Updates,
+) -> StreamingResponse:
+    """Operator-only SSE proxy; scope the upstream by the current Sandbox incarnation UID."""
+    if request.app.state.oidc is None or request_session(request).login is None:
+        raise HTTPException(403, "operator login required")
+    client = request.app.state.notifications_http
+    token_file = request.app.state.notifications_token_file
+    if client is None or token_file is None:
+        raise HTTPException(503, "notification diagnostics unavailable")
+    sandbox = sandbox_view(await inventory.get(name))
+    sessions = _operator_sessions(request)
+    session_id = operator_session_row(request).id
+    upstream = f"/operator/v1/sandboxes/{sandbox.namespace}/{sandbox.name}/notifications/stream"
+
+    async def session_over() -> None:
+        await sessions.until_ended(session_id, updates.changes[Channel.OPERATOR_SESSIONS])
+
+    async def body() -> AsyncIterator[bytes]:
+        try:
+            async with client.stream(
+                "GET", upstream, params={"uid": sandbox.uid},
+                headers={"Authorization": f"Bearer {token_file.read_text().strip()}"},
+                timeout=httpx.Timeout(None, connect=5),
+            ) as response:
+                response.raise_for_status()
+                async for chunk in shutdown.until(until_done(response.aiter_bytes(), session_over)):
+                    if await request.is_disconnected():
+                        return
+                    yield chunk
+        except (httpx.HTTPError, OSError):
+            logger.warning("Notification stream interrupted", exc_info=True)
+
+    return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
 @router.post("/{name}/suspend", status_code=status.HTTP_204_NO_CONTENT)
 async def suspend_sandbox(inventory: Inventory, name: str) -> Response:
     await inventory.suspend(name)
