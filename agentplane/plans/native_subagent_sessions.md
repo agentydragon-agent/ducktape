@@ -6,6 +6,9 @@ Agentplane adapter or inferred from parent prose. This is the evidence gate for
 [`NATIVE_SUBAGENT_THREADS`](task_dag.md#native_subagent_threads--adopt-harness-native-subagents-as-threads),
 not a change to its product priority or an implementation of session discovery.
 
+The passing initial scenarios support the [harness-declared logical sessions proposal](native_session_discovery.md).
+That plan sketches read-only discovery without treating the unmeasured matrix rows as implemented.
+
 ## Proposed ownership
 
 The runner reports which native sessions exist, their observed lifecycle, and their parent/child
