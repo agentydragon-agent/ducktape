@@ -1,0 +1,90 @@
+# One-off schema bootstrap for the Sandbox Service's Session Event history. The
+# image tag is immutable; do not add this Job to Flux image automation. For a new
+# migration, use a new Job name after reviewing the schema change. A failure is
+# intentionally visible and requires an explicit operator decision, not a retry.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-session-history-schema-0001
+  namespace: agentplane-staging
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agentplane-session-history-schema-0001
+  namespace: agentplane-staging
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-session-history-schema-0001
+    spec:
+      restartPolicy: Never
+      serviceAccountName: agentplane-session-history-schema-0001
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-service-history-migrate:devel-20261008050250-69c7643
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AGENTPLANE_SANDBOX_SERVICE_HISTORY_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-sandbox-service
+                  key: uri
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: false
+          terminationMessagePolicy: FallbackToLogsOnError
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-session-history-schema-0001
+  namespace: agentplane-staging
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-session-history-schema-0001
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            k8s:cnpg.io/cluster: postgres
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
