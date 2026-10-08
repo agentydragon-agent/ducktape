@@ -171,6 +171,46 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
+  name: postgres-sandbox-service-generator
+  namespace: agentplane-testing
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: postgres-sandbox-service
+  namespace: agentplane-testing
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: postgres-sandbox-service-generator
+  refreshInterval: 8760h
+  target:
+    name: postgres-sandbox-service
+    template:
+      data:
+        dbname: sandbox_service
+        host: postgres-rw.agentplane-testing.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://sandbox_service:{{ .password }}@postgres-rw.agentplane-testing.svc:5432/sandbox_service
+        username: sandbox_service
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
+      type: kubernetes.io/basic-auth
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
   name: postgres-electric-generator
   namespace: agentplane-testing
 spec:
@@ -248,6 +288,11 @@ spec:
           name: postgres-notifications
       - ensure: present
         login: true
+        name: sandbox_service
+        passwordSecret:
+          name: postgres-sandbox-service
+      - ensure: present
+        login: true
         name: electric
         passwordSecret:
           name: postgres-electric
@@ -300,6 +345,18 @@ spec:
   databaseReclaimPolicy: delete
   name: notifications
   owner: notifications
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: sandbox-service
+  namespace: agentplane-testing
+spec:
+  cluster:
+    name: postgres
+  databaseReclaimPolicy: delete
+  name: sandbox_service
+  owner: sandbox_service
 ---
 apiVersion: apps/v1
 kind: Deployment
