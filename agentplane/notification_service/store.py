@@ -633,10 +633,7 @@ class Store:
             SubscriptionHealthEvent(
                 provider="notifications", subscription_id=row.id, sequence=row.health_sequence, health=health
             ),
-            {
-                "error": error,
-                "retry_at": row.next_attempt.isoformat() if error and row.next_attempt else None,
-            },
+            {"error": error, "retry_at": row.next_attempt.isoformat() if error and row.next_attempt else None},
         )
         inbox.updated_at = datetime.now(UTC)
 

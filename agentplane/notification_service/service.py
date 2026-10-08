@@ -11,7 +11,13 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.notification_service.db import Inbox, Notice
-from agentplane.notification_service.models import ActionsSource, DestinationRef, SourceHealth, Subscribe, SubscriptionView
+from agentplane.notification_service.models import (
+    ActionsSource,
+    DestinationRef,
+    SourceHealth,
+    Subscribe,
+    SubscriptionView,
+)
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import Actions, SourceNotOwnedError
 from agentplane.notification_service.sources.github import GitHub, GitHubRetryError, GitHubUnavailableError

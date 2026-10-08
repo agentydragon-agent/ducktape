@@ -392,7 +392,6 @@ async def test_retention_gap_is_visible_and_replay_keeps_tombstone(store: Store)
     assert (await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)).inbox.last_cursor == 3
 
 
-
 async def test_health_transitions_are_durable_and_do_not_repeat(store: Store, engine: AsyncEngine) -> None:
     subscription = await store.subscribe(PRINCIPAL, BODY)
     claim = await store.claim()
@@ -422,7 +421,11 @@ async def test_health_transitions_are_durable_and_do_not_repeat(store: Store, en
     await recovered.record(claim, source, [])
     await recovered.record(claim, source, [])
     page = await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
-    assert [entry.event.sequence for entry in page.entries if isinstance(entry.event, SubscriptionHealthEvent)] == [1, 2, 3]
+    assert [entry.event.sequence for entry in page.entries if isinstance(entry.event, SubscriptionHealthEvent)] == [
+        1,
+        2,
+        3,
+    ]
     assert [entry.event.health for entry in page.entries if isinstance(entry.event, SubscriptionHealthEvent)] == [
         SourceHealth.BACKING_OFF,
         SourceHealth.ACCESS_ERROR,
@@ -448,9 +451,9 @@ async def test_overlapping_sources_have_independent_health_sequences(store: Stor
         await store.source_failed(claim, source, "HTTP 429")
     page = await store.read(PRINCIPAL.account, first.inbox_id, 0, 128)
     assert len(page.entries) == 2
-    assert {entry.event.subscription_id for entry in page.entries if isinstance(entry.event, SubscriptionHealthEvent)} == {
-        first.id, second.id
-    }
+    assert {
+        entry.event.subscription_id for entry in page.entries if isinstance(entry.event, SubscriptionHealthEvent)
+    } == {first.id, second.id}
     assert all(entry.event.sequence == 1 for entry in page.entries if isinstance(entry.event, SubscriptionHealthEvent))
 
 

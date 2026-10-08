@@ -1885,7 +1885,10 @@ routes.push(
                           cancelled: false,
                           expires_at: new Date(NOW + HOUR).toISOString(),
                           health,
-                          error: health === "backing_off" ? "GitHub rate limited (HTTP 429)" : "GitHub App access unavailable (HTTP 403)",
+                          error:
+                            health === "backing_off"
+                              ? "GitHub rate limited (HTTP 429)"
+                              : "GitHub App access unavailable (HTTP 403)",
                           next_source_check_at: new Date(NOW + 60000).toISOString(),
                         })),
                       ],
