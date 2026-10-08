@@ -165,6 +165,38 @@ py_test(
     ],
 )
 
+# Manual live proof: patch only the fixture Sandbox CR while it is suspended.
+py_test(
+    name = "test_runner_image_upgrade",
+    timeout = "eternal",
+    srcs = ["test_runner_image_upgrade.py"],
+    env_inherit = [
+        "AGENTPLANE_ACCEPTANCE_NAMESPACE",
+        "AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT",
+        "AGENTPLANE_ACCEPTANCE_TOKEN",
+        "AGENTPLANE_ACCEPTANCE_URL",
+        "AGENTPLANE_ACCEPTANCE_UPGRADE_IMAGE",
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":agent",
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app:client",
+        "//agentplane/app:sandbox_models",
+        "//agentplane/runner:harness",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:models",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
 py_test(
     name = "test_ollama_routes",
     timeout = "eternal",

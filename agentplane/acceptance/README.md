@@ -29,6 +29,25 @@ thread, per stage, cold and warm, against regression ceilings; its module docstr
 interval. Each run writes its timings to
 `bazel-testlogs/agentplane/acceptance/test_thread_latency/test.outputs/`.
 
+## Runner image replacement (manual proof)
+
+`//agentplane/acceptance:test_runner_image_upgrade` creates **its own** Sandbox, runs
+one completed turn on Claude and Codex, suspends it until its Pod is deleted, patches
+**that Sandbox CR only** to a different digest-pinned runner image, resumes it, and
+checks the same Sandbox UID, a new ready Pod running the selected image, and native
+context continuing in both existing Threads. The fixture suspends and deletes its
+Sandbox afterward. This is an evidence test, **not** a supported image-upgrade API.
+It does not prove safe handling of a command in flight or all crash windows.
+
+Run it explicitly with `AGENTPLANE_ACCEPTANCE_UPGRADE_IMAGE` set to a published,
+version-compatible `@sha256:` runner image *different from* the tested deployment's
+current image. The existing acceptance URL/identity and kubeconfig must target the
+same deployment; the kubeconfig must allow `get`/`patch` of `sandboxes.agents.x-k8s.io`
+and `get` of Pods in the acceptance namespace. Check the chosen image's provenance
+and compatibility before running; an untested image can make the fixture Sandbox
+unable to resume. No existing Sandbox is patched and the test is excluded from
+normal CI. Without the explicit image setting it fails before creating a Sandbox.
+
 ## Suspend and resume
 
 `//agentplane/acceptance:test_suspend_resume` opens one Claude Thread and one Codex Thread in the
