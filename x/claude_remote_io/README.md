@@ -15,8 +15,10 @@ Bazel pin does not change Agentplane's runner or its `2.1.252` scripted baseline
 
 The round-trip probe passed against the real CLI on `ffb21bad` in
 [CI](https://github.com/agentydragon/ducktape/actions/runs/37757068286).
-That build still failed a server type check; test success is not an all-green build claim.
-Child discovery, recovery, and same-version comparison remain unimplemented. Source inspection
+The follow-up `bf5a8508` passed tests/build, lint, formatting, Gazelle and import checks.
+A child scenario now scripts an actual `Agent` launch, checks parent/task correlation, and asserts
+attributed child prose and completion uploads; this new scenario is awaiting CI evidence.
+Recovery and same-version comparison remain unimplemented. Source inspection
 informs the candidate protocol; CI wire captures determine the actual contract.
 
 ```bash

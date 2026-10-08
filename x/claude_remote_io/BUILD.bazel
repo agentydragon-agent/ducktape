@@ -32,6 +32,7 @@ py_test(
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//aiohttp",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
