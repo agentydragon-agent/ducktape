@@ -36,4 +36,3 @@ def _write_frames(diagnostics: Path, name: str, frames: list[bytes]) -> None:
     diagnostics.mkdir(parents=True, exist_ok=True)
     for index, frame in enumerate(frames):
         (diagnostics / f"{name}.attempt{index}.png").write_bytes(frame)
-

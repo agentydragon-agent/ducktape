@@ -1,8 +1,8 @@
 """Render-health checks + PR-visuals publication for each casino view.
 
 Every (view, viewport) case boots the real server, waits for load-bearing DOM,
-captures once, and fails on any browser page error. The
-rendered PNGs plus a `visual-review.json` manifest go to undeclared outputs,
+captures once, and fails on any browser page error. The rendered PNGs plus a
+`visual-review.json` manifest go to undeclared outputs,
 where trusted CI (`devinfra/pr_visuals/publisher.py` via the "Publish PR
 visuals" workflow) publishes them as a browsable bundle, diffs them against the
 merge-base baseline, and comments on the PR.
