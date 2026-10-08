@@ -831,21 +831,25 @@ current container correctness work and ordinary Sandbox Service extraction.
 
 ### `THREAD_EVENT_CONTINUITY` — one runner-owned Thread Event log through harness resume
 
-**Identity decision:** a Thread is a fold over a logical Session's Event log, plus
-operator UI metadata; it is not a second execution or Event source. Today the app
-mints a UUID `thread_id` on first sight of `(sandbox, session_id)`, where the runner's
-client-chosen `session_id` is a string scoped by Sandbox. A suspend/resume on the
-same retained storage reopens that **same Session ID** and Event sequence; a new
-harness process is not a new Session. If one Thread is always the view of exactly
-one durable logical Session, prefer one globally unique canonical ID for both.
-This does not collapse their different interfaces or metadata: access to a live
-runner is still distinct from authorization to read retained history.
-For a disposable Sandbox, decide whether restoring the runner journal and native
-state preserves that same logical Session and ID across Sandbox incarnations; store
-the Sandbox and process incarnations as associations/provenance instead. If a later
-feature truly combines multiple independently created Sessions into one Thread, then
-retain separate IDs and an explicit mapping rather than silently changing the model.
-Existing IDs/URLs and non-UUID runner Session IDs need a planned migration or aliases.
+**Identity choice for one-Session/one-Thread:** a Thread is a fold over one logical
+Session's Event log, plus operator UI metadata; it is not a second execution or Event
+source. Existing `agentplane/runner/test_restart.py` crash and SIGTERM cases reopen
+the **same Session ID**, resume the native harness, and assert one contiguous Event
+sequence. `agentplane/acceptance/test_suspend_resume.py` also resumes both harnesses
+after Pod removal on retained storage. No further harness experiment is needed to
+establish this same-storage identity behavior. Choose one globally unique canonical
+UUID for new logical Sessions and their Thread views. This does not collapse their
+different interfaces or metadata: access to a live runner remains distinct from
+authorization to read retained history. Sandbox, runner process, and native harness
+identities remain separate. A future disposable Sandbox restores that same logical
+Session ID only if it restores and fences its complete runner journal and native state;
+portable-state/cache tests gate that additional claim, not the shared-ID choice.
+Today runner `session_id` is a client-chosen string scoped by Sandbox, while the app
+mints a distinct UUID Thread ID on first sight. Preserve existing Thread URLs and
+archive IDs in a planned cutover with explicit legacy aliases/mappings and a strategy
+for existing runner state; do not silently rekey retained native files or combine
+multiple independent Session histories under one ID. A future multi-Session Thread
+would require a separate explicit model and migration, not delay this one-to-one case.
 
 **Identity/storage cutover:** implement
 [one high-water mark per Event log](../docs/thread_layering.md#one-event-high-water-mark-per-log-across-harness-sessions):
@@ -929,7 +933,7 @@ an arbitrary forwarded caller header. Moving the Event archive does not itself m
 native harness state portable.
 
 **Migration gate:** define one durable archive authority and a staged, observable
-transfer of existing Session Event prefixes, source-to-Thread mappings, grants,
+transfer of existing Session Event prefixes, canonical IDs and legacy mappings, grants,
 feeds, and cursor/high-water state. Multiple ingester replicas can cooperate only
 with per-log claim/fencing or validated idempotent replay; there must not be two
 independent archive owners. Transfer fold rows/checkpoints only if fold ownership

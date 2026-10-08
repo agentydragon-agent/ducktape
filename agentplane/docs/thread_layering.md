@@ -87,18 +87,22 @@ a “session”; it already spans process restarts. That existing name does not 
 the target product Thread/incarnation relationship. The identity cutover must make the
 mapping explicit without duplicating the log's static Sandbox on each association.
 
-A Thread is a view/fold of a durable logical Session's Event log, with its own
+A Thread is a view/fold of one durable logical Session's Event log, with its own
 operator-set presentation; it is not a second execution source. Today the app mints
 a UUID for its Event-log/Thread view on first sight of a runner Session identified by
 `(sandbox, session_id)`. A suspend/resume on retained storage reuses that Session ID,
 native conversation, and Event sequence; a fresh harness process is an incarnation,
-not another Session. If the one-Thread-per-log relationship remains invariant, one
-globally unique stable ID could name both the logical Session and its Thread view.
-Sharing an ID does not give a Session caller permission to read the archive, and the
-Sandbox/process incarnations still need separate identities. A portable runtime must
-restore the same journal and native state before claiming it resumes the same logical
-Session in a new Sandbox; if a future Thread instead spans several independent
-Sessions, model that relationship explicitly rather than reusing one Session ID.
+not another Session. Runner restart tests verify the identical ID and contiguous
+Event prefix after crash and SIGTERM; the Sandbox suspend/resume acceptance exercises
+both harnesses after Pod replacement. For the one-Thread-per-Session model, adopt one
+globally unique stable ID for the logical Session and its Thread view. Sharing an ID
+does not give a live Session caller permission to read the archive; Sandbox, process,
+and native harness identities remain separate. A portable runtime may retain this
+ID across Sandboxes only if it restores the same fenced journal and native state;
+separate copied-state tests gate that claim. Converting today's distinct UUID and
+sandbox-scoped string IDs requires an explicit legacy mapping/state migration. A
+future multi-Session Thread would need a new explicit model rather than overloading
+this one-to-one identity.
 
 A runner's Event sequence goes into a Thread but is not itself the Thread. The app mints
 the Event log when it first sees a runner session and copies the runner's Events into it, along
