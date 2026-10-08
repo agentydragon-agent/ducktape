@@ -152,11 +152,15 @@ This is source evidence for a promising path, not an app-server wire assertion o
 v1 baseline automatically restores its children. Characterize unloaded identity, historical outcome,
 and active execution separately; a loaded-thread list need not enumerate all known children.
 
-The parameterized completed-child scenarios now also probe a clean parent exit and fresh-process
-resume. They query `TaskOutput` or v1 `wait_agent` without reactivating the child and retain both
-native traces. Their initial expectations are missing task / not-found despite retained parent
-history; CI must establish or correct those expectations from native evidence. This does not yet
-cover crash recovery, active children, v2, or RemoteIO.
+The parameterized completed-child scenarios also probe a clean parent exit and fresh-process
+resume. Both passed on commit `03596ef8` in
+[CI](https://github.com/agentydragon/ducktape/commit/03596ef86d09913a11f521a69640e129cf60fea9/checks).
+Parent model history retains the completed result, but querying the old child without reactivation
+returns a missing-task error from Claude `TaskOutput` and `not_found` from Codex v1 `wait_agent`.
+Codex also exposes `notFound` in the native collaboration item's `agentsStates`. Claude emits no
+new `task_notification` during the tested resume/input/query sequence; the fixture's append-only
+trace must be sliced at the process boundary to avoid counting first-process notifications as replay.
+These observations cover neither crash recovery nor active children, v2, or RemoteIO.
 
 ### Initial executable coverage
 
