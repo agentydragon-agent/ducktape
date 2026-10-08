@@ -245,7 +245,7 @@ the scenario under test; a bridge that turns any of these on must widen the rost
   `request_user_input`, `get_goal`, `create_goal`, `update_goal`).
 - **Multi-agent / subagents**: Default scenarios omit Claude `Agent`/`Task` and set Codex
   `features.multi_agent = false`. The opt-in cases in each harness's `test_tools.py` exercise one
-  child tool round trip; the [characterization matrix](../../plans/native_subagent_sessions.md)
+  child tool round trip; the [characterization matrix](../../plans/native_session_discovery.md#matrix)
   tracks the remaining discovery, forwarding, and recovery coverage.
   `parent_tool_use_id` is asserted; `subAgentActivity` remains unexercised.
 - **Web search and image viewing**: Codex `web_search = "disabled"`, `features.view_image = false`;
