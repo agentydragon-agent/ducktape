@@ -58,7 +58,7 @@ mutations. A `read` grant does not imply eventual `send` or `create` authority.
 Sessions in one Sandbox share its filesystem, ServiceAccount, working directories and
 potentially secrets. A filtered archive API cannot claim to isolate two co-resident
 Sessions of different compartments. Assign a Sandbox trust domain before opening its
-first classified Session and refuse incompatible Opens from *any* caller, including
+first classified Session and refuse incompatible Opens from _any_ caller, including
 direct Sandbox Service users and races on different service replicas. A Sandbox may
 contain multiple Sessions within that domain, but matching compartments alone do not
 prove that differently privileged work can safely share credentials or files.
