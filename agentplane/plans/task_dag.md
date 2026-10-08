@@ -747,31 +747,36 @@ For each harness, add a copied-state variant with an isolated new home/workspace
 capture the model request at the mock endpoint. Use a controlled, non-sensitive
 multi-turn prefix with tool interactions and reasoning items where exposed. Stop the
 old process, copy only its documented or observed native session artifacts to the
-isolated test workspace, and issue native resume plus one new turn. Compare the actual
-outgoing model-request prefix with same-process continuation and a cold-start control,
-including opaque/cacheable reasoning state if observable. Record byte/structural
-differences rather than guessing from rendered transcripts. A mock response's
-cache-usage fields cannot prove a real provider cache hit: if cheap warm continuation
-requires that claim, run a separate, bounded real-provider usage probe at the same
-model and within the cache TTL, and distinguish unavailable metrics from a
-demonstrated hit. Preserve redacted request/usage evidence and exact artifact
-inventory. Do not manufacture old reasoning content from an app Event archive.
+isolated test workspace, and issue native resume plus one new turn. Compare the
+original and resumed model requests against each provider's current
+documented cache-eligibility rules: model and relevant settings, system/tools/messages
+and their ordering, cache boundaries/controls, cache key where applicable, and
+opaque/cacheable reasoning state where exposed. Assert that the resumed request retains
+the eligible prior prefix (apart from the new turn); compare with same-process and cold
+start controls. Extend the mock request capture for cache-relevant headers if needed.
+A mock provider cannot report a real cache hit, but deterministic request-shape
+assertions are the acceptance criterion here; do not require a live-provider usage
+probe or treat cache misses from one real invocation as proof of a changed prefix.
+Record byte/structural differences and the exact artifact inventory rather than
+inferring eligibility from a rendered transcript. Do not manufacture old reasoning
+content from an app Event archive.
 
 - **`CLAUDE_FRESH_RESUME_CACHE_SPIKE`:** test Claude Code's native saved-session resume
   into a fresh CLI process with both unchanged local state and a copied-state target.
   Pin whether its continued request carries the same cacheable user/assistant/tool and
-  reasoning prefix; test provider-reported cache hits separately from mock-model CI.
+  reasoning prefix and cache boundary/controls under documented eligibility rules.
 - **`CODEX_FRESH_RESUME_CACHE_SPIKE`:** test Codex app-server's native thread resume in
   a fresh process with the same two state placements. Pin which persisted history and
-  reasoning/opaque items its continued request uses; test actual provider cache usage
-  separately from mock-model CI. Do not infer prefix equivalence from a successful
+  reasoning/opaque items its continued request uses and whether the prompt-cache key
+  and prefix remain eligible. Do not infer equivalence from a successful
   `thread/resume` reply.
 
-A full cache miss, loss of reasoning continuity, or absent metrics is a **finding** for
-that harness, not a license to invent replay or bulldoze past a native limitation. If
-cheap warm continuation cannot be demonstrated, gate the corresponding on-demand
-suspend/resume feature and retain a running/retained-volume option until viable native
-support exists. Neither harness's result blocks the other's investigation.
+A changed cacheable prefix, lost reasoning continuity, or missing eligibility signals
+is a **finding** for that harness, not a license to invent replay or bulldoze past a
+native limitation. If documented cache eligibility cannot be demonstrated, gate the
+corresponding on-demand suspend/resume feature and retain a running/retained-volume
+option until viable native support exists. Neither harness's result blocks the other's
+investigation.
 
 ### `SANDBOX_LIFECYCLE_DURABILITY` — preserve state through suspension and deletion
 
