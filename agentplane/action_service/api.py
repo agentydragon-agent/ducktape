@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated, cast
@@ -111,6 +111,19 @@ IDEMPOTENCY_KEY_FILTER = (
 
 def _sse_json(value: list[ActionRequestView]) -> bytes:
     return json.dumps([item.model_dump(mode="json") for item in value], separators=(",", ":")).encode()
+
+
+def _stream_operator_authorized(
+    principal: OperatorPrincipal,
+    credentials: HTTPAuthorizationCredentials | None,
+    authenticator: OperatorAuthenticator,
+) -> Callable[[], Awaitable[bool]]:
+    """Recheck stream authorization on every snapshot and keepalive, not just at connect time."""
+
+    async def authorized() -> bool:
+        return credentials is not None and await authenticator.authenticate(credentials.credentials) == principal
+
+    return authorized
 
 
 def _service(request: Request) -> ActionService:
@@ -409,9 +422,6 @@ def create_app(
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
         authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
     ) -> StreamingResponse:
-        async def authorized() -> bool:
-            return credentials is not None and await authenticator.authenticate(credentials.credentials) == principal
-
         async def read() -> bytes:
             return json.dumps(
                 [
@@ -422,7 +432,9 @@ def create_app(
                 separators=(",", ":"),
             ).encode()
 
-        return snapshot_stream(updates.subscribe_mcp_health, read, authorized)
+        return snapshot_stream(
+            updates.subscribe_mcp_health, read, _stream_operator_authorized(principal, credentials, authenticator)
+        )
 
     @app.get("/v1/action-groups/{group_key}/actions/{action_key}", response_model=ActionView)
     async def get_action(
@@ -480,13 +492,15 @@ def create_app(
         authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
         state: Annotated[ActionState | None, Query()] = None,
     ) -> StreamingResponse:
-        async def authorized() -> bool:
-            return credentials is not None and await authenticator.authenticate(credentials.credentials) == principal
-
         async def read() -> bytes:
             return _sse_json(await action_service.list_requests(principal, states=(state,) if state else ()))
 
-        return snapshot_stream(action_updates.subscribe_all, read, authorized, changed_event=True)
+        return snapshot_stream(
+            action_updates.subscribe_all,
+            read,
+            _stream_operator_authorized(principal, credentials, authenticator),
+            changed_event=True,
+        )
 
     @app.get("/v1/operator/action-requests/{request_id}", response_model=ActionRequestView)
     async def operator_get_request(
@@ -531,13 +545,12 @@ def create_app(
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
         authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
     ) -> StreamingResponse:
-        async def authorized() -> bool:
-            return credentials is not None and await authenticator.authenticate(credentials.credentials) == principal
-
         async def read() -> bytes:
             return json.dumps(await list_push_subscriptions(principal), separators=(",", ":")).encode()
 
-        return snapshot_stream(action_updates.subscribe_push, read, authorized)
+        return snapshot_stream(
+            action_updates.subscribe_push, read, _stream_operator_authorized(principal, credentials, authenticator)
+        )
 
     @app.post("/v1/operator/push/subscriptions", status_code=status.HTTP_204_NO_CONTENT)
     async def register_push_subscription(
@@ -619,15 +632,14 @@ def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
         authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
     ) -> StreamingResponse:
-        async def authorized() -> bool:
-            return credentials is not None and await authenticator.authenticate(credentials.credentials) == principal
-
         async def read() -> bytes:
             return json.dumps(
                 [row.model_dump(mode="json") for row in await authority.list()], separators=(",", ":")
             ).encode()
 
-        return snapshot_stream(updates.subscribe_connections, read, authorized)
+        return snapshot_stream(
+            updates.subscribe_connections, read, _stream_operator_authorized(principal, credentials, authenticator)
+        )
 
     @app.get("/v1/operator/connections/{connection_id}", dependencies=[Depends(_operator)])
     async def connection(connection_id: UUID) -> Connection:
@@ -723,9 +735,6 @@ def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
     ) -> StreamingResponse:
         next_expiry: datetime | None = None
 
-        async def authorized() -> bool:
-            return credentials is not None and await authenticator.authenticate(credentials.credentials) == principal
-
         async def read() -> bytes:
             nonlocal next_expiry
             rows = await authority.statuses()
@@ -740,7 +749,12 @@ def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
             )
             return json.dumps([row.model_dump(mode="json") for row in rows], separators=(",", ":")).encode()
 
-        return snapshot_stream(updates.subscribe_mcp_linkages, read, authorized, refresh_at=lambda: next_expiry)
+        return snapshot_stream(
+            updates.subscribe_mcp_linkages,
+            read,
+            _stream_operator_authorized(principal, credentials, authenticator),
+            refresh_at=lambda: next_expiry,
+        )
 
     @app.post("/v1/operator/mcp-servers/{server_id}/linkage/start", response_model=McpLinkageStartView)
     async def linkage_start(
