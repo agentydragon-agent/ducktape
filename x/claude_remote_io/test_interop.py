@@ -28,7 +28,13 @@ def uploaded_frames(upload: dict[str, Any]) -> list[dict[str, Any]]:
     return [event["payload"] for event in upload["body"]["events"]]
 
 
-async def finish_child(model: AnthropicMessages, peer: RemoteIOServer, session_id: str) -> str:
+async def drive_child(
+    model: AnthropicMessages,
+    peer: RemoteIOServer,
+    session_id: str,
+    command_id: str,
+    crash_process: asyncio.subprocess.Process | None = None,
+) -> str:
     async with await model.await_next_request() as first, await model.await_next_request() as second:
         parent, child = (first, second) if first.request.tool_results else (second, first)
         (launched,) = parent.request.tool_results
@@ -40,6 +46,23 @@ async def finish_child(model: AnthropicMessages, peer: RemoteIOServer, session_i
         await peer.wait_for(
             lambda upload: any(frame.get("result") == "PARENT_WAITING" for frame in uploaded_frames(upload))
         )
+        if crash_process is not None:
+            started = await peer.wait_for(
+                lambda upload: any(frame.get("subtype") == "task_started" for frame in uploaded_frames(upload))
+            )
+            (declaration,) = [frame for frame in uploaded_frames(started) if frame.get("subtype") == "task_started"]
+            task_id = declaration["task_id"]
+            assert isinstance(task_id, str)
+            await peer.wait_for(
+                lambda upload: (
+                    upload["path"] == "worker/events/delivery"
+                    and {"event_id": command_id, "status": "processed"} in upload["body"]["updates"]
+                )
+            )
+            crash_process.kill()
+            assert await crash_process.wait() < 0
+            await child.wait_client_closed()
+            return task_id
         await child.send(*sse.message_stream([sse.Text("REMOTE_CHILD_DONE")], model=MODEL).events)
     async with await model.await_next_request() as exchange:
         assert "REMOTE_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
@@ -76,9 +99,10 @@ async def finish_child(model: AnthropicMessages, peer: RemoteIOServer, session_i
     return task_id
 
 
-@pytest.mark.parametrize("scenario", ["single", "child", "reconnect", "completed-child-crash"])
+@pytest.mark.parametrize("scenario", ["single", "child", "reconnect", "completed-child-crash", "active-child-crash"])
 async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
-    subagent = scenario in {"child", "completed-child-crash"}
+    subagent = scenario in {"child", "completed-child-crash", "active-child-crash"}
+    active_crash = scenario == "active-child-crash"
     reconnect = scenario == "reconnect"
     logs = undeclared_outputs_dir() / f"remote-io-{scenario}"
     logs.mkdir()
@@ -187,17 +211,20 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                             await exchange.send(*sse.message_stream(blocks, model=MODEL).events)
                         agent_id = None
                         if subagent:
-                            agent_id = await finish_child(model, peer, session_id)
+                            agent_id = await drive_child(
+                                model, peer, session_id, command_id, process if active_crash else None
+                            )
+                        expected_result = "PARENT_WAITING" if active_crash else "REMOTE_IO_OK"
                         result_upload = await peer.wait_for(
                             lambda upload: any(
-                                frame.get("result") == "REMOTE_IO_OK" for frame in uploaded_frames(upload)
+                                frame.get("result") == expected_result for frame in uploaded_frames(upload)
                             )
                         )
                         (result,) = [
-                            frame for frame in uploaded_frames(result_upload) if frame.get("result") == "REMOTE_IO_OK"
+                            frame for frame in uploaded_frames(result_upload) if frame.get("result") == expected_result
                         ]
                         assert result["is_error"] is False
-                        assert result["result"] == "REMOTE_IO_OK"
+                        assert result["result"] == expected_result
                         assert result["session_id"] == session_id
                         await peer.wait_for(
                             lambda upload: (
@@ -241,10 +268,11 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                                 )
                                 == 1
                             )
-                        if scenario == "completed-child-crash":
+                        if scenario in {"completed-child-crash", "active-child-crash"}:
                             assert agent_id is not None
-                            process.kill()
-                            assert await process.wait() < 0
+                            if process.returncode is None:
+                                process.kill()
+                                assert await process.wait() < 0
                             await peer.begin_incarnation()
                             environment["CLAUDE_CODE_WORKER_EPOCH"] = str(peer.epoch)
                             resumed_command = command.copy()
@@ -278,7 +306,19 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                                 }
                             )
                             async with await model.await_next_request() as exchange:
-                                assert "REMOTE_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
+                                assert (
+                                    "Read the old child's result without restarting it."
+                                    in exchange.request.texts("user")[-1]
+                                )
+                                if active_crash:
+                                    assert "PARENT_WAITING" in exchange.request.texts("assistant")
+                                    assert not any(
+                                        frame.get("subtype") == "task_notification"
+                                        for upload in peer.uploads
+                                        for frame in uploaded_frames(upload)
+                                    )
+                                else:
+                                    assert "REMOTE_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
                                 assert "TaskOutput" not in exchange.request.tool_names
                                 await exchange.send(
                                     *sse.message_stream(
@@ -303,7 +343,7 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                                 )
                             )
                             assert not any(
-                                frame.get("subtype") == "task_notification"
+                                frame.get("subtype") in {"task_started", "task_notification"}
                                 for upload in peer.uploads
                                 if upload["body"]["worker_epoch"] == 2
                                 for frame in uploaded_frames(upload)

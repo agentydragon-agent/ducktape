@@ -37,7 +37,12 @@ child attribution, unavailable `TaskOutput`, retained parent history, and absenc
 notifications match the measured RemoteIO behavior. That revision's build/tests passed but its
 pre-commit formatting check required correction. These cases establish no completed-child fate
 recovery advantage for RemoteIO. They do not compare active-child fate or server-side hydration.
-RemoteIO clean exit, active-child crash, and server hydration remain unimplemented. Source inspection
+An active-child crash probe is awaiting CI: it holds the child model request unanswered, waits
+for the parent turn and its processed receipt, kills the process, observes model-connection closure,
+and resumes with retained files but empty server history. The first resumed model request must be
+for the genuine parent input, not restarted child work. Lifecycle absence is asserted only through
+that bounded input/query sequence; it does not prove the child can never be recovered.
+RemoteIO clean exit and server hydration remain unimplemented. Source inspection
 informs the candidate protocol; CI wire captures determine the actual contract.
 
 ```bash
