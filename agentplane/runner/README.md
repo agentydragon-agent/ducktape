@@ -155,8 +155,10 @@ shared flake tool definitions and the repo-configured Gazelle. This includes `bb
 Bazelisk, pre-commit and the pinned formatters without duplicating their package/version list.
 The generic runner remains unchanged.
 
-The image workflow exercises representative repository hooks as the image's non-root user,
-without network access. That proves local tooling, not authenticated BuildBuddy execution;
+`nix build .#checks.x86_64-linux.runner-ducktape-tools` exercises representative repository
+hooks in a sandboxed Nix derivation, using the exact tool closure included in the image. The
+image workflow runs that check and a thin non-root container smoke test for the assembled
+filesystem, entrypoint and tool availability. These prove local tooling, not authenticated BuildBuddy execution;
 a deployed sandbox must separately prove the normal proxy/CA/credential route for `bbr`.
 No credentials are embedded in the image. Builds/tests should use RBE; adding tools does not
 isolate their processes or memory from the harness. VM-backed resource/process isolation remains
