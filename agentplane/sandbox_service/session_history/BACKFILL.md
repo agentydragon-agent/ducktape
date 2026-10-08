@@ -9,14 +9,14 @@ runner locator; legacy rows without a reliably recorded Sandbox UID get `NULL`
 and are **not** eligible for shadow runner polling. Do not fabricate a UID based
 only on a currently matching Sandbox name.
 
-This is not a continuously running reconciler. The example Kubernetes Job at
-`agentplane/plans/session_history_backfill_job.yaml` is
-**deliberately excluded** from Flux's kustomization: it must not launch when
-merely merging/deploying an image. Before using it, pin a built image, verify
-Sandbox Service history schema migration and ingress defaults, and review DB
-Secret names and network grants for that cluster. Give the Job a bounded retry budget
-for infrastructure failures, but fail immediately on importer data conflicts (exit
-code 2 via `podFailurePolicy`). This is an import Job, not a Sandbox bootstrap retry.
+This is not a continuously running reconciler. The one-shot testing and staging
+GitOps Jobs were deliberately deployed only during the migration and removed
+after validation; there is no standing backfill Job. Any future repair requires
+a separately reviewed, explicitly named Job with a pinned current image and
+verified database Secret names, schema, and network policy. Give the Job a bounded
+retry budget for infrastructure failures, but fail immediately on importer data
+conflicts (exit code 2 via `podFailurePolicy`). This is an import Job, not a Sandbox
+bootstrap retry.
 
 Run the Job while app ingestion remains active. It takes a bounded high-water
 cursor **per session**, committing every 128 Events. A restarted Job begins with
