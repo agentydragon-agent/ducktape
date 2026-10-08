@@ -94,7 +94,9 @@ flowchart TB
     THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
     THREAD_ARCHIVE_OWNERSHIP["Deferred service boundary<br/>move Thread archive and read API out of app<br/>durable beyond Sandbox lifecycle"]:::decision
     SANDBOX_COMPARTMENT_BOUNDARY["Priority trust-boundary decision<br/>co-resident Threads share filesystem and SA<br/>no false compartment isolation"]:::decision
-    THREAD_PORTABLE_STATE["Deferred portability design<br/>preserve native session and runner journal<br/>outside disposable Sandbox storage"]:::decision
+    THREAD_PORTABLE_STATE["Deferred shared portability contract<br/>snapshot, fence, and restore runner/native state<br/>outside disposable Sandbox storage"]:::decision
+    CLAUDE_PORTABLE_STATE["Conditional Claude implementation<br/>native snapshot/restore<br/>only on supported evidence"]:::future
+    CODEX_PORTABLE_STATE["Conditional Codex implementation<br/>native snapshot/restore<br/>only on supported evidence"]:::future
     THREAD_ON_DEMAND_RUNTIME["Deferred runtime lifecycle<br/>new Sandbox on activity/notice<br/>restore and resume a durable Thread"]:::future
     HOSTED_THREAD_SURFACES["Deferred design<br/>read and control surfaces for a hosted Thread<br/>beyond today's Sandbox-bound view"]:::future
     THREAD_READ_POLICY["Priority design<br/>explicit SA access to selected Thread history<br/>evaluate Thread compartments"]:::active
@@ -135,8 +137,17 @@ flowchart TB
     NO_MANUAL_REFRESH["Planned principle<br/>no page in the app needs a Refresh button<br/>push (WS or SSE) everywhere, not just Sandboxes/Actions"]:::future
 
     THREAD_OUTLIVES_SANDBOX --> AG
+    SANDBOX_COMPARTMENT_BOUNDARY --> THREAD_READ_POLICY
     THREAD_OUTLIVES_SANDBOX --> THREAD_ON_DEMAND_RUNTIME
     THREAD_PORTABLE_STATE --> THREAD_ON_DEMAND_RUNTIME
+    THREAD_PORTABLE_STATE --> CLAUDE_PORTABLE_STATE
+    THREAD_PORTABLE_STATE --> CODEX_PORTABLE_STATE
+    CLAUDE_FRESH_RESUME_CACHE_SPIKE --> CLAUDE_PORTABLE_STATE
+    CODEX_FRESH_RESUME_CACHE_SPIKE --> CODEX_PORTABLE_STATE
+    CLAUDE_PORTABLE_STATE -. Claude runtime .-> THREAD_ON_DEMAND_RUNTIME
+    CODEX_PORTABLE_STATE -. Codex runtime .-> THREAD_ON_DEMAND_RUNTIME
+    SANDBOX_LIFECYCLE_DURABILITY --> THREAD_ON_DEMAND_RUNTIME
+    SANDBOX_COMPARTMENT_BOUNDARY --> THREAD_ON_DEMAND_RUNTIME
     THREAD_EVENT_CONTINUITY --> THREAD_ON_DEMAND_RUNTIME
     HOSTED_THREAD_SURFACES --> AG
     THREAD_READ_POLICY --> AG
@@ -948,9 +959,13 @@ snapshots. Retained artifacts must not include reusable Pod/ServiceAccount crede
 or silently widen their future access. A migration may intentionally leave legacy
 Threads read-only or require an opt-in destructive transition, but must not claim
 seamless resume from display history.
-Implementation for each harness depends on its own `CLAUDE_FRESH_RESUME_CACHE_SPIKE` or
-`CODEX_FRESH_RESUME_CACHE_SPIKE` evidence; no global assumption that both support cheap
-resume. Keep this separate from `SANDBOX_LIFECYCLE_DURABILITY` (archive before deletion).
+
+**Per-harness implementation nodes:** `CLAUDE_PORTABLE_STATE` and `CODEX_PORTABLE_STATE`
+apply this shared contract only after their respective fresh-process cache-eligibility
+spikes establish support. Neither harness gates the other's implementation. An
+unsupported harness remains on retained storage; do not claim portable resume for it.
+Keep the shared contract separate from `SANDBOX_LIFECYCLE_DURABILITY` (archive before
+deletion), which must be complete before a disposable runtime removes managed storage.
 
 ### `THREAD_ON_DEMAND_RUNTIME` — disposable Sandbox for a durable Thread
 
@@ -966,8 +981,9 @@ are UID-pinned to a Sandbox/session and retire after its removal; a deleted-Sand
 Thread needs a new durable address and delivery authority, not a claim that those inboxes
 already wake it. Test crashes and replica races through suspension, deletion,
 reprovisioning, and notification wakeup. Ship warm continuation only for a harness
-whose own fresh-process spike proves native history and affordable prefix-cache behavior;
-otherwise stop at a documented unsupported outcome rather than replaying a display transcript.
+whose own portable-state implementation passed its native history and documented
+cache-eligibility tests; otherwise stop at a documented unsupported outcome rather
+than replaying a display transcript.
 
 This is not a prerequisite for near-term `RUNNER_IMAGE_ROLLOUT`: first test the simpler
 pause/patch/restart-with-the-same-storage route for updating an existing Sandbox image.
