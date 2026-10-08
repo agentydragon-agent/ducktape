@@ -1,16 +1,18 @@
 """Workload-authenticated HTTP surface; no implicit current session and no destructive reads."""
 
 import asyncio
+import json
 import logging
 import traceback
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager, suppress
+from datetime import UTC, datetime
 from typing import Annotated, cast
 from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import select
 
 from agentplane.notification_service.models import (
@@ -76,10 +78,7 @@ async def health(request: Request) -> dict[str, str]:
     return {"status": "alive"}
 
 
-@router.get("/operator/v1/sandboxes/{namespace}/{name}/notifications")
-async def sandbox_notifications(
-    namespace: str, name: str, uid: str, caller: Caller, service: Notifications
-) -> SandboxNotificationStatus:
+def _authorize_sandbox_status(namespace: str, caller: WorkloadPrincipal, service: Service) -> None:
     if (
         caller.namespace != service.sandboxes.namespace
         or caller.service_account_name != service.operator_reader_account
@@ -88,12 +87,67 @@ async def sandbox_notifications(
         raise HTTPException(403, "operator diagnostics not authorized")
     if namespace != caller.namespace:
         raise HTTPException(404, "sandbox not found")
+
+
+async def _sandbox_status(service: Service, namespace: str, name: str, uid: str) -> SandboxNotificationStatus:
     return await service.store.sandbox_status(
         namespace,
         name,
         uid,
         quiet_seconds=service.notice_debounce.quiet_seconds,
         max_wait_seconds=service.notice_debounce.max_wait_seconds,
+    )
+
+
+@router.get("/operator/v1/sandboxes/{namespace}/{name}/notifications")
+async def sandbox_notifications(
+    namespace: str, name: str, uid: str, caller: Caller, service: Notifications
+) -> SandboxNotificationStatus:
+    _authorize_sandbox_status(namespace, caller, service)
+    return await _sandbox_status(service, namespace, name, uid)
+
+
+async def sandbox_status_frames(service: Service, namespace: str, name: str, uid: str) -> AsyncGenerator[bytes]:
+    """Subscribe before the first snapshot; NOTIFY invalidates, canonical rows are the source."""
+    with service.store.wakeups.subscribe() as changed:
+        listener = service.store.wakeups.listener
+        generation = listener.generation
+        last: str | None = None
+        while listener.connected and listener.generation == generation:
+            changed.clear()
+            status = await _sandbox_status(service, namespace, name, uid)
+            payload = status.model_dump(mode="json")
+            # observed_at is a read timestamp, not a state change.
+            key = json.dumps(payload["inboxes"], sort_keys=True) + json.dumps(
+                [sub.expires_at <= status.observed_at for item in status.inboxes for sub in item.subscriptions]
+            )
+            if key != last:
+                yield f"event: snapshot\ndata: {json.dumps(payload)}\n\n".encode()
+                last = key
+            now = datetime.now(UTC)
+            deadlines = [
+                deadline
+                for item in status.inboxes
+                for deadline in (
+                    item.notice_due_at,
+                    *(sub.expires_at for sub in item.subscriptions if not sub.cancelled),
+                )
+                if deadline is not None and deadline > status.observed_at
+            ]
+            delay = max(0, (min(deadlines) - now).total_seconds()) if deadlines else None
+            with suppress(TimeoutError):
+                await asyncio.wait_for(changed.wait(), timeout=delay)
+
+
+@router.get("/operator/v1/sandboxes/{namespace}/{name}/notifications/stream")
+async def sandbox_notifications_stream(
+    namespace: str, name: str, uid: str, caller: Caller, service: Notifications
+) -> StreamingResponse:
+    _authorize_sandbox_status(namespace, caller, service)
+    return StreamingResponse(
+        sandbox_status_frames(service, namespace, name, uid),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache"},
     )
 
 

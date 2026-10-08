@@ -31,6 +31,16 @@ async def test_thread_notifications(view: VisualPage, app: AgentplaneFixture) ->
     await view.capture(name="thread_notifications_diagnostics")
 
 
+async def test_notification_drawer_updates_without_reopening(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+    await page.get_by_role("button", name="Notifications").click()
+    await expect(page.get_by_text("Entries after acknowledgement · 5 not acknowledged")).to_be_visible()
+    await app.publish_notification_change()
+    await expect(page.get_by_text("Entries after acknowledgement · 6 not acknowledged")).to_be_visible()
+    await expect(page.get_by_text("GitHub workflow_run · completed")).to_be_visible()
+
+
 async def test_sandbox_notifications(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox")
     page = view.page
@@ -57,7 +67,7 @@ async def test_notification_service_reconnect(view: VisualPage, app: AgentplaneF
     await app.mount_thread(IDLE_THREAD)
     page = view.page
     await page.get_by_role("button", name="Notifications").click()
-    await expect(page.get_by_role("alert")).to_contain_text("Notification service unavailable")
+    await expect(page.get_by_text("Reconnecting to notification status…")).to_be_visible()
     await view.capture(name="notification_status_unavailable")
     await app.set_notification_status_unavailable(False)
     await page.keyboard.press("Escape")
