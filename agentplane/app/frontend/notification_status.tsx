@@ -1,4 +1,4 @@
-/** Read-only operator projection: no provider payloads or acknowledgement controls. */
+/** Read-only operator projection: curated entry summaries, no raw provider payloads or acknowledgement controls. */
 import { Badge, Divider, Drawer, Group, Paper, ScrollArea, Stack, Text } from "@mantine/core";
 import { useEffect, useState, type JSX } from "react";
 
@@ -39,6 +39,8 @@ type Inbox = {
   } | null;
   unannounced_count: number;
   pending_acknowledgement_count: number;
+  pending_entries: { cursor: number; created_at: string; provider: string; summary: string }[];
+  pending_entries_more: boolean;
   notice_due_at: string | null;
   quiet_until: string | null;
   max_wait_at: string | null;
@@ -136,6 +138,8 @@ export function NotificationStatus({
                 notice,
                 unannounced_count,
                 pending_acknowledgement_count,
+                pending_entries,
+                pending_entries_more,
                 notice_due_at,
                 quiet_until,
                 max_wait_at,
@@ -195,6 +199,21 @@ export function NotificationStatus({
                       <Text size="xs" c="dimmed">
                         Next scheduled inbox work: {timestamp(next_work_at)} (may be source polling or delivery retry)
                       </Text>
+                    )}
+                    <Divider label="Entries after acknowledgement" />
+                    {pending_entries.length === 0 && (
+                      <Text size="sm" c="dimmed">No retained unacknowledged entries</Text>
+                    )}
+                    {pending_entries.map((entry) => (
+                      <Paper key={entry.cursor} withBorder p="xs">
+                        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+                          #{entry.cursor} · {entry.summary}
+                        </Text>
+                        <Text size="xs" c="dimmed">{timestamp(entry.created_at)}</Text>
+                      </Paper>
+                    ))}
+                    {pending_entries_more && (
+                      <Text size="xs" c="dimmed">Showing the first 100 retained entries after acknowledgement; more entries remain.</Text>
                     )}
                     <Divider label="Subscriptions" />
                     {subscriptions.length === 0 && (

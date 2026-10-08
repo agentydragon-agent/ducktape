@@ -17,6 +17,7 @@ async def test_thread_notifications(view: VisualPage, app: AgentplaneFixture) ->
     page = view.page
     await page.get_by_role("button", name="Notifications").click()
     await expect(page.get_by_text("2 awaiting notice")).to_be_visible()
+    await expect(page.get_by_text("GitHub check_run · completed · success", exact=False)).to_be_visible()
     await expect(page.get_by_text("runner admitted; awaiting confirmation", exact=False)).to_be_visible()
     await expect(page.get_by_text("Session s-2")).to_have_count(0)
     await view.capture()
@@ -28,6 +29,7 @@ async def test_sandbox_notifications(view: VisualPage, app: AgentplaneFixture) -
     await page.get_by_role("button", name="Notifications").click()
     await expect(page.get_by_text("Session s-2")).to_be_visible()
     await expect(page.get_by_text("Session s-3")).to_be_visible()
+    await expect(page.get_by_text("GitHub pull_request · synchronize", exact=False)).to_be_visible()
     await expect(page.get_by_text("runner unavailable", exact=False)).to_be_visible()
     await expect(page.get_by_text("debouncing", exact=False)).to_be_visible()
     await view.capture()

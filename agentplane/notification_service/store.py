@@ -20,6 +20,7 @@ from agentplane.notification_service.models import (
     EventIdentity,
     InboxPage,
     InboxStatus,
+    InboxEntrySummary,
     InboxView,
     NoticeView,
     SandboxNotificationStatus,
@@ -256,7 +257,7 @@ class Store:
     async def sandbox_status(
         self, namespace: str, name: str, uid: str, *, quiet_seconds: float, max_wait_seconds: float
     ) -> SandboxNotificationStatus:
-        """Read-only UID-pinned diagnostic projection. Never load provider payloads."""
+        """Read-only UID-pinned diagnostic projection with bounded, curated entry summaries."""
         async with self.sessions.begin() as session:
             observed = datetime.now(UTC)
             rows = (
@@ -294,6 +295,38 @@ class Store:
                         )
                     )
                 ).scalar_one()
+                pending_rows = (
+                    await session.scalars(
+                        select(Entry)
+                        .where(Entry.inbox_id == row.id, Entry.cursor > max(row.acknowledged, row.expired_through))
+                        .order_by(Entry.cursor)
+                        .limit(101)
+                    )
+                ).all()
+                summaries = []
+                for entry in pending_rows[:100]:
+                    event = _EVENT.validate_python(entry.event)
+                    if isinstance(event, ActionsEvent):
+                        # Action state is a provider-owned lifecycle value, not arbitrary result content.
+                        state = entry.payload.get("state") if entry.payload else None
+                        summary = f"Action {event.request_id} · event {event.sequence}"
+                        if isinstance(state, str):
+                            summary += f" · {state[:80]}"
+                    else:
+                        summary = f"GitHub {event.event.value}"
+                        if event.action:
+                            summary += f" · {event.action[:80]}"
+                        if event.event.value in ("check_run", "workflow_run") and entry.payload:
+                            check = entry.payload.get(event.event.value)
+                            if isinstance(check, dict):
+                                conclusion = check.get("conclusion")
+                                if isinstance(conclusion, str):
+                                    summary += f" · {conclusion[:80]}"
+                    summaries.append(
+                        InboxEntrySummary(
+                            cursor=entry.cursor, created_at=entry.created_at, provider=event.provider, summary=summary
+                        )
+                    )
                 quiet_until = last + timedelta(seconds=quiet_seconds) if last else None
                 max_wait_at = first + timedelta(seconds=max_wait_seconds) if first else None
                 due = min(quiet_until, max_wait_at) if quiet_until and max_wait_at else None
@@ -329,6 +362,8 @@ class Store:
                         ],
                         unannounced_count=unannounced,
                         pending_acknowledgement_count=pending_ack,
+                        pending_entries=summaries,
+                        pending_entries_more=pending_ack > len(summaries),
                         notice_due_at=due if wait_reason == "debouncing" else None,
                         quiet_until=quiet_until if wait_reason == "debouncing" else None,
                         max_wait_at=max_wait_at if wait_reason == "debouncing" else None,

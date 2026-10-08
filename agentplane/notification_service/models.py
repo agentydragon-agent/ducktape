@@ -120,12 +120,21 @@ class SubscriptionStatus(Model):
     next_source_check_at: datetime | None
 
 
+class InboxEntrySummary(Model):
+    cursor: int
+    created_at: datetime
+    provider: str
+    summary: str
+
+
 class InboxStatus(Model):
     inbox: InboxView
     notice: NoticeView | None
     subscriptions: list[SubscriptionStatus]
     unannounced_count: int
     pending_acknowledgement_count: int
+    pending_entries: list[InboxEntrySummary]
+    pending_entries_more: bool
     notice_due_at: datetime | None
     quiet_until: datetime | None
     max_wait_at: datetime | None

@@ -176,6 +176,15 @@ async def test_operator_status_is_read_only_and_uid_pinned(store: Store) -> None
         inbox = response.json()["inboxes"][0]
         assert inbox["unannounced_count"] == 1
         assert inbox["pending_acknowledgement_count"] == 1
+        assert inbox["pending_entries_more"] is False
+        assert [(entry["cursor"], entry["summary"]) for entry in inbox["pending_entries"]] == [
+            (1, f"Action {subscription.source.request_id} · event 1 · decision_pending")
+        ]
+        assert "payload" not in str(inbox)
+        await store.acknowledge(PRINCIPAL.account, subscription.inbox_id, 1)
+        acknowledged = (await client.get(url, params={"uid": "sandbox-uid"})).json()["inboxes"][0]
+        assert acknowledged["pending_entries"] == []
+        assert acknowledged["pending_acknowledgement_count"] == 0
         assert inbox["subscriptions"][0]["id"] == str(subscription.id)
         assert inbox["notice_wait_reason"] == "debouncing"
         assert "payload" not in str(response.json())
