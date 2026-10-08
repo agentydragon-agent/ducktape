@@ -1777,6 +1777,7 @@ const MCP_GROUPS: ActionGroupView[] = [
 
 let notificationStatusUnavailable = false;
 let notificationExtraEntry = false;
+let pushBrowserAdded = false;
 
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
@@ -2380,6 +2381,12 @@ class HarnessEventSource extends EventTarget {
         source.serve(new URL(source.url, "http://harness"));
     }
   }
+  static publishPushBrowsers(): void {
+    for (const source of this.sources) {
+      if (source.url.includes("/push/subscriptions/stream") && source.readyState === this.OPEN)
+        source.serve(new URL(source.url, "http://harness"));
+    }
+  }
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 2;
@@ -2445,6 +2452,13 @@ class HarnessEventSource extends EventTarget {
         });
       }
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
+      return;
+    }
+    if (url.pathname === "/push/subscriptions/stream") {
+      const browsers = pushBrowserAdded
+        ? [{ endpoint: "https://push.example/browser", user_agent: "Second browser", created_at: ago(0) }]
+        : [];
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(browsers) }));
       return;
     }
     if (url.pathname === "/actions/stream") {
@@ -2537,6 +2551,10 @@ const visualHarness = {
   publishNotificationChange(): void {
     notificationExtraEntry = true;
     HarnessEventSource.publishNotifications();
+  },
+  publishPushBrowser(): void {
+    pushBrowserAdded = true;
+    HarnessEventSource.publishPushBrowsers();
   },
   setNotificationStatusUnavailable(unavailable: boolean): void {
     notificationStatusUnavailable = unavailable;

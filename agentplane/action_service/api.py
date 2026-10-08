@@ -7,7 +7,6 @@ accepts either bearer scheme rather than being duplicated under `/v1/operator/..
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -75,6 +74,7 @@ from agentplane.action_service.models import (
     ServiceReaderPrincipal,
 )
 from agentplane.action_service.oauth import ActionsOAuthProxy
+from agentplane.action_service.operator_stream import snapshot_stream
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.policy_view import CallerActionPolicyView, SubjectActionPolicyView
 from agentplane.action_service.push import PushIdentity, PushSubscriptionStore
@@ -455,35 +455,13 @@ def create_app(
         authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
         state: Annotated[ActionState | None, Query()] = None,
     ) -> StreamingResponse:
-        async def body() -> AsyncIterator[bytes]:
-            # Subscribe before reading; clear before each read, never after it.
-            with action_updates.subscribe_all() as subscription:
-                changed = subscription.changed
-                while True:
-                    changed.clear()
-                    subscription.check_available()
-                    if credentials is None or await authenticator.authenticate(credentials.credentials) != principal:
-                        return
-                    snapshot = await action_service.list_requests(principal, states=(state,) if state else ())
-                    subscription.check_available()
-                    yield b"event: snapshot\ndata: " + _sse_json(snapshot) + b"\n\n"
-                    while not changed.is_set():
-                        try:
-                            async with asyncio.timeout(5):
-                                await changed.wait()
-                        except TimeoutError:
-                            subscription.check_available()
-                            if (
-                                credentials is None
-                                or await authenticator.authenticate(credentials.credentials) != principal
-                            ):
-                                return
-                            subscription.check_available()
-                            yield b": keepalive\n\n"
-                    subscription.check_available()
-                    yield b"event: changed\ndata: {}\n\n"
+        async def authorized() -> bool:
+            return credentials is not None and await authenticator.authenticate(credentials.credentials) == principal
 
-        return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+        async def read() -> bytes:
+            return _sse_json(await action_service.list_requests(principal, states=(state,) if state else ()))
+
+        return snapshot_stream(action_updates.subscribe_all, read, authorized, changed_event=True)
 
     @app.get("/v1/operator/action-requests/{request_id}", response_model=ActionRequestView)
     async def operator_get_request(
@@ -520,6 +498,21 @@ def create_app(
             {"endpoint": row.endpoint, "user_agent": row.user_agent, "created_at": row.created_at.isoformat()}
             for row in await push_subscriptions.list_for(principal)
         ]
+
+    @app.get("/v1/operator/push/subscriptions/stream")
+    async def push_subscriptions_stream(
+        principal: Annotated[OperatorPrincipal, Depends(_operator)],
+        action_updates: Annotated[ActionUpdates, Depends(_updates)],
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
+        authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
+    ) -> StreamingResponse:
+        async def authorized() -> bool:
+            return credentials is not None and await authenticator.authenticate(credentials.credentials) == principal
+
+        async def read() -> bytes:
+            return json.dumps(await list_push_subscriptions(principal), separators=(",", ":")).encode()
+
+        return snapshot_stream(action_updates.subscribe_push, read, authorized)
 
     @app.post("/v1/operator/push/subscriptions", status_code=status.HTTP_204_NO_CONTENT)
     async def register_push_subscription(

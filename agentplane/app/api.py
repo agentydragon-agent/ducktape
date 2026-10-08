@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, nullcontext
 from pathlib import Path as FilePath
 from typing import Annotated
@@ -679,6 +679,51 @@ async def push_config(client: OperatorActions) -> dict[str, str | None]:
 @push_router.get("/subscriptions")
 async def push_subscriptions(client: OperatorActions) -> list[dict[str, object]]:
     return await client.push_subscriptions()
+
+
+def _operator_resource_stream(
+    request: Request,
+    shutdown: Shutdown,
+    updates: Updates,
+    sessions: OperatorSessions,
+    source: Callable[[], AbstractAsyncContextManager[AsyncIterator[bytes]]],
+    label: str,
+) -> StreamingResponse:
+    """Proxy an operator SSE resource, renewing upstream tokens and ending on logout."""
+    session_id = operator_session_row(request).id
+
+    async def session_over() -> None:
+        await sessions.until_ended(session_id, updates.changes[Channel.OPERATOR_SESSIONS])
+
+    async def upstream() -> AsyncIterator[bytes]:
+        while True:
+            delivered = False
+            async with source() as chunks:
+                async for chunk in chunks:
+                    delivered = True
+                    yield chunk
+            if not delivered:
+                return
+
+    async def body() -> AsyncIterator[bytes]:
+        try:
+            async for chunk in shutdown.until(until_done(upstream(), session_over)):
+                if await request.is_disconnected():
+                    return
+                yield chunk
+        except httpx.HTTPError, httpx2.TransportError, OperatorFederationError:
+            logger.warning("%s stream interrupted", label, exc_info=True)
+
+    return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
+@push_router.get("/subscriptions/stream")
+async def push_subscriptions_stream(
+    request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions
+) -> StreamingResponse:
+    return _operator_resource_stream(
+        request, shutdown, updates, sessions, client.stream_push_subscriptions, "Push settings"
+    )
 
 
 @push_router.post("/subscriptions", status_code=204)

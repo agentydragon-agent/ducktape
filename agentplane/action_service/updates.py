@@ -18,6 +18,7 @@ from sqlalchemy.engine import make_url
 from agentplane.postgres.listener import PostgresListener
 
 CHANNEL = "agentplane_action_updates"
+PUSH_CHANNEL = "agentplane_push_updates"
 logger = logging.getLogger(__name__)
 
 
@@ -46,9 +47,10 @@ class ActionUpdates:
     def __init__(self, database_url: str) -> None:
         self._subscribers: dict[UUID, set[asyncio.Event]] = {}
         self._all_subscribers: set[asyncio.Event] = set()
+        self._push_subscribers: set[asyncio.Event] = set()
         self.listener = PostgresListener(
             make_url(database_url),
-            channels=(CHANNEL,),
+            channels=(CHANNEL, PUSH_CHANNEL),
             application_name="agentplane-action-updates",
             notified=self._notified,
             invalidated=self._wake_all,
@@ -76,7 +78,20 @@ class ActionUpdates:
         finally:
             self._all_subscribers.discard(subscription.changed)
 
-    def _notified(self, _channel: str, payload: object) -> None:
+    @contextmanager
+    def subscribe_push(self) -> Iterator[ActionSubscription]:
+        subscription = ActionSubscription(self.listener)
+        self._push_subscribers.add(subscription.changed)
+        try:
+            yield subscription
+        finally:
+            self._push_subscribers.discard(subscription.changed)
+
+    def _notified(self, channel: str, payload: object) -> None:
+        if channel == PUSH_CHANNEL:
+            for changed in self._push_subscribers:
+                changed.set()
+            return
         for changed in self._all_subscribers:
             changed.set()
         try:
@@ -93,6 +108,8 @@ class ActionUpdates:
             changed.set()
 
     def _wake_all(self) -> None:
+        for changed in self._push_subscribers:
+            changed.set()
         for subscribers in self._subscribers.values():
             for changed in subscribers:
                 changed.set()

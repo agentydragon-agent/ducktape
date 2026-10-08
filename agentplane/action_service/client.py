@@ -182,15 +182,12 @@ class OperatorActionServiceClient(_BearerClient):
         return ActionHistoryPage.model_validate(response.json())
 
     @asynccontextmanager
-    async def stream_requests(self, *, state: ActionState | None = None) -> AsyncIterator[AsyncIterator[bytes]]:
-        """Open and check the upstream before handing its body to a streaming response."""
+    async def _stream_operator(
+        self, path: str, *, params: dict[str, str] | None = None
+    ) -> AsyncIterator[AsyncIterator[bytes]]:
+        """Operator SSE open/check/close, with a fresh exchanged token for each open."""
         token = await self._tokens.token()
-        request = self._http.build_request(
-            "GET",
-            "/v1/operator/action-requests/stream",
-            params={"state": state} if state else None,
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        request = self._http.build_request("GET", path, params=params, headers={"Authorization": f"Bearer {token}"})
         response = await self._http.send(request, stream=True)
         try:
             response.raise_for_status()
@@ -198,6 +195,18 @@ class OperatorActionServiceClient(_BearerClient):
         finally:
             with CancelScope(shield=True):
                 await response.aclose()
+
+    @asynccontextmanager
+    async def stream_requests(self, *, state: ActionState | None = None) -> AsyncIterator[AsyncIterator[bytes]]:
+        async with self._stream_operator(
+            "/v1/operator/action-requests/stream", params={"state": state} if state else None
+        ) as chunks:
+            yield chunks
+
+    @asynccontextmanager
+    async def stream_push_subscriptions(self) -> AsyncIterator[AsyncIterator[bytes]]:
+        async with self._stream_operator("/v1/operator/push/subscriptions/stream") as chunks:
+            yield chunks
 
     async def push_config(self) -> dict[str, str | None]:
         response = await self._request("GET", "/v1/operator/push/config")
