@@ -95,7 +95,9 @@ class RunnerBridge:
             raise RunnerError("service Session ID conflicts with the retained Thread identity")
         await self._event_logs.resume_pending(thread_id)
         await self._ingester.start()
-        return created.attached
+        attached = protocol_pb2.Attached()
+        attached.CopyFrom(created.attached)
+        return attached
 
     async def resume_thread(
         self, thread_id: UUID, *, expected_harness: str, expected_cwd: str
