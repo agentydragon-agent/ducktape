@@ -8,7 +8,7 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.protocol import event_log_pb2
-from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryNotFoundError, Store
+from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryNotFoundError, OpenReservation, Store
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -87,39 +87,63 @@ async def test_two_replica_writers_serialize_on_history_row(engine: AsyncEngine)
     assert await right.read(session_id) == (2, [entry(1), entry(2)])
 
 
+async def store_retry_with_new_defaults(store: Store, sandbox_uid: UUID) -> OpenReservation:
+    return await store.reserve(
+        caller_namespace="testing",
+        caller_name="app",
+        sandbox_namespace="testing",
+        sandbox_name="worker",
+        sandbox_uid=sandbox_uid,
+        open_key="open-1",
+        open_request=b"spec",
+        launch_spec=b"changed default should be ignored",
+    )
+
+
 @pytest.mark.asyncio
-async def test_registration_is_stable_across_retries_and_replicas(engine: AsyncEngine) -> None:
+async def test_reservation_is_stable_across_retries_and_replicas(engine: AsyncEngine) -> None:
     left, right = Store(engine), Store(engine)
     uid = uuid4()
 
-    async def register(store: Store, sandbox_uid: UUID, runner_session_id: str = "s-1") -> UUID:
-        return await store.register(
+    async def reserve(
+        store: Store, *, key: str = "open-1", caller_name: str = "app", sandbox_uid: UUID = uid, payload: bytes = b"spec"
+    ) -> OpenReservation:
+        return await store.reserve(
+            caller_namespace="testing",
+            caller_name=caller_name,
             sandbox_namespace="testing",
             sandbox_name="worker",
             sandbox_uid=sandbox_uid,
-            runner_session_id=runner_session_id,
+            open_key=key,
+            open_request=payload,
+            launch_spec=b"initial frozen spec",
         )
 
-    first, second = await asyncio.gather(register(left, uid), register(right, uid))
+    first, second = await asyncio.gather(reserve(left), reserve(right))
     assert first == second
-    assert await register(Store(engine), uid) == first
-    assert await left.read(first) == (0, [])
-    assert await register(left, uuid4()) != first
-    assert await register(left, uid, "s-2") != first
+    assert await reserve(Store(engine)) == first
+    assert await left.read(first.session_id) == (0, [])  # no runner was contacted
+    assert first.launch_spec == b"initial frozen spec"
+    assert await store_retry_with_new_defaults(right, uid) == first
+    assert await reserve(left, key="open-2") != first
+    assert await reserve(left, caller_name="other") != first
+    assert await reserve(left, sandbox_uid=uuid4()) != first
+    with pytest.raises(HistoryConflictError, match="different inputs"):
+        await reserve(left, payload=b"different caller request")
+    assert await reserve(right) == first  # a bad retry does not change the reservation
+    with pytest.raises(ValueError, match="required"):
+        await reserve(left, key="")
 
 
 @pytest.mark.asyncio
-async def test_registration_reuses_imported_history_and_rejects_identity_collision(engine: AsyncEngine) -> None:
+async def test_imported_history_keeps_its_id_and_fences_duplicate_locator(engine: AsyncEngine) -> None:
     store = Store(engine)
     session_id, uid = uuid4(), uuid4()
     await store.open(
         session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1"
     )
-    assert (
-        await store.register(
-            sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1"
-        )
-        == session_id
+    await store.open(
+        session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1"
     )
     with pytest.raises(HistoryConflictError, match="belongs to another"):
         await store.open(
@@ -129,6 +153,18 @@ async def test_registration_reuses_imported_history_and_rejects_identity_collisi
     await opened(store, uuid4())
     with pytest.raises(HistoryConflictError, match="belongs to another"):
         await opened(store, uuid4())
+    # A new Open is identified by its caller key, not by this physical runner path.
+    reservation = await store.reserve(
+        caller_namespace="testing",
+        caller_name="app",
+        sandbox_namespace="testing",
+        sandbox_name="worker",
+        sandbox_uid=uid,
+        open_key="new",
+        open_request=b"spec",
+        launch_spec=b"effective spec",
+    )
+    assert reservation.session_id != session_id
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 
 exports_files([
     "0001_session_history.py",
-    "0002_unique_runner_locator.py",
+    "0002_session_open_reservations.py",
 ])
 
 py_library(
@@ -15,7 +15,7 @@ py_library(
 )
 
 py_library(
-    name = "0002_unique_runner_locator",
-    srcs = ["0002_unique_runner_locator.py"],
+    name = "0002_session_open_reservations",
+    srcs = ["0002_session_open_reservations.py"],
     deps = ["@pypi//alembic"],
 )

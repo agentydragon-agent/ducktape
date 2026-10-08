@@ -5,7 +5,7 @@ filegroup(
     srcs = [
         "env.py",
         "//agentplane/sandbox_service/session_history/migrations/versions:0001_session_history.py",
-        "//agentplane/sandbox_service/session_history/migrations/versions:0002_unique_runner_locator.py",
+        "//agentplane/sandbox_service/session_history/migrations/versions:0002_session_open_reservations.py",
     ],
     visibility = ["//agentplane/sandbox_service/session_history:__pkg__"],
 )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -22,6 +23,12 @@ class HistoryConflictError(ValueError):
 
 class HistoryNotFoundError(LookupError):
     pass
+
+
+@dataclass(frozen=True)
+class OpenReservation:
+    session_id: UUID
+    launch_spec: bytes
 
 
 class Store:
@@ -67,50 +74,66 @@ class Store:
             ):
                 raise HistoryConflictError(f"session {session_id} has a different runner locator")
 
-    async def register(
-        self, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID, runner_session_id: str
-    ) -> UUID:
-        """Get or mint a stable Session UUID for this physical runner locator.
+    async def reserve(
+        self,
+        *,
+        caller_namespace: str,
+        caller_name: str,
+        sandbox_namespace: str,
+        sandbox_name: str,
+        sandbox_uid: UUID,
+        open_key: str,
+        open_request: bytes,
+        launch_spec: bytes,
+    ) -> OpenReservation:
+        """Reserve a durable Session ID *before* runner attach, or recover a lost reply.
 
-        The locator constraint arbitrates concurrent replicas and a response-lost retry.
-        Legacy imports can instead use `open` to preserve their existing public UUID.
+        The key is opaque to the Service and scoped to the authenticated caller and
+        Sandbox incarnation. The request bytes identify the caller's original inputs;
+        the launch bytes freeze the effective runner setup, even if defaults change.
+        Imported histories use `open` to keep their existing public IDs.
         """
+        if not all((caller_namespace, caller_name, sandbox_namespace, sandbox_name, open_key)):
+            raise ValueError("caller, sandbox, and Open idempotency key are required")
         async with self._sessions.begin() as session:
             candidate = uuid4()
             created = await session.scalar(
                 insert(SessionHistory)
                 .values(
                     id=candidate,
+                    caller_namespace=caller_namespace,
+                    caller_name=caller_name,
                     sandbox_namespace=sandbox_namespace,
                     sandbox_name=sandbox_name,
                     sandbox_uid=sandbox_uid,
-                    runner_session_id=runner_session_id,
+                    open_key=open_key,
+                    open_request=open_request,
+                    launch_spec=launch_spec,
+                    runner_session_id=None,
                     source_id=None,
                     last_cursor=0,
                 )
-                .on_conflict_do_nothing(
-                    index_elements=[
-                        SessionHistory.sandbox_namespace,
-                        SessionHistory.sandbox_name,
-                        SessionHistory.sandbox_uid,
-                        SessionHistory.runner_session_id,
-                    ]
-                )
+                .on_conflict_do_nothing()
                 .returning(SessionHistory.id)
             )
             if created is not None:
-                return created
-            result = await session.scalar(
-                select(SessionHistory.id).where(
+                return OpenReservation(created, launch_spec)
+            existing = await session.scalar(
+                select(SessionHistory).where(
+                    SessionHistory.caller_namespace == caller_namespace,
+                    SessionHistory.caller_name == caller_name,
                     SessionHistory.sandbox_namespace == sandbox_namespace,
                     SessionHistory.sandbox_name == sandbox_name,
                     SessionHistory.sandbox_uid == sandbox_uid,
-                    SessionHistory.runner_session_id == runner_session_id,
+                    SessionHistory.open_key == open_key,
                 )
             )
-            if result is None:
-                raise HistoryConflictError("runner locator is not registered")
-            return result
+            if existing is None:
+                raise HistoryConflictError("Open identity could not be reserved")
+            if existing.open_request != open_request:
+                raise HistoryConflictError("Open idempotency key reused with different inputs")
+            assert existing.launch_spec is not None
+            return OpenReservation(existing.id, existing.launch_spec)
 
     async def append(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> int:
         """Replay exact duplicates or extend the prefix; serialize concurrent writers by Session ID.
