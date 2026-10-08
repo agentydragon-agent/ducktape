@@ -74,6 +74,8 @@ flowchart TB
     HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
     NOTIFICATION_SOURCE_WIRING["Conditional future refactor<br/>extract shared source wiring<br/>from concrete implementations"]:::future
     CRON_NOTIFICATIONS["Unranked future capability<br/>scheduled / cron notifications<br/>durable schedules and missed-tick policy"]:::future
+    MULTIAGENT_MODEL["Unranked design<br/>Agentplane-level agent relationships<br/>authority vs harness-native children"]:::decision
+    AGENT_SANDBOX_LAUNCH["Unranked capability<br/>agent-requested Sandbox launch<br/>bounded specs and delegated ownership"]:::future
     AGENT_MESSAGING_DESIGN["Unranked design<br/>agent-to-agent message authority<br/>choose transport and delivery contract"]:::decision
     AGENT_MESSAGING["Unranked capability<br/>send and receive authorized agent messages<br/>durable delivery and batching"]:::future
     AGENT_MESSAGE_CLASSIFICATION["Optional later safeguard<br/>classify agent messages for leakage<br/>without silently losing delivery"]:::future
@@ -160,6 +162,8 @@ flowchart TB
     THREAD_ARCHIVE_STORE --> THREAD_ARCHIVE_BACKFILL
     THREAD_ARCHIVE_STORE --> THREAD_ARCHIVE_INGEST
     THREAD_ARCHIVE_BACKFILL --> THREAD_ARCHIVE_UI_CUTOVER
+    MULTIAGENT_MODEL --> AGENT_MESSAGING_DESIGN
+    MULTIAGENT_MODEL --> AGENT_SANDBOX_LAUNCH
     AGENT_MESSAGING_DESIGN --> AGENT_MESSAGING
     AGENT_MESSAGING --> AGENT_MESSAGE_CLASSIFICATION
     THREAD_ARCHIVE_INGEST --> THREAD_ARCHIVE_UI_CUTOVER
@@ -1462,6 +1466,41 @@ and existing destination-lifetime rules; waking suspended harnesses remains a se
 Acceptance covers firing, cancellation, restart, replica races, missed ticks and DST transitions.
 A scheduled notification must not itself grant authority to perform an Action or bypass approval.
 
+### `MULTIAGENT_MODEL` — relationships and authority across agents and native subagents
+
+**Unranked design prerequisite for Agentplane-level messaging and agent-requested Sandbox launch:**
+choose stable identities for independently managed agents and their Sandboxes/Threads, and model
+creator, owner/manager and parent/child relationships separately. Specify who may create, address,
+observe, control, stop or delete a child; whether any authority is inherited (default to none),
+how policy and quotas constrain depth/fanout, and what reassignment or parent termination does to
+running work. An “X owned by Y” edge must not by itself confer access to X's Thread, credentials,
+workspace or Actions. Distinguish operator-created agents from agent-launched ones, and explicit
+delegation from mere provenance. Coordinate the policy vocabulary with `THREAD_CREATE_POLICY` and
+`THREAD_READ_POLICY` without conflating a message grant, Thread creation and Sandbox creation.
+
+Compare these Agentplane-level relationships with `NATIVE_SUBAGENT_THREADS`: Claude/Codex native
+children necessarily live within their parent Agentplane Sandbox and are discovered as linked
+Threads, not separately provisioned Agentplane agents. Preserve native parent/child provenance and
+harness-owned lifecycle; do not implement agent spawning by relabeling a native Task, or make an
+Agentplane-launched Sandbox masquerade as a harness-native child. Decide which shared UI/identity
+terms and conversation/coordination concepts can be reused without sharing control or security
+boundaries. The two tracks can progress independently; this is a comparison, not a new dependency
+for native discovery.
+
+### `AGENT_SANDBOX_LAUNCH` — allow agents to launch constrained Sandboxes
+
+**Unranked future capability; depends on `MULTIAGENT_MODEL`:** specify and enforce a launch
+policy for each caller: permitted templates/presets, image and harness/model selections, resource
+limits, workspace mounts, network/egress, Kubernetes grants, Action policy bindings, secrets and
+lifetime. A preset is a bundle of defaults, not permission to choose arbitrary overrides or grant
+itself access. Resolve the effective spec server-side and record creator, owner/manager, chosen
+policy, child identity, audit trail and explicit lifecycle/revocation semantics. Provide idempotent
+create and bounded quota/depth to avoid duplicate or runaway launches after a lost response.
+Prove both permitted and denied settings, concurrency, parent revocation/deletion and recipient
+isolation. Launch authority alone grants neither Thread read/write nor messaging; those require
+their own explicit policies. Reuse the existing Sandbox Service launch boundary where possible,
+not a harness-native subagent creation API.
+
 ### `AGENT_MESSAGING_DESIGN` — choose agent-to-agent message authority and transport
 
 **Unranked design, no transport selected:** define who may send to whom (agent, Sandbox,
@@ -1469,7 +1508,9 @@ Session/Thread and ServiceAccount identity), who administers allowlists or scope
 what happens on revocation or recipient deletion. Compare a Notification Service source (reusing
 inbox, notice batching, runner delivery and acknowledgement), a purpose-built durable message
 channel, and suitable existing messaging infrastructure. Separate a sender's accepted write from
-recipient delivery, runner admission, agent handling and explicit acknowledgement. Decide how
+recipient delivery, runner admission, agent handling and explicit acknowledgement. Apply the
+identity/ownership choices from `MULTIAGENT_MODEL` without treating ownership as permission to
+message. Decide how
 receivers recover unread messages after downtime and how agents learn a recipient's stable identity;
 do not assume a co-resident Sandbox or single replica. Treat message content and claimed sender
 identity as untrusted, with source authentication and per-recipient authorization at admission.
@@ -1736,7 +1777,8 @@ Not deferred work with a node below, but scope this project is not pursuing:
 - cross-cutting capability profiles — see [`profiles.md`](profiles.md);
 - delegated-versus-brokered external-access policy and grant/revocation semantics — see
   [`external_access.md`](external_access.md);
-- MCP registry, dynamic action marketplace, standing grants, and cross-agent permissions;
+- MCP registry, dynamic action marketplace, standing grants, and a general cross-agent
+  privilege-sharing framework beyond scoped messaging and constrained agent-requested launches;
 - access to Agentplane services beyond Actions for hosted agents and external harnesses — the
   constraints are in
   [workload authentication § Access beyond Actions](../docs/workload_authentication.md#access-beyond-actions);
