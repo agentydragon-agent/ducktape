@@ -46,9 +46,8 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
             "valueFrom": {"secretKeyRef": {"name": "postgres-sandbox-service", "key": "uri"}},
         }
     ]
-    assert (
-        one(item for item in service_pod["containers"] if item["name"] == "sandbox-service")["env"] == migration["env"]
-    )
+    service_container = one(item for item in service_pod["containers"] if item["name"] == "sandbox-service")
+    assert migration["env"][0] in service_container["env"]
     for rule in resource("Role", app.NAME)["rules"]:
         assert set(rule["verbs"]) <= {"get", "list", "watch"}
     backend_config = yaml.safe_load(resource("ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])

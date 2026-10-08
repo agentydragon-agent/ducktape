@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -161,7 +162,7 @@ class Store:
     ) -> UUID | None:
         """Map an inventoried runner ID to a public Session ID, if managed."""
         async with self._sessions() as session:
-            return await session.scalar(
+            result = await session.scalar(
                 select(SessionHistory.id).where(
                     SessionHistory.sandbox_namespace == sandbox_namespace,
                     SessionHistory.sandbox_name == sandbox_name,
@@ -169,6 +170,7 @@ class Store:
                     SessionHistory.runner_session_id == runner_session_id,
                 )
             )
+            return cast(UUID | None, result)
 
     async def append(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> int:
         """Replay exact duplicates or extend the prefix; serialize concurrent writers by Session ID.

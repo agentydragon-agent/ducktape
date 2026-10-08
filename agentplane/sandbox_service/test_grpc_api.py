@@ -188,7 +188,7 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
     store = Store(engine)
     async with service_client(replace(resources, history=store), token_file) as remote:
         runner = remote.runner(DESTINATION)
-        overrides = {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state/{session_id}"}
+        overrides: dict[str, object] = {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state/{session_id}"}
         created = await runner.create(idempotency_key="first-attempt", spec=overrides)
         first = await peer.attachments.get()
         public = created.session_id
