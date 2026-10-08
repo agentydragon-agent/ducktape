@@ -39,6 +39,14 @@ resume (`test_instructions.py`). The harness runs drive the binaries
 through <../native/README.md>; features each harness has beyond what these tests exercise are
 listed in <../native/docs/protocol_roster.md>.
 
+## Subagent characterization
+
+The subagent cases in each `test_tools.py` opt into native delegation and script a child tool
+round trip. Claude also exercises `SendMessage` to a completed child and a `TaskOutput` read
+of its follow-up result. The [test matrix](../plans/native_subagent_sessions.md) tracks their precise coverage
+and the remaining discovery, forwarding, concurrency, cancellation, and recovery cases. These tests
+do not enable subagents in production or implement a shared session model.
+
 ## When a binary pin changes
 
 The tests pin observed behavior of one build. After a bump, run the live probe in

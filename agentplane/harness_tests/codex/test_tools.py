@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shlex
 
 import pytest_bazel
@@ -126,6 +127,107 @@ async def test_file_edit_round_trip_changes_the_workspace(
         "printf 'after\\n' > editable.txt",
         "cat editable.txt",
     ]
+
+
+async def test_subagent_spawn_and_wait_report_the_child_identity(
+    codex: CodexHarness, openai_responses: OpenAIResponses
+) -> None:
+    """Parent and child requests may interleave; route by native thread ID, not arrival order."""
+    config: dict[str, object] = {"features.multi_agent": True, "features.multi_agent_v2": False}
+    async with codex.start(openai_responses, config=config) as run:
+        turn = await run.start_turn("Delegate a shell probe to a child and wait for its result.")
+        async with await openai_responses.await_next_request() as exchange:
+            assert "multi_agent_v1" in exchange.request.tool_names
+            stream = sse.response_stream(
+                [
+                    sse.FunctionCall(
+                        "call_spawn_child",
+                        "spawn_agent",
+                        {"message": "Run the child shell probe and reply CHILD_DONE.", "fork_context": False},
+                        namespace="multi_agent_v1",
+                    )
+                ],
+                model=MODEL,
+            )
+            await exchange.send(*stream.events)
+
+        spawned_id = None
+        child_thread_ids: set[str] = set()
+        handled: set[str] = set()
+        # Exactly two model requests per participant: spawn -> wait -> answer for the parent,
+        # and shell -> answer for the child. Holding wait open cannot block answering the child.
+        for _ in range(4):
+            async with await openai_responses.await_next_request() as exchange:
+                request = exchange.request
+                if request.client_metadata.thread_id == turn.thread_id:
+                    result = request.function_call_outputs[-1]
+                    assert result.call_id not in handled
+                    handled.add(result.call_id)
+                    if result.call_id == "call_spawn_child":
+                        spawned_id = json.loads(result.output)["agent_id"]
+                        assert spawned_id != turn.thread_id
+                        stream = sse.response_stream(
+                            [
+                                sse.FunctionCall(
+                                    "call_wait_child",
+                                    "wait_agent",
+                                    {"targets": [spawned_id]},
+                                    namespace="multi_agent_v1",
+                                )
+                            ],
+                            model=MODEL,
+                        )
+                    else:
+                        assert result.call_id == "call_wait_child"
+                        waited = json.loads(result.output)
+                        assert waited["timed_out"] is False
+                        assert waited["status"] == {spawned_id: {"completed": "CHILD_DONE"}}
+                        stream = sse.response_stream([sse.Message("PARENT_DONE")], model=MODEL)
+                else:
+                    child_thread_ids.add(request.client_metadata.thread_id)
+                    if not request.function_call_outputs:
+                        assert "child_start" not in handled
+                        handled.add("child_start")
+                        assert "Run the child shell probe" in "\n".join(
+                            message.text for message in request.messages("user")
+                        )
+                        stream = sse.response_stream(
+                            [sse.FunctionCall("call_child_shell", "exec_command", {"cmd": "printf CHILD_TOOL_OUTPUT"})],
+                            model=MODEL,
+                        )
+                    else:
+                        (result,) = request.function_call_outputs
+                        assert result.call_id == "call_child_shell"
+                        assert result.call_id not in handled
+                        handled.add(result.call_id)
+                        assert "CHILD_TOOL_OUTPUT" in result.output
+                        stream = sse.response_stream([sse.Message("CHILD_DONE")], model=MODEL)
+                await exchange.send(*stream.events)
+
+        assert handled == {"call_spawn_child", "call_wait_child", "child_start", "call_child_shell"}
+        assert child_thread_ids == {spawned_id}
+        assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
+        assert run.running
+
+    captured = run.native_frames()
+    completed = [
+        frame["params"]["item"]
+        for frame in captured
+        if frame.get("method") == "item/completed" and frame["params"]["item"]["type"] == "collabAgentToolCall"
+    ]
+    assert {item["id"] for item in completed} == {"call_spawn_child", "call_wait_child"}
+    started_ids = {
+        frame["params"]["item"]["id"]
+        for frame in captured
+        if frame.get("method") == "item/started" and frame["params"]["item"]["type"] == "collabAgentToolCall"
+    }
+    assert started_ids == {"call_spawn_child", "call_wait_child"}
+    for item in completed:
+        assert item["status"] == "completed"
+        assert item["senderThreadId"] == turn.thread_id
+        assert item["receiverThreadIds"] == [spawned_id]
+    wait_item = next(item for item in completed if item["id"] == "call_wait_child")
+    assert wait_item["agentsStates"][spawned_id] == {"status": "completed", "message": "CHILD_DONE"}
 
 
 if __name__ == "__main__":

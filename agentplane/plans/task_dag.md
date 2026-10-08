@@ -483,6 +483,9 @@ boundary, separate from the deferred product capability profile in [Profiles](pr
 
 #### `NATIVE_SUBAGENT_THREADS` — adopt harness-native subagents as Threads
 
+The [characterization matrix](native_subagent_sessions.md) gates the shared session model. Initial
+scripted tests cover a child tool round trip; discovery, independent control, and recovery remain open.
+
 **Unranked candidate:** when Claude or Codex starts a native subagent, discover its native identity
 and available transcript/events and expose it as a linked child Thread in Agentplane. Verify
 creation, output, completion, and restart/resume from separate harness evidence; do not infer child

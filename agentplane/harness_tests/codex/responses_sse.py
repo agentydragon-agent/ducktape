@@ -27,6 +27,7 @@ class FunctionCall:
     call_id: str
     name: str
     arguments: dict[str, Any]
+    namespace: str | None = None
 
 
 Item = Reasoning | Message | FunctionCall
@@ -70,7 +71,7 @@ def _completed_item(item: Item) -> dict[str, Any]:
                 "role": "assistant",
                 "content": [{"type": "output_text", "annotations": [], "text": text}],
             }
-        case FunctionCall(call_id, name, arguments):
+        case FunctionCall(call_id, name, arguments, namespace):
             return {
                 "id": f"fc_test_{next(_ids)}",
                 "type": "function_call",
@@ -78,6 +79,7 @@ def _completed_item(item: Item) -> dict[str, Any]:
                 "call_id": call_id,
                 "name": name,
                 "arguments": json.dumps(arguments),
+                **({"namespace": namespace} if namespace is not None else {}),
             }
 
 
