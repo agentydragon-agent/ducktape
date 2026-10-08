@@ -22,6 +22,23 @@ cannot receive comments. The publisher rechecks the PR before updating its
 singleton comment so a push during artifact processing does not replace a newer
 review with an older result.
 
+## Determinism checks
+
+`//devinfra/pr_visuals:determinism_bin` repeats visual targets and checks the PNGs
+registered in each run's `visual-review.json`. Changed bytes, missing declared
+images, and images omitted from a later run's manifest fail the check. Manifest
+membership—not a filename or whether the UI state is intermediate—defines the
+review set.
+
+Other PNGs are listed separately as diagnostics. Their differences or absence do
+not fail the check. Nonzero test/build executions and non-passing test statuses
+still fail, even when no review images were produced. A successful diagnostics-only
+target has no review images to compare.
+
+The checker downloads manifests from BuildBuddy's CAS and compares PNGs by their
+content-addressed artifact URIs; it does not download the PNGs. The GitHub publisher
+continues to show only registered review assets.
+
 ## Opting a visual test in
 
 Use one of the shared harnesses and it's automatic:

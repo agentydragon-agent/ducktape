@@ -8,29 +8,29 @@ Two runs is the obvious check and is too few: a race that fires one time in five
 perfectly stable across a pair, and the three instances this repo has already hit (an
 unguarded Mantine animation, two mocked-fetch races) are exactly that shape. This runs N.
 
-Nothing is downloaded: BuildBuddy's artifact URIs are content-addressed, so an asset that
-rendered identically in every run reports one URI across all of them, and an asset that
-drifted reports several. The same runs give per-target durations, which is the evidence
-`size` should be set from -- see AGENTS.md on sizing from measurement rather than from a
-timeout that once went red.
+Only `visual-review.json` manifests are downloaded. Their assets are compared using
+BuildBuddy's content-addressed artifact URIs, without downloading PNGs. Other PNGs are
+reported as diagnostics and do not fail the sweep. Test failures still fail it.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
+import urllib.parse
+import urllib.request
 import uuid
 from collections import defaultdict
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from devinfra.pr_visuals.artifacts import Runner, list_ci_artifacts
 from devinfra.pr_visuals.targets import TestRun, list_test_runs
 from util.bazel.workspace import get_build_workspace_directory
-
-# What a rendered scene is published as; anything else in the outputs is not a render.
-RENDER_SUFFIX = ".png"
+from util.visual_review import MANIFEST_NAME, VisualReviewManifest
 
 # Every target that drives a browser carries this tag -- `visual_test` applies it, and the
 # screenshot macros set it directly -- so the fleet is a question for Bazel rather than a list
@@ -41,7 +41,7 @@ VISUAL_FLEET = "attr(tags, visual, //...)"
 
 @dataclass(frozen=True)
 class Render:
-    """One published image, identified the way a reviewer would name it."""
+    """One PNG identified by target and output name."""
 
     target: str
     asset: str
@@ -60,7 +60,28 @@ class Observation:
 
     @property
     def runs_present(self) -> int:
-        return sum(len(invocations) for invocations in self.by_digest.values())
+        return len({invocation for invocations in self.by_digest.values() for invocation in invocations})
+
+
+@dataclass(frozen=True)
+class Observations:
+    review: dict[Render, Observation]
+    diagnostics: dict[Render, Observation]
+
+
+@dataclass(frozen=True)
+class Execution:
+    invocation: str
+    returncode: int
+
+
+def load_manifest(uri: str) -> VisualReviewManifest:
+    request = urllib.request.Request(
+        f"https://app.buildbuddy.io/file/download?bytestream_url={urllib.parse.quote(uri, safe='')}",
+        headers={"x-buildbuddy-api-key": os.environ["BUILDBUDDY_API_KEY"]},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return VisualReviewManifest.model_validate_json(response.read())
 
 
 def visual_fleet(*, bbr: Path, run: Runner) -> list[str]:
@@ -106,8 +127,8 @@ def _rule_label(line: str) -> str | None:
     return rule.get("name") if isinstance(rule, dict) and isinstance(rule.get("name"), str) else None
 
 
-def run_once(targets: list[str], *, bbr: Path, run: Runner) -> str:
-    """One full, uncached execution of `targets`, returning the invocation it became.
+def run_once(targets: list[str], *, bbr: Path, run: Runner) -> Execution:
+    """One full, uncached execution of `targets`, retaining its invocation and exit status.
 
     The ID is minted here and handed to the run rather than read back out of it: `bbr` honours
     an explicit `--invocation_id` (devinfra/bbr.py), so the run's identity is known by
@@ -118,29 +139,54 @@ def run_once(targets: list[str], *, bbr: Path, run: Runner) -> str:
     peer's. Either way a later run would observe the first run's bytes and every scene
     would look perfectly reproducible.
 
-    A failing target is not an error here -- its status reaches the report, where a reader can
-    see it -- so only a `bbr` that could not run at all raises.
+    Retain nonzero exits so build failures cannot disappear behind stable screenshots or
+    a missing test summary. Finish the other runs before reporting the failures.
     """
     invocation = str(uuid.uuid4())
-    run(
+    result = run(
         [bbr, "test", f"--invocation_id={invocation}", "--nocache_test_results", "--noremote_accept_cached", *targets],
         check=False,
         text=True,
         cwd=get_build_workspace_directory(),
     )
-    return invocation
+    return Execution(invocation, result.returncode)
 
 
-def observe(invocations: list[str], *, bbapi: Path, run: Runner) -> dict[Render, Observation]:
-    """Fold every run's published renders into one observation per render."""
-    seen: dict[Render, Observation] = defaultdict(lambda: Observation(by_digest=defaultdict(list)))
-    for listed in list_ci_artifacts(invocations, bbapi=bbapi, run=run):
-        name = listed.artifact.name
-        if not name.endswith(RENDER_SUFFIX):
+def observe(
+    invocations: list[str], *, bbapi: Path, run: Runner, read_manifest: Callable[[str], VisualReviewManifest]
+) -> Observations:
+    """An image counts as published only when that run's manifest declares it."""
+    artifacts = list_ci_artifacts(invocations, bbapi=bbapi, run=run)
+    manifests: dict[str, VisualReviewManifest] = {}
+    declared: dict[tuple[str, str], set[str]] = defaultdict(set)
+    review: dict[Render, Observation] = {}
+    for listed in artifacts:
+        if listed.artifact.name != f"test.outputs/{MANIFEST_NAME}":
             continue
-        observation = seen[Render(listed.artifact.label, name.removeprefix("test.outputs/"))]
-        observation.by_digest[listed.artifact.uri].append(listed.invocation_id)
-    return dict(seen)
+        uri = listed.artifact.uri
+        if uri not in manifests:
+            manifests[uri] = read_manifest(uri)
+        for asset in manifests[uri].assets:
+            declared[listed.invocation_id, listed.artifact.label].add(asset.path)
+            # Keep declarations even when the PNG is absent from every run.
+            review.setdefault(Render(listed.artifact.label, asset.path), Observation(by_digest={}))
+
+    diagnostics: dict[Render, Observation] = {}
+    for listed in artifacts:
+        if not listed.artifact.name.startswith("test.outputs/") or not listed.artifact.name.endswith(".png"):
+            continue
+        render = Render(listed.artifact.label, listed.artifact.name.removeprefix("test.outputs/"))
+        if render in review:
+            if render.asset not in declared[listed.invocation_id, render.target]:
+                continue
+            observation = review[render]
+        else:
+            observation = diagnostics.setdefault(render, Observation(by_digest={}))
+        produced_by = observation.by_digest.setdefault(listed.artifact.uri, [])
+        # Shards/retries may list identical artifacts more than once in an invocation.
+        if listed.invocation_id not in produced_by:
+            produced_by.append(listed.invocation_id)
+    return Observations(review=review, diagnostics=diagnostics)
 
 
 def observe_targets(
@@ -160,14 +206,14 @@ def observe_targets(
 
 @dataclass(frozen=True)
 class Findings:
-    """The renders that fail a sweep; both the report and the exit code are derived from them."""
+    """Images whose bytes differ or whose output is missing from some runs."""
 
     drifted: list[Render]
     missing: list[Render]
 
 
 def analyze(observations: dict[Render, Observation], *, runs: int) -> Findings:
-    """Renders whose bytes differ between runs, and renders some of the `runs` did not publish."""
+    """Images whose bytes differ between runs, or that some runs did not produce."""
     drifted = sorted(
         (render for render, seen in observations.items() if len(seen.by_digest) > 1),
         key=lambda render: (render.target, render.asset),
@@ -181,25 +227,15 @@ def analyze(observations: dict[Render, Observation], *, runs: int) -> Findings:
     return Findings(drifted=drifted, missing=missing)
 
 
-def report(observations: dict[Render, Observation], invocations: list[str], targets: dict[str, list[TestRun]]) -> str:
-    """A markdown report: what drifted, what went missing, and what each target cost.
-
-    Every render stays in BuildBuddy as the run's undeclared test outputs, so the report
-    names the invocations rather than copying pixels anywhere: that is both where the PNGs
-    already are and the only place a reader can get the two differing versions to compare.
-    """
-    runs = len(invocations)
+def _image_report(observations: dict[Render, Observation], *, runs: int) -> list[str]:
+    if not observations:
+        return ["No images in this group.", ""]
     findings = analyze(observations, runs=runs)
-
-    lines = [f"# Visual determinism over {runs} runs", ""]
-    lines += ["Every run's renders are that invocation's undeclared test outputs:", ""]
-    lines += [f"{index + 1}. `{invocation}`" for index, invocation in enumerate(invocations)]
-    lines += ["", "```bash", "bbapi artifact download <invocation> '*.png' --all", "```", ""]
-
+    lines: list[str] = []
     if not findings.drifted and not findings.missing:
-        lines.append(f"All {len(observations)} renders reproduced identically in every run.")
+        lines.append(f"All {len(observations)} image(s) reproduced identically in every run.")
     if findings.drifted:
-        lines += [f"## {len(findings.drifted)} render(s) not reproducible", ""]
+        lines += [f"### {len(findings.drifted)} image(s) not reproducible", ""]
         for render in findings.drifted:
             lines.append(f"- `{render.target}` — `{render.asset}`")
             # Which run produced which bytes: the reader downloads one of each and diffs.
@@ -209,12 +245,53 @@ def report(observations: dict[Render, Observation], invocations: list[str], targ
             ]
         lines.append("")
     if findings.missing:
-        lines += [f"## {len(findings.missing)} render(s) not published by every run", ""]
+        lines += [f"### {len(findings.missing)} image(s) absent from some runs", ""]
         lines += [
             f"- `{render.target}` — `{render.asset}`: present in {observations[render].runs_present}/{runs}"
             for render in findings.missing
         ]
         lines.append("")
+
+    return lines
+
+
+def report(
+    observations: Observations,
+    invocations: list[str],
+    targets: dict[str, list[TestRun]],
+    *,
+    failed_executions: Sequence[Execution] = (),
+) -> str:
+    """Review-asset reproducibility, non-failing diagnostics, and execution health."""
+    runs = len(invocations)
+    lines = [f"# Visual determinism over {runs} runs", ""]
+    lines += ["Artifacts are retained in each invocation's undeclared test outputs:", ""]
+    lines += [f"{index + 1}. `{invocation}`" for index, invocation in enumerate(invocations)]
+    lines += ["", "```bash", "bbapi artifact download <invocation> '*.png' --all", "```", ""]
+    lines += [
+        "## Review assets",
+        "",
+        "Images declared in `visual-review.json`; differences or missing images fail the check.",
+        "",
+    ]
+    lines += _image_report(observations.review, runs=runs)
+    lines += [
+        "",
+        "## Diagnostic PNGs (informational)",
+        "",
+        "Unpublished PNGs do not affect the check's exit status.",
+        "",
+    ]
+    lines += _image_report(observations.diagnostics, runs=runs)
+    if failed_executions:
+        lines += ["", "## Failed executions", ""]
+        lines += [f"- `{execution.invocation}`: bbr exited {execution.returncode}" for execution in failed_executions]
+    failed_targets = sorted(label for label, tests in targets.items() if any(test.status != "PASSED" for test in tests))
+    if failed_targets:
+        lines += ["", "## Non-passing test targets", ""]
+        lines += [f"- `{label}`" for label in failed_targets]
+    if not targets:
+        lines += ["", "No test results found; the check fails.", ""]
 
     # Wall time per run, not summed over shards: it is what one shard had to finish inside, so
     # it is the number `size` is set from. A status other than PASSED is worth seeing beside it.
@@ -247,25 +324,28 @@ def main() -> None:
 
     targets = args.targets or visual_fleet(bbr=args.bbr, run=subprocess.run)
 
-    invocations = []
+    executions = []
     for index in range(args.runs):
         print(f"run {index + 1}/{args.runs}: {' '.join(targets)}", flush=True)
-        invocations.append(run_once(targets, bbr=args.bbr, run=subprocess.run))
+        executions.append(run_once(targets, bbr=args.bbr, run=subprocess.run))
 
-    observations = observe(invocations, bbapi=args.bbapi, run=subprocess.run)
-    if not observations:
-        raise SystemExit(f"no renders published by {targets}; nothing to compare")
-
-    summary = report(
-        observations, invocations, observe_targets(invocations, targets, bbapi=args.bbapi, run=subprocess.run)
-    )
+    invocations = [execution.invocation for execution in executions]
+    observations = observe(invocations, bbapi=args.bbapi, run=subprocess.run, read_manifest=load_manifest)
+    test_runs = observe_targets(invocations, targets, bbapi=args.bbapi, run=subprocess.run)
+    failed_executions = [execution for execution in executions if execution.returncode != 0]
+    summary = report(observations, invocations, test_runs, failed_executions=failed_executions)
     print(summary)
     if args.summary:
         args.summary.write_text(summary)
 
-    # Exit code is the signal a scheduled run reports on; the markdown says which renders.
-    findings = analyze(observations, runs=args.runs)
-    if findings.drifted or findings.missing:
+    findings = analyze(observations.review, runs=args.runs)
+    if (
+        findings.drifted
+        or findings.missing
+        or failed_executions
+        or not test_runs
+        or any(test.status != "PASSED" for tests in test_runs.values() for test in tests)
+    ):
         raise SystemExit(1)
 
 
