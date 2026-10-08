@@ -57,11 +57,6 @@ MOBILE_VIEWPORT: ViewportSize = {"width": 390, "height": 844}
 FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
 
 
-@pytest.fixture(params=[DESKTOP_VIEWPORT, MOBILE_VIEWPORT], ids=["desktop", "mobile"])
-def viewport(request: pytest.FixtureRequest) -> ViewportSize:
-    return request.param
-
-
 @asynccontextmanager
 async def casino_view(
     playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str
@@ -148,6 +143,7 @@ def _post(origin: str, path: str, payload: dict) -> None:
             raise RuntimeError(f"seed {path} failed: HTTP {response.status}")
 
 
+@pytest.mark.parametrize("viewport", [DESKTOP_VIEWPORT, MOBILE_VIEWPORT], ids=["desktop", "mobile"])
 @pytest.mark.parametrize(
     ("query", "visible_text"),
     [

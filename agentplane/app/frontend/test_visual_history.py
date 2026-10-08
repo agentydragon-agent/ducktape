@@ -130,7 +130,9 @@ async def recovery_tools(view: VisualPage, app: AgentplaneFixture) -> VisualPage
     tools = view.page.locator(".agentplane-step-details").filter(
         has_not=view.page.locator(".agentplane-step-title:text-is('Reasoning')")
     )
-    await expect(tools).to_have_count(4)
+    # The discarded call uses DiscardedCard, not a normal StepLine.
+    await expect(tools).to_have_count(3)
+    await expect(view.page.get_by_text("Succeeded, then discarded from context", exact=True)).to_be_visible()
     await expect(tools.locator(".agentplane-disclosure-summary[aria-expanded='false']")).to_have_count(0)
     return view
 
