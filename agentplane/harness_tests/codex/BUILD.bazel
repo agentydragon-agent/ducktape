@@ -124,6 +124,7 @@ py_test(
         "//:conftest",
         "//agentplane/harness_tests:conftest",
         "//agentplane/native/codex:wire",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

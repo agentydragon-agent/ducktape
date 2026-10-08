@@ -6,6 +6,9 @@ Agentplane adapter or inferred from parent prose. This is the evidence gate for
 [`NATIVE_SUBAGENT_THREADS`](task_dag.md#native_subagent_threads--adopt-harness-native-subagents-as-threads),
 not a change to its product priority or an implementation of session discovery.
 
+The passing initial scenarios support the [harness-declared logical sessions proposal](native_session_discovery.md).
+That plan sketches read-only discovery without treating the unmeasured matrix rows as implemented.
+
 ## Proposed ownership
 
 The runner reports which native sessions exist, their observed lifecycle, and their parent/child
@@ -97,6 +100,67 @@ that the recipient consumed the message. Characterize these separately under the
 - **`ListAgents` and configuration-specific team tools (planned):** first establish availability,
   scope, and feature gates. An entry in a tool roster does not prove that it enumerates all native
   children. Keep cross-session/remote messaging outside these same-harness loopback scenarios.
+
+### Resume and child fate (planned)
+
+Expand S10/S11 for both harnesses. The passing Claude `SendMessage` scenario reactivates a
+completed child within the same live harness; it does not establish recovery after parent exit.
+Distinguish client reattachment to a live owner, runner restart with retained journals, clean parent
+harness exit followed by native resume, and parent crash followed by native resume. Record which
+processes and native storage survive each case; these are not equivalent forms of resume.
+
+For each applicable boundary, gate interruption with the child running (held at a model request or
+tool), completed before its notification is consumed, completed after notification consumption,
+failed, or cancelled. Include a pending follow-up message. Exercise conversational children and
+non-conversation background tasks separately where supported; a task ID alone does not establish
+a resumable conversation. Unsupported stimuli need evidence, not a fabricated terminal event.
+
+Retain native traces from both process incarnations and answer:
+
+- **Rediscovery:** does resume enumerate or redeclare children/tasks, with stable IDs and parent
+  links? Is the inventory complete, historical, or only active? Can a previously known ID be queried?
+- **Fate and timing:** is completion, failure, cancellation, continued execution, automatic restart,
+  or unknown fate visible during handshake, after the first genuine input, through history, or only
+  through an explicit query? Record each route separately. Parent model memory of a result is not
+  independent runner-visible lifecycle evidence.
+- **Delivery:** are terminal notifications replayed, omitted, or duplicated? Can the runner recover
+  a result whose notification it missed? Does a queued message survive, disappear, or get delivered
+  again, and what proves consumption rather than acceptance?
+- **Execution:** does native resume restart child work, replace its ID, or replay a tool side effect?
+  Use synthetic execution markers to distinguish retained history from fresh work. Do not send a
+  follow-up merely to discover fate without recording that it can itself reactivate the child.
+
+Use bounded phases: observe resume without input, then a genuine scripted parent input, then any
+advertised status/history query. Negative observations apply only to that phase and route. Reuse
+ordinary parent-resume fixtures, preserving native storage while starting a new harness process;
+model-side gates establish the stimulus, but assertions about discoverability use native wire data.
+Pin observed behavior per harness/configuration before advertising recovery capabilities.
+
+### Transport-specific recovery investigation
+
+Compare Claude `stream-json` with [`--sdk-url` RemoteIO](claude_remote_io.md), using the
+same binary version and interruption points. The RemoteIO plan's static findings concern
+`2.1.292`; they are not evidence of runner-pinned `2.1.252` behavior. Probe worker registration,
+reinitialization, child/task inventory, transcript hydration, terminal-event replay, and whether
+command delivery receipts expose anything about child execution. Keep server-supplied history
+separate from state recovered by the harness itself. No transport cutover is implied.
+
+Codex v1 and v2 require separate recovery probes. At tag `rust-v0.157.0`, upstream
+[`multi_agent_resume.rs`](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/core/tests/suite/multi_agent_resume.rs)
+and its restore tests exercise v2 durable child identities and lazy loading after root restart.
+This is source evidence for a promising path, not an app-server wire assertion or proof that the
+v1 baseline automatically restores its children. Characterize unloaded identity, historical outcome,
+and active execution separately; a loaded-thread list need not enumerate all known children.
+
+The parameterized completed-child scenarios also probe a clean parent exit and fresh-process
+resume. Both passed on commit `03596ef8` in
+[CI](https://github.com/agentydragon/ducktape/commit/03596ef86d09913a11f521a69640e129cf60fea9/checks).
+Parent model history retains the completed result, but querying the old child without reactivation
+returns a missing-task error from Claude `TaskOutput` and `not_found` from Codex v1 `wait_agent`.
+Codex also exposes `notFound` in the native collaboration item's `agentsStates`. Claude emits no
+new `task_notification` during the tested resume/input/query sequence; the fixture's append-only
+trace must be sliced at the process boundary to avoid counting first-process notifications as replay.
+These observations cover neither crash recovery nor active children, v2, or RemoteIO.
 
 ### Initial executable coverage
 
