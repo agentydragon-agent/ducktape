@@ -7,10 +7,6 @@ and the [staging acceptance record](../notification_service/docs/staging_github_
 
 ## Remaining live verification
 
-- [ ] Verify listener/service restart recovery and same-delivery-ID redelivery deduplication.
-      Overlapping-subscription deduplication was proved live; it is not a webhook-redelivery test.
-- [ ] Verify failed-delivery visibility and the operator/API redelivery procedure. GitHub does not
-      automatically retry failed webhook requests; durable recovery starts only after receipt commit.
 - [ ] Audit remaining event/permission coverage, including PR lifecycle/reviews, pushes/ref changes,
       installation lifecycle, revoked access and fork-head correlation. An uninstalled fork is not
       covered merely because its base repository is installed. Successful ducktape subscriptions do
@@ -19,9 +15,9 @@ and the [staging acceptance record](../notification_service/docs/staging_github_
       not publicly routed). HTTPRoute acceptance, exact-path configuration and successful signed
       delivery are verified, not a substitute for these negative probes.
 
-## Next: event-driven Actions consumption
+## Deferred: event-driven Actions consumption
 
-Replace the notification source's five-second Action-history polling in a separate implementation PR:
+If idle polling becomes a priority, replace the notification source's five-second Action-history polling in a separate implementation PR:
 
 - Add a read-authorized SSE change feed backed by the Action Service's existing committed-event
   notifications. Its current SSE endpoint is operator-only; notifications must not gain operator

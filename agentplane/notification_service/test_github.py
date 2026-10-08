@@ -240,6 +240,35 @@ async def test_signed_http_durable_acceptance_and_disabled_provider(
         assert delivery.payload == comment()
 
 
+async def test_redelivery_after_restart_replays_one_committed_receipt(
+    store: Store, engine: AsyncEngine, provider: tuple[GitHub, Upstream]
+) -> None:
+    github, _ = provider
+    sub = await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
+    raw, headers = signed(comment(), "issue_comment")
+    delivery_id = UUID(headers["X-GitHub-Delivery"])
+    signature = headers["X-Hub-Signature-256"]
+    assert await github.ingest(store, "issue_comment", delivery_id, signature, raw)
+
+    # Reconstruct both the provider and store before the inbox worker processes the receipt.
+    recovered = Store(engine)
+    restarted = GitHub(github.http, github.settings)
+    assert not await restarted.ingest(recovered, "issue_comment", delivery_id, signature, raw)
+    claim = await recovered.claim()
+    assert claim is not None
+    source = await recovered.source(claim)
+    assert source is not None
+    await restarted.reconcile(recovered, claim, source, SOURCE)
+    page = await recovered.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
+    assert len(page.entries) == 1
+    assert page.entries[0].payload == comment()
+    assert not await restarted.ingest(recovered, "issue_comment", delivery_id, signature, raw)
+    await restarted.reconcile(recovered, claim, source, SOURCE)
+    assert (await recovered.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).entries == page.entries
+    async with recovered.sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(GitHubDelivery)) == 1
+
+
 @pytest.mark.parametrize(
     "values", [{"actions_after_sequence": 0}, {"github_start_position": None}, {"github_binding": None}]
 )

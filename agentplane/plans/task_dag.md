@@ -68,11 +68,10 @@ flowchart TB
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
-    NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
-    NOTIFICATION_WORKER_ISOLATION["Reliability follow-up<br/>separate notification HTTP and delivery workers<br/>independent failure domains"]:::future
+    NOTIFICATION_ACTION_FEED["Deferred optimization<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
+    NOTIFICATION_WORKER_ISOLATION["Deferred reliability refactor<br/>separate notification HTTP and delivery workers<br/>independent failure domains"]:::future
     HARNESS_AUTO_COMPACTION_PROOF["Future harness acceptance<br/>automatic compaction<br/>standing instructions on next request"]:::future
     NOTIFICATION_NOTICE_PACING["Incremental improvement<br/>stage-aware notice pacing<br/>avoid redundant busy-turn notices"]:::future
-    GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
     HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
     NOTIFICATION_SOURCE_WIRING["Conditional future refactor<br/>extract shared source wiring<br/>from concrete implementations"]:::future
     CRON_NOTIFICATIONS["Unranked future capability<br/>scheduled / cron notifications<br/>durable schedules and missed-tick policy"]:::future
@@ -1366,7 +1365,7 @@ second tool-request lifecycle; the settled harness behavior and the seam are in
 
 ### `NOTIFICATION_WORKER_ISOLATION` — separate notification API and delivery workers
 
-**Planned reliability improvement:** the notification HTTP server currently starts delivery
+**Deferred reliability improvement:** the notification HTTP server currently starts delivery
 workers in its lifespan. A fatal worker failure takes an HTTP replica out of service; if it repeats
 on both replicas, inbox reads, acknowledgements, subscription management and GitHub webhook
 receipt are unavailable even though the API and database may still be healthy. The worker
@@ -1392,10 +1391,10 @@ split is not its root-cause fix.
 
 ### `NOTIFICATION_ACTION_FEED` — remove idle Action-history polling
 
-**Remaining implementation:** replace the notification source's five-second history polling with
+**Deferred optimization:** replace the notification source's five-second history polling with
 one read-authorized change feed per replica, followed by catch-up from canonical Action events.
 Reuse the existing Action Service committed-event signals; no operator authority or cross-service
-DB access. [Acceptance](notifications.md#next-event-driven-actions-consumption) includes reconnect,
+DB access. [Acceptance](notifications.md#deferred-event-driven-actions-consumption) includes reconnect,
 missed-signal recovery, subscription-creation races and idle-without-polling behavior.
 The shared PostgreSQL listener refactor did not implement this cross-service feed.
 
@@ -1453,15 +1452,6 @@ request and resume for instructions. The native explicit-compaction tests establ
 working assumption that standing instructions survive; they do not directly test automatic
 compaction or the runner's exact constructed instructions. Do not block a frontend compaction
 control on this optional coverage.
-
-### `GITHUB_DELIVERY_RECOVERY` — remaining live reliability acceptance
-
-**Remaining deployed acceptance:** prove same-delivery-ID redelivery does not append another entry,
-and listener/service restart resumes committed work without missing or duplicating delivery.
-Overlap deduplication and a successful first delivery do not prove these cases. Include failed
-webhook visibility and the operator redelivery procedure: GitHub does not automatically retry
-failed requests, and durable recovery starts at receipt commit. Track remaining access/event/fork
-coverage separately in the [notification plan](notifications.md#remaining-live-verification).
 
 ### `HOME_ASSISTANT_NOTIFICATIONS` — entity and event subscriptions
 

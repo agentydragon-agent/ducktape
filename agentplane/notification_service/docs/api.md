@@ -146,6 +146,12 @@ events, oversized bodies and busy ingress are rejected. Upstream signatures and 
 never returned to agents. Installation lifecycle payloads are retained internally, not delivered as PR activity.
 GitHub does not automatically retry failed webhook requests: failures/timeouts require redelivery.
 Durable recovery starts at the committed receipt, not at the start of the HTTP request.
+If GitHub reports a failed delivery, an App operator should inspect the webhook's Recent Deliveries
+in GitHub App settings and redeliver that delivery (or use GitHub's App delivery-attempt API
+with App authority). A retry of an already committed receipt returns 202 with `duplicate: true`;
+a retry of an uncommitted receipt returns 202 with `duplicate: false` after commit. Then check
+subscription/inbox state separately: HTTP acceptance does not prove runner delivery or agent
+acknowledgement. Do not replay with a new delivery ID or assume GitHub retries automatically.
 
 PostgreSQL is the durable ingress journal, with committed ordering serialized against subscription
 creation. Inbox workers asynchronously replay from each subscription boundary; they recheck current App
