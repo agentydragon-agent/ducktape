@@ -268,9 +268,20 @@ def report(
     lines += ["Artifacts are retained in each invocation's undeclared test outputs:", ""]
     lines += [f"{index + 1}. `{invocation}`" for index, invocation in enumerate(invocations)]
     lines += ["", "```bash", "bbapi artifact download <invocation> '*.png' --all", "```", ""]
-    lines += ["## Review assets", "", "Images declared in `visual-review.json`; differences or missing images fail the check.", ""]
+    lines += [
+        "## Review assets",
+        "",
+        "Images declared in `visual-review.json`; differences or missing images fail the check.",
+        "",
+    ]
     lines += _image_report(observations.review, runs=runs)
-    lines += ["", "## Diagnostic PNGs (informational)", "", "Unpublished PNGs do not affect the check's exit status.", ""]
+    lines += [
+        "",
+        "## Diagnostic PNGs (informational)",
+        "",
+        "Unpublished PNGs do not affect the check's exit status.",
+        "",
+    ]
     lines += _image_report(observations.diagnostics, runs=runs)
     if failed_executions:
         lines += ["", "## Failed executions", ""]

@@ -30,6 +30,7 @@ py_library(
     deps = [
         ":artifacts",
         ":targets",
+        "//util:visual_review",
         "//util/bazel:workspace",
     ],
 )
@@ -55,6 +56,7 @@ py_test(
     deps = [
         ":determinism",
         "//:conftest",
+        "//util:visual_review",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

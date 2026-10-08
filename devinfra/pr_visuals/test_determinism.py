@@ -76,10 +76,15 @@ def test_unpublished_pngs_are_diagnostics_and_other_outputs_are_ignored() -> Non
     observations = observe(
         ["run-1", "run-2"],
         bbapi=Path("bbapi"),
-        run=_listing({
-            "run-1": [_artifact("//ui:visual", "loading.png", "first"), _artifact("//ui:visual", "trace.zip", "trace")],
-            "run-2": [_artifact("//ui:visual", "loading.png", "second")],
-        }),
+        run=_listing(
+            {
+                "run-1": [
+                    _artifact("//ui:visual", "loading.png", "first"),
+                    _artifact("//ui:visual", "trace.zip", "trace"),
+                ],
+                "run-2": [_artifact("//ui:visual", "loading.png", "second")],
+            }
+        ),
         read_manifest=lambda _: pytest.fail("no manifest was listed"),
     )
     assert observations.review == {}
@@ -95,10 +100,15 @@ def test_manifest_membership_not_filename_decides_what_is_reviewed(name: str) ->
     observations = observe(
         ["run-1", "run-2"],
         bbapi=Path("bbapi"),
-        run=_listing({
-            invocation: [_artifact("//ui:visual", "visual-review.json", "manifest"), _artifact("//ui:visual", name, invocation)]
-            for invocation in ("run-1", "run-2")
-        }),
+        run=_listing(
+            {
+                invocation: [
+                    _artifact("//ui:visual", "visual-review.json", "manifest"),
+                    _artifact("//ui:visual", name, invocation),
+                ]
+                for invocation in ("run-1", "run-2")
+            }
+        ),
         read_manifest=lambda _: _manifest(name),
     )
     assert analyze(observations.review, runs=2).drifted == [Render("//ui:visual", name)]
@@ -112,10 +122,9 @@ def test_a_png_without_its_own_runs_declaration_is_missing(second_manifest: list
     observations = observe(
         ["run-1", "run-2"],
         bbapi=Path("bbapi"),
-        run=_listing({
-            "run-1": [_artifact("//ui:visual", "visual-review.json", "first"), png],
-            "run-2": [*second_manifest, png],
-        }),
+        run=_listing(
+            {"run-1": [_artifact("//ui:visual", "visual-review.json", "first"), png], "run-2": [*second_manifest, png]}
+        ),
         read_manifest=manifests.__getitem__,
     )
     render = Render("//ui:visual", "list.png")
@@ -140,9 +149,7 @@ def test_shard_manifests_are_unioned_without_counting_duplicate_outputs_as_runs(
 
 
 def test_conflicting_outputs_in_one_run_do_not_hide_a_missing_run() -> None:
-    observations = {
-        Render("//ui:visual", "list.png"): Observation(by_digest={"first": ["run-1"], "second": ["run-1"]})
-    }
+    observations = {Render("//ui:visual", "list.png"): Observation(by_digest={"first": ["run-1"], "second": ["run-1"]})}
     render = Render("//ui:visual", "list.png")
     assert analyze(observations, runs=2) == Findings(drifted=[render], missing=[render])
 
@@ -178,11 +185,15 @@ def test_manifest_membership_is_scoped_to_its_target() -> None:
     observations = observe(
         ["run-1"],
         bbapi=Path("bbapi"),
-        run=_listing({"run-1": [
-            _artifact("//ui:visual", "visual-review.json", "manifest"),
-            _artifact("//ui:visual", "list.png", "review"),
-            _artifact("//other:browser", "list.png", "diagnostic"),
-        ]}),
+        run=_listing(
+            {
+                "run-1": [
+                    _artifact("//ui:visual", "visual-review.json", "manifest"),
+                    _artifact("//ui:visual", "list.png", "review"),
+                    _artifact("//other:browser", "list.png", "diagnostic"),
+                ]
+            }
+        ),
         read_manifest=lambda _: _manifest("list.png"),
     )
     assert set(observations.review) == {Render("//ui:visual", "list.png")}
@@ -325,7 +336,9 @@ def test_a_target_that_did_not_pass_says_so_in_the_report() -> None:
         return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
 
     summary = report(
-        Observations(review={}, diagnostics={}), ["run-1", "run-2"], observe_targets(["run-1", "run-2"], ["//ui:visual"], bbapi=Path("bbapi"), run=fake_run)
+        Observations(review={}, diagnostics={}),
+        ["run-1", "run-2"],
+        observe_targets(["run-1", "run-2"], ["//ui:visual"], bbapi=Path("bbapi"), run=fake_run),
     )
 
     assert "FLAKY, PASSED" in summary
