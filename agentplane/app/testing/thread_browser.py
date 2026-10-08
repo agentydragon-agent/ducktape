@@ -56,7 +56,10 @@ async def page(
             args=[*CONTAINER_BASE_BROWSER_ARGS, f"--ignore-certificate-errors-spki-list={certificate.spki}"],
         )
         try:
-            async with await browser.new_context(viewport=viewport.size) as context:
+            # The real app honors reduced motion for running-state chevrons,
+            # streaming cursors and breathing labels. Keep those out of image diffs
+            # without freezing the live clock or changing replication/scroll behavior.
+            async with await browser.new_context(viewport=viewport.size, reduced_motion="reduce") as context:
                 await context.add_init_script(path=history_probe.script_path())
                 await context.add_init_script(path=get_required_path("_main/agentplane/app/testing/thread_page.js"))
                 await context.tracing.start(screenshots=True, snapshots=True, sources=True)

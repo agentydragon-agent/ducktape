@@ -134,6 +134,11 @@ async def recovery_tools(view: VisualPage, app: AgentplaneFixture) -> VisualPage
     await expect(tools).to_have_count(3)
     await expect(view.page.get_by_text("Succeeded, then discarded from context", exact=True)).to_be_visible()
     await expect(tools.locator(".agentplane-disclosure-summary[aria-expanded='false']")).to_have_count(0)
+    # Expansion resizes virtual rows and can still restore the reading anchor.
+    # Position the screenshot only after the history's own layout work finishes.
+    await expect(view.page.get_by_role("region", name="Thread history")).to_have_attribute(
+        "data-layout-settled", "true"
+    )
     return view
 
 
