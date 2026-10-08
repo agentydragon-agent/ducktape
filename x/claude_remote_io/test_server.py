@@ -110,9 +110,7 @@ async def test_resume_cursor_replays_original_envelopes_and_new_events(peer) -> 
         assert third["sequence_num"] == 3
     # A repeated cursor is an explicit replay, not a new command envelope. The
     # query cursor takes precedence over Last-Event-ID, as in the CLI peer.
-    async with client.get(
-        path, headers={**AUTH, "Last-Event-ID": "3"}, params={"from_sequence_num": "1"}
-    ) as response:
+    async with client.get(path, headers={**AUTH, "Last-Event-ID": "3"}, params={"from_sequence_num": "1"}) as response:
         assert await event(response) == second
         assert await event(response) == third
     assert server.stream_cursors == [1, 1]
