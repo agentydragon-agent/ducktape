@@ -113,10 +113,16 @@ def _sse_json(value: list[ActionRequestView]) -> bytes:
     return json.dumps([item.model_dump(mode="json") for item in value], separators=(",", ":")).encode()
 
 
+def _mcp_group_snapshot(catalog: ActionCatalog) -> bytes:
+    """The operator's complete MCP catalog view, including currently available Actions."""
+    return json.dumps(
+        [row.model_dump(mode="json") for row in catalog.group_views(with_detail=True) if row.executor_kind == "mcp"],
+        separators=(",", ":"),
+    ).encode()
+
+
 def _stream_operator_authorized(
-    principal: OperatorPrincipal,
-    credentials: HTTPAuthorizationCredentials | None,
-    authenticator: OperatorAuthenticator,
+    principal: OperatorPrincipal, credentials: HTTPAuthorizationCredentials | None, authenticator: OperatorAuthenticator
 ) -> Callable[[], Awaitable[bool]]:
     """Recheck stream authorization on every snapshot and keepalive, not just at connect time."""
 
@@ -423,14 +429,7 @@ def create_app(
         authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
     ) -> StreamingResponse:
         async def read() -> bytes:
-            return json.dumps(
-                [
-                    row.model_dump(mode="json")
-                    for row in action_catalog.group_views(with_detail=True)
-                    if row.executor_kind == "mcp"
-                ],
-                separators=(",", ":"),
-            ).encode()
+            return _mcp_group_snapshot(action_catalog)
 
         return snapshot_stream(
             updates.subscribe_mcp_health, read, _stream_operator_authorized(principal, credentials, authenticator)

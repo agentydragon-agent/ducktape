@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import timedelta
 from typing import Any, cast
 from uuid import uuid4
@@ -11,7 +12,7 @@ import httpx
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.action_service.api import create_app
+from agentplane.action_service.api import _mcp_group_snapshot, create_app
 from agentplane.action_service.auth import OperatorAuthenticator, workload_principal
 from agentplane.action_service.catalog import (
     ActionCatalog,
@@ -560,6 +561,8 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
                 ],
             }
         ]
+        streamed_groups = json.loads(_mcp_group_snapshot(catalog))
+        assert streamed_groups[0]["actions"] == groups.json()[0]["actions"]
         assert "github-mcp-account" not in groups.text
 
         # /v1/action-groups accepts either bearer scheme, and only an operator's (e.g. the settings

@@ -610,7 +610,6 @@ py_test(
         ":operator_stream",
         ":updates",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
