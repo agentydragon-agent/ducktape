@@ -102,6 +102,7 @@ flowchart TB
     APP_ALEMBIC_SQUASH["One-off app schema cleanup<br/>new baseline after identity/archive cutover<br/>stamp each deployed database before pruning"]:::future
     SANDBOX_COMPARTMENT_DESIGN["Trust-boundary decision<br/>Sandbox compartment assignment and enforcement<br/>shared filesystem and SA"]:::decision
     SANDBOX_COMPARTMENT_BOUNDARY["Enforce Sandbox trust domain<br/>reject incompatible Open and replacement<br/>no false cross-compartment isolation"]:::future
+    RUNNER_STATE_BOUNDARY_RETHINK["Deferred architecture question<br/>should runner own a database at all?<br/>thin harness adapter vs durable journal"]:::decision
     THREAD_PORTABLE_STATE["Deferred shared portability contract<br/>snapshot, fence, and restore runner/native state<br/>outside disposable Sandbox storage"]:::decision
     CLAUDE_PORTABLE_STATE["Conditional Claude implementation<br/>native snapshot/restore<br/>only on supported evidence"]:::future
     CODEX_PORTABLE_STATE["Conditional Codex implementation<br/>native snapshot/restore<br/>only on supported evidence"]:::future
@@ -1097,6 +1098,31 @@ co-resident Threads with mixed intended audiences, default to no ServiceAccount 
 exposure and require reviewed reclassification or a new Sandbox; do not silently
 merge their histories. Test mismatch, concurrent Open, same-name
 Sandbox replacement, shared workspace/SA access, and historical archives after deletion.
+
+### `RUNNER_STATE_BOUNDARY_RETHINK` — should the runner own durable state?
+
+**Deferred design question, not a decided refactor:** today each Sandbox runner stores
+its command journal and Event log in SQLite on Sandbox-attached storage alongside
+native harness artifacts. A bulk runner-state schema migration or move off those
+volumes could require inspecting and migrating each Sandbox PVC individually. Ask whether a runner should instead
+be a thin, mostly stateless adapter that launches/controls a harness and carries its
+protocol traffic to Sandbox Service (or an independent history/command authority),
+with durable command admission, Event ordering, and replay outside each runner PVC.
+The native harness may still require persistent files; removing runner SQLite does
+not by itself make Claude/Codex state or workspaces portable.
+
+Examine whether the current boundary — a harness-neutral runner ↔ Sandbox Service
+protocol — has pushed persistence and harness-independent recovery into the runner
+unnecessarily. Compare per-runner storage with a central durable authority for
+admission acknowledgements, deduplication and lost replies, ordered Event publication,
+writer fencing across restarts/replicas, recovery after disconnect, and runner-offline
+operation. Keep harness-specific mechanics behind an adapter without forcing the
+service to understand native frames. Pin failure modes and migration/rollback costs,
+including existing Threads and their PVCs, before choosing either design. This
+investigation does **not** block the near-term archive, same-storage image rollout or
+identity cutovers, which must preserve today's runner journal contract until a
+replacement is designed and proved. Do not silently discard state or assume the
+archive alone can replace native resume or command recovery.
 
 ### `THREAD_PORTABLE_STATE` — durable state beyond a Sandbox volume
 
