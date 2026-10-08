@@ -594,36 +594,15 @@ def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
         authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
     ) -> StreamingResponse:
-        async def body() -> AsyncIterator[bytes]:
-            with updates.subscribe_connections() as subscription:
-                changed = subscription.changed
-                while True:
-                    changed.clear()
-                    subscription.check_available()
-                    if credentials is None or await authenticator.authenticate(credentials.credentials) != principal:
-                        return
-                    snapshot = await authority.list()
-                    subscription.check_available()
-                    yield (
-                        b"event: snapshot\ndata: "
-                        + json.dumps([row.model_dump(mode="json") for row in snapshot], separators=(",", ":")).encode()
-                        + b"\n\n"
-                    )
-                    while not changed.is_set():
-                        try:
-                            async with asyncio.timeout(5):
-                                await changed.wait()
-                        except TimeoutError:
-                            subscription.check_available()
-                            if (
-                                credentials is None
-                                or await authenticator.authenticate(credentials.credentials) != principal
-                            ):
-                                return
-                            yield b": keepalive\n\n"
-                    subscription.check_available()
+        async def authorized() -> bool:
+            return credentials is not None and await authenticator.authenticate(credentials.credentials) == principal
 
-        return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+        async def read() -> bytes:
+            return json.dumps(
+                [row.model_dump(mode="json") for row in await authority.list()], separators=(",", ":")
+            ).encode()
+
+        return snapshot_stream(updates.subscribe_connections, read, authorized)
 
     @app.get("/v1/operator/connections/{connection_id}", dependencies=[Depends(_operator)])
     async def connection(connection_id: UUID) -> Connection:

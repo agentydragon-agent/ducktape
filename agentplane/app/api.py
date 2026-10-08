@@ -524,36 +524,47 @@ async def list_connections(client: OperatorActions) -> list[Connection]:
     return await client.connections()
 
 
-@connections_router.get("/connections/stream")
-async def connections_stream(
-    request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions
+def _operator_resource_stream(
+    request: Request,
+    shutdown: Shutdown,
+    updates: Updates,
+    sessions: OperatorSessions,
+    source: Callable[[], AbstractAsyncContextManager[AsyncIterator[bytes]]],
+    label: str,
 ) -> StreamingResponse:
+    """Proxy an operator SSE resource, renewing upstream tokens and ending on logout."""
     session_id = operator_session_row(request).id
 
     async def session_over() -> None:
         await sessions.until_ended(session_id, updates.changes[Channel.OPERATOR_SESSIONS])
 
+    async def upstream() -> AsyncIterator[bytes]:
+        while True:
+            delivered = False
+            async with source() as chunks:
+                async for chunk in chunks:
+                    delivered = True
+                    yield chunk
+            if not delivered:
+                return
+
     async def body() -> AsyncIterator[bytes]:
         try:
-
-            async def upstream() -> AsyncIterator[bytes]:
-                while True:
-                    delivered = False
-                    async with client.stream_connections() as chunks:
-                        async for chunk in chunks:
-                            delivered = True
-                            yield chunk
-                    if not delivered:
-                        return
-
             async for chunk in shutdown.until(until_done(upstream(), session_over)):
                 if await request.is_disconnected():
                     return
                 yield chunk
         except httpx.HTTPError, httpx2.TransportError, OperatorFederationError:
-            logger.warning("Connections stream interrupted", exc_info=True)
+            logger.warning("%s stream interrupted", label, exc_info=True)
 
     return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
+@connections_router.get("/connections/stream")
+async def connections_stream(
+    request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions
+) -> StreamingResponse:
+    return _operator_resource_stream(request, shutdown, updates, sessions, client.stream_connections, "Connections")
 
 
 @connections_router.get("/connections/{connection_id}")

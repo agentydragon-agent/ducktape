@@ -144,20 +144,6 @@ class OperatorActionServiceClient(_BearerClient):
         )
         return EnrollmentDecisionResult.model_validate(response.json())
 
-    @asynccontextmanager
-    async def stream_connections(self) -> AsyncIterator[AsyncIterator[bytes]]:
-        token = await self._tokens.token()
-        request = self._http.build_request(
-            "GET", "/v1/operator/connections/stream", headers={"Authorization": f"Bearer {token}"}
-        )
-        response = await self._http.send(request, stream=True)
-        try:
-            response.raise_for_status()
-            yield response.aiter_raw()
-        finally:
-            with CancelScope(shield=True):
-                await response.aclose()
-
     async def connections(self) -> list[Connection]:
         response = await self._request("GET", "/v1/operator/connections")
         return [Connection.model_validate(row) for row in response.json()]
@@ -220,6 +206,11 @@ class OperatorActionServiceClient(_BearerClient):
     @asynccontextmanager
     async def stream_push_subscriptions(self) -> AsyncIterator[AsyncIterator[bytes]]:
         async with self._stream_operator("/v1/operator/push/subscriptions/stream") as chunks:
+            yield chunks
+
+    @asynccontextmanager
+    async def stream_connections(self) -> AsyncIterator[AsyncIterator[bytes]]:
+        async with self._stream_operator("/v1/operator/connections/stream") as chunks:
             yield chunks
 
     async def push_config(self) -> dict[str, str | None]:
