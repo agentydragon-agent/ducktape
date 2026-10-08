@@ -51,8 +51,9 @@ restart. The tested Codex v1 surface must not stand in for its v2 configuration.
 Use **logical session** for a native conversational participant that can accumulate history and
 potentially do more work later. Keep these concepts separate:
 
-- **Execution owner:** the existing runner session that launches and supervises the harness and
-  retains its native state. This role does not make it the semantic parent of every descendant.
+- **Execution owner:** the durable runner resource that launches and supervises the harness and
+  retains its native state. Today this is coupled to a root session; with harness-minted root IDs it
+  must be reservable before that root is declared. It is not the semantic parent of every descendant.
 - **Logical session:** a root conversation or a discovered native child. It owns attributed
   conversation history, not necessarily a process, workspace, or independently usable control API.
 - **Parent relationship:** the native delegation ancestry, supported by evidence. Preserve the
@@ -72,11 +73,13 @@ is insufficient to advertise an exhaustive live-native snapshot.
 
 ## Identity and declaration
 
-Root IDs can retain their existing client-selected behavior. On native discovery the runner allocates
-and persists an opaque child session ID before publishing it. Use the canonical logical identity
-direction in the layering plan; do not require existing root storage paths to be rekeyed here.
+Use the same declaration model for roots and children. Today root runner IDs are client-selected;
+the proposed harness-minted-root flow below separates requesting creation from observing a native
+conversation. Persist an opaque Agentplane logical ID and its native binding before publication.
+Use the canonical logical identity direction in the layering plan; do not require existing root
+storage paths to be rekeyed here.
 
-A child descriptor should carry:
+A session descriptor should carry:
 
 - Logical session ID, execution-owner ID, and parent ID when established.
 - Origin kind: explicitly opened root or harness-discovered child.
@@ -100,6 +103,74 @@ Declare only when there is native evidence of an actual child identity. A tool-c
 returned child ID is a pending delegation in the parent's history, not yet a child session. An
 error before creation must not leave a phantom child. If an ID is first observed at completion,
 allow late discovery without inventing a previously observed running interval.
+
+## The single-agent case: harness-minted root IDs
+
+A single-agent run is the smallest declaration case: one execution owner, one root declaration,
+no parent relationship. The harness is authoritative about the native conversation's identity and
+existence; the caller requests creation rather than declaring that a conversation already exists.
+
+Keep three identifiers distinct:
+
+- **Creation request ID:** caller-chosen correlation/idempotency key. Retrying it retrieves the same
+  creation attempt; it is not a native or logical session ID.
+- **Native session ID:** minted by the harness and learned from native protocol evidence.
+- **Agentplane session reference:** a stable public logical identity bound to the qualified native
+  ID. Prefer an opaque runner-assigned ID so native scope/format changes do not rekey public history.
+  Making the native ID itself public is a possible alternative, but it still needs harness/owner
+  scope; a bare native ID is not a globally unique Agentplane reference.
+
+The proposed flow is:
+
+1. The client requests a new root with a spec and creation request ID, optionally including the
+   first input with its own command ID. It does not need to supply a future session ID.
+2. The runner durably reserves the execution owner, native state location, and creation intent.
+   It may reserve the eventual logical ID and journal here, but reports **pending creation**, not
+   an observed native session. Setup and launch failures belong to this attempt.
+3. The adapter starts the harness and requests a new native conversation. Native evidence supplies
+   its ID; the runner commits the binding and a root `SessionDeclared` observation with no parent.
+4. The client receives the declared session reference and can list, attach, and use the proven root
+   controls. Identity binding must not change the journal's origin or discard pre-declaration evidence.
+5. Later turns and explicit native resume reuse that binding when continuity is established.
+   Creating another native conversation is another declaration, not a relabeling of this session.
+
+The two harnesses have different declaration timing:
+
+- **Codex:** the existing adapter already obtains a harness-minted `thread.id` from `thread/start`.
+  That reply can declare the root before the first `turn/start`. Today it is stored underneath a
+  separately client-chosen runner session ID; the new creation flow removes that client-ID prerequisite.
+- **Claude:** the existing runner currently generates a UUID and passes `--session-id` on fresh
+  launch; the adapter's `handshake()` returns that preselected ID after `initialize`, not an ID minted
+  by the handshake response. To exercise harness-minted identity, omit the fresh-launch override
+  and bind the ID from an observed native
+  session-bearing frame. Do not assume `initialize` announces it: the exact earliest reliable
+  declaration boundary needs a pinned test, including the no-input case.
+
+If the ID is not revealed until input starts, the API must not deadlock by requiring an attached
+session before accepting the first input. Persist that input in the creation attempt's existing
+journal, dispatch it using that command ID when the native transport is ready, then bind the resulting
+session declaration without resubmitting the input.
+The pending creation reference can serve launch progress and declaration evidence until attachment
+is possible. A UI may show a pending conversation, but it must not report a native session as already
+created. Do not insert a synthetic user prompt merely to force the harness to allocate an ID.
+
+Creation idempotency is not native exactly-once execution. If the runner crashes after requesting a
+native conversation but before durably recording its ID, a retry of the same creation request must
+not blindly start another one. Recover through positively identified native state/protocol evidence
+where supported; otherwise report an ambiguous creation outcome. A JSON-RPC request ID or a saved
+creation intent alone does not prove the native operation is safe to repeat. Test that crash window
+before promising automatic recovery. Changed specs under the same creation key are rejected.
+
+This proposes separating **create**, **observe/attach**, and **explicit resume** in the runner/service
+contract rather than overloading `Open(unknown_id, spec)` with a guessed future ID. Use the existing
+command/journal machinery for the attempt and first input, not another execution queue. Retain the
+existing root mappings and history; implementation should make an atomic contract cutover rather
+than add a tolerant second interpretation of `Open`. The first child-discovery slice may keep today's
+root creation path, but that is an explicit scope boundary, not the final identity model.
+
+Root and child discovery then converge: both commit the same descriptor and declaration observation;
+only their cause, parent linkage, and capabilities differ. A child declaration has native delegation
+provenance rather than a client creation request, and does not allocate a new execution owner.
 
 ## Proposed observation flow
 
@@ -226,10 +297,15 @@ implementation of a supposedly independent child command.
 
 ## Implementation slices and acceptance
 
-1. **Evidence extraction and routing.** Extend native wire types only for fields consumed; add
+1. **Evidence extraction and routing.** Pin root ID allocation/declaration timing for both harnesses,
+   including Claude without `--session-id` and without initial input. Extend native wire types only
+   for fields consumed; add
    adapter tests for declaration, aliases, attribution, and completion using the characterized native
    events. Retain unknown frames. Verify child events cannot settle parent commands or turns.
-2. **Durable read-only child sessions.** Resolve qualified evidence references and the cross-journal
+2. **Durable declaration and read-only child sessions.** Decide whether harness-minted root creation
+   ships in this slice or follows the existing-root discovery path. If included, test creation retries,
+   delayed declaration/first-input delivery, and crashes before/after the native ID binding. Resolve
+   qualified evidence references and the cross-journal
    commit/replay design. Persist descriptors and attributed child streams; implement read-only
    list/attach. Crash-test every declaration/fan-out publication boundary and duplicate replay.
 3. **Service and presentation.** Expose inventory/history through the existing Sandbox Service API.
