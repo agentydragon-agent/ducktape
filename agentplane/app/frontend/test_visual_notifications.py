@@ -5,6 +5,7 @@ import pytest_bazel
 from playwright.async_api import expect
 
 from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
+from util.testing.viewports import MOBILE
 from util.testing.visual_capture import VisualPage
 
 pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.visual_fixtures")
@@ -53,6 +54,30 @@ async def test_notification_service_reconnect(view: VisualPage, app: AgentplaneF
     await page.get_by_role("button", name="Notifications").click()
     await expect(page.get_by_text("2 awaiting notice")).to_be_visible()
     await view.capture(name="notification_status_reconnected")
+
+
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+async def test_thread_notifications_mobile_menu(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+    await expect(page.get_by_role("button", name="Notifications")).to_have_count(0)
+    await page.get_by_role("button", name="More", exact=True).click()
+    await expect(page.get_by_role("menuitem", name="Notifications")).to_be_visible()
+    await view.capture(name="thread_notifications_mobile_menu")
+    await page.get_by_role("menuitem", name="Notifications").click()
+    await expect(page.get_by_text("2 awaiting notice")).to_be_visible()
+    await view.capture(name="thread_notifications_mobile_drawer")
+
+
+@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+async def test_sandbox_notifications_mobile_menu(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/sandboxes/ready-sandbox")
+    page = view.page
+    await expect(page.get_by_role("button", name="Notifications")).to_have_count(0)
+    await page.get_by_role("button", name="More Sandbox actions").click()
+    await page.get_by_role("menuitem", name="Notifications").click()
+    await expect(page.get_by_text("Session s-2")).to_be_visible()
+    await view.capture()
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 /** Read-only operator projection: no provider payloads or acknowledgement controls. */
-import { Badge, Button, Divider, Drawer, Group, Paper, ScrollArea, Stack, Text } from "@mantine/core";
+import { Badge, Divider, Drawer, Group, Paper, ScrollArea, Stack, Text } from "@mantine/core";
 import { useEffect, useState, type JSX } from "react";
 
 import { fetchWithLogin } from "./client";
@@ -58,8 +58,17 @@ function timestamp(value: string): string {
   return new Date(value).toLocaleString();
 }
 
-export function NotificationStatus({ sandbox, sessionId }: { sandbox: string; sessionId?: string }): JSX.Element {
-  const [opened, setOpened] = useState(false);
+export function NotificationStatus({
+  sandbox,
+  sessionId,
+  opened,
+  onClose,
+}: {
+  sandbox: string;
+  sessionId?: string;
+  opened: boolean;
+  onClose: () => void;
+}): JSX.Element {
   const [data, setData] = useState<Status | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -98,16 +107,7 @@ export function NotificationStatus({ sandbox, sessionId }: { sandbox: string; se
   const inboxes = data?.inboxes.filter(({ inbox }) => !sessionId || inbox.session_id === sessionId) ?? [];
   return (
     <>
-      <Button size="xs" variant="subtle" onClick={() => setOpened(true)}>
-        Notifications
-      </Button>
-      <Drawer
-        opened={opened}
-        onClose={() => setOpened(false)}
-        title={`Notifications · ${sandbox}`}
-        position="right"
-        size="lg"
-      >
+      <Drawer opened={opened} onClose={onClose} title={`Notifications · ${sandbox}`} position="right" size="lg">
         <ScrollArea h="calc(100vh - 110px)">
           <Stack gap="md" pr="sm">
             <Text size="sm" c="dimmed">

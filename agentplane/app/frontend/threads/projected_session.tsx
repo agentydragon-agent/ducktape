@@ -924,6 +924,7 @@ function ProjectedSessionBody({
   onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const sync = useThreadSync().useThread();
   const commands = useProjectedCommands(threadId, entities);
   const openDebug = useOpenChronologicalDebug();
@@ -1152,7 +1153,15 @@ function ProjectedSessionBody({
             )}
           </Group>
           <TopbarActions>
-            <NotificationStatus sandbox={thread.sandbox} sessionId={thread.session_id} />
+            <Button size="xs" variant="subtle" visibleFrom="sm" onClick={() => setNotificationsOpen(true)}>
+              Notifications
+            </Button>
+            <NotificationStatus
+              sandbox={thread.sandbox}
+              sessionId={thread.session_id}
+              opened={notificationsOpen}
+              onClose={() => setNotificationsOpen(false)}
+            />
             <Menu position="bottom-end" withArrow shadow="md">
               <Menu.Target>
                 <ActionIcon size="sm" variant="subtle" color="gray" aria-label="More">
@@ -1162,6 +1171,9 @@ function ProjectedSessionBody({
               <Menu.Dropdown>
                 <Menu.Label style={{ overflowWrap: "anywhere" }}>Thread ID: {threadId}</Menu.Label>
                 <Menu.Divider />
+                <Menu.Item hiddenFrom="sm" onClick={() => setNotificationsOpen(true)}>
+                  Notifications
+                </Menu.Item>
                 <Menu.Item leftSection={<IconHistory size={15} />} onClick={() => openDebug()}>
                   Debug history
                 </Menu.Item>
