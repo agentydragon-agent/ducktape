@@ -268,6 +268,49 @@ async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
         with pytest.raises(ServiceError) as invalid:
             await runner.lookup(idempotency_key="")
         assert invalid.value.code == grpc.StatusCode.INVALID_ARGUMENT
+        with pytest.raises(ServiceError) as missing:
+            await runner.retry_reserved(idempotency_key="missing-key")
+        assert missing.value.code == grpc.StatusCode.NOT_FOUND
+
+        def frozen_launch(session_id: UUID) -> bytes:
+            return protocol_pb2.FrozenLaunch(
+                open=runner_pb2.Open(
+                    session_id=f"r-{session_id}",
+                    spec=runner_pb2.SessionSpec(
+                        harness=runner_pb2.HARNESS_CODEX,
+                        cwd=f"/state/{session_id}",
+                        model="frozen-model",
+                        instructions="private launch instructions",
+                    ),
+                    setup_script="private setup",
+                )
+            ).SerializeToString(deterministic=True)
+
+        frozen = await store.reserve(
+            caller_namespace=OWNER.namespace,
+            caller_name=OWNER.name,
+            sandbox_namespace=SANDBOX_NAMESPACE,
+            sandbox_name=SANDBOX,
+            sandbox_uid=UUID(SANDBOX_UID),
+            open_key="retry-after-reload",
+            open_request=b"original spec is no longer in the browser",
+            launch_spec=frozen_launch,
+        )
+        assert not (await runner.lookup(idempotency_key="retry-after-reload")).HasField("summary")
+        # A restarted app needs only its Open key, not the original spec/setup script or today's defaults.
+        async with service_client(
+            replace(resources, history=Store(engine), platform_instructions="changed"), token_file
+        ) as restarted:
+            recovered = await restarted.runner(DESTINATION).retry_reserved(idempotency_key="retry-after-reload")
+        attached = await peer.attachments.get()
+        assert recovered.session_id == str(frozen.session_id)
+        assert recovered.attached.session_id == recovered.session_id
+        assert attached.opened.session_id == f"r-{frozen.session_id}"
+        assert attached.opened.spec.cwd == f"/state/{frozen.session_id}"
+        assert attached.opened.spec.instructions == "private launch instructions"
+        assert attached.opened.setup_script == "private setup"
+        await attached.closed.wait()
+        assert (await runner.lookup(idempotency_key="retry-after-reload")).HasField("summary")
 
         created = await runner.create(
             idempotency_key="confirmed-key", spec={"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state"}

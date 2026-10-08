@@ -72,6 +72,11 @@ Kubernetes ownership labels, stored bindings, identities, and PVC policy remain 
   the native session is inventoried; it includes the frozen spec and is intended for the
   trusted app, **not** for forwarding to browsers. A reservation alone is not proof of
   successful Open. Does not create, resume or change any session.
+- `RetryReservedSession`: a deliberately mutating companion scoped to the same caller,
+  Sandbox UID and Open key. Completes a committed reservation with the *original* frozen
+  launch settings, including setup script; it accepts no spec, setup script, or defaults
+  from a reloaded browser. An absent key is NOT_FOUND; concurrent retries remain bound
+  to the original runner session. Requires the verified current Sandbox/runner.
 - Both Open paths: bootstrap
   and setup use the runner's existing idempotence; the response is the native attachment snapshot, not
   a claim that all setup or a model turn has completed.

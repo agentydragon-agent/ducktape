@@ -26,7 +26,7 @@ from agentplane.sandbox_service.egress_views import BindingNotFoundError, Unknow
 from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.session_history.store import HistoryNotFoundError, Store
+from agentplane.sandbox_service.session_history.store import HistoryNotFoundError, OpenReservation, Store
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.bearer import parse_bearer, sole_header
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
@@ -332,17 +332,46 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     open_request=request.SerializeToString(deterministic=True),
                     launch_spec=freeze,
                 )
-                launch = protocol_pb2.FrozenLaunch.FromString(reservation.launch_spec)
-                public_id = str(reservation.session_id)
-                attachment = await session_lifecycle.open_session(
-                    client,
-                    protocol_pb2.SessionDestination(sandbox=request.sandbox, session_id=launch.open.session_id),
-                    launch.open.spec,
-                    binding=protocol_pb2.SandboxBinding(bootstrap=launch.bootstrap),
-                    setup_script=launch.open.setup_script if launch.open.HasField("setup_script") else None,
-                )
-                attachment.session_id = public_id
-                return protocol_pb2.CreateSessionResponse(session_id=public_id, attached=attachment)
+                return await self.attach_reserved(client, request.sandbox, reservation)
+
+    @staticmethod
+    async def attach_reserved(
+        client: RunnerClient, sandbox: SandboxDestination, reservation: OpenReservation
+    ) -> protocol_pb2.CreateSessionResponse:
+        """Reuse exactly the launch frozen before first runner contact, regardless of today's defaults."""
+        launch = protocol_pb2.FrozenLaunch.FromString(reservation.launch_spec)
+        public_id = str(reservation.session_id)
+        attachment = await session_lifecycle.open_session(
+            client,
+            protocol_pb2.SessionDestination(sandbox=sandbox, session_id=launch.open.session_id),
+            launch.open.spec,
+            binding=protocol_pb2.SandboxBinding(bootstrap=launch.bootstrap),
+            setup_script=launch.open.setup_script if launch.open.HasField("setup_script") else None,
+        )
+        attachment.session_id = public_id
+        return protocol_pb2.CreateSessionResponse(session_id=public_id, attached=attachment)
+
+    @override
+    async def RetryReservedSession(
+        self, request: protocol_pb2.LookupSessionRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.CreateSessionResponse:
+        async with errors(context), asyncio.timeout(self.resources.lifecycle_timeout_s):
+            caller = await self.resources.authenticate(context)
+            if not request.idempotency_key or len(request.idempotency_key) > 128:
+                raise ValueError("Open key is required and must not exceed 128 characters")
+            await self.checked_sandbox(protocol_pb2.SandboxRequest(destination=request.sandbox))
+            reservation = await self.history().reserved_open(
+                caller_namespace=caller.namespace,
+                caller_name=caller.name,
+                sandbox_namespace=self.resources.destinations.inventory.namespace,
+                sandbox_name=request.sandbox.sandbox,
+                sandbox_uid=UUID(request.sandbox.sandbox_uid),
+                open_key=request.idempotency_key,
+            )
+            if reservation is None:
+                raise HistoryNotFoundError(request.idempotency_key)
+            async with self.runner(request.sandbox) as (client, _):
+                return await self.attach_reserved(client, request.sandbox, reservation)
 
     @override
     async def LookupSession(

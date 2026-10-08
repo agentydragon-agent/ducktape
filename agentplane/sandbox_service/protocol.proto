@@ -31,6 +31,8 @@ service SandboxService {
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   // Read-only reconciliation by the original caller, sandbox incarnation and Open key.
   rpc LookupSession(LookupSessionRequest) returns (LookupSessionResponse);
+  // Finish a committed reservation using only its frozen launch; no original inputs from the caller.
+  rpc RetryReservedSession(LookupSessionRequest) returns (CreateSessionResponse);
   rpc ResumeSession(SessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
   // Returns the original matching CommandAdmitted entry, not command completion.
   rpc SubmitCommand(SubmitCommandRequest) returns (ducktape.agentplane.protocol.v1.EventEntry);
