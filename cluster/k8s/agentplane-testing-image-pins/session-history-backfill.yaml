@@ -1,11 +1,10 @@
-# Deliberately NOT included in kustomization.yaml: apply only after #9456 deploys
-# with history_ingestion_enabled=false and after replacing :unset with a pinned image.
-# A failed import stops; inspect the Job and correct the issue before a deliberate rerun.
+# One-shot testing import; a failed Job stays failed for inspection (no retries).
+# Remove this resource after recording the validation result, not by Job TTL.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: agentplane-session-history-backfill-v1
-  namespace: agentplane-staging
+  name: agentplane-session-history-backfill-testing-v1
+  namespace: agentplane-testing
 spec:
   backoffLimit: 0
   template:
@@ -23,7 +22,7 @@ spec:
         - name: forgejo-images-creds
       containers:
         - name: backfill
-          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-service-history-backfill:unset
+          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-service-history-backfill:devel-20261008214653-1c38c48
           imagePullPolicy: IfNotPresent
           env:
             - name: AGENTPLANE_HISTORY_BACKFILL_SANDBOX_NAMESPACE
@@ -62,7 +61,7 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: agentplane-session-history-backfill
-  namespace: agentplane-staging
+  namespace: agentplane-testing
 spec:
   endpointSelector:
     matchLabels:
@@ -80,7 +79,7 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
             k8s:cnpg.io/cluster: postgres
       toPorts:
         - ports:
