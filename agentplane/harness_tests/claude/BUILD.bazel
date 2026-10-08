@@ -151,6 +151,7 @@ py_test(
         ":messages",
         "//:conftest",
         "//agentplane/harness_tests:conftest",
+        "//agentplane/native:async_process",
         "//agentplane/native/claude:async_run",
         "//agentplane/native/claude:blocks",
         "//agentplane/native/claude:scenarios",
