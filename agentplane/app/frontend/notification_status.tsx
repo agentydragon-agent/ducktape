@@ -60,6 +60,10 @@ function timestamp(value: string): string {
   return new Date(value).toLocaleString();
 }
 
+function entryTime(value: string): string {
+  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 export function NotificationStatus({
   sandbox,
   sessionId,
@@ -205,10 +209,7 @@ export function NotificationStatus({
                                 {entry.summary}
                               </Text>
                               <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-                                {new Date(entry.created_at).toLocaleTimeString([], {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
+                                {entryTime(entry.created_at)}
                               </Text>
                             </Group>
                           </Stack>
