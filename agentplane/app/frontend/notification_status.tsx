@@ -1,5 +1,5 @@
 /** Read-only operator projection: curated entry summaries, no raw provider payloads or acknowledgement controls. */
-import { Badge, Divider, Drawer, Group, Paper, ScrollArea, Stack, Text } from "@mantine/core";
+import { Accordion, Badge, Divider, Drawer, Group, Paper, ScrollArea, Stack, Text } from "@mantine/core";
 import { useEffect, useState, type JSX } from "react";
 
 import { fetchWithLogin } from "./client";
@@ -152,19 +152,12 @@ export function NotificationStatus({
                       <Text fw={600}>Session {inbox.session_id}</Text>
                       {inbox.retired && <Badge color="gray">Retired</Badge>}
                     </Group>
-                    <Text size="xs" c="dimmed">
-                      Inbox {inbox.id}
-                    </Text>
                     <Group gap="xs">
                       <Badge color={unannounced_count ? "blue" : "gray"}>{unannounced_count} awaiting notice</Badge>
                       <Badge color={pending_acknowledgement_count ? "yellow" : "gray"}>
                         {pending_acknowledgement_count} not acknowledged
                       </Badge>
                     </Group>
-                    <Text size="sm">
-                      Cursors: latest {inbox.last_cursor} · notice-covered {inbox.covered} · acknowledged{" "}
-                      {inbox.acknowledged} · expired through {inbox.expired_through}
-                    </Text>
                     {notice && (
                       <Text size="sm">
                         Latest notice through {notice.through_cursor}:{" "}
@@ -190,32 +183,41 @@ export function NotificationStatus({
                         {notice_due_at ? ` · eligible ${timestamp(notice_due_at)}` : ""}
                       </Text>
                     )}
-                    {notice_due_at && (
-                      <Text size="xs" c="dimmed">
-                        Quiet until {timestamp(quiet_until!)} · maximum wait {timestamp(max_wait_at!)}
-                      </Text>
-                    )}
-                    {next_work_at && (
-                      <Text size="xs" c="dimmed">
-                        Next scheduled inbox work: {timestamp(next_work_at)} (may be source polling or delivery retry)
-                      </Text>
-                    )}
                     <Divider label="Entries after acknowledgement" />
                     {pending_entries.length === 0 && (
                       <Text size="sm" c="dimmed">
                         No retained unacknowledged entries
                       </Text>
                     )}
-                    {pending_entries.map((entry) => (
-                      <Paper key={entry.cursor} withBorder p="xs">
-                        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-                          #{entry.cursor} · {entry.summary}
-                        </Text>
-                        <Text size="xs" c="dimmed">
-                          {timestamp(entry.created_at)}
-                        </Text>
-                      </Paper>
-                    ))}
+                    {pending_entries.length > 0 && (
+                      <Stack gap={4}>
+                        {pending_entries.map((entry, index) => (
+                          <Stack key={entry.cursor} gap={4}>
+                            {entry.cursor > inbox.covered &&
+                              (index === 0 || (pending_entries[index - 1]?.cursor ?? 0) <= inbox.covered) && (
+                                <Divider label={`Notice covered through #${inbox.covered} · awaiting notice below`} />
+                              )}
+                            <Group gap="xs" wrap="nowrap" align="flex-start" py={4}>
+                              <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+                                #{entry.cursor}
+                              </Text>
+                              <Text size="sm" style={{ overflowWrap: "anywhere", flex: 1 }}>
+                                {entry.summary}
+                              </Text>
+                              <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+                                {new Date(entry.created_at).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </Text>
+                            </Group>
+                          </Stack>
+                        ))}
+                        {!pending_entries_more && (pending_entries.at(-1)?.cursor ?? 0) <= inbox.covered && (
+                          <Divider label={`Notice covered through #${inbox.covered}`} />
+                        )}
+                      </Stack>
+                    )}
                     {pending_entries_more && (
                       <Text size="xs" c="dimmed">
                         Showing the first 100 retained entries after acknowledgement; more entries remain.
@@ -251,6 +253,30 @@ export function NotificationStatus({
                         )}
                       </Stack>
                     ))}
+                    <Accordion variant="contained" chevronPosition="right">
+                      <Accordion.Item value="diagnostics">
+                        <Accordion.Control>Inbox diagnostics</Accordion.Control>
+                        <Accordion.Panel>
+                          <Stack gap="xs">
+                            <Text size="xs" c="dimmed">Inbox {inbox.id}</Text>
+                            <Text size="sm">
+                              Cursors: latest {inbox.last_cursor} · notice-covered {inbox.covered} · acknowledged{" "}
+                              {inbox.acknowledged} · expired through {inbox.expired_through}
+                            </Text>
+                            {notice_due_at && (
+                              <Text size="xs" c="dimmed">
+                                Quiet until {timestamp(quiet_until!)} · maximum wait {timestamp(max_wait_at!)}
+                              </Text>
+                            )}
+                            {next_work_at && (
+                              <Text size="xs" c="dimmed">
+                                Next scheduled inbox work: {timestamp(next_work_at)} (may be source polling or delivery retry)
+                              </Text>
+                            )}
+                          </Stack>
+                        </Accordion.Panel>
+                      </Accordion.Item>
+                    </Accordion>
                   </Stack>
                 </Paper>
               )
