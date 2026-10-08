@@ -67,7 +67,7 @@ Do not expose scoped SA reads as a confidentiality guarantee until the admission
 boundary is enforced. Existing mixed or unknown co-resident Sessions remain
 operator-only until reviewed/reclassified or split into separately isolated
 Sandboxes; never silently coalesce their audiences. Deleting the Sandbox does not
-delete the archived label or enlarge the historical read set.
+delete the durable compartment assignment or enlarge the historical read set.
 
 ## Read and revocation behavior
 
