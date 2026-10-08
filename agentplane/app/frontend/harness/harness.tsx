@@ -1286,23 +1286,32 @@ function lifecycleGroupRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
-function setupRows(threadId: string): Record<string, unknown>[] {
+function setupRows(threadId: string, running = false): Record<string, unknown>[] {
   const event = (value: MessageInitShape<typeof EventSchema>["observation"]): Record<string, unknown> =>
     toJson(EventSchema, create(EventSchema, { observation: value })) as Record<string, unknown>;
-  return [
-    { ...viewState(4, null), thread_id: threadId },
-    lifecycle(1, "setup_started", event({ case: "setupStarted", value: {} }), threadId),
+  const output = (cursor: number, channel: "stdout" | "stderr", text: string) =>
     lifecycle(
-      2,
+      cursor,
       "setup_output",
       event({
         case: "setupOutput",
-        value: { stream: { case: "stdout", value: new TextEncoder().encode("Workspace ready\n") } },
+        value: { stream: { case: channel, value: new TextEncoder().encode(text) } },
       }),
       threadId
-    ),
-    lifecycle(3, "setup_finished", event({ case: "setupFinished", value: { exitCode: 0 } }), threadId),
-    lifecycle(4, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+    );
+  return [
+    { ...viewState(7, null), thread_id: threadId },
+    lifecycle(1, "setup_started", event({ case: "setupStarted", value: {} }), threadId),
+    output(2, "stderr", "Cloning into project...\nUpdating files: 10%\r"),
+    output(3, "stdout", "Workspace ready\n"),
+    output(4, "stderr", "Updating files: 80%\r"),
+    output(5, "stderr", "Updating files: 100%\n"),
+    ...(running
+      ? []
+      : [
+          lifecycle(6, "setup_finished", event({ case: "setupFinished", value: { exitCode: 0 } }), threadId),
+          lifecycle(7, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+        ]),
   ];
 }
 
@@ -2682,7 +2691,10 @@ const visualHarness = {
     threadEntityRows = lifecycleGroupRows;
   },
   threadSetup(): void {
-    threadEntityRows = setupRows;
+    threadEntityRows = (id) => setupRows(id);
+  },
+  threadSetupRunning(): void {
+    threadEntityRows = (id) => setupRows(id, true);
   },
   shellCalls(): void {
     threadEntityRows = shellCallRows;

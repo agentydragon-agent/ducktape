@@ -147,7 +147,6 @@ flowchart TB
     THREAD_IDENTITY_NEW["New Session identity<br/>one canonical UUID for Session/Thread<br/>create/Open across app and runner"]:::future
     THREAD_EVENT_CONTINUITY["Identity cutover capstone<br/>legacy mapping plus new IDs, one runner journal<br/>exclusive writer across incarnations"]:::milestone
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
-    THREAD_SETUP_PROGRESS["P2 Thread UI<br/>coalesce live setup stdout/stderr<br/>progress widget with raw detail"]:::future
     NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
     THREAD_OUTBOX_CUTOVER["Deferred cutover<br/>all product commands via app outbox if chosen<br/>no competing relay path"]:::future
@@ -372,19 +371,6 @@ Role-versus-bundle representation belongs to `KUBERNETES_RBAC_POLICIES`. Respect
 ownership: an account's bindings must not fight a reconciler for the same objects.
 
 ## Named gates and acceptance evidence
-
-### `THREAD_SETUP_PROGRESS` — coalesce live Thread setup output
-
-**P2, observed during fresh Haku checkout:** setup currently renders each incoming stderr chunk
-as a separate “Setup stderr” block. A Git clone then fills the transcript with repeated
-“Cloning into ...” and “Updating files: N%” blocks rather than showing one progressing operation.
-Group consecutive setup output for the same setup run and stream into a live setup widget; render
-carriage-return and newline progress sensibly, including distinct clone steps, and expose an
-expandable raw stdout/stderr log for diagnostics. Preserve original archived events and ordering;
-do not silently hide warnings, nonzero exit status, or interrupted setup. On reconnect/replay,
-rebuild the same widget without duplicating chunks, and leave a useful final summary when setup
-finishes. Test incremental arrival, interleaved stdout/stderr, failure, and replay using the
-existing Thread event feed. This is presentation work, not a new setup protocol.
 
 ### Unranked future harness capabilities
 
@@ -664,8 +650,7 @@ reconnect, and runner restart.
 Specify a durable start receipt and scoped progress/result reads or feed without
 making Open wait for the script; keep successful bootstrap as an Open precondition
 unless a separately reviewed contract changes that. Separate the configured
-launch/RPC deadlines from the acceptance promise. `THREAD_SETUP_PROGRESS` is
-separate UI presentation work; per-session setup is not this Sandbox initialization.
+launch/RPC deadlines from the acceptance promise. Per-session setup progress is not this Sandbox initialization.
 
 ### `SANDBOX_CREATE_RECONCILE` — lost lifecycle response and partial provisioning
 

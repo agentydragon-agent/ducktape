@@ -46,6 +46,66 @@ export function summarizeSetup(entities: readonly ThreadEntity[]): string {
   return "Thread setup running";
 }
 
+/** Recent display lines only. The entities remain the unmodified, expandable raw evidence. */
+export function setupProgress(entities: readonly ThreadEntity[]): string[] {
+  const recent: { text: string; order: number }[] = [];
+  const streams = {
+    stdout: { decoder: new TextDecoder(), line: "", pendingReturn: false, order: 0 },
+    stderr: { decoder: new TextDecoder(), line: "", pendingReturn: false, order: 0 },
+  };
+  let order = 0;
+  const complete = (stream: (typeof streams)["stdout"]) => {
+    const text = stream.line.trim();
+    if (text) {
+      recent.push({ text, order: ++order });
+      if (recent.length > 3) recent.shift();
+    }
+    stream.line = "";
+  };
+  const write = (stream: (typeof streams)["stdout"], text: string) => {
+    for (const char of text) {
+      if (stream.pendingReturn) {
+        stream.pendingReturn = false;
+        if (char === "\n") {
+          complete(stream); // CRLF is one newline; a bare CR overwrites the current line.
+          continue;
+        }
+        stream.line = "";
+      }
+      if (char === "\r") stream.pendingReturn = true;
+      else if (char === "\n") complete(stream);
+      else {
+        stream.line += char;
+        stream.line = stream.line.slice(-240); // Bound the preview, never the retained output.
+        stream.order = ++order;
+      }
+    }
+  };
+  let terminal = false;
+  for (const entity of entities) {
+    if (!setupStep(entity) || !("event" in entity.state)) continue;
+    const observation = fromJson(EventSchema, entity.state.event as JsonValue).observation;
+    if (observation.case === "setupOutput") {
+      const { case: channel, value } = observation.value.stream;
+      if (channel === "stdout" || channel === "stderr") {
+        write(streams[channel], streams[channel].decoder.decode(value, { stream: true }));
+      }
+    } else if (observation.case === "setupFinished" || observation.case === "setupInterrupted") {
+      terminal = true;
+    }
+  }
+  if (terminal) for (const stream of Object.values(streams)) write(stream, stream.decoder.decode());
+  return [
+    ...recent,
+    ...Object.values(streams)
+      .filter((stream) => stream.line.trim())
+      .map((stream) => ({ text: stream.line.trim(), order: stream.order })),
+  ]
+    .sort((a, b) => a.order - b.order)
+    .slice(-3)
+    .map(({ text }) => text);
+}
+
 function itemKind(entity: ThreadEntity): ItemKind | null {
   return entity.entityKind === "item" && "kind" in entity.state ? entity.state.kind : null;
 }
