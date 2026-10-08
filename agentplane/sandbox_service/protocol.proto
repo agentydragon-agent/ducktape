@@ -25,7 +25,10 @@ service SandboxService {
   rpc RevokeEgress(RevokeEgressRequest) returns (google.protobuf.Empty);
 
   rpc ListSessions(SandboxRequest) returns (ducktape.agentplane.runner.v1.ListSessionsResponse);
+  // Legacy caller-chosen runner identifier; retained until app cutover.
   rpc OpenSession(OpenSessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
+  // Service-owned Session identity. The key is only for an explicit Open retry.
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   rpc ResumeSession(SessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
   // Returns the original matching CommandAdmitted entry, not command completion.
   rpc SubmitCommand(SubmitCommandRequest) returns (ducktape.agentplane.protocol.v1.EventEntry);
@@ -59,6 +62,31 @@ message OpenSessionRequest {
   // Paths use SessionSpec's proto field names; nested paths and '*' are not accepted.
   google.protobuf.FieldMask override_mask = 3;
   optional string setup_script = 4;
+}
+
+message CreateSessionRequest {
+  SandboxDestination sandbox = 1;
+  // Opaque to the service, scoped to the authenticated caller and Sandbox UID.
+  string idempotency_key = 2;
+  ducktape.agentplane.runner.v1.SessionSpec spec = 3;
+  // Which spec fields replace the Sandbox defaults (proto field names). Proto3 scalar
+  // fields cannot distinguish absent from explicitly empty; e.g. instructions=""
+  // with "instructions" in this mask clears inherited instructions. An empty mask
+  // inherits all defaults, regardless of spec's scalar default values.
+  google.protobuf.FieldMask override_mask = 4;
+  optional string setup_script = 5;
+}
+
+message CreateSessionResponse {
+  // Durable service ID (UUID), NOT the runner or harness session ID.
+  string session_id = 1;
+  ducktape.agentplane.runner.v1.Attached attached = 2;
+}
+
+// Internal frozen launch snapshot, committed before contacting the runner.
+message FrozenLaunch {
+  ducktape.agentplane.runner.v1.Open open = 1;
+  string bootstrap = 2;
 }
 
 message SubmitCommandRequest {

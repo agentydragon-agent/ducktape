@@ -8,7 +8,7 @@ from agentplane.sandbox_service import protocol_pb2
 # gazelle:include_dep @pypi//protobuf
 
 
-def launch_overrides(request: protocol_pb2.OpenSessionRequest) -> dict[str, object]:
+def launch_overrides(request: protocol_pb2.OpenSessionRequest | protocol_pb2.CreateSessionRequest) -> dict[str, object]:
     paths = list(request.override_mask.paths)
     fields = runner_pb2.SessionSpec.DESCRIPTOR.fields_by_name
     if len(set(paths)) != len(paths) or any(path not in fields for path in paths):

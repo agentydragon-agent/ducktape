@@ -5,11 +5,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import override
+from uuid import UUID
 
 import grpc
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.json_format import ParseError
 from kubernetes_asyncio import client as k8s_client
+from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.protocol import event_log_pb2
@@ -24,6 +26,7 @@ from agentplane.sandbox_service.egress_views import BindingNotFoundError, Unknow
 from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.session_history.store import HistoryNotFoundError, Store
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.bearer import parse_bearer, sole_header
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
@@ -40,6 +43,7 @@ class Resources:
     caller_accounts: frozenset[ServiceAccountRef]
     platform_instructions: str
     runner_admission_ack_timeout_s: float
+    history: Store | None = None
     admission_timeout_s: float = 15
     follow_lease_s: float = 900
     lifecycle_timeout_s: float = 300
@@ -59,7 +63,7 @@ class Resources:
         if not self.caller_accounts:
             raise ValueError("at least one service caller is required")
 
-    async def authenticate(self, context: grpc.aio.ServicerContext) -> None:
+    async def authenticate(self, context: grpc.aio.ServicerContext) -> ServiceAccountRef:
         values = [value for key, value in (context.invocation_metadata() or ()) if key == "authorization"]
         if any(not isinstance(value, str) for value in values):
             raise WorkloadPrincipalRejectedError("invalid bearer metadata")
@@ -70,6 +74,7 @@ class Resources:
         principal = await self.principals.resolve_workload(token)
         if principal.account not in self.caller_accounts:
             await context.abort(grpc.StatusCode.PERMISSION_DENIED, "service caller not allowed")
+        return principal.account
 
 
 @asynccontextmanager
@@ -79,7 +84,7 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         yield
     except WorkloadPrincipalRejectedError:
         await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
-    except SandboxNotFoundError, BindingNotFoundError:
+    except SandboxNotFoundError, BindingNotFoundError, HistoryNotFoundError:
         await context.abort(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
     except ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError:
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection")
@@ -89,7 +94,7 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         )
     except InventoryError, RunnerError, StreamClosedError:
         await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request")
-    except DestinationUnavailableError, ConnectionError, k8s_client.ApiException:
+    except DestinationUnavailableError, ConnectionError, k8s_client.ApiException, SQLAlchemyError:
         await context.abort(grpc.StatusCode.UNAVAILABLE, "destination unavailable; no offline admission")
     except grpc.RpcError as error:
         if isinstance(error, grpc.aio.AioRpcError):
@@ -222,7 +227,18 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
         self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         async with self.request(context), self.runner(request.destination) as (client, _):
-            return runner_pb2.ListSessionsResponse(sessions=await client.list_sessions())
+            sessions = await client.list_sessions()
+            if self.resources.history is not None:
+                for summary in sessions:
+                    public_id = await self.resources.history.session_id(
+                        sandbox_namespace=self.resources.destinations.inventory.namespace,
+                        sandbox_name=request.destination.sandbox,
+                        sandbox_uid=UUID(request.destination.sandbox_uid),
+                        runner_session_id=summary.session_id,
+                    )
+                    if public_id is not None:
+                        summary.session_id = str(public_id)
+            return runner_pb2.ListSessionsResponse(sessions=sessions)
 
     @override
     async def OpenSession(
@@ -250,6 +266,84 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     setup_script=request.setup_script if request.HasField("setup_script") else None,
                 )
 
+    def history(self) -> Store:
+        if self.resources.history is None:
+            raise DestinationUnavailableError("Session history database not configured")
+        return self.resources.history
+
+    async def runner_session_id(self, destination: protocol_pb2.SessionDestination) -> str:
+        """Keep physical runner identifiers behind this service, including on follow."""
+        try:
+            session_id = UUID(destination.session_id)
+        except ValueError:
+            return destination.session_id  # legacy caller-chosen runner ID
+        if str(session_id) != destination.session_id:
+            return destination.session_id
+        return await self.history().runner_id(
+            session_id,
+            sandbox_namespace=self.resources.destinations.inventory.namespace,
+            sandbox_name=destination.sandbox.sandbox,
+            sandbox_uid=UUID(destination.sandbox.sandbox_uid),
+        )
+
+    @override
+    async def CreateSession(
+        self, request: protocol_pb2.CreateSessionRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.CreateSessionResponse:
+        async with errors(context), asyncio.timeout(self.resources.lifecycle_timeout_s):
+            caller = await self.resources.authenticate(context)
+            if len(request.idempotency_key) > 128 or len(request.setup_script) > 65_536:
+                raise ValueError("Open key or setup script is too long")
+            overrides = wire.launch_overrides(request)
+            async with self.runner(request.sandbox) as (client, endpoint):
+                sandbox_uid = UUID(request.sandbox.sandbox_uid)
+
+                def freeze(session_id: UUID) -> bytes:
+                    destination = protocol_pb2.SessionDestination(sandbox=request.sandbox, session_id=str(session_id))
+                    spec = session_lifecycle.launch_spec(
+                        destination,
+                        overrides,
+                        binding=endpoint.binding,
+                        platform_instructions=self.resources.platform_instructions,
+                        sandbox_namespace=self.resources.destinations.inventory.namespace,
+                    )
+                    setup_script = (
+                        request.setup_script
+                        if request.HasField("setup_script")
+                        else endpoint.binding.session_defaults.setup_script
+                        if endpoint.binding is not None and endpoint.binding.session_defaults.HasField("setup_script")
+                        else None
+                    )
+                    launch = protocol_pb2.FrozenLaunch(
+                        open=runner_pb2.Open(session_id=f"r-{session_id}", spec=spec),
+                        bootstrap=endpoint.binding.bootstrap if endpoint.binding is not None else "",
+                    )
+                    if setup_script is not None:
+                        launch.open.setup_script = setup_script
+                    return launch.SerializeToString(deterministic=True)
+
+                reservation = await self.history().reserve(
+                    caller_namespace=caller.namespace,
+                    caller_name=caller.name,
+                    sandbox_namespace=self.resources.destinations.inventory.namespace,
+                    sandbox_name=request.sandbox.sandbox,
+                    sandbox_uid=sandbox_uid,
+                    open_key=request.idempotency_key,
+                    open_request=request.SerializeToString(deterministic=True),
+                    launch_spec=freeze,
+                )
+                launch = protocol_pb2.FrozenLaunch.FromString(reservation.launch_spec)
+                public_id = str(reservation.session_id)
+                attachment = await session_lifecycle.open_session(
+                    client,
+                    protocol_pb2.SessionDestination(sandbox=request.sandbox, session_id=launch.open.session_id),
+                    launch.open.spec,
+                    binding=protocol_pb2.SandboxBinding(bootstrap=launch.bootstrap),
+                    setup_script=launch.open.setup_script if launch.open.HasField("setup_script") else None,
+                )
+                attachment.session_id = public_id
+                return protocol_pb2.CreateSessionResponse(session_id=public_id, attached=attachment)
+
     @override
     async def ResumeSession(
         self, request: protocol_pb2.SessionRequest, context: grpc.aio.ServicerContext
@@ -259,7 +353,9 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             if not destination.session_id:
                 raise ValueError("session ID is required")
             async with self.runner(destination.sandbox) as (client, _):
-                return await session_lifecycle.resume_session(client, destination.session_id)
+                result = await session_lifecycle.resume_session(client, await self.runner_session_id(destination))
+                result.session_id = destination.session_id
+                return result
 
     @override
     async def SubmitCommand(
@@ -276,7 +372,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             async with self.runner(destination.sandbox) as (client, _):
                 return await admit_running_command(
                     client,
-                    destination.session_id,
+                    await self.runner_session_id(destination),
                     request.command,
                     after_cursor=request.follow.after_cursor,
                     timeout_s=self.resources.runner_admission_ack_timeout_s,
@@ -299,11 +395,16 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             client = self._runner_client(endpoint.target)
             try:
                 async with asyncio.timeout(self.resources.admission_timeout_s):
-                    attachment = await client.attach(destination.session_id, after_cursor=request.follow.after_cursor)
+                    attachment = await client.attach(
+                        await self.runner_session_id(destination), after_cursor=request.follow.after_cursor
+                    )
                 try:
                     deadline = asyncio.get_running_loop().time() + self.resources.follow_lease_s
                     async with asyncio.timeout(self.resources.admission_timeout_s):
-                        await context.write(protocol_pb2.FollowSessionResponse(attached=attachment.attached))
+                        attached = runner_pb2.Attached()
+                        attached.CopyFrom(attachment.attached)
+                        attached.session_id = destination.session_id
+                        await context.write(protocol_pb2.FollowSessionResponse(attached=attached))
                     while True:
                         # Idle runners may stay quiet for the whole lease. Only writes have
                         # the short timeout: a blocked consumer must not pin an attachment.

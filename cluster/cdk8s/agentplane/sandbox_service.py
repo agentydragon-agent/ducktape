@@ -101,11 +101,11 @@ class SandboxService(Construct):
         # Like the other database-backed services, a migration failure blocks Pod
         # startup, including existing lifecycle RPCs. The command has no retry loop.
         migration_env = {
-            "AGENTPLANE_SANDBOX_SERVICE_HISTORY_DATABASE_URL": SecretRef(
+            "AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL": SecretRef(
                 namespace=env.namespace, name="postgres-sandbox-service"
             )
             .key("uri")
-            .env_value(self, "history-database")
+            .env_value(self, "database")
         }
         deployment = Deployment(
             self,
@@ -130,6 +130,7 @@ class SandboxService(Construct):
         container = deployment.add_container(
             name="sandbox-service",
             image=f"{_IMAGE}:unset",
+            env_variables=migration_env,
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             ports=[endpoint.port.container_port(), Port(name="health", number=settings.health_port).container_port()],
             readiness=http_probe("/healthz", port=settings.health_port, initial_delay_seconds=3, period_seconds=10),

@@ -2024,6 +2024,11 @@ spec:
       automountServiceAccountToken: true
       containers:
         - env:
+            - name: AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-sandbox-service
             - name: AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE
               value: /etc/agentplane-sandbox-service/config.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-sandbox-service:unset
@@ -2076,7 +2081,7 @@ spec:
         - name: forgejo-images-creds
       initContainers:
         - env:
-            - name: AGENTPLANE_SANDBOX_SERVICE_HISTORY_DATABASE_URL
+            - name: AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   key: uri
