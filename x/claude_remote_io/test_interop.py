@@ -293,6 +293,25 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                                     "request": {"subtype": "initialize"},
                                 }
                             )
+                            if active_crash:
+                                stopped_upload = await peer.wait_for(
+                                    lambda upload: (
+                                        upload["body"]["worker_epoch"] == 2
+                                        and any(
+                                            frame.get("subtype") == "task_notification"
+                                            for frame in uploaded_frames(upload)
+                                        )
+                                    )
+                                )
+                                (stopped,) = [
+                                    frame
+                                    for frame in uploaded_frames(stopped_upload)
+                                    if frame.get("subtype") == "task_notification"
+                                ]
+                                assert stopped["task_id"] == agent_id
+                                assert stopped["status"] == "stopped"
+                                assert stopped["session_id"] == session_id
+                                assert "didn't finish before the previous session ended" in stopped["summary"]
                             await peer.send(
                                 {
                                     "type": "user",
@@ -312,11 +331,6 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                                 )
                                 if active_crash:
                                     assert "PARENT_WAITING" in exchange.request.texts("assistant")
-                                    assert not any(
-                                        frame.get("subtype") == "task_notification"
-                                        for upload in peer.uploads
-                                        for frame in uploaded_frames(upload)
-                                    )
                                 else:
                                     assert "REMOTE_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
                                 assert "TaskOutput" not in exchange.request.tool_names
@@ -343,7 +357,8 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                                 )
                             )
                             assert not any(
-                                frame.get("subtype") in {"task_started", "task_notification"}
+                                frame.get("subtype") == "task_started"
+                                or (not active_crash and frame.get("subtype") == "task_notification")
                                 for upload in peer.uploads
                                 if upload["body"]["worker_epoch"] == 2
                                 for frame in uploaded_frames(upload)

@@ -37,11 +37,13 @@ child attribution, unavailable `TaskOutput`, retained parent history, and absenc
 notifications match the measured RemoteIO behavior. That revision's build/tests passed but its
 pre-commit formatting check required correction. These cases establish no completed-child fate
 recovery advantage for RemoteIO. They do not compare active-child fate or server-side hydration.
-An active-child crash probe is awaiting CI: it holds the child model request unanswered, waits
-for the parent turn and its processed receipt, kills the process, observes model-connection closure,
-and resumes with retained files but empty server history. The first resumed model request must be
-for the genuine parent input, not restarted child work. Lifecycle absence is asserted only through
-that bounded input/query sequence; it does not prove the child can never be recovered.
+The active-child crash capture on `68a3c393` produced a native `task_notification` in epoch 2
+with the original child `task_id`, `status: stopped`, and a summary saying the background agent
+did not finish before the previous session ended. The model request had been held unanswered
+when the old process was killed. No server history was supplied. This is affirmative native fate
+evidence, unlike the completed-child case's lack of new notifications. The old assertion expecting
+no notification failed; the revised probe pins this outcome and asks whether it arrives after
+initialize, before any new parent input. That timing assertion is awaiting CI.
 RemoteIO clean exit and server hydration remain unimplemented. Source inspection
 informs the candidate protocol; CI wire captures determine the actual contract.
 
