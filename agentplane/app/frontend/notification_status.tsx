@@ -259,7 +259,9 @@ export function NotificationStatus({
                         <Accordion.Control>Inbox diagnostics</Accordion.Control>
                         <Accordion.Panel>
                           <Stack gap="xs">
-                            <Text size="xs" c="dimmed">Inbox {inbox.id}</Text>
+                            <Text size="xs" c="dimmed">
+                              Inbox {inbox.id}
+                            </Text>
                             <Text size="sm">
                               Cursors: latest {inbox.last_cursor} · notice-covered {inbox.covered} · acknowledged{" "}
                               {inbox.acknowledged} · expired through {inbox.expired_through}
@@ -271,7 +273,8 @@ export function NotificationStatus({
                             )}
                             {next_work_at && (
                               <Text size="xs" c="dimmed">
-                                Next scheduled inbox work: {timestamp(next_work_at)} (may be source polling or delivery retry)
+                                Next scheduled inbox work: {timestamp(next_work_at)} (may be source polling or delivery
+                                retry)
                               </Text>
                             )}
                           </Stack>
