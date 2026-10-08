@@ -28,9 +28,9 @@ _STORAGE_SIZE = "5Gi"
 # traffic to this Cluster name the same port.
 POSTGRES_PORT = 5432
 
-# The two logical databases each service owns on the shared Cluster; the initdb-owned
+# The logical databases services own on the shared Cluster; the initdb-owned
 # "app"/trajectory database needs no Database/role of its own.
-_ROLE_NAMES = ["actions", "egress", "notifications"]
+_ROLE_NAMES = ["actions", "egress", "notifications", "sessionhistory"]
 _ELECTRIC_ROLE = "electric"
 
 

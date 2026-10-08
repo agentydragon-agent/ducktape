@@ -67,6 +67,28 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
+def test_session_history_database_is_independent_of_app_and_inventory(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    documents = agentplane_manifests[namespace]
+
+    def resource(kind: str, name: str) -> dict[str, Any]:
+        return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
+
+    database = resource("Database", "sessionhistory")
+    assert database["spec"]["name"] == "sessionhistory"
+    assert database["spec"]["owner"] == "sessionhistory"
+    cluster = resource("Cluster", "postgres")
+    roles = cluster["spec"]["managed"]["roles"]
+    assert one(role for role in roles if role["name"] == "sessionhistory")["passwordSecret"] == {
+        "name": "postgres-sessionhistory"
+    }
+    secret = resource("ExternalSecret", "postgres-sessionhistory")
+    assert secret["spec"]["target"]["template"]["data"]["dbname"] == "sessionhistory"
+    assert not resource("Deployment", sandbox_service.NAME)["spec"]["template"]["spec"].get("initContainers")
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
 def test_notifications_have_no_app_or_direct_runner_dependency(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
