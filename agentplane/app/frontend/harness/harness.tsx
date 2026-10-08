@@ -2398,7 +2398,8 @@ class HarnessEventSource extends EventTarget {
   }
   static publishMcp(path: string): void {
     for (const source of this.sources) {
-      if (source.url.endsWith(path) && source.readyState === this.OPEN) source.serve(new URL(source.url, "http://harness"));
+      if (source.url.endsWith(path) && source.readyState === this.OPEN)
+        source.serve(new URL(source.url, "http://harness"));
     }
   }
   static readonly CONNECTING = 0;
@@ -2495,10 +2496,16 @@ class HarnessEventSource extends EventTarget {
       const rows = MCP_GROUPS.map((row) =>
         row.key === "example_docs" && mcpHealthChanged
           ? {
-              ...row, available: false,
-              health: { state: "disconnected" as const, reason: "connect_failed" as const,
-                detail: "Connection refused", last_discovery_at: row.health?.last_discovery_at ?? null,
-                retry_at: new Date(NOW + 20_000).toISOString(), failures: 1 },
+              ...row,
+              available: false,
+              health: {
+                state: "disconnected" as const,
+                reason: "connect_failed" as const,
+                detail: "Connection refused",
+                last_discovery_at: row.health?.last_discovery_at ?? null,
+                retry_at: new Date(NOW + 20_000).toISOString(),
+                failures: 1,
+              },
             }
           : row
       );

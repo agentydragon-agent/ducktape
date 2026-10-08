@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from uuid import UUID
 
 from sqlalchemy.engine import make_url
@@ -74,71 +74,49 @@ class ActionUpdates:
                 del self._subscribers[request_id]
 
     @contextmanager
-    def subscribe_all(self) -> Iterator[ActionSubscription]:
+    def _subscribe_broadcast(self, subscribers: set[asyncio.Event]) -> Iterator[ActionSubscription]:
+        subscription = ActionSubscription(self.listener)
+        subscribers.add(subscription.changed)
+        try:
+            yield subscription
+        finally:
+            subscribers.discard(subscription.changed)
+
+    def subscribe_all(self) -> AbstractContextManager[ActionSubscription]:
         """Subscribe to every committed Action event for server-push consumers."""
-        subscription = ActionSubscription(self.listener)
-        self._all_subscribers.add(subscription.changed)
-        try:
-            yield subscription
-        finally:
-            self._all_subscribers.discard(subscription.changed)
+        return self._subscribe_broadcast(self._all_subscribers)
 
-    @contextmanager
-    def subscribe_push(self) -> Iterator[ActionSubscription]:
-        subscription = ActionSubscription(self.listener)
-        self._push_subscribers.add(subscription.changed)
-        try:
-            yield subscription
-        finally:
-            self._push_subscribers.discard(subscription.changed)
+    def subscribe_push(self) -> AbstractContextManager[ActionSubscription]:
+        return self._subscribe_broadcast(self._push_subscribers)
 
-    @contextmanager
-    def subscribe_connections(self) -> Iterator[ActionSubscription]:
-        subscription = ActionSubscription(self.listener)
-        self._connection_subscribers.add(subscription.changed)
-        try:
-            yield subscription
-        finally:
-            self._connection_subscribers.discard(subscription.changed)
+    def subscribe_connections(self) -> AbstractContextManager[ActionSubscription]:
+        return self._subscribe_broadcast(self._connection_subscribers)
 
-    @contextmanager
-    def subscribe_mcp_linkages(self) -> Iterator[ActionSubscription]:
-        subscription = ActionSubscription(self.listener)
-        self._linkage_subscribers.add(subscription.changed)
-        try:
-            yield subscription
-        finally:
-            self._linkage_subscribers.discard(subscription.changed)
+    def subscribe_mcp_linkages(self) -> AbstractContextManager[ActionSubscription]:
+        return self._subscribe_broadcast(self._linkage_subscribers)
 
-    @contextmanager
-    def subscribe_mcp_health(self) -> Iterator[ActionSubscription]:
-        subscription = ActionSubscription(self.listener)
-        self._health_subscribers.add(subscription.changed)
-        try:
-            yield subscription
-        finally:
-            self._health_subscribers.discard(subscription.changed)
+    def subscribe_mcp_health(self) -> AbstractContextManager[ActionSubscription]:
+        return self._subscribe_broadcast(self._health_subscribers)
+
+    @staticmethod
+    def _wake(subscribers: set[asyncio.Event]) -> None:
+        for changed in subscribers:
+            changed.set()
 
     def wake_mcp_health(self) -> None:
         """The supervisor's replica-local catalog changed; stream readers re-read it."""
-        for changed in self._health_subscribers:
-            changed.set()
+        self._wake(self._health_subscribers)
 
     def _notified(self, channel: str, payload: object) -> None:
-        if channel == PUSH_CHANNEL:
-            for changed in self._push_subscribers:
-                changed.set()
+        broadcast = {
+            PUSH_CHANNEL: self._push_subscribers,
+            CONNECTIONS_CHANNEL: self._connection_subscribers,
+            MCP_LINKAGE_CHANNEL: self._linkage_subscribers,
+        }.get(channel)
+        if broadcast is not None:
+            self._wake(broadcast)
             return
-        if channel == CONNECTIONS_CHANNEL:
-            for changed in self._connection_subscribers:
-                changed.set()
-            return
-        if channel == MCP_LINKAGE_CHANNEL:
-            for changed in self._linkage_subscribers:
-                changed.set()
-            return
-        for changed in self._all_subscribers:
-            changed.set()
+        self._wake(self._all_subscribers)
         try:
             request_id = UUID(str(payload))
         except ValueError:
@@ -153,16 +131,12 @@ class ActionUpdates:
             changed.set()
 
     def _wake_all(self) -> None:
-        for changed in self._linkage_subscribers:
-            changed.set()
-        for changed in self._health_subscribers:
-            changed.set()
-        for changed in self._push_subscribers:
-            changed.set()
-        for changed in self._connection_subscribers:
-            changed.set()
-        for subscribers in self._subscribers.values():
-            for changed in subscribers:
-                changed.set()
-        for changed in self._all_subscribers:
-            changed.set()
+        for subscribers in (
+            self._linkage_subscribers,
+            self._health_subscribers,
+            self._push_subscribers,
+            self._connection_subscribers,
+            self._all_subscribers,
+            *self._subscribers.values(),
+        ):
+            self._wake(subscribers)

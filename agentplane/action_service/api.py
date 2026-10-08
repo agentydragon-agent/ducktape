@@ -415,7 +415,7 @@ def create_app(
         async def read() -> bytes:
             return json.dumps(
                 [
-                    row.model_copy(update={"actions": []}).model_dump(mode="json")
+                    row.model_dump(mode="json")
                     for row in action_catalog.group_views(with_detail=True)
                     if row.executor_kind == "mcp"
                 ],

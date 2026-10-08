@@ -142,31 +142,56 @@ it("renders independent linkage and health snapshots, then updates either withou
   const groups = vi.fn(async () => []);
   const container = await render(list, {}, groups);
   const publish = async (path: string, value: unknown) => {
-    await act(async () => sources.get(path)?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(value) })));
+    await act(async () =>
+      sources.get(path)?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(value) }))
+    );
   };
   expect(container.textContent).toContain("Loading MCP servers");
   expect(container.textContent).not.toContain("No MCP servers are configured");
   await publish("/mcp-servers/stream", [
     {
-      server_id: "example", server_url: "https://mcp.example.test", status: "linked", revision: 1,
-      scopes: [], expires_at: null, linked_at: null, linked_by: null,
+      server_id: "example",
+      server_url: "https://mcp.example.test",
+      status: "linked",
+      revision: 1,
+      scopes: [],
+      expires_at: null,
+      linked_at: null,
+      linked_by: null,
     },
   ]);
   expect(container.textContent).toContain("Loading MCP servers");
   await publish("/action-groups/stream", [
     {
-      key: "example", title: "Example", description: "", executor_kind: "mcp", executor_description: "Example",
-      available: true, health: { state: "available", reason: null, detail: null, failures: 0,
-        retry_at: null, last_discovery_at: null }, actions: [],
+      key: "example",
+      title: "Example",
+      description: "",
+      executor_kind: "mcp",
+      executor_description: "Example",
+      available: true,
+      health: { state: "available", reason: null, detail: null, failures: 0, retry_at: null, last_discovery_at: null },
+      actions: [],
     },
   ]);
   expect(container.textContent).toContain("OAuth linklinked");
   expect(container.textContent).toContain("Connectionavailable");
   await publish("/action-groups/stream", [
     {
-      key: "example", title: "Example", description: "", executor_kind: "mcp", executor_description: "Example",
-      available: false, health: { state: "disconnected", reason: "connect_failed", detail: "Connection refused",
-        failures: 1, retry_at: null, last_discovery_at: null }, actions: [],
+      key: "example",
+      title: "Example",
+      description: "",
+      executor_kind: "mcp",
+      executor_description: "Example",
+      available: false,
+      health: {
+        state: "disconnected",
+        reason: "connect_failed",
+        detail: "Connection refused",
+        failures: 1,
+        retry_at: null,
+        last_discovery_at: null,
+      },
+      actions: [],
     },
   ]);
   expect(container.textContent).toContain("Connectionconnect_failed");

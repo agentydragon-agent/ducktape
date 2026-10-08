@@ -9,8 +9,6 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 from unittest.mock import Mock
 
-import pytest_bazel
-
 from agentplane.action_service.operator_stream import snapshot_stream
 from agentplane.action_service.updates import ActionSubscription
 

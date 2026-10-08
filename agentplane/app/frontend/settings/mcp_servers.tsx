@@ -119,8 +119,14 @@ export function McpServers({
   const [busy, setBusy] = useState<{ serverId: string; operation: "link" | "disconnect" } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [linkageConnection, setLinkageConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
-  const [healthConnection, setHealthConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
+  const [linkageConnection, setLinkageConnection] = useState<StreamConnection>({
+    phase: "connecting",
+    since: Date.now(),
+  });
+  const [healthConnection, setHealthConnection] = useState<StreamConnection>({
+    phase: "connecting",
+    since: Date.now(),
+  });
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -148,28 +154,21 @@ export function McpServers({
       void load();
       return;
     }
-    let haveLinkages = false;
-    let haveHealth = false;
-    const stopLinkages = followStream("/mcp-servers/stream", {
-      events: {
-        snapshot: (message) => {
-          setLinkages(JSON.parse(message.data) as McpLinkageView[]);
-          haveLinkages = true;
-          if (haveHealth) setLoading(false);
+    const received = new Set<string>();
+    function subscribe<T>(url: string, accept: (rows: T) => void, onConnection: (state: StreamConnection) => void) {
+      return followStream(url, {
+        events: {
+          snapshot: (message) => {
+            accept(JSON.parse(message.data) as T);
+            received.add(url);
+            if (received.size === 2) setLoading(false);
+          },
         },
-      },
-      onConnection: setLinkageConnection,
-    });
-    const stopHealth = followStream("/action-groups/stream", {
-      events: {
-        snapshot: (message) => {
-          setGroups(JSON.parse(message.data) as ActionGroupView[]);
-          haveHealth = true;
-          if (haveLinkages) setLoading(false);
-        },
-      },
-      onConnection: setHealthConnection,
-    });
+        onConnection,
+      });
+    }
+    const stopLinkages = subscribe<McpLinkageView[]>("/mcp-servers/stream", setLinkages, setLinkageConnection);
+    const stopHealth = subscribe<ActionGroupView[]>("/action-groups/stream", setGroups, setHealthConnection);
     return () => {
       stopLinkages();
       stopHealth();
