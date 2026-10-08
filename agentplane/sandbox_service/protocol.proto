@@ -93,9 +93,12 @@ message LookupSessionRequest {
 message LookupSessionResponse {
   // Empty when no reservation exists for this exact caller, Sandbox UID and key.
   string session_id = 1;
-  // Only set once the runner inventories the session; a reservation alone is not an Open success.
+  // Only set after evidence that native Open succeeded; inventory alone also includes failed Opens.
   // This is app-facing only and may contain the frozen spec: never forward it to the browser.
   ducktape.agentplane.runner.v1.SessionSummary summary = 2;
+  // The runner has terminal setup/launch failure evidence without a successful native start.
+  // A reserved but still in-flight Open leaves both summary and failed unset.
+  bool failed = 3;
 }
 
 // Internal frozen launch snapshot, committed before contacting the runner.

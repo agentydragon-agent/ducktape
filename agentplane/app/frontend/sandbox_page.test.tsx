@@ -370,7 +370,7 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 
-it.each(["absent", "unconfirmed"] as const)("checks %s without retrying or treating it as ready", async (status) => {
+it.each(["absent", "unconfirmed", "failed"] as const)("does not retry %s Open", async (status) => {
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(
       request.method === "GET"
@@ -384,7 +384,13 @@ it.each(["absent", "unconfirmed"] as const)("checks %s without retrying or treat
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(first.idempotency_key);
   await act(async () => button("Check Open status").click());
   expect(onOpenThread).not.toHaveBeenCalled();
-  expect(container.textContent).toContain(status === "absent" ? "No Open reservation" : "runner has not confirmed");
+  expect(container.textContent).toContain(
+    status === "absent"
+      ? "No Open reservation"
+      : status === "failed"
+        ? "runner could not start"
+        : "runner has not confirmed"
+  );
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   const lookup = sessions.mock.calls.find(([request]) => new URL(request.url).pathname.endsWith("/open"))?.[0];
   expect(new URL(lookup!.url).searchParams.get("idempotency_key")).toBe(first.idempotency_key);

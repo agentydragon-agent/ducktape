@@ -472,6 +472,10 @@ export function SandboxPage({
         setError(
           "Open was reserved but the runner has not confirmed it. Check later, or explicitly discard it to start fresh; this attempt will not be retried."
         );
+      } else if (result.status === "failed") {
+        setError(
+          "The runner could not start this session. Discard this Open attempt before starting fresh; it will not be retried."
+        );
       } else {
         setError("No Open reservation exists for this attempt. You may discard it and start fresh.");
       }

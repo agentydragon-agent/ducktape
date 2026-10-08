@@ -43,7 +43,7 @@ class NewSession(BaseModel):
 
 
 class OpenStatus(BaseModel):
-    status: Literal["absent", "unconfirmed", "ready"]
+    status: Literal["absent", "unconfirmed", "failed", "ready"]
     session_id: str | None = None
 
 
@@ -113,6 +113,8 @@ class RunnerBridge:
         result = await self._runners.client(sandbox).lookup(idempotency_key=idempotency_key)
         if not result.session_id:
             return OpenStatus(status="absent")
+        if result.failed:
+            return OpenStatus(status="failed", session_id=result.session_id)
         if not result.HasField("summary"):
             return OpenStatus(status="unconfirmed", session_id=result.session_id)
         thread_id = await self._event_logs.open(sandbox, result.session_id, result.summary.spec)
