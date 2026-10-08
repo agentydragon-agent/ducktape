@@ -707,7 +707,7 @@ async def push_subscriptions_stream(
                 if await request.is_disconnected():
                     return
                 yield chunk
-        except (httpx.HTTPError, httpx2.TransportError, OperatorFederationError):
+        except httpx.HTTPError, httpx2.TransportError, OperatorFederationError:
             logger.warning("Push settings stream interrupted", exc_info=True)
 
     return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
