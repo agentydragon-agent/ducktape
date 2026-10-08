@@ -309,9 +309,7 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
 
         def entry(cursor: int, event: event_pb2.Event) -> event_log_pb2.EventEntry:
             return event_log_pb2.EventEntry(
-                cursor=cursor,
-                origin=event_log_pb2.EventOrigin(source_id="journal", sequence=cursor),
-                event=event,
+                cursor=cursor, origin=event_log_pb2.EventOrigin(source_id="journal", sequence=cursor), event=event
             )
 
         # A failed native handshake leaves the runner's session in inventory but

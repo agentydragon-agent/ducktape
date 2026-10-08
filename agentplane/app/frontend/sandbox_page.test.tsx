@@ -370,7 +370,7 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 
-it.each(["absent", "unconfirmed", "failed"] as const)("checks %s without retrying or treating it as ready", async (status) => {
+it.each(["absent", "unconfirmed", "failed"] as const)("does not retry %s Open", async (status) => {
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(
       request.method === "GET"
