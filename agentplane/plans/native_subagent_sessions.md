@@ -203,3 +203,36 @@ frames alongside it. Add deterministic adapter tests for normalization/replay on
 exists; do not replace the real-binary tests with adapter mocks. Keep read-only presentation separate
 from independently controlling children, and do not manufacture a complete transcript from a parent
 summary.
+
+
+## Codex multi-agent v2 discovery extension
+
+`//agentplane/harness_tests/codex:test_v2_discovery` adds a separate configuration matrix
+on the existing Codex **0.157.0** pin: `features.multi_agent=true` and
+`features.multi_agent_v2=true`. The existing app-server driver already uses v2 JSON-RPC
+methods; this extension specifically changes the **multi-agent feature/tool surface** from
+`multi_agent_v1` to `collaboration`. It is not a production adapter or pin change.
+
+| Case | Assertions / evidence | Status |
+| --- | --- | --- |
+| Root creation | `thread/start` mints ID; root has no parent; loaded enumeration includes it | Added, awaiting CI |
+| Native child launch | `collaboration.spawn_agent`, task name and `fork_turns=none`; completed spawn item's receiver ID agrees with child model-request ID | Added, awaiting CI |
+| Live child snapshot | `thread/read` identifies parent and shared session tree, active status; paginated loaded enumeration includes root and child | Added, awaiting CI |
+| Completed child, clean restart | Await native completed turn, restart server, resume root, enumerate and read historical child without resuming it | Added, awaiting CI |
+| Completed child, crash | Same read-only recovery after killing the server | Added, awaiting CI |
+| Active child, crash | Hold model request unanswered, kill server, observe request closure; recover identity/history without child reactivation | Added, awaiting CI |
+| Live client reconnect | Retain server process, reconnect a separate client, compare enumeration and subscriptions | Planned; stdio process restart is not this case |
+| Alternate context/ancestry | Context fork, concurrent children, grandchild, explicit child attachment and input | Planned |
+
+The recovery probes query `thread/loaded/list`, `thread/list` with an explicit subagent
+source filter, and `thread/read(includeTurns=true)`. They assert that reading the child does
+not add it to loaded threads. No model-driven status query, child resume, or `followup_task`
+is used; a bounded no-model-request observation follows the reads. Native request/response
+traces and `recovery.json` retain exact fields for each case. Source inspection motivates
+these expectations; CI must verify them before they become protocol findings.
+
+A historical completed turn is distinct from a runtime `notLoaded` status. For an active
+child killed with the process, retain and inspect the historical status rather than labeling
+`notLoaded` as stopped/completed. The first probe asserts absence of the never-produced
+child answer, not an invented terminal fate. Follow-up assertions should pin the actual
+recovered status once the first wire capture is available.

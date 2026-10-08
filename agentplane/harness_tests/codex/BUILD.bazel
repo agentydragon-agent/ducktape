@@ -245,3 +245,28 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_v2_discovery",
+    size = "medium",
+    srcs = ["test_v2_discovery.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: real pinned CLI
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":harness",
+        ":responses",
+        ":responses_sse",
+        "//:conftest",
+        "//agentplane/harness_tests:conftest",
+        "//agentplane/native:async_process",
+        "//agentplane/native/codex:driver",
+        "//agentplane/native/codex:scenarios",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
