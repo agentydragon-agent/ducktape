@@ -42,8 +42,9 @@ with the original child `task_id`, `status: stopped`, and a summary saying the b
 did not finish before the previous session ended. The model request had been held unanswered
 when the old process was killed. No server history was supplied. This is affirmative native fate
 evidence, unlike the completed-child case's lack of new notifications. The old assertion expecting
-no notification failed; the revised probe pins this outcome and asks whether it arrives after
-initialize, before any new parent input. That timing assertion is awaiting CI.
+no notification failed. The corrected probe passed on `b5cb47fd`: the notification arrives after
+initialize, before any new parent input. A matching no-input `stream-json` active-child crash
+probe is awaiting CI; until then, do not call this a RemoteIO-specific capability.
 RemoteIO clean exit and server hydration remain unimplemented. Source inspection
 informs the candidate protocol; CI wire captures determine the actual contract.
 
