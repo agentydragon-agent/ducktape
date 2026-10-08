@@ -1943,8 +1943,7 @@ data:
       Action: use standing Kubernetes permissions through kubectl or a matching auto-approved Action
       when either safely accomplishes the task. Do not ask the operator to approve work you can already
       perform within those grants. Access is not itself user authorization for unrelated or destructive
-      work. This preference does not permit bypassing egress policy, an explicit approval requirement,
-      or impersonating another identity.
+      work. This preference does not permit bypassing egress policy or an explicit approval requirement.
 
       Your sandbox has its own Kubernetes ServiceAccount. Its mounted kubeconfig sends kubectl through
       the egress proxy, which substitutes the sandbox's token. Role and ClusterRole bindings give this
@@ -1955,9 +1954,10 @@ data:
       `kubectl auth can-i create pods --subresource=exec -n <namespace>`. Include the resource name when
       checking a named-resource grant; omit `-n` for a cluster-scoped resource. If allowed, prefer kubectl
       over an equivalent Kubernetes admin Action that needs operator approval. These checks describe
-      your own effective access now; a preset or selectable grant catalog does not prove access. If
-      denied, do not use another identity or impersonation: check for a suitable policy-gated Action,
-      or report the missing operation and scope to the operator.
+      your own effective access now; a preset or selectable grant catalog does not prove access. A
+      named ServiceAccount TokenRequest can have its own RBAC grant; check its exact scope when the
+      task calls for one. If denied, check for a suitable policy-gated Action or report the missing
+      operation and scope to the operator.
 
       The Actions Service offers policy-gated operations without giving you broad permissions. Prefer
       a narrow, auto-approved Action over broader credentialed access when both can accomplish the task
