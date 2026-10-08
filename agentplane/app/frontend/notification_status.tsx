@@ -160,13 +160,6 @@ export function NotificationStatus({
                         </Text>
                       )}
                     </Group>
-                    <Group gap="xs">
-                      <Text size="sm">{unannounced_count} awaiting notice</Text>
-                      <Text size="sm" c="dimmed">
-                        ·
-                      </Text>
-                      <Text size="sm">{pending_acknowledgement_count} not acknowledged</Text>
-                    </Group>
                     {notice && (
                       <Text size="sm">
                         Latest notice through {notice.through_cursor}:{" "}
@@ -192,7 +185,9 @@ export function NotificationStatus({
                         {notice_due_at ? ` · eligible ${timestamp(notice_due_at)}` : ""}
                       </Text>
                     )}
-                    <Divider label="Entries after acknowledgement" />
+                    <Divider
+                      label={`Entries after acknowledgement · ${pending_acknowledgement_count} not acknowledged`}
+                    />
                     {pending_entries.length === 0 && (
                       <Text size="sm" c="dimmed">
                         No retained unacknowledged entries
@@ -204,7 +199,9 @@ export function NotificationStatus({
                           <Stack key={entry.cursor} gap={4}>
                             {entry.cursor > inbox.covered &&
                               (index === 0 || (pending_entries[index - 1]?.cursor ?? 0) <= inbox.covered) && (
-                                <Divider label={`Notice covered through #${inbox.covered} · awaiting notice below`} />
+                                <Divider
+                                  label={`Notice covered through #${inbox.covered} · ${unannounced_count} awaiting notice below`}
+                                />
                               )}
                             <Group gap="xs" wrap="nowrap" align="flex-start" py={4}>
                               <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
@@ -220,7 +217,9 @@ export function NotificationStatus({
                           </Stack>
                         ))}
                         {!pending_entries_more && (pending_entries.at(-1)?.cursor ?? 0) <= inbox.covered && (
-                          <Divider label={`Notice covered through #${inbox.covered}`} />
+                          <Divider
+                            label={`Notice covered through #${inbox.covered} · ${unannounced_count} awaiting notice`}
+                          />
                         )}
                       </Stack>
                     )}

@@ -16,10 +16,11 @@ async def test_thread_notifications(view: VisualPage, app: AgentplaneFixture) ->
     await app.mount_thread(IDLE_THREAD)
     page = view.page
     await page.get_by_role("button", name="Notifications").click()
-    await expect(page.get_by_text("2 awaiting notice")).to_be_visible()
+    await expect(page.get_by_text("2 awaiting notice", exact=False)).to_be_visible()
     await expect(page.get_by_role("dialog").locator(".mantine-Badge-root")).to_have_count(0)
     await expect(page.get_by_text("GitHub check_run · completed · success", exact=False)).to_be_visible()
-    await expect(page.get_by_text("Notice covered through #7 · awaiting notice below")).to_be_visible()
+    await expect(page.get_by_text("Entries after acknowledgement · 5 not acknowledged")).to_be_visible()
+    await expect(page.get_by_text("Notice covered through #7 · 2 awaiting notice below")).to_be_visible()
     await expect(page.get_by_text("Inbox diagnostics")).to_be_visible()
     await expect(page.get_by_text("Cursors: latest", exact=False)).to_be_hidden()
     await expect(page.get_by_text("runner admitted; awaiting confirmation", exact=False)).to_be_visible()
@@ -37,7 +38,7 @@ async def test_sandbox_notifications(view: VisualPage, app: AgentplaneFixture) -
     await expect(page.get_by_text("Session s-2")).to_be_visible()
     await expect(page.get_by_text("Session s-3")).to_be_visible()
     await expect(page.get_by_text("GitHub pull_request · synchronize", exact=False)).to_be_visible()
-    await expect(page.get_by_text("Notice covered through #1 · awaiting notice below")).to_be_visible()
+    await expect(page.get_by_text("Notice covered through #1 · 2 awaiting notice below")).to_be_visible()
     await expect(page.get_by_text("runner unavailable", exact=False)).to_be_visible()
     await expect(page.get_by_text("debouncing", exact=False)).to_be_visible()
     await view.capture()
@@ -62,7 +63,7 @@ async def test_notification_service_reconnect(view: VisualPage, app: AgentplaneF
     await page.keyboard.press("Escape")
     await expect(page.get_by_text("Loading notification status…")).to_have_count(0)
     await page.get_by_role("button", name="Notifications").click()
-    await expect(page.get_by_text("2 awaiting notice")).to_be_visible()
+    await expect(page.get_by_text("2 awaiting notice", exact=False)).to_be_visible()
     await view.capture(name="notification_status_reconnected")
 
 
@@ -75,7 +76,7 @@ async def test_thread_notifications_mobile_menu(view: VisualPage, app: Agentplan
     await expect(page.get_by_role("menuitem", name="Notifications")).to_be_visible()
     await view.capture(name="thread_notifications_mobile_menu")
     await page.get_by_role("menuitem", name="Notifications").click()
-    await expect(page.get_by_text("2 awaiting notice")).to_be_visible()
+    await expect(page.get_by_text("2 awaiting notice", exact=False)).to_be_visible()
     await view.capture(name="thread_notifications_mobile_drawer")
 
 
