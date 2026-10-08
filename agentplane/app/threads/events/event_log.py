@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy import select, update
@@ -74,11 +74,20 @@ class EventLogStore:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
 
     async def open(self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec) -> UUID:
-        """The session's event log, created from the spec on first sight; its id is the thread's."""
+        """Materialize the Session's Thread; preserve any existing legacy mapping."""
+        # New service-owned IDs are canonical UUIDs. Old runner IDs (typically s-UUID)
+        # retain their already-minted Thread IDs; discovery and explicit Open race safely
+        # on the (sandbox, session_id) uniqueness constraint.
+        try:
+            parsed = UUID(session_id)
+            thread_id = parsed if str(parsed) == session_id else uuid4()
+        except ValueError:
+            thread_id = uuid4()
         async with self._sessions.begin() as session:
             created = await session.scalar(
                 insert(EventLog)
                 .values(
+                    id=thread_id,
                     sandbox=sandbox,
                     session_id=session_id,
                     harness=Harness(protocol_pb2.Harness.Name(spec.harness)),
