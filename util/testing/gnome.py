@@ -4,11 +4,15 @@ import re
 import shlex
 import time
 from collections.abc import Callable, Mapping
+from io import BytesIO
 from pathlib import Path
 from typing import cast
 
 from docker.models.containers import Container, ExecResult
 from PIL import Image
+
+from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.visual_review import publish_review_png
 
 
 def exec_output(result: ExecResult) -> tuple[bytes, bytes]:
@@ -144,3 +148,17 @@ def crop_panel_menu(full: Image.Image, geometry: tuple[int, int, int, int]) -> I
     if width <= 0 or height <= 0 or left >= full.width or bottom <= 0:
         raise AssertionError(f"menu lies outside the screenshot: {geometry}, screen={full.size}")
     return full.crop((left, 0, full.width, bottom))
+
+
+def capture_panel_menu(
+    session: GnomeSession, output_dir: Path, *, geometry: tuple[int, int, int, int], name: str, title: str, label: str
+) -> Path:
+    """Capture and publish the panel/menu crop; output_dir is mounted at /out."""
+    session.screenshot(f"/out/{name}")
+    full_path = output_dir / name
+    assert full_path.is_file(), f"scrot did not produce {full_path}"
+    with Image.open(full_path) as full:
+        cropped = crop_panel_menu(full, geometry)
+        png = BytesIO()
+        cropped.save(png, format="PNG")
+    return publish_review_png(png.getvalue(), output_dir=undeclared_outputs_dir(), title=title, name=name, label=label)

@@ -115,8 +115,12 @@ async def test_nested_parent_sticks_before_child(view: VisualPage, app: Agentpla
 
 
 @pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
-async def test_nested_headings_stack(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_disclosure(nested=True)
+@pytest.mark.parametrize("wrapped_headings", [False, True], ids=["short", "wrapped"])
+async def test_nested_headings_stack(view: VisualPage, app: AgentplaneFixture, wrapped_headings: bool) -> None:
+    await app.mount_disclosure(nested=True, wrapped_headings=wrapped_headings)
+    await view.page.wait_for_selector(
+        ".demo-outer .agentplane-disclosure-heading[data-expanded='true']", state="attached"
+    )
     await view.page.wait_for_selector(
         ".demo-inner .agentplane-disclosure-heading[data-expanded='true']", state="attached"
     )
@@ -127,23 +131,9 @@ async def test_nested_headings_stack(view: VisualPage, app: AgentplaneFixture) -
     await _scroll_to_copy(page, "nested-paragraph", outer_height + inner_height + 16)
     await _expect_at(page, _OUTER, 0)
     await _expect_at(page, _INNER, outer_height)
-    await view.capture()
-
-
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
-async def test_wrapped_nested_headings_stack(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_disclosure(nested=True, wrapped_headings=True)
-    await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
-    await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading", state="attached")
-    await view.check(context="fixture ready")
-    page = view.page
-    outer_height = await _height(page, _OUTER)
-    inner_height = await _height(page, _INNER)
-    await _scroll_to_copy(page, "nested-paragraph", outer_height + inner_height + 16)
-    await _expect_at(page, _OUTER, 0)
-    await _expect_at(page, _INNER, outer_height)
-    assert outer_height >= 56, "outer mobile heading did not wrap"
-    assert inner_height >= 56, "inner mobile heading did not wrap"
+    if wrapped_headings:
+        assert outer_height >= 56, "outer mobile heading did not wrap"
+        assert inner_height >= 56, "inner mobile heading did not wrap"
     await view.capture()
 
 

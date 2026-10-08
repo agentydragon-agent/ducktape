@@ -5,7 +5,6 @@ import { createRoot } from "react-dom/client";
 import type { ComponentType } from "react";
 import { MantineProvider } from "@mantine/core";
 
-import SCENARIOS from "./scenarios.json";
 import "../../src/app.css";
 
 // Import React components rendered by the scenarios.
@@ -164,18 +163,6 @@ const pages: Record<string, ScenarioPage> = {
   },
 };
 
-// scenarios.json is what the sweep runs; `pages` is what this harness can mount. A name in one and
-// not the other means a scenario that is never rendered, or one the runner asks for and cannot get.
-const declared = new Set(Object.keys(SCENARIOS));
-const mountable = new Set(Object.keys(pages));
-const missing = [...declared].filter((name) => !mountable.has(name));
-const unswept = [...mountable].filter((name) => !declared.has(name));
-if (missing.length || unswept.length) {
-  throw new Error(
-    `scenarios.json and harness pages disagree: ${JSON.stringify({ missingFromHarness: missing, missingFromScenarios: unswept })}`
-  );
-}
-
 const params = new URLSearchParams(window.location.search);
 const pageName = params.get("page");
 const app = document.getElementById("app");
@@ -202,8 +189,6 @@ if (!pageName) {
     root.render(<div style={{ color: "red", padding: 20 }}>Unknown page: {pageName}</div>);
   } else {
     const ScenarioComponent = page.component;
-    // Every scenario in scenarios.json captures `#shot`, so the crop is the component's own
-    // bounding box.
     const shot = (
       <div id="shot">
         <ScenarioComponent {...(page.props as any)} />

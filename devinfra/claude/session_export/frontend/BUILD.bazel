@@ -335,7 +335,8 @@ filegroup(
 
 py_visual_test(
     name = "visual",
-    size = "small",
+    # Browser startup plus 11–12 captures per shard can exceed small's 60-second budget on RBE.
+    size = "medium",
     assets = [
         "harness/index.html",
         ":visual_harness_css",
@@ -348,6 +349,7 @@ py_visual_test(
         "//util/testing:visual_capture",
         "@pypi//playwright",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
     test_module = "devinfra.claude.session_export.frontend.test_visual",

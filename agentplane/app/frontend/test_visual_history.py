@@ -140,9 +140,6 @@ async def test_debug_history_latest_session_error_raw(view: VisualPage, app: Age
     await view.check(context="fixture ready")
     page = view.page
     await _open_debug_history(page)
-    await expect(
-        page.locator('[aria-label="Chronological observations"] [data-debug-observation]').first
-    ).to_be_visible()
     await view.capture()
 
 
@@ -153,9 +150,6 @@ async def test_debug_history_latest_session_error_raw_phone(view: VisualPage, ap
     await view.check(context="fixture ready")
     page = view.page
     await _open_debug_history(page)
-    await expect(
-        page.locator('[aria-label="Chronological observations"] [data-debug-observation]').first
-    ).to_be_visible()
     await view.capture()
 
 
@@ -166,9 +160,6 @@ async def test_debug_history_latest_session_interleaved_raw(view: VisualPage, ap
     await view.check(context="fixture ready")
     page = view.page
     await _open_debug_history(page)
-    await expect(
-        page.locator('[aria-label="Chronological observations"] [data-debug-observation]').first
-    ).to_be_visible()
     await view.capture()
 
 
@@ -178,9 +169,6 @@ async def test_debug_history_latest_session_raw(view: VisualPage, app: Agentplan
     await view.check(context="fixture ready")
     page = view.page
     await _open_debug_history(page)
-    await expect(
-        page.locator('[aria-label="Chronological observations"] [data-debug-observation]').first
-    ).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
 
 
@@ -191,9 +179,6 @@ async def test_debug_history_latest_session_pending_raw(view: VisualPage, app: A
     await view.check(context="fixture ready")
     page = view.page
     await _open_debug_history(page)
-    await expect(
-        page.locator('[aria-label="Chronological observations"] [data-debug-observation]').first
-    ).to_be_visible()
     await expect(page.locator('[data-thread-anchor="16"]')).to_be_visible()
     await expect(page.locator('.agentplane-user-bubble[data-message-phase="local"]')).to_be_visible()
     await view.capture()

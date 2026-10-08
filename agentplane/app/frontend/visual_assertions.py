@@ -186,6 +186,11 @@ async def _open_debug_history(page: Page) -> None:
     await page.get_by_role("button", name="More", exact=True).click()
     await page.get_by_role("menuitem", name="Debug history").click()
     await expect(page.locator('[aria-label="Chronological observations"]')).to_be_visible()
+    await expect(
+        page.locator('[aria-label="Chronological observations"] [data-debug-observation]').first
+    ).to_be_visible()
+    # The opening menu item overlaps the drawer's pagination buttons.
+    await page.mouse.move(0, 0)
 
 
 async def _assert_phone_composer_layout(page: Page) -> None:
