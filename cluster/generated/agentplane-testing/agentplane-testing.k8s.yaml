@@ -2024,7 +2024,7 @@ spec:
       automountServiceAccountToken: true
       containers:
         - env:
-            - name: AGENTPLANE_SANDBOX_SERVICE_HISTORY_DATABASE_URL
+            - name: AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   key: uri
@@ -2081,7 +2081,7 @@ spec:
         - name: forgejo-images-creds
       initContainers:
         - env:
-            - name: AGENTPLANE_SANDBOX_SERVICE_HISTORY_DATABASE_URL
+            - name: AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   key: uri

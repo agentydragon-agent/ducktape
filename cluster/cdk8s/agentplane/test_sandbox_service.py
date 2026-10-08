@@ -42,7 +42,7 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     assert migration["name"] == "migrate"
     assert migration["env"] == [
         {
-            "name": "AGENTPLANE_SANDBOX_SERVICE_HISTORY_DATABASE_URL",
+            "name": "AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL",
             "valueFrom": {"secretKeyRef": {"name": "postgres-sandbox-service", "key": "uri"}},
         }
     ]

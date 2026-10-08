@@ -69,6 +69,10 @@ message CreateSessionRequest {
   // Opaque to the service, scoped to the authenticated caller and Sandbox UID.
   string idempotency_key = 2;
   ducktape.agentplane.runner.v1.SessionSpec spec = 3;
+  // Which spec fields replace the Sandbox defaults (proto field names). Proto3 scalar
+  // fields cannot distinguish absent from explicitly empty; e.g. instructions=""
+  // with "instructions" in this mask clears inherited instructions. An empty mask
+  // inherits all defaults, regardless of spec's scalar default values.
   google.protobuf.FieldMask override_mask = 4;
   optional string setup_script = 5;
 }

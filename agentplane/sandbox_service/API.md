@@ -79,8 +79,9 @@ Read/follow/command RPCs never provision, resume, or wake a Sandbox or harness.
 
 ### Launch overrides and field presence
 
-`OpenSessionRequest.spec` is the existing runner `SessionSpec`. Its `override_mask` names the exact
-proto fields to replace in stored defaults, including fields explicitly set to empty/default values.
+`OpenSessionRequest.spec` and `CreateSessionRequest.spec` use the runner `SessionSpec`. Their
+`override_mask` names the exact proto fields to replace in stored defaults, including fields
+explicitly set to empty/default values.
 For example, `paths: ["model", "instructions"]` selects `spec.model` and `spec.instructions`; an empty
 instructions string clears the caller's inherited instructions, but not backend platform guidance.
 Nested paths, unknown paths, duplicate paths, and supplied nondefault fields outside the mask are

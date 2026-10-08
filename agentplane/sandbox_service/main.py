@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     )
 
     sandbox_namespace: str = Field(min_length=1)
-    history_database_url: str | None = Field(default=None, min_length=1)
+    database_url: str | None = Field(default=None, min_length=1)
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
     platform_instructions: str = Field(min_length=1)
     lifecycle_timeout_s: float = Field(default=300, gt=0)
@@ -92,10 +92,10 @@ async def serve(settings: Settings) -> None:
         k8s_config.load_incluster_config(client_configuration=configuration)
     else:
         await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
-    if settings.history_database_url is None:
-        raise ValueError("Session history database URL is required at runtime")
+    if settings.database_url is None:
+        raise ValueError("Sandbox Service database URL is required at runtime")
     engine = create_async_engine(
-        make_url(settings.history_database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
+        make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
     )
     try:
         await serve_with_engine(settings, configuration, engine)

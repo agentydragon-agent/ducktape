@@ -1,4 +1,4 @@
-"""Migrate the Sandbox Service's independent Session Event history database.
+"""Migrate the Sandbox Service database (currently storing Session Event history).
 
 Run from the history migration image as a Sandbox Service Deployment init container.
 A migration failure prevents the Pod from serving even existing lifecycle RPCs.
@@ -10,7 +10,7 @@ from agentplane.sandbox_service.session_history.database_migrate import RUNNER
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_SANDBOX_SERVICE_HISTORY_")
+    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_SANDBOX_SERVICE_")
     database_url: str
 
 
