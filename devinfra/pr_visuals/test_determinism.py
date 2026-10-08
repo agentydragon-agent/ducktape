@@ -172,7 +172,7 @@ def test_unreadable_manifest_is_not_silently_treated_as_diagnostic() -> None:
     def fail(_uri: str) -> VisualReviewManifest:
         raise OSError("manifest unavailable")
 
-    with pytest.raises(OSError):
+    with pytest.raises(OSError, match="manifest unavailable"):
         observe(
             ["run-1"],
             bbapi=Path("bbapi"),
