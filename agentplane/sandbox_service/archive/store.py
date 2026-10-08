@@ -109,7 +109,11 @@ class Store:
                 raise ValueError("cursor beyond archived prefix")
             rows = await session.scalars(
                 select(ArchivedEvent)
-                .where(ArchivedEvent.session_id == session_id, ArchivedEvent.cursor > after_cursor)
+                .where(
+                    ArchivedEvent.session_id == session_id,
+                    ArchivedEvent.cursor > after_cursor,
+                    ArchivedEvent.cursor <= archive.last_cursor,
+                )
                 .order_by(ArchivedEvent.cursor)
                 .limit(limit)
             )
