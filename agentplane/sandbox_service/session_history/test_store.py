@@ -159,6 +159,21 @@ async def test_reservation_is_stable_across_retries_and_replicas(engine: AsyncEn
     with pytest.raises(ValueError, match="required"):
         await reserve(left, key="")
 
+    async def lookup(*, caller_name: str = "app", sandbox_uid: UUID = uid, key: str = "open-1") -> UUID | None:
+        return await right.lookup_open(
+            caller_namespace="testing",
+            caller_name=caller_name,
+            sandbox_namespace="testing",
+            sandbox_name="worker",
+            sandbox_uid=sandbox_uid,
+            open_key=key,
+        )
+
+    assert await lookup() == first.session_id
+    assert await lookup(caller_name="not-this-caller") is None
+    assert await lookup(sandbox_uid=uuid4()) is None
+    assert await lookup(key="absent") is None
+
 
 @pytest.mark.asyncio
 async def test_imported_history_keeps_its_id_and_fences_duplicate_locator(engine: AsyncEngine) -> None:

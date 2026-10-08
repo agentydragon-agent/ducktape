@@ -345,6 +345,36 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 return protocol_pb2.CreateSessionResponse(session_id=public_id, attached=attachment)
 
     @override
+    async def LookupSession(
+        self, request: protocol_pb2.LookupSessionRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.LookupSessionResponse:
+        async with errors(context), asyncio.timeout(self.resources.admission_timeout_s):
+            caller = await self.resources.authenticate(context)
+            if not request.idempotency_key or len(request.idempotency_key) > 128:
+                raise ValueError("Open key is required and must not exceed 128 characters")
+            await self.checked_sandbox(protocol_pb2.SandboxRequest(destination=request.sandbox))
+            public_id = await self.history().lookup_open(
+                caller_namespace=caller.namespace,
+                caller_name=caller.name,
+                sandbox_namespace=self.resources.destinations.inventory.namespace,
+                sandbox_name=request.sandbox.sandbox,
+                sandbox_uid=UUID(request.sandbox.sandbox_uid),
+                open_key=request.idempotency_key,
+            )
+            if public_id is None:
+                return protocol_pb2.LookupSessionResponse()
+            result = protocol_pb2.LookupSessionResponse(session_id=str(public_id))
+            # DB reservation precedes runner Open. Never report an Open success based on
+            # the reservation alone (or mistake a stale Sandbox UID for this one).
+            async with self.runner(request.sandbox) as (client, _):
+                for summary in await client.list_sessions():
+                    if summary.session_id == f"r-{public_id}":
+                        result.summary.CopyFrom(summary)
+                        result.summary.session_id = str(public_id)
+                        break
+            return result
+
+    @override
     async def ResumeSession(
         self, request: protocol_pb2.SessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.Attached:

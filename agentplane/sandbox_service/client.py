@@ -210,6 +210,12 @@ class Runner:
             self.service.stub.CreateSession, request, timeout_s=self.service.lifecycle_timeout_s
         )
 
+    async def lookup(self, *, idempotency_key: str) -> protocol_pb2.LookupSessionResponse:
+        return await self.service.unary(
+            self.service.stub.LookupSession,
+            protocol_pb2.LookupSessionRequest(sandbox=self.destination, idempotency_key=idempotency_key),
+        )
+
     async def open(
         self, session_id: str, spec: dict[str, object], setup_script: str | None = None
     ) -> runner_pb2.Attached:

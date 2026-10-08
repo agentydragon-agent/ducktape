@@ -66,6 +66,12 @@ Kubernetes ownership labels, stored bindings, identities, and PVC policy remain 
   `SubmitCommand` accept the returned ID and resolve it to the retained runner ID within the
   pinned Sandbox UID. The key is not a Session ID and does not apply to runner-discovered native
   child sessions. No app caller uses this new RPC until its own cutover.
+- `LookupSession`: read-only reconciliation by authenticated caller, current Sandbox name/UID
+  and opaque Open key. Returns no public ID for an absent reservation, or the public ID
+  without runner confirmation for a reserved Open. A runner summary is present only when
+  the native session is inventoried; it includes the frozen spec and is intended for the
+  trusted app, **not** for forwarding to browsers. A reservation alone is not proof of
+  successful Open. Does not create, resume or change any session.
 - Both Open paths: bootstrap
   and setup use the runner's existing idempotence; the response is the native attachment snapshot, not
   a claim that all setup or a model turn has completed.
