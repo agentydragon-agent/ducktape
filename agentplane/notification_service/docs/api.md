@@ -197,6 +197,14 @@ it returns no provider payloads, idempotency keys, notice text or mutation capab
 the browser's operator login and resolves the current Sandbox UID before calling it; a reused name
 cannot expose another incarnation. Workload `/v1` endpoints remain owner-scoped.
 
+The sibling `GET /operator/v1/sandboxes/{namespace}/{name}/notifications/stream?uid=…`
+uses the same authorization and returns snapshot SSE frames. It subscribes to committed
+queue wakeups before its initial read; a reconnect always reads durable status anew,
+so PostgreSQL NOTIFY is only an invalidation, not a replay log. Debounce deadlines
+and subscription expiry also trigger snapshots when their displayed status changes.
+The app proxies this stream under the operator session lifetime; the drawer follows
+it only while open, retains the last snapshot during an outage, and marks it stale.
+
 The snapshot groups inboxes by session and reports cursor counts, subscriptions, source errors and
 the latest notice stage. `unannounced_count` counts retained entries beyond the maximum of covered,
 acknowledged and expired cursors; `pending_acknowledgement_count` counts retained, non-expired
