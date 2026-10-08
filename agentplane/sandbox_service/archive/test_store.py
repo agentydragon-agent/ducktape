@@ -36,11 +36,14 @@ async def test_replay_survives_new_store_and_deleted_sandbox(engine: AsyncEngine
     store = Store(engine)
     await opened(store, session_id)
     await opened(store, session_id)
+    native = entry(3)
+    native.event.ClearField("harness_started")
+    native.event.native.line = "frame with a NUL\x00 and provider bytes"
     assert await store.append(session_id, [entry(1), entry(2, resumed=True)]) == 2
-    assert await Store(engine).append(session_id, [entry(1), entry(2, resumed=True), entry(3)]) == 3
+    assert await Store(engine).append(session_id, [entry(1), entry(2, resumed=True), native]) == 3
     high_water, events = await Store(engine).read(session_id, after_cursor=1, limit=2)
     assert high_water == 3
-    assert events == [entry(2, resumed=True), entry(3)]
+    assert events == [entry(2, resumed=True), native]
     assert await Store(engine).read(session_id, after_cursor=3) == (3, [])
     with pytest.raises(ValueError, match="beyond"):
         await store.read(session_id, after_cursor=4)
