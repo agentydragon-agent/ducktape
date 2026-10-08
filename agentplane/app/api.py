@@ -7,7 +7,7 @@ import hashlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, nullcontext
-from pathlib import Path
+from pathlib import Path as FilePath
 from typing import Annotated
 from uuid import UUID
 
@@ -19,7 +19,6 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from agentplane.notification_service.models import SandboxNotificationStatus
 from agentplane.action_service.catalog import ActionGroupView
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
@@ -55,7 +54,12 @@ from agentplane.app.electric import ElectricProxy, router as electric_router
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
 from agentplane.app.live import LiveIndex, Updates, router as live_router
 from agentplane.app.oidc import OIDCSettings, build_oauth
-from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row, request_session
+from agentplane.app.operator_sessions import (
+    OperatorSessionMiddleware,
+    OperatorSessionStore,
+    operator_session_row,
+    request_session,
+)
 from agentplane.app.presets import PresetCatalog, SandboxPresetView
 from agentplane.app.sandbox_models import (
     KubernetesGrantView,
@@ -83,6 +87,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
 from agentplane.app.threads.view.fold import CommandOutcome
 from agentplane.app.threads.view.views import ThreadView
+from agentplane.notification_service.models import SandboxNotificationStatus
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import OpenTimeoutError, RunnerError
 from agentplane.runner.harness import Harness
@@ -986,7 +991,7 @@ def create_app(
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     notifications_http: httpx.AsyncClient | None = None,
-    notifications_token_file: Path | None = None,
+    notifications_token_file: FilePath | None = None,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""

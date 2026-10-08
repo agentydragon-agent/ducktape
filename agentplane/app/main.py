@@ -273,7 +273,9 @@ async def async_main(settings: Settings) -> None:
             else "http://disabled.invalid",
             timeout=10,
         ) as actions_http,
-        httpx.AsyncClient(base_url=settings.notifications_url or "http://disabled.invalid", timeout=5) as notifications_http,
+        httpx.AsyncClient(
+            base_url=settings.notifications_url or "http://disabled.invalid", timeout=5
+        ) as notifications_http,
         httpx.AsyncClient(base_url=settings.egress_admin_url, timeout=settings.egress_admin_timeout) as admin_http,
         httpx.AsyncClient(
             base_url=settings.electric_url or "http://disabled.invalid", timeout=httpx.Timeout(65, connect=5)

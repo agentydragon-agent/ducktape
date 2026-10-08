@@ -20,11 +20,11 @@ from agentplane.notification_service.models import (
     EventIdentity,
     InboxPage,
     InboxStatus,
-    SubscriptionStatus,
-    SandboxNotificationStatus,
     InboxView,
     NoticeView,
+    SandboxNotificationStatus,
     Subscribe,
+    SubscriptionStatus,
     SubscriptionUpdate,
     SubscriptionView,
 )
@@ -259,52 +259,83 @@ class Store:
         """Read-only UID-pinned diagnostic projection. Never load provider payloads."""
         async with self.sessions.begin() as session:
             observed = datetime.now(UTC)
-            rows = (await session.scalars(
-                select(Inbox).where(
-                    Inbox.destination_ref["namespace"].astext == namespace,
-                    Inbox.destination_ref["name"].astext == name,
-                    Inbox.destination_ref["uid"].astext == uid,
-                ).order_by(Inbox.session_id, Inbox.id).limit(1000)
-            )).all()
+            rows = (
+                await session.scalars(
+                    select(Inbox)
+                    .where(
+                        Inbox.destination_ref["namespace"].astext == namespace,
+                        Inbox.destination_ref["name"].astext == name,
+                        Inbox.destination_ref["uid"].astext == uid,
+                    )
+                    .order_by(Inbox.session_id, Inbox.id)
+                    .limit(1000)
+                )
+            ).all()
             result = []
             for row in rows:
-                subscriptions = (await session.scalars(
-                    select(Subscription).where(Subscription.inbox_id == row.id).order_by(Subscription.id)
-                )).all()
+                subscriptions = (
+                    await session.scalars(
+                        select(Subscription).where(Subscription.inbox_id == row.id).order_by(Subscription.id)
+                    )
+                ).all()
                 notice = await session.get(Notice, row.id)
                 boundary = max(row.covered, row.acknowledged, row.expired_through)
-                first, last, unannounced = (await session.execute(
-                    select(func.min(Entry.created_at), func.max(Entry.created_at), func.count())
-                    .where(Entry.inbox_id == row.id, Entry.cursor > boundary)
-                )).one()
-                pending_ack = (await session.execute(
-                    select(func.count()).where(Entry.inbox_id == row.id, Entry.cursor > max(row.acknowledged, row.expired_through))
-                )).scalar_one()
+                first, last, unannounced = (
+                    await session.execute(
+                        select(func.min(Entry.created_at), func.max(Entry.created_at), func.count()).where(
+                            Entry.inbox_id == row.id, Entry.cursor > boundary
+                        )
+                    )
+                ).one()
+                pending_ack = (
+                    await session.execute(
+                        select(func.count()).where(
+                            Entry.inbox_id == row.id, Entry.cursor > max(row.acknowledged, row.expired_through)
+                        )
+                    )
+                ).scalar_one()
                 quiet_until = last + timedelta(seconds=quiet_seconds) if last else None
                 max_wait_at = first + timedelta(seconds=max_wait_seconds) if first else None
                 due = min(quiet_until, max_wait_at) if quiet_until and max_wait_at else None
                 wait_reason = (
-                    "retired" if row.retired else
-                    "notice_error" if notice and notice.error else
-                    "delivery_retry" if row.delivery_error else
-                    "awaiting_confirmation" if notice and not notice.confirmed else
-                    "debouncing" if due and due > observed else
-                    "ready" if due else None
+                    "retired"
+                    if row.retired
+                    else "notice_error"
+                    if notice and notice.error
+                    else "delivery_retry"
+                    if row.delivery_error
+                    else "awaiting_confirmation"
+                    if notice and not notice.confirmed
+                    else "debouncing"
+                    if due and due > observed
+                    else "ready"
+                    if due
+                    else None
                 )
-                result.append(InboxStatus(
-                    inbox=InboxView.model_validate(row),
-                    notice=NoticeView.model_validate(notice) if notice else None,
-                    subscriptions=[SubscriptionStatus(
-                        id=sub.id, source=Subscribe.model_validate(sub.creation).source,
-                        cancelled=sub.cancelled, expires_at=sub.expires_at,
-                        error=sub.error, next_source_check_at=sub.next_attempt,
-                    ) for sub in subscriptions],
-                    unannounced_count=unannounced, pending_acknowledgement_count=pending_ack,
-                    notice_due_at=due if wait_reason == "debouncing" else None,
-                    quiet_until=quiet_until if wait_reason == "debouncing" else None,
-                    max_wait_at=max_wait_at if wait_reason == "debouncing" else None,
-                    notice_wait_reason=wait_reason, next_work_at=row.next_attempt,
-                ))
+                result.append(
+                    InboxStatus(
+                        inbox=InboxView.model_validate(row),
+                        notice=NoticeView.model_validate(notice) if notice else None,
+                        subscriptions=[
+                            SubscriptionStatus(
+                                id=sub.id,
+                                source=Subscribe.model_validate(sub.creation).source,
+                                cancelled=sub.cancelled,
+                                expires_at=sub.expires_at,
+                                error=sub.error,
+                                next_source_check_at=sub.next_attempt,
+                            )
+                            for sub in subscriptions
+                        ],
+                        unannounced_count=unannounced,
+                        pending_acknowledgement_count=pending_ack,
+                        notice_due_at=due if wait_reason == "debouncing" else None,
+                        quiet_until=quiet_until if wait_reason == "debouncing" else None,
+                        max_wait_at=max_wait_at if wait_reason == "debouncing" else None,
+                        notice_wait_reason=wait_reason,
+                        next_work_at=row.next_attempt,
+                    )
+                )
             return SandboxNotificationStatus(observed_at=observed, inboxes=result)
 
     async def inboxes(self, owner: ServiceAccountRef) -> list[InboxView]:

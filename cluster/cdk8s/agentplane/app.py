@@ -58,7 +58,16 @@ from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import actions, database, egress, electric, llm_ingress, sandbox_pod, sandbox_service, notifications
+from cluster.cdk8s.agentplane import (
+    actions,
+    database,
+    egress,
+    electric,
+    llm_ingress,
+    notifications,
+    sandbox_pod,
+    sandbox_service,
+)
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -323,17 +332,27 @@ class App(Construct):
         ApiObject.of(deployment).add_json_patch(
             JsonPatch.add(
                 "/spec/template/spec/volumes/-",
-                k8s.Volume(name="notifications-token", projected=k8s.ProjectedVolumeSource(sources=[
-                    k8s.VolumeProjection(service_account_token=k8s.ServiceAccountTokenProjection(
-                        audience=notifications.TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
-                    ))
-                ])),
+                k8s.Volume(
+                    name="notifications-token",
+                    projected=k8s.ProjectedVolumeSource(
+                        sources=[
+                            k8s.VolumeProjection(
+                                service_account_token=k8s.ServiceAccountTokenProjection(
+                                    audience=notifications.TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
+                                )
+                            )
+                        ]
+                    ),
+                ),
             )
         )
         ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add("/spec/template/spec/containers/0/volumeMounts/-", k8s.VolumeMount(
-                name="notifications-token", mount_path="/var/run/secrets/agentplane-notifications", read_only=True
-            ))
+            JsonPatch.add(
+                "/spec/template/spec/containers/0/volumeMounts/-",
+                k8s.VolumeMount(
+                    name="notifications-token", mount_path="/var/run/secrets/agentplane-notifications", read_only=True
+                ),
+            )
         )
 
         # With the database (cnpg_conventions R5). Unlike llm-ingress/egress, the app

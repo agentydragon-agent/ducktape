@@ -171,7 +171,7 @@ class Notifications(Construct):
             endpoint_selector=_LABELS,
             ingress=[
                 IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-egress"), ports=[8080]),
-                IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-app"), ports=[8080])
+                IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-app"), ports=[8080]),
             ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),

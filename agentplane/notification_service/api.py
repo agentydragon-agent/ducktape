@@ -80,14 +80,18 @@ async def health(request: Request) -> dict[str, str]:
 async def sandbox_notifications(
     namespace: str, name: str, uid: str, caller: Caller, service: Notifications
 ) -> SandboxNotificationStatus:
-    if (caller.namespace != service.sandboxes.namespace or
-        caller.service_account_name != service.operator_reader_account or
-        service.operator_reader_account is None):
+    if (
+        caller.namespace != service.sandboxes.namespace
+        or caller.service_account_name != service.operator_reader_account
+        or service.operator_reader_account is None
+    ):
         raise HTTPException(403, "operator diagnostics not authorized")
     if namespace != caller.namespace:
         raise HTTPException(404, "sandbox not found")
     return await service.store.sandbox_status(
-        namespace, name, uid,
+        namespace,
+        name,
+        uid,
         quiet_seconds=service.notice_debounce.quiet_seconds,
         max_wait_seconds=service.notice_debounce.max_wait_seconds,
     )

@@ -4,12 +4,39 @@ import { useEffect, useState, type JSX } from "react";
 
 import { fetchWithLogin } from "./client";
 
-type Source = { provider: string; request_id?: string; repository?: string; subject?: { kind: string; number?: number; name?: string; sha?: string } };
-type Subscription = { id: string; source: Source; cancelled: boolean; expires_at: string; error: string | null; next_source_check_at: string | null };
+type Source = {
+  provider: string;
+  request_id?: string;
+  repository?: string;
+  subject?: { kind: string; number?: number; name?: string; sha?: string };
+};
+type Subscription = {
+  id: string;
+  source: Source;
+  cancelled: boolean;
+  expires_at: string;
+  error: string | null;
+  next_source_check_at: string | null;
+};
 type Inbox = {
-  inbox: { id: string; session_id: string; last_cursor: number; acknowledged: number; covered: number; expired_through: number; retired: boolean; delivery_error: string | null };
+  inbox: {
+    id: string;
+    session_id: string;
+    last_cursor: number;
+    acknowledged: number;
+    covered: number;
+    expired_through: number;
+    retired: boolean;
+    delivery_error: string | null;
+  };
   subscriptions: Subscription[];
-  notice: { through_cursor: number; attempted: boolean; admitted: boolean; confirmed: boolean; error: string | null } | null;
+  notice: {
+    through_cursor: number;
+    attempted: boolean;
+    admitted: boolean;
+    confirmed: boolean;
+    error: string | null;
+  } | null;
   unannounced_count: number;
   pending_acknowledgement_count: number;
   notice_due_at: string | null;
@@ -22,7 +49,8 @@ type Status = { observed_at: string; inboxes: Inbox[] };
 
 function sourceLabel(source: Source): string {
   if (source.provider === "actions") return `Action ${source.request_id}`;
-  if (source.provider === "github") return `${source.repository ?? "GitHub"} · ${source.subject?.kind ?? "event"} ${source.subject?.number ?? source.subject?.name ?? source.subject?.sha ?? ""}`;
+  if (source.provider === "github")
+    return `${source.repository ?? "GitHub"} · ${source.subject?.kind ?? "event"} ${source.subject?.number ?? source.subject?.name ?? source.subject?.sha ?? ""}`;
   return source.provider;
 }
 
@@ -43,53 +71,168 @@ export function NotificationStatus({ sandbox, sessionId }: { sandbox: string; se
     async function refresh(): Promise<void> {
       setLoading(true);
       try {
-        const response = await fetchWithLogin(`/sandboxes/${encodeURIComponent(sandbox)}/notifications`, { signal: abort.signal });
-        if (!response.ok) throw new Error(response.status === 503 ? "Notification service unavailable" : `Status ${response.status}`);
+        const response = await fetchWithLogin(`/sandboxes/${encodeURIComponent(sandbox)}/notifications`, {
+          signal: abort.signal,
+        });
+        if (!response.ok)
+          throw new Error(response.status === 503 ? "Notification service unavailable" : `Status ${response.status}`);
         const snapshot = (await response.json()) as Status;
-        if (!abort.signal.aborted) { setData(snapshot); setError(null); }
+        if (!abort.signal.aborted) {
+          setData(snapshot);
+          setError(null);
+        }
       } catch (failure) {
-        if (!abort.signal.aborted) setError(failure instanceof Error ? failure.message : "Unable to load notifications");
+        if (!abort.signal.aborted)
+          setError(failure instanceof Error ? failure.message : "Unable to load notifications");
       } finally {
         if (!abort.signal.aborted) setLoading(false);
       }
     }
     void refresh();
     const timer = window.setInterval(() => void refresh(), 15000);
-    return () => { abort.abort(); window.clearInterval(timer); };
+    return () => {
+      abort.abort();
+      window.clearInterval(timer);
+    };
   }, [opened, sandbox]);
   const inboxes = data?.inboxes.filter(({ inbox }) => !sessionId || inbox.session_id === sessionId) ?? [];
-  return <>
-    <Button size="xs" variant="subtle" onClick={() => setOpened(true)}>Notifications</Button>
-    <Drawer opened={opened} onClose={() => setOpened(false)} title={`Notifications · ${sandbox}`} position="right" size="lg">
-      <ScrollArea h="calc(100vh - 110px)">
-        <Stack gap="md" pr="sm">
-          <Text size="sm" c="dimmed">Read-only status. Runner confirmation does not mean the agent handled a notice.</Text>
-          {data && <Text size="xs" c="dimmed">Snapshot: {timestamp(data.observed_at)}{loading ? " · refreshing" : ""}</Text>}
-          {!data && loading && <Text>Loading notification status…</Text>}
-          {error && <Text role="alert" c="red">{error}{data ? " · showing last snapshot" : ""}</Text>}
-          {data && inboxes.length === 0 && <Text>No inbox for {sessionId ? "this runner session" : "this Sandbox incarnation"}.</Text>}
-          {inboxes.map(({ inbox, subscriptions, notice, unannounced_count, pending_acknowledgement_count, notice_due_at, quiet_until, max_wait_at, notice_wait_reason, next_work_at }) => <Paper key={inbox.id} withBorder p="md">
-            <Stack gap="xs">
-              <Group justify="space-between"><Text fw={600}>Session {inbox.session_id}</Text>{inbox.retired && <Badge color="gray">Retired</Badge>}</Group>
-              <Text size="xs" c="dimmed">Inbox {inbox.id}</Text>
-              <Group gap="xs"><Badge color={unannounced_count ? "blue" : "gray"}>{unannounced_count} awaiting notice</Badge><Badge color={pending_acknowledgement_count ? "yellow" : "gray"}>{pending_acknowledgement_count} not acknowledged</Badge></Group>
-              <Text size="sm">Cursors: latest {inbox.last_cursor} · notice-covered {inbox.covered} · acknowledged {inbox.acknowledged} · expired through {inbox.expired_through}</Text>
-              {notice && <Text size="sm">Latest notice through {notice.through_cursor}: {notice.error ? `error: ${notice.error}` : notice.confirmed ? "harness confirmed" : notice.admitted ? "runner admitted; awaiting confirmation" : notice.attempted ? "delivery attempted" : "prepared"}</Text>}
-              {inbox.delivery_error && <Text c="red" size="sm">Delivery: {inbox.delivery_error}</Text>}
-              {notice_wait_reason && <Text size="sm">Notice: {notice_wait_reason.replaceAll("_", " ")}{notice_due_at ? ` · eligible ${timestamp(notice_due_at)}` : ""}</Text>}
-              {notice_due_at && <Text size="xs" c="dimmed">Quiet until {timestamp(quiet_until!)} · maximum wait {timestamp(max_wait_at!)}</Text>}
-              {next_work_at && <Text size="xs" c="dimmed">Next scheduled inbox work: {timestamp(next_work_at)} (may be source polling or delivery retry)</Text>}
-              <Divider label="Subscriptions" />
-              {subscriptions.length === 0 && <Text size="sm" c="dimmed">No subscriptions</Text>}
-              {subscriptions.map((sub) => <Stack gap={2} key={sub.id}>
-                <Text size="sm">{sourceLabel(sub.source)} · {sub.cancelled ? "cancelled" : new Date(sub.expires_at).getTime() <= new Date(data.observed_at).getTime() ? "expired" : "active"}</Text>
-                <Text size="xs" c="dimmed">Expires {timestamp(sub.expires_at)}{sub.next_source_check_at ? ` · next source check ${timestamp(sub.next_source_check_at)}` : ""}</Text>
-                {sub.error && <Text c="red" size="xs">Source: {sub.error}</Text>}
-              </Stack>)}
-            </Stack>
-          </Paper>)}
-        </Stack>
-      </ScrollArea>
-    </Drawer>
-  </>;
+  return (
+    <>
+      <Button size="xs" variant="subtle" onClick={() => setOpened(true)}>
+        Notifications
+      </Button>
+      <Drawer
+        opened={opened}
+        onClose={() => setOpened(false)}
+        title={`Notifications · ${sandbox}`}
+        position="right"
+        size="lg"
+      >
+        <ScrollArea h="calc(100vh - 110px)">
+          <Stack gap="md" pr="sm">
+            <Text size="sm" c="dimmed">
+              Read-only status. Runner confirmation does not mean the agent handled a notice.
+            </Text>
+            {data && (
+              <Text size="xs" c="dimmed">
+                Snapshot: {timestamp(data.observed_at)}
+                {loading ? " · refreshing" : ""}
+              </Text>
+            )}
+            {!data && loading && <Text>Loading notification status…</Text>}
+            {error && (
+              <Text role="alert" c="red">
+                {error}
+                {data ? " · showing last snapshot" : ""}
+              </Text>
+            )}
+            {data && inboxes.length === 0 && (
+              <Text>No inbox for {sessionId ? "this runner session" : "this Sandbox incarnation"}.</Text>
+            )}
+            {inboxes.map(
+              ({
+                inbox,
+                subscriptions,
+                notice,
+                unannounced_count,
+                pending_acknowledgement_count,
+                notice_due_at,
+                quiet_until,
+                max_wait_at,
+                notice_wait_reason,
+                next_work_at,
+              }) => (
+                <Paper key={inbox.id} withBorder p="md">
+                  <Stack gap="xs">
+                    <Group justify="space-between">
+                      <Text fw={600}>Session {inbox.session_id}</Text>
+                      {inbox.retired && <Badge color="gray">Retired</Badge>}
+                    </Group>
+                    <Text size="xs" c="dimmed">
+                      Inbox {inbox.id}
+                    </Text>
+                    <Group gap="xs">
+                      <Badge color={unannounced_count ? "blue" : "gray"}>{unannounced_count} awaiting notice</Badge>
+                      <Badge color={pending_acknowledgement_count ? "yellow" : "gray"}>
+                        {pending_acknowledgement_count} not acknowledged
+                      </Badge>
+                    </Group>
+                    <Text size="sm">
+                      Cursors: latest {inbox.last_cursor} · notice-covered {inbox.covered} · acknowledged{" "}
+                      {inbox.acknowledged} · expired through {inbox.expired_through}
+                    </Text>
+                    {notice && (
+                      <Text size="sm">
+                        Latest notice through {notice.through_cursor}:{" "}
+                        {notice.error
+                          ? `error: ${notice.error}`
+                          : notice.confirmed
+                            ? "harness confirmed"
+                            : notice.admitted
+                              ? "runner admitted; awaiting confirmation"
+                              : notice.attempted
+                                ? "delivery attempted"
+                                : "prepared"}
+                      </Text>
+                    )}
+                    {inbox.delivery_error && (
+                      <Text c="red" size="sm">
+                        Delivery: {inbox.delivery_error}
+                      </Text>
+                    )}
+                    {notice_wait_reason && (
+                      <Text size="sm">
+                        Notice: {notice_wait_reason.replaceAll("_", " ")}
+                        {notice_due_at ? ` · eligible ${timestamp(notice_due_at)}` : ""}
+                      </Text>
+                    )}
+                    {notice_due_at && (
+                      <Text size="xs" c="dimmed">
+                        Quiet until {timestamp(quiet_until!)} · maximum wait {timestamp(max_wait_at!)}
+                      </Text>
+                    )}
+                    {next_work_at && (
+                      <Text size="xs" c="dimmed">
+                        Next scheduled inbox work: {timestamp(next_work_at)} (may be source polling or delivery retry)
+                      </Text>
+                    )}
+                    <Divider label="Subscriptions" />
+                    {subscriptions.length === 0 && (
+                      <Text size="sm" c="dimmed">
+                        No subscriptions
+                      </Text>
+                    )}
+                    {subscriptions.map((sub) => (
+                      <Stack gap={2} key={sub.id}>
+                        <Text size="sm">
+                          {sourceLabel(sub.source)} ·{" "}
+                          {sub.cancelled
+                            ? "cancelled"
+                            : new Date(sub.expires_at).getTime() <=
+                                new Date(data?.observed_at ?? sub.expires_at).getTime()
+                              ? "expired"
+                              : "active"}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          Expires {timestamp(sub.expires_at)}
+                          {sub.next_source_check_at
+                            ? ` · next source check ${timestamp(sub.next_source_check_at)}`
+                            : ""}
+                        </Text>
+                        {sub.error && (
+                          <Text c="red" size="xs">
+                            Source: {sub.error}
+                          </Text>
+                        )}
+                      </Stack>
+                    ))}
+                  </Stack>
+                </Paper>
+              )
+            )}
+          </Stack>
+        </ScrollArea>
+      </Drawer>
+    </>
+  );
 }
