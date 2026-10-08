@@ -602,6 +602,16 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_operator_stream",
+    srcs = ["test_operator_stream.py"],
+    deps = [
+        ":operator_stream",
+        ":updates",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "updates",
     srcs = ["updates.py"],
@@ -951,6 +961,7 @@ py_test(
         ":db",
         ":mcp_linkage",
         ":models",
+        ":updates",
         "//:conftest",
         "@pypi//httpx2",
         "@pypi//more_itertools",

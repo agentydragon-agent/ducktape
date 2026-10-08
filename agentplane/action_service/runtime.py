@@ -8,7 +8,7 @@ start and refuse every call at dispatch.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 
 from pydantic import ValidationError
@@ -25,7 +25,11 @@ from agentplane.action_service.sandbox.inventory import SandboxClients
 
 @asynccontextmanager
 async def running_executor(
-    catalog: ActionCatalog, linkage: McpLinkageAuthority | None = None, sandboxes: SandboxClients | None = None
+    catalog: ActionCatalog,
+    linkage: McpLinkageAuthority | None = None,
+    sandboxes: SandboxClients | None = None,
+    *,
+    on_health_change: Callable[[], None] | None = None,
 ) -> AsyncIterator[dict[str, Executor]]:
     """Validate bindings locally, then schedule independent optional backend supervisors."""
     executors: dict[str, Executor] = {}
@@ -58,6 +62,8 @@ async def running_executor(
 
     async with AsyncExitStack() as stack:
         for key, mcp_executor in supervised.items():
+            if on_health_change is not None:
+                mcp_executor.on_health_change = on_health_change
             # Register before start: a connected client can fail during initial discovery.
             stack.push_async_callback(_close_executor, key, mcp_executor)
             await mcp_executor.start()

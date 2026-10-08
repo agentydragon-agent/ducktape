@@ -20,6 +20,7 @@ from agentplane.postgres.listener import PostgresListener
 CHANNEL = "agentplane_action_updates"
 PUSH_CHANNEL = "agentplane_push_updates"
 CONNECTIONS_CHANNEL = "agentplane_connection_updates"
+MCP_LINKAGE_CHANNEL = "agentplane_mcp_linkage_updates"
 logger = logging.getLogger(__name__)
 
 
@@ -50,9 +51,11 @@ class ActionUpdates:
         self._all_subscribers: set[asyncio.Event] = set()
         self._push_subscribers: set[asyncio.Event] = set()
         self._connection_subscribers: set[asyncio.Event] = set()
+        self._linkage_subscribers: set[asyncio.Event] = set()
+        self._health_subscribers: set[asyncio.Event] = set()
         self.listener = PostgresListener(
             make_url(database_url),
-            channels=(CHANNEL, PUSH_CHANNEL, CONNECTIONS_CHANNEL),
+            channels=(CHANNEL, PUSH_CHANNEL, CONNECTIONS_CHANNEL, MCP_LINKAGE_CHANNEL),
             application_name="agentplane-action-updates",
             notified=self._notified,
             invalidated=self._wake_all,
@@ -98,6 +101,29 @@ class ActionUpdates:
         finally:
             self._connection_subscribers.discard(subscription.changed)
 
+    @contextmanager
+    def subscribe_mcp_linkages(self) -> Iterator[ActionSubscription]:
+        subscription = ActionSubscription(self.listener)
+        self._linkage_subscribers.add(subscription.changed)
+        try:
+            yield subscription
+        finally:
+            self._linkage_subscribers.discard(subscription.changed)
+
+    @contextmanager
+    def subscribe_mcp_health(self) -> Iterator[ActionSubscription]:
+        subscription = ActionSubscription(self.listener)
+        self._health_subscribers.add(subscription.changed)
+        try:
+            yield subscription
+        finally:
+            self._health_subscribers.discard(subscription.changed)
+
+    def wake_mcp_health(self) -> None:
+        """The supervisor's replica-local catalog changed; stream readers re-read it."""
+        for changed in self._health_subscribers:
+            changed.set()
+
     def _notified(self, channel: str, payload: object) -> None:
         if channel == PUSH_CHANNEL:
             for changed in self._push_subscribers:
@@ -105,6 +131,10 @@ class ActionUpdates:
             return
         if channel == CONNECTIONS_CHANNEL:
             for changed in self._connection_subscribers:
+                changed.set()
+            return
+        if channel == MCP_LINKAGE_CHANNEL:
+            for changed in self._linkage_subscribers:
                 changed.set()
             return
         for changed in self._all_subscribers:
@@ -123,6 +153,10 @@ class ActionUpdates:
             changed.set()
 
     def _wake_all(self) -> None:
+        for changed in self._linkage_subscribers:
+            changed.set()
+        for changed in self._health_subscribers:
+            changed.set()
         for changed in self._push_subscribers:
             changed.set()
         for changed in self._connection_subscribers:

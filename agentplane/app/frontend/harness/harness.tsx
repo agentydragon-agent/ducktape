@@ -1779,6 +1779,8 @@ let notificationStatusUnavailable = false;
 let notificationExtraEntry = false;
 let pushBrowserAdded = false;
 let connectionRenamed = false;
+let mcpLinkageChanged = false;
+let mcpHealthChanged = false;
 
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
@@ -2394,6 +2396,11 @@ class HarnessEventSource extends EventTarget {
         source.serve(new URL(source.url, "http://harness"));
     }
   }
+  static publishMcp(path: string): void {
+    for (const source of this.sources) {
+      if (source.url.endsWith(path) && source.readyState === this.OPEN) source.serve(new URL(source.url, "http://harness"));
+    }
+  }
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 2;
@@ -2474,6 +2481,27 @@ class HarnessEventSource extends EventTarget {
       if (!route || !match) throw new Error("Missing connections fixture");
       const rows = route[2](match, url.searchParams, undefined, undefined) as ReturnType<typeof sampleConnection>[];
       if (connectionRenamed) rows[0].display_name = "Updated OAuth client";
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
+      return;
+    }
+    if (url.pathname === "/mcp-servers/stream") {
+      const rows = MCP_LINKAGES.map((row) =>
+        row.server_id === "example_docs" && mcpLinkageChanged ? { ...row, status: "expired" as const } : row
+      );
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
+      return;
+    }
+    if (url.pathname === "/action-groups/stream") {
+      const rows = MCP_GROUPS.map((row) =>
+        row.key === "example_docs" && mcpHealthChanged
+          ? {
+              ...row, available: false,
+              health: { state: "disconnected" as const, reason: "connect_failed" as const,
+                detail: "Connection refused", last_discovery_at: row.health?.last_discovery_at ?? null,
+                retry_at: new Date(NOW + 20_000).toISOString(), failures: 1 },
+            }
+          : row
+      );
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
       return;
     }
@@ -2575,6 +2603,14 @@ const visualHarness = {
   publishConnectionRename(): void {
     connectionRenamed = true;
     HarnessEventSource.publishConnections();
+  },
+  publishMcpLinkageChange(): void {
+    mcpLinkageChanged = true;
+    HarnessEventSource.publishMcp("/mcp-servers/stream");
+  },
+  publishMcpHealthChange(): void {
+    mcpHealthChanged = true;
+    HarnessEventSource.publishMcp("/action-groups/stream");
   },
   setNotificationStatusUnavailable(unavailable: boolean): void {
     notificationStatusUnavailable = unavailable;

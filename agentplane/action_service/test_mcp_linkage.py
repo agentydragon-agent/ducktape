@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from urllib.parse import parse_qs, urlparse
 
 import httpx2
@@ -13,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStart, McpLinkageStatus, McpOAuthServer
 from agentplane.action_service.models import OperatorPrincipal
+from agentplane.action_service.updates import ActionUpdates
 
 OPERATOR = OperatorPrincipal(issuer="test-linkage", subject="operator")
 TOKEN_ENDPOINT = "https://idp.example.test/token"
@@ -61,6 +64,25 @@ async def test_a_refreshed_token_is_served_and_wakes_the_servers_executors(engin
         changed = authority.subscribe_changes(SERVER.server_id)
         assert await authority.access_token_for_execution(SERVER.server_id) == "test-only-refreshed-token"
     assert changed.is_set()
+
+
+async def test_linkage_changes_wake_streams_on_both_replicas(engine: AsyncEngine, db_url: str) -> None:
+    updates_a, updates_b = ActionUpdates(db_url), ActionUpdates(db_url)
+    refreshed = httpx2.Response(200, json={"access_token": "test-only-refreshed-token", "expires_in": 3600})
+    async with httpx2.AsyncClient(transport=_provider(refreshed)) as http:
+        authority = McpLinkageAuthority(make_sessionmaker(engine), {SERVER.server_id: SERVER}, http=http)
+        async with updates_a.listener.listen(), updates_b.listener.listen():
+            with updates_a.subscribe_mcp_linkages() as first, updates_b.subscribe_mcp_linkages() as second:
+                await _link(authority)
+                async with asyncio.timeout(10):
+                    await asyncio.gather(first.changed.wait(), second.changed.wait())
+                assert (await authority.status(SERVER.server_id)).status == McpLinkageStatus.LINKED
+                first.changed.clear()
+                second.changed.clear()
+                await authority.disconnect(SERVER.server_id, OPERATOR)
+                async with asyncio.timeout(10):
+                    await asyncio.gather(first.changed.wait(), second.changed.wait())
+                assert (await authority.status(SERVER.server_id)).status == McpLinkageStatus.UNLINKED
 
 
 @pytest.mark.parametrize(

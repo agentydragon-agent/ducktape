@@ -206,6 +206,18 @@ async def test_mcp_servers_linked_and_expired(view: VisualPage, app: AgentplaneF
     await view.capture(target=view.page.locator("#app"))
 
 
+async def test_mcp_servers_linkage_and_health_update_while_open(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/mcp-servers")
+    page = view.page
+    docs = page.locator('[data-mcp-server="linkage:example_docs"]')
+    await expect(docs.get_by_text("linked", exact=True)).to_be_visible()
+    await app.publish_mcp_linkage_change()
+    await expect(docs.get_by_text("expired", exact=True)).to_be_visible()
+    await app.publish_mcp_health_change()
+    await expect(docs.get_by_text("connect_failed", exact=True)).to_be_visible()
+    await view.capture(name="mcp_linkage_and_health_live")
+
+
 @pytest.mark.parametrize(
     ("focus_key", "focus_state", "other_key", "other_state", "viewport"),
     [

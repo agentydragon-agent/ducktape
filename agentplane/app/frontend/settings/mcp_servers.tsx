@@ -1,5 +1,6 @@
 import { Alert, Badge, Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
 import { type JSX, type ReactNode, useCallback, useEffect, useState } from "react";
+import { followStream, type StreamConnection } from "../live_stream";
 
 import { displayableError, mcpLinkageService, type McpLinkageService, type McpLinkageView } from "../client";
 import { type ActionGroupService, actionGroupService, type ActionGroupView } from "../actions/client";
@@ -118,6 +119,8 @@ export function McpServers({
   const [busy, setBusy] = useState<{ serverId: string; operation: "link" | "disconnect" } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [linkageConnection, setLinkageConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
+  const [healthConnection, setHealthConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -140,7 +143,37 @@ export function McpServers({
   }, [service, groupService]);
 
   useEffect(() => {
-    void load();
+    if (typeof EventSource === "undefined") {
+      // The non-browser unit test environment has no EventSource.
+      void load();
+      return;
+    }
+    let haveLinkages = false;
+    let haveHealth = false;
+    const stopLinkages = followStream("/mcp-servers/stream", {
+      events: {
+        snapshot: (message) => {
+          setLinkages(JSON.parse(message.data) as McpLinkageView[]);
+          haveLinkages = true;
+          if (haveHealth) setLoading(false);
+        },
+      },
+      onConnection: setLinkageConnection,
+    });
+    const stopHealth = followStream("/action-groups/stream", {
+      events: {
+        snapshot: (message) => {
+          setGroups(JSON.parse(message.data) as ActionGroupView[]);
+          haveHealth = true;
+          if (haveLinkages) setLoading(false);
+        },
+      },
+      onConnection: setHealthConnection,
+    });
+    return () => {
+      stopLinkages();
+      stopHealth();
+    };
   }, [load]);
 
   async function link(linkage: McpLinkageView): Promise<void> {
@@ -172,15 +205,16 @@ export function McpServers({
 
   return (
     <Stack>
-      <Group justify="flex-end">
-        <Button variant="light" loading={loading} disabled={busy !== null} onClick={() => void load()}>
-          Refresh
-        </Button>
-      </Group>
       <Text c="dimmed" size="sm">
         Every configured MCP server, oauth-linked or not. Link one shared operator-managed OAuth account per
         oauth-linked server; Agents never receive these credentials.
       </Text>
+      {linkageConnection.phase === "reconnecting" && (
+        <Text role="status">OAuth linkage stream disconnected; showing last known state. Reconnecting…</Text>
+      )}
+      {healthConnection.phase === "reconnecting" && (
+        <Text role="status">MCP health stream disconnected; showing last known state. Reconnecting…</Text>
+      )}
       {error && <Alert color="red">{error}</Alert>}
       {warnings.length > 0 && (
         <Alert color="orange">

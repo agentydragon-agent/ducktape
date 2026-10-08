@@ -213,6 +213,16 @@ class OperatorActionServiceClient(_BearerClient):
         async with self._stream_operator("/v1/operator/connections/stream") as chunks:
             yield chunks
 
+    @asynccontextmanager
+    async def stream_mcp_linkages(self) -> AsyncIterator[AsyncIterator[bytes]]:
+        async with self._stream_operator("/v1/operator/mcp-servers/stream") as chunks:
+            yield chunks
+
+    @asynccontextmanager
+    async def stream_group_health(self) -> AsyncIterator[AsyncIterator[bytes]]:
+        async with self._stream_operator("/v1/operator/action-groups/stream") as chunks:
+            yield chunks
+
     async def push_config(self) -> dict[str, str | None]:
         response = await self._request("GET", "/v1/operator/push/config")
         return cast(dict[str, str | None], response.json())

@@ -11,6 +11,7 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Annotated, cast
 from uuid import UUID
 
@@ -59,6 +60,7 @@ from agentplane.action_service.mcp_linkage import (
     McpLinkageNotFoundError,
     McpLinkageStart,
     McpLinkageStartView,
+    McpLinkageStatus,
     McpLinkageView,
 )
 from agentplane.action_service.models import (
@@ -399,6 +401,29 @@ def create_app(
     ) -> list[ActionGroupView]:
         return action_catalog.group_views(with_detail=isinstance(principal, OperatorPrincipal))
 
+    @app.get("/v1/operator/action-groups/stream")
+    async def group_health_stream(
+        principal: Annotated[OperatorPrincipal, Depends(_operator)],
+        action_catalog: Annotated[ActionCatalog, Depends(_catalog)],
+        updates: Annotated[ActionUpdates, Depends(_updates)],
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
+        authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
+    ) -> StreamingResponse:
+        async def authorized() -> bool:
+            return credentials is not None and await authenticator.authenticate(credentials.credentials) == principal
+
+        async def read() -> bytes:
+            return json.dumps(
+                [
+                    row.model_copy(update={"actions": []}).model_dump(mode="json")
+                    for row in action_catalog.group_views(with_detail=True)
+                    if row.executor_kind == "mcp"
+                ],
+                separators=(",", ":"),
+            ).encode()
+
+        return snapshot_stream(updates.subscribe_mcp_health, read, authorized)
+
     @app.get("/v1/action-groups/{group_key}/actions/{action_key}", response_model=ActionView)
     async def get_action(
         group_key: str,
@@ -688,6 +713,34 @@ def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
     async def list_mcp_linkages(principal: Annotated[OperatorPrincipal, Depends(_operator)]) -> list[McpLinkageView]:
         del principal
         return await authority.statuses()
+
+    @app.get("/v1/operator/mcp-servers/stream")
+    async def mcp_linkages_stream(
+        principal: Annotated[OperatorPrincipal, Depends(_operator)],
+        updates: Annotated[ActionUpdates, Depends(_updates)],
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
+        authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
+    ) -> StreamingResponse:
+        next_expiry: datetime | None = None
+
+        async def authorized() -> bool:
+            return credentials is not None and await authenticator.authenticate(credentials.credentials) == principal
+
+        async def read() -> bytes:
+            nonlocal next_expiry
+            rows = await authority.statuses()
+            now = datetime.now(UTC)
+            next_expiry = min(
+                (
+                    row.expires_at
+                    for row in rows
+                    if row.status == McpLinkageStatus.LINKED and row.expires_at is not None and row.expires_at > now
+                ),
+                default=None,
+            )
+            return json.dumps([row.model_dump(mode="json") for row in rows], separators=(",", ":")).encode()
+
+        return snapshot_stream(updates.subscribe_mcp_linkages, read, authorized, refresh_at=lambda: next_expiry)
 
     @app.post("/v1/operator/mcp-servers/{server_id}/linkage/start", response_model=McpLinkageStartView)
     async def linkage_start(

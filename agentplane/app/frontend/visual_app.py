@@ -108,6 +108,12 @@ class AgentplaneFixture:
     async def publish_connection_rename(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.publishConnectionRename()")
 
+    async def publish_mcp_linkage_change(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.publishMcpLinkageChange()")
+
+    async def publish_mcp_health_change(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.publishMcpHealthChange()")
+
     async def set_notification_status_unavailable(self, unavailable: bool) -> None:
         await self.page.evaluate(
             "unavailable => window.agentplaneVisual.setNotificationStatusUnavailable(unavailable)", unavailable

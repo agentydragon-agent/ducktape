@@ -411,7 +411,10 @@ client and selecting this Connection on the consent page; management has no dire
 Policy editing and deployment are outside this surface.
 
 The MCP servers tab lists the Action Service's OAuth-linked MCP server groups and links or
-disconnects each one. The BFF proxies `GET /mcp-servers`, `GET /mcp-servers/{id}/linkage`,
+disconnects each one. The tab follows independent linkage and replica-local MCP health
+snapshots via session-bound `/mcp-servers/stream` and `/action-groups/stream` routes; neither a
+linkage-only event nor a stale health read is presented as a fully live view. The BFF also proxies
+`GET /mcp-servers`, `GET /mcp-servers/{id}/linkage`,
 `POST /mcp-servers/{id}/linkage/start`, and `POST /mcp-servers/{id}/linkage/disconnect` through the
 same operator federation; the provider's redirect lands on `GET /mcp-linkage/callback`, which
 completes the link and returns the browser to `/#/mcp-servers`. What a link authorizes and when a

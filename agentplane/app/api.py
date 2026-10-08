@@ -504,6 +504,20 @@ async def action_groups(client: OperatorActions) -> list[ActionGroupView]:
     return await client.action_groups()
 
 
+@connections_router.get("/mcp-servers/stream")
+async def mcp_linkages_stream(
+    request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions
+) -> StreamingResponse:
+    return _operator_resource_stream(request, shutdown, updates, sessions, client.stream_mcp_linkages, "MCP linkage")
+
+
+@connections_router.get("/action-groups/stream")
+async def group_health_stream(
+    request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions
+) -> StreamingResponse:
+    return _operator_resource_stream(request, shutdown, updates, sessions, client.stream_group_health, "MCP health")
+
+
 @connections_router.post("/mcp-servers/{server_id}/linkage/start")
 async def start_mcp_linkage(server_id: str, body: McpLinkageStart, client: OperatorActions) -> McpLinkageStartView:
     return await client.start_mcp_linkage(server_id, body.scopes)
