@@ -71,6 +71,7 @@ class SubscriptionView(Model):
     cancelled: bool
     expires_at: datetime
     error: str | None
+    retry_at: datetime | None
 
 
 class InboxView(Model):

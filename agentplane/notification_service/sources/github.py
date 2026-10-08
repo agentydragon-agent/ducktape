@@ -4,9 +4,11 @@ import asyncio
 import hashlib
 import hmac
 import logging
+import math
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from typing import Literal
 from urllib.parse import quote
 from uuid import UUID
@@ -52,9 +54,30 @@ class GitHubNotInstalledError(GitHubUnavailableError):
 
 
 class GitHubRetryError(Exception):
-    def __init__(self, retry_seconds: int = 60) -> None:
+    def __init__(self, status_code: int, retry_seconds: int) -> None:
         self.retry_seconds = retry_seconds
-        super().__init__("GitHub temporarily unavailable")
+        super().__init__(f"GitHub rate limited (HTTP {status_code}); retry in {retry_seconds}s")
+
+
+def rate_limit_delay(headers: httpx.Headers, now: float) -> int:
+    # GitHub primary limits use an epoch reset; secondary limits may supply Retry-After.
+    # Neither deadline may be shortened by our fallback or a maximum-delay clamp.
+    delay = 60
+    retry_after = headers.get("retry-after", "")
+    if retry_after.isascii() and retry_after.isdecimal():
+        delay = max(delay, int(retry_after))
+    elif retry_after:
+        try:
+            deadline = parsedate_to_datetime(retry_after)
+        except (ValueError, OverflowError):
+            pass
+        else:
+            if deadline.tzinfo is not None:
+                delay = max(delay, math.ceil(deadline.timestamp() - now))
+    reset = headers.get("x-ratelimit-reset", "")
+    if headers.get("x-ratelimit-remaining") == "0" and reset.isascii() and reset.isdecimal():
+        delay = max(delay, math.ceil(int(reset) - now))
+    return delay
 
 
 class InvalidSignatureError(Exception):
@@ -252,8 +275,7 @@ class GitHub:
             response.status_code == 403
             and (response.headers.get("x-ratelimit-remaining") == "0" or "retry-after" in response.headers)
         ):
-            delay = response.headers.get("retry-after", "60")
-            raise GitHubRetryError(min(3600, max(60, int(delay) if delay.isdecimal() else 60)))
+            raise GitHubRetryError(response.status_code, rate_limit_delay(response.headers, time.time()))
         if allow_missing and response.status_code == 404:
             return response
         if response.status_code == 401:
