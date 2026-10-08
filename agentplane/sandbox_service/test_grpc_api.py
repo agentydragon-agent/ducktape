@@ -270,8 +270,7 @@ async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
         assert invalid.value.code == grpc.StatusCode.INVALID_ARGUMENT
 
         created = await runner.create(
-            idempotency_key="confirmed-key",
-            spec={"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state"},
+            idempotency_key="confirmed-key", spec={"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state"}
         )
         await (await peer.attachments.get()).closed.wait()
         confirmed = await runner.lookup(idempotency_key="confirmed-key")
