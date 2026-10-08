@@ -210,17 +210,23 @@ class Service:
                         GitHubRetryError,
                     ) as failure:
                         # No upstream body, bearer, or native content in diagnostics.
-                        await self.store.source_failed(
-                            claim,
-                            source,
+                        source_error = (
                             str(failure)
-                            if isinstance(failure, GitHubUnavailableError)
+                            if isinstance(failure, (GitHubUnavailableError, GitHubRetryError))
                             else (
                                 f"HTTP {failure.response.status_code}"
                                 if isinstance(failure, httpx.HTTPStatusError)
                                 else type(failure).__name__
-                            ),
-                            failure.retry_seconds if isinstance(failure, GitHubRetryError) else 60,
+                            )
+                        )
+                        retry_seconds = failure.retry_seconds if isinstance(failure, GitHubRetryError) else 60
+                        await self.store.source_failed(claim, source, source_error, retry_seconds)
+                        logger.warning(
+                            "notification source retry: inbox=%s subscription=%s cause=%s retry_seconds=%s",
+                            claim.id,
+                            source.id,
+                            source_error,
+                            retry_seconds,
                         )
                 notice = await self.prepare_notice(claim)
                 if notice is not None and error is None:

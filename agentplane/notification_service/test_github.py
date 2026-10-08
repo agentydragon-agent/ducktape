@@ -27,12 +27,18 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.notification_service.api import authenticated_caller, create_app
 from agentplane.notification_service.database_migrate import RUNNER
-from agentplane.notification_service.db import GitHubDelivery, Subscription
+from agentplane.notification_service.db import GitHubDelivery, Inbox, Subscription
 from agentplane.notification_service.models import DestinationRef, Subscribe, SubscriptionUpdate
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, NoticeDebounceSettings, Settings
 from agentplane.notification_service.sources.actions import Actions
-from agentplane.notification_service.sources.github import GitHub, GitHubRetryError, GitHubUnavailableError, Repository
+from agentplane.notification_service.sources.github import (
+    GitHub,
+    GitHubRetryError,
+    GitHubUnavailableError,
+    Repository,
+    rate_limit_delay,
+)
 from agentplane.notification_service.sources.github_models import (
     BranchSubject,
     CommitSubject,
@@ -42,7 +48,7 @@ from agentplane.notification_service.sources.github_models import (
     PullRequestSubject,
 )
 from agentplane.notification_service.store import ConflictError, NotFoundError, Store
-from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.client import Runner, SandboxServiceClient
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
 
@@ -341,6 +347,111 @@ async def test_replay_boundary_overlapping_matches_and_revocation(
     with pytest.raises(GitHubRetryError) as error:
         await github.context(SOURCE)
     assert error.value.retry_seconds == 120
+
+
+@pytest.mark.parametrize(
+    ("headers", "expected"),
+    [
+        ({}, 60),
+        ({"retry-after": "120"}, 120),
+        ({"retry-after": "7200"}, 7200),
+        ({"retry-after": "1"}, 60),
+        ({"retry-after": "invalid"}, 60),
+        ({"retry-after": "-1"}, 60),
+        ({"retry-after": "Thu, 01 Jan 1970 01:00:00 GMT"}, 2600),
+        ({"retry-after": "Thu, 01 Jan 1970 00:00:00 GMT"}, 60),
+        ({"x-ratelimit-remaining": "0", "x-ratelimit-reset": "3600"}, 2600),
+        ({"x-ratelimit-remaining": "0", "x-ratelimit-reset": "999"}, 60),
+        ({"x-ratelimit-remaining": "0", "x-ratelimit-reset": "invalid"}, 60),
+        ({"x-ratelimit-remaining": "1", "x-ratelimit-reset": "3600"}, 60),
+        ({"retry-after": "120", "x-ratelimit-remaining": "0", "x-ratelimit-reset": "3600"}, 2600),
+        ({"retry-after": "7200", "x-ratelimit-remaining": "0", "x-ratelimit-reset": "3600"}, 7200),
+    ],
+)
+def test_rate_limit_deadlines(headers: dict[str, str], expected: int) -> None:
+    assert rate_limit_delay(httpx.Headers(headers), 1000.25) == expected
+
+
+@pytest.mark.parametrize("status", [403, 429])
+async def test_primary_limit_uses_reset_without_retry_after(provider: tuple[GitHub, Upstream], status: int) -> None:
+    github, upstream = provider
+    upstream.responses["/repos/owner/repo/installation"] = httpx.Response(
+        status, headers={"x-ratelimit-remaining": "0", "x-ratelimit-reset": "3600"}, text="private upstream body"
+    )
+    headers = github.app_headers()
+    with (
+        patch("agentplane.notification_service.sources.github.time.time", return_value=1000.25),
+        pytest.raises(GitHubRetryError, match=f"HTTP {status}") as failure,
+    ):
+        await github.request("GET", "/repos/owner/repo/installation", headers)
+    assert failure.value.retry_seconds == 2600
+    assert "private upstream body" not in str(failure.value)
+
+
+async def test_rate_limit_retry_survives_ingress_and_restart(
+    store: Store, engine: AsyncEngine, provider: tuple[GitHub, Upstream], caplog: pytest.LogCaptureFixture
+) -> None:
+    github, upstream = provider
+    sub = await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
+    await ingest(github, store, comment())
+    upstream.limited = True
+    service = Service(
+        store,
+        create_autospec(Actions),
+        create_autospec(SandboxServiceClient),
+        github,
+        notice_debounce=NoticeDebounceSettings(quiet_seconds=3600, max_wait_seconds=3600),
+        stale_confirmation_s=30,
+    )
+    runner = create_autospec(Runner)
+    with patch.object(Service, "runner", return_value=runner):
+        before = datetime.now(UTC)
+        assert await service.step()
+        async with store.sessions() as session:
+            source = await session.get(Subscription, sub.id)
+            assert source is not None
+            retry_at = source.next_attempt
+            assert retry_at is not None
+            assert before + timedelta(seconds=120) <= retry_at <= datetime.now(UTC) + timedelta(seconds=120)
+        view = await store.subscription(PRINCIPAL.account, sub.id)
+        assert view.error == "GitHub rate limited (HTTP 403); retry in 120s"
+        assert view.retry_at == retry_at
+        assert f"subscription={sub.id}" in caplog.text
+        assert "retry_seconds=120" in caplog.text
+        assert not (await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).entries
+
+        requests = len(upstream.requests)
+        await ingest(github, store, comment())
+        assert await service.step()
+        assert len(upstream.requests) == requests
+        assert (await store.subscription(PRINCIPAL.account, sub.id)).retry_at == retry_at
+        assert await store.get_next_work_at() == retry_at
+
+        # Advance the durable deadline, then recover with no process-local provider/store state
+        # and no further webhook to wake the source.
+        async with store.sessions.begin() as session:
+            await session.execute(
+                update(Subscription).where(Subscription.id == sub.id).values(next_attempt=datetime.now(UTC))
+            )
+            await session.execute(update(Inbox).where(Inbox.id == sub.inbox_id).values(next_attempt=datetime.now(UTC)))
+        upstream.limited = False
+        recovered = Store(engine)
+        restarted = Service(
+            recovered,
+            service.actions,
+            service.sandboxes,
+            GitHub(github.http, github.settings),
+            notice_debounce=service.notice_debounce,
+            stale_confirmation_s=30,
+        )
+        assert await restarted.step()
+    view = await recovered.subscription(PRINCIPAL.account, sub.id)
+    assert view.error is None
+    assert view.retry_at is None
+    page = await recovered.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
+    assert len(page.entries) == 2
+    assert all(entry.payload == comment() for entry in page.entries)
+    assert page.inbox.acknowledged == 0
 
 
 @pytest.mark.parametrize(

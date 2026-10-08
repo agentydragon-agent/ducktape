@@ -68,6 +68,7 @@ def subscription_view(row: Subscription) -> SubscriptionView:
         cancelled=row.cancelled,
         expires_at=row.expires_at,
         error=row.error,
+        retry_at=row.next_attempt if row.error and not row.cancelled and row.expires_at > datetime.now(UTC) else None,
     )
 
 

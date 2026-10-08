@@ -181,7 +181,17 @@ including authentication errors and suspended installations, surface as subscrip
 Any authenticated workload may subscribe to repositories accessible through this App, including private
 repositories; normal inbox ownership still applies. Revocation/suspension/identity changes stop new matching
 and expose subscription errors; delivered entries stay available. Transient/rate-limit failures retry with
-backoff. A changed installation/repository identity requires explicit subscription recreation.
+backoff. Subscription views expose the safe `error` and an absolute `retry_at` for a scheduled
+source retry (null after success, cancellation or expiry); this is not a runner-delivery deadline.
+Rate-limit retries respect both `Retry-After` and an exhausted primary quota's `X-RateLimit-Reset`,
+with a minimum 60-second delay when GitHub supplies no later deadline. Workers log the subscription,
+safe failure category and retry delay, never upstream bodies or credentials.
+
+Accepted webhooks remain durable while a source is backing off. New ingress does not shorten that
+source's retry deadline; workers resume matching retained receipts after the deadline, including
+after restart, and clear the error on success. No client-side resubscription or reconciliation is
+needed for this recovery. Webhook deliveries GitHub never successfully submitted are outside that
+guarantee. A changed installation/repository identity requires explicit subscription recreation.
 
 Migration `0005_github` retains existing Actions identities, checkpoints, payloads and delivery state while
 making event identity provider-neutral and storing source-specific progress separately. Use a coordinated service/schema cutover; older
