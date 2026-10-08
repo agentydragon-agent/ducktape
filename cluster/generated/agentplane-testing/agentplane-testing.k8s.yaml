@@ -2460,7 +2460,7 @@ data:
     sandbox_presets:
       public-coder:
         title: Public coder
-        template: agentplane-runner
+        template: runner
         egress_policies:
           - basic
           - packages
@@ -2912,7 +2912,7 @@ kind: SandboxTemplate
 metadata:
   annotations:
     sandbox-actions.agentplane.allegedly.works/description: "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
-  name: agentplane-runner
+  name: runner
   namespace: agentplane-testing
 spec:
   networkPolicyManagement: Unmanaged
@@ -3003,7 +3003,7 @@ spec:
               value: agentplane-credential-agentplane-workload
             - name: TZ
               value: America/Los_Angeles
-          image: git.allegedly.works/ducktape-ci/agentplane-runner:unset
+          image: git.allegedly.works/ducktape-ci/runner:unset
           name: runner
           ports:
             - containerPort: 7000

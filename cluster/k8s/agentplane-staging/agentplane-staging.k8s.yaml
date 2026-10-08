@@ -3203,10 +3203,51 @@ data:
         setup_script: |
           #!/bin/sh
           git clone --branch main --single-branch http://finance-agent:agentplane-credential-forgejo-finance-agent@forgejo-http.forgejo.svc.cluster.local:3000/finance-agent/finance-agent.git .
+      public-coder-ducktape-codex:
+        title: Public coder / ducktape / Codex
+        harness: HARNESS_CODEX
+        model: chatgpt/oai-responses/gpt-6-luna
+        cwd: /state/workspaces/{session_id}
+        reasoning_effort: medium
+        instructions: |-
+          Work as a public-repository coding agent. You will usually work on the public GitHub repository
+          agentydragon/ducktape. Follow the shared ducktape contribution instructions below.
+
+          The public-coder preset grants BuildBuddy diagnostics through Agentplane egress. Use its
+          credential placeholder as the `x-buildbuddy-api-key` header through the proxy when reading
+          invocation details or logs from the allowed BuildBuddy API host. The proxy substitutes the
+          cluster-held API key; never read, print, or persist the real key or bypass the proxy.
+
+          When contributing to the public `agentydragon/ducktape` repository, use the dedicated
+          `agentydragon-agent` GitHub identity, not the operator's identity. Check the current Agentplane
+          egress rules before GitHub access. The `github-agentydragon-agent` rule supplies a substituted PAT:
+          use its exact returned placeholder as an HTTP Basic password for Git push and as a Bearer token
+          for GitHub API calls through the proxy. Never read, log, or persist the real PAT.
+
+          Work in a ducktape checkout (not nested inside another repository). Fork to
+          `agentydragon-agent/ducktape` if the fork does not exist, push the change branch to that fork,
+          then open a PR from `agentydragon-agent:<branch>` against `agentydragon/ducktape`'s `devel`
+          branch with the substituted PAT. Never push directly to the upstream repository. Check the
+          diff for personal data before pushing; public ducktape must contain only generic tooling and
+          public-safe instructions.
+
+          You are using the ducktape-specific `runner-ducktape` container, built with Nix (not NixOS).
+          The repository's shared tool set is already on PATH: `bb`, `bbr`, Bazelisk, `pre-commit`,
+          Ruff, Prettier and its pinned plugins, nixfmt, Buildifier, and the repo-configured Gazelle.
+          Use these installed tools; do not install standalone substitutes or bypass repository hooks.
+          Use the checkout's normal commands and configuration, preferring `bbr` for remote builds/tests.
+
+          Outbound access still follows Agentplane egress policy. Check the current rules for credentials
+          and destinations; tool availability does not imply authenticated BuildBuddy access. Preserve the
+          sandbox's proxy and CA configuration, and report an unavailable route rather than bypassing it.
+
+          This is still a container sharing resources with the harness, not a VM with isolated tool
+          processes. A large local build or indiscriminate process kill can terminate your own session.
+          Prefer remote execution and target only processes you created when cleaning up.
     sandbox_presets:
       public-coder:
         title: Public coder
-        template: agentplane-runner
+        template: runner
         egress_policies:
           - basic
           - packages
@@ -3298,7 +3339,7 @@ data:
           fi
       haku:
         title: Haku
-        template: agentplane-runner
+        template: runner
         egress_policies:
           - basic
           - forgejo-haku
@@ -3396,7 +3437,7 @@ data:
         thread_preset: haku-codex
       finance-agent:
         title: Finance agent
-        template: agentplane-runner
+        template: runner
         egress_policies:
           - basic
           - packages
@@ -3489,6 +3530,98 @@ data:
           - coinbase-credentials
           - spend-policy-config
         thread_preset: finance-agent-codex
+      public-coder-ducktape:
+        title: Public coder / ducktape
+        template: runner-ducktape
+        egress_policies:
+          - basic
+          - packages
+          - github-agentydragon-agent
+          - github-clone
+          - github-actions-logs
+          - buildbuddy
+          - agentplane-testing
+        action_policy_sets:
+          - public-github-reads
+          - public-ducktape-reads
+          - public-ducktape-fork-reads
+          - public-gaffer-private-reads
+          - github-identity-reads
+          - ssh-reads
+          - ducktape-pr-failed-jobs
+        kubernetes_grants:
+          - agentplane-staging-metadata
+          - agentplane-staging-logs
+          - activitywatch-metadata
+          - activitywatch-logs
+          - agent-sandbox-system-metadata
+          - agentplane-index-metadata
+          - agentplane-index-logs
+          - agentplane-testing-metadata
+          - agentplane-testing-logs
+          - airlock-metadata
+          - airlock-logs
+          - authentik-metadata
+          - authentik-logs
+          - cert-manager-metadata
+          - cert-manager-logs
+          - cli-proxy-api-metadata
+          - cli-proxy-api-logs
+          - clickhouse-metadata
+          - clickhouse-logs
+          - cnpg-system-metadata
+          - cnpg-system-logs
+          - flux-system-metadata
+          - flux-system-logs
+          - gatus-metadata
+          - gatus-logs
+          - grocy-sf-metadata
+          - grocy-sf-logs
+          - grocy-vallejo-metadata
+          - grocy-vallejo-logs
+          - haku-ci-metadata
+          - haku-ci-logs
+          - litellm-metadata
+          - litellm-logs
+          - local-path-storage-metadata
+          - local-path-storage-logs
+          - loki-metadata
+          - loki-logs
+          - monitoring-metadata
+          - monitoring-logs
+          - nix-cache-metadata
+          - node-feature-discovery-metadata
+          - node-feature-discovery-logs
+          - nvidia-device-plugin-metadata
+          - nvidia-device-plugin-logs
+          - oci-cache-metadata
+          - oci-cache-logs
+          - openebs-metadata
+          - openebs-logs
+          - proxmox-proxy-metadata
+          - proxmox-proxy-logs
+          - public-coder-agent-metadata
+          - study-casino-metadata
+          - study-casino-logs
+          - tana-mcp-metadata
+          - tana-mcp-logs
+          - vm-images-publisher-metadata
+          - haku-console-metadata
+          - clickhouse-diagnostics
+          - ducktape-flux-read
+          - public-coder-volsync-status
+          - public-coder-agent-reader
+          - agentplane-testing-operator
+          - agentplane-testing-login
+          - public-coder-node-read
+          - public-coder-cluster-metadata-read
+        thread_preset: public-coder-ducktape-codex
+        bootstrap: |
+          marker=/state/workspaces/.agentplane-public-coder-ready
+          mkdir -p /state/workspaces
+          if [ ! -f "$marker" ]; then
+            printf '%s\n' 'public-coder workspace initialized' > "$marker"
+          fi
     kubernetes_grants:
       sandbox-tool-config:
         kind: RoleBinding
@@ -4402,7 +4535,7 @@ kind: SandboxTemplate
 metadata:
   annotations:
     sandbox-actions.agentplane.allegedly.works/description: "The shared runner image, built to host an agent harness: the sandbox tools (git, curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
-  name: agentplane-runner
+  name: runner
   namespace: agentplane-staging
 spec:
   networkPolicyManagement: Unmanaged
@@ -4493,7 +4626,7 @@ spec:
               value: agentplane-credential-agentplane-workload
             - name: TZ
               value: America/Los_Angeles
-          image: git.allegedly.works/ducktape-ci/agentplane-runner:unset
+          image: git.allegedly.works/ducktape-ci/runner:unset
           name: runner
           ports:
             - containerPort: 7000
@@ -4849,9 +4982,10 @@ data:
           description: Stamped and exec'd by this service, as the caller, in its own namespace.
           namespace: agentplane-staging
           templates:
-            - agentplane-runner
             - agentplane-sandbox
             - agentplane-sandbox-build
+            - runner
+            - runner-ducktape
         direct_tools:
           - create
           - dispose
@@ -5752,6 +5886,221 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: agentplane-notifications
+---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  annotations:
+    sandbox-actions.agentplane.allegedly.works/description: "Public ducktape development: the runner and harnesses plus the repository's shared bb/bbr, Bazelisk, pre-commit, formatters and Gazelle. Same container isolation and permissions as the generic runner; use remote execution for builds."
+  name: runner-ducktape
+  namespace: agentplane-staging
+spec:
+  networkPolicyManagement: Unmanaged
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-runner
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --state-dir
+            - /state
+            - --listen
+            - 0.0.0.0:7000
+            - --claude-binary
+            - /bin/claude
+            - --anthropic-base-url
+            - $(LITELLM_URL)
+            - --codex-binary
+            - /bin/codex
+            - --openai-base-url
+            - $(LITELLM_URL)/v1
+            - --harness-env
+            - HOME
+            - --harness-env
+            - PATH
+            - --harness-env
+            - TZ
+            - --harness-env
+            - HTTP_PROXY
+            - --harness-env
+            - HTTPS_PROXY
+            - --harness-env
+            - http_proxy
+            - --harness-env
+            - https_proxy
+            - --harness-env
+            - NO_PROXY
+            - --harness-env
+            - no_proxy
+            - --harness-env
+            - SSL_CERT_FILE
+            - --harness-env
+            - NODE_EXTRA_CA_CERTS
+            - --harness-env
+            - CURL_CA_BUNDLE
+            - --harness-env
+            - GIT_SSL_CAINFO
+            - --harness-env
+            - REQUESTS_CA_BUNDLE
+            - --harness-env
+            - KUBECONFIG
+            - --harness-inherit-env
+            - TZDIR
+          env:
+            - name: LITELLM_URL
+              value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
+            - name: AGENTPLANE_MODEL_CONTEXT_WINDOWS
+              value: '{"ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k":262144,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k":262144}'
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:3128
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:3128
+            - name: http_proxy
+              value: http://127.0.0.1:3128
+            - name: https_proxy
+              value: http://127.0.0.1:3128
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost
+            - name: no_proxy
+              value: 127.0.0.1,localhost
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: CURL_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: GIT_SSL_CAINFO
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: KUBECONFIG
+              value: /etc/kubernetes/kubeconfig
+            - name: ANTHROPIC_AUTH_TOKEN
+              value: agentplane-credential-agentplane-workload
+            - name: OPENAI_API_KEY
+              value: agentplane-credential-agentplane-workload
+            - name: TZ
+              value: America/Los_Angeles
+          image: git.allegedly.works/ducktape-ci/runner-ducktape:unset
+          name: runner
+          ports:
+            - containerPort: 7000
+              name: runner
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /state
+              name: state
+            - mountPath: /etc/ssl/certs/ca-certificates.crt
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.crt
+            - mountPath: /etc/ssl/certs/java/cacerts
+              name: egress-ca
+              readOnly: true
+              subPath: ca-certificates.p12
+            - mountPath: /etc/kubernetes/kubeconfig
+              name: tool-config
+              readOnly: true
+              subPath: kubeconfig
+          workingDir: /state
+        - env:
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
+              value: agentplane-egress.agentplane-staging.svc.cluster.local
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
+              value: "8888"
+            - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
+              value: "3128"
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
+              value: 0.0.0.0
+            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
+              value: "3129"
+            - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
+              value: /var/run/agentplane-egress/token
+            - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token"}'
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
+          name: egress-sidecar
+          readinessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /readyz
+              port: 3129
+            periodSeconds: 2
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /var/run/agentplane-egress
+              name: egress-token
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-runner
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - configMap:
+            name: agentplane-egress-ca
+          name: egress-ca
+        - configMap:
+            name: agentplane-sandbox-tool-config
+          name: tool-config
+        - name: egress-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-egress
+                  expirationSeconds: 600
+                  path: token
+              - serviceAccountToken:
+                  audience: https://localhost:7445
+                  expirationSeconds: 600
+                  path: kubernetes-token
+              - serviceAccountToken:
+                  audience: agentplane-notifications
+                  expirationSeconds: 600
+                  path: notifications-token
+  volumeClaimTemplates:
+    - metadata:
+        name: state
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: local-path-ovh-hdd
+  volumeClaimTemplatesPolicy: Overrides
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
