@@ -75,6 +75,7 @@ class SandboxService(Construct):
             caller_accounts=frozenset({manager, ServiceAccountRef(namespace=env.namespace, name=notifications.NAME)}),
             token_audience=TOKEN_AUDIENCE,
             history_reader_accounts=frozenset({manager}),
+            history_ingestion_enabled=env.sandbox_service_history_ingestion_enabled,
             platform_instructions=combine_instructions(
                 render_platform_instructions(
                     egress_api_url=f"http://{egress.agent_api(env.namespace).fqdn}",

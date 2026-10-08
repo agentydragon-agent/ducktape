@@ -1787,7 +1787,7 @@ metadata:
 data:
   config.yaml: |
     sandbox_namespace: agentplane-testing
-    history_ingestion_enabled: false
+    history_ingestion_enabled: true
     caller_accounts:
       - namespace: agentplane-testing
         name: agentplane-app

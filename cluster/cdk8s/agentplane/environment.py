@@ -120,6 +120,8 @@ class Environment:
     app_config: AppSettingsConfig
     # Options for Sandbox Service's gRPC channel to the runner, authored into its ConfigMap.
     runner_grpc_channel_options: Mapping[str, int | str]
+    # Keep the shadow copier opt-in per deployment until imported histories are verified.
+    sandbox_service_history_ingestion_enabled: bool
     # Shared source for app settings and the follow-up ingress metadata projection.
     model_routes: HarnessRoutes
     db: DbProps
