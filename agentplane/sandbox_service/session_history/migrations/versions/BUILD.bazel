@@ -17,5 +17,8 @@ py_library(
 py_library(
     name = "0002_session_open_reservations",
     srcs = ["0002_session_open_reservations.py"],
-    deps = ["@pypi//alembic"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
 )

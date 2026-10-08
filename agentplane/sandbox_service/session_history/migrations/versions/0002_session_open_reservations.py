@@ -30,14 +30,7 @@ def upgrade() -> None:
     op.create_index(
         "ux_history_open_key",
         "session_history",
-        [
-            "caller_namespace",
-            "caller_name",
-            "sandbox_namespace",
-            "sandbox_name",
-            "sandbox_uid",
-            "open_key",
-        ],
+        ["caller_namespace", "caller_name", "sandbox_namespace", "sandbox_name", "sandbox_uid", "open_key"],
         unique=True,
         postgresql_where=sa.text("open_key IS NOT NULL"),
     )

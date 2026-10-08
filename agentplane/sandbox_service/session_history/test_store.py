@@ -8,7 +8,12 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.protocol import event_log_pb2
-from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryNotFoundError, OpenReservation, Store
+from agentplane.sandbox_service.session_history.store import (
+    HistoryConflictError,
+    HistoryNotFoundError,
+    OpenReservation,
+    Store,
+)
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -106,7 +111,12 @@ async def test_reservation_is_stable_across_retries_and_replicas(engine: AsyncEn
     uid = uuid4()
 
     async def reserve(
-        store: Store, *, key: str = "open-1", caller_name: str = "app", sandbox_uid: UUID = uid, payload: bytes = b"spec"
+        store: Store,
+        *,
+        key: str = "open-1",
+        caller_name: str = "app",
+        sandbox_uid: UUID = uid,
+        payload: bytes = b"spec"
     ) -> OpenReservation:
         return await store.reserve(
             caller_namespace="testing",
