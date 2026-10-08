@@ -58,10 +58,12 @@ export function Connections({ service = connectionService }: { service?: Connect
   useEffect(() => {
     if (typeof EventSource === "undefined") return; // Non-browser unit test environment.
     return followStream("/connections/stream", {
-      events: { snapshot: (message) => {
-        setRows(JSON.parse(message.data) as Connection[]);
-        setLoaded(true);
-      } },
+      events: {
+        snapshot: (message) => {
+          setRows(JSON.parse(message.data) as Connection[]);
+          setLoaded(true);
+        },
+      },
       onConnection: setConnection,
     });
   }, []);
@@ -99,14 +101,15 @@ export function Connections({ service = connectionService }: { service?: Connect
     <Stack>
       <Group justify="space-between">
         <Title order={2}>OAuth clients</Title>
-
       </Group>
       <Text c="dimmed" size="sm">
         Named external clients and the ServiceAccount their most recent grant acts as. Unlink revokes authority without
         deleting history or stopping already claimed work; changing the bound ServiceAccount requires a fresh
         authorization.
       </Text>
-      {connection.phase === "reconnecting" && <Text role="status">Connection lost; showing last OAuth clients. Reconnecting…</Text>}
+      {connection.phase === "reconnecting" && (
+        <Text role="status">Connection lost; showing last OAuth clients. Reconnecting…</Text>
+      )}
       {error && (
         <Alert color="red" role="alert">
           {error}

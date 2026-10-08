@@ -604,16 +604,21 @@ def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
                         return
                     snapshot = await authority.list()
                     subscription.check_available()
-                    yield b"event: snapshot\ndata: " + json.dumps(
-                        [row.model_dump(mode="json") for row in snapshot], separators=(",", ":")
-                    ).encode() + b"\n\n"
+                    yield (
+                        b"event: snapshot\ndata: "
+                        + json.dumps([row.model_dump(mode="json") for row in snapshot], separators=(",", ":")).encode()
+                        + b"\n\n"
+                    )
                     while not changed.is_set():
                         try:
                             async with asyncio.timeout(5):
                                 await changed.wait()
                         except TimeoutError:
                             subscription.check_available()
-                            if credentials is None or await authenticator.authenticate(credentials.credentials) != principal:
+                            if (
+                                credentials is None
+                                or await authenticator.authenticate(credentials.credentials) != principal
+                            ):
                                 return
                             yield b": keepalive\n\n"
                     subscription.check_available()

@@ -502,8 +502,8 @@ ts_library(
     srcs = ["settings/connections.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":live_stream",
         ":client",
+        ":live_stream",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
