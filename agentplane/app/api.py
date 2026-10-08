@@ -683,8 +683,7 @@ async def push_subscriptions(client: OperatorActions) -> list[dict[str, object]]
 
 @push_router.get("/subscriptions/stream")
 async def push_subscriptions_stream(
-    request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates,
-    sessions: OperatorSessions,
+    request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions
 ) -> StreamingResponse:
     session_id = operator_session_row(request).id
 
@@ -693,6 +692,7 @@ async def push_subscriptions_stream(
 
     async def body() -> AsyncIterator[bytes]:
         try:
+
             async def upstream() -> AsyncIterator[bytes]:
                 while True:
                     delivered = False

@@ -148,7 +148,9 @@ export function PushSettings(): JSX.Element {
         Register this browser
       </Button>
       {connection.phase === "reconnecting" && (
-        <Text role="status" c="dimmed" size="sm">Connection lost; showing last registered browsers. Reconnecting…</Text>
+        <Text role="status" c="dimmed" size="sm">
+          Connection lost; showing last registered browsers. Reconnecting…
+        </Text>
       )}
       {devices.map((device) => (
         <Paper withBorder p="sm" key={device.endpoint}>

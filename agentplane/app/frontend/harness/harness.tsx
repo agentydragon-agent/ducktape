@@ -2455,7 +2455,9 @@ class HarnessEventSource extends EventTarget {
       return;
     }
     if (url.pathname === "/push/subscriptions/stream") {
-      const browsers = pushBrowserAdded ? [{ endpoint: "https://push.example/browser", user_agent: "Second browser", created_at: ago(0) }] : [];
+      const browsers = pushBrowserAdded
+        ? [{ endpoint: "https://push.example/browser", user_agent: "Second browser", created_at: ago(0) }]
+        : [];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(browsers) }));
       return;
     }

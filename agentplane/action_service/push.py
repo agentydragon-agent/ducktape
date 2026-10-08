@@ -26,7 +26,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from agentplane.action_service.db import ActionRequestRow, PushDeliveryRow, PushSubscriptionRow
 from agentplane.action_service.models import ActionState, OperatorPrincipal
-from agentplane.action_service.updates import ActionUpdates, PUSH_CHANNEL
+from agentplane.action_service.updates import PUSH_CHANNEL, ActionUpdates
 
 logger = logging.getLogger(__name__)
 PUSH_TTL_SECONDS = 600

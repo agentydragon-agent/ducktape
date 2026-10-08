@@ -545,7 +545,10 @@ def create_app(
                                 await changed.wait()
                         except TimeoutError:
                             subscription.check_available()
-                            if credentials is None or await authenticator.authenticate(credentials.credentials) != principal:
+                            if (
+                                credentials is None
+                                or await authenticator.authenticate(credentials.credentials) != principal
+                            ):
                                 return
                             yield b": keepalive\n\n"
                     subscription.check_available()

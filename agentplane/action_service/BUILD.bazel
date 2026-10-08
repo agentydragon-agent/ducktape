@@ -920,6 +920,7 @@ py_test(
         ":db",
         ":models",
         ":push",
+        ":updates",
         "//:conftest",
         "//agentplane:subjects",
         "@pypi//cryptography",

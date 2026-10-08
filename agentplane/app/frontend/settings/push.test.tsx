@@ -11,22 +11,44 @@ it("updates registered browsers from the stream without a refresh button", async
   class Source extends EventTarget {
     static readonly CLOSED = 2;
     readyState = 1;
-    constructor(readonly url: string) { super(); stream = this; }
-    close() { this.readyState = Source.CLOSED; }
+    constructor(readonly url: string) {
+      super();
+      stream = this;
+    }
+    close() {
+      this.readyState = Source.CLOSED;
+    }
   }
   vi.stubGlobal("EventSource", Source);
-  vi.stubGlobal("fetch", vi.fn(async (url: string) =>
-    Response.json(url === "/push/config" ? { application_server_key: null } : [])
-  ));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => Response.json(url === "/push/config" ? { application_server_key: null } : []))
+  );
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   try {
-    await act(async () => root.render(<MantineProvider env="test"><PushSettings /></MantineProvider>));
+    await act(async () =>
+      root.render(
+        <MantineProvider env="test">
+          <PushSettings />
+        </MantineProvider>
+      )
+    );
     expect(container.textContent).not.toContain("Refresh notification settings");
-    await act(async () => stream.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([
-      { endpoint: "https://push.example/other", user_agent: "Another browser", created_at: "2026-01-01T00:00:00Z" }
-    ]) })));
+    await act(async () =>
+      stream.dispatchEvent(
+        new MessageEvent("snapshot", {
+          data: JSON.stringify([
+            {
+              endpoint: "https://push.example/other",
+              user_agent: "Another browser",
+              created_at: "2026-01-01T00:00:00Z",
+            },
+          ]),
+        })
+      )
+    );
     expect(container.textContent).toContain("Another browser");
   } finally {
     await act(async () => root.unmount());

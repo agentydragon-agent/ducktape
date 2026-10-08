@@ -23,7 +23,6 @@ from agentplane.action_service.models import (
     ProviderVote,
     Verdict,
 )
-from agentplane.action_service.updates import ActionUpdates
 from agentplane.action_service.push import (
     ActionPushNotifier,
     PushIdentity,
@@ -32,6 +31,7 @@ from agentplane.action_service.push import (
     PushSubscriptionStore,
     WebPushSettings,
 )
+from agentplane.action_service.updates import ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 
 OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
