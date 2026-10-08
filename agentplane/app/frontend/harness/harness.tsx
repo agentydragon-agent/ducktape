@@ -1775,6 +1775,8 @@ const MCP_GROUPS: ActionGroupView[] = [
   }),
 ];
 
+let notificationStatusUnavailable = false;
+
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
 routes.push(
@@ -1822,6 +1824,177 @@ routes.push(
         bootstrap: "mkdir -p /state/workspaces",
       },
     ],
+  ],
+  [
+    "GET",
+    /^\/sandboxes\/([^/]+)\/notifications$/,
+    (match) =>
+      notificationStatusUnavailable
+        ? new Response(null, { status: 503 })
+        : {
+            observed_at: ago(0),
+            inboxes:
+              match[1] === "ready-sandbox"
+                ? [
+                    {
+                      inbox: {
+                        id: "inbox-one",
+                        session_id: "s-1",
+                        last_cursor: 9,
+                        acknowledged: 4,
+                        covered: 7,
+                        expired_through: 0,
+                        retired: false,
+                        delivery_error: null,
+                      },
+                      subscriptions: [
+                        {
+                          id: "subscription-one",
+                          source: { provider: "actions", request_id: "d49b85b5-849f-4e7d-a644-d4a8b8c16127" },
+                          cancelled: false,
+                          expires_at: new Date(NOW + HOUR).toISOString(),
+                          error: null,
+                          next_source_check_at: new Date(NOW + 30000).toISOString(),
+                        },
+                        {
+                          id: "subscription-two",
+                          source: {
+                            provider: "github",
+                            repository: "agentydragon/ducktape",
+                            subject: { kind: "pull_request", number: 42 },
+                          },
+                          cancelled: true,
+                          expires_at: ago(HOUR),
+                          error: null,
+                          next_source_check_at: null,
+                        },
+                      ],
+                      notice: { through_cursor: 7, attempted: true, admitted: true, confirmed: false, error: null },
+                      unannounced_count: 2,
+                      pending_acknowledgement_count: 5,
+                      pending_entries: [
+                        {
+                          cursor: 5,
+                          created_at: ago(30000),
+                          provider: "actions",
+                          summary: "Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · event 5 · decision_pending",
+                        },
+                        {
+                          cursor: 6,
+                          created_at: ago(20000),
+                          provider: "github",
+                          summary: "GitHub check_run · completed · success",
+                        },
+                        {
+                          cursor: 7,
+                          created_at: ago(10000),
+                          provider: "github",
+                          summary: "GitHub issue_comment · created",
+                        },
+                        {
+                          cursor: 8,
+                          created_at: ago(5000),
+                          provider: "actions",
+                          summary: "Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · event 8 · running",
+                        },
+                        {
+                          cursor: 9,
+                          created_at: ago(0),
+                          provider: "actions",
+                          summary: "Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · event 9 · succeeded",
+                        },
+                      ],
+                      pending_entries_more: false,
+                      notice_due_at: null,
+                      quiet_until: null,
+                      max_wait_at: null,
+                      notice_wait_reason: "awaiting_confirmation",
+                      next_work_at: new Date(NOW + 5000).toISOString(),
+                    },
+                    {
+                      inbox: {
+                        id: "inbox-two",
+                        session_id: "s-2",
+                        last_cursor: 3,
+                        acknowledged: 1,
+                        covered: 1,
+                        expired_through: 0,
+                        retired: false,
+                        delivery_error: null,
+                      },
+                      subscriptions: [],
+                      notice: null,
+                      unannounced_count: 2,
+                      pending_acknowledgement_count: 2,
+                      pending_entries: [
+                        {
+                          cursor: 2,
+                          created_at: ago(10000),
+                          provider: "github",
+                          summary: "GitHub check_run · completed · failure",
+                        },
+                        {
+                          cursor: 3,
+                          created_at: ago(0),
+                          provider: "github",
+                          summary: "GitHub pull_request · synchronize",
+                        },
+                      ],
+                      pending_entries_more: false,
+                      notice_due_at: new Date(NOW + 60000).toISOString(),
+                      quiet_until: new Date(NOW + 60000).toISOString(),
+                      max_wait_at: new Date(NOW + 120000).toISOString(),
+                      notice_wait_reason: "debouncing",
+                      next_work_at: new Date(NOW + 60000).toISOString(),
+                    },
+                    {
+                      inbox: {
+                        id: "inbox-three",
+                        session_id: "s-3",
+                        last_cursor: 2,
+                        acknowledged: 0,
+                        covered: 2,
+                        expired_through: 0,
+                        retired: false,
+                        delivery_error: "runner unavailable",
+                      },
+                      subscriptions: [
+                        {
+                          id: "subscription-three",
+                          source: { provider: "actions", request_id: "d49b85b5-849f-4e7d-a644-d4a8b8c16127" },
+                          cancelled: false,
+                          expires_at: ago(HOUR),
+                          error: "source unavailable",
+                          next_source_check_at: new Date(NOW + 60000).toISOString(),
+                        },
+                      ],
+                      notice: { through_cursor: 2, attempted: true, admitted: false, confirmed: false, error: null },
+                      unannounced_count: 0,
+                      pending_acknowledgement_count: 2,
+                      pending_entries: [
+                        {
+                          cursor: 1,
+                          created_at: ago(10000),
+                          provider: "actions",
+                          summary: "Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · event 1 · decision_pending",
+                        },
+                        {
+                          cursor: 2,
+                          created_at: ago(0),
+                          provider: "actions",
+                          summary: "Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · event 2 · running",
+                        },
+                      ],
+                      pending_entries_more: false,
+                      notice_due_at: null,
+                      quiet_until: null,
+                      max_wait_at: null,
+                      notice_wait_reason: "delivery_retry",
+                      next_work_at: new Date(NOW + 5000).toISOString(),
+                    },
+                  ]
+                : [],
+          },
   ],
   ["GET", /^\/sandboxes\/templates$/, () => ["agentplane-runner"]],
   [
@@ -2317,6 +2490,9 @@ const visualHarness = {
   },
   paginateActionHistory(): void {
     pageActionHistory = true;
+  },
+  setNotificationStatusUnavailable(unavailable: boolean): void {
+    notificationStatusUnavailable = unavailable;
   },
   failActionGroups(): void {
     actionGroupsUnavailable = true;

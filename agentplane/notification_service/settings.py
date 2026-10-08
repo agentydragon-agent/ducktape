@@ -94,6 +94,10 @@ class Settings(BaseSettings):
     token_audience: str = Field(
         default=TOKEN_AUDIENCE, description="Audience required when TokenReview authenticates callers of this API."
     )
+    operator_reader_account: str | None = Field(
+        default=None,
+        description="ServiceAccount name allowed to read UID-pinned operator diagnostics, not inbox payloads.",
+    )
     notice_debounce: NoticeDebounceSettings = Field(default_factory=NoticeDebounceSettings)
     stale_inbox_confirmation_s: float = Field(
         default=30,

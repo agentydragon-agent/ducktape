@@ -7,6 +7,7 @@ import hashlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, nullcontext
+from pathlib import Path as FilePath
 from typing import Annotated
 from uuid import UUID
 
@@ -53,7 +54,12 @@ from agentplane.app.electric import ElectricProxy, router as electric_router
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
 from agentplane.app.live import LiveIndex, Updates, router as live_router
 from agentplane.app.oidc import OIDCSettings, build_oauth
-from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row
+from agentplane.app.operator_sessions import (
+    OperatorSessionMiddleware,
+    OperatorSessionStore,
+    operator_session_row,
+    request_session,
+)
 from agentplane.app.presets import PresetCatalog, SandboxPresetView
 from agentplane.app.sandbox_models import (
     KubernetesGrantView,
@@ -81,6 +87,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
 from agentplane.app.threads.view.fold import CommandOutcome
 from agentplane.app.threads.view.views import ThreadView
+from agentplane.notification_service.models import SandboxNotificationStatus
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import OpenTimeoutError, RunnerError
 from agentplane.runner.harness import Harness
@@ -260,6 +267,29 @@ async def create_sandbox(
 @router.get("/{name}")
 async def get_sandbox(inventory: Inventory, name: str) -> SandboxView:
     return sandbox_view(await inventory.get(name))
+
+
+@router.get("/{name}/notifications")
+async def sandbox_notifications(inventory: Inventory, request: Request, name: str) -> SandboxNotificationStatus:
+    """Operator-authenticated BFF; never return provider payloads or workload inbox authority."""
+    if request.app.state.oidc is None or request_session(request).login is None:
+        raise HTTPException(403, "operator login required")
+    client = request.app.state.notifications_http
+    token_file = request.app.state.notifications_token_file
+    if client is None or token_file is None:
+        raise HTTPException(503, "notification diagnostics unavailable")
+    sandbox = sandbox_view(await inventory.get(name))
+    try:
+        response = await client.get(
+            f"/operator/v1/sandboxes/{sandbox.namespace}/{sandbox.name}/notifications",
+            params={"uid": sandbox.uid},
+            headers={"Authorization": f"Bearer {token_file.read_text().strip()}"},
+        )
+        response.raise_for_status()
+    except (httpx.HTTPError, OSError) as error:
+        logger.warning("notification diagnostics unavailable: %s", type(error).__name__)
+        raise HTTPException(503, "notification diagnostics unavailable") from error
+    return SandboxNotificationStatus.model_validate(response.json())
 
 
 @router.post("/{name}/suspend", status_code=status.HTTP_204_NO_CONTENT)
@@ -960,6 +990,8 @@ def create_app(
     content: ContentStore,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
+    notifications_http: httpx.AsyncClient | None = None,
+    notifications_token_file: FilePath | None = None,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
@@ -1013,6 +1045,8 @@ def create_app(
     app.state.content = content
     app.state.database_updates = database_updates
     app.state.operator_sessions = operator_sessions
+    app.state.notifications_http = notifications_http
+    app.state.notifications_token_file = notifications_token_file
     app.state.models = catalog
     app.state.presets = configured_presets
     app.state.kubernetes_grants = configured_grants

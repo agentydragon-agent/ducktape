@@ -77,7 +77,6 @@ flowchart TB
     NOTIFICATION_SOURCE_WIRING["Conditional future refactor<br/>extract shared source wiring<br/>from concrete implementations"]:::future
     CRON_NOTIFICATIONS["Unranked future capability<br/>scheduled / cron notifications<br/>durable schedules and missed-tick policy"]:::future
     NOTIFICATION_PRESENTATION["Unranked future capability<br/>structured notification provenance<br/>compact frontend presentation"]:::future
-    NOTIFICATION_STATUS_UI["Unranked future capability<br/>Thread/Sandbox notification status<br/>integration app inspection"]:::future
     KUBERNETES_MONITORING["Unranked future capability<br/>agent-visible Kubernetes rollout monitoring<br/>notifications are an option"]:::future
     DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
     HARNESS_CONFIG_ISOLATION["Unranked prerequisite<br/>separate hosted feature config from capture scenarios<br/>keep project and host settings isolated"]:::future
@@ -1435,7 +1434,7 @@ read-authorized, resumable view of runner session progress (e.g. attach state an
 through the existing Sandbox Service route), with a catch-up read before relying on idle events;
 avoid per-inbox long-lived polling, cross-service DB access, and holding delivery leases while
 waiting. Specify the waiting reason and next eligible time (or event, with a time fallback) in
-durable/service-readable status so `NOTIFICATION_STATUS_UI` can explain why e.g. seven entries
+durable/service-readable status so the operator notification drawer can explain why e.g. seven entries
 are pending; distinguish pending inbox entries from notices
 waiting for harness confirmation and entries awaiting agent acknowledgement. Do not claim a
 precise delivery time if it depends on a harness event or the runner being offline.
@@ -1497,38 +1496,6 @@ coalesce); bound frequency/backlog and avoid a burst after downtime. Reuse expli
 and existing destination-lifetime rules; waking suspended harnesses remains a separate decision.
 Acceptance covers firing, cancellation, restart, replica races, missed ticks and DST transitions.
 A scheduled notification must not itself grant authority to perform an Action or bypass approval.
-
-### `NOTIFICATION_STATUS_UI` — inspect Thread/Sandbox notification status in the integration app
-
-**Unranked future capability:** give the operator a read-only view of notification state for a
-Thread's runner session and its Sandbox incarnation, including whether an inbox/subscriptions
-exist, which sources are active or expired, latest entry/acknowledged/expired cursors, pending
-entries, and the latest notice's delivery/confirmation or source errors. Distinguish "runner
-admitted", "harness confirmed" and "agent acknowledged"; none proves the Action or source
-itself succeeded. A Sandbox-level view should identify its sessions instead of merging their
-inboxes into an ambiguous count.
-
-Explore a discoverable entry point in the Thread/Sandbox UI (overflow menu, status icon or a
-panel; do not prescribe placement yet). Show useful empty, loading, disconnected, suspended and
-error states, plus timestamps and links to the underlying inbox/subscriptions where authorized.
-Display the service's actual pacing state when available: pending entry count, latest notice's
-stage, whether a follow-up is waiting for confirmation, a grace deadline, a runner idle
-transition, or a delivery retry, and the next eligible time or condition plus its reason. Label
-estimates and offline/unknown conditions honestly; never infer a cooldown from a frontend-only
-timer. This can ship first
-with existing state and expand when `NOTIFICATION_NOTICE_PACING` adds stage-aware decisions.
-Do not imply that reading or inspecting marks entries handled; no implicit acknowledgement or
-subscription mutation. Decide the backend read/projection path with explicit operator-to-inbox
-authorization: the Notification Service's workload API is scoped to ServiceAccounts, not an
-operator browser credential, so do not expose its bearer token to the frontend or silently give
-every viewer the Sandbox workload's inbox authority. Use paged/on-demand detail rather than
-copying arbitrary provider payloads into a global UI feed; treat displayed payloads as untrusted.
-
-Acceptance covers multiple sessions and Sandbox incarnations, an absent inbox, active and
-cancelled/expired subscriptions, entries awaiting acknowledgement, failed delivery, reconnect,
-and an unauthorized viewer. This is a status/inspection surface, distinct from
-`NOTIFICATION_PRESENTATION`'s compact rendering of notices in the conversation; neither is a
-prerequisite for the other.
 
 ### `NOTIFICATION_PRESENTATION` — structured metadata and compact notification rendering
 

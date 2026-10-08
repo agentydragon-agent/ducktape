@@ -1,3 +1,4 @@
+import { NotificationStatus } from "./notification_status";
 import {
   ActionIcon,
   Badge,
@@ -270,6 +271,7 @@ export function SandboxPage({
   onBack: () => void;
 }): JSX.Element {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const tab: Tab = isTab(requestedTab) ? requestedTab : DEFAULT_TAB;
@@ -545,6 +547,20 @@ export function SandboxPage({
         </Button>
         {sandbox && (
           <Group gap="xs" ml="auto" wrap="nowrap">
+            <Button size="xs" variant="subtle" visibleFrom="sm" onClick={() => setNotificationsOpen(true)}>
+              Notifications
+            </Button>
+            <Menu position="bottom-end">
+              <Menu.Target>
+                <ActionIcon variant="subtle" hiddenFrom="sm" aria-label="More Sandbox actions">
+                  <IconDotsVertical size={16} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item onClick={() => setNotificationsOpen(true)}>Notifications</Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+            <NotificationStatus sandbox={name} opened={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
             <SuspendResume sandbox={sandbox} onAct={(action) => void act(action)} />
             <DeleteButton sandbox={sandbox} onDelete={() => setConfirmingDelete(true)} />
           </Group>

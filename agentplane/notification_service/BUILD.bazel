@@ -91,6 +91,7 @@ py_library(
 py_library(
     name = "models",
     srcs = ["models.py"],
+    visibility = ["//agentplane/app:__pkg__"],
     deps = [
         "//agentplane/notification_service/sources:github_models",
         "@pypi//pydantic",
@@ -202,8 +203,10 @@ py_test(
         ":conftest",
         ":models",
         ":service",
+        ":settings",
         ":store",
         "//:conftest",
+        "//agentplane/action_service:models",
         "//agentplane/workload_auth:principal",
         "@pypi//httpx",
         "@pypi//pytest",

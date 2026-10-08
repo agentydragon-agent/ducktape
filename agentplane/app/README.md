@@ -578,3 +578,14 @@ consumers can opt into `capture_history`; the resume cursor is independent of th
 capture. Explicit session Open cancels its observer after `Attached`, avoiding a
 full-history drain. The leased ingestion connection remains responsible for copying
 runner events into PostgreSQL.
+
+## Notification diagnostics
+
+An operator can open the read-only Notifications drawer from a Thread (filtered to its runner
+session) or a Sandbox (all its sessions). The app's authenticated BFF resolves the live Sandbox
+incarnation and calls Notification Service's UID-pinned, bounded-summary operator read API with its
+own rotating audience-scoped service token. It shows the first 100 retained entries after
+acknowledgement (provider, cursor, time, and curated lifecycle/event summary), with a truncation
+indicator. It never sends that token or raw provider payloads to the browser, and requires a
+browser operator login, not merely a workload bearer admitted elsewhere in the app. No inspection acknowledges an entry or changes a subscription. The drawer refreshes
+only while open and labels an unavailable backend or retained snapshot explicitly.

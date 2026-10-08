@@ -17,6 +17,7 @@ from agentplane.notification_service.models import (
     Acknowledge,
     InboxPage,
     InboxView,
+    SandboxNotificationStatus,
     SourceView,
     Subscribe,
     SubscriptionUpdate,
@@ -73,6 +74,27 @@ async def health(request: Request) -> dict[str, str]:
     if any(worker.done() for worker in workers):
         raise HTTPException(503, "notification workers failed")
     return {"status": "alive"}
+
+
+@router.get("/operator/v1/sandboxes/{namespace}/{name}/notifications")
+async def sandbox_notifications(
+    namespace: str, name: str, uid: str, caller: Caller, service: Notifications
+) -> SandboxNotificationStatus:
+    if (
+        caller.namespace != service.sandboxes.namespace
+        or caller.service_account_name != service.operator_reader_account
+        or service.operator_reader_account is None
+    ):
+        raise HTTPException(403, "operator diagnostics not authorized")
+    if namespace != caller.namespace:
+        raise HTTPException(404, "sandbox not found")
+    return await service.store.sandbox_status(
+        namespace,
+        name,
+        uid,
+        quiet_seconds=service.notice_debounce.quiet_seconds,
+        max_wait_seconds=service.notice_debounce.max_wait_seconds,
+    )
 
 
 @router.get("/v1/sources")

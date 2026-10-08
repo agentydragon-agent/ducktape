@@ -181,3 +181,23 @@ Migration `0005_github` retains existing Actions identities, checkpoints, payloa
 making event identity provider-neutral and storing source-specific progress separately. Use a coordinated service/schema cutover; older
 workers cannot use the replaced columns. Downgrade refuses to proceed if GitHub subscriptions or deliveries
 exist, rather than discarding that data.
+
+## Operator notification diagnostics
+
+The integration app (and only the configured `operator_reader_account` in the Notification Service's
+namespace) can read `GET /operator/v1/sandboxes/{namespace}/{name}/notifications?uid=…` with a
+Pod-bound, audience-specific workload token. This endpoint does not delegate agent inbox authority:
+it returns no provider payloads, idempotency keys, notice text or mutation capability. The app verifies
+the browser's operator login and resolves the current Sandbox UID before calling it; a reused name
+cannot expose another incarnation. Workload `/v1` endpoints remain owner-scoped.
+
+The snapshot groups inboxes by session and reports cursor counts, subscriptions, source errors and
+the latest notice stage. `unannounced_count` counts retained entries beyond the maximum of covered,
+acknowledged and expired cursors; `pending_acknowledgement_count` counts retained, non-expired
+entries beyond acknowledgement (including entries already covered by a notice). A prepared or
+confirmed notice does not acknowledge an entry. `notice_due_at`, `quiet_until` and `max_wait_at`
+are exposed only when a new notice is waiting on the current quiet/max-wait debounce. When a
+previous notice awaits confirmation or a delivery error needs retry, the waiting reason replaces
+the debounce deadline. `next_work_at` is the worker's next scheduled inbox work, **not** a promise
+of notice delivery; `next_source_check_at` is only the individual subscription's reconciliation
+schedule. Offline runner states and event-dependent pacing have no guaranteed delivery time.

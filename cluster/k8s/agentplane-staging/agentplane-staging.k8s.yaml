@@ -3972,6 +3972,8 @@ spec:
             - --namespace=agentplane-staging
             - --sandbox-namespace=agentplane-staging
             - --sandbox-service-target=agentplane-sandbox-service.agentplane-staging.svc.cluster.local:8080
+            - --notifications-url=http://agentplane-notifications.agentplane-staging.svc.cluster.local:8080
+            - --notifications-token-file=/var/run/secrets/agentplane-notifications/token
             - --host=0.0.0.0
             - --port=8080
           env:
@@ -4071,6 +4073,9 @@ spec:
             - mountPath: /var/run/secrets/agentplane-sandbox-service
               name: sandbox-service-token
               readOnly: true
+            - mountPath: /var/run/secrets/agentplane-notifications
+              name: notifications-token
+              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -4168,6 +4173,13 @@ spec:
             sources:
               - serviceAccountToken:
                   audience: agentplane-sandbox-service
+                  expirationSeconds: 3600
+                  path: token
+        - name: notifications-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-notifications
                   expirationSeconds: 3600
                   path: token
 ---
@@ -4296,6 +4308,14 @@ spec:
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-sandbox-service
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-notifications
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -5591,6 +5611,7 @@ data:
   settings.yaml: |
     namespace: agentplane-staging
     token_audience: agentplane-notifications
+    operator_reader_account: agentplane-app
     notice_debounce:
       quiet_seconds: 60
       max_wait_seconds: 120
@@ -5685,6 +5706,14 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-app
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:

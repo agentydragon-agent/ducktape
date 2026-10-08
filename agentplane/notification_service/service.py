@@ -55,9 +55,11 @@ class Service:
         *,
         notice_debounce: NoticeDebounceSettings,
         stale_confirmation_s: float,
+        operator_reader_account: str | None = None,
     ) -> None:
         self.store, self.actions, self.sandboxes = store, actions, sandboxes
         self.github = github
+        self.operator_reader_account = operator_reader_account
         self.notice_debounce = notice_debounce
         self.stale_confirmation_s = stale_confirmation_s
 

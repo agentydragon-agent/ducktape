@@ -74,6 +74,7 @@ py_library(
         "//agentplane/app/threads/view:content",
         "//agentplane/app/threads/view:fold",
         "//agentplane/app/threads/view:views",
+        "//agentplane/notification_service:models",
         "//agentplane/runner:errors",
         "//agentplane/runner:harness",
         "//agentplane/runner:protocol_pb2",

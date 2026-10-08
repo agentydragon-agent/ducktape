@@ -92,6 +92,7 @@ class Notifications(Construct):
             content={
                 "namespace": env.namespace,
                 "token_audience": TOKEN_AUDIENCE,
+                "operator_reader_account": "agentplane-app",
                 "notice_debounce": {"quiet_seconds": 60, "max_wait_seconds": 120},
                 "actions": {
                     "url": f"http://{actions.fqdn}:{actions.port.number}",
@@ -169,7 +170,8 @@ class Notifications(Construct):
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=_LABELS,
             ingress=[
-                IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-egress"), ports=[8080])
+                IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-egress"), ports=[8080]),
+                IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-app"), ports=[8080]),
             ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
