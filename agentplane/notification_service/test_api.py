@@ -177,6 +177,7 @@ async def test_operator_status_is_read_only_and_uid_pinned(store: Store) -> None
         assert inbox["unannounced_count"] == 1
         assert inbox["pending_acknowledgement_count"] == 1
         assert inbox["pending_entries_more"] is False
+        assert isinstance(subscription.source, ActionsSource)
         assert [(entry["cursor"], entry["summary"]) for entry in inbox["pending_entries"]] == [
             (1, f"Action {subscription.source.request_id} · event 1 · decision_pending")
         ]
