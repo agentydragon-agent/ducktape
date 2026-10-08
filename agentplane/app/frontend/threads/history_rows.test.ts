@@ -2,7 +2,14 @@ import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
 import { EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
-import { historyRows, rowKey, summarizeLifecycleGroup, summarizeRun, summarizeSetup, setupProgress } from "./history_rows";
+import {
+  historyRows,
+  rowKey,
+  summarizeLifecycleGroup,
+  summarizeRun,
+  summarizeSetup,
+  setupProgress,
+} from "./history_rows";
 import { testEntity, testItem } from "./thread_entity_fixture";
 import type { ThreadEntity } from "./thread_sync";
 
@@ -116,12 +123,11 @@ describe("setupProgress", () => {
       output(4, "stderr", bytes("Updating files: 90%\rUpdating files: 100%\n")),
     ];
     expect(setupProgress(partial.slice(0, 2))).toEqual(["Cloning into repo...", "Updating files: 10%"]);
-    expect(setupProgress(partial)).toEqual([
-      "Cloning into repo...",
-      "Preparing workspace",
-      "Updating files: 100%",
-    ]);
-    const finished = [...partial, lifecycleItem(5, "setup_finished", { case: "setupFinished", value: { exitCode: 7 } })];
+    expect(setupProgress(partial)).toEqual(["Cloning into repo...", "Preparing workspace", "Updating files: 100%"]);
+    const finished = [
+      ...partial,
+      lifecycleItem(5, "setup_finished", { case: "setupFinished", value: { exitCode: 7 } }),
+    ];
     expect(setupProgress(finished)).toEqual(setupProgress(partial));
     expect(summarizeSetup(finished)).toBe("Thread setup failed (exit 7)");
     expect(historyRows(finished)[0]?.entities).toEqual(finished); // Raw evidence remains available on expansion.
@@ -136,10 +142,9 @@ describe("setupProgress", () => {
       output(4, "stderr", euro.slice(1)),
     ];
     expect(setupProgress(partial)).toEqual(["Ready", "€"]);
-    expect(setupProgress([...partial, lifecycleItem(5, "setup_interrupted", { case: "setupInterrupted", value: {} })])).toEqual([
-      "Ready",
-      "€",
-    ]);
+    expect(
+      setupProgress([...partial, lifecycleItem(5, "setup_interrupted", { case: "setupInterrupted", value: {} })])
+    ).toEqual(["Ready", "€"]);
   });
 });
 
