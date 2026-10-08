@@ -57,7 +57,7 @@ class RemoteIOServer:
 
     async def handle(self, request: web.Request) -> web.StreamResponse:
         if request.headers.get("Authorization") != f"Bearer {TEST_TOKEN}":
-            raise web.HTTPUnauthorized()
+            raise web.HTTPUnauthorized
         tail = request.match_info["tail"]
         if request.method == "GET" and tail == "worker/events/stream":
             return await self.events(request)
@@ -77,13 +77,15 @@ class RemoteIOServer:
             "worker/internal-events",
             "worker/heartbeat",
         }:
+            if not isinstance(body, dict):
+                raise web.HTTPBadRequest
             if body.get("worker_epoch") != 1:
                 return web.json_response({"reason": "worker_epoch_mismatch"}, status=409)
             async with self.changed:
                 self.uploads.append({"path": tail, "body": body})
                 self.changed.notify_all()
             return web.json_response({"has_subscribers": True})
-        raise web.HTTPNotFound()
+        raise web.HTTPNotFound
 
     async def events(self, request: web.Request) -> web.StreamResponse:
         cursor = int(request.query.get("from_sequence_num", request.headers.get("Last-Event-ID", "0")))
@@ -95,7 +97,7 @@ class RemoteIOServer:
         try:
             while not self.stopping:
                 async with self.changed:
-                    await self.changed.wait_for(lambda: self.stopping or len(self.commands) > cursor)
+                    await self.changed.wait_for(lambda cursor=cursor: self.stopping or len(self.commands) > cursor)
                     pending = self.commands[cursor:]
                 for event in pending:
                     data = json.dumps(event)

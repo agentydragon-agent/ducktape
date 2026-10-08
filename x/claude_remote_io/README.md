@@ -36,3 +36,11 @@ exclude headers. Server-provided hydration must be separately identified in futu
 
 This is not production authentication, durable admission, multi-replica storage, or a runner
 transport cutover. Do not import this experimental server into Agentplane services.
+
+## Initial wire observation
+
+The first CI run reached initialization and a model request through the experimental server.
+A user frame without origin metadata was rendered upstream as "Another Claude session sent a
+message", with a warning that a peer cannot grant escalation. The internal-event upload marked
+its origin as `peer` / `unknown`. The baseline asserts this behavior; it does not claim to submit
+an authenticated human-origin command. Output/completion assertions have not passed yet.
