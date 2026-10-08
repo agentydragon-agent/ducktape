@@ -38,6 +38,7 @@ from agentplane.app.testing.thread_browser import (
     ThreadBrowser,
     append_items,
     capture_reading_anchor,
+    expect_projected_cursor,
     expect_reading_anchor,
     frames,
     message_composer,
@@ -362,8 +363,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
 ) -> None:
     page, store, source = thread_browser.page, thread_browser.store, thread_browser.source
     thread = await thread_browser.event_logs.open(SANDBOX, SESSION, source.attached.spec)
-    thread_browser.opened.replay.set()
-    await expect_projected_cursor(page, source.entries[-1].cursor)
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     draft = message_composer(page)
     await draft.fill("Draft survives projection replacement")
@@ -519,6 +519,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                 opened = await source.opened.get()
                 opened.replay.set()
                 await page.goto(f"{ingress.url}/#/threads/{thread}")
+                await expect_projected_cursor(page, source.entries[-1].cursor)
                 await expect(page.get_by_text("Projected browser prefix", exact=True)).to_be_visible()
                 await expect(page.get_by_text("A newer browser item", exact=True)).to_be_visible()
                 # The window reads the bodies of closed disclosures ahead of any opening, and shows none.
@@ -651,7 +652,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     last = source.append(
         event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" and debug ready"))
     )
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix and debug ready", exact=True)).to_be_visible()
     draft = message_composer(page)
     await draft.fill("Draft survives debug inspection")
@@ -739,7 +740,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
 
 async def test_browser_replays_streams_and_reloads_one_exact_thread(thread_browser: ThreadBrowser) -> None:
     page, source = thread_browser.page, thread_browser.source
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" and live suffix")))
     complete_text = "Test retained prefix and live suffix"
@@ -787,7 +788,7 @@ async def test_browser_replays_streams_and_reloads_one_exact_thread(thread_brows
 
 async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thread_browser: ThreadBrowser) -> None:
     page = thread_browser.page
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     sidebar = page.get_by_role("navigation", name="Threads", exact=True)
     await expect(sidebar.get_by_text("Browser thread", exact=True)).to_be_visible()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
@@ -818,7 +819,7 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     request: pytest.FixtureRequest,
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     if raw:
         await expand_item_evidence(page)
@@ -941,7 +942,7 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
 async def test_small_upward_scroll_stays_detached_when_tail_streams(thread_browser: ThreadBrowser) -> None:
     """A streamed update during a slow, sub-slack mouse scroll must not reattach following."""
     page, source = thread_browser.page, thread_browser.source
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     for number in range(18):
         item_id = f"slow-scroll-item-{number}"
@@ -1079,7 +1080,7 @@ def append_tool_call(thread_browser: ThreadBrowser, name: str) -> event_log_pb2.
 
 async def append_run_among_rows(thread_browser: ThreadBrowser, *, below: int) -> None:
     """Reading rows, a run of three finished tool calls, then `below` more rows, all in the thread."""
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(thread_browser.page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
     append_items(thread_browser, "above", range(25))
     for name in ("a", "b", "c"):
@@ -1545,16 +1546,6 @@ async def test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it(
     await expect_history_bottom(page)
 
 
-async def expect_projected_cursor(page: Page, cursor: int) -> None:
-    await page.wait_for_function(
-        """cursor => {
-            const value = document.querySelector('[data-projection-cursor]')?.dataset.projectionCursor;
-            return value !== undefined && BigInt(value) >= BigInt(cursor);
-        }""",
-        arg=str(cursor),
-    )
-
-
 async def expect_archived_events(
     event_logs: EventLogStore, thread_id: UUID, expected: list[event_log_pb2.EventEntry]
 ) -> list[event_log_pb2.EventEntry]:
@@ -1585,7 +1576,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     thread_browser: ThreadBrowser, raw: bool, request: pytest.FixtureRequest
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     if raw:
         await expand_item_evidence(page)
@@ -1721,7 +1712,7 @@ async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
     thread_browser: ThreadBrowser, outcome: str
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     submitted = "Test input whose outcome must remain visible"
     composer = message_composer(page)
@@ -1769,7 +1760,7 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
     thread_browser: ThreadBrowser,
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     composer = message_composer(page)
     await composer.fill("Test input from the real browser")
@@ -1797,7 +1788,7 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
 
 async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(thread_browser: ThreadBrowser) -> None:
     page, source = thread_browser.page, thread_browser.source
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     intercepted: asyncio.Queue[Request] = asyncio.Queue()
 
@@ -1854,7 +1845,7 @@ async def expect_pending_message_bubble(page: Page, text: str) -> None:
 
 async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_browser: ThreadBrowser) -> None:
     page, source = thread_browser.page, thread_browser.source
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     replies: asyncio.Queue[APIResponse] = asyncio.Queue()
     drop_reply = asyncio.Event()
@@ -1905,7 +1896,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
 
 async def test_lost_runner_receipt_reconciles_from_thread_without_retry(thread_browser: ThreadBrowser) -> None:
     page, source = thread_browser.page, thread_browser.source
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     receipts: asyncio.Queue[APIResponse] = asyncio.Queue()
 
@@ -1936,7 +1927,7 @@ async def test_lost_runner_receipt_reconciles_from_thread_without_retry(thread_b
 
 async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(thread_browser: ThreadBrowser) -> None:
     page, source = thread_browser.page, thread_browser.source
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     requests: asyncio.Queue[command_pb2.Command] = asyncio.Queue()
 
@@ -1991,7 +1982,7 @@ async def open_debug_history(page: Page) -> None:
 @pytest.mark.parametrize("replay_after", [4])
 async def test_unobserved_committed_admission_reconciles_once_after_reload(thread_browser: ThreadBrowser) -> None:
     page, source, app = thread_browser.page, thread_browser.source, thread_browser.app
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     replies: asyncio.Queue[APIResponse] = asyncio.Queue()
     drop_reply = asyncio.Event()
@@ -2069,7 +2060,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
 @pytest.mark.parametrize("replay_after", [4])
 async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(thread_browser: ThreadBrowser) -> None:
     page, source, app = thread_browser.page, thread_browser.source, thread_browser.app
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     for text in (" and preceding delta A", " and preceding delta B"):
         source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=text)))
@@ -2119,7 +2110,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
 @pytest.mark.parametrize("replay_after", [4])
 async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_browser: ThreadBrowser) -> None:
     page, source, app = thread_browser.page, thread_browser.source, thread_browser.app
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     document = await page.evaluate_handle("document")
     submissions: list[Request] = []
@@ -2206,7 +2197,7 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
     thread_browser: ThreadBrowser,
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     composer = message_composer(page)
     await composer.fill("Command retained across terminal shape error")
@@ -2256,7 +2247,7 @@ async def test_thread_says_it_is_reconnecting_while_electric_retries_a_dropped_c
     thread_browser: ThreadBrowser,
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     # Electric's connection is separate from the shared Threads snapshot. Its indicator
     # reports the outage, while both dots use the same Threads verdict (not an Electric-specific label).
@@ -2285,7 +2276,7 @@ async def test_ahead_snapshot_is_not_a_thread_or_effective_model(thread_browser:
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert await thread_browser.event_logs.last_cursor(thread.id) == 0
 
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     await expect(page.get_by_role("status")).to_have_count(0)
     await expect(page.get_by_role("combobox", name="Model", exact=True)).to_have_value("Test Model Before")
@@ -2299,7 +2290,7 @@ async def test_rejected_source_suffix_stops_browser_without_replacing_verified_h
     thread_browser: ThreadBrowser,
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_enabled()
 
@@ -2325,7 +2316,7 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
     thread_browser: ThreadBrowser,
 ) -> None:
     page, source, store = thread_browser.page, thread_browser.source, thread_browser.store
-    thread_browser.opened.replay.set()
+    await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     composer = message_composer(page)
     draft = "Retained draft while projection failure is reported"
