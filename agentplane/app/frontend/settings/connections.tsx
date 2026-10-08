@@ -1,4 +1,5 @@
-import { Alert, Button, Group, Stack, Table, Text, Title } from "@mantine/core";
+import { Alert, Button, Group, Stack, Table, Text } from "@mantine/core";
+import { followStream, type StreamConnection } from "../live_stream";
 import { type JSX, useCallback, useEffect, useState } from "react";
 
 import {
@@ -29,6 +30,7 @@ export function Connections({ service = connectionService }: { service?: Connect
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unlinking, setUnlinking] = useState<Connection | null>(null);
+  const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
 
   const load = useCallback(async (): Promise<void> => {
     const [connections, callers] = await Promise.all([service.list(), service.callerServiceAccounts()]);
@@ -53,6 +55,18 @@ export function Connections({ service = connectionService }: { service?: Connect
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  useEffect(() => {
+    if (typeof EventSource === "undefined") return; // Non-browser unit test environment.
+    return followStream("/connections/stream", {
+      events: {
+        snapshot: (message) => {
+          setRows(JSON.parse(message.data) as Connection[]);
+          setLoaded(true);
+        },
+      },
+      onConnection: setConnection,
+    });
+  }, []);
 
   async function confirmUnlink(): Promise<void> {
     if (unlinking === null) return;
@@ -85,17 +99,14 @@ export function Connections({ service = connectionService }: { service?: Connect
 
   return (
     <Stack>
-      <Group justify="space-between">
-        <Title order={2}>OAuth clients</Title>
-        <Button variant="light" loading={busy} onClick={() => void refresh()}>
-          Refresh
-        </Button>
-      </Group>
       <Text c="dimmed" size="sm">
         Named external clients and the ServiceAccount their most recent grant acts as. Unlink revokes authority without
         deleting history or stopping already claimed work; changing the bound ServiceAccount requires a fresh
         authorization.
       </Text>
+      {connection.phase === "reconnecting" && (
+        <Text role="status">Connection lost; showing last OAuth clients. Reconnecting…</Text>
+      )}
       {error && (
         <Alert color="red" role="alert">
           {error}

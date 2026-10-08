@@ -524,6 +524,13 @@ async def list_connections(client: OperatorActions) -> list[Connection]:
     return await client.connections()
 
 
+@connections_router.get("/connections/stream")
+async def connections_stream(
+    request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates, sessions: OperatorSessions
+) -> StreamingResponse:
+    return _operator_resource_stream(request, shutdown, updates, sessions, client.stream_connections, "Connections")
+
+
 @connections_router.get("/connections/{connection_id}")
 async def get_connection(connection_id: UUID, client: OperatorActions) -> Connection:
     return await client.connection(connection_id)

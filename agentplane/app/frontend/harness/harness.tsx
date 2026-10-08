@@ -1778,6 +1778,7 @@ const MCP_GROUPS: ActionGroupView[] = [
 let notificationStatusUnavailable = false;
 let notificationExtraEntry = false;
 let pushBrowserAdded = false;
+let connectionRenamed = false;
 
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
@@ -2387,6 +2388,12 @@ class HarnessEventSource extends EventTarget {
         source.serve(new URL(source.url, "http://harness"));
     }
   }
+  static publishConnections(): void {
+    for (const source of this.sources) {
+      if (source.url.includes("/connections/stream") && source.readyState === this.OPEN)
+        source.serve(new URL(source.url, "http://harness"));
+    }
+  }
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 2;
@@ -2459,6 +2466,15 @@ class HarnessEventSource extends EventTarget {
         ? [{ endpoint: "https://push.example/browser", user_agent: "Second browser", created_at: ago(0) }]
         : [];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(browsers) }));
+      return;
+    }
+    if (url.pathname === "/connections/stream") {
+      const route = routes.find(([method, pattern]) => method === "GET" && pattern.test("/connections"));
+      const match = "/connections".match(/^\/connections$/);
+      if (!route || !match) throw new Error("Missing connections fixture");
+      const rows = route[2](match, url.searchParams, undefined, undefined) as ReturnType<typeof sampleConnection>[];
+      if (connectionRenamed) rows[0].display_name = "Updated OAuth client";
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
       return;
     }
     if (url.pathname === "/actions/stream") {
@@ -2555,6 +2571,10 @@ const visualHarness = {
   publishPushBrowser(): void {
     pushBrowserAdded = true;
     HarnessEventSource.publishPushBrowsers();
+  },
+  publishConnectionRename(): void {
+    connectionRenamed = true;
+    HarnessEventSource.publishConnections();
   },
   setNotificationStatusUnavailable(unavailable: boolean): void {
     notificationStatusUnavailable = unavailable;

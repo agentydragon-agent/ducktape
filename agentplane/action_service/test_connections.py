@@ -60,6 +60,24 @@ def authority(engine: AsyncEngine) -> ConnectionAuthority:
     return ConnectionAuthority(make_sessionmaker(engine), admitted_callers(PERSONAL, OTHER))
 
 
+async def test_connection_stream_wakes_on_committed_grant_and_rename(engine: AsyncEngine, db_url: str) -> None:
+    updates = ActionUpdates(db_url)
+    service = authority(engine)
+    async with updates.listener.listen():
+        with updates.subscribe_connections() as subscriber:
+            request = binding()
+            await service.bind(request)
+            async with asyncio.timeout(10):
+                await subscriber.changed.wait()
+            connection = (await service.list())[0]
+            assert connection.grants[0].id == request.grant_id
+            subscriber.changed.clear()
+            await service.rename(connection.id, expected_version=connection.version, display_name="Renamed")
+            async with asyncio.timeout(10):
+                await subscriber.changed.wait()
+            assert (await service.list())[0].display_name == "Renamed"
+
+
 async def test_binding_retries_are_atomic_and_survive_authority_replacement(engine: AsyncEngine) -> None:
     service = authority(engine)
     request = binding()

@@ -1,4 +1,4 @@
-import { Button, Code, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { Button, Code, Group, Paper, Stack, Text } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState } from "react";
 import { followStream, type StreamConnection } from "../live_stream";
 
@@ -129,7 +129,6 @@ export function PushSettings(): JSX.Element {
 
   return (
     <Stack>
-      <Title order={2}>Notifications</Title>
       <Text c="dimmed">
         Register this browser for Action approval notifications and manage the operator&apos;s registered browsers.
       </Text>

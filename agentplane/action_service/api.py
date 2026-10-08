@@ -587,6 +587,23 @@ def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
     async def connections() -> list[Connection]:
         return await authority.list()
 
+    @app.get("/v1/operator/connections/stream")
+    async def connections_stream(
+        principal: Annotated[OperatorPrincipal, Depends(_operator)],
+        updates: Annotated[ActionUpdates, Depends(_updates)],
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
+        authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
+    ) -> StreamingResponse:
+        async def authorized() -> bool:
+            return credentials is not None and await authenticator.authenticate(credentials.credentials) == principal
+
+        async def read() -> bytes:
+            return json.dumps(
+                [row.model_dump(mode="json") for row in await authority.list()], separators=(",", ":")
+            ).encode()
+
+        return snapshot_stream(updates.subscribe_connections, read, authorized)
+
     @app.get("/v1/operator/connections/{connection_id}", dependencies=[Depends(_operator)])
     async def connection(connection_id: UUID) -> Connection:
         return await authority.get(connection_id)
