@@ -229,11 +229,14 @@ async def test_remote_io_round_trip(tmp_path: Path, subagent: bool, reconnect: b
                                     frame.get("result") == "AFTER_RECONNECT" for frame in uploaded_frames(upload)
                                 )
                             )
-                            assert sum(
-                                frame.get("result") == "REMOTE_IO_OK"
-                                for upload in peer.uploads
-                                for frame in uploaded_frames(upload)
-                            ) == 1
+                            assert (
+                                sum(
+                                    frame.get("result") == "REMOTE_IO_OK"
+                                    for upload in peer.uploads
+                                    for frame in uploaded_frames(upload)
+                                )
+                                == 1
+                            )
                 finally:
                     if process.returncode is None:
                         process.kill()
