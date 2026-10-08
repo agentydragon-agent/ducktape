@@ -55,8 +55,18 @@ Kubernetes ownership labels, stored bindings, identities, and PVC policy remain 
 
 ## Sessions and commands
 
-- `ListSessions`: Sandbox destination; returns native retained `SessionSummary` messages.
-- `OpenSession`: explicit session creation/start using stored defaults plus selected overrides. Bootstrap
+- `ListSessions`: Sandbox destination; maps Service-created runner IDs to public Session IDs in
+  the returned summaries. Legacy runner-owned sessions retain their existing IDs.
+- `OpenSession`: legacy caller-chosen runner ID; retained for deployed app sessions until cutover.
+- `CreateSession`: new explicit Open with Sandbox destination, caller-scoped idempotency key,
+  and selected overrides (no runner ID). A durable public Session UUID and effective launch
+  settings are committed before runner contact; the Service returns the UUID and an attachment
+  snapshot with that public ID. Concurrent or response-lost retries use the original settings;
+  a changed request with the same key is rejected. `ResumeSession`, `FollowSession`, and
+  `SubmitCommand` accept the returned ID and resolve it to the retained runner ID within the
+  pinned Sandbox UID. The key is not a Session ID and does not apply to runner-discovered native
+  child sessions. No app caller uses this new RPC until its own cutover.
+- Both Open paths: bootstrap
   and setup use the runner's existing idempotence; the response is the native attachment snapshot, not
   a claim that all setup or a model turn has completed.
 - `ResumeSession`: uses exactly the runner-retained spec, without applying today's defaults/instructions
@@ -81,9 +91,9 @@ block; deployment construction supplies service URLs and assembles all shared gu
 The Sandbox Service passes it through unchanged. On `OpenSession`, the backend prepends the explicit
 Sandbox/session destination (and notification destination when configured), then appends the effective
 session `instructions`, stored or overridden. A non-empty `platform_instructions` value is required; there is
-no runtime default. Stored specs are never rewritten. Changed defaults may make an Open retry conflict:
-inspect retained state and explicitly resume rather than silently adopting a different spec or creating
-another ID.
+no runtime default. Stored specs are never rewritten. For legacy `OpenSession`, changed defaults may make a retry conflict: inspect retained state and
+explicitly resume. `CreateSession` instead persists the original effective settings under the caller's
+key, so changed defaults cannot change a response-lost retry.
 
 Resume also needs the native harness's retained conversation. The pinned Claude harness can refuse
 resuming an empty conversation that never persisted a turn. The service surfaces that refusal; it does

@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.destinations import DestinationResolver
@@ -22,6 +23,7 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, KubernetesGrant, RoleBindingGrant
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.session_history.store import Store
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
@@ -35,6 +37,7 @@ class Settings(BaseSettings):
     )
 
     sandbox_namespace: str = Field(min_length=1)
+    history_database_url: str | None = Field(default=None, min_length=1)
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
     platform_instructions: str = Field(min_length=1)
     lifecycle_timeout_s: float = Field(default=300, gt=0)
@@ -81,12 +84,22 @@ class Settings(BaseSettings):
 
 
 async def serve(settings: Settings) -> None:
-    platform_instructions = settings.platform_instructions
+
     configuration = k8s_client.Configuration()
     if settings.kubeconfig is None:
         k8s_config.load_incluster_config(client_configuration=configuration)
     else:
         await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
+    if settings.history_database_url is None:
+        raise ValueError("Session history database URL is required at runtime")
+    engine = create_async_engine(settings.history_database_url)
+    try:
+        await serve_with_engine(settings, configuration, engine)
+    finally:
+        await engine.dispose()
+
+
+async def serve_with_engine(settings: Settings, configuration: k8s_client.Configuration, engine: AsyncEngine) -> None:
     async with k8s_client.ApiClient(configuration) as api:
         core = k8s_client.CoreV1Api(api)
         inventory = SandboxInventory(
@@ -127,12 +140,13 @@ async def serve(settings: Settings) -> None:
         )
         resources = Resources(
             principals=principals,
+            history=Store(engine),
             destinations=DestinationResolver(inventory, core, settings.runner_port),
             admission_timeout_s=settings.admission_timeout_s,
             runner_admission_ack_timeout_s=settings.runner_admission_ack_timeout_s,
             follow_lease_s=settings.follow_lease_s,
             caller_accounts=settings.caller_accounts,
-            platform_instructions=platform_instructions,
+            platform_instructions=settings.platform_instructions,
             lifecycle_timeout_s=settings.lifecycle_timeout_s,
             runner_grpc_channel_options=settings.runner_grpc_channel_options,
             provisioning=provisioning,

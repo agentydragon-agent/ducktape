@@ -139,6 +139,7 @@ py_library(
         ":kubernetes_bindings",
         ":kubernetes_grants",
         ":provisioning",
+        "//agentplane/sandbox_service/session_history:store",
         "//agentplane:subjects",
         "//agentplane/workload_auth:principal",
         "//util:kubernetes",
@@ -147,6 +148,7 @@ py_library(
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+        "@pypi//sqlalchemy",
         "@pypi//uvicorn",
     ],
 )
@@ -423,6 +425,7 @@ py_library(
         ":provisioning",
         ":session_lifecycle",
         ":wire",
+        "//agentplane/sandbox_service/session_history:store",
         "//agentplane:grpc_options",
         "//agentplane:subjects",
         "//agentplane/protocol:event_log_pb2",
@@ -436,6 +439,7 @@ py_library(
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -450,6 +454,8 @@ py_test(
         ":kubernetes_grants",
         ":kubernetes_views",
         ":wire",
+        "//agentplane/sandbox_service/session_history:conftest",
+        "//agentplane/sandbox_service/session_history:store",
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/protocol:command_pb2",
@@ -468,6 +474,7 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 

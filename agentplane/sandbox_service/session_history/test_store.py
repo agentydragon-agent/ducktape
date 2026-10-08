@@ -101,7 +101,7 @@ async def store_retry_with_new_defaults(store: Store, sandbox_uid: UUID) -> Open
         sandbox_uid=sandbox_uid,
         open_key="open-1",
         open_request=b"spec",
-        launch_spec=b"changed default should be ignored",
+        launch_spec=lambda _: b"changed default should be ignored",
     )
 
 
@@ -126,14 +126,18 @@ async def test_reservation_is_stable_across_retries_and_replicas(engine: AsyncEn
             sandbox_uid=sandbox_uid,
             open_key=key,
             open_request=payload,
-            launch_spec=b"initial frozen spec",
+            launch_spec=lambda candidate: f"frozen {candidate}".encode(),
         )
 
     first, second = await asyncio.gather(reserve(left), reserve(right))
     assert first == second
     assert await reserve(Store(engine)) == first
     assert await left.read(first.session_id) == (0, [])  # no runner was contacted
-    assert first.launch_spec == b"initial frozen spec"
+    assert first.launch_spec == f"frozen {first.session_id}".encode()
+    assert await left.runner_id(first.session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid) == f"r-{first.session_id}"
+    assert await right.session_id(sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id=f"r-{first.session_id}") == first.session_id
+    with pytest.raises(HistoryNotFoundError):
+        await left.runner_id(first.session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uuid4())
     assert await store_retry_with_new_defaults(right, uid) == first
     assert await reserve(left, key="open-2") != first
     assert await reserve(left, caller_name="other") != first
@@ -172,7 +176,7 @@ async def test_imported_history_keeps_its_id_and_fences_duplicate_locator(engine
         sandbox_uid=uid,
         open_key="new",
         open_request=b"spec",
-        launch_spec=b"effective spec",
+        launch_spec=lambda _: b"effective spec",
     )
     assert reservation.session_id != session_id
 

@@ -5,6 +5,7 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
+from uuid import UUID
 from pathlib import Path
 from uuid import uuid4
 
@@ -14,6 +15,7 @@ import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.json_format import MessageToDict, ParseDict
 from kubernetes_asyncio import client as k8s_client
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
@@ -29,6 +31,7 @@ from agentplane.sandbox_service.kubernetes_views import (
     PROVISIONING_ANNOTATION,
 )
 from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, SandboxDestination
+from agentplane.sandbox_service.session_history.store import Store
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -38,6 +41,9 @@ from util.agent_sandbox import SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
+# gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
+
+pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
 
 TOKEN = "test-grpc-token"
 AUDIENCE = "test-sandbox-service"
@@ -63,12 +69,21 @@ class Peer:
         self.port = 0
         self.state = runner_pb2.HARNESS_STATE_RUNNING
         self.answer_open = True
+        self.opened_ids: dict[str, runner_pb2.Open] = {}
+
+    async def list_sessions(
+        self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.ListSessionsResponse:
+        return runner_pb2.ListSessionsResponse(
+            sessions=[runner_pb2.SessionSummary(session_id=key, spec=value.spec) for key, value in self.opened_ids.items()]
+        )
 
     async def attach(
         self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
     ) -> AsyncIterator[runner_pb2.ServerMessage]:
         first = await anext(requests)
         connection = PeerAttachment(first.open)
+        self.opened_ids[first.open.session_id] = first.open
         self.attachments.put_nowait(connection)
 
         async def consume() -> None:
@@ -106,6 +121,11 @@ async def peer() -> AsyncIterator[Peer]:
             grpc.method_handlers_generic_handler(
                 "ducktape.agentplane.runner.v1.Runner",
                 {
+                    "ListSessions": grpc.unary_unary_rpc_method_handler(
+                        peer.list_sessions,
+                        request_deserializer=runner_pb2.ListSessionsRequest.FromString,
+                        response_serializer=runner_pb2.ListSessionsResponse.SerializeToString,
+                    ),
                     "Attach": grpc.stream_stream_rpc_method_handler(
                         peer.attach,
                         request_deserializer=runner_pb2.ClientMessage.FromString,
@@ -158,6 +178,78 @@ def token_file(tmp_path: Path) -> Path:
 async def remote(resources: Resources, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
     async with service_client(resources, token_file) as client:
         yield client
+
+
+async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
+    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
+) -> None:
+    store = Store(engine)
+    async with service_client(replace(resources, history=store), token_file) as remote:
+        runner = remote.runner(DESTINATION)
+        overrides = {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state/{session_id}"}
+        created = await runner.create(idempotency_key="first-attempt", spec=overrides)
+        first = await peer.attachments.get()
+        public = created.session_id
+        assert str(UUID(public)) == public
+        assert created.attached.session_id == public
+        assert first.opened.session_id == f"r-{public}"
+        assert public in first.opened.spec.instructions
+        assert created.attached.session_id != first.opened.session_id
+        await first.closed.wait()
+        assert [row.session_id for row in await runner.list_sessions()] == [public]
+
+        # Simulate changed defaults/platform instructions after the original reply was lost.
+        async with service_client(replace(resources, history=Store(engine), platform_instructions="Changed guidance"), token_file) as retry:
+            again = await retry.runner(DESTINATION).create(idempotency_key="first-attempt", spec=overrides)
+        second = await peer.attachments.get()
+        assert again == created
+        assert second.opened == first.opened
+        assert "Changed guidance" not in second.opened.spec.instructions
+        await second.closed.wait()
+
+        with pytest.raises(ServiceError) as conflict:
+            await runner.create(idempotency_key="first-attempt", spec=overrides | {"model": "different"})
+        assert conflict.value.code == grpc.StatusCode.INVALID_ARGUMENT
+        assert peer.attachments.empty()
+
+        attachment = await runner.attach(public)
+        following = await peer.attachments.get()
+        assert following.opened.session_id == f"r-{public}"
+        assert attachment.attached.session_id == public
+        attachment.cancel()
+        await following.closed.wait()
+        assert await runner.resume(public) == created.attached
+        resumed = await peer.attachments.get()
+        assert resumed.opened.session_id == f"r-{public}"
+        await resumed.closed.wait()
+
+
+async def test_managed_open_lost_response_uses_same_reservation(
+    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
+) -> None:
+    peer.answer_open = False
+    store = Store(engine)
+    request = protocol_pb2.CreateSessionRequest(
+        sandbox=DESTINATION,
+        idempotency_key="lost-response",
+        spec=runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, cwd="/state", model="test-model"),
+    )
+    request.override_mask.paths.extend(["harness", "cwd", "model"])
+    async with service_client(replace(resources, history=store), token_file) as remote:
+        call = remote.stub.CreateSession(request, metadata=await remote.metadata(), timeout=10)
+        async with asyncio.timeout(5):
+            first = await peer.attachments.get()
+        call.cancel()  # reply unknown to caller, reservation and runner attachment already committed
+        with pytest.raises((asyncio.CancelledError, grpc.aio.AioRpcError)):
+            await call
+        await first.closed.wait()
+        peer.answer_open = True
+        recovered = await remote.stub.CreateSession(request, metadata=await remote.metadata(), timeout=5)
+        second = await peer.attachments.get()
+        assert first.opened == second.opened
+        assert recovered.attached.session_id == recovered.session_id
+        assert second.opened.session_id == f"r-{recovered.session_id}"
+        await second.closed.wait()
 
 
 def admission(command: command_pb2.Command, cursor: int) -> event_log_pb2.EventEntry:
