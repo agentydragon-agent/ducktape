@@ -1,5 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
+resources:
+  - session-history-backfill.yaml
 images:
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
     newTag: devel-20261004223832-0cbad07 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
