@@ -150,7 +150,7 @@ flowchart TB
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
     THREAD_OUTBOX_CUTOVER["Deferred cutover<br/>all product commands via app outbox if chosen<br/>no competing relay path"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
-    NO_MANUAL_REFRESH["Planned principle<br/>no page in the app needs a Refresh button<br/>push (WS or SSE) everywhere, not just Sandboxes/Actions"]:::future
+    THREAD_SYNC_STOPPED_RECOVERY["Remaining recovery UX<br/>restart stopped Thread synchronization safely<br/>without a manual Refresh thread button"]:::future
 
     THREAD_OUTLIVES_SANDBOX --> AG
     SANDBOX_COMPARTMENT_DESIGN --> SANDBOX_COMPARTMENT_BOUNDARY
@@ -1609,22 +1609,17 @@ The required native continuation proof, command-provenance guarantee, and no-dup
 gate are in [Thread, runner, and harness layering](../docs/thread_layering.md#deferred-commands-unsettled-across-successor-sessions).
 Until then there is no automatic cross-session replay.
 
-### `NO_MANUAL_REFRESH` — no page in the app should ever need a Refresh button
+### `THREAD_SYNC_STOPPED_RECOVERY` — recover stopped Thread synchronization automatically
 
-**Planned principle:** every page in the integration app should stay automatically up to date by
-listening for changes — push (WebSocket, SSE, or similar), not a manual Refresh button and not a
-poll timer. Concretely missing it today: the Settings modal's OAuth-clients tab
-(`settings/connections.tsx`), MCP-servers tab (`settings/mcp_servers.tsx`), and Notifications tab
-(`settings/push.tsx`) all fetch once on mount and rely on an explicit "Refresh" button for anything
-that changes afterward. This is not starting from nothing: `sandboxes.tsx`/`sandbox_page.tsx`
-already push via `live.tsx`'s `useLive`/`EventSource` mechanism (`/live/sandboxes`,
-`/live/sandboxes/:name`), and `actions.tsx` already opens its own `/actions/stream` `EventSource`
-independently of that. [The push mechanism plan](push_mechanism.md) (not yet confirmed) designs a
-`live.tsx`-style snapshot-on-change stream for each Settings tab's own resource (Connections, MCP
-linkages, push subscriptions), reusing `live.py`'s generic `frames()` helper on the Action Service
-side rather than a third hand-rolled implementation.
-
-**No dependency** on the UI-shell cluster above; ships independently, one tab/page at a time.
+**Remaining exception to live views:** `frontend/threads/projected_session.tsx` offers a manual
+“Refresh thread” button after a terminal synchronization error. Decide when the sync client may
+retry automatically, with bounded backoff and a visible stale/error state rather than an infinite
+silent loop. Reconnect from the durable cursor and reconcile the current Thread window; a retry
+must not re-submit a command or discard locally pending input. Distinguish transient transport
+failures from permanent access/scope errors, for which the operator needs an actionable error
+instead of an automatic retry. Acceptance covers disconnect, archive/scope change, repeated failure
+and eventual recovery without requiring a manual reload. Ordinary Settings, Actions and Sandbox
+views already use live streams; their shipped contracts belong in the app and Action Service READMEs.
 
 ## Deferred work
 
