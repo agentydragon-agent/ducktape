@@ -32,8 +32,11 @@ invoking it returns `No such tool available: TaskOutput`. That is an unavailable
 not a missing-child observation. The passing probe pins that error and notification absence through the resume/input/query
 sequence without reactivating the child. It does not establish
 whether another route can recover the child's fate.
-The same-version `stream-json` control now tests equivalent child attribution, unavailable
-`TaskOutput`, and completed-child resume after both clean exit and crash; those assertions await CI.
+The same-version `stream-json` controls passed on `58ed5a87` after both clean exit and crash:
+child attribution, unavailable `TaskOutput`, retained parent history, and absence of new completion
+notifications match the measured RemoteIO behavior. That revision's build/tests passed but its
+pre-commit formatting check required correction. These cases establish no completed-child fate
+recovery advantage for RemoteIO. They do not compare active-child fate or server-side hydration.
 RemoteIO clean exit, active-child crash, and server hydration remain unimplemented. Source inspection
 informs the candidate protocol; CI wire captures determine the actual contract.
 

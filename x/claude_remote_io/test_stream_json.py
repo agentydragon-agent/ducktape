@@ -102,7 +102,9 @@ async def test_completed_child_resume(tmp_path: Path, crash: bool) -> None:
                             *sse.message_stream(
                                 [
                                     sse.ToolUse(
-                                        "toolu_stdio_read", "TaskOutput", {"task_id": started["task_id"], "block": False}
+                                        "toolu_stdio_read",
+                                        "TaskOutput",
+                                        {"task_id": started["task_id"], "block": False},
                                     )
                                 ],
                                 model=MODEL,
@@ -115,7 +117,8 @@ async def test_completed_child_resume(tmp_path: Path, crash: bool) -> None:
                         await exchange.send(*sse.message_stream([sse.Text("STDIO_RESUMED")], model=MODEL).events)
                     assert (await recovery.result()).result == "STDIO_RESUMED"
                     assert not any(
-                        frame.get("subtype") == "task_notification" for frame in resumed.native_frames()[len(captured) :]
+                        frame.get("subtype") == "task_notification"
+                        for frame in resumed.native_frames()[len(captured) :]
                     )
             except BaseException:
                 await resumed.crash()
