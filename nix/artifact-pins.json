@@ -37,11 +37,11 @@
       "sha256": "2JYYS2keNT9y+32cEr3d22qymLZSxwg8sI2aox4YtQs="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-3a8cbe7734d5/aiquota.zip",
-      "sha256": "K267VGIm2hFvw4fMY1BoXA2Qg77bQmIMwdQ0P24pDTU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-995fb48db4ca/aiquota.zip",
+      "sha256": "fLw843xZV4mEa/C3Y3j/JmrHoUkuPURJWxRnclwXrvs="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-3a8cbe7734d5/aiquota-0.1.0-py3-none-any.whl",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-995fb48db4ca/aiquota-0.1.0-py3-none-any.whl",
       "sha256": "lj1e2F6EjCYEco4L9O1sTUo+AEp/x/uLZ4cCTrEcl3Y="
     },
     "debundle": {
@@ -233,12 +233,12 @@
       "sha256": "ehEEqt+2TQPSBsA/KugNUtehlLVNeWkdFlugUmDWZOk="
     },
     "plaid-spend-desktop": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-dded028ba2e7/plaid_spend_desktop-0.1.0-py3-none-any.whl",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-c142f447b8f2/plaid_spend_desktop-0.1.0-py3-none-any.whl",
       "sha256": "Q8EQMM/JFSJRDZ7pEsXFrGBiVWyLNSvIwcG231mQ/po="
     },
     "plaid-spend-desktop-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-dded028ba2e7/plaid-spend-desktop.zip",
-      "sha256": "sk3ldao+jq7UGItq1WIlN7pQQA8JberCHxW/QxWrWv0="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-c142f447b8f2/plaid-spend-desktop.zip",
+      "sha256": "+iaAiereN/dSA57ZwyjY6dgXqfUi1SeWuNfu/D++7+Q="
     },
     "pr-visuals": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-10a1bd57a2b7/pr_visuals-0.1.0-py3-none-any.whl",
