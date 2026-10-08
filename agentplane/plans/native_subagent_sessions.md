@@ -214,55 +214,48 @@ methods; this extension specifically changes the **multi-agent feature/tool surf
 
 | Case                           | Assertions / evidence                                                                                                             | Status                                          |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| Root creation                  | `thread/start` mints ID; root has no parent; loaded enumeration includes it                                                       | Added, awaiting CI                              |
-| Native child launch            | `collaboration.spawn_agent`, task name and `fork_turns=none`; `subAgentActivity.agentThreadId` agrees with child model-request ID | Added, awaiting CI                              |
-| Live child snapshot            | `thread/read` identifies parent and shared session tree, active status; paginated loaded enumeration includes root and child      | Added, awaiting CI                              |
-| Completed child, clean restart | Await native completed turn, restart server, resume root, enumerate and read historical child without resuming it                 | Added, awaiting CI                              |
-| Completed child, crash         | Same read-only recovery after killing the server                                                                                  | Added, awaiting CI                              |
-| Active child, crash            | Hold model request unanswered, kill server, observe request closure; recover identity/history without child reactivation          | Added, awaiting CI                              |
+| Root creation                  | `thread/start` mints ID; root has no parent; loaded enumeration includes it                                                       | Verified `8f5c39f4`                             |
+| Native child launch            | `collaboration.spawn_agent`, task name and `fork_turns=none`; `subAgentActivity.agentThreadId` agrees with child model-request ID | Verified `8f5c39f4`                             |
+| Live child snapshot            | `thread/read` identifies parent and shared session tree, active status; paginated loaded enumeration includes root and child      | Verified `8f5c39f4`                             |
+| Completed child, clean restart | Await native completed turn, restart server, resume root, enumerate and read historical child without resuming it                 | Verified `8f5c39f4`                             |
+| Completed child, crash         | Same read-only recovery after killing the server                                                                                  | Verified `8f5c39f4`                             |
+| Active child, crash            | Hold model request unanswered, kill server, observe request closure; recover identity/history without child reactivation          | Verified `8f5c39f4`                             |
 | Live client reconnect          | Retain server process, reconnect a separate client, compare enumeration and subscriptions                                         | Planned; stdio process restart is not this case |
 | Alternate context/ancestry     | Context fork, concurrent children, grandchild, explicit child attachment and input                                                | Planned                                         |
 
-The recovery probes query `thread/loaded/list`, `thread/list` with an explicit subagent
-source filter, and `thread/read(includeTurns=true)`. They assert that reading the child does
-not add it to loaded threads. No model-driven status query, child resume, or `followup_task`
-is used; a bounded no-model-request observation follows the reads. Native request/response
-traces and `recovery.json` retain exact fields for each case. Source inspection motivates
-these expectations; CI must verify them before they become protocol findings.
+Verified on `8f5c39f4`: Bazel tests/build, pre-commit, Gazelle, build/import checks, and
+visual review passed. The visual-diff report is neutral and uses a fallback baseline;
+it is not proof of unchanged visuals.
 
-A historical completed turn is distinct from a runtime `notLoaded` status. For an active
-child killed with the process, retain and inspect the historical status rather than labeling
-`notLoaded` as stopped/completed. The first probe asserts absence of the never-produced
-child answer, not an invented terminal fate. Follow-up assertions should pin the actual
-recovered status once the first wire capture is available.
+### Observed discovery and recovery contract
 
-The first CI capture (`6975829c`) confirms v2 emits `item/completed` with
-`item.type=subAgentActivity`, `kind=started`, `agentThreadId`, and
-`agentPath=/root/probe`; the enclosing `params.threadId` identifies the parent.
-The v1 `senderThreadId` / `receiverThreadIds` shape does not apply to this item.
-The capture also contains child `agentMessage` output under the child's own thread ID
-and a parent-stream `subAgentActivity(kind=completed)`. Live read assertions reached
-shared session-tree identity and completed child history, but the incorrect v1-shaped
-assertion stopped the first run before recovery. Recovery expectations remain unverified.
+- Launch emits `item/completed` with `item.type=subAgentActivity`, `kind=started`,
+  `agentThreadId`, and `agentPath=/root/probe`; enclosing `params.threadId` identifies
+  the parent. V1's `senderThreadId` / `receiverThreadIds` shape does not apply here.
+- Native captures also contain child `agentMessage` output under the child's own thread
+  ID and parent-stream `subAgentActivity(kind=completed)`. The test pins spawn identity
+  and completed-child history; these additional live output shapes were inspected in traces.
+- After restarting and resuming the root, loaded enumeration contains the root, not the
+  child. A broad `thread/list(sourceKinds=["subAgent"], modelProviders=[])` returns no
+  rows in these cases. **Explicit `thread/list(parentThreadId=...)` does find the original
+  child.** An empty broad listing is not proof of missing identity or history.
+- `thread/read(includeTurns=true)` retains the original child ID, `parentThreadId`, and
+  source ancestry. Completed-child history retains the answer and a `completed` turn
+  after both clean exit and crash. An active child killed with its model response held
+  unanswered reads back with an **`interrupted` historical turn**, null `completedAt`,
+  and no answer. Runtime status is **`notLoaded`** in all three cases; that load state
+  alone is not terminal-fate evidence.
+- While live, the child's `sessionId` equals the root's. An unloaded read after restart
+  instead reports `sessionId` equal to the child thread ID. Do not use that field alone
+  as a durable tree key; retain the original thread ID and explicit parent linkage.
+- Recovery uses paginated read-only enumeration and history reads. It does not send
+  `turn/start`, resume the child, or invoke `followup_task` or a model-driven status tool.
+  Reads leave loaded enumeration unchanged, followed by a 250 ms no-model-request
+  observation. This bounded observation is not a guarantee against arbitrary delayed work.
 
-On `4ffb8a5f`, all three cases resume the root with only that root in loaded enumeration,
-but a broad `thread/list(sourceKinds=["subAgent"], modelProviders=[])` returns no rows.
-That query is not sufficient to establish missing child identity or lost history. The next
-probe pins the empty result, additionally queries the explicit `parentThreadId` relation,
-and directly reads the previously observed child ID. Both responses remain in the native
-trace; the recovery snapshot is written before asserting the relation-query result.
-The broad-filter observation does not yet establish whether relation discovery succeeds.
-
-The follow-up capture (`fba86abb`) reaches relation enumeration and direct history reads:
-`thread/list(parentThreadId=...)` includes the original child, and its direct read retains
-`parentThreadId` plus the source's `/root/probe` path. All three children read as
-`status.type=notLoaded`. Completed-child history retains the answer and a `completed` turn;
-the active-crash child has an `interrupted` historical turn with no `completedAt` timestamp
-and no answer. This is historical interruption evidence, distinct from runtime load status.
-
-The same capture exposes a loaded/unloaded identity distinction: while live, the child read
-shares the root's `sessionId`; after restart, its unloaded read reports `sessionId` equal to
-the child thread ID. Do not use that field alone as a durable tree key. Original child ID,
-`parentThreadId`, and source ancestry remain the relation evidence. The preceding assertion
-that `sessionId` always equals the root was incorrect; the updated test pins the observed
-change. Full-suite acceptance, including the final no-model-request check, still awaits CI.
+Native request/response traces and `recovery.json` retain exact fields for each case.
+The fixture uses the pinned real CLI against a loopback scripted Responses endpoint,
+without live inference credentials. These results support a runner projection of native
+child identity, ancestry, load state, and historical turn outcome as separate facts.
+They do not establish live reconnect semantics, independent child control, or recovery
+without native persisted state; those remain separate matrix items.
