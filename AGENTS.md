@@ -389,6 +389,21 @@ faster than `git bisect`. Recipes: `buildbuddy_api` skill.
 **Snapshot tests (syrupy)**: `uses_syrupy = True` on `py_test`, `.ambr` files in
 `data`. Update/retrieval workflow: <devinfra/docs/syrupy_snapshots.md>.
 
+### Visual Tests
+
+Treat screenshot publication for human review as a first-class test purpose: when a UI
+changes, the GitHub PR comment should show reviewers what changed and how. A test that
+mounts a component, captures its intended state, and succeeds is valid; do not flag it as
+inadequate merely because it lacks behavioral assertions or an automated pixel-diff gate.
+
+Add readiness checks where needed to capture the intended state rather than an accidental
+loading screen, incomplete layout, or collapsed panel. A small assertion such as expected
+text being present is welcome, but do not require every screenshot test to duplicate a
+functional test suite. Keep shared render-health checks; a passing test does not mean the
+image is unchanged or visually correct. Review the published before/after images.
+
+See <util/testing/frontend_visual/README.md> for the capture API and publication workflow.
+
 ### Live OpenAI API Tests
 
 Use `live_openai_py_test` from `//openai_utils/testing:testing.bzl` — generates `.mock`
