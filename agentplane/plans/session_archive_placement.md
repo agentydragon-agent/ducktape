@@ -71,7 +71,7 @@ its archived raw prefix.
    The app remains a composition client and an owner of its UI projections only.
 
 A cutover must have a backup and a recorded high-water mark. Rolling old app code
-back after it stops ingesting requires reconciling *new* authoritative archive
+back after it stops ingesting requires reconciling _new_ authoritative archive
 Events, not simply flipping traffic back to stale app tables. Remove one-off import
 code once completed, retaining the legacy **data association** needed for old
 runners. Never delete the existing Sandbox state or rename native directories to
