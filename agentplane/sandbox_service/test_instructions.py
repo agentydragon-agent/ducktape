@@ -3,7 +3,11 @@
 import pytest_bazel
 
 from agentplane.runner import protocol_pb2
-from agentplane.sandbox_service.instructions import combine_instructions
+from agentplane.sandbox_service.instructions import (
+    combine_instructions,
+    render_kubernetes_admin_instructions,
+    render_platform_instructions,
+)
 from agentplane.sandbox_service.protocol_pb2 import (
     SandboxBinding,
     SandboxDestination,
@@ -14,6 +18,22 @@ from agentplane.sandbox_service.protocol_pb2 import (
 from agentplane.sandbox_service.session_lifecycle import launch_spec
 
 # gazelle:include_dep @pypi//protobuf
+
+
+def test_kubernetes_admin_guidance_is_rendered_once_for_every_sandbox() -> None:
+    actions_url = "http://agentplane-actions.test:8080"
+    section = render_kubernetes_admin_instructions(actions_service_url=actions_url)
+    platform = render_platform_instructions(
+        egress_api_url="http://agentplane-egress.test",
+        actions_service_url=actions_url,
+        notifications_service_url="http://agentplane-notifications.test:8080",
+    )
+    assert platform.count(section) == 1
+    assert "kubernetes_admin" in section
+    assert "pods_exec" in section and "resources_get" in section
+    assert "kubectl auth can-i" in section and "auto_approve_if" in section
+    assert "manual operator approval" in section
+    assert actions_url in section
 
 
 def test_task_instructions_augment_platform_guidance() -> None:
