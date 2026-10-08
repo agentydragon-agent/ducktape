@@ -606,8 +606,10 @@ py_test(
     name = "test_operator_stream",
     srcs = ["test_operator_stream.py"],
     deps = [
+        ":conftest",
         ":operator_stream",
         ":updates",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
