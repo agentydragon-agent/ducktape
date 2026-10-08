@@ -5,6 +5,11 @@ installed it on all their repositories. Real branch CI events and a PR comment w
 inbox and harness on 2026-10-04; see the [acceptance record](../notification_service/docs/staging_github_acceptance.md)
 for evidence and limits. Basic implementation, provisioning and live delivery are no longer pending.
 
+The read-only Thread/Sandbox notification diagnostics view shipped in
+[#9436](https://github.com/agentydragon/ducktape/pull/9436). It shows subscriptions, notice timing,
+and bounded summaries of unacknowledged entries, with the notice-coverage boundary in the entry
+list. Operator reads neither acknowledge entries nor expose raw provider payloads.
+
 The [service README](../notification_service/README.md), HTTP OpenAPI and source discovery document
 implemented behavior. The [task DAG](task_dag.md) owns work status and dependencies; this file tracks
 remaining acceptance and deferred decisions.
@@ -58,10 +63,6 @@ Replace the notification source's five-second Action-history polling in a separa
 
 - Recurring scheduled/cron notifications with durable scheduling and explicit missed-tick behavior:
   [`CRON_NOTIFICATIONS`](task_dag.md#cron_notifications--scheduled-notifications-for-agents).
-
-- Thread/Sandbox notification status inspection in the integration app:
-  [`NOTIFICATION_STATUS_UI`](task_dag.md#notification_status_ui--inspect-threadsandbox-notification-status-in-the-integration-app).
-  Show inbox and subscription state without implying read means acknowledged.
 
 - Structured notification-message provenance for eventual compact frontend rendering:
   [`NOTIFICATION_PRESENTATION`](task_dag.md#notification_presentation--structured-metadata-and-compact-notification-rendering).
