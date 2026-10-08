@@ -7,6 +7,7 @@ instead of an admission denial or a CreateContainerConfigError on the cluster.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from itertools import combinations
 from typing import Any, cast
 
 import jsii
@@ -17,6 +18,8 @@ from cluster.cdk8s.pod_policy import POD_SPEC_PATHS, pod_spec
 
 _OUTSIDE_ENTITIES = frozenset({"world", "remote-node", "host"})
 _HTTPS_PORT = "443"
+_NETWORKPOLICY_KIND = "CiliumNetworkPolicy"
+_CLUSTERWIDE_KIND = "CiliumClusterwideNetworkPolicy"
 # Pod-spec keys that name a Secret or ConfigMap: env valueFrom, envFrom, volumes (plain,
 # projected sources), imagePullSecrets.
 _SECRET_REF_KEYS = frozenset({"secretKeyRef", "secretRef", "imagePullSecrets"})
@@ -57,7 +60,7 @@ def pinned_https_egress(objects: list[dict[str, Any]], *, unpinned: frozenset[st
     TLS-terminating proxy whose allowlist is its own configuration."""
     errors: list[str] = []
     for obj in objects:
-        if obj["kind"] != "CiliumNetworkPolicy" or obj["metadata"]["name"] in unpinned:
+        if obj["kind"] != _NETWORKPOLICY_KIND or obj["metadata"]["name"] in unpinned:
             continue
         for rule in obj["spec"].get("egress", []):
             destination = rule.get("toFQDNs") or sorted(_OUTSIDE_ENTITIES & set(rule.get("toEntities", [])))
@@ -70,6 +73,111 @@ def pinned_https_egress(objects: list[dict[str, Any]], *, unpinned: frozenset[st
                 and not to_ports.get("serverNames")
             )
     return errors
+
+
+def _outside_https_pins(obj: dict[str, Any]) -> tuple[bool, bool]:
+    """Whether this policy's egress to port 443 outside the cluster pins TLS SNI: `(pins_sni,
+    left_open)`, each true when at least one such rule carries `serverNames` or leaves it off. A
+    destination is outside the cluster when it names FQDNs or entities from `_OUTSIDE_ENTITIES`;
+    in-cluster peers (`toEndpoints`, and `toEntities: [cluster]`) never are."""
+    pins_sni = left_open = False
+    for rule in obj["spec"].get("egress", []):
+        if not (rule.get("toFQDNs") or _OUTSIDE_ENTITIES & set(rule.get("toEntities", []))):
+            continue
+        for to_ports in rule.get("toPorts", []):
+            if not any(port["port"] == _HTTPS_PORT for port in to_ports.get("ports", [])):
+                continue
+            pinned = bool(to_ports.get("serverNames"))
+            pins_sni, left_open = pins_sni or pinned, left_open or not pinned
+    return pins_sni, left_open
+
+
+def _endpoint_scope(obj: dict[str, Any]) -> tuple[str, dict[str, str], bool]:
+    """What a policy's `endpointSelector` covers: `(namespace, matchLabels, selects_everything)`.
+
+    A policy that names no labels, or names `matchExpressions`, cannot be reduced to label pairs
+    here, so it answers `selects_everything`: it conflicts rather than being skipped quietly.
+    `CiliumClusterwideNetworkPolicy` has no namespace of its own and reaches every one, so it
+    carries the empty string, which `_share_endpoints` reads as "any".
+    """
+    selector = obj["spec"].get("endpointSelector") or {}
+    labels = dict(selector.get("matchLabels") or {})
+    namespace = "" if obj["kind"] == _CLUSTERWIDE_KIND else obj["metadata"].get("namespace", "")
+    return namespace, labels, not labels or bool(selector.get("matchExpressions"))
+
+
+def _share_endpoints(left: tuple[str, dict[str, str], bool], right: tuple[str, dict[str, str], bool]) -> bool:
+    """Whether one endpoint can satisfy both selectors at once.
+
+    A `matchLabels` selector matches every endpoint carrying at least those labels, so two
+    selectors overlap unless they pin the same key to different values: an endpoint labelled with
+    the union of both satisfies them, however narrow each is on its own. Disjoint key sets always
+    overlap, which is the answer a check for shared keys alone would get wrong.
+    """
+    left_namespace, left_labels, left_all = left
+    right_namespace, right_labels, right_all = right
+    if left_namespace and right_namespace and left_namespace != right_namespace:
+        return False
+    if left_all or right_all:
+        return True
+    shared = set(left_labels) & set(right_labels)
+    return all(left_labels[key] == right_labels[key] for key in shared)
+
+
+def https_egress_sni_conflicts(objects: list[dict[str, Any]]) -> list[str]:
+    """No endpoint may pin SNI on outside port 443 and leave that port open at the same time.
+
+    `serverNames` is an L7 rule, and Cilium enforces L7 per **port on the endpoint**, over the
+    merge of every rule and every policy selecting that endpoint. Once anything pins SNI on 443,
+    the endpoint's node-IP HTTPS is decided by the union of the `serverNames` lists in scope: an
+    open `toEntities: [world, remote-node, host]:443` rule -- in the same policy or in a sibling
+    one -- stops being open for every name nobody typed into a list, and those connections reset
+    inside the handshake. Each rule reads correctly on its own and the pair means something else
+    entirely, so the combination is refused at synth rather than discovered later as reset
+    handshakes to whichever public hostname is missing. Two weeks of Grocy, Forgejo, Haku's
+    mailbox, ActivityWatch and aiquota traffic failing out of agentplane-staging sandboxes was
+    exactly this pair: cluster/docs/cilium_network_policy.md section "An SNI rule decides port 443
+    for every policy that selects the same Pod".
+
+    Two policies are compared when one endpoint can satisfy both selectors. Namespaced policies
+    must share a namespace to do it -- `CiliumNetworkPolicy` cannot reach another one -- and a
+    clusterwide policy is compared against every namespace it covers.
+    """
+    scoped = [
+        (f"{obj['kind']}/{obj['metadata']['name']}", _endpoint_scope(obj), _outside_https_pins(obj))
+        for obj in objects
+        if obj["kind"] in (_NETWORKPOLICY_KIND, _CLUSTERWIDE_KIND)
+    ]
+    errors = [
+        f"{name} pins SNI on outside HTTPS and leaves port {_HTTPS_PORT} open beside it: the pin "
+        "decides every name on that port, not just the ones it lists"
+        for name, _, (pins_sni, left_open) in scoped
+        if pins_sni and left_open
+    ]
+    for first, second in combinations(scoped, 2):
+        (name, scope, first_pins), (other, other_scope, other_pins) = first, second
+        if name == other or not _share_endpoints(scope, other_scope):
+            continue
+        pinned, unpinned = _pin_against_open((name, first_pins), (other, other_pins))
+        if pinned is not None:
+            errors.append(
+                f"{pinned} pins SNI on outside HTTPS while {unpinned} leaves port {_HTTPS_PORT} open "
+                "for the same endpoints: the pin decides every name on that port, not just its own"
+            )
+    return errors
+
+
+def _pin_against_open(
+    first: tuple[str, tuple[bool, bool]], second: tuple[str, tuple[bool, bool]]
+) -> tuple[str | None, str | None]:
+    """Which of two policies pins SNI on outside 443 and which leaves it open, or `(None, None)`
+    when they do not contradict each other."""
+    (first_name, (first_pins_sni, first_open)), (second_name, (second_pins_sni, second_open)) = first, second
+    if first_pins_sni and second_open:
+        return first_name, second_name
+    if second_pins_sni and first_open:
+        return second_name, first_name
+    return None, None
 
 
 def _references(pod: dict[str, Any]) -> Iterator[tuple[str, str]]:
@@ -136,6 +244,7 @@ class FleetRules:
         return [
             *pod_hardening(objects),
             *pinned_https_egress(objects, unpinned=self._unpinned_https_egress),
+            *https_egress_sni_conflicts(objects),
             *resolved_references(objects),
         ]
 

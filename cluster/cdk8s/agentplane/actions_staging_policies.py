@@ -27,7 +27,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
-from cluster.cdk8s import agent_access_profiles as access, cilium, external_creds
+from cluster.cdk8s import agent_access_profiles as access, external_creds
 from cluster.cdk8s.agentplane import app as app_component, dex, egress, testing
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
@@ -622,6 +622,15 @@ def add_staging_action_policies(scope: Construct) -> None:
         ],
     )
     proxy = egress.proxy(_NAMESPACE)
+    # No `serverNames` on node:443 here, deliberately. This selector is the staging egress
+    # proxy's own Pods, and `egress.py` already gives them open `[world, remote-node, host]:443/80`.
+    # An SNI rule added on top of that is an L7 rule for the whole endpoint: it decides every
+    # node-IP HTTPS the proxy makes, resetting every `*.allegedly.works` name nobody typed into the
+    # list. That pair is what made Grocy, Forgejo, Haku's mailbox, ActivityWatch and aiquota
+    # unreachable from sandboxes for two weeks. `fleet_rules.https_egress_sni_conflicts` refuses it
+    # at synth now; the mechanism is cluster/docs/cilium_network_policy.md section "An SNI rule
+    # decides port 443 for every policy that selects the same Pod". The proxy fences those names
+    # where it is meant to: in its own `EgressPolicy` objects.
     NetworkPolicy(
         scope,
         "networkpolicy-egress-to-testing-app",
@@ -629,9 +638,9 @@ def add_staging_action_policies(scope: Construct) -> None:
         endpoint_selector=proxy.pods.selector,
         egress=[
             testing_app.egress(),
-            cilium.egress_via_gateway(*testing_login_hosts),
             # Gateway Service traffic is checked against the selected backend, not
-            # node:443. Keep Dex's backend permission scoped to its login SNI.
+            # node:443. Keep Dex's backend permission scoped to its login SNI. This rule is
+            # Dex's own port, so its SNI scoping touches nothing else the proxy reaches.
             EgressRule.to_endpoints(
                 dex.service().pods.cilium,
                 dex.service().pod_port,

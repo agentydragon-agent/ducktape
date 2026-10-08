@@ -10,7 +10,13 @@ from cdk8s import (
     Testing as Cdk8sTesting,
 )  # pytest auto-collects classes named Test*
 
-from cluster.cdk8s.fleet_rules import add_fleet_rules, pinned_https_egress, pod_hardening, resolved_references
+from cluster.cdk8s.fleet_rules import (
+    add_fleet_rules,
+    https_egress_sni_conflicts,
+    pinned_https_egress,
+    pod_hardening,
+    resolved_references,
+)
 
 _HARDENED = {"securityContext": {"seccompProfile": {"type": "RuntimeDefault"}}}
 _RESOURCES = {"requests": {"cpu": "10m", "memory": "16Mi"}, "limits": {"cpu": "100m", "memory": "64Mi"}}
@@ -39,6 +45,13 @@ def _https(destination: dict[str, Any], server_names: list[str] | None = None) -
     if server_names is not None:
         to_ports["serverNames"] = server_names
     return {**destination, "toPorts": [to_ports]}
+
+
+def _policy_for(name: str, egress: list[dict[str, Any]], *, namespace: str, labels: dict[str, str]) -> dict[str, Any]:
+    policy = _policy(name, egress)
+    policy["metadata"]["namespace"] = namespace
+    policy["spec"]["endpointSelector"] = {"matchLabels": labels}
+    return policy
 
 
 def test_pod_hardening_names_the_container_and_what_it_lacks() -> None:
@@ -148,6 +161,102 @@ def test_references_resolve_in_chart_and_reject_wrong_kind() -> None:
     assert resolved_references(objects) == [
         "Deployment/wrong-kind reads Secret 'wrong-kind', but the chart creates a ConfigMap with that name"
     ]
+
+
+_STAGING = "agentplane-staging"
+
+
+def test_an_sni_pin_may_not_share_an_endpoint_with_open_https_egress() -> None:
+    """The pair that broke every `*.allegedly.works` name a proxy served: one policy pinning SNI on
+    node:443, a sibling leaving that port open for the same Pods. Cilium enforces the pin per port
+    on the endpoint across both policies, so the open rule silently stops being open."""
+    proxy = {"app.kubernetes.io/name": "agentplane-egress"}
+    open_egress = _policy_for(
+        "egress", [_https({"toEntities": ["world", "remote-node", "host"]})], namespace=_STAGING, labels=proxy
+    )
+    pinned_egress = _policy_for(
+        "egress-to-testing-app",
+        [_https({"toEntities": ["remote-node", "host"]}, ["agentplane-testing.allegedly.works"])],
+        namespace=_STAGING,
+        labels=proxy,
+    )
+    conflict = (
+        "CiliumNetworkPolicy/egress-to-testing-app pins SNI on outside HTTPS while "
+        "CiliumNetworkPolicy/egress leaves port 443 open for the same endpoints: the pin decides "
+        "every name on that port, not just its own"
+    )
+    assert https_egress_sni_conflicts([open_egress, pinned_egress]) == [conflict]
+    # Order decides nothing, and neither half conflicts on its own.
+    assert https_egress_sni_conflicts([pinned_egress, open_egress]) == [conflict]
+    assert https_egress_sni_conflicts([open_egress]) == []
+    assert https_egress_sni_conflicts([pinned_egress]) == []
+    # A selector naming a different Pod, and a namespaced policy in a namespace the other cannot
+    # reach, both stay legal.
+    elsewhere = _policy_for("elsewhere", pinned_egress["spec"]["egress"], namespace="elsewhere", labels=proxy)
+    another = {"app.kubernetes.io/name": "agentplane-app"}
+    other_pod = _policy_for("other-pod", pinned_egress["spec"]["egress"], namespace=_STAGING, labels=another)
+    assert https_egress_sni_conflicts([open_egress, elsewhere]) == []
+    assert https_egress_sni_conflicts([open_egress, other_pod]) == []
+    # Everything else overlaps, because `matchLabels` matches endpoints carrying *at least* those
+    # labels: a narrower selector (subset) and a disjoint key set both describe endpoints that
+    # satisfy the open rule too.
+    subset = _policy_for("subset", pinned_egress["spec"]["egress"], namespace=_STAGING, labels=proxy | {"tier": "x"})
+    disjoint_keys = _policy_for("odd", pinned_egress["spec"]["egress"], namespace=_STAGING, labels={"tier": "x"})
+    assert len(https_egress_sni_conflicts([open_egress, subset])) == 1
+    assert len(https_egress_sni_conflicts([subset, open_egress])) == 1
+    assert len(https_egress_sni_conflicts([open_egress, disjoint_keys])) == 1
+    # An SNI rule on a port nothing else uses is not a conflict: the L7 layer is per port. That is
+    # how the proxy keeps Dex's SNI scoping and its open 443 side by side.
+    dex = _policy_for(
+        "dex",
+        [{"toPorts": [{"ports": [{"port": "5556", "protocol": "TCP"}], "serverNames": ["dex.test"]}]}],
+        namespace=_STAGING,
+        labels=proxy,
+    )
+    assert https_egress_sni_conflicts([open_egress, dex]) == []
+    # 443 on in-cluster peers is not outside HTTPS: neither an endpoint with SNI nor `cluster`.
+    internal = _policy_for(
+        "internal",
+        [
+            _https({"toEndpoints": [{"matchLabels": {"app": "x"}}]}, ["internal.test"]),
+            {"toEntities": ["cluster"], "toPorts": [{"ports": [{"port": "443", "protocol": "TCP"}]}]},
+        ],
+        namespace=_STAGING,
+        labels=proxy,
+    )
+    assert https_egress_sni_conflicts([open_egress, internal]) == []
+    # A selector this cannot reduce to labels -- none at all, or `matchExpressions` -- covers
+    # everything in scope, so it conflicts rather than being skipped.
+    no_selector = _policy("catch-all", [_https({"toEntities": ["remote-node", "host"]}, ["a.test"])])
+    assert len(https_egress_sni_conflicts([open_egress, no_selector])) == 1
+    expressions = _policy_for("expressions", pinned_egress["spec"]["egress"], namespace=_STAGING, labels={})
+    expressions["spec"]["endpointSelector"]["matchExpressions"] = [
+        {"key": "app.kubernetes.io/name", "operator": "In", "values": ["agentplane-egress"]}
+    ]
+    assert len(https_egress_sni_conflicts([open_egress, expressions])) == 1
+    # The same shape inside one policy -- a pinned rule and an open one on 443 -- is the same
+    # contradiction, and is named as its own error.
+    both = _policy_for(
+        "both",
+        [_https({"toEntities": ["world", "remote-node", "host"]}), _https({"toEntities": ["remote-node"]}, ["a.test"])],
+        namespace=_STAGING,
+        labels=proxy,
+    )
+    assert https_egress_sni_conflicts([both]) == [
+        "CiliumNetworkPolicy/both pins SNI on outside HTTPS and leaves port 443 open beside it: the pin "
+        "decides every name on that port, not just the ones it lists"
+    ]
+    # A clusterwide policy reaches every namespace, so it conflicts across the namespace boundary.
+    clusterwide = {
+        "apiVersion": "cilium.io/v2",
+        "kind": "CiliumClusterwideNetworkPolicy",
+        "metadata": {"name": "wide"},
+        "spec": {
+            "egress": [_https({"toEntities": ["remote-node", "host"]}, ["a.test"])],
+            "endpointSelector": {"matchLabels": proxy},
+        },
+    }
+    assert len(https_egress_sni_conflicts([open_egress, clusterwide])) == 1
 
 
 def test_rules_fail_synth_naming_the_object() -> None:

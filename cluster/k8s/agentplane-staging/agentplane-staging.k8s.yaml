@@ -6946,16 +6946,6 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
-    - toEntities:
-        - remote-node
-        - host
-      toPorts:
-        - ports:
-            - port: "443"
-              protocol: TCP
-          serverNames:
-            - agentplane-testing.allegedly.works
-            - agentplane-dex-testing.allegedly.works
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-testing-dex
