@@ -379,9 +379,11 @@ async def test_primary_limit_uses_reset_without_retry_after(provider: tuple[GitH
         status, headers={"x-ratelimit-remaining": "0", "x-ratelimit-reset": "3600"}, text="private upstream body"
     )
     headers = github.app_headers()
-    with patch("agentplane.notification_service.sources.github.time.time", return_value=1000.25):
-        with pytest.raises(GitHubRetryError, match=f"HTTP {status}") as failure:
-            await github.request("GET", "/repos/owner/repo/installation", headers)
+    with (
+        patch("agentplane.notification_service.sources.github.time.time", return_value=1000.25),
+        pytest.raises(GitHubRetryError, match=f"HTTP {status}") as failure,
+    ):
+        await github.request("GET", "/repos/owner/repo/installation", headers)
     assert failure.value.retry_seconds == 2600
     assert "private upstream body" not in str(failure.value)
 
