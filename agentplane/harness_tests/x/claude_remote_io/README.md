@@ -1,3 +1,5 @@
+<!-- Experimental harness peer; not a production transport. -->
+
 # Claude RemoteIO interoperability spike
 
 Experimental, single-session, in-memory server for Claude Code **2.1.292**. The separate
@@ -54,7 +56,7 @@ RemoteIO clean exit and server hydration remain unimplemented. Source inspection
 informs the candidate protocol; CI wire captures determine the actual contract.
 
 ```bash
-bbr test //x/claude_remote_io:all
+bbr test //agentplane/harness_tests/x/claude_remote_io:all
 ```
 
 ## Test boundary

@@ -27,6 +27,7 @@ py_test(
         ":local_proxy",
         ":server",
         "//:conftest",
+        "//agentplane/harness_tests:conftest",
         "//agentplane/harness_tests/claude:anthropic_sse",
         "//agentplane/harness_tests/claude:messages",
         "//util/bazel:runfiles",
@@ -48,6 +49,7 @@ py_test(
     ],
     deps = [
         "//:conftest",
+        "//agentplane/harness_tests:conftest",
         "//agentplane/harness_tests/claude:anthropic_sse",
         "//agentplane/harness_tests/claude:harness",
         "//agentplane/harness_tests/claude:messages",
@@ -65,6 +67,7 @@ py_test(
     deps = [
         ":server",
         "//:conftest",
+        "//agentplane/harness_tests:conftest",
         "@pypi//aiohttp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
