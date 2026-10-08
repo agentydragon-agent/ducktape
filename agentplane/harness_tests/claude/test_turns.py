@@ -12,6 +12,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.harness_tests.claude import anthropic_sse as sse, frames
 from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
 from agentplane.harness_tests.claude.messages import AnthropicMessages
+from agentplane.native.async_process import NativeProcessEofError
 from agentplane.native.claude import async_run, wire
 from agentplane.native.claude.blocks import TextBlock, ThinkingBlock, blocks_of
 from agentplane.native.claude.scenarios import SYSTEM_PROMPT, TOOLS
@@ -218,8 +219,10 @@ async def test_crash_before_a_completed_turn_leaves_claudes_session_unresumable(
             await exchange.wait_client_closed()
 
     async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION, initialize=False) as resumed:
-        failure = await resumed.initialize()
-        assert isinstance(failure, wire.ResultFrame)
+        events = resumed.events()
+        with pytest.raises(NativeProcessEofError, match="stdout closed"):
+            await resumed.initialize()
+        failure = await events.result()
         assert failure.is_error is True
         assert failure.errors == [f"No conversation found with session ID: {CRASHED_SESSION}"]
 
