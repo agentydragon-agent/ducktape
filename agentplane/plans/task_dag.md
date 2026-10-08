@@ -118,6 +118,8 @@ flowchart TB
     SUBMISSION_STAGE_INDICATOR["Planned UI<br/>staged submission indicator<br/>which of five stages, not two strings"]:::future
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
+    CLAUDE_FRESH_RESUME_CACHE_SPIKE["Independent Claude spike<br/>fresh-process resume from copied native state<br/>prefix/reasoning and cache evidence"]:::future
+    CODEX_FRESH_RESUME_CACHE_SPIKE["Independent Codex spike<br/>fresh-process resume from copied native state<br/>prefix/reasoning and cache evidence"]:::future
     CODEX_RECOVERY_PROTOCOL["Deferred interoperability follow-up<br/>Codex reconciliation via documented app-server APIs<br/>replace private rollout inspection"]:::future
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
     RUNNER_IMAGE_ROLLOUT["Planned operator workflow<br/>upgrade the runner image on existing Sandboxes<br/>preserve Thread state and resume safely"]:::future
@@ -728,6 +730,37 @@ instead of silently depending on internal rollout details.
 Agentplane still reads Codex's persisted history for reconciliation. `excludeTurns` only avoids
 returning the full transcript in a resume response; it does not replace this migration.
 
+### Fresh-process native resume and prefix-cache spikes
+
+These are separate **evidence projects**, not automatic-recovery implementations or a
+promise that either vendor retains provider cache hits after process replacement. Use
+the pinned harness versions and a controlled, non-sensitive conversation containing a
+multi-turn prefix, tool interactions, and reasoning items where the upstream actually
+exposes them. Quiesce/kill the old process, copy only its documented or observed native
+session artifacts to a fresh harness process in a separate workspace/Sandbox, and issue
+native resume plus one new turn. Compare the actual outgoing model-request prefix with
+same-process continuation and a cold-start control, including opaque/cacheable reasoning
+state if observable. Record byte/structural differences rather than guessing from rendered
+transcripts. Measure provider-reported cache-read/creation tokens (or equivalent) at the
+same model and within the same cache TTL; distinguish an unobservable cache result from
+a demonstrated hit. Preserve redacted request/usage evidence and exact artifact inventory.
+Do not manufacture old reasoning content from an app Event archive.
+
+- **`CLAUDE_FRESH_RESUME_CACHE_SPIKE`:** test Claude Code's native saved-session resume
+  into a fresh CLI process with both unchanged local state and a copied-state target.
+  Pin whether its continued request carries the same cacheable user/assistant/tool and
+  reasoning prefix, and whether Anthropic reports a cache hit versus full prefix creation.
+- **`CODEX_FRESH_RESUME_CACHE_SPIKE`:** test Codex app-server's native thread resume in
+  a fresh process with the same two state placements. Pin which persisted history and
+  reasoning/opaque items its continued request uses, and actual provider cache-usage
+  evidence; do not infer prefix equivalence from a successful `thread/resume` reply.
+
+A full cache miss, loss of reasoning continuity, or absent metrics is a **finding** for
+that harness, not a license to invent replay or bulldoze past a native limitation. If
+cheap warm continuation cannot be demonstrated, gate the corresponding on-demand
+suspend/resume feature and retain a running/retained-volume option until viable native
+support exists. Neither harness's result blocks the other's investigation.
+
 ### `SANDBOX_LIFECYCLE_DURABILITY` — preserve state through suspension and deletion
 
 **Planned lifecycle correctness:** verify the actual runner state mount, native artifacts,
@@ -872,7 +905,9 @@ snapshots. Retained artifacts must not include reusable Pod/ServiceAccount crede
 or silently widen their future access. A migration may intentionally leave legacy
 Threads read-only or require an opt-in destructive transition, but must not claim
 seamless resume from display history.
-Keep this separate from `SANDBOX_LIFECYCLE_DURABILITY` (archive before deletion).
+Implementation for each harness depends on its own `CLAUDE_FRESH_RESUME_CACHE_SPIKE` or
+`CODEX_FRESH_RESUME_CACHE_SPIKE` evidence; no global assumption that both support cheap
+resume. Keep this separate from `SANDBOX_LIFECYCLE_DURABILITY` (archive before deletion).
 
 ### `THREAD_ON_DEMAND_RUNTIME` — disposable Sandbox for a durable Thread
 
@@ -886,8 +921,10 @@ wakeup deduplication, startup/bootstrap once for the new Sandbox, image selectio
 expiry/cost, and behavior when native resume is impossible. Current notification inboxes
 are UID-pinned to a Sandbox/session and retire after its removal; a deleted-Sandbox
 Thread needs a new durable address and delivery authority, not a claim that those inboxes
-already wake it. Test crashes and replica races
-through suspension, deletion, reprovisioning, and notification wakeup.
+already wake it. Test crashes and replica races through suspension, deletion,
+reprovisioning, and notification wakeup. Ship warm continuation only for a harness
+whose own fresh-process spike proves native history and affordable prefix-cache behavior;
+otherwise stop at a documented unsupported outcome rather than replaying a display transcript.
 
 This is not a prerequisite for near-term `RUNNER_IMAGE_ROLLOUT`: first test the simpler
 pause/patch/restart-with-the-same-storage route for updating an existing Sandbox image.
