@@ -107,17 +107,12 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
         async with harness.start(model, subagents=True, resume_id=initial.session_id, initialize=False) as resumed:
             try:
                 async with asyncio.timeout(45):
-                    # The sole initialization request can be preceded by an automatic
-                    # task-notification result. Keep an independent cursor so that the
-                    # facade's early ResultFrame return cannot hide the actual reply.
-                    handshake = resumed.events()
+                    # Keep background results independently observable while the
+                    # shared facade waits for the correlated initialization reply.
                     automatic = resumed.events()
-                    await resumed.initialize()
-                    while True:
-                        reply = await handshake.next()
-                        if isinstance(reply, wire.ControlResponseFrame):
-                            assert reply.response.subtype == "success"
-                            break
+                    reply = await resumed.initialize()
+                    assert isinstance(reply, wire.ControlResponseFrame)
+                    assert reply.response.subtype == "success"
                     if active:
                         notification_result = await automatic.result()
                         assert not notification_result.is_error

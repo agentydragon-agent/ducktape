@@ -43,10 +43,16 @@ class ClaudeHarness:
             sdk_mcp_servers=sdk_mcp_servers,
             sdk_mcp_server_configs=sdk_mcp_server_configs,
         )
+        # Resuming can emit task-notification results before the initialization
+        # reply. Only this request's control response can complete its handshake;
+        # transport EOF/timeout handles a process that never sends that reply.
         receipt = await self.transport.request(
-            request, matches=lambda frame: _is_initialize_response(frame, request.request_id)
+            request, matches=lambda frame: _is_control_response(frame, request.request_id)
         )
-        return _receipt(receipt)
+        parsed = _receipt(receipt)
+        if isinstance(parsed.response, wire.ControlResponseFrame) and parsed.response.response.subtype == "error":
+            raise RuntimeError(f"Claude initialization rejected: {parsed.response.response.error}")
+        return parsed
 
     async def submit(self, text: str, *, message_uuid: str | None = None) -> wire.UserInput:
         frame = driver.user_frame(text, message_uuid=message_uuid)
@@ -102,7 +108,3 @@ def _is_control_response(frame: Frame, request_id: str) -> bool:
         and isinstance(response, dict)
         and response.get("request_id") == request_id
     )
-
-
-def _is_initialize_response(frame: Frame, request_id: str) -> bool:
-    return _is_control_response(frame, request_id) or frame.get("type") == "result"
