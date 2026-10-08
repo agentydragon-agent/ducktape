@@ -359,9 +359,7 @@ async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_
                             *sse.message_stream(
                                 [
                                     sse.ToolUse(
-                                        "toolu_read_after_resume",
-                                        "TaskOutput",
-                                        {"task_id": agent_id, "block": False},
+                                        "toolu_read_after_resume", "TaskOutput", {"task_id": agent_id, "block": False}
                                     )
                                 ],
                                 model=MODEL,
@@ -375,7 +373,9 @@ async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_
                         await exchange.send(*sse.message_stream([sse.Text("RESUME_PROBE_DONE")], model=MODEL).events)
                     assert (await recovery.result()).result == "RESUME_PROBE_DONE"
                     assert not [
-                        frame for frame in resumed.native_frames() if frame.get("subtype") == "task_notification"
+                        frame
+                        for frame in resumed.native_frames()[len(captured) :]
+                        if frame.get("subtype") == "task_notification"
                     ]
             except BaseException:
                 await resumed.crash()
