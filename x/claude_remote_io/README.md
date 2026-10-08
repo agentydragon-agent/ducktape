@@ -44,7 +44,12 @@ when the old process was killed. No server history was supplied. This is affirma
 evidence, unlike the completed-child case's lack of new notifications. The old assertion expecting
 no notification failed. The corrected probe passed on `b5cb47fd`: the notification arrives after
 initialize, before any new parent input. A matching no-input `stream-json` active-child crash
-probe is awaiting CI; until then, do not call this a RemoteIO-specific capability.
+capture on `35c6144f` also contains the original task's `stopped` notification before
+new input, followed by an empty successful zero-turn result **before** initialization's
+control response. The generic test helper mistook that result for initialization failure.
+The experimental driver now waits for the actual control reply and checks the automatic
+result separately; the complete active-resume assertion sequence awaits CI. The captured
+notification itself is therefore not a RemoteIO-specific capability.
 RemoteIO clean exit and server hydration remain unimplemented. Source inspection
 informs the candidate protocol; CI wire captures determine the actual contract.
 

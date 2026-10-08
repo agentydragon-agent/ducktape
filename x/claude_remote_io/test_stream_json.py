@@ -12,6 +12,7 @@ import pytest_bazel
 from agentplane.harness_tests.claude import anthropic_sse as sse
 from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
 from agentplane.harness_tests.claude.messages import AnthropicMessages
+from agentplane.native.claude import wire
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -77,7 +78,9 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
                     if not active:
                         async with await model.await_next_request() as exchange:
                             assert "STDIO_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
-                            await exchange.send(*sse.message_stream([sse.Text("STDIO_PARENT_DONE")], model=MODEL).events)
+                            await exchange.send(
+                                *sse.message_stream([sse.Text("STDIO_PARENT_DONE")], model=MODEL).events
+                            )
                         assert (await completed.result()).result == "STDIO_PARENT_DONE"
                         if crash:
                             assert await run.crash() < 0
@@ -101,10 +104,25 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
                 and {"type": "text", "text": "STDIO_CHILD_DONE"} in frame["message"]["content"]
                 for frame in captured
             )
-        async with harness.start(model, subagents=True, resume_id=initial.session_id) as resumed:
+        async with harness.start(model, subagents=True, resume_id=initial.session_id, initialize=False) as resumed:
             try:
                 async with asyncio.timeout(45):
+                    # The sole initialization request can be preceded by an automatic
+                    # task-notification result. Keep an independent cursor so that the
+                    # facade's early ResultFrame return cannot hide the actual reply.
+                    handshake = resumed.events()
+                    automatic = resumed.events()
+                    await resumed.initialize()
+                    while True:
+                        reply = await handshake.next()
+                        if isinstance(reply, wire.ControlResponseFrame):
+                            assert reply.response.subtype == "success"
+                            break
                     if active:
+                        notification_result = await automatic.result()
+                        assert not notification_result.is_error
+                        assert notification_result.result == ""
+                        assert notification_result.num_turns == 0
                         events = resumed.events()
                         while not any(
                             frame.get("subtype") == "task_notification"
