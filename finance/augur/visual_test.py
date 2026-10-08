@@ -424,7 +424,7 @@ def augur_server(augur_config: Config, hermetic_prices: dict[Platform, dict[str,
 
 @pytest.fixture
 async def page(playwright: Playwright) -> AsyncIterator[Page]:
-    async with await deterministic_browser_context(
+    async with deterministic_browser_context(
         playwright, viewport=SCREENSHOT_VIEWPORT, frozen_now_ms=FROZEN_NOW_MS
     ) as context:
         page = await context.new_page()

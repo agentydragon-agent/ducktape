@@ -12,7 +12,8 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -53,15 +54,7 @@ def chromium_executable() -> str | None:
     return str(path) if (path := find_path("chrome_headless_shell/chrome-headless-shell")) else None
 
 
-def _font_pinned_user_data_dir() -> Path:
-    user_data_parent = Path(os.environ.get("TEST_TMPDIR", tempfile.gettempdir()))
-    user_data_parent.mkdir(parents=True, exist_ok=True)
-    user_data_dir = Path(tempfile.mkdtemp(prefix="chrome-user-data-", dir=user_data_parent))
-    (user_data_dir / "Default").mkdir()
-    (user_data_dir / "Default" / "Preferences").write_text(json.dumps(_FONT_PREFERENCES))
-    return user_data_dir
-
-
+@asynccontextmanager
 async def deterministic_browser_context(
     playwright: Playwright,
     *,
@@ -71,22 +64,29 @@ async def deterministic_browser_context(
     device_scale_factor: float = 1,
     has_touch: bool = False,
     extra_args: Sequence[str] = (),
-) -> BrowserContext:
-    context = await playwright.chromium.launch_persistent_context(
-        user_data_dir=str(_font_pinned_user_data_dir()),
-        headless=True,
-        executable_path=chromium_executable(),
-        args=[*DETERMINISTIC_BROWSER_ARGS, *extra_args],
-        viewport=viewport,
-        device_scale_factor=device_scale_factor,
-        has_touch=has_touch,
-        color_scheme=color_scheme,
-        reduced_motion="reduce",
-        locale="en-US",
-        timezone_id="UTC",
-    )
-    await context.add_init_script(frozen_clock_script(frozen_now_ms))
-    return context
+) -> AsyncIterator[BrowserContext]:
+    """Own the browser and its font-pinned profile, including failed setup."""
+    user_data_parent = Path(os.environ.get("TEST_TMPDIR", tempfile.gettempdir()))
+    user_data_parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="chrome-user-data-", dir=user_data_parent) as profile:
+        user_data_dir = Path(profile)
+        (user_data_dir / "Default").mkdir()
+        (user_data_dir / "Default" / "Preferences").write_text(json.dumps(_FONT_PREFERENCES))
+        async with await playwright.chromium.launch_persistent_context(
+            user_data_dir=profile,
+            headless=True,
+            executable_path=chromium_executable(),
+            args=[*DETERMINISTIC_BROWSER_ARGS, *extra_args],
+            viewport=viewport,
+            device_scale_factor=device_scale_factor,
+            has_touch=has_touch,
+            color_scheme=color_scheme,
+            reduced_motion="reduce",
+            locale="en-US",
+            timezone_id="UTC",
+        ) as context:
+            await context.add_init_script(frozen_clock_script(frozen_now_ms))
+            yield context
 
 
 def frozen_clock_script(now_ms: int) -> str:

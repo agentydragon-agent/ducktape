@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import AsyncMock
+
 import pytest
 import pytest_bazel
 from playwright.async_api import Page, Playwright
@@ -31,7 +34,7 @@ async def _platform_families(page: Page, selector: str) -> list[str]:
 
 
 async def test_generic_families_are_browser_pinned(playwright: Playwright) -> None:
-    async with await deterministic_browser_context(
+    async with deterministic_browser_context(
         playwright, viewport={"width": 800, "height": 600}, frozen_now_ms=0
     ) as context:
         page = await context.new_page()
@@ -67,7 +70,7 @@ async def test_generic_families_are_browser_pinned(playwright: Playwright) -> No
 
 @pytest.mark.usefixtures("los_angeles_process_timezone")
 async def test_the_page_timezone_is_utc_whatever_the_process_timezone(playwright: Playwright) -> None:
-    async with await deterministic_browser_context(
+    async with deterministic_browser_context(
         playwright, viewport={"width": 800, "height": 600}, frozen_now_ms=0
     ) as context:
         page = await context.new_page()
@@ -80,7 +83,7 @@ async def test_the_page_timezone_is_utc_whatever_the_process_timezone(playwright
 
 
 async def test_animations_and_transitions_are_pinned_by_the_css(playwright: Playwright) -> None:
-    async with await deterministic_browser_context(
+    async with deterministic_browser_context(
         playwright, viewport={"width": 800, "height": 600}, frozen_now_ms=0
     ) as context:
         page = await context.new_page()
@@ -105,6 +108,56 @@ async def test_animations_and_transitions_are_pinned_by_the_css(playwright: Play
         )
 
     assert styles == {"playState": "paused", "transition": "none"}
+
+
+@pytest.mark.parametrize("fail_in_body", [False, True])
+async def test_browser_and_profile_are_cleaned_up(
+    playwright: Playwright, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fail_in_body: bool
+) -> None:
+    monkeypatch.setenv("TEST_TMPDIR", str(tmp_path))
+
+    pages: list[Page] = []
+
+    async def use_browser() -> None:
+        async with deterministic_browser_context(
+            playwright, viewport={"width": 800, "height": 600}, frozen_now_ms=0
+        ) as context:
+            page = await context.new_page()
+            pages.append(page)
+            assert len(list(tmp_path.glob("chrome-user-data-*"))) == 1
+            if fail_in_body:
+                raise RuntimeError("test body failed")
+
+    if fail_in_body:
+        with pytest.raises(RuntimeError, match="test body failed"):
+            await use_browser()
+    else:
+        await use_browser()
+    assert pages and all(page.is_closed() for page in pages)
+    assert not list(tmp_path.glob("chrome-user-data-*"))
+
+
+@pytest.mark.parametrize("stage", ["launch", "initialization"])
+async def test_failed_browser_setup_removes_profile(
+    playwright: Playwright, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    monkeypatch.setenv("TEST_TMPDIR", str(tmp_path))
+    context = AsyncMock()
+    context.__aenter__.return_value = context
+    launch = AsyncMock(return_value=context)
+    if stage == "launch":
+        launch.side_effect = RuntimeError("setup failed")
+    else:
+        context.add_init_script.side_effect = RuntimeError("setup failed")
+    monkeypatch.setattr(playwright.chromium, "launch_persistent_context", launch)
+    with pytest.raises(RuntimeError, match="setup failed"):
+        async with deterministic_browser_context(
+            playwright, viewport={"width": 800, "height": 600}, frozen_now_ms=0
+        ):
+            raise AssertionError("failed setup must not yield a context")
+    assert not Path(launch.call_args.kwargs["user_data_dir"]).exists()
+    if stage == "initialization":
+        context.__aexit__.assert_awaited_once()
 
 
 if __name__ == "__main__":
