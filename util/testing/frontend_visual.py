@@ -105,23 +105,3 @@ async def deterministic_browser_context(
 def frozen_clock_script(now_ms: int) -> str:
     source = get_required_path(own_repo_rlocation("util/testing/frozen-clock.js")).read_text()
     return f"(() => {{ {source} frozenClock({now_ms}); }})();"
-
-
-def stability_style() -> str:
-    """CSS for timing and caret stability; font choice and rasterization are browser-owned."""
-    return """
-    :root,
-    body,
-    * {
-      caret-color: transparent !important;
-    }
-    *,
-    *::before,
-    *::after {
-      animation-duration: 0s !important;
-      animation-delay: 0s !important;
-      transition-duration: 0s !important;
-      transition-delay: 0s !important;
-      scroll-behavior: auto !important;
-    }
-    """

@@ -30,7 +30,7 @@ from study_casino.changelog import LATEST_CHANGELOG_ID
 from study_casino.config import Settings
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual import deterministic_browser_context, stability_style
+from util.testing.frontend_visual import deterministic_browser_context
 from util.testing.postgres_fixtures import start_postgres_container
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_capture import VisualPage
@@ -64,7 +64,6 @@ async def casino_view(
         page = await context.new_page()
         view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Study Casino views", output_suffix="")
         await page.goto(f"{casino_server}/{query}", wait_until="networkidle", timeout=30_000)
-        await page.add_style_tag(content=stability_style())
         try:
             yield view
         finally:
