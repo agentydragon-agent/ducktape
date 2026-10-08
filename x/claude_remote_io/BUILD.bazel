@@ -36,3 +36,24 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_stream_json",
+    size = "medium",
+    srcs = ["test_stream_json.py"],
+    data = ["@claude_remote_io_cli_linux_x64//:claude"],  # keep: same-version native control
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",  # keep: native CLI platform
+        "@platforms//os:linux",  # keep: native CLI platform
+    ],
+    deps = [
+        "//:conftest",
+        "//agentplane/harness_tests/claude:anthropic_sse",
+        "//agentplane/harness_tests/claude:harness",
+        "//agentplane/harness_tests/claude:messages",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
