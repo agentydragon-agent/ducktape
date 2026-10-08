@@ -732,12 +732,21 @@ returning the full transcript in a resume response; it does not replace this mig
 
 ### Fresh-process native resume and prefix-cache spikes
 
-These are separate **evidence projects**, not automatic-recovery implementations or a
-promise that either vendor retains provider cache hits after process replacement. Use
-the pinned harness versions and a controlled, non-sensitive conversation containing a
-multi-turn prefix, tool interactions, and reasoning items where the upstream actually
-exposes them. Quiesce/kill the old process, copy only its documented or observed native
-session artifacts to a fresh harness process in a separate workspace/Sandbox, and issue
+These are separate **evidence questions per harness**, not automatic-recovery
+implementations or a promise that either vendor retains provider cache hits after
+process replacement. Start by extending `agentplane/acceptance/test_suspend_resume.py`:
+it already replaces the Sandbox Pod and verifies native resume plus retained context
+for Claude and Codex on the same Sandbox storage. Extend it with checks for stable
+identities and retained Event cursors, and instrument native prefix/reasoning continuity
+and measured cache reuse where observable (or use companion controlled harness tests
+for evidence the deployed path cannot expose). A copied-state target needs a separate
+variant/fixture because the current test reuses the Sandbox volume. Do not mistake a
+remembered marker or `resumed=True` for prefix identity, a cache hit, or portability
+across deleted storage. Use the pinned harness versions and a controlled,
+non-sensitive conversation containing a multi-turn prefix, tool interactions, and
+reasoning items where the upstream actually exposes them. Quiesce/kill the old process,
+copy only its documented or observed native session artifacts to a fresh harness
+process in a separate workspace/Sandbox, and issue
 native resume plus one new turn. Compare the actual outgoing model-request prefix with
 same-process continuation and a cold-start control, including opaque/cacheable reasoning
 state if observable. Record byte/structural differences rather than guessing from rendered
