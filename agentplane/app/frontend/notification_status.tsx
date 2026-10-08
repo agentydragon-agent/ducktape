@@ -51,9 +51,9 @@ type Status = { observed_at: string; inboxes: Inbox[] };
 type SubscriptionState = "active" | "expired" | "cancelled";
 type SubscriptionFilter = "not-cancelled" | SubscriptionState | "all";
 
-function subscriptionState(sub: Subscription, observedAt: string): SubscriptionState {
+function subscriptionState(sub: Subscription, observedAt?: string): SubscriptionState {
   if (sub.cancelled) return "cancelled";
-  return new Date(sub.expires_at).getTime() <= new Date(observedAt).getTime() ? "expired" : "active";
+  return new Date(sub.expires_at).getTime() <= new Date(observedAt ?? sub.expires_at).getTime() ? "expired" : "active";
 }
 
 function sourceLabel(source: Source): string {
@@ -104,13 +104,14 @@ export function NotificationStatus({
       onConnection: setConnection,
     });
   }, [opened, sandbox]);
+  const observedAt = data?.observed_at;
   const inboxes =
     data?.inboxes
       .filter(({ inbox }) => !sessionId || inbox.session_id === sessionId)
       .map((status) => ({
         ...status,
         subscriptions: status.subscriptions.filter((sub) => {
-          const state = subscriptionState(sub, data.observed_at);
+          const state = subscriptionState(sub, observedAt);
           return (
             subscriptionFilter === "all" ||
             (subscriptionFilter === "not-cancelled" ? state !== "cancelled" : state === subscriptionFilter)
@@ -270,7 +271,7 @@ export function NotificationStatus({
                     {subscriptions.map((sub) => (
                       <Stack gap={2} key={sub.id}>
                         <Text size="sm">
-                          {sourceLabel(sub.source)} · {subscriptionState(sub, data?.observed_at ?? sub.expires_at)}
+                          {sourceLabel(sub.source)} · {subscriptionState(sub, observedAt)}
                         </Text>
                         <Text size="xs" c="dimmed">
                           Expires {timestamp(sub.expires_at)}
