@@ -4,10 +4,11 @@ import asyncio
 from uuid import UUID, uuid4
 
 import pytest
+import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.protocol import event_log_pb2
-from agentplane.sandbox_service.archive.store import ArchiveConflictError, ArchiveNotFoundError, Store
+from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryNotFoundError, Store
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -54,15 +55,15 @@ async def test_bad_batch_rolls_back_and_conflicting_duplicate_rejected(engine: A
     store = Store(engine)
     session_id = uuid4()
     await opened(store, session_id)
-    with pytest.raises(ArchiveConflictError, match="expected 2"):
+    with pytest.raises(HistoryConflictError, match="expected 2"):
         await store.append(session_id, [entry(1), entry(3)])
     assert await store.read(session_id) == (0, [])
     assert await store.append(session_id, [entry(1), entry(2)]) == 2
     for bad in ([entry(2, resumed=True)], [entry(3, "other")], [entry(4)]):
-        with pytest.raises(ArchiveConflictError):
+        with pytest.raises(HistoryConflictError):
             await store.append(session_id, bad)
     assert await store.read(session_id) == (2, [entry(1), entry(2)])
-    with pytest.raises(ArchiveConflictError, match="locator"):
+    with pytest.raises(HistoryConflictError, match="locator"):
         await store.open(
             session_id,
             sandbox_namespace="testing",
@@ -70,12 +71,12 @@ async def test_bad_batch_rolls_back_and_conflicting_duplicate_rejected(engine: A
             sandbox_uid=None,
             runner_session_id="original-native-path",
         )
-    with pytest.raises(ArchiveNotFoundError):
+    with pytest.raises(HistoryNotFoundError):
         await store.append(uuid4(), [entry(1)])
 
 
 @pytest.mark.asyncio
-async def test_two_replica_writers_serialize_on_archive_row(engine: AsyncEngine) -> None:
+async def test_two_replica_writers_serialize_on_history_row(engine: AsyncEngine) -> None:
     session_id = uuid4()
     left, right = Store(engine), Store(engine)
     await opened(left, session_id)
@@ -84,3 +85,7 @@ async def test_two_replica_writers_serialize_on_archive_row(engine: AsyncEngine)
     )
     assert list(results) == [2, 2]
     assert await right.read(session_id) == (2, [entry(1), entry(2)])
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -1,4 +1,4 @@
-"""Isolated, migrated PostgreSQL fixture for the archive store."""
+"""Isolated, migrated PostgreSQL fixture for the history store."""
 
 from collections.abc import AsyncIterator, Iterator
 from uuid import uuid4
@@ -8,7 +8,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
-from agentplane.sandbox_service.archive.database_migrate import RUNNER
+from agentplane.sandbox_service.session_history.database_migrate import RUNNER
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 
@@ -19,7 +19,7 @@ from util.testing.postgres_fixtures import postgres_container
 @pytest.fixture
 def db_url(postgres_container: PostgresContainer) -> Iterator[str]:
     admin = f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}:{postgres_container.get_exposed_port(5432)}/postgres"
-    name = f"archive_{uuid4().hex}"
+    name = f"history_{uuid4().hex}"
     url = (
         make_url(create_database_sync(admin, name))
         .set(drivername="postgresql+asyncpg")
@@ -37,5 +37,3 @@ async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
         yield engine
     finally:
         await engine.dispose()
-
-

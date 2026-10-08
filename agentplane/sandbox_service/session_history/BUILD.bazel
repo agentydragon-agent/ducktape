@@ -22,7 +22,7 @@ py_library(
 py_library(
     name = "database_migrate",
     srcs = ["database_migrate.py"],
-    data = ["//agentplane/sandbox_service/archive/migrations:files"],
+    data = ["//agentplane/sandbox_service/session_history/migrations:files"],
     deps = [
         ":db",
         "//util:db_migrations",
@@ -56,6 +56,7 @@ py_test(
         "//agentplane/sandbox_service:conftest",
         "@pypi//protobuf",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

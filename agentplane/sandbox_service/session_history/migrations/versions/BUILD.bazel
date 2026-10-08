@@ -1,10 +1,10 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
-exports_files(["0001_archive.py"])
+exports_files(["0001_session_history.py"])
 
 py_library(
-    name = "0001_archive",
-    srcs = ["0001_archive.py"],
+    name = "0001_session_history",
+    srcs = ["0001_session_history.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

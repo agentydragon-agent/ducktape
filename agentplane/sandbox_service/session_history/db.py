@@ -13,9 +13,9 @@ class Base(DeclarativeBase):
     pass
 
 
-class SessionArchive(Base):
-    __tablename__ = "session_archive"
-    __table_args__ = (CheckConstraint("last_cursor >= 0", name="archive_last_cursor_nonnegative"),)
+class SessionHistory(Base):
+    __tablename__ = "session_history"
+    __table_args__ = (CheckConstraint("last_cursor >= 0", name="history_last_cursor_nonnegative"),)
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     sandbox_namespace: Mapped[str] = mapped_column(String)
@@ -27,11 +27,11 @@ class SessionArchive(Base):
     last_cursor: Mapped[int] = mapped_column(BigInteger)
 
 
-class ArchivedEvent(Base):
-    __tablename__ = "archived_event"
+class SessionEvent(Base):
+    __tablename__ = "session_event"
 
-    session_id: Mapped[UUID] = mapped_column(ForeignKey("session_archive.id"), primary_key=True)
+    session_id: Mapped[UUID] = mapped_column(ForeignKey("session_history.id"), primary_key=True)
     cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     # Preserve the complete wire entry (including unknown fields and native frames). JSONB
-    # cannot represent arbitrary native bytes, and a parsed fold is not a replayable archive.
+    # cannot represent arbitrary native bytes, and a parsed fold is not a replayable history.
     payload: Mapped[bytes] = mapped_column(LargeBinary)

@@ -1,8 +1,8 @@
-"""Sandbox Service's independent, image-owned Session archive schema."""
+"""Sandbox Service's independent, image-owned Session history schema."""
 
 from pathlib import Path
 
-from agentplane.sandbox_service.archive.db import Base
+from agentplane.sandbox_service.session_history.db import Base
 from util.db_migrations import MigrationRunner
 
 RUNNER = MigrationRunner(
