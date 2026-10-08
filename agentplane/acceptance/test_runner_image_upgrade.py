@@ -89,11 +89,11 @@ async def test_runner_image_upgrade_keeps_both_native_sessions(client: Client, s
     catalog = await client.models()
     markers = {protocol_pb2.HARNESS_CLAUDE: f"CLAUDE-{uuid4().hex}", protocol_pb2.HARNESS_CODEX: f"CODEX-{uuid4().hex}"}
     agents: dict[protocol_pb2.Harness, Agent] = {}
-    for harness in markers:
+    for harness, marker in markers.items():
         offered = catalog.harnesses[Harness(protocol_pb2.Harness.Name(harness))]
         assert offered
         agent = await Agent.open(client, sandbox=view.name, harness=harness, model=offered[0])
-        seed = await agent.run(f"Remember this exact token: {markers[harness]}. Do not use tools. Reply only ACK.")
+        seed = await agent.run(f"Remember this exact token: {marker}. Do not use tools. Reply only ACK.")
         assert seed.input_confirmed
         agents[harness] = agent
 
