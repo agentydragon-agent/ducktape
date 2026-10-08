@@ -5,6 +5,36 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { PushSettings } from "./push";
 
+it("updates registered browsers from the stream without a refresh button", async () => {
+  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  let stream!: EventTarget;
+  class Source extends EventTarget {
+    static readonly CLOSED = 2;
+    readyState = 1;
+    constructor(readonly url: string) { super(); stream = this; }
+    close() { this.readyState = Source.CLOSED; }
+  }
+  vi.stubGlobal("EventSource", Source);
+  vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+    Response.json(url === "/push/config" ? { application_server_key: null } : [])
+  ));
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<MantineProvider env="test"><PushSettings /></MantineProvider>));
+    expect(container.textContent).not.toContain("Refresh notification settings");
+    await act(async () => stream.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([
+      { endpoint: "https://push.example/other", user_agent: "Another browser", created_at: "2026-01-01T00:00:00Z" }
+    ]) })));
+    expect(container.textContent).toContain("Another browser");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("lists registered browsers, identifies this browser, and unregisters it locally and remotely", async () => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const endpoint = "https://push.example/current";

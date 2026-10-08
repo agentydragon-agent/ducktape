@@ -681,6 +681,38 @@ async def push_subscriptions(client: OperatorActions) -> list[dict[str, object]]
     return await client.push_subscriptions()
 
 
+@push_router.get("/subscriptions/stream")
+async def push_subscriptions_stream(
+    request: Request, client: OperatorActions, shutdown: Shutdown, updates: Updates,
+    sessions: OperatorSessions,
+) -> StreamingResponse:
+    session_id = operator_session_row(request).id
+
+    async def session_over() -> None:
+        await sessions.until_ended(session_id, updates.changes[Channel.OPERATOR_SESSIONS])
+
+    async def body() -> AsyncIterator[bytes]:
+        try:
+            async def upstream() -> AsyncIterator[bytes]:
+                while True:
+                    delivered = False
+                    async with client.stream_push_subscriptions() as chunks:
+                        async for chunk in chunks:
+                            delivered = True
+                            yield chunk
+                    if not delivered:
+                        return
+
+            async for chunk in shutdown.until(until_done(upstream(), session_over)):
+                if await request.is_disconnected():
+                    return
+                yield chunk
+        except (httpx.HTTPError, httpx2.TransportError, OperatorFederationError):
+            logger.warning("Push settings stream interrupted", exc_info=True)
+
+    return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
 @push_router.post("/subscriptions", status_code=204)
 async def register_push_subscription(body: dict[str, str], client: OperatorActions, request: Request) -> None:
     await client.register_push(body, user_agent=request.headers.get("user-agent", "")[:300])

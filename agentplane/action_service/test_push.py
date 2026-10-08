@@ -23,6 +23,7 @@ from agentplane.action_service.models import (
     ProviderVote,
     Verdict,
 )
+from agentplane.action_service.updates import ActionUpdates
 from agentplane.action_service.push import (
     ActionPushNotifier,
     PushIdentity,
@@ -56,6 +57,24 @@ class RecordingNotifier(ActionPushNotifier):
             return "retry"
         self.recorded.append((row.endpoint, message.kind))
         return "sent"
+
+
+async def test_push_settings_wake_on_remote_registration_and_removal(engine: AsyncEngine, db_url: str) -> None:
+    updates = ActionUpdates(db_url)
+    store = PushSubscriptionStore(make_sessionmaker(engine))
+    endpoint = f"https://push.example/{uuid4()}"
+    async with updates.listener.listen():
+        with updates.subscribe_push() as subscription:
+            await store.save(operator=OPERATOR, endpoint=endpoint, p256dh="test", auth="test", user_agent=None)
+            async with asyncio.timeout(10):
+                await subscription.changed.wait()
+            assert [row.endpoint for row in await store.list_for(OPERATOR) if row.endpoint == endpoint] == [endpoint]
+            assert not [row for row in await store.list_for(OTHER_OPERATOR) if row.endpoint == endpoint]
+            subscription.changed.clear()
+            assert await store.delete(operator=OPERATOR, endpoint=endpoint)
+            async with asyncio.timeout(10):
+                await subscription.changed.wait()
+            assert not [row for row in await store.list_for(OPERATOR) if row.endpoint == endpoint]
 
 
 async def test_replica_delivery_and_recovery(engine: AsyncEngine, db_url: str) -> None:

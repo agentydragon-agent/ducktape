@@ -199,6 +199,20 @@ class OperatorActionServiceClient(_BearerClient):
             with CancelScope(shield=True):
                 await response.aclose()
 
+    @asynccontextmanager
+    async def stream_push_subscriptions(self) -> AsyncIterator[AsyncIterator[bytes]]:
+        token = await self._tokens.token()
+        request = self._http.build_request(
+            "GET", "/v1/operator/push/subscriptions/stream", headers={"Authorization": f"Bearer {token}"}
+        )
+        response = await self._http.send(request, stream=True)
+        try:
+            response.raise_for_status()
+            yield response.aiter_raw()
+        finally:
+            with CancelScope(shield=True):
+                await response.aclose()
+
     async def push_config(self) -> dict[str, str | None]:
         response = await self._request("GET", "/v1/operator/push/config")
         return cast(dict[str, str | None], response.json())

@@ -521,6 +521,37 @@ def create_app(
             for row in await push_subscriptions.list_for(principal)
         ]
 
+    @app.get("/v1/operator/push/subscriptions/stream")
+    async def push_subscriptions_stream(
+        principal: Annotated[OperatorPrincipal, Depends(_operator)],
+        action_updates: Annotated[ActionUpdates, Depends(_updates)],
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
+        authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
+    ) -> StreamingResponse:
+        async def body() -> AsyncIterator[bytes]:
+            with action_updates.subscribe_push() as subscription:
+                changed = subscription.changed
+                while True:
+                    changed.clear()
+                    subscription.check_available()
+                    if credentials is None or await authenticator.authenticate(credentials.credentials) != principal:
+                        return
+                    snapshot = await list_push_subscriptions(principal)
+                    subscription.check_available()
+                    yield b"event: snapshot\ndata: " + json.dumps(snapshot, separators=(",", ":")).encode() + b"\n\n"
+                    while not changed.is_set():
+                        try:
+                            async with asyncio.timeout(5):
+                                await changed.wait()
+                        except TimeoutError:
+                            subscription.check_available()
+                            if credentials is None or await authenticator.authenticate(credentials.credentials) != principal:
+                                return
+                            yield b": keepalive\n\n"
+                    subscription.check_available()
+
+        return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
     @app.post("/v1/operator/push/subscriptions", status_code=status.HTTP_204_NO_CONTENT)
     async def register_push_subscription(
         body: PushSubscriptionInput, principal: Annotated[OperatorPrincipal, Depends(_operator)], request: Request
