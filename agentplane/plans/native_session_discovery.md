@@ -1,7 +1,9 @@
 # Harness-declared logical sessions
 
 Status: **proposed**, grounded in the passing characterization tests from
-[PR #9435](https://github.com/agentydragon/ducktape/pull/9435). This is a possible next implementation
+[PR #9435](https://github.com/agentydragon/ducktape/pull/9435), the Claude 2.1.292
+[RemoteIO/stdio comparison #9440](https://github.com/agentydragon/ducktape/pull/9440), and
+[Codex multi-agent v2 matrix #9446](https://github.com/agentydragon/ducktape/pull/9446). This is a possible next implementation
 of `NATIVE_SUBAGENT_THREADS`, not a shipped runner contract or a priority change. The
 [characterization matrix](native_subagent_sessions.md) remains the evidence inventory.
 
@@ -42,14 +44,47 @@ For Codex app-server `0.157.0`, with `multi_agent_v1` enabled:
 - Spawn-tool completion and child-work completion are different observations.
 
 The runner can obtain these identities from native traffic. The model endpoints used by the tests
-are a test oracle, not a proposed discovery dependency. The tests do not yet prove full Codex child
-transcript delivery, complete native enumeration, nesting, or identity continuity after native
-restart. The tested Codex v1 surface must not stand in for its v2 configuration.
+are a test oracle, not a proposed discovery dependency. The v1 tests do not prove full Codex child
+transcript delivery, complete native enumeration, or nesting. Do not apply their missing-child
+resume result to v2, or interpret the newer recovery tests as evidence for every configuration.
+
+For Codex `0.157.0` with **multi-agent v2**, the passing `8f5c39f4` matrix establishes:
+
+- `item/completed` with `subAgentActivity(kind=started)` supplies `agentThreadId` and
+  `agentPath`; enclosing `params.threadId` identifies the parent. It is not a v1 collaboration item.
+- After root resume, `thread/list(parentThreadId=...)` discovers the original child and
+  `thread/read` recovers its history without loading it. The broad subagent-source query returns
+  no rows in these scenarios. Loaded-only or broad-source enumeration is not a complete tree scan.
+- Completed turns and answers survive clean exit and crash. A child killed with an unanswered
+  model request has an `interrupted` historical turn, null completion timestamp, and no answer.
+  Its runtime status is `notLoaded`, not a second historical outcome.
+- The child's live `sessionId` equals the root's, but an unloaded read reports the child's own
+  thread ID as `sessionId`. Stable thread ID and explicit parent linkage are the tree evidence.
+- Captures include child prose under its thread ID and parent-stream completion activity. This
+  does not establish a complete child transcript or live-client reconnect semantics.
+
+For Claude **2.1.292**, tested independently of the runner's `2.1.252` pin:
+
+- Both RemoteIO and stream-json expose task identity and forwarded child output, still using
+  the parent's native session ID on child frames.
+- Native-file resume after an active-child crash automatically reports the original task as
+  `stopped` before new parent input. The notification can omit the original tool-use ID.
+- An empty successful zero-turn result accompanies task-notification processing; over stdio it
+  can precede the initialization control response. It must not settle a user command or be
+  treated as an initialization failure merely because it arrived first.
+- Completed-child resume retains parent history without a new completion notification in the
+  tested sequence. `TaskOutput` is unavailable in this configuration; its error is not a missing
+  task result. The older version's tool behavior must not be assumed.
+
+These results justify version-specific read-only recovery, not a production version/transport
+cutover. RemoteIO is not required for the observed stopped-child signal; complete Claude task
+enumeration, server history hydration, and recovery without native files remain unproven.
 
 ## Vocabulary and ownership
 
-Use **logical session** for a native conversational participant that can accumulate history and
-potentially do more work later. Keep these concepts separate:
+Use **logical session** as the runner's tracked conversational entity, with an explicit kind
+(`root_conversation`, `native_thread`, or `agent_task`). A Claude child may remain an agent task,
+not an independently addressable conversation. The common name grants no control capability. Keep these concepts separate:
 
 - **Execution owner:** the durable runner resource that launches and supervises the harness and
   retains its native state. Today this is coupled to a root session; with harness-minted root IDs it
@@ -89,8 +124,9 @@ A session descriptor should carry:
 - Optional display metadata supplied by the harness, treated as untrusted content.
 
 Native handle lookup needs a persisted namespace, not a bare `task_id` or `threadId`. Qualify it by
-execution owner, harness kind, native handle kind, and native identity scope. Initially, a native
-scope cannot be assumed to survive a new harness incarnation. Runner replay on retained storage
+execution owner, harness kind, native handle kind, and native identity scope. Native storage lineage and process incarnation are separate: a PID or process restart does not
+by itself establish or break identity continuity. A new storage lineage starts a new namespace;
+retained state plus positive native resume evidence can preserve the existing one. Runner replay on retained storage
 reuses its saved mapping; matching a newly launched harness to old children requires positive
 continuity evidence. Neither PID reuse nor equal descriptions proves continuity.
 
@@ -341,29 +377,220 @@ reactivation may execute work again. Characterize native resume's own automatic 
 and side-effect replay before offering it as recovery. Read-only acceptance must cover retained
 outcomes with unknown current availability; stronger fate reconciliation remains test-gated.
 
-Independent child input, interruption, native resume, nested ancestry, enumeration, and new identity
-scope reconciliation remain gated by the matrix. Do not enable parent-injected tool calls as a hidden
+Independent child input, interruption, nested ancestry, complete enumeration, and broader identity
+scope reconciliation remain gated by the matrix. The measured Codex v2 relation/history reads and
+Claude 2.1.292 stopped-task recovery are admissible only for their characterized configurations. Do not enable parent-injected tool calls as a hidden
 implementation of a supposedly independent child command.
+
+## Concrete shared contract for both harnesses
+
+This section chooses the read-only implementation direction. Names below are proposed semantic
+fields/operations, not shipped protobufs. Keep the original native frame, version/configuration,
+execution-owner incarnation, and evidence reference alongside every derived fact.
+
+### Records, identity scopes, and state
+
+The runner persists one descriptor per logical entity with these independent components:
+
+- **Identity:** opaque runner logical ID, execution owner, entity kind, qualified native handle,
+  storage-lineage ID, and creation/discovery evidence. Native display names and paths are metadata,
+  not lookup keys. Root creation can reserve an ID before native existence is confirmed.
+- **Ancestry:** parent logical ID when resolved; otherwise the qualified native parent reference
+  and an unresolved marker. Record delegation call IDs separately. Out-of-order parent discovery
+  must not force reparenting to the execution owner or allocate a second child.
+- **Availability:** current native load/attachment evidence (`loaded`, `not_loaded`, `unknown`,
+  or explicitly disposed), plus observation time/incarnation. Track owner transport/process health
+  separately; its loss invalidates claims of current observation, not recorded work outcomes.
+- **Activities:** native turn ID where available, current work evidence, and historical outcome
+  (`completed`, `interrupted`, `stopped`, `failed`, or unresolved). Preserve the exact native label
+  and whether the fact is a live notification or reconstructed history. Never fabricate a turn ID,
+  completion timestamp, or successful result from a load-state change.
+- **Coverage:** what is known about identity enumeration, transcript content, lifecycle history,
+  and freshness. A snapshot declares its query scope and completeness separately from its rows.
+- **Capabilities:** separately record observed native operations and enabled public runner
+  operations, with supported/unsupported/unknown states. A native tool callable by the parent model
+  is not an independent runner operation. Read-only v1 enables inventory/follow only for children.
+
+Qualified keys are `(execution_owner, storage_lineage, harness, handle_kind, native_id)` for
+Codex threads. Claude task IDs additionally live under the positively identified parent native
+session: `(execution_owner, storage_lineage, claude, parent_native_session_id, task_id)`.
+An originating tool-use ID is a routing alias scoped to that parent session, not a substitute task
+identity. Preserve many continuation-call aliases if evidenced. A reused/conflicting alias cannot
+silently merge tasks; quarantine the attribution and expose a reconciliation error.
+
+Runner storage replay restores these keys without contacting the harness. Native resume is a
+separate operation: the observed root ID and retained state must establish continuity before new
+child observations can join old mappings. Codex's restored child ID and parent relation provide
+that evidence in the measured v2 cases; Claude's stopped notification can join the retained task ID
+under its resumed parent even without a repeated tool-use ID. A clone of native state into another
+execution owner does not silently merge histories. Missing or conflicting continuity leaves an
+unresolved record, not guessed identity or automatic retry of old work.
+
+### Root creation and today's service IDs
+
+The current Sandbox Service already has `CreateSession` / `LookupSession` with a caller- and
+Sandbox-UID-scoped idempotency key, a frozen launch request, and a durable **service session UUID**.
+Its response also contains the runner `Attached.session_id`; these IDs are not interchangeable.
+See [`sandbox_service/protocol.proto`](../sandbox_service/protocol.proto) and
+[`session_history/store.py`](../sandbox_service/session_history/store.py).
+
+Build on those reservations rather than introducing another creation queue or replacing the API
+with the illustrative `StartSession` name above. Preserve the existing service UUID and routing
+binding to `(Sandbox UID, runner logical ID)`. The runner remains authoritative about existence
+and native bindings; the service row is a durable address/authorization/history projection, not a
+second native session registry. A runner-minted root ID requires returning and persisting that
+binding rather than treating today's preselected `Open.session_id` as proof of native creation.
+Existing roots can retain their runner IDs; opaque runner allocation is not a reason to rekey them.
+
+The concrete root sequences are:
+
+1. Client provisions an authorized sandbox through Sandbox Service and follows readiness.
+2. Client calls `CreateSession` with harness spec, override mask, and idempotency key. Service
+   reserves its UUID and immutable launch intent. Runner accepts/reserves a logical root and
+   execution owner. Timeout recovery uses `LookupSession`; a reservation is not launch success.
+3. **Codex:** initialize the app-server; send `thread/start`; commit the returned thread ID as
+   the native binding before reporting root readiness. No client-selected native thread ID is
+   required. First user input subsequently uses `turn/start` with its own command ID.
+4. **Claude, initial supported path:** retain the adapter-selected UUID passed via `--session-id`.
+   Persist that selection before launch, distinguish requested identity from observed native
+   identity, and verify session-bearing traffic agrees. Initialization confirms transport readiness,
+   not a separate harness-minted ID. A mismatch fails reconciliation rather than rewriting history.
+5. Both return the same service-facing shape, with creation/readiness and native-confirmation
+   status distinguishable. Input is admitted only to the appropriate root execution owner.
+
+Omitting Claude's ID override is a later optional mode, gated by the no-input declaration timing
+experiment described above. Clients need not choose native IDs, but a uniform client API does
+not require both harnesses to mint them. Do not block the first read-only child slice on changing
+root allocation. If first input is bundled with creation in a future API, journal it once as described
+above; do not silently add such a field or a synthetic prompt to today's `CreateSession`.
+
+### Codex v2: spawn, observation, and recovery
+
+For a root bound to native thread `T0` and runner logical root `R0`:
+
+1. A parent model's `collaboration.spawn_agent` request remains an item in `R0`. Until native
+   evidence exposes a child identity, it is only a pending delegation.
+2. `subAgentActivity(kind=started, agentThreadId=T1, agentPath=...)` in `T0`'s stream declares
+   logical child `R1`, kind `native_thread`, parent `R0`. Upsert by qualified `T1`, not by task name
+   or path. The spawn item completing means creation activity completed, not child work completed.
+3. Child-native frames bearing `threadId=T1` route to `R1`. Parent delegation/results remain in
+   `R0`; relation events link the two. When the parent stream reports a child completion activity,
+   emit a child-outcome observation citing that parent evidence, without attributing parent prose
+   to the child or settling the parent's user command.
+4. After process loss, keep `R1` and its last known outcomes; current observation becomes stale.
+   On explicit root resume, verify `T0`, enumerate `thread/list(parentThreadId=T0)` through every
+   page, and read `T1`'s metadata/history. Also inspect loaded enumeration as a different view.
+5. Reconcile `R1` to `not_loaded`, retaining completed history or the observed interrupted turn.
+   An unloaded `sessionId=T1` does not split the entity or remove its parent. Persist the historical
+   turn key and provenance so repeated reads update the same activity instead of emitting a new
+   interruption on every reconnect.
+
+The measured direct-child query is not proof of complete arbitrary-depth ancestry. Recursive
+scanning and ancestor queries need their own tests, cycle protection, and bounded pagination.
+Do not perform child `thread/resume`, `followup_task`, or a model prompt just to populate inventory.
+Live socket reconnection and subscribing to independently addressable children remain separate
+acceptance cases; stdio process restart is not a substitute.
+
+### Claude: task declaration, routing, and recovery
+
+For a root native session `C0` bound to `R0`:
+
+1. A native `Agent` delegation stays in parent history. An agent-typed `task_started` with task
+   ID `A1` declares `R1`, kind `agent_task`, under `R0`; record originating tool-use ID `U1` as
+   an alias. Do not declare shell jobs or unknown task kinds as conversational children.
+2. Forwarded content carrying `parent_tool_use_id=U1` routes to `R1` even when its `session_id`
+   equals `C0`. Keep the parent tool result as parent content and child-authored output as child
+   content, both linked to their original evidence. Missing alias resolution stays explicitly
+   unresolved until later evidence permits attribution; never default it to root-authored text.
+3. `task_notification(task_id=A1, status=...)` updates child work outcome. This does not close
+   `R1` forever or prove it can accept independent input. On 2.1.252, measured `SendMessage`
+   continuation is parent-mediated native behavior, not permission to expose a child input API.
+4. On a 2.1.292 native-file resume, an automatic stopped-task notification joins `R1` using `A1`
+   and resumed `C0`, even when `U1` is absent. Record native `stopped` rather than inventing a
+   successful completion, cancellation request, or exact stop time. An unknown `A1` may be
+   late-discovered from evidenced agent-task metadata without inventing its start interval.
+5. Initialization responses, user-command results, and background-task results require separate
+   correlation. An automatic empty result does not finish a newly admitted user input. Preserve
+   uncertainty when the native frame lacks sufficient correlation; do not match by arrival order.
+6. Completed-child recovery without a fresh notification leaves the saved outcome intact and
+   current availability unknown. Parent transcript memory is not new lifecycle evidence. The
+   unavailable 2.1.292 `TaskOutput` route must not become an automatic recovery query.
+
+The declaration/routing model applies to both tested stdio and experimental RemoteIO captures;
+production integration initially uses the existing transport and pin. Enabling 2.1.292 recovery
+requires an explicit pin/capability rollout. RemoteIO input-origin metadata, receipt IDs, and
+server history hydration have independent gaps and are not smuggled into this slice.
+
+### Durable ingestion, projection, and list/follow handoff
+
+Use the existing runner storage and journal authority, not a new execution/message queue:
+
+1. Durably append the raw native frame to the owner journal with its owner ID, incarnation, and
+   source cursor before deriving externally visible facts. Recovery reprocesses any unprojected
+   prefix. A truncated/uncommitted frame cannot support a published declaration.
+2. In one durable registry transaction, upsert the descriptor/aliases/activity facts, advance the
+   projection checkpoint and registry revision, and record destination-event work for the existing
+   journal writer. Allocate the child's journal identity here; a repeated source frame finds the same
+   descriptor. The publication work is an outbox for projection, not a harness-command queue.
+3. Append derived events idempotently by `(owner evidence reference, destination logical ID,
+   projection kind/index)`, then mark that work published. Journal append must support recovery
+   of that key before acknowledging publication; an outbox alone does not prevent duplicates.
+   A client may briefly see a declared child with no projected content yet, never a reference to
+   nonexistent raw evidence. Child events carry qualified cross-log evidence references.
+4. Store native activity/item IDs where available to distinguish repeated history hydration from
+   new work. Source-frame deduplication alone cannot deduplicate a later query returning the same
+   historical outcome. Keep newly received raw evidence while upserting the existing activity.
+5. Return inventory at a runner registry revision and permit following subsequent registry changes
+   from that revision. This covers new execution owners as well as children racing the snapshot;
+   following only owners that existed at listing time is insufficient. This is a view of the same
+   durable runner registry, not a new service-side event authority. Expired cursors require an
+   explicit resnapshot; owner-local and child-local content cursors are never compared numerically.
+
+Implementation must first verify that current storage can provide these atomic/idempotent seams;
+if not, introduce the minimal journal primitive and crash tests before exposing child discovery.
+Schema names are deliberately deferred, but the ordering and failure guarantees are not optional.
+
+### Service exposure, controls, and acceptance boundaries
+
+Sandbox Service lists/follows the runner's descriptor inventory and binds discovered runner IDs to
+service-facing session references idempotently. A unique `(Sandbox UID, runner logical ID)` binding
+prevents concurrent listing/follow clients from allocating duplicate public child addresses. Its
+persisted history projection can retain records while the runner is unavailable, clearly marked as
+stale. Projection failure cannot block runner-native discovery or require an app database write.
+
+Extend inventory/attachment responses with explicit descriptor kind, parent/owner references,
+coverage, availability, and capabilities. Do not duplicate the parent's launch spec onto a child.
+The app may create linked Thread views from this evidence; it does not create or supervise native
+children. Authorize child reads through the same sandbox/service boundary; knowing a native ID,
+sharing a process, or receiving a harness message is not a new authorization grant. Native prompt,
+path, and tool metadata are untrusted data, not instructions or proof of human origin.
+
+Read-only child attach must not launch/resume the owner, rerun setup, or admit input/interruption.
+Reject unsupported commands before durable admission with a capability-specific error. Historical
+`canAcceptDirectInput` or a native parent-tool capability is not enough to enable a public operation;
+command routing, authorization, receipts, retries, and sibling isolation each need acceptance tests.
+Existing root controls and command IDs retain their semantics.
 
 ## Implementation slices and acceptance
 
-1. **Evidence extraction and routing.** Pin root ID allocation/declaration timing for both harnesses,
-   including Claude without `--session-id` and without initial input. Extend native wire types only
-   for fields consumed; add
+1. **Evidence extraction and routing.** Keep the existing root launch path initially; pin its native
+   identity-confirmation boundary and extract the characterized child evidence for each supported
+   version/configuration. Claude without `--session-id` and without initial input remains an optional
+   separate root-allocation experiment. Extend native wire types only for fields consumed; add
    adapter tests for declaration, aliases, attribution, and completion using the characterized native
    events. Retain unknown frames. Verify child events cannot settle parent commands or turns.
-2. **Durable declaration and read-only child sessions.** Decide whether harness-minted root creation
-   ships in this slice or follows the existing-root discovery path. If included, test creation retries,
-   delayed declaration/first-input delivery, and crashes before/after the native ID binding. Resolve
-   qualified evidence references and the cross-journal
-   commit/replay design. Persist descriptors and attributed child streams; implement read-only
+2. **Durable declaration and read-only child sessions.** Follow the existing-root discovery path;
+   preserve service UUIDs and runner root IDs. Implement qualified evidence references and the
+   registry/outbox/idempotent-journal seams above. Test root launch crashes before/after native
+   binding without assuming exactly-once creation. Persist descriptors and attributed child streams;
+   implement read-only
    list/attach. Crash-test every declaration/fan-out publication boundary and duplicate replay.
 3. **Service and presentation.** Expose inventory/history through the existing Sandbox Service API.
    The app discovers children from runner evidence and presents linked Threads with coverage and
    availability indicators. No app database write is a prerequisite for declaring a native child.
 4. **Broader recovery and control.** Add only the capabilities demonstrated by further tests:
    alternate subscriptions, native enumeration, independent controls, restart identity, nesting,
-   and Codex v2. These are not prerequisites for honest read-only discovery.
+   and broader Codex v2 contexts. These are not prerequisites for honest read-only discovery.
 
 Acceptance for the read-only slice must run both pinned harnesses through the runner with the
 integration app unavailable. Prove that an ordinary parent action creates a discoverable child,
@@ -371,5 +598,30 @@ IDs and aliases agree, attributed content does not contaminate the parent, and c
 does not destroy its identity. Claude's completed-child follow-up must reuse the child session.
 Also cover late discovery, duplicate events, unknown native kinds, missing correlation, concurrent
 siblings, attachment during discovery, owner loss, runner restart with retained storage, and explicit
-rejection of child launch/control. Assert the honest lower coverage for Codex until additional native
-transcript delivery is demonstrated. UI acceptance then proves presentation, not backend authority.
+rejection of child launch/control. Assert version-specific coverage without claiming a complete transcript merely because some
+Codex child prose was observed. UI acceptance then proves presentation, not backend authority.
+
+Concrete gates for this implementation (not satisfied merely by the characterization PRs):
+
+- **Single-agent control:** for each supported harness, one creation key produces one reserved
+  root and stable service/runner binding; changed-spec retries fail; ambiguous native launch is not
+  repeated automatically. Attaching/following never becomes creation or resume by accident.
+- **Codex v2 child:** a real spawn declares one child; duplicate activity frames and repeated
+  relation/history queries retain that logical ID. After completed/active crash recovery, show
+  `not_loaded` separately from completed/interrupted history despite the changed `sessionId`.
+- **Claude child:** forwarded frames before and after task declaration resolve to one task; missing
+  tool-use aliases do not contaminate parent output. On the characterized newer pin, automatic
+  stopped-task and empty-result traffic during resume cannot settle user commands or initialization.
+  On the older pin, do not advertise that recovery capability solely from the newer experiment.
+- **Failure boundaries:** crash after raw append, registry commit, destination append, and before
+  outbox acknowledgement. Replay produces no duplicate IDs or derived event keys and no dangling
+  evidence references. Conflicting parent/alias mappings remain visible reconciliation errors.
+- **Inventory handoff:** create a root/child during list/follow, restart the runner between those
+  operations, and expire a cursor. Recover by revision or explicit resnapshot without silently
+  missing an owner. Absence from partial native inventory never marks a child disposed.
+- **Service isolation:** two clients discover the same child concurrently and obtain the same service
+  mapping. With the integration app unavailable, list/follow still works; unauthorized reads and
+  unsupported child commands fail before admission, and observation starts no native work.
+- **Coverage honesty:** lost native state, missing terminal notification, stale owner connection,
+  and unknown task kinds remain distinguishable. No reconstruction from prose is labeled native
+  lifecycle evidence; no child is restarted to make its status observable.
