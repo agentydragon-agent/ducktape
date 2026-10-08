@@ -1,6 +1,9 @@
 # Harness-declared logical sessions
 
-Status: **proposed**, grounded in the passing characterization tests from
+Status: **proposed; implementation deferred** while session-event ownership moves into Sandbox
+Service. Near-term work is tracked in the [harness hardening burndown](harness_hardening.md).
+
+Evidence is grounded in the passing characterization tests from
 [PR #9435](https://github.com/agentydragon/ducktape/pull/9435), the Claude 2.1.292
 [RemoteIO/stdio comparison #9440](https://github.com/agentydragon/ducktape/pull/9440), and
 [Codex multi-agent v2 matrix #9446](https://github.com/agentydragon/ducktape/pull/9446). This is a possible next implementation

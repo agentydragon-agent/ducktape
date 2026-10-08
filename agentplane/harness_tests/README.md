@@ -47,6 +47,9 @@ of its follow-up result. The [test matrix](../plans/native_subagent_sessions.md)
 and the remaining discovery, forwarding, concurrency, cancellation, and recovery cases. These tests
 do not enable subagents in production or implement a shared session model.
 
+The [hardening burndown](../plans/harness_hardening.md) tracks shared-fixture cleanup and the next
+reconnect, correlation, interruption and recovery work. Native subsession implementation is deferred.
+
 ## When a binary pin changes
 
 The tests pin observed behavior of one build. After a bump, run the live probe in
