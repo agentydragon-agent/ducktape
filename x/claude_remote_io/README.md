@@ -19,8 +19,16 @@ The follow-up `bf5a8508` passed tests/build, lint, formatting, Gazelle and impor
 The child scenario passed on `8671925f`: a real `Agent` launch yields `task_started` and
 `task_notification` with matching `task_id` and originating `tool_use_id`. Child assistant prose
 arrives with that call's `parent_tool_use_id` and the parent's `session_id`; the latter alone cannot
-identify children. A live-process SSE reconnect probe is awaiting CI evidence. Process recovery
-and same-version comparison remain unimplemented. Source inspection
+identify children. The live-process SSE reconnect probe passed on `9e500aa9`: the CLI reconnects
+at the delivered cursor, retains the earlier answer in model context, and emits no duplicate first
+result during the tested continuation.
+
+The completed-child crash probe is awaiting CI evidence. It kills the parent after child completion,
+retains native files, increments the worker epoch, and starts `--resume` with no server-provided
+history. The fixture drops already-settled inbound commands at that explicit boundary; this is
+not a general replay policy or server-durability test. The probe asks whether local parent history
+survives and whether `TaskOutput` can recover the prior child's fate without reactivating it.
+Clean exit, active-child crash, server hydration, and same-version comparison remain unimplemented. Source inspection
 informs the candidate protocol; CI wire captures determine the actual contract.
 
 ```bash

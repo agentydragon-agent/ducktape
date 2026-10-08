@@ -22,6 +22,7 @@ class RemoteIOServer:
         self.uploads: list[dict[str, Any]] = []
         self.changed = asyncio.Condition()
         self.stopping = False
+        self.epoch = 1
         self.connected = asyncio.Event()
         self.stream_requests: list[web.Request] = []
         self.stream_cursors: list[int] = []
@@ -52,6 +53,18 @@ class RemoteIOServer:
             await self.changed.wait_for(lambda: any(predicate(item) for item in self.uploads))
             return next(item for item in self.uploads if predicate(item))
 
+    async def begin_incarnation(self) -> None:
+        """Script a new worker after the prior process died; do not replay settled commands."""
+        async with self.changed:
+            self.epoch += 1
+            self.commands.clear()
+            self.connected.clear()
+            for request in self.stream_requests:
+                if request.transport is not None:
+                    request.transport.close()
+            self.changed.notify_all()
+            self.record("server", "begin_incarnation", {"worker_epoch": self.epoch})
+
     async def reconnect(self) -> int:
         async with self.changed:
             previous = len(self.stream_requests)
@@ -80,7 +93,7 @@ class RemoteIOServer:
             # No hydration in the baseline: do not manufacture history for the CLI.
             return web.json_response({"data": []})
         if request.method == "POST" and tail == "worker/register":
-            return web.json_response({"worker_epoch": 1})
+            return web.json_response({"worker_epoch": self.epoch})
         if request.method in {"PUT", "POST"} and tail in {
             "worker",
             "worker/events",
@@ -90,7 +103,7 @@ class RemoteIOServer:
         }:
             if not isinstance(body, dict):
                 raise web.HTTPBadRequest
-            if body.get("worker_epoch") != 1:
+            if body.get("worker_epoch") != self.epoch:
                 return web.json_response({"reason": "worker_epoch_mismatch"}, status=409)
             async with self.changed:
                 self.uploads.append({"path": tail, "body": body})
@@ -110,13 +123,17 @@ class RemoteIOServer:
             self.connected.set()
             self.changed.notify_all()
 
+        epoch = self.epoch
+
         def ready() -> bool:
-            return self.stopping or len(self.commands) > cursor
+            return self.stopping or epoch != self.epoch or len(self.commands) > cursor
 
         try:
             while not self.stopping:
                 async with self.changed:
                     await self.changed.wait_for(ready)
+                    if epoch != self.epoch:
+                        return response
                     pending = self.commands[cursor:]
                 for event in pending:
                     data = json.dumps(event)

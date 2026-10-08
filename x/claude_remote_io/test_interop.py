@@ -28,7 +28,7 @@ def uploaded_frames(upload: dict[str, Any]) -> list[dict[str, Any]]:
     return [event["payload"] for event in upload["body"]["events"]]
 
 
-async def finish_child(model: AnthropicMessages, peer: RemoteIOServer, session_id: str) -> None:
+async def finish_child(model: AnthropicMessages, peer: RemoteIOServer, session_id: str) -> str:
     async with await model.await_next_request() as first, await model.await_next_request() as second:
         parent, child = (first, second) if first.request.tool_results else (second, first)
         (launched,) = parent.request.tool_results
@@ -71,12 +71,13 @@ async def finish_child(model: AnthropicMessages, peer: RemoteIOServer, session_i
         if frame.get("parent_tool_use_id") == "toolu_remote_child"
     )
 
+    return notification["task_id"]
 
-@pytest.mark.parametrize(
-    ("subagent", "reconnect"), [(False, False), (True, False), (False, True)], ids=["single", "child", "reconnect"]
-)
-async def test_remote_io_round_trip(tmp_path: Path, subagent: bool, reconnect: bool) -> None:
-    scenario = "child" if subagent else "reconnect" if reconnect else "single"
+
+@pytest.mark.parametrize("scenario", ["single", "child", "reconnect", "completed-child-crash"])
+async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
+    subagent = scenario in {"child", "completed-child-crash"}
+    reconnect = scenario == "reconnect"
     logs = undeclared_outputs_dir() / f"remote-io-{scenario}"
     logs.mkdir()
     peer = RemoteIOServer(logs / "http.jsonl")
@@ -122,7 +123,7 @@ async def test_remote_io_round_trip(tmp_path: Path, subagent: bool, reconnect: b
                 "--name",
                 "remote-io-probe",
                 "--tools",
-                "Agent" if subagent else "",
+                "Agent,TaskOutput" if subagent else "",
                 "--model",
                 MODEL,
                 "--input-format",
@@ -182,8 +183,9 @@ async def test_remote_io_round_trip(tmp_path: Path, subagent: bool, reconnect: b
                             else:
                                 blocks = [sse.Text("REMOTE_IO_OK")]
                             await exchange.send(*sse.message_stream(blocks, model=MODEL).events)
+                        agent_id = None
                         if subagent:
-                            await finish_child(model, peer, session_id)
+                            agent_id = await finish_child(model, peer, session_id)
                         result_upload = await peer.wait_for(
                             lambda upload: any(
                                 frame.get("result") == "REMOTE_IO_OK" for frame in uploaded_frames(upload)
@@ -236,6 +238,72 @@ async def test_remote_io_round_trip(tmp_path: Path, subagent: bool, reconnect: b
                                     for frame in uploaded_frames(upload)
                                 )
                                 == 1
+                            )
+                        if scenario == "completed-child-crash":
+                            assert agent_id is not None
+                            process.kill()
+                            assert await process.wait() < 0
+                            await peer.begin_incarnation()
+                            environment["CLAUDE_CODE_WORKER_EPOCH"] = str(peer.epoch)
+                            resumed_command = command.copy()
+                            resumed_command[resumed_command.index("--session-id")] = "--resume"
+                            process = await asyncio.create_subprocess_exec(
+                                *resumed_command,
+                                cwd=tmp_path,
+                                env=environment,
+                                stdin=asyncio.subprocess.PIPE,
+                                stdout=stdout,
+                                stderr=stderr,
+                            )
+                            await peer.connected.wait()
+                            await peer.send(
+                                {
+                                    "type": "control_request",
+                                    "request_id": str(uuid4()),
+                                    "request": {"subtype": "initialize"},
+                                }
+                            )
+                            await peer.send(
+                                {
+                                    "type": "user",
+                                    "uuid": str(uuid4()),
+                                    "session_id": session_id,
+                                    "parent_tool_use_id": None,
+                                    "message": {
+                                        "role": "user",
+                                        "content": "Read the old child's result without restarting it.",
+                                    },
+                                }
+                            )
+                            async with await model.await_next_request() as exchange:
+                                assert "REMOTE_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
+                                await exchange.send(
+                                    *sse.message_stream(
+                                        [
+                                            sse.ToolUse(
+                                                "toolu_after_crash", "TaskOutput", {"task_id": agent_id, "block": False}
+                                            )
+                                        ],
+                                        model=MODEL,
+                                    ).events
+                                )
+                            async with await model.await_next_request() as exchange:
+                                (read,) = exchange.request.tool_results
+                                assert read.tool_use_id == "toolu_after_crash"
+                                assert read.is_error is True, read
+                                assert agent_id in read.text
+                                await exchange.send(*sse.message_stream([sse.Text("AFTER_CRASH")], model=MODEL).events)
+                            await peer.wait_for(
+                                lambda upload: (
+                                    upload["body"]["worker_epoch"] == 2
+                                    and any(frame.get("result") == "AFTER_CRASH" for frame in uploaded_frames(upload))
+                                )
+                            )
+                            assert not any(
+                                frame.get("subtype") == "task_notification"
+                                for upload in peer.uploads
+                                if upload["body"]["worker_epoch"] == 2
+                                for frame in uploaded_frames(upload)
                             )
                 finally:
                     if process.returncode is None:
