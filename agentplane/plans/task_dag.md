@@ -74,6 +74,9 @@ flowchart TB
     HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
     NOTIFICATION_SOURCE_WIRING["Conditional future refactor<br/>extract shared source wiring<br/>from concrete implementations"]:::future
     CRON_NOTIFICATIONS["Unranked future capability<br/>scheduled / cron notifications<br/>durable schedules and missed-tick policy"]:::future
+    AGENT_MESSAGING_DESIGN["Unranked design<br/>agent-to-agent message authority<br/>choose transport and delivery contract"]:::decision
+    AGENT_MESSAGING["Unranked capability<br/>send and receive authorized agent messages<br/>durable delivery and batching"]:::future
+    AGENT_MESSAGE_CLASSIFICATION["Optional later safeguard<br/>classify agent messages for leakage<br/>without silently losing delivery"]:::future
     NOTIFICATION_PRESENTATION["Unranked future capability<br/>structured notification provenance<br/>compact frontend presentation"]:::future
     KUBERNETES_MONITORING["Unranked future capability<br/>agent-visible Kubernetes rollout monitoring<br/>notifications are an option"]:::future
     DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
@@ -157,6 +160,8 @@ flowchart TB
     THREAD_ARCHIVE_STORE --> THREAD_ARCHIVE_BACKFILL
     THREAD_ARCHIVE_STORE --> THREAD_ARCHIVE_INGEST
     THREAD_ARCHIVE_BACKFILL --> THREAD_ARCHIVE_UI_CUTOVER
+    AGENT_MESSAGING_DESIGN --> AGENT_MESSAGING
+    AGENT_MESSAGING --> AGENT_MESSAGE_CLASSIFICATION
     THREAD_ARCHIVE_INGEST --> THREAD_ARCHIVE_UI_CUTOVER
     THREAD_ARCHIVE_UI_CUTOVER --> THREAD_ARCHIVE_OWNERSHIP
     RUNNER_STATE_BOUNDARY_RETHINK --> RUNNER_OUTBOUND_CUTOVER
@@ -1456,6 +1461,41 @@ coalesce); bound frequency/backlog and avoid a burst after downtime. Reuse expli
 and existing destination-lifetime rules; waking suspended harnesses remains a separate decision.
 Acceptance covers firing, cancellation, restart, replica races, missed ticks and DST transitions.
 A scheduled notification must not itself grant authority to perform an Action or bypass approval.
+
+### `AGENT_MESSAGING_DESIGN` — choose agent-to-agent message authority and transport
+
+**Unranked design, no transport selected:** define who may send to whom (agent, Sandbox,
+Session/Thread and ServiceAccount identity), who administers allowlists or scoped policies, and
+what happens on revocation or recipient deletion. Compare a Notification Service source (reusing
+inbox, notice batching, runner delivery and acknowledgement), a purpose-built durable message
+channel, and suitable existing messaging infrastructure. Separate a sender's accepted write from
+recipient delivery, runner admission, agent handling and explicit acknowledgement. Decide how
+receivers recover unread messages after downtime and how agents learn a recipient's stable identity;
+do not assume a co-resident Sandbox or single replica. Treat message content and claimed sender
+identity as untrusted, with source authentication and per-recipient authorization at admission.
+
+### `AGENT_MESSAGING` — authorized agent-to-agent send and receive
+
+**Unranked future capability; depends on `AGENT_MESSAGING_DESIGN`:** implement the selected
+channel so agents can send and receive bounded messages without a human relaying them. Enforce
+send/receive policy on the service side, including cross-Sandbox and cross-operator boundaries;
+never rely on a prompt or frontend visibility filter as access control. Provide durable message IDs,
+idempotent submit and replay/cursors, bounded retention and backpressure, clear delivery and
+acknowledgement states, and useful sender/provenance metadata. If Notifications is selected, make
+agent-originated messages a properly authorized source and reuse inbox batching without treating
+notice admission as recipient acknowledgement; if not, document how the channel integrates with
+runner turns and avoids duplicate or lost messages. Test permitted and forbidden pairs, revocation,
+offline catch-up, concurrent senders/replicas, batching and retries without leaking content to
+unauthorized recipients. This capability does not grant access to the other agent's Thread or
+permission to execute its Actions.
+
+### `AGENT_MESSAGE_CLASSIFICATION` — optional outbound content safeguards
+
+**Lower-priority follow-up, not a prerequisite for messaging:** evaluate leakage classification
+and policy-gated review for messages crossing trust boundaries. Define what content can be inspected,
+who can review a held message, false-positive/appeal handling, and whether a block is surfaced to
+both parties without disclosing the blocked payload. Do not silently discard accepted messages or
+claim classifiers replace the sender/recipient authorization checks in `AGENT_MESSAGING`.
 
 ### `NOTIFICATION_PRESENTATION` — structured metadata and compact notification rendering
 
