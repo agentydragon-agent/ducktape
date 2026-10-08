@@ -153,7 +153,8 @@ Tests that inspect an attachment's complete `seen` history explicitly enable
 this runner, both harnesses, and the sandbox substrate, adding `preCommitPackages` from the
 shared flake tool definitions and the repo-configured Gazelle. This includes `bb`, `bbr`,
 Bazelisk, pre-commit and the pinned formatters without duplicating their package/version list.
-The generic runner remains unchanged.
+The generic image is `runner` (`nix build .#runner-image`); `runner-ducktape` adds tools
+without changing the runner executable or internal service-account/network-policy identities.
 
 `nix build .#checks.x86_64-linux.runner-ducktape-tools` exercises representative repository
 hooks in a sandboxed Nix derivation, using the exact tool closure included in the image. The

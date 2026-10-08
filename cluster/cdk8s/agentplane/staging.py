@@ -203,7 +203,7 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
                 # Each describes itself in the annotation the sandbox Actions read. The integration app's
                 # runner template is offered for a caller that wants the harnesses or a state volume
                 # that survives its Pod.
-                templates={command_sandbox.NAME, command_sandbox.BUILD_NAME, "agentplane-runner", "runner-ducktape"},
+                templates={command_sandbox.NAME, command_sandbox.BUILD_NAME, "runner", "runner-ducktape"},
             ),
             # claude.ai and Claude Code reach these as MCP tools of their own, where `sandbox-self`
             # auto-approves them for the Connection's claude-ai account.

@@ -1,6 +1,6 @@
 # Build agentplane's Nix runner image (agentplane/runner/image.nix) and push it to the Forgejo
 # registry, through nix-image.yml. The archive also goes to the Attic cache.
-name: Agentplane Runner Image
+name: Runner Images
 
 on:
   push:
@@ -48,7 +48,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: agentplane-runner-image-${{ github.ref }}
+  group: runner-image-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -58,7 +58,7 @@ jobs:
   image:
     strategy:
       matrix:
-        variant: [agentplane-runner, runner-ducktape]
+        variant: [runner, runner-ducktape]
     uses: ./.github/workflows/nix-image.yml
     with:
       attr: ${{ matrix.variant }}-image

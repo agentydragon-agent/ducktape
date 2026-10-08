@@ -90,7 +90,7 @@ def settings(
         sandbox_presets={
             "public-coder": SandboxPreset(
                 title="Public coder",
-                template="agentplane-runner",
+                template="runner",
                 egress_policies=[
                     BASIC_POLICY,
                     PACKAGES_POLICY,

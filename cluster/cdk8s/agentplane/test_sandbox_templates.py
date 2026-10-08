@@ -53,7 +53,7 @@ def test_all_sandbox_workloads_use_shared_environment_defaults(
         timezone = next(item for item in workload["env"] if item["name"] == "TZ")
         assert timezone["value"] == "America/Los_Angeles"
 
-    runner = next(template for template in templates if template["metadata"]["name"] == "agentplane-runner")
+    runner = next(template for template in templates if template["metadata"]["name"] == "runner")
     args = runner["spec"]["podTemplate"]["spec"]["containers"][0]["args"]
     assert any(args[index : index + 2] == ["--harness-env", "TZ"] for index in range(len(args) - 1))
     # TZDIR's value belongs to the sandbox image, but a harness child starts from only what the
@@ -97,7 +97,7 @@ def test_ducktape_template_is_staging_only_and_changes_only_image(
             assert "public-coder-ducktape" not in presets
             continue
         assert presets["public-coder-ducktape"]["template"] == "runner-ducktape"
-        generic = templates["agentplane-runner"]["spec"]
+        generic = templates["runner"]["spec"]
         specialized = deepcopy(templates["runner-ducktape"]["spec"])
         container = specialized["podTemplate"]["spec"]["containers"][0]
         assert container["image"] == "git.allegedly.works/ducktape-ci/runner-ducktape:unset"

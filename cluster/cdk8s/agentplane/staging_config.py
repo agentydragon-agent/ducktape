@@ -169,7 +169,7 @@ def config(
     )
     cfg.sandbox_presets["haku"] = SandboxPreset(
         title="Haku",
-        template="agentplane-runner",
+        template="runner",
         # These policies are what a *launch* is granted, independent of which
         # caller/ServiceAccount stamps it.
         egress_policies=[
@@ -209,7 +209,7 @@ def config(
     )
     cfg.sandbox_presets["finance-agent"] = SandboxPreset(
         title="Finance agent",
-        template="agentplane-runner",
+        template="runner",
         egress_policies=[
             BASIC_POLICY,
             PACKAGES_POLICY,

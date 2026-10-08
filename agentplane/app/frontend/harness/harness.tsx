@@ -136,7 +136,7 @@ const SANDBOXES: SandboxView[] = [
             state: {
               waiting: {
                 reason: "ImagePullBackOff",
-                message: 'Back-off pulling image "registry.test/agentplane-runner:harness"',
+                message: 'Back-off pulling image "registry.test/runner:harness"',
               },
             },
             ready: false,
@@ -1812,7 +1812,7 @@ routes.push(
       {
         name: "public-coder",
         title: "Public coder",
-        template: "agentplane-runner",
+        template: "runner",
         egress_policies: ["github-public"],
         action_policy_sets: ["public-coder"],
         kubernetes_grants: ["workspace-read"],
@@ -1998,7 +1998,7 @@ routes.push(
                 : [],
           },
   ],
-  ["GET", /^\/sandboxes\/templates$/, () => ["agentplane-runner"]],
+  ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
   [
     "GET",
     /^\/kubernetes-grants$/,

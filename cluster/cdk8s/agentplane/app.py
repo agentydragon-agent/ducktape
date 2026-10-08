@@ -88,7 +88,7 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "agentplane-app"
 _APP_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
-_RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner"
+_RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/runner"
 _RUNNER_PORT = 7000
 _LABELS = {"app.kubernetes.io/name": NAME}
 _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
@@ -143,7 +143,7 @@ class App(Construct):
             self,
             "runner-template",
             env,
-            name="agentplane-runner",
+            name="runner",
             image=_RUNNER_IMAGE,
             description=(
                 "The shared runner image, built to host an agent harness: the sandbox tools (git, "
