@@ -345,7 +345,9 @@ it("reports non-transient session-list failures instead of treating them as star
 
 it("shows creation progress, prevents duplicate clicks, and does not retry failed Opens", async () => {
   let fail!: (response: Response) => void;
-  const pending = new Promise<Response>((resolve) => { fail = resolve; });
+  const pending = new Promise<Response>((resolve) => {
+    fail = resolve;
+  });
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     request.method === "GET" ? Promise.resolve(Response.json([])) : pending
   );
@@ -393,7 +395,9 @@ it("recovers a lost Open from lookup without sending a second Open", async () =>
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(
       request.method === "GET"
-        ? Response.json(new URL(request.url).pathname.endsWith("/open") ? { status: "ready", session_id: publicId } : [])
+        ? Response.json(
+            new URL(request.url).pathname.endsWith("/open") ? { status: "ready", session_id: publicId } : []
+          )
         : Response.json({ detail: "connection lost" }, { status: 503 })
     )
   );
@@ -410,7 +414,9 @@ it("reload retains only the opaque key, never the Open spec or bootstrap", async
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(
       request.method === "GET"
-        ? Response.json(new URL(request.url).pathname.endsWith("/open") ? { status: "unconfirmed", session_id: null } : [])
+        ? Response.json(
+            new URL(request.url).pathname.endsWith("/open") ? { status: "unconfirmed", session_id: null } : []
+          )
         : Response.json({ detail: "connection lost" }, { status: 503 })
     )
   );

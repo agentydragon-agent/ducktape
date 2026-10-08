@@ -40,8 +40,8 @@ from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 from agentplane.runner.testing.unanswering_runner import UnansweringRunner
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.testing.backend import backend, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
@@ -606,13 +606,15 @@ def test_create_session_uses_service_id_and_preserves_legacy_open(
 
     monkeypatch.setattr(bridge, "create_session", create_session)
     path = "/sandboxes/live/sessions"
-    created = client.post(path, json={
-        "idempotency_key": "open-key", "spec": {"cwd": "/w/{session_id}"}, "setup_script": "bootstrap",
-    })
+    created = client.post(
+        path, json={"idempotency_key": "open-key", "spec": {"cwd": "/w/{session_id}"}, "setup_script": "bootstrap"}
+    )
     assert created.status_code == 201, created.text
     assert created.json()["sessionId"] == public_id
     assert received == [("live", "open-key", {"cwd": "/w/{session_id}"}, "bootstrap")]
-    assert client.post(path, json={"idempotency_key": "open-key", "session_id": "legacy", "spec": {}}).status_code == 422
+    assert (
+        client.post(path, json={"idempotency_key": "open-key", "session_id": "legacy", "spec": {}}).status_code == 422
+    )
 
 
 def test_open_lookup_reconciles_only_runner_confirmed_sessions(

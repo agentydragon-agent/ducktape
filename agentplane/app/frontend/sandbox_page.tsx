@@ -475,7 +475,9 @@ export function SandboxPage({
       if (result.status === "ready" && result.session_id) {
         await openThread(result.session_id, pendingOpen.openKey);
       } else if (result.status === "unconfirmed") {
-        setError("Open was reserved but the runner has not confirmed it. Check later, or explicitly discard it to start fresh; this attempt will not be retried.");
+        setError(
+          "Open was reserved but the runner has not confirmed it. Check later, or explicitly discard it to start fresh; this attempt will not be retried."
+        );
       } else {
         setError("No Open reservation exists for this attempt. You may discard it and start fresh.");
       }
