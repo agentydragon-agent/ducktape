@@ -92,7 +92,7 @@ flowchart TB
     HARNESS_PLUGINS["Unranked candidate<br/>project plugins and skill packages<br/>source trust and capability grants"]:::future
     HARNESS_PROMPT_SUGGESTIONS["Optional, lowest estimated win<br/>Claude prompt suggestions<br/>measure UX before enabling"]:::future
     THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
-    THREAD_ARCHIVE_OWNERSHIP["Deferred service boundary<br/>move Thread archive and read API out of app<br/>durable beyond Sandbox lifecycle"]:::decision
+    THREAD_ARCHIVE_OWNERSHIP["Deferred service boundary<br/>move Session Event archive/read out of app<br/>Thread folds remain a separate choice"]:::decision
     SANDBOX_COMPARTMENT_BOUNDARY["Priority trust-boundary decision<br/>co-resident Threads share filesystem and SA<br/>no false compartment isolation"]:::decision
     THREAD_PORTABLE_STATE["Deferred shared portability contract<br/>snapshot, fence, and restore runner/native state<br/>outside disposable Sandbox storage"]:::decision
     CLAUDE_PORTABLE_STATE["Conditional Claude implementation<br/>native snapshot/restore<br/>only on supported evidence"]:::future
@@ -873,50 +873,55 @@ app admission policy. No automatic cross-successor replay is implied.
 one, which is a durability and ownership question about the Thread record itself, separable from
 what any surface shows of it.
 
-### `THREAD_ARCHIVE_OWNERSHIP` — Thread history outside the UI app
+### `THREAD_ARCHIVE_OWNERSHIP` — Session Event archive outside the UI app
 
-**Deferred service-boundary decision:** move durable Thread identity, the ingested runner
-Event prefix, and the authorized raw read/follow API out of the integration app so agents
-can address a service-owned Thread history API directly. This does **not** decide where
-materialized Thread folds live. Sandbox Service is a plausible home because it opens
-runner sessions and owns runner reachability, but it currently owns Kubernetes intent
-and has no archive database; do not confuse historical Thread storage with the
-lifetime of a Sandbox CR, Pod, or PVC. Compare an archive component within Sandbox
-Service to an independently deployable Thread/history service; choose boundaries
-by durable ownership and least privilege, not by today's endpoint name.
+**Deferred service-boundary decision:** move the durable copy of runner Session Events
+and its authorized raw read/follow API out of the integration app so agents can read
+retained history through Sandbox Service. This does **not** choose where Thread folds,
+Thread identity/mapping, or operator UI metadata live. Sandbox Service is a plausible
+home because it opens runner sessions and owns runner reachability, but it currently
+owns Kubernetes intent and has no archive database; historical Event storage must
+outlive a Sandbox CR, Pod, or PVC. Compare an archive component within Sandbox Service
+to an independently deployable history service; choose by durable ownership and least
+privilege, not by today's endpoint names. `FollowSession` is a runner stream, not a
+retained-archive read after Sandbox deletion.
 
-The runner's journal remains authoritative for admission and Events until safely copied;
-the durable Event archive must survive deleted Sandboxes and have a fenced, replayable
-ingester and stable Thread IDs/cursors. Today the app folds each ingested Event batch
-in the same transaction as archive insertion. Decide fold ownership separately: folds
-might stay in the app as rebuildable, platform-independent UI-friendly projections
-of an authorized Event feed (retaining links to richer native/debug evidence), or move
-alongside the archive if agents need the same normalized view or atomic fold updates
-are important. A shared versioned fold implementation need not dictate where
-materialized rows live. If split, define projection epochs, checkpoint/replay,
-lag and failure behavior, native evidence links, and which service serves the folded
-feed; do not present a lagging fold as the archive's Event high-water mark. Co-locate
-Thread read grants with the new durable read authority; direct ServiceAccount requests
-require independently verified identity and per-Thread authorization, while browser
-requests can retain the app as UI facade only if its delegation is authenticated,
-scoped, and not a trusted arbitrary header. Moving the archive does not by itself
-make native history or workspace files portable.
+The runner's journal remains authoritative for admission and Event publication; the
+archive stores an independently replayable, contiguous copied prefix. Today the app
+copies each batch **and** advances its fold in one database transaction. That coupling
+is an implementation choice, not a requirement of append-only Event ingestion. The
+archive ingester can commit an Event batch and its own checkpoint independently of
+a fold projector. Replay from either the live runner while its journal exists or the
+retained archive after deletion allows the fold to catch up or rebuild. Validate
+source identity, cursor order and exact-payload duplicate replay; reject conflicting
+entries rather than silently overwriting them. If folding fails, retain and expose the
+raw prefix and explicit fold lag/error; do not stall archive ingestion just because a
+projection cannot interpret an Event. Each projector commits its own epoch/checkpoint
+with its derived rows, and fold views must never claim to cover a later raw cursor.
 
-**Migration gate:** define the one archive writer and a staged, observable transfer of
-existing Threads, Events, grants, and Event cursors/high-water state. Transfer fold rows,
-fold checkpoints, and folded feeds only if fold ownership moves; otherwise rebase the
-app's fold projection on the new authorized Event feed and prove replay/lag behavior.
-No app and service replicas may both claim archive ownership; pin old/new read behavior,
-revocation, operator access, and restart/lag cases. If a legacy conversion is
-destructive, make its loss explicit and deliberate rather than silently presenting
-incomplete histories as resumable. Split implementation into independently testable
-owner/ingestion/read/cutover slices after choosing the contract. Immediate
-`THREAD_READ_POLICY` can work while the app still owns the archive; its semantics must
-be portable to the eventual archive owner. If Sandbox Service exposes a Thread read API
-first, it must use an authorized durable archive source, not `FollowSession`: that RPC
-follows a runner Session and cannot serve a Thread retained after Sandbox deletion.
-Moving archive ownership first is a separate option. Neither path confers Thread-read
-authority from permission to inspect a Sandbox or Session.
+**Fold placement remains open:** folds could stay in the app as rebuildable,
+platform-independent UI-friendly projections (retaining links to richer native/debug
+evidence), or move alongside the archive if agent readers need the normalized view
+there. A shared, versioned fold implementation need not dictate where its materialized
+rows live. Either choice requires a documented replay, lag, error, native-link and
+authorization contract once archive and fold commits are decoupled. One `read` grant
+covers both folded and raw/native representations of the same history. Co-locate grant
+authority with the durable underlying history or define authenticated, scoped internal
+authorization across the boundary; do not trust an arbitrary forwarded caller header.
+Moving the Event archive does not itself make native harness state portable.
+
+**Migration gate:** define one durable archive authority and a staged, observable
+transfer of existing Session Event prefixes, source-to-Thread mappings, grants,
+feeds, and cursor/high-water state. Multiple ingester replicas can cooperate only
+with per-log claim/fencing or validated idempotent replay; there must not be two
+independent archive owners. Transfer fold rows/checkpoints only if fold ownership
+moves; otherwise point the app projector at the new replayable archive feed. Pin
+revocation, operator access, restart, lag, and deleted-Sandbox behavior. If a legacy
+conversion is destructive, make its loss explicit rather than claiming incomplete
+histories are resumable. Split owner/ingestion/read/cutover into independently testable
+slices. `THREAD_READ_POLICY` can work while the app owns the archive; its semantics
+must be portable to the eventual archive owner. If Sandbox Service exposes a history
+read API first, it needs an authorized durable archive source, not `FollowSession`.
 
 ### `SANDBOX_COMPARTMENT_BOUNDARY` — do not mistake Thread ACLs for isolation
 
