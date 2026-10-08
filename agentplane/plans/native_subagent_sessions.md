@@ -55,22 +55,22 @@ Its `multi_agent_v2` feature is a separate configuration to characterize, not an
 **Partial** identifies the exact remaining question. **Planned** means no new assertion yet.
 No row below claims a measured result before execution.
 
-| ID | Scenario and controlled stimulus | Claude Code | Codex app-server | Evidence needed before normalization |
-| --- | --- | --- | --- | --- |
-| S1 | Spawn one foreground child with a unique task marker | Added: `Agent` call produces a child model request | Added: namespaced `spawn_agent` produces a different model-request thread ID | Creation evidence, native identity, parent linkage, and when each becomes available |
-| S2 | Child runs a shell tool and returns a unique result | Added: child tool result round trip and forwarded tool frame's `parent_tool_use_id` | Partial: child tool result round trip; its model-request identity matches the spawn result | Which child tool inputs/results reach the runner, their attribution, and which require another subscription |
-| S3 | Child completes; parent consumes result and continues | Added: foreground `Agent` result returns to parent; parent completes | Added: `wait_agent` result and native completed collaboration item identify the same child and its completion | Distinguish delegation-tool completion, child completion, and parent-turn completion |
-| S4 | Observe child prose with forwarding defaults and explicit opt-in | Partial: default excludes child prose from standalone assistant text frames | Planned: compare parent stream with explicit child attachment | Full transcript vs summary; transport/subscription required; provenance of every message |
-| S5 | Two children active together; finish in reverse spawn order | Planned | Planned | Independent identities and terminal states; interleaved tool/text attribution; no imposed global ordering |
-| S6 | Child tool fails, then child handles it successfully | Planned | Planned | Tool failure must not be mistaken for session failure; preserve exit/error evidence |
-| S7 | Child model request fails terminally; parent continues | Planned | Planned | Failure event/result and correlation; distinguish harness failure from a tool error |
-| S8 | Interrupt child while its model exchange is held open | Planned: determine whether independent control exists | Planned: exercise native child control | Accepted control vs observed interruption; sibling/parent isolation; too-late behavior |
-| S9 | Parent completes, is interrupted, or exits while child is active | Planned: foreground and background separately | Planned | Whether child stops, outlives parent turn, or disappears with process; no inferred completion |
-| S10 | Disconnect client while retaining the harness, then reconnect | Planned: first establish supported transport | Planned | Enumeration vs events-only discovery; snapshot completeness; history replay and duplicate identity |
-| S11 | Restart harness and resume parent with completed and active children | Planned | Planned | Persisted child identity/history, recoverable execution, and explicit unrecoverable/lost state |
-| S12 | Child delegates to a grandchild within configured depth limits | Planned | Planned | Full ancestry vs root-only correlation; rejection at the limit without phantom sessions |
-| S13 | Send child another input after it completes; attempt independent resume | Planned | Planned | Same session vs successor identity, supported addressing, and capability boundaries |
-| S14 | Repeat core scenarios with alternate subagent configuration | Planned: prose forwarding and background execution | Planned: `multi_agent_v2`, then context-forking variants | Configuration-dependent behavior must not silently inherit the baseline contract |
+| ID  | Scenario and controlled stimulus                                        | Claude Code                                                                         | Codex app-server                                                                                              | Evidence needed before normalization                                                                        |
+| --- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| S1  | Spawn one background child with a unique task marker                    | Added: `Agent` call produces a child model request                                  | Added: namespaced `spawn_agent` produces a different model-request thread ID                                  | Creation evidence, native identity, parent linkage, and when each becomes available                         |
+| S2  | Child runs a shell tool and returns a unique result                     | Added: child tool result round trip and forwarded tool frame's `parent_tool_use_id` | Partial: child tool result round trip; its model-request identity matches the spawn result                    | Which child tool inputs/results reach the runner, their attribution, and which require another subscription |
+| S3  | Child completes; parent consumes result and continues                   | Added: async launch, parent turn end, child completion notification                 | Added: `wait_agent` result and native completed collaboration item identify the same child and its completion | Distinguish delegation-tool completion, child completion, and parent-turn completion                        |
+| S4  | Observe child prose with forwarding defaults and explicit opt-in        | Partial: default excludes child prose from standalone assistant text frames         | Planned: compare parent stream with explicit child attachment                                                 | Full transcript vs summary; transport/subscription required; provenance of every message                    |
+| S5  | Two children active together; finish in reverse spawn order             | Planned                                                                             | Planned                                                                                                       | Independent identities and terminal states; interleaved tool/text attribution; no imposed global ordering   |
+| S6  | Child tool fails, then child handles it successfully                    | Planned                                                                             | Planned                                                                                                       | Tool failure must not be mistaken for session failure; preserve exit/error evidence                         |
+| S7  | Child model request fails terminally; parent continues                  | Planned                                                                             | Planned                                                                                                       | Failure event/result and correlation; distinguish harness failure from a tool error                         |
+| S8  | Interrupt child while its model exchange is held open                   | Planned: determine whether independent control exists                               | Planned: exercise native child control                                                                        | Accepted control vs observed interruption; sibling/parent isolation; too-late behavior                      |
+| S9  | Parent completes, is interrupted, or exits while child is active        | Planned: foreground and background separately                                       | Planned                                                                                                       | Whether child stops, outlives parent turn, or disappears with process; no inferred completion               |
+| S10 | Disconnect client while retaining the harness, then reconnect           | Planned: first establish supported transport                                        | Planned                                                                                                       | Enumeration vs events-only discovery; snapshot completeness; history replay and duplicate identity          |
+| S11 | Restart harness and resume parent with completed and active children    | Planned                                                                             | Planned                                                                                                       | Persisted child identity/history, recoverable execution, and explicit unrecoverable/lost state              |
+| S12 | Child delegates to a grandchild within configured depth limits          | Planned                                                                             | Planned                                                                                                       | Full ancestry vs root-only correlation; rejection at the limit without phantom sessions                     |
+| S13 | Send child another input after it completes; attempt independent resume | Planned                                                                             | Planned                                                                                                       | Same session vs successor identity, supported addressing, and capability boundaries                         |
+| S14 | Repeat core scenarios with alternate subagent configuration             | Planned: prose forwarding and background execution                                  | Planned: `multi_agent_v2`, then context-forking variants                                                      | Configuration-dependent behavior must not silently inherit the baseline contract                            |
 
 ### Initial executable coverage
 
@@ -80,7 +80,8 @@ CI coverage:
 - `//agentplane/harness_tests/claude:test_tools`:
   `test_subagent_tool_frames_are_correlated_with_the_parent_call` covers S1–S3 and the default half
   of S4. The child executes `Bash`; its forwarded tool frame points to the parent's `Agent` call.
-  This does not yet establish a durable child session ID or an independent child transcript API.
+  The async launch result, `task_started`, and `task_notification` must agree on child identity.
+  This does not yet establish identity across restart or an independent child transcript API.
 - `//agentplane/harness_tests/codex:test_tools`:
   `test_subagent_spawn_and_wait_report_the_child_identity` covers S1, the upstream part of S2, and
   S3. It handles parent/child model exchanges in either order and checks native collaboration items
@@ -90,8 +91,7 @@ CI coverage:
 Single-agent tests keep their current configuration. Only the new Claude scenario enables `Agent`;
 only the new Codex scenario enables multi-agent tools. Neither changes production launch defaults.
 
-CI should run the existing affected targets; no live-inference job or new secret is needed. Tests
-have not been run as part of authoring this matrix. A first failure is diagnostic evidence to inspect,
+CI should run the existing affected targets; no live-inference job or new secret is needed. CI runs these assertions against the pinned binaries. A first failure is diagnostic evidence to inspect,
 not a reason to weaken an assertion into accepting either behavior. Fix the script if it did not
 reach the intended stimulus; update a behavioral expectation only against the actual native trace.
 

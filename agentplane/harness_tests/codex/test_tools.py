@@ -213,15 +213,13 @@ async def test_subagent_spawn_and_wait_report_the_child_identity(
     completed = [
         frame["params"]["item"]
         for frame in captured
-        if frame.get("method") == "item/completed"
-        and frame["params"]["item"]["type"] == "collabAgentToolCall"
+        if frame.get("method") == "item/completed" and frame["params"]["item"]["type"] == "collabAgentToolCall"
     ]
     assert {item["id"] for item in completed} == {"call_spawn_child", "call_wait_child"}
     started_ids = {
         frame["params"]["item"]["id"]
         for frame in captured
-        if frame.get("method") == "item/started"
-        and frame["params"]["item"]["type"] == "collabAgentToolCall"
+        if frame.get("method") == "item/started" and frame["params"]["item"]["type"] == "collabAgentToolCall"
     }
     assert started_ids == {"call_spawn_child", "call_wait_child"}
     for item in completed:

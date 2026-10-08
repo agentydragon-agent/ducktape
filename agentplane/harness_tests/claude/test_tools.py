@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest_bazel
 
 from agentplane.harness_tests.claude import anthropic_sse as sse, frames
@@ -112,57 +114,76 @@ async def test_file_edit_round_trip_changes_the_workspace(
 async def test_subagent_tool_frames_are_correlated_with_the_parent_call(
     claude: ClaudeHarness, anthropic_messages: AnthropicMessages
 ) -> None:
-    """Drive a real foreground Agent, including its own tool round trip, without a live model."""
+    """The pinned Agent launches asynchronously; parent completion does not finish the child."""
     async with claude.start(anthropic_messages, subagents=True) as run:
-        prompt = await run.send("Delegate the shell probe to a child, then report its result.")
+        try:
+            async with asyncio.timeout(45):
+                prompt = await run.send("Delegate the shell probe to a child, then report its result.")
 
-        async with await anthropic_messages.await_next_request() as exchange:
-            assert "Agent" in exchange.request.tool_names
-            stream = sse.message_stream(
-                [
-                    sse.ToolUse(
-                        "toolu_spawn_child",
-                        "Agent",
-                        {
-                            "description": "Child shell probe",
-                            "subagent_type": "general-purpose",
-                            "prompt": "Run the child shell probe and reply CHILD_DONE.",
-                        },
+                async with await anthropic_messages.await_next_request() as exchange:
+                    assert "Agent" in exchange.request.tool_names
+                    stream = sse.message_stream(
+                        [
+                            sse.ToolUse(
+                                "toolu_spawn_child",
+                                "Agent",
+                                {
+                                    "description": "Child shell probe",
+                                    "subagent_type": "general-purpose",
+                                    "prompt": "Run the child shell probe and reply CHILD_DONE.",
+                                },
+                            )
+                        ],
+                        model=MODEL,
                     )
-                ],
-                model=MODEL,
-            )
-            await exchange.send(*stream.events)
+                    await exchange.send(*stream.events)
 
-        async with await anthropic_messages.await_next_request() as exchange:
-            # An actual child model request, not a parent-generated description of delegation.
-            assert "Run the child shell probe" in "\n".join(exchange.request.texts("user"))
-            assert not exchange.request.tool_results
-            assert "Bash" in exchange.request.tool_names
-            stream = sse.message_stream(
-                [sse.ToolUse("toolu_child_shell", "Bash", {"command": "printf CHILD_TOOL_OUTPUT"})],
-                model=MODEL,
-            )
-            await exchange.send(*stream.events)
+                # The parent gets an async-launch result independently of the child's first request.
+                # Hold the child at the model boundary until the parent has finished its initial turn.
+                async with (
+                    await anthropic_messages.await_next_request() as first,
+                    await anthropic_messages.await_next_request() as second,
+                ):
+                    parent, child = (first, second) if first.request.tool_results else (second, first)
+                    (launched,) = parent.request.tool_results
+                    assert launched.tool_use_id == "toolu_spawn_child"
+                    assert launched.is_error is False
+                    assert "Async agent launched successfully" in launched.text
+                    assert "Run the child shell probe" in "\n".join(child.request.texts("user"))
+                    assert not child.request.tool_results
+                    assert "Bash" in child.request.tool_names
+                    stream = sse.message_stream([sse.Text("PARENT_WAITING")], model=MODEL)
+                    await parent.send(*stream.events)
+                    await parent.close()
+                    assert (await prompt.result()).result == "PARENT_WAITING"
+                    completion = run.events()
+                    stream = sse.message_stream(
+                        [sse.ToolUse("toolu_child_shell", "Bash", {"command": "printf CHILD_TOOL_OUTPUT"})],
+                        model=MODEL,
+                    )
+                    await child.send(*stream.events)
 
-        async with await anthropic_messages.await_next_request() as exchange:
-            (result,) = exchange.request.tool_results
-            assert result.tool_use_id == "toolu_child_shell"
-            assert result.is_error is False
-            assert "CHILD_TOOL_OUTPUT" in result.text
-            stream = sse.message_stream([sse.Text("CHILD_DONE")], model=MODEL)
-            await exchange.send(*stream.events)
+                async with await anthropic_messages.await_next_request() as exchange:
+                    (result,) = exchange.request.tool_results
+                    assert result.tool_use_id == "toolu_child_shell"
+                    assert result.is_error is False
+                    assert "CHILD_TOOL_OUTPUT" in result.text
+                    stream = sse.message_stream([sse.Text("CHILD_DONE")], model=MODEL)
+                    await exchange.send(*stream.events)
 
-        async with await anthropic_messages.await_next_request() as exchange:
-            (result,) = exchange.request.tool_results
-            assert result.tool_use_id == "toolu_spawn_child"
-            assert result.is_error is False
-            assert "CHILD_DONE" in result.text
-            stream = sse.message_stream([sse.Text("PARENT_DONE")], model=MODEL)
-            await exchange.send(*stream.events)
+                # Completion arrives as a new parent input, not as the earlier Agent tool result.
+                async with await anthropic_messages.await_next_request() as exchange:
+                    assert "CHILD_DONE" in "\n".join(exchange.request.texts("user"))
+                    stream = sse.message_stream([sse.Text("PARENT_DONE")], model=MODEL)
+                    await exchange.send(*stream.events)
 
-        assert (await prompt.result()).result == "PARENT_DONE"
-        assert run.running
+                assert (await completion.result()).result == "PARENT_DONE"
+                assert run.running
+        except BaseException:
+            # A failed script leaves model exchanges unanswered. EOF alone can wait for that child
+            # forever, hiding the assertion behind the Bazel target timeout.
+            await run.crash()
+            raise
 
     captured = run.native_frames()
     frames.assert_success(captured, "PARENT_DONE")
@@ -174,9 +195,23 @@ async def test_subagent_tool_frames_are_correlated_with_the_parent_call(
     ]
     assert child_tool_frames
     assert {frame["parent_tool_use_id"] for frame in child_tool_frames} == {"toolu_spawn_child"}
+    started = [frame for frame in captured if frame.get("subtype") == "task_started"]
+    (task,) = started
+    assert task["tool_use_id"] == "toolu_spawn_child"
+    assert task["is_backgrounded"] is True
+    launch_results = [
+        result for result in frames.tool_results(captured) if isinstance(result, dict) and "agentId" in result
+    ]
+    (launch_result,) = launch_results
+    assert launch_result["agentId"] == task["task_id"]
+    assert launch_result["isAsync"] is True
+    notifications = [frame for frame in captured if frame.get("subtype") == "task_notification"]
+    (notification,) = notifications
+    assert notification["task_id"] == task["task_id"]
+    assert notification["tool_use_id"] == "toolu_spawn_child"
+    assert notification["status"] == "completed"
     # Default forwarding exposes child tools, not the child's prose as a standalone assistant message.
     assert "CHILD_DONE" not in frames.assistant_texts(captured)
-
 
 if __name__ == "__main__":
     pytest_bazel.main()
