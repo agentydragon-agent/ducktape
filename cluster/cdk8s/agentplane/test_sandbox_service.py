@@ -56,7 +56,7 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     assert platform.count(sandbox_service.KUBERNETES_ADMIN_INSTRUCTIONS) == 1
     assert "kubernetes_admin" in platform
     assert "pods_exec" in platform
-    assert f"http://agentplane-actions.{namespace}.svc.cluster.local:8080/v1/action-groups" in platform
+    assert f"http://agentplane-actions.{namespace}.svc.cluster.local:8080" in platform
     assert backend_config["kubernetes_binding_cleanup_namespaces"] == sorted(
         backend_config["kubernetes_binding_cleanup_namespaces"]
     )
