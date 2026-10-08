@@ -30,8 +30,13 @@ POSTGRES_PORT = 5432
 
 # The logical databases services own on the shared Cluster; the initdb-owned
 # "app"/trajectory database needs no Database/role of its own.
-_ROLE_NAMES = ["actions", "egress", "notifications", "sessionhistory"]
+_ROLE_NAMES = ["actions", "egress", "notifications", "sandbox_service"]
 _ELECTRIC_ROLE = "electric"
+
+
+def _role_secret_name(role: str) -> str:
+    """PostgreSQL identifiers may contain underscores; Kubernetes Secret names may not."""
+    return f"postgres-{role.replace('_', '-')}"
 
 
 def postgres(env: Environment) -> cnpg.PostgresRef:
@@ -49,7 +54,7 @@ def _role_credentials(
     mint_db_role_secret(
         scope,
         id,
-        name=f"postgres-{role}",
+        name=_role_secret_name(role),
         namespace=cluster.namespace,
         role=role,
         host=cluster.rw.host,
@@ -92,7 +97,7 @@ class Db(Construct):
                         name=role,
                         ensure=ClusterSpecManagedRolesEnsure.PRESENT,
                         login=True,
-                        password_secret=ClusterSpecManagedRolesPasswordSecret(name=f"postgres-{role}"),
+                        password_secret=ClusterSpecManagedRolesPasswordSecret(name=_role_secret_name(role)),
                     )
                     for role in _ROLE_NAMES
                 ]
@@ -112,7 +117,7 @@ class Db(Construct):
             Database(
                 self,
                 f"database-{role}",
-                metadata=ApiObjectMetadata(name=role, namespace=env.namespace),
+                metadata=ApiObjectMetadata(name=role.replace("_", "-"), namespace=env.namespace),
                 cluster=DatabaseSpecCluster(name=cluster.name),
                 name=role,
                 owner=role,
