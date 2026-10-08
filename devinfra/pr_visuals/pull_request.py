@@ -1,4 +1,4 @@
-"""Find the open pull request a CI run was built for.
+"""Find the open or merged pull request a CI run was built for.
 
 A `workflow_run` event's `pull_requests` is empty for a fork's run, and for any run it is resolved when
 the event is delivered, not for the run's commit; so the PR is found from the run's head ref and commit.
@@ -18,13 +18,15 @@ class PullRequestRef:
     base_sha: str
 
 
-def find_open_pull_request(*, repository: str, head: str, head_sha: str, token: str) -> PullRequestRef | None:
-    """The open PR from ``head`` (``owner:branch``) whose head commit is ``head_sha``, if there is one.
+def find_reviewable_pull_request(*, repository: str, head: str, head_sha: str, token: str) -> PullRequestRef | None:
+    """Find an open or merged PR whose final head is the run's exact commit.
 
-    None means the run is for a commit that is no longer the head of an open PR: superseded by a newer push,
-    or its PR closed. Two such PRs raise: attaching a review to the wrong one is worse than publishing none.
+    Closed-unmerged PRs and superseded commits cannot receive reviews. A merged
+    PR can: publication may finish after merge. Ambiguous matches still raise.
     """
     with Github(auth=Auth.Token(token)) as github:
-        pulls = github.get_repo(repository).get_pulls(state="open", head=head)
-        pull = only([pull for pull in pulls if pull.head.sha == head_sha])
+        pulls = github.get_repo(repository).get_pulls(state="all", head=head)
+        pull = only(
+            [pull for pull in pulls if pull.head.sha == head_sha and (pull.state == "open" or pull.merged)]
+        )
         return None if pull is None else PullRequestRef(number=pull.number, base_sha=pull.base.sha)

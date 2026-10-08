@@ -16,6 +16,12 @@ every visual target the run covered rather than only the ones it re-executed —
 which takes a download-mode flag to hold
 (<devinfra/docs/bazel_caching.md> § Undeclared test outputs under BwoB).
 
+Publication can finish after merge: an open or merged PR can receive a review
+only for its exact final head SHA. Closed-unmerged PRs and superseded commits
+cannot receive comments. The publisher rechecks the PR before updating its
+singleton comment so a push during artifact processing does not replace a newer
+review with an older result.
+
 ## Opting a visual test in
 
 Use one of the shared harnesses and it's automatic:

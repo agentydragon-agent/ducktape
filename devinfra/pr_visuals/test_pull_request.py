@@ -7,13 +7,17 @@ import pytest
 import pytest_bazel
 
 from devinfra.pr_visuals import pull_request
-from devinfra.pr_visuals.pull_request import PullRequestRef, find_open_pull_request
+from devinfra.pr_visuals.pull_request import PullRequestRef, find_reviewable_pull_request
 
 HEAD_SHA = "a" * 40
 
 
-def _pull(number: int, *, head_sha: str = HEAD_SHA, base_sha: str = "b" * 40) -> SimpleNamespace:
-    return SimpleNamespace(number=number, head=SimpleNamespace(sha=head_sha), base=SimpleNamespace(sha=base_sha))
+def _pull(
+    number: int, *, head_sha: str = HEAD_SHA, base_sha: str = "b" * 40, state: str = "open", merged: bool = False
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        number=number, head=SimpleNamespace(sha=head_sha), base=SimpleNamespace(sha=base_sha), state=state, merged=merged
+    )
 
 
 @dataclass
@@ -39,19 +43,31 @@ class FakeGithub:
 def _find(monkeypatch: pytest.MonkeyPatch, pulls: list[SimpleNamespace]) -> tuple[PullRequestRef | None, FakeGithub]:
     github = FakeGithub(pulls)
     monkeypatch.setattr(pull_request, "Github", lambda **_kwargs: github)
-    found = find_open_pull_request(repository="example/repo", head="fork-owner:topic", head_sha=HEAD_SHA, token="t")
+    found = find_reviewable_pull_request(repository="example/repo", head="fork-owner:topic", head_sha=HEAD_SHA, token="t")
     return found, github
 
 
-def test_the_open_pr_whose_head_is_the_run_commit_is_found_by_its_head_ref(monkeypatch: pytest.MonkeyPatch) -> None:
-    found, github = _find(monkeypatch, [_pull(8733, base_sha="c" * 40)])
+@pytest.mark.parametrize(("state", "merged"), [("open", False), ("closed", True)], ids=["open", "merged"])
+def test_the_pr_whose_head_is_the_run_commit_is_found_by_its_head_ref(
+    monkeypatch: pytest.MonkeyPatch, state: str, merged: bool
+) -> None:
+    found, github = _find(monkeypatch, [_pull(8733, base_sha="c" * 40, state=state, merged=merged)])
 
     assert found == PullRequestRef(number=8733, base_sha="c" * 40)
-    assert github.queries == [{"state": "open", "head": "fork-owner:topic"}]
+    assert github.queries == [{"state": "all", "head": "fork-owner:topic"}]
 
 
-def test_a_pr_that_moved_on_to_a_newer_commit_is_not_the_runs_pr(monkeypatch: pytest.MonkeyPatch) -> None:
-    found, _ = _find(monkeypatch, [_pull(8733, head_sha="d" * 40)])
+@pytest.mark.parametrize(("state", "merged"), [("open", False), ("closed", True)], ids=["open", "merged"])
+def test_a_pr_that_moved_on_to_a_newer_commit_is_not_the_runs_pr(
+    monkeypatch: pytest.MonkeyPatch, state: str, merged: bool
+) -> None:
+    found, _ = _find(monkeypatch, [_pull(8733, head_sha="d" * 40, state=state, merged=merged)])
+
+    assert found is None
+
+
+def test_a_closed_unmerged_pr_is_not_reviewable(monkeypatch: pytest.MonkeyPatch) -> None:
+    found, _ = _find(monkeypatch, [_pull(8733, state="closed")])
 
     assert found is None
 
