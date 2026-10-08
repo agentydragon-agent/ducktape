@@ -18,10 +18,11 @@ the authority's notification/watch mechanism (PostgreSQL `NOTIFY` for Action Ser
 reconnect/replay from durable state rather than process-local memory. A single-replica deployment
 is an explicit temporary operational constraint, never an implicit correctness assumption.
 
-**Immediate operator priority:** `THREAD_READ_POLICY` — enable explicitly scoped
-ServiceAccount access to selected Thread history. Design it alongside
-`SANDBOX_COMPARTMENT_BOUNDARY`: app read filters cannot isolate co-resident sessions
-sharing a filesystem and ServiceAccount. Neither requires the hosted runtime pivot.
+**Immediate operator priority:** design `THREAD_READ_POLICY` — explicitly scoped
+ServiceAccount access to selected Session history and derived Thread views. Ship it
+after `THREAD_ARCHIVE_OWNERSHIP` provides an acyclic, durable archive source and
+`SANDBOX_COMPARTMENT_BOUNDARY` addresses co-resident sessions sharing a filesystem
+and ServiceAccount. None requires the hosted runtime pivot.
 
 Proposed execution order for the Thread correctness/UI track:
 
@@ -138,6 +139,7 @@ flowchart TB
 
     THREAD_OUTLIVES_SANDBOX --> AG
     SANDBOX_COMPARTMENT_BOUNDARY --> THREAD_READ_POLICY
+    THREAD_ARCHIVE_OWNERSHIP --> THREAD_READ_POLICY
     THREAD_OUTLIVES_SANDBOX --> THREAD_ON_DEMAND_RUNTIME
     THREAD_PORTABLE_STATE --> THREAD_ON_DEMAND_RUNTIME
     THREAD_PORTABLE_STATE --> CLAUDE_PORTABLE_STATE
@@ -905,10 +907,15 @@ evidence), or move alongside the archive if agent readers need the normalized vi
 there. A shared, versioned fold implementation need not dictate where its materialized
 rows live. Either choice requires a documented replay, lag, error, native-link and
 authorization contract once archive and fold commits are decoupled. One `read` grant
-covers both folded and raw/native representations of the same history. Co-locate grant
-authority with the durable underlying history or define authenticated, scoped internal
-authorization across the boundary; do not trust an arbitrary forwarded caller header.
-Moving the Event archive does not itself make native harness state portable.
+covers both folded and raw/native representations of the same history. If agents need
+folded reads through Sandbox Service while folds remain app-only, do not have Sandbox
+Service fetch them from the app: either materialize an agent-facing projection from
+the archived Events independently or defer folded agent reads. Keep canonical
+classification and grants in the archive authority, with the durable Session/Thread
+association available there without querying the app. An independent history service
+upstream of both the app and Sandbox Service is another acyclic option. Do not trust
+an arbitrary forwarded caller header. Moving the Event archive does not itself make
+native harness state portable.
 
 **Migration gate:** define one durable archive authority and a staged, observable
 transfer of existing Session Event prefixes, source-to-Thread mappings, grants,
@@ -919,9 +926,11 @@ moves; otherwise point the app projector at the new replayable archive feed. Pin
 revocation, operator access, restart, lag, and deleted-Sandbox behavior. If a legacy
 conversion is destructive, make its loss explicit rather than claiming incomplete
 histories are resumable. Split owner/ingestion/read/cutover into independently testable
-slices. `THREAD_READ_POLICY` can work while the app owns the archive; its semantics
-must be portable to the eventual archive owner. If Sandbox Service exposes a history
-read API first, it needs an authorized durable archive source, not `FollowSession`.
+slices. Design `THREAD_READ_POLICY` in parallel, but do not expose SA transcript
+reads through Sandbox Service until its source is an independent, durable archive:
+not an app-backed broker and not the live runner's `FollowSession`. Backfill existing
+app-held histories through a one-way migration, never a runtime service-to-app read.
+Block direct SA reads of app history rather than retaining a bypass of the new grants.
 
 ### `SANDBOX_COMPARTMENT_BOUNDARY` — do not mistake Thread ACLs for isolation
 
@@ -934,12 +943,13 @@ until stronger isolation is proved. Even matching compartments do not by themsel
 that differently privileged sessions may share credentials or working files.
 
 Decide where the Sandbox compartment is assigned and enforced on Open, including direct
-Sandbox Service callers: app owns durable Thread classification and grants; Sandbox Service
-must reject a launch incompatible with the current Sandbox trust domain rather than trusting
-an arbitrary client-supplied label. A launch preset may supply an initial value, not become
-a persistent Agent type. For existing co-resident Threads with mixed intended audiences,
-default to no ServiceAccount read exposure and require reviewed reclassification or a new
-Sandbox; do not silently merge their histories. Test mismatch, concurrent Open, same-name
+Sandbox Service callers: the independent history authority owns canonical classification
+and grants; Sandbox Service must reject a launch incompatible with the current Sandbox
+trust domain rather than trusting an arbitrary client-supplied label. A launch preset
+may supply an initial value, not become a persistent Agent type. For existing
+co-resident Threads with mixed intended audiences, default to no ServiceAccount read
+exposure and require reviewed reclassification or a new Sandbox; do not silently
+merge their histories. Test mismatch, concurrent Open, same-name
 Sandbox replacement, shared workspace/SA access, and historical archives after deletion.
 
 ### `THREAD_PORTABLE_STATE` — durable state beyond a Sandbox volume
@@ -1012,8 +1022,10 @@ does not yet.
 **Immediate design priority:** today `TokenReviewer` admits named ServiceAccount subjects,
 but the app's `require_caller` router dependency does not apply per-Thread authorization.
 An admitted token can read the full Thread list and raw Events, not just its own history.
-Do not add new token subjects as a substitute for per-Thread grants. Operator sessions
-retain their existing broader view; token authentication alone conveys no Thread scope.
+Do not add new token subjects as a substitute for scoped grants; remove direct SA
+access to app history routes before advertising Sandbox Service's grants. Operator
+sessions retain their existing broader view; token authentication alone conveys no
+history scope.
 
 **Leading scope candidate to evaluate:** operator-defined Thread _compartments_ (or
 collections), not agent types. A stable Thread has one explicit compartment and a
@@ -1022,10 +1034,10 @@ grants can handle exceptional delegation. Example: a director SA reads the compa
 for its own conversations, finance-private discussions, and selected public-coder work,
 but receives `send` authority only for a narrower set. Neither being a subordinate in an
 organizational hierarchy nor using the same launch preset grants access. Presets may
-suggest a compartment at launch, but app authorization must validate the assignment
-and persist it on the Thread, not infer it from the current preset, Sandbox, or runner
-session. Existing Threads need a default that exposes nothing to token callers until
-classified by an authorized operator.
+suggest a compartment at launch, but the independent history authority must validate
+and persist the assignment on durable history and its Thread association, not infer it
+from the current preset or live Sandbox. Existing histories need a default that
+exposes nothing to SA callers until classified by an authorized operator.
 
 Unlike hierarchical intelligence _levels_, compartments have no implied dominance:
 `read(finance-private)` does not imply `read(public-coder)` or `send(finance-private)`.
@@ -1043,7 +1055,7 @@ protect runner-local files or Sandbox credentials.
 **Design gate:** choose who creates compartments, assigns/reclassifies Threads, grants
 scoped verbs to ServiceAccounts, and revokes them; pin SA identity and replacement
 semantics without silently inheriting another principal's access. Filter list/discovery
-in the authoritative app store and check direct reads, Events, observations,
+in the authoritative history/policy store and check direct reads, Events, observations,
 evidence/frame routes, live feeds and replay at the same boundary. Treat an
 unauthorized Thread as not found, reauthorize reconnects, and stop feeds on revocation.
 Audit adjacent mutation, media, and bulk/sync endpoints before claiming that a caller
@@ -1052,7 +1064,7 @@ and deleted Sandboxes, two replicas, reclassification, and revocation during SSE
 Co-design the grant vocabulary with future `CROSS_THREAD_DELIVERY` and
 `THREAD_CREATE_POLICY`: **read does not imply send or create**. Do not block the
 first read implementation on choosing command versus mailbox delivery, a hosted
-Thread lifecycle, or a later `THREAD_ARCHIVE_OWNERSHIP` move.
+Thread lifecycle, or whether UI folds move with the durable Session Event archive.
 
 ### `CROSS_THREAD_DELIVERY` — send a message to another agent's Thread
 
