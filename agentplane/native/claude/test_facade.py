@@ -37,10 +37,7 @@ for frame in frames:
 @pytest.mark.parametrize("outcome", ["success", "error", "eof"])
 async def test_initialize_requires_its_control_reply(tmp_path: Path, outcome: str) -> None:
     async with AsyncNativeProcess(
-        tmp_path,
-        [sys.executable, "-c", PEER, outcome],
-        cwd=tmp_path,
-        environment=dict(os.environ),
+        tmp_path, [sys.executable, "-c", PEER, outcome], cwd=tmp_path, environment=dict(os.environ)
     ) as process:
         observed = process.frames()
         harness = facade.ClaudeHarness(process)
