@@ -3,10 +3,7 @@
 import pytest_bazel
 
 from agentplane.runner import protocol_pb2
-from agentplane.sandbox_service.instructions import (
-    combine_instructions,
-    render_platform_instructions,
-)
+from agentplane.sandbox_service.instructions import combine_instructions
 from agentplane.sandbox_service.protocol_pb2 import (
     SandboxBinding,
     SandboxDestination,
