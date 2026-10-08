@@ -1,4 +1,4 @@
-load("@aspect_bazel_lib//lib:jq.bzl", "jq")
+# gazelle:exclude test_visual.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
@@ -245,28 +245,30 @@ filegroup(
     srcs = ["harness/bundle.css"],
 )
 
-# The sweep's scenario table, derived from the scenes the harness mounts rather than listed again.
-jq(
-    name = "screenshot_scenarios",
-    testonly = True,
-    srcs = [":scenes_json"],
-    out = "harness/scenarios.json",
-    filter_file = "harness/scenarios.jq",
-)
-
 # Peak-burn hours and credit expiries render in the viewer's zone; the sweep's browser context is UTC.
 py_visual_test(
     name = "screenshots",
     # medium: 13 shots, each on a browser of its own, measured 22s.
     size = "medium",
     assets = [
+        ":scenes_json",
         "harness/index.html",
         ":screenshot_bundle_css",
     ],
+    env = {"FIXTURE_CATALOG": "$(rlocationpath :scenes_json)"},
     harness = ":screenshot_bundle_js",
     # Keeps the published names (<name>.png), so PR visual review compares each shot with its baseline.
     output_suffix = "",
-    scenarios = ":screenshot_scenarios",
+    test_deps = [
+        "//util/bazel:runfiles",
+        "//util/testing:viewports",
+        "//util/testing:visual_capture",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+    test_module = "aiquota.frontend.test_visual",
+    test_srcs = ["test_visual.py"],
     title = "aiquota dashboard",
 )
 

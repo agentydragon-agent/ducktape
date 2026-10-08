@@ -1,16 +1,17 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_visibility = ["//visibility:public"])
 
 TSCONFIG = "//haku/console/frontend:tsconfig"
 
 # Shared preview-screenshot harness. `mcp_mock.ts` owns only the JSON-RPC transport simulation;
-# each server package owns its fixtures and tiny installer beside its widgets. `emit_scenarios`
+# each server package owns its fixtures and tiny installer beside its widgets. `emit_fixtures`
 # derives a server's scenario table from its fixtures (see `preview_screenshots`).
 js_binary(
-    name = "emit_scenarios",
-    entry_point = "emit_scenarios.mjs",
+    name = "emit_fixtures",
+    entry_point = "emit_fixtures.mjs",
 )
 
 ts_library(
@@ -56,5 +57,21 @@ ts_library(
         "//:node_modules/react-dom",
         "//haku/console/frontend:theme",
         "//haku/console/frontend/tool_rendering:variant",
+    ],
+)
+
+py_library(
+    name = "preview_visual",
+    testonly = True,
+    srcs = ["preview_visual.py"],
+    deps = [
+        "//util/bazel:runfiles",
+        "//util/testing:viewports",
+        "//util/testing:visual_capture",
+        "//util/testing:visual_fixtures",
+        "@pypi//playwright",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

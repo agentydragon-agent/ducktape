@@ -1,6 +1,6 @@
 /**
- * Visual-test harness: the app mounted on canned data, nothing on the network. The `?page=` query
- * (set by the visual sweep) picks the route; `fetch` (stubbed by network.ts, imported first so the
+ * Visual-test harness: Python configures canned data and explicitly mounts the app. No scene registry.
+ * `fetch` (stubbed by network.ts, imported first so the
  * app's client captures the stub) answers API and Electric Shape routes. `EventSource` remains
  * only for the live sandbox, thread, and action-inventory views.
  */
@@ -9,6 +9,7 @@ import { TEST_REASONING_EFFORTS } from "../test_model_catalog";
 import "@mantine/core/styles.css";
 
 import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
 import App from "../app";
@@ -28,26 +29,16 @@ import {
   type SessionSummary,
 } from "../../../runner/protocol_pb";
 import { DisclosureVisual } from "./disclosure_visual";
-import { SCENARIOS, type Scenario } from "./scenario";
 import { LocalCommands } from "../threads/local_commands";
 import { streamRegistry } from "../stream_status";
 import { ThemeProvider } from "../theme";
 import rollout from "./realistic_rollout.json";
 import reportedRollout from "./reported_rollout.json";
 
-/** Resolved before any fixture is built: the scenario's fields are what the fixtures vary on. */
-function resolveScenario(): Scenario {
-  const name = new URLSearchParams(window.location.search).get("page") ?? "sandboxes";
-  const found: Scenario | undefined = SCENARIOS[name];
-  if (found === undefined) throw new Error(`unknown harness scenario ${name}`);
-  return found;
-}
-
-const scenario = resolveScenario();
-// Pages in a visual sweep share an origin. Each scene owns its local-command fixtures.
+// Each test owns its local-command fixtures.
 localStorage.clear();
 
-// The visual sweep freezes the wall clock before this bundle runs, so relative ages stay put.
+// The visual harness freezes the wall clock before this bundle runs, so relative ages stay put.
 const NOW = Date.now();
 const HOUR = 3_600_000;
 
@@ -172,14 +163,14 @@ const SANDBOXES: SandboxView[] = [
   },
 ];
 
-if (scenario.grantError) {
+function failGrantProvisioning(): void {
   const sandbox = SANDBOXES[0]!;
   sandbox.launch_grants_pending = true;
   sandbox.kubernetes_grants_ready = false;
   sandbox.kubernetes_grant_error = "ApiException (403)";
 }
 
-if (scenario.threadlessSandbox) {
+function addProvisioningSandbox(): void {
   SANDBOXES.push({
     name: "test-provisioning",
     uid: "0f9c1d2e-0000-4000-8000-000000000007",
@@ -406,7 +397,7 @@ const DECISIONS: Decision[] = [
   },
 ];
 
-/** The phone scenario shows the proxy unreachable, the desktop one its decisions; both fit on a page. */
+/** The phone fixture shows the proxy unreachable, the desktop one its decisions; both fit on a page. */
 function egressDecisions(): Decision[] | Response {
   if (window.matchMedia("(max-width: 600px)").matches) {
     return Response.json({ detail: "the egress proxy did not answer: connection refused" }, { status: 502 });
@@ -546,7 +537,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   },
 ];
 
-/** The `endedAttachment` scenario: the states thread's harness was shut down, and the runner feed has ended. */
+/** The `endedAttachment` fixture: the states thread's harness was shut down, and the runner feed has ended. */
 function withEndedAttachment(thread: ThreadView): ThreadView {
   return thread.session_id === "s-2"
     ? {
@@ -566,18 +557,7 @@ function withFailedTurn(thread: ThreadView): ThreadView {
     : thread;
 }
 
-function scenarioThread(thread: ThreadView): ThreadView {
-  if (scenario.realisticRollout && thread.session_id === "s-1")
-    return {
-      ...thread,
-      name: scenario.realisticRollout === "reported" ? "Reported thread excerpt" : "Completed diagnostic run",
-      harness: "HARNESS_CODEX",
-      active_turn_id: null,
-      last_turn_status: "TURN_STATUS_COMPLETED",
-    };
-  if (scenario.endedAttachment) return withEndedAttachment(thread);
-  return scenario.failedTurn ? withFailedTurn(thread) : thread;
-}
+let mapThread = (thread: ThreadView): ThreadView => thread;
 
 // A 32x32 checkerboard, 95 bytes: a real image, small enough to inline.
 const DIAGRAM_PNG =
@@ -590,21 +570,15 @@ const SSH_EXEC_RESULT = {
   user: "test-user",
   exit_code: 2,
   stdout: [
-    ...(scenario.hiddenCodepoints
-      ? ["review result: visible start \u202Ereversed\u202C, joined\u200Bword, and control\u001Bmarker"]
-      : [
-          "/home/test-user/test-archive:",
-          "total 1536",
-          ...Array.from({ length: 30 }, (_, index) => {
-            const day = index + 1;
-            return `-rw-r--r-- 1 test-user test-user 51200 Sep ${String(day).padStart(2)} 03:00 test-backup-2026-09-${String(day).padStart(2, "0")}.tar.zst`;
-          }),
-          "",
-        ]),
+    "/home/test-user/test-archive:",
+    "total 1536",
+    ...Array.from({ length: 30 }, (_, index) => {
+      const day = index + 1;
+      return `-rw-r--r-- 1 test-user test-user 51200 Sep ${String(day).padStart(2)} 03:00 test-backup-2026-09-${String(day).padStart(2, "0")}.tar.zst`;
+    }),
+    "",
   ].join("\n"),
-  stderr: scenario.hiddenCodepoints
-    ? "stderr contains a zero-width\u200B separator and U+202E bidi override\u202C\n"
-    : "ls: cannot access '/home/test-user/test-archive/test-missing': No such file or directory\n",
+  stderr: "ls: cannot access '/home/test-user/test-archive/test-missing': No such file or directory\n",
   stdout_truncated: false,
   stderr_truncated: false,
 };
@@ -640,11 +614,7 @@ const ACTIONS: ActionRequestView[] = [
     arguments: {
       host: "test-archive-host",
       user: "test-user",
-      command: scenario.longPendingAction
-        ? Array.from({ length: 55 }, (_, index) => `echo review-step-${index + 1}`).join("\n")
-        : scenario.hiddenCodepoints
-          ? 'printf "review \u202Ereversed\u202C zero\u200Bwidth control\u001B"'
-          : 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"',
+      command: 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"',
       timeout_seconds: 60,
     },
     title: "restart the test backup service",
@@ -1173,7 +1143,7 @@ function endedAttachmentRows(threadId: string): Record<string, unknown>[] {
  * vertical room at phone width, so the queued-input dot at the bottom falls off the page; the desktop
  * capture is where every state here is visible.
  */
-function statesRows(threadId: string): Record<string, unknown>[] {
+function statesRows(threadId: string, outcomes = false): Record<string, unknown>[] {
   const rows = [
     viewState(28, "t2"),
     item(7, "tool-0", ItemKind.TOOL_CALL, null, {
@@ -1196,20 +1166,8 @@ function statesRows(threadId: string): Record<string, unknown>[] {
       output: "42 passed",
       turn: "t2",
     }),
-    command(
-      24,
-      "queued-model",
-      "change_model",
-      scenario.pendingCommands === "outcomes" ? "failed" : "pending",
-      "Model unavailable"
-    ),
-    command(
-      25,
-      "queued-interrupt",
-      "interrupt_turn",
-      scenario.pendingCommands === "outcomes" ? "noop" : "pending",
-      "Target turn already ended"
-    ),
+    command(24, "queued-model", "change_model", outcomes ? "failed" : "pending", "Model unavailable"),
+    command(25, "queued-interrupt", "interrupt_turn", outcomes ? "noop" : "pending", "Target turn already ended"),
     // Admitted and still pending, so it renders inline as a pending message bubble rather than in
     // the pending-commands box below -- see projected_session.tsx's pendingSentMessage.
     command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),
@@ -1537,10 +1495,10 @@ function quietRecoveryRows(threadId: string): Record<string, unknown>[] {
   ];
 }
 
-function recoveryRows(threadId: string): Record<string, unknown>[] {
-  if (scenario.recovery === "quiet") return quietRecoveryRows(threadId);
+function recoveryRows(threadId: string, kind: "messages" | "tools" | "quiet"): Record<string, unknown>[] {
+  if (kind === "quiet") return quietRecoveryRows(threadId);
   const rows =
-    scenario.recovery === "tools"
+    kind === "tools"
       ? [
           item(10, "revised-tool", ItemKind.TOOL_CALL, null, {
             threadId,
@@ -1599,35 +1557,17 @@ function recoveryRows(threadId: string): Record<string, unknown>[] {
             }
           ),
         ];
-  if (scenario.recovery === "tools") rows[0].output_ref = payload(10, "revised-tool", "output", "aborted");
+  if (kind === "tools") rows[0].output_ref = payload(10, "revised-tool", "output", "aborted");
   return [{ ...viewState(40, null), thread_id: threadId }, ...rows];
 }
 
-function threadEntityRows(threadId: string): Record<string, unknown>[] {
-  if (scenario.realisticRollout) return realisticRolloutRows(threadId);
-  if (scenario.recovery) return recoveryRows(threadId);
-  if (scenario.shellCalls) return shellCallRows(threadId);
-  if (scenario.endedAttachment) return endedAttachmentRows(threadId);
-  if (scenario.failedTurn) return failedRows(threadId, scenario.failedTurn === "after-content");
-  if (scenario.interleavedEvents) return interleavedRows(threadId);
-  if (scenario.lifecycleGroup) return lifecycleGroupRows(threadId);
-  if (scenario.threadSetup) return setupRows(threadId);
-  if (scenario.markdownCodeFence) return codeFenceRows(threadId);
-  if (scenario.streamingInterleaved) return streamingInterleavedRows(threadId);
-  if (scenario.unfinishedReasoning) return unfinishedReasoningRows(threadId);
-  if (scenario.standaloneReasoning)
-    return standaloneReasoningRows(
-      threadId,
-      scenario.longReasoningPreview ?? false,
-      scenario.reasoningCodeFence ?? false,
-      scenario.longReasoningBody ?? false
-    );
-  if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
-  return standardRows(threadId, scenario.longReasoningPreview ?? false, scenario.longReasoningBody ?? false);
-}
+let threadEntityRows = (threadId: string): Record<string, unknown>[] =>
+  threadId === THREADS[2].id ? statesRows(threadId) : standardRows(threadId, false, false);
 
-function realisticRolloutRows(threadId: string): Record<string, unknown>[] {
-  const entries = scenario.realisticRollout === "reported" ? reportedRollout : rollout;
+function realisticRolloutRows(
+  threadId: string,
+  entries: typeof rollout | typeof reportedRollout
+): Record<string, unknown>[] {
   const rows = entries.map((entry, index) => {
     const cursor = index + 1;
     const id = `rollout-${cursor}`;
@@ -1673,7 +1613,7 @@ function threadScope(threadId: string): Record<string, string> {
   return { projection_epoch: CONVERSATION_EPOCH, through_cursor: String(through) };
 }
 
-if (scenario.pendingCommands === "mixed") {
+function rememberPendingInput(): void {
   const local = new LocalCommands(THREADS[2].id);
   local.remember(
     create(CommandSchema, {
@@ -1686,7 +1626,7 @@ if (scenario.pendingCommands === "mixed") {
   );
 }
 
-if (scenario.pendingCommands === "outcomes") {
+function rememberSettledCommands(): void {
   // A settled command shows while the browser that sent it still holds it.
   const local = new LocalCommands(THREADS[2].id);
   local.remember(
@@ -1856,7 +1796,7 @@ routes.push(
         },
       ],
       harnesses: {
-        HARNESS_CLAUDE: scenario.claudePaused ? [] : ["harness-claude-model", "next-model"],
+        HARNESS_CLAUDE: availableClaudeModels,
         HARNESS_CODEX: ["harness-codex-model"],
       },
     }),
@@ -1910,9 +1850,9 @@ routes.push(
     /^\/actions\/history$/,
     (_match, query) => {
       const past = ACTIONS.filter((request) => request.state !== "decision_pending");
-      return scenario.historyPaged && !query.has("cursor")
+      return pageActionHistory && !query.has("cursor")
         ? { items: past.slice(0, 2), next_cursor: "second-page" }
-        : { items: scenario.historyPaged ? past.slice(2) : past, next_cursor: null };
+        : { items: pageActionHistory ? past.slice(2) : past, next_cursor: null };
     },
   ],
   [
@@ -1943,7 +1883,7 @@ routes.push(
     "GET",
     /^\/action-groups$/,
     () =>
-      scenario.actionGroupsUnavailable
+      actionGroupsUnavailable
         ? Response.json({ detail: "the Action Service did not answer: connection refused" }, { status: 502 })
         : MCP_GROUPS,
   ],
@@ -1991,7 +1931,7 @@ routes.push(
     /^\/threads\/([0-9a-f-]+)$/,
     (match) => {
       const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === match[1]);
-      return thread && scenarioThread(thread);
+      return thread && mapThread(thread);
     },
   ]
 );
@@ -2122,7 +2062,7 @@ routes.push(
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/scope$/,
     (match) =>
-      scenario.sessionReplay === "unavailable"
+      syncScopeUnavailable
         ? // This persistent service failure is distinct from a retired epoch's 410, which the
           // production store resolves by reading the scope again.
           Response.json({ detail: "thread fold is temporarily unavailable" }, { status: 503 })
@@ -2134,7 +2074,7 @@ routes.push(
     (match, query, signal) =>
       query.get("live") !== "true"
         ? electricShape([], `visual-entities-${match[1]}`)
-        : scenario.sessionReplay === "reconnecting"
+        : !entityStreamConnected
           ? Response.json({ detail: "thread shape is temporarily unavailable" }, { status: 503 })
           : electricLive(`visual-entities-${match[1]}`, undefined, signal),
   ],
@@ -2143,9 +2083,7 @@ routes.push(
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
     (match, query, _signal, body) => {
       const rows = threadRows(match[1]).map((row) =>
-        scenario.sessionReplay === "catching-up" && row.entity_kind === "view_state"
-          ? { ...row, revision_cursor: "8" }
-          : row
+        withholdEntitySegments && row.entity_kind === "view_state" ? { ...row, revision_cursor: "8" } : row
       );
       return electricSubset(
         entitySubset(rows, subsetOf(query, body)).map((row) => shapeRow("thread_entity", row)),
@@ -2214,7 +2152,7 @@ routes.push(
     "POST",
     /^\/threads\/([0-9a-f-]+)\/commands$/,
     () =>
-      scenario.commandAdmissionTimedOut
+      commandAdmissionTimedOut
         ? Response.json({ detail: "runner admission was not confirmed within 15 seconds" }, { status: 504 })
         : UNANSWERED,
   ],
@@ -2254,11 +2192,11 @@ const WEDGED: WatchHealth = {
 };
 
 function watch(): WatchHealth {
-  return scenario.wedgedWatch ? WEDGED : FRESH;
+  return watchHealth;
 }
 
 /** Live inventory and action streams remain EventSource; projected threads use Electric fetches above.
- * A stream a scenario drops goes back to `CONNECTING`, as a browser's does when the network drops,
+ * A stream a fixture drops goes back to `CONNECTING`, as a browser's does when the network drops,
  * and never reconnects. */
 class HarnessEventSource extends EventTarget {
   static readonly CONNECTING = 0;
@@ -2279,26 +2217,23 @@ class HarnessEventSource extends EventTarget {
     if (url.pathname === "/live/threads") {
       const snapshot: ThreadsSnapshot = {
         sandboxes: SANDBOXES,
-        threads: THREADS_WITH_SANDBOXES.map(scenarioThread),
-        updates_connected: scenario.sidebarSource !== "database-disconnected",
+        threads: THREADS_WITH_SANDBOXES.map(mapThread),
+        updates_connected: threadDatabaseConnected,
         watch: watch(),
       };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (scenario.sidebarSource === "disconnected") this.drop();
+      if (dropThreadStream) this.drop();
       return;
     }
     if (url.pathname === "/live/sandboxes") {
       const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (scenario.inventoryDropped) this.drop();
+      if (dropInventoryStream) this.drop();
       return;
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
     if (url.pathname === "/actions/stream") {
-      const pending =
-        scenario.pendingActions || scenario.route.startsWith("/actions")
-          ? ACTIONS.filter((request) => request.state === "decision_pending")
-          : [];
+      const pending = includePendingActions ? ACTIONS.filter((request) => request.state === "decision_pending") : [];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(pending) }));
       return;
     }
@@ -2328,17 +2263,174 @@ class HarnessEventSource extends EventTarget {
 
 window.EventSource = HarnessEventSource as unknown as typeof EventSource;
 
-// Under the frozen clock no stream is ever off for any time at all, so the registry's runs ahead of
-// it instead: a stream off since the scene began has been off this long when it renders.
-const { outageAge } = scenario;
-if (outageAge !== undefined) streamRegistry.now = () => Date.now() + outageAge;
+// Mutable mock service state; Python fixture methods change it before mounting React.
+let availableClaudeModels = ["harness-claude-model", "next-model"];
+let pageActionHistory = false;
+let actionGroupsUnavailable = false;
+let commandAdmissionTimedOut = false;
+let syncScopeUnavailable = false;
+let entityStreamConnected = true;
+let withholdEntitySegments = false;
+let threadDatabaseConnected = true;
+let dropThreadStream = false;
+let dropInventoryStream = false;
+let includePendingActions = false;
+let watchHealth = FRESH;
 
-if (!scenario.disclosureVisual) window.location.hash = scenario.route;
+function mount(element: ReactNode): void {
+  const container = document.getElementById("app");
+  if (!container) throw new Error("missing #app");
+  createRoot(container).render(<ThemeProvider>{element}</ThemeProvider>);
+}
 
-const container = document.getElementById("app");
-if (!container) throw new Error("missing #app");
-createRoot(container).render(
-  <ThemeProvider>
-    {scenario.disclosureVisual ? <DisclosureVisual stage={scenario.disclosureVisual} /> : <App />}
-  </ThemeProvider>
-);
+/** Callable fixture builders, not a name-to-recipe dispatcher. Python owns their composition. */
+const visualHarness = {
+  mountApp(route: string): void {
+    window.location.hash = route;
+    mount(<App />);
+  },
+  mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
+    mount(<DisclosureVisual {...props} />);
+  },
+  failGrantProvisioning,
+  addProvisioningSandbox,
+  pauseClaude(): void {
+    availableClaudeModels = [];
+  },
+  staleWatch(): void {
+    watchHealth = WEDGED;
+  },
+  disconnectThreadDatabase(): void {
+    threadDatabaseConnected = false;
+  },
+  disconnectThreadStream(): void {
+    dropThreadStream = true;
+  },
+  disconnectInventoryStream(): void {
+    dropInventoryStream = true;
+  },
+  ageOutage(milliseconds: number): void {
+    streamRegistry.now = () => Date.now() + milliseconds;
+  },
+  showPendingActions(): void {
+    includePendingActions = true;
+  },
+  paginateActionHistory(): void {
+    pageActionHistory = true;
+  },
+  failActionGroups(): void {
+    actionGroupsUnavailable = true;
+  },
+  timeOutCommandAdmission(): void {
+    commandAdmissionTimedOut = true;
+  },
+  failSyncScope(): void {
+    syncScopeUnavailable = true;
+  },
+  disconnectEntityStream(): void {
+    entityStreamConnected = false;
+  },
+  withholdEntitySegments(): void {
+    withholdEntitySegments = true;
+  },
+  longPendingAction(): void {
+    ACTIONS[1]!.arguments = {
+      host: "test-archive-host",
+      user: "test-user",
+      timeout_seconds: 60,
+      command: Array.from({ length: 55 }, (_, index) => `echo review-step-${index + 1}`).join("\n"),
+    };
+  },
+  hiddenCodepoints(): void {
+    ACTIONS[1]!.arguments = {
+      host: "test-archive-host",
+      user: "test-user",
+      timeout_seconds: 60,
+      command: 'printf "review \u202Ereversed\u202C zero\u200Bwidth control\u001B"',
+    };
+    const result = {
+      ...SSH_EXEC_RESULT,
+      stdout: "review result: visible start \u202Ereversed\u202C, joined\u200Bword, and control\u001Bmarker",
+      stderr: "stderr contains a zero-width\u200B separator and U+202E bidi override\u202C\n",
+    };
+    ACTIONS[2]!.execution!.result = {
+      _meta: { "io.modelcontextprotocol/serverInfo": { name: "ssh-mcp", version: "4.0.3" } },
+      content: [{ type: "text", text: JSON.stringify(result) }],
+      structuredContent: result,
+      isError: false,
+    };
+  },
+  recovery(kind: "messages" | "tools" | "quiet"): void {
+    threadEntityRows = (id) => recoveryRows(id, kind);
+  },
+  failedTurn(afterContent: boolean): void {
+    mapThread = withFailedTurn;
+    threadEntityRows = (id) => failedRows(id, afterContent);
+  },
+  endedAttachment(): void {
+    mapThread = withEndedAttachment;
+    threadEntityRows = endedAttachmentRows;
+  },
+  interleavedEvents(): void {
+    threadEntityRows = interleavedRows;
+  },
+  lifecycleGroup(): void {
+    threadEntityRows = lifecycleGroupRows;
+  },
+  threadSetup(): void {
+    threadEntityRows = setupRows;
+  },
+  shellCalls(): void {
+    threadEntityRows = shellCallRows;
+  },
+  markdownCodeFence(): void {
+    threadEntityRows = codeFenceRows;
+  },
+  streamingInterleaved(): void {
+    threadEntityRows = streamingInterleavedRows;
+  },
+  unfinishedReasoning(): void {
+    threadEntityRows = unfinishedReasoningRows;
+  },
+  standaloneReasoning(longPreview: boolean, codeFence: boolean, longBody: boolean): void {
+    threadEntityRows = (id) => standaloneReasoningRows(id, longPreview, codeFence, longBody);
+  },
+  standardHistory(longPreview: boolean, longBody: boolean): void {
+    threadEntityRows = (id) => (id === THREADS[2].id ? statesRows(id) : standardRows(id, longPreview, longBody));
+  },
+  pendingCommands(): void {
+    threadEntityRows = (id) => statesRows(id);
+  },
+  commandOutcomes(): void {
+    threadEntityRows = (id) => statesRows(id, true);
+  },
+  rememberPendingInput,
+  rememberSettledCommands,
+  completedRollout(): void {
+    mapThread = (thread) =>
+      thread.session_id === "s-1"
+        ? {
+            ...thread,
+            name: "Completed diagnostic run",
+            harness: "HARNESS_CODEX",
+            active_turn_id: null,
+            last_turn_status: "TURN_STATUS_COMPLETED",
+          }
+        : thread;
+    threadEntityRows = (id) => realisticRolloutRows(id, rollout);
+  },
+  reportedRollout(): void {
+    mapThread = (thread) =>
+      thread.session_id === "s-1"
+        ? {
+            ...thread,
+            name: "Reported thread excerpt",
+            harness: "HARNESS_CODEX",
+            active_turn_id: null,
+            last_turn_status: "TURN_STATUS_COMPLETED",
+          }
+        : thread;
+    threadEntityRows = (id) => realisticRolloutRows(id, reportedRollout);
+  },
+};
+Object.assign(window, { agentplaneVisual: visualHarness });

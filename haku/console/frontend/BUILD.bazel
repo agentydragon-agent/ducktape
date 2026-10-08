@@ -1,4 +1,4 @@
-load("@aspect_bazel_lib//lib:jq.bzl", "jq")
+# gazelle:exclude test_visual.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
@@ -915,8 +915,7 @@ spa_bundle(
 # (harness/harness.tsx) to a PNG in the test's undeclared outputs, for eyeballing (see
 # AGENTS.md). Browser rendering runs on the RBE worker's display stack, so it is a test, not a
 # `bb run` binary. It is a generator, not a pixel-diff gate: it passes as long as every scene renders.
-# Swept by the Playwright scenario sweep at //util/testing:visual_sweep, one test per shot
-# (`--test_filter=<scene>-<scheme>` renders one).
+# Python tests in test_visual.py own interactions, readiness and capture.
 
 ts_library(
     name = "screenshot_harness_lib",
@@ -981,15 +980,6 @@ filegroup(
     srcs = ["harness/dist/harness.js"],
 )
 
-# The scenario table: every scene in light and dark, with how each is reached.
-jq(
-    name = "screenshot_scenarios",
-    srcs = [],
-    out = "harness/scenarios.json",
-    args = ["--null-input"],
-    filter_file = "harness/scenarios.jq",
-)
-
 py_visual_test(
     name = "screenshots",
     # medium: each of the 4 shards measures 35s alone and up to 63s with nine runs at once; `small` is 60s.
@@ -1002,12 +992,22 @@ py_visual_test(
     # The shell reads `localStorage`, frames another origin and parses its own location, and the mock
     # fetch parses relative `/api/…` URLs it never sends: it needs the origin of a real page.
     page_url = "https://haku-console.test/",
-    scenarios = ":screenshot_scenarios",
     # The shell frames Haku's UI, an origin that does not exist here: the fence answers it with a striped
     # test document, so layout overlap with the frame is visible in the image.
     served_documents = {"https://haku-ui.test/": "harness/mock_haku_ui.html"},
     shard_count = 4,
     stylesheets = [":styles_css"],
+    test_deps = [
+        "//util/testing:page_capture",
+        "//util/testing:viewports",
+        "//util/testing:visual_capture",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+    test_module = "haku.console.frontend.test_visual",
+    test_srcs = ["test_visual.py"],
     title = "Haku Console",
 )
 

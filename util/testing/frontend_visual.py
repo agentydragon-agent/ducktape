@@ -42,7 +42,7 @@ DETERMINISTIC_BROWSER_ARGS: list[str] = CONTAINER_BASE_BROWSER_ARGS + _FLAGS["de
 DISABLE_ANIMATIONS_CSS = get_required_path(own_repo_rlocation("util/testing/disable-animations.css")).read_text()
 
 
-# The instant the scenario sweep freezes page clocks to, so date-relative text renders the same on
+# The instant visual harnesses freeze page clocks to, so date-relative text renders the same on
 # every run. 2025-02-01T12:00:00Z.
 FROZEN_NOW_MS = 1_738_411_200_000
 

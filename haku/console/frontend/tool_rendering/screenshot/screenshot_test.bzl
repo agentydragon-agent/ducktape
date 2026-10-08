@@ -5,8 +5,7 @@ to produce one `py_visual_test` that renders that server's tool-call preview car
 fixture × variant × color scheme) plus a `visual-review.json`. The shared harness — the card
 renderer, the mount, the mock — lives in `//haku/console/frontend/tool_rendering/screenshot`; this
 macro only bundles the server's entry (an IIFE that imports the shared mount + that server's
-fixtures), derives the scenario table from the server's fixtures, and runs the shared sweep
-(`//util/testing:visual_sweep`).
+fixtures), exports fixture identities, and runs the Python tests in preview_visual.py.
 
 Co-locating fixtures + target per server means a widget change re-runs only that server's
 screenshots (per-target Bazel caching), and `pr_visuals.py` already aggregates every test
@@ -50,12 +49,12 @@ def preview_screenshots(name, entry, fixtures, deps, visibility = None):
         visibility = visibility,
     )
     js_run_binary(
-        name = name + "_scenarios",
+        name = name + "_fixtures",
         srcs = [fixtures],
-        outs = [name + "_scenarios.json"],
-        args = [fixtures, name + "_scenarios.json"],
+        outs = [name + "_fixtures.json"],
+        args = [fixtures, name + "_fixtures.json"],
         chdir = native.package_name(),
-        tool = "//haku/console/frontend/tool_rendering/screenshot:emit_scenarios",
+        tool = "//haku/console/frontend/tool_rendering/screenshot:emit_fixtures",
     )
     py_visual_test(
         name = name,
@@ -63,7 +62,10 @@ def preview_screenshots(name, entry, fixtures, deps, visibility = None):
         # to 130s with all seven running at once. large gave a 900s budget to under two minutes of work.
         size = "medium",
         harness = ":%s_bundle" % name,
-        scenarios = ":%s_scenarios" % name,
+        assets = [":%s_fixtures" % name],
+        env = {"FIXTURE_CATALOG": "$(rlocationpath :%s_fixtures)" % name},
+        test_module = "haku.console.frontend.tool_rendering.screenshot.preview_visual",
+        test_deps = ["//haku/console/frontend/tool_rendering/screenshot:preview_visual"],
         title = "Haku Console previews",
         # The harness is inlined into a page of no origin, whose relative `/api/…` URLs the mock
         # fetch parses and never sends: the base gives them something to resolve against.

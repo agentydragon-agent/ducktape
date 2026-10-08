@@ -154,7 +154,7 @@ async def test_screenshot_rounds_to_the_nearest_pixel_and_takes_the_whole_elemen
 async def test_screenshot_refuses_an_element_with_no_extent(page: Page) -> None:
     await page.set_content("<div id='empty'></div>")
 
-    with pytest.raises(ValueError, match=r"scene foo: selector='#empty' has no visible extent"):
+    with pytest.raises(ValueError, match=r"scene foo: .*has no visible extent"):
         await screenshot_element(page, "#empty", context="scene foo")
 
 

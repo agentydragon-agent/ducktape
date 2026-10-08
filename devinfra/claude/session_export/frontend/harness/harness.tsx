@@ -639,20 +639,19 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
     new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 
   if (url.pathname === "/api/status") {
-    const page = new URLSearchParams(window.location.search).get("page") ?? "";
-    return Promise.resolve(json(page.includes("_paired") ? pairedStatus : unpairedStatus));
+    return Promise.resolve(json(fixture === "sync-paired" ? pairedStatus : unpairedStatus));
   }
   if (url.pathname === "/api/pairing") return Promise.resolve(json({ authorization_url: "https://claude.ai/code" }));
   if (url.pathname === "/api/pairing/complete") return Promise.resolve(json(pairedStatus));
   if (url.pathname === "/api/sync") return Promise.resolve(new Response(null, { status: 202 }));
   if (url.pathname === "/v1/code/sessions") {
-    if (scenario.startsWith("SessionMarkdown"))
+    if (fixture === "markdown")
       return Promise.resolve(json({ data: [markdownSession], next_cursor: null, resume_token: null }));
     return Promise.resolve(
       json(
-        scenario.startsWith("SessionNoisySidebar")
+        fixture === "sidebar"
           ? { data: sidebarSessions, next_cursor: null, resume_token: null }
-          : scenario.startsWith("SessionNarrationVisibility")
+          : fixture === "narration"
             ? {
                 data: [
                   { ...narrationSession, git_branch: "feature/narration-fixture", repo_path: "~/code/sample-format" },
@@ -660,18 +659,17 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
                 next_cursor: null,
                 resume_token: null,
               }
-            : scenario.startsWith("SessionCompletedActivity")
+            : fixture === "completed-activity"
               ? { data: [noisySession], next_cursor: null, resume_token: null }
-              : scenario.startsWith("SessionNoisy")
+              : fixture === "noisy"
                 ? { data: [noisySession], next_cursor: null, resume_token: null }
                 : sessionPage
       )
     );
   }
   if (/^\/v1\/code\/sessions\/[^/]+\/events$/.test(url.pathname)) {
-    const page = new URLSearchParams(window.location.search).get("page") ?? "";
-    if (page.startsWith("SessionMarkdown")) return Promise.resolve(json(markdownEventPage));
-    if (page.startsWith("SessionLatestFirst")) {
+    if (fixture === "markdown") return Promise.resolve(json(markdownEventPage));
+    if (fixture === "history") {
       const cursor = url.searchParams.get("cursor");
       return Promise.resolve(
         json(
@@ -681,7 +679,7 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
         )
       );
     }
-    if (page.startsWith("SessionCompletedActivity")) {
+    if (fixture === "completed-activity") {
       return Promise.resolve(
         json({
           data: longCommandActivitySessionEvents,
@@ -691,7 +689,7 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
         })
       );
     }
-    if (page.startsWith("SessionNarrationVisibility")) {
+    if (fixture === "narration") {
       return Promise.resolve(
         json({
           data: narrationSessionEvents,
@@ -701,7 +699,7 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
         })
       );
     }
-    if (page.startsWith("SessionNoisy"))
+    if (fixture === "noisy" || fixture === "sidebar")
       return Promise.resolve(
         json({
           data: noisySessionEvents,
@@ -710,19 +708,20 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
           last_id: noisySessionEvents.at(-1)?.event_id,
         })
       );
-    const events = page.startsWith("SessionReadFileResult")
-      ? readFileEventPage
-      : page.startsWith("SessionToolResult")
-        ? toolResultEventPage
-        : page.startsWith("SessionSubagent")
-          ? subagentEventPage
-          : page.startsWith("SessionPeerMessage")
-            ? peerMessageEventPage
-            : page.startsWith("SessionPeerHold")
-              ? peerHoldEventPage
-              : page.startsWith("SessionLocalCommandRows")
-                ? localCommandEventPage
-                : eventPage;
+    const events =
+      fixture === "file-result"
+        ? readFileEventPage
+        : fixture === "tool-result"
+          ? toolResultEventPage
+          : fixture === "subagent"
+            ? subagentEventPage
+            : fixture === "peer-message"
+              ? peerMessageEventPage
+              : fixture === "peer-hold"
+                ? peerHoldEventPage
+                : fixture === "local-commands"
+                  ? localCommandEventPage
+                  : eventPage;
     return Promise.resolve(json(events));
   }
   return Promise.reject(new Error(`Unmocked session sync request: ${url.pathname}`));
@@ -732,418 +731,47 @@ window.fetch = mockFetch;
 
 const root = document.getElementById("app");
 if (!root) throw new Error("Visual test harness is missing #app");
-const scenario = new URLSearchParams(window.location.search).get("page") ?? "";
+const fixture = new URLSearchParams(window.location.search).get("page");
+if (
+  ![
+    "sync-paired",
+    "sync",
+    "markdown",
+    "history",
+    "completed-activity",
+    "narration",
+    "sidebar",
+    "noisy",
+    "file-result",
+    "tool-result",
+    "subagent",
+    "peer-message",
+    "peer-hold",
+    "local-commands",
+    "viewer",
+  ].includes(fixture ?? "")
+) {
+  throw new Error(`Unknown session fixture ${fixture}`);
+}
 try {
   window.localStorage.removeItem("claude-session-sidebar-visible");
   window.localStorage.removeItem("claude-session-sidebar-width");
 } catch {
   // The visual harness starts with its default sidebar state when storage is unavailable.
 }
-const pathname = scenario.startsWith("SessionSync") ? "/sync" : "/sessions";
+const pathname = fixture === "sync" || fixture === "sync-paired" ? "/sync" : "/sessions";
 
-function scrollTranscriptElementIntoView(element: HTMLElement): void {
-  const viewport = document.querySelector<HTMLDivElement>(
-    '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
-  );
-  if (viewport === null) return;
-  const viewportRect = viewport.getBoundingClientRect();
-  const elementRect = element.getBoundingClientRect();
-  const targetTop = Math.max(0, (viewport.clientHeight - elementRect.height) / 2);
-  viewport.scrollTop += elementRect.top - viewportRect.top - targetTop;
-  viewport.dispatchEvent(new Event("scroll"));
-}
-
-function clickDisclosureRightEdge(button: HTMLButtonElement): void {
-  scrollTranscriptElementIntoView(button);
-  const rect = button.getBoundingClientRect();
-  const parentRect = button.parentElement!.getBoundingClientRect();
-  if (rect.width < parentRect.width - 2) throw new Error("Disclosure does not fill its row");
-  if (rect.height > 28) throw new Error("Disclosure exceeds 28px");
-  const hit = document.elementFromPoint(rect.right - 2, rect.top + rect.height / 2);
-  if (!(hit instanceof HTMLElement) || !button.contains(hit)) {
-    throw new Error("Right edge of disclosure is not clickable");
-  }
-  hit.click();
-}
+// Expected fixture data only. Python owns interactions, layout assertions and capture readiness.
+Object.assign(window, {
+  __visualFixture__: {
+    longCommandActivityTitle,
+    longCommandActivityDetail,
+    noisyEventCount: noisySessionEvents.length,
+  },
+});
 
 createRoot(root).render(
   <MantineProvider defaultColorScheme="auto">
     <App pathname={pathname} />
   </MantineProvider>
 );
-
-if (
-  scenario.startsWith("SessionReadFileResult") ||
-  scenario.startsWith("SessionToolResult") ||
-  scenario.startsWith("SessionSubagent")
-) {
-  // A toggle that never mounts fails the scene on its readySelectors, which only exist inside the expanded tool run.
-  const expandFixtureDetails = (): void => {
-    const toggle = document.querySelector<HTMLButtonElement>("[data-tool-run-toggle]");
-    if (toggle === null) return;
-    toolDetailsObserver.disconnect();
-    toggle.click();
-    const toolRun = toggle.closest<HTMLElement>('[data-fold-kind="tool-run"]');
-    if (toolRun !== null) scrollTranscriptElementIntoView(toolRun);
-  };
-  const toolDetailsObserver = new MutationObserver(expandFixtureDetails);
-  toolDetailsObserver.observe(root, { childList: true, subtree: true, attributes: true });
-  expandFixtureDetails();
-}
-
-if (scenario.startsWith("SessionCompletedActivity")) {
-  let expanded = false;
-  const verifyActivitySummary = (): void => {
-    const details = [...document.querySelectorAll<HTMLDetailsElement>('[data-fold-kind="activity"]')].find(
-      (candidate) => candidate.querySelector("summary")?.getAttribute("title") === longCommandActivityTitle
-    );
-    if (details === undefined) return;
-    if (!expanded) {
-      const closedHeight = details.getBoundingClientRect().height;
-      root.dataset.completedActivityClosedHeight = String(closedHeight);
-      if (closedHeight > 28) throw new Error(`Collapsed completed activity is ${closedHeight}px tall`);
-      if (scenario.includes("Expanded")) {
-        expanded = true;
-        details.open = true;
-        return;
-      }
-    } else {
-      const title = details.querySelector<HTMLElement>("[data-activity-title]");
-      const detail = details.querySelector<HTMLElement>("[data-activity-detail]");
-      if (
-        !details.open ||
-        title?.textContent !== longCommandActivityTitle ||
-        detail?.textContent !== longCommandActivityDetail
-      ) {
-        throw new Error("Expanded completed activity omitted its full title or detail");
-      }
-      if (title.getBoundingClientRect().height <= 0 || detail.getBoundingClientRect().height <= 0) {
-        throw new Error("Expanded completed activity title or detail is not visible");
-      }
-    }
-    scrollTranscriptElementIntoView(details);
-    root.dataset.completedActivityReady = "true";
-    activityObserver.disconnect();
-  };
-  const activityObserver = new MutationObserver(verifyActivitySummary);
-  activityObserver.observe(root, { childList: true, subtree: true, attributes: true });
-  verifyActivitySummary();
-}
-
-if (scenario.startsWith("SessionMarkdown")) {
-  const verifyMarkdownSanitization = (): void => {
-    const userMarkdown = document.querySelector<HTMLElement>('[data-message-role="user"] .agentplane-markdown');
-    const assistantMarkdown = document.querySelector<HTMLElement>(
-      '[data-message-role="assistant"] .agentplane-markdown'
-    );
-    if (userMarkdown === null || assistantMarkdown === null) return;
-    markdownObserver.disconnect();
-
-    const markdownRoots = [userMarkdown, assistantMarkdown];
-    const unsafeElement = markdownRoots.some((markdown) => markdown.querySelector("script, img, [onclick], [onerror]"));
-    const unsafeLink = markdownRoots
-      .flatMap((markdown) => [...markdown.querySelectorAll<HTMLAnchorElement>("a")])
-      .some((link) => /^(javascript|data):/i.test(link.getAttribute("href") ?? ""));
-    const fixtureWindow = window as typeof window & { __sessionMarkdownFixtureExecuted?: boolean };
-    if (unsafeElement || unsafeLink || fixtureWindow.__sessionMarkdownFixtureExecuted !== undefined)
-      throw new Error("Markdown fixture retained executable HTML or an unsafe URL");
-
-    root.dataset.markdownSanitized = "true";
-  };
-  const markdownObserver = new MutationObserver(verifyMarkdownSanitization);
-  markdownObserver.observe(root, { childList: true, subtree: true, attributes: true });
-  verifyMarkdownSanitization();
-}
-
-if (scenario.startsWith("SessionNarrationVisibility")) {
-  // Layout is what jsdom cannot show: narration must be laid out, not CSS-hidden.
-  const markNarrationVisible = (): void => {
-    const narration = document.querySelector<HTMLElement>('[data-fold-kind="narration"]');
-    if (narration === null || narration.getBoundingClientRect().height <= 0) return;
-    scrollTranscriptElementIntoView(narration);
-    root.dataset.narrationReady = "true";
-    narrationObserver.disconnect();
-  };
-  const narrationObserver = new MutationObserver(markNarrationVisible);
-  narrationObserver.observe(root, { childList: true, subtree: true, attributes: true });
-  markNarrationVisible();
-}
-
-if (scenario.startsWith("SessionLatestFirst")) {
-  let prepending = false;
-  let thinkingDetails: HTMLDetailsElement | null = null;
-  let thinkingTop = 0;
-  const failAnchorScenario = (message: string): never => {
-    root.dataset.historyAnchorReady = "true";
-    root.dataset.historyAnchorError = message;
-    throw new Error(message);
-  };
-  const stopWatchingTail = (): void => {
-    tailObserver.disconnect();
-    document.removeEventListener("scroll", verifyNewestFirstHistory, true);
-  };
-  const verifyNewestFirstHistory = (): void => {
-    const viewport = document.querySelector<HTMLDivElement>(
-      '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
-    );
-    const latestCard = document.querySelector<HTMLElement>('[data-history-sequences~="17"]');
-    if (viewport === null || latestCard === null || viewport.scrollHeight <= viewport.clientHeight) return;
-    const viewportRect = viewport.getBoundingClientRect();
-    const latestRect = latestCard.getBoundingClientRect();
-    // The latest message can have bottom spacing or an event strip after it.
-    // Assert the scroll position and message visibility, not a card-edge coincidence.
-    const atTail = Math.abs(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight) <= 1;
-    const latestVisible = latestRect.bottom > viewportRect.top && latestRect.top < viewportRect.bottom;
-    if (!atTail || !latestVisible) return;
-    root.dataset.latestTailReady = "true";
-    if (scenario !== "SessionLatestFirstAnchor") {
-      stopWatchingTail();
-      return;
-    }
-
-    const details = document.querySelector<HTMLDetailsElement>('details[aria-label="Thinking"]');
-    if (details === null) return;
-    stopWatchingTail();
-    const detailsRect = details.getBoundingClientRect();
-    viewport.scrollTop += detailsRect.top - viewportRect.top - 100;
-    viewport.dispatchEvent(new Event("scroll"));
-    details.open = true;
-    window.requestAnimationFrame(() => {
-      thinkingDetails = details;
-      thinkingTop = details.getBoundingClientRect().top;
-      const loadOlder = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-        button.textContent?.includes("Load older events")
-      );
-      if (loadOlder === undefined) {
-        failAnchorScenario("The older-history control is missing at the initial tail");
-        return;
-      }
-      prepending = true;
-      loadOlder.click();
-    });
-  };
-  // Scrolling to the tail fires `scroll`, not a DOM mutation, and the tail is part of what is awaited.
-  const tailObserver = new MutationObserver(verifyNewestFirstHistory);
-  tailObserver.observe(root, { childList: true, subtree: true, attributes: true });
-  document.addEventListener("scroll", verifyNewestFirstHistory, true);
-  verifyNewestFirstHistory();
-
-  if (scenario === "SessionLatestFirstAnchor") {
-    const observer = new MutationObserver(() => {
-      if (!prepending || !document.querySelector('[data-history-sequences~="1"]')) return;
-      window.requestAnimationFrame(() => {
-        const viewport = document.querySelector<HTMLDivElement>(
-          '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
-        );
-        const details = document.querySelector<HTMLDetailsElement>('details[aria-label="Thinking"]');
-        const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find((candidate) =>
-          candidate.textContent?.includes("Load older events")
-        );
-        if (viewport === null || details === null || details !== thinkingDetails || !details.open) {
-          failAnchorScenario("Prepending older history replaced or closed the open thinking disclosure");
-          return;
-        }
-        if (button !== undefined) {
-          failAnchorScenario("The exhausted older-history cursor left the load control enabled");
-          return;
-        }
-        const displacement = Math.abs(details.getBoundingClientRect().top - thinkingTop);
-        if (displacement > 1.5) {
-          failAnchorScenario(`Prepending older history moved the visible anchor by ${displacement.toFixed(1)}px`);
-          return;
-        }
-        root.dataset.historyAnchorReady = "true";
-        observer.disconnect();
-      });
-    });
-    observer.observe(root, { childList: true, subtree: true, attributes: true });
-  }
-}
-
-if (scenario.startsWith("SessionNoisy")) {
-  let openedInspector = false;
-  let filtered = false;
-  let expanded = false;
-  const observer = new MutationObserver(() => {
-    if (!document.querySelector('[data-message-role="assistant"]') && !openedInspector) return;
-    if (!scenario.includes("Raw") && !scenario.includes("Hook")) {
-      if (document.querySelector('[data-fold-kind="notice"]')) throw new Error("Hook noise leaked into the transcript");
-      if (scenario.includes("Thinking")) {
-        const thinking = document.querySelector<HTMLDetailsElement>('[data-fold-kind="thinking"]');
-        if (thinking === null) {
-          document.querySelector<HTMLButtonElement>('[data-tool-group-toggle][aria-expanded="false"]')?.click();
-          return;
-        }
-        thinking.open = true;
-        scrollTranscriptElementIntoView(thinking);
-      }
-      root.dataset.noisyReady = "true";
-      observer.disconnect();
-      return;
-    }
-    if (!openedInspector) {
-      openedInspector = true;
-      document.querySelector<HTMLButtonElement>('[aria-label="Show raw event stream"]')?.click();
-      return;
-    }
-    const rawRows = document.querySelectorAll<HTMLDetailsElement>("[data-raw-event]");
-    if (rawRows.length === 0) return;
-    if (scenario.includes("Hook")) {
-      if (!filtered) {
-        filtered = true;
-        const select = document.querySelector<HTMLSelectElement>('[aria-label="Event kind"]')!;
-        select.value = "system · hook_response";
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-        return;
-      }
-      if ([...rawRows].some((row) => !row.querySelector("summary")?.textContent?.includes("hook_response"))) return;
-      if (!expanded) {
-        expanded = true;
-        rawRows[0]?.querySelector("summary")?.click();
-        if (rawRows[0] !== undefined) scrollTranscriptElementIntoView(rawRows[0]);
-        return;
-      }
-      if (!document.querySelector("[data-event-json]")) return;
-    } else if (rawRows.length !== noisySessionEvents.length) {
-      throw new Error("The event inspector omitted stored events");
-    } else {
-      const viewport = document.querySelector<HTMLDivElement>(
-        '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
-      );
-      if (viewport !== null) {
-        viewport.scrollTop = 0;
-        viewport.dispatchEvent(new Event("scroll"));
-      }
-    }
-    root.dataset.noisyReady = "true";
-    observer.disconnect();
-  });
-  observer.observe(root, { childList: true, subtree: true, attributes: true });
-}
-
-if (scenario.startsWith("SessionNoisySidebar")) {
-  const sidebarObserver = new MutationObserver(() => {
-    if (root.dataset.noisyReady !== "true") return;
-
-    if (scenario.endsWith("_mobile")) {
-      const toggle = document.querySelector<HTMLButtonElement>('button[aria-controls="session-sidebar-mobile"]');
-      if (toggle?.getAttribute("aria-expanded") !== "true") {
-        toggle?.click();
-        return;
-      }
-      const drawer = document.body.querySelector<HTMLElement>(".mantine-Drawer-root");
-      if (drawer?.querySelector("#session-sidebar-mobile") == null) return;
-      sidebarObserver.disconnect();
-      // The drawer slides in over a CSS transition that starts a frame after it mounts. It is the open
-      // scene only once that has finished: fully opaque, with nothing in flight.
-      const markOpenOnceArrived = (): void => {
-        const content = drawer.querySelector<HTMLElement>(".mantine-Drawer-content")!;
-        if (getComputedStyle(content).opacity === "1" && drawer.getAnimations({ subtree: true }).length === 0) {
-          root.dataset.sidebarReady = "mobile-open";
-        } else {
-          requestAnimationFrame(markOpenOnceArrived);
-        }
-      };
-      markOpenOnceArrived();
-      return;
-    }
-
-    if (scenario.includes("Collapsed")) {
-      const toggle = document.querySelector<HTMLButtonElement>('button[aria-controls="session-sidebar"]');
-      if (toggle?.getAttribute("aria-expanded") !== "false") {
-        toggle?.click();
-        return;
-      }
-      root.dataset.sidebarReady = "collapsed";
-      sidebarObserver.disconnect();
-      return;
-    }
-
-    if (scenario.includes("Wide")) {
-      const separator = document.querySelector<HTMLElement>("[data-session-sidebar-resizer]");
-      if (separator === null) return;
-      separator.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
-      root.dataset.sidebarReady = "wide";
-      sidebarObserver.disconnect();
-      return;
-    }
-
-    root.dataset.sidebarReady = "expanded";
-    sidebarObserver.disconnect();
-  });
-  sidebarObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
-}
-
-if (scenario.startsWith("SessionNoisyTimeline")) {
-  let opened = false;
-  let expanded = false;
-  const observer = new MutationObserver(() => {
-    const strips = [...document.querySelectorAll<HTMLElement>("[data-event-strip]")];
-    if (strips.length === 0) return;
-    const sequences = strips.flatMap((strip) => strip.dataset.historySequences!.split(" "));
-    if (sequences.length !== noisySessionEvents.length || new Set(sequences).size !== sequences.length) {
-      throw new Error("Timeline must represent every loaded event exactly once");
-    }
-    const strip = strips[0]!;
-    if (!opened) {
-      for (const item of strips) {
-        if (item.getBoundingClientRect().height > 28) throw new Error("Collapsed event strip exceeds 28px");
-        if (item.querySelectorAll("[data-event-dot]").length > 12) throw new Error("Unbounded timeline dot count");
-        if (item.scrollWidth > item.clientWidth + 1) throw new Error("Event strip overflows the transcript");
-      }
-      if (document.querySelector("[data-event-json]")) throw new Error("Timeline expanded JSON by default");
-      if (document.querySelectorAll('[data-fold-kind="tool-run"]').length > 3)
-        throw new Error("Adjacent tool work was not grouped");
-      if (scenario.includes("Expanded")) {
-        opened = true;
-        strip.querySelector<HTMLButtonElement>("[data-event-dot]")!.click();
-        return;
-      }
-    }
-    if (scenario.includes("Expanded")) {
-      const detail = strip.querySelector<HTMLDetailsElement>("[data-raw-event]");
-      if (detail === null) return;
-      if (!expanded) {
-        expanded = true;
-        detail.querySelector("summary")!.click();
-        return;
-      }
-      if (!strip.querySelector("[data-event-json]")) return;
-    }
-    scrollTranscriptElementIntoView(strip);
-    root.dataset.timelineReady = "true";
-    observer.disconnect();
-  });
-  observer.observe(root, { childList: true, subtree: true, attributes: true });
-}
-
-if (scenario.startsWith("SessionNoisyActivity")) {
-  let stage = 0;
-  const observer = new MutationObserver(() => {
-    const group = document.querySelector<HTMLElement>('[data-fold-kind="tool-group"]');
-    if (group === null) return;
-    if (stage === 0) {
-      if (group.getBoundingClientRect().height > 28) throw new Error("Collapsed tool group exceeds 28px");
-      if (group.querySelector('[data-fold-kind="tool-run"]')) throw new Error("Tool group expanded by default");
-      if (scenario.includes("Expanded")) {
-        stage = 1;
-        clickDisclosureRightEdge(group.querySelector<HTMLButtonElement>("[data-tool-group-toggle]")!);
-        return;
-      }
-    }
-    if (scenario.includes("Expanded")) {
-      const tool = group.querySelector<HTMLButtonElement>("[data-tool-run-toggle]");
-      if (tool === null) return;
-      if (stage === 1) {
-        stage = 2;
-        clickDisclosureRightEdge(tool);
-        return;
-      }
-      if (!group.querySelector("[data-tool-file-preview]")) return;
-    }
-    scrollTranscriptElementIntoView(group);
-    root.dataset.activityReady = "true";
-    observer.disconnect();
-  });
-  observer.observe(root, { childList: true, subtree: true, attributes: true });
-}

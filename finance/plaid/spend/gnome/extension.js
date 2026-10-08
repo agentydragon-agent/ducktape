@@ -299,6 +299,7 @@ const PlaidSpendIndicator = GObject.registerClass(
         '<node><interface name="works.allegedly.PlaidSpendTest">' +
           '<method name="Reload"><arg type="s" direction="in" name="path"/></method>' +
           '<method name="OpenMenu"/>' +
+          '<method name="WaitForPaint"/>' +
           '<method name="CloseMenu"/>' +
           '<method name="GetPanelLabel"><arg type="s" direction="out" name="label"/></method>' +
           '<method name="GetMenuText"><arg type="s" direction="out" name="text"/></method>' +
@@ -306,6 +307,16 @@ const PlaidSpendIndicator = GObject.registerClass(
           "</interface></node>",
         {
           Reload: (path) => this._loadFixtureFile(path),
+          WaitForPaintAsync: (_params, invocation) => {
+            const signal = global.stage.connect("after-paint", () => {
+              global.stage.disconnect(signal);
+              GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                invocation.return_value(null);
+                return GLib.SOURCE_REMOVE;
+              });
+            });
+            global.stage.queue_redraw();
+          },
           OpenMenu: () => this.menu.open(false),
           CloseMenu: () => this.menu.close(false),
           GetPanelLabel: () => this._label.get_text(),

@@ -9,6 +9,7 @@ import json
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from dataclasses import replace
 from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
@@ -58,8 +59,8 @@ from agentplane.app.threads.view.views import ThreadFeedErrorState, ThreadOperat
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 from util.testing.visual_review import upsert_review_asset
-from util.testing.visual_scenarios import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 from util.visual_review import VisualReviewAsset
 
 # gazelle:include_dep @pypi//protobuf
@@ -806,7 +807,7 @@ async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thre
 @pytest.mark.parametrize("raw", [False, True], ids=["normal", "raw"])
 @pytest.mark.parametrize(
     ("viewport", "resized_viewport"),
-    [(DESKTOP, DESKTOP.model_copy(update={"height": SMALL_MOBILE.height})), (MOBILE, SMALL_MOBILE)],
+    [(DESKTOP, replace(DESKTOP, height=SMALL_MOBILE.height)), (MOBILE, SMALL_MOBILE)],
     ids=["desktop", "phone"],
 )
 async def test_thread_follows_bottom_until_reader_scrolls_up(

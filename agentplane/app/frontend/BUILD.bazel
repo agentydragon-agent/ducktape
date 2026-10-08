@@ -1,5 +1,8 @@
-# The visual macro collects this test module under :visual so its PNGs keep the same gallery identity.
-# gazelle:exclude test_visual_interactions.py
+# gazelle:exclude test_visual_disclosures.py
+# gazelle:exclude test_visual_history.py
+# gazelle:exclude test_visual_policies.py
+# gazelle:exclude test_visual_navigation.py
+# gazelle:exclude test_visual_scenes.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
@@ -7,7 +10,8 @@ load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
-load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+load("//devinfra/python:defs.bzl", "py_library")
+load(":visual_tests.bzl", "agentplane_visual_test")
 load(":vitest.bzl", "agentplane_vitest_test")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
@@ -1172,30 +1176,15 @@ vitest_config(
     setup_files = ["test_setup.ts"],
 )
 
-# Visual render-health tests: the app mounted by harness/harness.tsx on canned inventory and runner
-# events (fetch and EventSource stubbed, nothing on the network), one scenario per row of
-# harness/scenarios.json, the PNGs published for PR visual review on the shared
-# //util/testing/frontend_visual machinery.
-#
-# The fixture tables: the harness reads both to mount a scene by `?page=`. The generic sweep
-# captures scenarios.json; Python Playwright tests drive and capture interaction_scenarios.json.
+# Python visual tests mount the app against canned inventory and runner events.
+# Python calls fixture builders and mounts explicitly; JSON files contain recorded event rows only.
 js_library(
-    name = "visual_scenarios_json",
+    name = "visual_rollouts",
     testonly = True,
     srcs = [
-        "harness/interaction_scenarios.json",
         "harness/realistic_rollout.json",
         "harness/reported_rollout.json",
-        "harness/scenarios.json",
     ],
-)
-
-ts_library(
-    name = "visual_scenario",
-    testonly = True,
-    srcs = ["harness/scenario.ts"],
-    tsconfig = TSCONFIG,
-    deps = [":visual_scenarios_json"],
 )
 
 ts_library(
@@ -1219,8 +1208,7 @@ ts_library(
         ":stream_status",
         ":test_model_catalog",
         ":theme",
-        ":visual_scenario",
-        ":visual_scenarios_json",
+        ":visual_rollouts",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -1261,41 +1249,36 @@ filegroup(
     srcs = ["harness/bundle.css"],
 )
 
-# Every scenario in both fixture tables, each on its own browser -- `shard_count` buys the
-# parallelism per-scenario targets used to give, without BUILD repeating the scene list. Filter
-# static scenes by scenario name and interactive scenes by Python test name; see AGENTS.md.
-#
-# medium: a shard renders 20-21 scenarios, each on its own browser. The six shards took 32-59s in a
-# run alone (invocation b4c9de0e-a2bd-4dd7-9cf4-336af5fc7295) and up to 74s with three such runs and
-# a test batch going at once (92260881-030d-484a-aa4c-d78914a4fe46), past `small`'s 60s.
-#
-# devtools_viewport: the phone scenarios' 2.625 device scale factor is where Playwright's viewport
-# renders a few pixels differently from the DevTools one the published images were rendered with.
-py_visual_test(
-    name = "visual",
-    size = "medium",
-    assets = [
-        "harness/index.html",
-        "harness/interaction_scenarios.json",
-        ":visual_bundle_css",
-    ],
-    devtools_viewport = True,
-    env = {"INTERACTION_SCENARIOS_PATH": "$(rlocationpath harness/interaction_scenarios.json)"},
-    harness = ":visual_bundle_js",
-    scenarios = "harness/scenarios.json",
-    shard_count = 6,
-    test_deps = [
-        "//util/testing:page_capture",
-        "//util/testing:undeclared_outputs",
-        "//util/testing:visual_scenarios",
-        "@pypi//playwright",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-    test_module = "agentplane.app.frontend.test_visual_interactions",
-    test_srcs = ["test_visual_interactions.py"],
-    title = "Agentplane",
+agentplane_visual_test(
+    name = "visual_scenes",
+    src = "test_visual_scenes.py",
+    shard_count = 2,
+    title = "Agentplane: mounted views",
+)
+
+agentplane_visual_test(
+    name = "visual_disclosures",
+    src = "test_visual_disclosures.py",
+    title = "Agentplane: disclosures",
+)
+
+agentplane_visual_test(
+    name = "visual_history",
+    src = "test_visual_history.py",
+    shard_count = 2,
+    title = "Agentplane: history",
+)
+
+agentplane_visual_test(
+    name = "visual_navigation",
+    src = "test_visual_navigation.py",
+    title = "Agentplane: navigation",
+)
+
+agentplane_visual_test(
+    name = "visual_policies",
+    src = "test_visual_policies.py",
+    title = "Agentplane: policies",
 )
 
 js_test(
@@ -1321,3 +1304,34 @@ agentplane_vitest_test(
 )
 
 check_vitest_specs()
+
+py_library(
+    name = "visual_assertions",
+    testonly = True,
+    srcs = ["visual_assertions.py"],
+    deps = [
+        "//util/testing:page_capture",
+        "//util/testing:undeclared_outputs",
+        "//util/testing:visual_capture",
+        "@pypi//playwright",
+    ],
+)
+
+py_library(
+    name = "visual_app",
+    srcs = ["visual_app.py"],
+    deps = ["@pypi//playwright"],
+)
+
+py_library(
+    name = "visual_fixtures",
+    testonly = True,
+    srcs = ["visual_fixtures.py"],
+    deps = [
+        ":visual_app",
+        "//util/testing:viewports",
+        "//util/testing:visual_capture",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)

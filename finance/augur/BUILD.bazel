@@ -125,6 +125,8 @@ py_test(
         "//util/bazel:runfiles",
         "//util/testing:asgi",
         "//util/testing:frontend_visual",
+        "//util/testing:page_capture",
+        "//util/testing:stable_capture",
         "//util/testing:undeclared_outputs",
         "//util/testing:visual_review",
         "@pypi//playwright",

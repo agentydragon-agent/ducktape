@@ -28,7 +28,7 @@ from agentplane.protocol import event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_scenarios import DESKTOP, Viewport
+from util.testing.viewports import DESKTOP, Viewport
 
 # gazelle:include_dep @pypi//protobuf
 

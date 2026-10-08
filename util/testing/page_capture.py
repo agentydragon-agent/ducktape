@@ -5,8 +5,8 @@ context options, set by `frontend_visual.deterministic_browser_context`. What is
 records or waits for, and each recorder is a value the caller holds, so asserting on a page nobody
 instrumented cannot be written.
 
-Loading content and orchestrating several shots stay with the caller: `visual_sweep` for a table of
-harness scenes, a bespoke driver for anything else.
+Loading content and orchestrating shots stay with the test. `visual_capture` combines these
+primitives with deterministic page lifecycles and visual-review publication.
 """
 
 from __future__ import annotations
@@ -17,11 +17,13 @@ import math
 import re
 from collections.abc import Awaitable, Callable, Mapping
 from types import MappingProxyType
+from typing import Literal
 
 from playwright.async_api import (
     CDPSession,
     Error as PlaywrightError,
     FloatRect,
+    Locator,
     Page,
     Request,
     Route,
@@ -102,7 +104,7 @@ async def wait_for_stable(page: Page) -> None:
     """Wait until the page is done rendering what it has: fonts applied, images decoded, a frame painted.
 
     Finishes as soon as those hold, and cannot pass early on a loaded runner the way a sleep can.
-    Deliberately does not await `document.getAnimations()`: the sweep pins every animation with
+    Deliberately does not await `document.getAnimations()`: harness pages pin animations with
     `animation-play-state: paused`, and a paused animation's `finished` never settles, so awaiting it
     would hang instead of capturing.
 
@@ -229,9 +231,23 @@ async def screenshot_element(page: Page, selector: str, *, context: str) -> byte
     screenshot does: a fractional height such as 1630.4 would otherwise publish one row taller.
     An element taller than the viewport is captured whole.
     """
-    if (element := await page.query_selector(selector)) is None:
+    locator = page.locator(selector)
+    if await locator.count() == 0:
         raise LookupError(f"{context}: {selector=} matched no element")
-    box = await element.evaluate(_ELEMENT_BOX_JS)
+    return await screenshot_locator(page, locator, context=context)
+
+
+async def screenshot_locator(
+    page: Page,
+    target: Locator,
+    *,
+    context: str,
+    scale: Literal["css", "device"] = "device",
+    animations: Literal["allow", "disabled"] = "allow",
+) -> bytes:
+    if (count := await target.count()) != 1:
+        raise ValueError(f"{context}: screenshot target must match exactly one element, got {count}")
+    box = await target.evaluate(_ELEMENT_BOX_JS)
     x, y = _round_half_up(box["x"]), _round_half_up(box["y"])
     clip: FloatRect = {
         "x": x,
@@ -240,8 +256,8 @@ async def screenshot_element(page: Page, selector: str, *, context: str) -> byte
         "height": _round_half_up(box["height"] + box["y"] - y),
     }
     if clip["width"] == 0 or clip["height"] == 0:
-        raise ValueError(f"{context}: {selector=} has no visible extent: {clip=}")
-    return await page.screenshot(clip=clip, full_page=True)
+        raise ValueError(f"{context}: screenshot target has no visible extent: {clip=}")
+    return await page.screenshot(clip=clip, full_page=True, scale=scale, animations=animations)
 
 
 def _round_half_up(value: float) -> int:

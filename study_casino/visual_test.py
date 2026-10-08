@@ -33,6 +33,7 @@ from study_casino.config import Settings
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context, stability_style
+from util.testing.page_capture import PageErrors, wait_for_stable
 from util.testing.postgres_fixtures import start_postgres_container
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
@@ -155,17 +156,14 @@ async def _render_case(playwright: Playwright, origin: str, case: Case, out_dir:
         playwright, viewport=case.viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
     ) as context:
         page = await context.new_page()
-        page_errors: list[str] = []
-        page.on("pageerror", lambda e: page_errors.append(f"{e}\n{getattr(e, 'stack', '')}"))
+        page_errors = PageErrors(page)
         await page.goto(f"{origin}/{case.query}", wait_until="networkidle", timeout=30_000)
         await page.add_style_tag(content=stability_style())
         await page.get_by_text(case.visible_text).first.wait_for(state="visible", timeout=15_000)
-        # Force fonts to settle before screenshot.
-        await page.evaluate("() => document.fonts.ready.then(() => true)")
+        await wait_for_stable(page)
         actual_path = out_dir / f"{case.name}.{suffix}.png"
         await page.screenshot(path=str(actual_path), full_page=True, animations="disabled", caret="hide", scale="css")
-        if page_errors:
-            raise AssertionError(f"{case.name} raised browser page errors:\n" + "\n".join(page_errors))
+        page_errors.assert_none(context=case.name)
         return actual_path
 
 
