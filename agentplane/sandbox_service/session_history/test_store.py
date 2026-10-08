@@ -94,7 +94,10 @@ async def test_registration_is_stable_across_retries_and_replicas(engine: AsyncE
 
     async def register(store: Store, sandbox_uid: UUID, runner_session_id: str = "s-1") -> UUID:
         return await store.register(
-            sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=sandbox_uid, runner_session_id=runner_session_id
+            sandbox_namespace="testing",
+            sandbox_name="worker",
+            sandbox_uid=sandbox_uid,
+            runner_session_id=runner_session_id,
         )
 
     first, second = await asyncio.gather(register(left, uid), register(right, uid))
