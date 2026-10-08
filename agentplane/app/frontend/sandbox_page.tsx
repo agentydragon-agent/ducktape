@@ -27,6 +27,7 @@ import {
   displayableError,
   findThread,
   listSessions,
+  lookupOpen,
   modelsForHarness,
   harnessOptions,
   openSession,
@@ -55,20 +56,14 @@ import {
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { StaleNotice } from "./stream_status";
 import { TopbarTitle } from "./topbar";
-import {
-  HarnessState,
-  SessionSpecSchema,
-  SetupState,
-  type SessionSpec,
-  type SessionSummary,
-} from "../../runner/protocol_pb";
+import { HarnessState, SessionSpecSchema, SetupState, type SessionSummary } from "../../runner/protocol_pb";
 
-// Persist only the retry identity, never instructions or setup scripts (which can contain secrets).
+// Persist only the Open key, never instructions or setup scripts (which can contain secrets).
 function pendingOpenKey(sandbox: string): string {
   return `agentplane:pending-open:${sandbox}`;
 }
 
-type PendingOpen = { sessionId: string; spec?: SessionSpec; setupScript?: string };
+type PendingOpen = { openKey: string };
 
 function setupLabel(state: SetupState): string {
   switch (state) {
@@ -279,11 +274,15 @@ export function SandboxPage({
   const [sessionList, setSessionList] = useState<"loading" | "waiting" | "ready" | { error: string }>("loading");
   const [creatingSession, setCreatingSession] = useState(false);
   const [pendingOpen, setPendingOpen] = useState<PendingOpen | null>(() => {
-    const sessionId = sessionStorage.getItem(pendingOpenKey(name));
-    return sessionId ? { sessionId } : null;
+    const openKey = sessionStorage.getItem(pendingOpenKey(name));
+    return openKey ? { openKey } : null;
   });
+  useEffect(() => {
+    const openKey = sessionStorage.getItem(pendingOpenKey(name));
+    setPendingOpen(openKey ? { openKey } : null);
+  }, [name]);
   function rememberOpen(attempt: PendingOpen | null): void {
-    if (attempt) sessionStorage.setItem(pendingOpenKey(name), attempt.sessionId);
+    if (attempt) sessionStorage.setItem(pendingOpenKey(name), attempt.openKey);
     else sessionStorage.removeItem(pendingOpenKey(name));
     setPendingOpen(attempt);
   }
@@ -437,44 +436,25 @@ export function SandboxPage({
 
   async function createSession(): Promise<void> {
     if (!sandbox || !model || creatingSession || pendingOpen) return;
-    const sessionId = `s-${crypto.randomUUID()}`;
-    const attempt: PendingOpen = {
-      sessionId,
-      spec: fromJson(SessionSpecSchema, {
-        harness,
-        cwd: cwdTemplate.replaceAll("{session_id}", sessionId),
-        model,
-        reasoningEffort: effort,
-        instructions,
-      } as JsonValue),
-      setupScript,
-    };
-    // Record the ID *before* sending Open. A lost response or reload cannot mint another
-    // session implicitly. Keep the original request in memory for exact same-tab retries.
-    rememberOpen(attempt);
-    await retryOpen(attempt);
-  }
-
-  async function retryOpen(attempt: PendingOpen): Promise<void> {
-    if (creatingSession) return;
+    const openKey = crypto.randomUUID();
+    const spec = fromJson(SessionSpecSchema, {
+      harness,
+      cwd: cwdTemplate, // Sandbox Service expands {session_id} after reserving the public ID.
+      model,
+      reasoningEffort: effort,
+      instructions,
+    } as JsonValue);
+    // Only the opaque key survives reload. In particular, never persist instructions or bootstrap.
+    rememberOpen({ openKey });
     setCreatingSession(true);
     setError(null);
     try {
-      // A previous Open may have succeeded despite a lost response. Prefer its mapping.
-      if (await findThread(name, attempt.sessionId)) {
-        await openThread(attempt.sessionId);
-        return;
-      }
-      if (!attempt.spec) {
-        setError(
-          "The original Open request is unavailable after a reload. Check for its Thread again later, or explicitly discard this attempt."
-        );
-        return;
-      }
-      await openSession(name, attempt.sessionId, attempt.spec, attempt.setupScript);
-      await openThread(attempt.sessionId);
+      const attached = await openSession(name, openKey, spec, setupScript);
+      if (!attached.sessionId) throw new Error("Open returned without a Session ID");
+      await openThread(attached.sessionId, openKey);
     } catch (reason: unknown) {
-      setError(displayableError(reason));
+      // Outcome may be ambiguous. Do not replay Open or bootstrap, even in this tab.
+      setError(`${displayableError(reason)} Check this attempt before starting another session.`);
     } finally {
       setCreatingSession(false);
     }
@@ -485,14 +465,15 @@ export function SandboxPage({
     setCreatingSession(true);
     setError(null);
     try {
-      const thread = await findThread(name, pendingOpen.sessionId);
-      if (thread) {
-        rememberOpen(null);
-        onOpenThread(thread.id);
-      } else {
+      const result = await lookupOpen(name, pendingOpen.openKey);
+      if (result.status === "ready" && result.session_id) {
+        await openThread(result.session_id, pendingOpen.openKey);
+      } else if (result.status === "unconfirmed") {
         setError(
-          `No Thread record yet for ${pendingOpen.sessionId}. The runner may still be processing Open; check again later. Discarding this attempt can create a separate session.`
+          "Open was reserved but the runner has not confirmed it. Check later, or explicitly discard it to start fresh; this attempt will not be retried."
         );
+      } else {
+        setError("No Open reservation exists for this attempt. You may discard it and start fresh.");
       }
     } catch (reason: unknown) {
       setError(displayableError(reason));
@@ -501,11 +482,11 @@ export function SandboxPage({
     }
   }
 
-  async function openThread(sessionId: string): Promise<void> {
+  async function openThread(sessionId: string, resolvedOpenKey?: string): Promise<void> {
     try {
       const thread = threadBySession[sessionId] ?? (await findThread(name, sessionId));
       if (!thread) throw new Error(`Thread metadata is not available for session ${sessionId}`);
-      if (sessionStorage.getItem(pendingOpenKey(name)) === sessionId) rememberOpen(null);
+      if (resolvedOpenKey && sessionStorage.getItem(pendingOpenKey(name)) === resolvedOpenKey) rememberOpen(null);
       onOpenThread(thread.id);
     } catch (reason: unknown) {
       setError(displayableError(reason));
@@ -648,20 +629,12 @@ export function SandboxPage({
             {pendingOpen && (
               <Stack gap="xs">
                 <Text size="sm" role="status">
-                  Open for {pendingOpen.sessionId} may have succeeded. Do not start another session until you have
-                  checked this attempt.{" "}
-                  {pendingOpen.spec
-                    ? "Retry sends the same ID, specification, and setup script, even if you edit the form."
-                    : "After a reload the original specification and setup script are unavailable; only the ID was saved."}
+                  Open attempt {pendingOpen.openKey} may have succeeded. Check its status before starting another
+                  session. An unconfirmed attempt is never retried automatically.
                 </Text>
                 <Group gap="xs">
-                  {pendingOpen.spec && (
-                    <Button disabled={creatingSession} onClick={() => void retryOpen(pendingOpen)}>
-                      Retry same session
-                    </Button>
-                  )}
                   <Button disabled={creatingSession} variant="light" onClick={() => void checkPendingOpen()}>
-                    Check for Thread
+                    Check Open status
                   </Button>
                   <Button
                     disabled={creatingSession}

@@ -61,7 +61,8 @@ Kubernetes ownership labels, stored bindings, identities, and PVC policy remain 
 - `CreateSession`: new explicit Open with Sandbox destination, caller-scoped idempotency key,
   and selected overrides (no runner ID). A durable public Session UUID and effective launch
   settings are committed before runner contact; the Service returns the UUID and an attachment
-  snapshot with that public ID. Concurrent or response-lost retries use the original settings;
+  snapshot with that public ID. A `{session_id}` placeholder in a selected `cwd` override
+  is expanded to that UUID after reservation, just like the stored default cwd. Concurrent or response-lost retries use the original settings;
   a changed request with the same key is rejected. `ResumeSession`, `FollowSession`, and
   `SubmitCommand` accept the returned ID and resolve it to the retained runner ID within the
   pinned Sandbox UID. The key is not a Session ID and does not apply to runner-discovered native

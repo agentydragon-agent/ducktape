@@ -252,7 +252,9 @@ it("uses the bound working directory template and setup script for later Threads
   await render(sessions);
   await act(async () => newSession().click());
   const body = await postedBody(sessions);
-  expect(body.spec.cwd).toMatch(/^\/state\/custom\/s-[^/]+\/work$/);
+  expect(body.spec.cwd).toBe("/state/custom/{session_id}/work");
+  expect(body.idempotency_key).toMatch(/^[0-9a-f-]{36}$/);
+  expect(body.session_id).toBeUndefined();
   expect(body.setup_script).toBe("printf 'ready\\n'");
 });
 
@@ -341,7 +343,7 @@ it("reports non-transient session-list failures instead of treating them as star
   expect(container.textContent).not.toContain("Waiting for the sandbox runner");
 });
 
-it("shows creation progress, prevents duplicate clicks, and restores the button after failure", async () => {
+it("shows creation progress, prevents duplicate clicks, and does not retry failed Opens", async () => {
   let fail!: (response: Response) => void;
   const pending = new Promise<Response>((resolve) => {
     fail = resolve;
@@ -358,7 +360,7 @@ it("shows creation progress, prevents duplicate clicks, and restores the button 
   await act(async () => fail(Response.json({ detail: "session refused" }, { status: 422 })));
   expect(newSession().disabled).toBe(true);
   expect(container.textContent).toContain("session refused");
-  expect(container.textContent).toContain("Retry same session");
+  expect(container.textContent).toContain("Check Open status");
   expect(onOpenThread).not.toHaveBeenCalled();
 });
 
@@ -368,67 +370,84 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 
-it("retries a lost Open with its original identity and payload despite changed form values", async () => {
+it.each(["absent", "unconfirmed"] as const)("checks %s without retrying or treating it as ready", async (status) => {
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(
-      request.method === "GET" ? Response.json([]) : Response.json({ detail: "connection lost" }, { status: 503 })
-    )
-  );
-  await render(sessions);
-  await act(async () => newSession().click());
-  const first = await postedBody(sessions);
-  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(first.session_id);
-  await act(async () => {
-    const input = labeledInput("Working directory");
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-    if (!setter) throw new Error("HTMLInputElement.value has no setter");
-    setter.call(input, "/different/{session_id}");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  expect(labeledInput("Working directory").value).toBe("/different/{session_id}");
-  await act(async () => button("Retry same session").click());
-  const requests = sessions.mock.calls.filter(([request]) => request.method === "POST");
-  expect(requests).toHaveLength(2);
-  expect(await requests[1][0].json()).toEqual(first);
-  expect(newSession().disabled).toBe(true);
-});
-
-it("recovers the original Open mapping after a lost response without sending a second Open", async () => {
-  const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
-    Promise.resolve(
-      request.method === "GET" ? Response.json([]) : Response.json({ detail: "connection lost" }, { status: 503 })
+      request.method === "GET"
+        ? Response.json(new URL(request.url).pathname.endsWith("/open") ? { status, session_id: null } : [])
+        : Response.json({ detail: "connection lost" }, { status: 503 })
     )
   );
   const onOpenThread = await render(sessions);
   await act(async () => newSession().click());
-  const original = await postedBody(sessions);
-  live.snapshot.threads = [thread({ id: "recovered", session_id: original.session_id })];
-  await act(async () => button("Check for Thread").click());
-  expect(onOpenThread).toHaveBeenCalledWith("recovered");
+  const first = await postedBody(sessions);
+  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(first.idempotency_key);
+  await act(async () => button("Check Open status").click());
+  expect(onOpenThread).not.toHaveBeenCalled();
+  expect(container.textContent).toContain(status === "absent" ? "No Open reservation" : "runner has not confirmed");
+  expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
+  const lookup = sessions.mock.calls.find(([request]) => new URL(request.url).pathname.endsWith("/open"))?.[0];
+  expect(new URL(lookup!.url).searchParams.get("idempotency_key")).toBe(first.idempotency_key);
+});
+
+it("recovers a lost Open from lookup without sending a second Open", async () => {
+  const publicId = "78c4fcc4-35cb-4296-804e-5fb7e0e525fe";
+  const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
+    Promise.resolve(
+      request.method === "GET"
+        ? Response.json(
+            new URL(request.url).pathname.endsWith("/open") ? { status: "ready", session_id: publicId } : []
+          )
+        : Response.json({ detail: "connection lost" }, { status: 503 })
+    )
+  );
+  const onOpenThread = await render(sessions);
+  await act(async () => newSession().click());
+  live.snapshot.threads = [thread({ id: publicId, session_id: publicId })];
+  await act(async () => button("Check Open status").click());
+  expect(onOpenThread).toHaveBeenCalledWith(publicId);
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
 });
 
-it("reload keeps only the Open ID and requires an explicit decision instead of minting a new one", async () => {
+it("reload retains only the opaque key, never the Open spec or bootstrap", async () => {
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(
-      request.method === "GET" ? Response.json([]) : Response.json({ detail: "connection lost" }, { status: 503 })
+      request.method === "GET"
+        ? Response.json(
+            new URL(request.url).pathname.endsWith("/open") ? { status: "unconfirmed", session_id: null } : []
+          )
+        : Response.json({ detail: "connection lost" }, { status: 503 })
     )
   );
   await render(sessions);
   await act(async () => newSession().click());
   const original = await postedBody(sessions);
+  expect(original.spec).toBeDefined();
+  expect(sessionStorage.length).toBe(1);
+  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(original.idempotency_key);
   await act(async () => root.unmount());
   container.remove();
   await render(sessions);
-  expect(container.textContent).toContain(original.session_id);
-  expect(container.textContent).toContain("original specification and setup script are unavailable");
+  expect(container.textContent).toContain(original.idempotency_key);
   expect(newSession().disabled).toBe(true);
-  expect(container.textContent).not.toContain("Retry same session");
-  await act(async () => button("Check for Thread").click());
+  await act(async () => button("Check Open status").click());
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
-  live.snapshot.threads = [thread({ id: "found-after-reload", session_id: original.session_id })];
-  await act(async () => button("Check for Thread").click());
+  await act(async () => button("Discard attempt").click());
+  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
+  expect(newSession().disabled).toBe(false);
+});
+
+it("opens a service-owned public session ID on success, never the Open key", async () => {
+  const publicId = "7af90050-01fd-423c-a3cb-c1f552b6cda7";
+  live.snapshot.threads = [thread({ id: publicId, session_id: publicId })];
+  const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
+    Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ sessionId: publicId }))
+  );
+  const onOpenThread = await render(sessions);
+  await act(async () => newSession().click());
+  expect(onOpenThread).toHaveBeenCalledWith(publicId);
+  expect((await postedBody(sessions)).idempotency_key).not.toBe(publicId);
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
 });
 
