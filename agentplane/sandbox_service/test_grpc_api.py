@@ -317,7 +317,8 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
         peer.history[physical_id] = [entry(1, event_pb2.Event(harness_exited=event_pb2.HarnessExited(exit_code=1)))]
         failed = await runner.lookup(idempotency_key="failed-handshake")
         assert failed.session_id == created.session_id
-        assert failed.failed and not failed.HasField("summary")
+        assert failed.failed
+        assert not failed.HasField("summary")
         observed = await peer.attachments.get()
         assert observed.opened.session_id == physical_id
         assert not observed.opened.HasField("spec")
@@ -327,7 +328,8 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
         peer.history[physical_id] = [entry(1, event_pb2.Event(setup_started=event_pb2.SetupStarted()))]
         peer.setup_state = runner_pb2.SETUP_STATE_RUNNING
         pending = await runner.lookup(idempotency_key="failed-handshake")
-        assert not pending.failed and not pending.HasField("summary")
+        assert not pending.failed
+        assert not pending.HasField("summary")
         await (await peer.attachments.get()).closed.wait()
 
         # A previously healthy session may be stopped now. Historical native
@@ -338,12 +340,14 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
             entry(2, event_pb2.Event(harness_exited=event_pb2.HarnessExited(exit_code=0))),
         ]
         ready = await runner.lookup(idempotency_key="failed-handshake")
-        assert not ready.failed and ready.summary.session_id == created.session_id
+        assert not ready.failed
+        assert ready.summary.session_id == created.session_id
         await (await peer.attachments.get()).closed.wait()
 
         peer.setup_state = runner_pb2.SETUP_STATE_FAILED
         setup_failure = await runner.lookup(idempotency_key="failed-handshake")
-        assert setup_failure.failed and not setup_failure.HasField("summary")
+        assert setup_failure.failed
+        assert not setup_failure.HasField("summary")
         assert peer.attachments.empty()
 
 
