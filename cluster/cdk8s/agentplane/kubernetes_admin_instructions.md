@@ -12,7 +12,7 @@ and its arguments with
 migration check, a read-only `pods_exec` query in the named database Pod is preferable to a
 broad administrative mutation. Do not read or print secrets as a diagnostic shortcut.
 
-Inspect your `/v1/action-policy` bindings and `auto_approve_if` for the *exact* action and
+Inspect your `/v1/action-policy` bindings and `auto_approve_if` for the _exact_ action and
 arguments before submitting. A Kubernetes admin Action may require manual operator approval;
 never assume its presence in the catalog means it is auto-approved. If approval is needed,
 explain why your own RBAC cannot perform the operation, submit a narrowly scoped request,
