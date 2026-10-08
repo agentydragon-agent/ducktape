@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, wire
 from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxServiceClient, ServiceError
@@ -30,7 +31,8 @@ from agentplane.sandbox_service.kubernetes_views import (
     PROVISIONING_ANNOTATION,
 )
 from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, SandboxDestination
-from agentplane.sandbox_service.session_history.store import Store
+from agentplane.sandbox_service.session_history.ingestion import copy_confirmed_prefix
+from agentplane.sandbox_service.session_history.store import HistoryConflictError, Store
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -105,7 +107,11 @@ class Peer:
         try:
             if self.answer_open:
                 yield runner_pb2.ServerMessage(
-                    attached=runner_pb2.Attached(session_id=first.open.session_id, harness_state=self.state)
+                    attached=runner_pb2.Attached(
+                        session_id=first.open.session_id,
+                        harness_state=self.state,
+                        last_cursor=len(self.history.get(first.open.session_id, [])),
+                    )
                 )
                 for entry in self.history.get(first.open.session_id, []):
                     if entry.cursor > first.open.follow.after_cursor:
@@ -349,6 +355,51 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
         assert setup_failure.failed
         assert not setup_failure.HasField("summary")
         assert peer.attachments.empty()
+
+
+async def test_history_copy_replays_only_published_prefix_and_detects_regression(
+    peer: Peer, engine: AsyncEngine
+) -> None:
+    store = Store(engine)
+    session_id = uuid4()
+    physical = f"r-{session_id}"
+    await store.open(
+        session_id,
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name=SANDBOX,
+        sandbox_uid=UUID(SANDBOX_UID),
+        runner_session_id=physical,
+    )
+    [locator] = await store.runnable_locators(SANDBOX_NAMESPACE, [SANDBOX])
+    assert locator.session_id == session_id
+    assert locator.runner_session_id == physical
+    peer.opened_ids[physical] = runner_pb2.Open(session_id=physical)
+
+    def entry(cursor: int) -> event_log_pb2.EventEntry:
+        return event_log_pb2.EventEntry(
+            cursor=cursor,
+            origin=event_log_pb2.EventOrigin(source_id="retained-journal", sequence=cursor),
+            event=event_pb2.Event(harness_stderr=event_pb2.HarnessStderr(text=f"line {cursor}")),
+        )
+
+    peer.history[physical] = [entry(1), entry(2)]
+    async with grpc.aio.insecure_channel(f"127.0.0.1:{peer.port}") as channel:
+        runner = RunnerClient(channel)
+        assert await copy_confirmed_prefix(store, locator, runner, batch_size=1) == 2
+        await (await peer.attachments.get()).closed.wait()
+        assert (await store.read(session_id))[1] == peer.history[physical]
+        assert await copy_confirmed_prefix(store, locator, runner) == 2  # exact replay is idempotent
+        await (await peer.attachments.get()).closed.wait()
+        peer.history[physical].append(entry(3))
+        assert await copy_confirmed_prefix(Store(engine), locator, runner) == 3
+        await (await peer.attachments.get()).closed.wait()
+        assert (await store.read(session_id))[1] == peer.history[physical]
+        peer.history[physical] = [entry(1)]  # a replacement lost the runner's journal
+        with pytest.raises(HistoryConflictError, match="regressed"):
+            await copy_confirmed_prefix(store, locator, runner)
+        await (await peer.attachments.get()).closed.wait()
+        assert (await store.read(session_id))[0] == 3
+    assert await store.runnable_locators("different-namespace", [SANDBOX]) == []
 
 
 async def test_managed_open_lost_response_uses_same_reservation(

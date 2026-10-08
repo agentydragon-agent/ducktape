@@ -24,6 +24,7 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, KubernetesGrant, RoleBindingGrant
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.session_history.ingestion import HistoryIngester
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -41,6 +42,9 @@ class Settings(BaseSettings):
 
     sandbox_namespace: str = Field(min_length=1)
     database_url: str | None = Field(default=None, min_length=1)
+    # Explicit shadow-mode gate. Enable only after the one-way existing-history
+    # import has been verified; the app remains the UI's raw Event authority.
+    history_ingestion_enabled: bool = False
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
     platform_instructions: str = Field(min_length=1)
     lifecycle_timeout_s: float = Field(default=300, gt=0)
@@ -142,9 +146,10 @@ async def serve_with_engine(settings: Settings, configuration: k8s_client.Config
                 or any(isinstance(grant, ClusterRoleBindingGrant) for grant in settings.kubernetes_grants.values()),
             ),
         )
+        history_store = Store(engine)
         resources = Resources(
             principals=principals,
-            history=Store(engine),
+            history=history_store,
             destinations=DestinationResolver(inventory, core, settings.runner_port),
             admission_timeout_s=settings.admission_timeout_s,
             runner_admission_ack_timeout_s=settings.runner_admission_ack_timeout_s,
@@ -168,6 +173,18 @@ async def serve_with_engine(settings: Settings, configuration: k8s_client.Config
             return {"status": "ok"}
 
         reconcile = asyncio.create_task(provisioning.run(), name="sandbox-provisioning")
+        history = (
+            asyncio.create_task(
+                HistoryIngester(
+                    history_store,
+                    resources.destinations,
+                    runner_grpc_channel_options=settings.runner_grpc_channel_options,
+                ).run(),
+                name="sandbox-session-history-ingestion",
+            )
+            if settings.history_ingestion_enabled
+            else None
+        )
         try:
             await uvicorn.Server(
                 uvicorn.Config(health, host=settings.host, port=settings.health_port, access_log=False)
@@ -175,8 +192,13 @@ async def serve_with_engine(settings: Settings, configuration: k8s_client.Config
         finally:
             await server.stop(grace=5)
             reconcile.cancel()
+            if history is not None:
+                history.cancel()
             with suppress(asyncio.CancelledError):
                 await reconcile
+            if history is not None:
+                with suppress(asyncio.CancelledError):
+                    await history
 
 
 def main() -> None:
