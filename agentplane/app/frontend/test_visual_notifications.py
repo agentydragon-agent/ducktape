@@ -1,6 +1,7 @@
 """Notification diagnostics seen from a Thread and the owning Sandbox."""
 
 import pytest
+import pytest_bazel
 from playwright.async_api import expect
 
 from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
@@ -51,3 +52,7 @@ async def test_notification_service_reconnect(view: VisualPage, app: AgentplaneF
     await page.get_by_role("button", name="Notifications").click()
     await expect(page.get_by_text("2 awaiting notice")).to_be_visible()
     await view.capture(name="notification_status_reconnected")
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

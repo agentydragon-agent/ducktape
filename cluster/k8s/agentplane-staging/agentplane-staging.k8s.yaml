@@ -4177,7 +4177,6 @@ spec:
                   audience: agentplane-notifications
                   expirationSeconds: 3600
                   path: token
-
 ---
 apiVersion: v1
 kind: Service
@@ -5715,7 +5714,6 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
-
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
