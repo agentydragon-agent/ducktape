@@ -270,8 +270,7 @@ export function NotificationStatus({
                     {subscriptions.map((sub) => (
                       <Stack gap={2} key={sub.id}>
                         <Text size="sm">
-                          {sourceLabel(sub.source)} ·{" "}
-                          {subscriptionState(sub, data?.observed_at ?? sub.expires_at)}
+                          {sourceLabel(sub.source)} · {subscriptionState(sub, data?.observed_at ?? sub.expires_at)}
                         </Text>
                         <Text size="xs" c="dimmed">
                           Expires {timestamp(sub.expires_at)}
