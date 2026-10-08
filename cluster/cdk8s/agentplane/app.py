@@ -139,7 +139,17 @@ class App(Construct):
         self._add_network_policy()
         if env.replicas.pdb_min_available is not None:
             self._add_pdb(env.replicas.pdb_min_available)
-        self._add_sandbox_template()
+        RunnerTemplate(
+            self,
+            "runner-template",
+            env,
+            name="agentplane-runner",
+            image=_RUNNER_IMAGE,
+            description=(
+                "The shared runner image, built to host an agent harness: the sandbox tools (git, "
+                "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
+            ),
+        )
 
     def _add_service_accounts(self) -> ServiceAccount:
         namespace = self.env.namespace
@@ -440,7 +450,18 @@ class App(Construct):
             self, "pdb", name=NAME, namespace=self.env.namespace, min_available=min_available, selector=_LABELS
         )
 
-    def _runner_container(self) -> SandboxTemplateSpecPodTemplateSpecContainers:
+
+class RunnerTemplate(Construct):
+    """Shared runner Pod and storage wiring; an image variant adds no authority or isolation."""
+
+    def __init__(
+        self, scope: Construct, id: str, env: Environment, *, name: str, image: str, description: str
+    ) -> None:
+        super().__init__(scope, id)
+        self.env = env
+        self._add_sandbox_template(name=name, image=image, description=description)
+
+    def _runner_container(self, image: str) -> SandboxTemplateSpecPodTemplateSpecContainers:
         # Through the egress proxy, which matches the host on the exact string its policy names.
         llm = llm_ingress.service(self.env.namespace)
         litellm_url = f"http://{llm.fqdn}:{llm.port.number}"
@@ -478,7 +499,7 @@ class App(Construct):
             args.extend(["--harness-inherit-env", name])
         return SandboxTemplateSpecPodTemplateSpecContainers(
             name="runner",
-            image=f"{_RUNNER_IMAGE}:{_PLACEHOLDER_TAG}",
+            image=f"{image}:{_PLACEHOLDER_TAG}",
             args=args,
             # The runner works in absolute paths. This is for a command exec'd in: the sandbox
             # Actions' `runner` boxes start there unless the caller names a directory.
@@ -532,21 +553,16 @@ class App(Construct):
             ],
         )
 
-    def _add_sandbox_template(self) -> None:
+    def _add_sandbox_template(self, *, name: str, image: str, description: str) -> None:
         namespace = self.env.namespace
         SandboxTemplate(
             self,
             "sandboxtemplate",
             metadata=ApiObjectMetadata(
-                name="agentplane-runner",
+                name=name,
                 namespace=namespace,
                 # What the sandbox Actions tell an agent choosing among the templates they offer.
-                annotations={
-                    DESCRIPTION_ANNOTATION: (
-                        "The shared runner image, built to host an agent harness: the sandbox tools (git, "
-                        "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
-                    )
-                },
+                annotations={DESCRIPTION_ANNOTATION: description},
             ),
             # The CiliumNetworkPolicy next to this construct is the runner's fence.
             network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
@@ -554,7 +570,7 @@ class App(Construct):
             pod_template=SandboxTemplateSpecPodTemplate(
                 metadata=SandboxTemplateSpecPodTemplateMetadata(labels=_RUNNER_LABELS),
                 spec=sandbox_pod.pod_spec(
-                    self.env, workload=self._runner_container(), service_account_name="agentplane-runner"
+                    self.env, workload=self._runner_container(image), service_account_name="agentplane-runner"
                 ),
             ),
             volume_claim_templates=[

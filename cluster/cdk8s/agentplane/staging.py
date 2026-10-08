@@ -30,6 +30,7 @@ from agentplane.app.action_federation import ExchangeFederationSettings
 from cluster.cdk8s import cilium, external_creds, ha_mcp, node_scheduling, public_coder_egress
 from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
+from cluster.cdk8s.agentplane.app import RunnerTemplate
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials, credential_external_secret
 from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
@@ -202,7 +203,7 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
                 # Each describes itself in the annotation the sandbox Actions read. The integration app's
                 # runner template is offered for a caller that wants the harnesses or a state volume
                 # that survives its Pod.
-                templates={command_sandbox.NAME, command_sandbox.BUILD_NAME, "agentplane-runner"},
+                templates={command_sandbox.NAME, command_sandbox.BUILD_NAME, "agentplane-runner", "runner-ducktape"},
             ),
             # claude.ai and Claude Code reach these as MCP tools of their own, where `sandbox-self`
             # auto-approves them for the Connection's claude-ai account.
@@ -375,6 +376,18 @@ ENV = Environment(
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
+    RunnerTemplate(
+        chart,
+        "ducktape-runner-template",
+        ENV,
+        name="runner-ducktape",
+        image="git.allegedly.works/ducktape-ci/runner-ducktape",
+        description=(
+            "Public ducktape development: the runner and harnesses plus the repository's shared "
+            "bb/bbr, Bazelisk, pre-commit, formatters and Gazelle. Same container isolation and "
+            "permissions as the generic runner; use remote execution for builds."
+        ),
+    )
     notification_service = notifications.service(_NAMESPACE)
     https_route(
         chart,

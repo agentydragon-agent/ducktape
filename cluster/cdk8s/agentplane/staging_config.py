@@ -239,4 +239,14 @@ def config(
     for preset in ("public-coder", "finance-agent"):
         cfg.sandbox_presets[preset].action_policy_sets.append(DUCKTAPE_PR_FAILED_JOBS_SET)
         cfg.sandbox_presets[preset].egress_policies.append(AGENTPLANE_TESTING_POLICY)
+    public_coder = cfg.sandbox_presets["public-coder"]
+    thread = cfg.thread_presets[public_coder.thread_preset].model_copy(deep=True)
+    thread.title = "Public coder / ducktape / Codex"
+    thread.instructions += "\n\n" + Path(__file__).with_name("ducktape_container_instructions.md").read_text().strip()
+    cfg.thread_presets["public-coder-ducktape-codex"] = thread
+    sandbox = public_coder.model_copy(deep=True)
+    sandbox.title = "Public coder / ducktape"
+    sandbox.template = "runner-ducktape"
+    sandbox.thread_preset = "public-coder-ducktape-codex"
+    cfg.sandbox_presets["public-coder-ducktape"] = sandbox
     return cfg

@@ -89,6 +89,7 @@ IMAGES = (
     "public-coder-agent",
     "public-coder-devbox",
     "rtl-tcp",
+    "runner-ducktape",
     "ssh-mcp",
     "stalwart",
     "study-casino",

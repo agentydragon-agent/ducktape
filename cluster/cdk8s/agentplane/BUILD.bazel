@@ -399,6 +399,7 @@ py_library(
     name = "staging_config",
     srcs = ["staging_config.py"],
     data = [
+        "ducktape_container_instructions.md",
         "finance_agent_instructions.md",
         "finance_agent_thread_setup.sh",
         "haku_thread_setup.sh",
@@ -473,6 +474,7 @@ py_library(
     srcs = ["staging.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":app",
         ":actions",
         ":actions_staging_policies",
         ":chart",

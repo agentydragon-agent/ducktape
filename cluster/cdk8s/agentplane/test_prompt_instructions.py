@@ -69,5 +69,30 @@ def test_haku_preset_binds_what_its_account_binding_names(
     assert set(preset) <= created, sorted(set(preset) - created)
 
 
+def test_ducktape_preset_reuses_public_coder_authority_and_instructions() -> None:
+    cfg = config()
+    generic = cfg.sandbox_presets["public-coder"]
+    ducktape = cfg.sandbox_presets["public-coder-ducktape"]
+    assert generic.template == "agentplane-runner"
+    assert ducktape.template == "runner-ducktape"
+    assert ducktape.model_dump(exclude={"title", "template", "thread_preset"}) == generic.model_dump(
+        exclude={"title", "template", "thread_preset"}
+    )
+    original = cfg.thread_presets[generic.thread_preset]
+    specialized = cfg.thread_presets[ducktape.thread_preset]
+    assert specialized.model_dump(exclude={"title", "instructions"}) == original.model_dump(
+        exclude={"title", "instructions"}
+    )
+    assert specialized.instructions.startswith(original.instructions + "\n\n")
+    assert specialized.instructions.count(DUCKTAPE_PR_INSTRUCTIONS) == 1
+    assert "ducktape-specific `runner-ducktape` container" in specialized.instructions
+    assert "pre-commit" in specialized.instructions
+    assert "not a VM" in specialized.instructions
+    assert "ducktape-specific" not in original.instructions
+    assert ducktape.egress_policies is not generic.egress_policies
+    assert ducktape.action_policy_sets is not generic.action_policy_sets
+    assert ducktape.kubernetes_grants is not generic.kubernetes_grants
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
