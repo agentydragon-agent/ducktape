@@ -7,6 +7,9 @@ pkgs.runCommand "runner-ducktape-tools-check"
       pkgs.git
     ];
     dontAddPythonPath = true;
+    # pygit2 initializes TLS on import, even for bbr --help. The build sandbox has no /etc CA file.
+    # This is check-local: the deployed container must keep its injected egress CA settings.
+    SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   }
   ''
     export HOME="$TMPDIR/home"
