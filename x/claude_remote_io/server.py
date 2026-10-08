@@ -85,7 +85,10 @@ class RemoteIOServer:
         tail = request.match_info["tail"]
         if request.method == "GET" and tail == "worker/events/stream":
             return await self.events(request)
-        body = await request.json() if request.can_read_body else None
+        try:
+            body = await request.json() if request.can_read_body else None
+        except json.JSONDecodeError as error:
+            raise web.HTTPBadRequest(text="invalid JSON body") from error
         self.record("worker", request.path_qs, body)
         if request.method == "GET" and tail == "worker":
             return web.json_response({"worker": {"external_metadata": {}, "internal_metadata": {}}})
@@ -112,7 +115,12 @@ class RemoteIOServer:
         raise web.HTTPNotFound
 
     async def events(self, request: web.Request) -> web.StreamResponse:
-        cursor = int(request.query.get("from_sequence_num", request.headers.get("Last-Event-ID", "0")))
+        try:
+            cursor = int(request.query.get("from_sequence_num", request.headers.get("Last-Event-ID", "0")))
+        except ValueError as error:
+            raise web.HTTPBadRequest(text="invalid event cursor") from error
+        if cursor < 0:
+            raise web.HTTPBadRequest(text="negative event cursor")
         self.record("worker", request.path_qs, {"cursor": cursor})
         response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
         await response.prepare(request)
