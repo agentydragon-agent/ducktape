@@ -103,6 +103,11 @@ flowchart TB
     SANDBOX_COMPARTMENT_DESIGN["Trust-boundary decision<br/>Sandbox compartment assignment and enforcement<br/>shared filesystem and SA"]:::decision
     SANDBOX_COMPARTMENT_BOUNDARY["Enforce Sandbox trust domain<br/>reject incompatible Open and replacement<br/>no false cross-compartment isolation"]:::future
     RUNNER_STATE_BOUNDARY_RETHINK["Deferred architecture question<br/>should runner own a database at all?<br/>thin harness adapter vs durable journal"]:::decision
+    RUNNER_OUTBOUND_CHANNEL["Future transport<br/>worker dials central service<br/>authenticate, fence and reconnect"]:::future
+    CLAUDE_OFFLINE_CATCHUP["Claude offline catch-up evidence<br/>turn continues; sync after outage or crash<br/>native history vs minimal spool"]:::future
+    CODEX_OFFLINE_CATCHUP["Codex offline catch-up evidence<br/>turn continues; sync after outage or crash<br/>native history vs minimal spool"]:::future
+    RUNNER_CENTRAL_ADMISSION["Future central authority<br/>durable command receipt and redelivery<br/>without runner journal as source"]:::future
+    RUNNER_OUTBOUND_CUTOVER["Future migration capstone<br/>outbound-connected thin adapters<br/>central commands and Event authority"]:::milestone
     THREAD_PORTABLE_STATE["Deferred shared portability contract<br/>snapshot, fence, and restore runner/native state<br/>outside disposable Sandbox storage"]:::decision
     CLAUDE_PORTABLE_STATE["Conditional Claude implementation<br/>native snapshot/restore<br/>only on supported evidence"]:::future
     CODEX_PORTABLE_STATE["Conditional Codex implementation<br/>native snapshot/restore<br/>only on supported evidence"]:::future
@@ -158,6 +163,13 @@ flowchart TB
     THREAD_ARCHIVE_BACKFILL --> THREAD_ARCHIVE_UI_CUTOVER
     THREAD_ARCHIVE_INGEST --> THREAD_ARCHIVE_UI_CUTOVER
     THREAD_ARCHIVE_UI_CUTOVER --> THREAD_ARCHIVE_OWNERSHIP
+    RUNNER_STATE_BOUNDARY_RETHINK --> RUNNER_OUTBOUND_CUTOVER
+    RUNNER_OUTBOUND_CHANNEL --> RUNNER_OUTBOUND_CUTOVER
+    CLAUDE_OFFLINE_CATCHUP --> RUNNER_OUTBOUND_CUTOVER
+    CODEX_OFFLINE_CATCHUP --> RUNNER_OUTBOUND_CUTOVER
+    RUNNER_CENTRAL_ADMISSION --> RUNNER_OUTBOUND_CUTOVER
+    RUNNER_IMAGE_ROLLOUT --> RUNNER_OUTBOUND_CUTOVER
+    THREAD_ARCHIVE_OWNERSHIP --> RUNNER_OUTBOUND_CUTOVER
     THREAD_ARCHIVE_OWNERSHIP --> THREAD_READ_POLICY
     THREAD_ARCHIVE_OWNERSHIP --> THREAD_EVENT_CONTINUITY
     RUNNER_IMAGE_UPGRADE_PROOF --> RUNNER_IMAGE_ROLLOUT
@@ -1105,9 +1117,9 @@ Sandbox replacement, shared workspace/SA access, and historical archives after d
 its command journal and Event log in SQLite on Sandbox-attached storage alongside
 native harness artifacts. A bulk runner-state schema migration or move off those
 volumes could require inspecting and migrating each Sandbox PVC individually.
-Ask whether a runner should instead
-be a thin, mostly stateless adapter that launches/controls a harness and carries its
-protocol traffic to Sandbox Service (or an independent history/command authority),
+Pin the guarantees and migration tradeoffs of making the runner a thin, mostly
+stateless adapter that launches/controls a harness and carries its protocol
+traffic to Sandbox Service (or an independent history/command authority),
 with durable command admission, Event ordering, and replay outside each runner PVC.
 The native harness may still require persistent files; removing runner SQLite does
 not by itself make Claude/Codex state or workspaces portable.
@@ -1138,6 +1150,49 @@ investigation does **not** block the near-term archive, same-storage image rollo
 identity cutovers, which must preserve today's runner journal contract until a
 replacement is designed and proved. Do not silently discard state or assume the
 archive alone can replace native resume or command recovery.
+
+### `RUNNER_OUTBOUND_CHANNEL` — worker-initiated transport
+
+Build an authenticated outbound connection from each Sandbox runner/adapter to the
+central service. Bind it to the Sandbox UID and worker incarnation, fence previous
+connections, and support reconnect, backpressure and multi-replica server failover.
+Prove the connection shape first while leaving the current runner journal authoritative;
+outbound transport alone does not move admission or Event durability.
+
+### `CLAUDE_OFFLINE_CATCHUP` / `CODEX_OFFLINE_CATCHUP` — recover work done offline
+
+Independently for each harness, run an existing turn across central-service loss and
+return, then repeat with a worker/process crash. Check which exact observations and command
+effects can be recovered from native on-disk history, and which require a small local
+spool. Resume from verified per-source cursors; reject conflicting or missing prefixes
+rather than pretending a reconstructed UI transcript is an exact Event log. Continued
+turns should be able to finish while disconnected, then catch up when service returns.
+New remotely submitted work need not be accepted during an outage unless the central
+admission contract explicitly promises it. Codex's native persistence and relay's
+in-memory buffering are not by themselves proof of lossless catch-up after a crash.
+
+### `RUNNER_CENTRAL_ADMISSION` — durable commands at the central authority
+
+Specify and implement central command identity, acceptance, idempotency, delivery,
+and acknowledgement under lost replies and worker replacement, without relying on
+the runner SQLite journal as the source of accepted commands. Define whether offline
+submission is rejected or durably queued, and distinguish receipt, dispatch and native
+effect. Use the selected archive authority for raw Event prefixes without creating a
+second independent Event log; retain writer fencing and exact replay.
+
+### `RUNNER_OUTBOUND_CUTOVER` — migrate to thin, outbound-connected adapters
+
+**Deferred migration direction:** after the runner-state boundary decision, prove
+the outbound channel, each harness's offline catch-up and central admission
+independently.
+Cut over existing Sandboxes only with a tested image rollout and a durable archive
+already able to reconcile their Event prefixes. Preserve old runner IDs and native
+files; verify pending commands, exact Event cursors and rollback across worker/server
+crashes before retiring runner-side journal state where its guarantees have actually
+moved. This is not required for scoped agent reads, archive extraction, or same-storage
+image upgrades. Native harness storage may still live on Sandbox PVCs; this migration
+targets the **additional** Agentplane runner database and inbound control path, not
+native-session portability or zero downtime.
 
 ### `THREAD_PORTABLE_STATE` — durable state beyond a Sandbox volume
 
