@@ -2083,6 +2083,19 @@ data:
       session inbox to clean up one task. If abandoning an Action or choosing an independently authorized
       alternative, follow the Actions cancellation procedure; unsubscribing is not withdrawal.
 
+      ### Subscription health
+
+      Subscription GET/list responses declare `health` (`healthy`, `backing_off`, or `access_error`),
+      `error`, and `retry_at`. Cancellation/expiry are separate lifecycle states. The service sends durable
+      inbox entries with `event.provider=notifications` on health transitions, identifying
+      `event.subscription_id`, `event.sequence`, and `event.health`; payload carries safe `error` and
+      `retry_at` fields. Repeated failures in the same health state do not generate more entries.
+      Process and acknowledge these alongside provider events. A health entry is an observation, not
+      proof of current health: read the subscription for current state, especially before abandoning
+      monitoring. Recovery means source processing succeeded, not that CI passed or an Action succeeded.
+      Retries preserve accepted events; do not recreate a subscription just to recover from backoff.
+      Runner-delivery errors remain separate in `inbox.delivery_error`.
+
       ### GitHub repository updates (when enabled)
 
       Check GET http://agentplane-notifications.agentplane-staging.svc.cluster.local:8080/v1/sources before using GitHub. If github is advertised, subscribe with the same
