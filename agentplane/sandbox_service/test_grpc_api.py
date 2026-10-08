@@ -67,15 +67,24 @@ class Peer:
         self.attachments: asyncio.Queue[PeerAttachment] = asyncio.Queue()
         self.port = 0
         self.state = runner_pb2.HARNESS_STATE_RUNNING
+        self.setup_state = runner_pb2.SETUP_STATE_NOT_REQUIRED
         self.answer_open = True
         self.opened_ids: dict[str, runner_pb2.Open] = {}
+        self.history: dict[str, list[event_log_pb2.EventEntry]] = {}
 
     async def list_sessions(
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         return runner_pb2.ListSessionsResponse(
             sessions=[
-                runner_pb2.SessionSummary(session_id=key, spec=value.spec) for key, value in self.opened_ids.items()
+                runner_pb2.SessionSummary(
+                    session_id=key,
+                    spec=value.spec,
+                    last_cursor=len(self.history.get(key, [])),
+                    harness_state=self.state,
+                    setup_state=self.setup_state,
+                )
+                for key, value in self.opened_ids.items()
             ]
         )
 
@@ -98,6 +107,9 @@ class Peer:
                 yield runner_pb2.ServerMessage(
                     attached=runner_pb2.Attached(session_id=first.open.session_id, harness_state=self.state)
                 )
+                for entry in self.history.get(first.open.session_id, []):
+                    if entry.cursor > first.open.follow.after_cursor:
+                        yield runner_pb2.ServerMessage(event_entry=entry)
             while (message := await connection.responses.get()) is not None:
                 if isinstance(message, grpc.StatusCode):
                     await context.abort(message, "test runner failure")
@@ -280,6 +292,63 @@ async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
         assert confirmed.summary.session_id == created.session_id
         assert confirmed.summary.spec.model == "test-model"
         assert f"r-{created.session_id}" not in str(confirmed)
+
+
+async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success(
+    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
+) -> None:
+    """Inventory also retains a spec after a native handshake fails; never project it as a Thread."""
+    async with service_client(replace(resources, history=Store(engine)), token_file) as remote:
+        runner = remote.runner(DESTINATION)
+        created = await runner.create(
+            idempotency_key="failed-handshake", spec={"harness": "HARNESS_CODEX", "model": "m", "cwd": "/state"}
+        )
+        await (await peer.attachments.get()).closed.wait()
+        physical_id = f"r-{created.session_id}"
+        peer.state = runner_pb2.HARNESS_STATE_STOPPED
+
+        def entry(cursor: int, event: event_pb2.Event) -> event_log_pb2.EventEntry:
+            return event_log_pb2.EventEntry(
+                cursor=cursor, origin=event_log_pb2.EventOrigin(source_id="journal", sequence=cursor), event=event
+            )
+
+        # A failed native handshake leaves the runner's session in inventory but
+        # never emits HarnessStarted. The observation-only attachment does not retry Open.
+        peer.history[physical_id] = [entry(1, event_pb2.Event(harness_exited=event_pb2.HarnessExited(exit_code=1)))]
+        failed = await runner.lookup(idempotency_key="failed-handshake")
+        assert failed.session_id == created.session_id
+        assert failed.failed
+        assert not failed.HasField("summary")
+        observed = await peer.attachments.get()
+        assert observed.opened.session_id == physical_id
+        assert not observed.opened.HasField("spec")
+        await observed.closed.wait()
+
+        # A reservation with an in-flight setup has neither success nor failure evidence.
+        peer.history[physical_id] = [entry(1, event_pb2.Event(setup_started=event_pb2.SetupStarted()))]
+        peer.setup_state = runner_pb2.SETUP_STATE_RUNNING
+        pending = await runner.lookup(idempotency_key="failed-handshake")
+        assert not pending.failed
+        assert not pending.HasField("summary")
+        await (await peer.attachments.get()).closed.wait()
+
+        # A previously healthy session may be stopped now. Historical native
+        # startup proves Open succeeded, even when a later exit stopped it.
+        peer.setup_state = runner_pb2.SETUP_STATE_NOT_REQUIRED
+        peer.history[physical_id] = [
+            entry(1, event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=8))),
+            entry(2, event_pb2.Event(harness_exited=event_pb2.HarnessExited(exit_code=0))),
+        ]
+        ready = await runner.lookup(idempotency_key="failed-handshake")
+        assert not ready.failed
+        assert ready.summary.session_id == created.session_id
+        await (await peer.attachments.get()).closed.wait()
+
+        peer.setup_state = runner_pb2.SETUP_STATE_FAILED
+        setup_failure = await runner.lookup(idempotency_key="failed-handshake")
+        assert setup_failure.failed
+        assert not setup_failure.HasField("summary")
+        assert peer.attachments.empty()
 
 
 async def test_managed_open_lost_response_uses_same_reservation(
