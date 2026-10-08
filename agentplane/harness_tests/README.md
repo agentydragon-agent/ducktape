@@ -42,7 +42,8 @@ listed in <../native/docs/protocol_roster.md>.
 ## Subagent characterization
 
 The subagent cases in each `test_tools.py` opt into native delegation and script a child tool
-round trip. The [test matrix](../plans/native_subagent_sessions.md) tracks their precise coverage
+round trip. Claude also exercises `SendMessage` to a completed child and a `TaskOutput` read
+of its follow-up result. The [test matrix](../plans/native_subagent_sessions.md) tracks their precise coverage
 and the remaining discovery, forwarding, concurrency, cancellation, and recovery cases. These tests
 do not enable subagents in production or implement a shared session model.
 

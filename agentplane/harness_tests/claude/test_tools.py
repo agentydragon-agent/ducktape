@@ -221,5 +221,130 @@ async def test_subagent_tool_frames_are_correlated_with_the_parent_call(
     assert child_text["session_id"] == notification["session_id"]
 
 
+async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_result(
+    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+) -> None:
+    """A SendMessage receipt is not child completion; TaskOutput reads the later result."""
+    async with claude.start(anthropic_messages, subagents=True) as run:
+        try:
+            async with asyncio.timeout(45):
+                prompt = await run.send("Delegate a probe, then send the same child a follow-up.")
+                async with await anthropic_messages.await_next_request() as exchange:
+                    assert {"Agent", "SendMessage", "TaskOutput"} <= set(exchange.request.tool_names)
+                    stream = sse.message_stream(
+                        [
+                            sse.ToolUse(
+                                "toolu_spawn_message_child",
+                                "Agent",
+                                {
+                                    "description": "Messaging probe",
+                                    "subagent_type": "general-purpose",
+                                    "prompt": "Reply CHILD_FIRST_DONE.",
+                                },
+                            )
+                        ],
+                        model=MODEL,
+                    )
+                    await exchange.send(*stream.events)
+
+                async with (
+                    await anthropic_messages.await_next_request() as first,
+                    await anthropic_messages.await_next_request() as second,
+                ):
+                    parent, child = (first, second) if first.request.tool_results else (second, first)
+                    (launched,) = parent.request.tool_results
+                    assert launched.tool_use_id == "toolu_spawn_message_child"
+                    assert launched.is_error is False
+                    assert "Reply CHILD_FIRST_DONE." in "\n".join(child.request.texts("user"))
+                    launch_results = [
+                        result
+                        for result in frames.tool_results(run.native_frames())
+                        if isinstance(result, dict) and "agentId" in result
+                    ]
+                    (launch_result,) = launch_results
+                    agent_id = launch_result["agentId"]
+                    stream = sse.message_stream([sse.Text("PARENT_WAITING")], model=MODEL)
+                    await parent.send(*stream.events)
+                    await parent.close()
+                    assert (await prompt.result()).result == "PARENT_WAITING"
+                    followup = run.events()
+                    stream = sse.message_stream([sse.Text("CHILD_FIRST_DONE")], model=MODEL)
+                    await child.send(*stream.events)
+
+                async with await anthropic_messages.await_next_request() as exchange:
+                    assert "CHILD_FIRST_DONE" in "\n".join(exchange.request.texts("user"))
+                    stream = sse.message_stream(
+                        [
+                            sse.ToolUse(
+                                "toolu_followup",
+                                "SendMessage",
+                                {
+                                    "to": agent_id,
+                                    "message": "FOLLOWUP_PROBE: reply CHILD_SECOND_DONE.",
+                                    "summary": "Follow up on the completed probe",
+                                },
+                            )
+                        ],
+                        model=MODEL,
+                    )
+                    await exchange.send(*stream.events)
+
+                async with (
+                    await anthropic_messages.await_next_request() as first,
+                    await anthropic_messages.await_next_request() as second,
+                ):
+                    parent, child = (first, second) if first.request.tool_results else (second, first)
+                    (sent,) = parent.request.tool_results
+                    assert sent.tool_use_id == "toolu_followup"
+                    assert sent.is_error is False
+                    # Prove continuity of the child's transcript as well as delivery of the message.
+                    assert "CHILD_FIRST_DONE" in child.request.texts("assistant")
+                    assert "FOLLOWUP_PROBE" in "\n".join(child.request.texts("user"))
+                    stream = sse.message_stream([sse.Text("PARENT_FOLLOWUP_WAITING")], model=MODEL)
+                    await parent.send(*stream.events)
+                    await parent.close()
+                    assert (await followup.result()).result == "PARENT_FOLLOWUP_WAITING"
+                    completion = run.events()
+                    stream = sse.message_stream([sse.Text("CHILD_SECOND_DONE")], model=MODEL)
+                    await child.send(*stream.events)
+
+                async with await anthropic_messages.await_next_request() as exchange:
+                    assert "CHILD_SECOND_DONE" in "\n".join(exchange.request.texts("user"))
+                    stream = sse.message_stream(
+                        [sse.ToolUse("toolu_read_child", "TaskOutput", {"task_id": agent_id, "block": False})],
+                        model=MODEL,
+                    )
+                    await exchange.send(*stream.events)
+
+                async with await anthropic_messages.await_next_request() as exchange:
+                    (read,) = exchange.request.tool_results
+                    assert read.tool_use_id == "toolu_read_child"
+                    assert read.is_error is False
+                    assert "CHILD_SECOND_DONE" in read.text
+                    stream = sse.message_stream([sse.Text("PARENT_DONE")], model=MODEL)
+                    await exchange.send(*stream.events)
+                assert (await completion.result()).result == "PARENT_DONE"
+        except BaseException:
+            await run.crash()
+            raise
+
+    captured = run.native_frames()
+    frames.assert_success(captured, "PARENT_DONE")
+    notifications = [frame for frame in captured if frame.get("subtype") == "task_notification"]
+    assert len(notifications) == 2
+    assert {frame["task_id"] for frame in notifications} == {agent_id}
+    assert {frame["status"] for frame in notifications} == {"completed"}
+    results = [result for result in frames.tool_results(captured) if isinstance(result, dict)]
+    sent_results = [result for result in results if "resumedAgentId" in result]
+    (sent_result,) = sent_results
+    assert sent_result["success"] is True
+    assert sent_result["resumedAgentId"] == agent_id
+    read_results = [result for result in results if "retrieval_status" in result]
+    (read_result,) = read_results
+    assert read_result["retrieval_status"] == "success"
+    assert read_result["task"]["task_id"] == agent_id
+    assert read_result["task"]["status"] == "completed"
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

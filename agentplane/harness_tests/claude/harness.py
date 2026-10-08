@@ -48,7 +48,7 @@ class ClaudeHarness:
             replay_user_messages=replay_user_messages,
             hooks=hooks,
             slash_commands=slash_commands,
-            tools=(*scenarios.TOOLS, "Agent") if subagents else scenarios.TOOLS,
+            tools=(*scenarios.TOOLS, "Agent", "SendMessage", "TaskOutput") if subagents else scenarios.TOOLS,
         )
         environment = {
             **self.base_environment,

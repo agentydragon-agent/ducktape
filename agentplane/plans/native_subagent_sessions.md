@@ -73,6 +73,31 @@ child prose. They must not inherit expectations from the older `2.1.220` probe.
 | S13 | Send child another input after it completes; attempt independent resume | Planned                                                                             | Planned                                                                                                       | Same session vs successor identity, supported addressing, and capability boundaries                         |
 | S14 | Repeat core scenarios with alternate subagent configuration             | Planned: prose forwarding and background execution                                  | Planned: `multi_agent_v2`, then context-forking variants                                                      | Configuration-dependent behavior must not silently inherit the baseline contract                            |
 
+### Claude communication surfaces
+
+Do not treat every communication operation as another spawn, or a successful send receipt as proof
+that the recipient consumed the message. Characterize these separately under the pinned tool roster:
+
+- **`Agent` / `Task`:** creation and parent provenance. The model-facing `Agent` name and the native
+  init roster's `Task` name differ in the current trace; aliases are not separate child sessions.
+- **`SendMessage`, completed child (added):** address the returned agent ID; prove the follow-up
+  reaches a child request containing its previous answer; correlate the send receipt and subsequent
+  completion with the same child. Covered by
+  `test_send_message_resumes_a_completed_child_and_task_output_reads_its_result`.
+- **`SendMessage`, active child (planned):** gate the child's request, send another message, and
+  determine when it is consumed and whether it interrupts work. Test child-to-parent and sibling
+  delivery separately, including an unknown recipient. Do not infer delivery from a successful
+  parent tool result.
+- **`TaskOutput` (partial):** the communication test reads the completed child's follow-up result
+  with `block=false`. Running-task reads and `block=true` need separate gates. The pinned tool
+  describes itself as deprecated; test its behavior without making it the proposed discovery API.
+- **`TaskStop` (planned):** stop a held-open child request; distinguish the tool receipt from an
+  observed terminal notification and verify that parent and sibling work survive. Team shutdown
+  messages, if advertised, are a separate cooperative protocol rather than equivalent cancellation.
+- **`ListAgents` and configuration-specific team tools (planned):** first establish availability,
+  scope, and feature gates. An entry in a tool roster does not prove that it enumerates all native
+  children. Keep cross-session/remote messaging outside these same-harness loopback scenarios.
+
 ### Initial executable coverage
 
 The additions live in the existing tool-test targets, with their existing pinned-binary runfiles and
@@ -89,7 +114,7 @@ CI coverage:
   against the returned child ID. It does not yet assert child tool/text visibility on the parent
   connection, child attachment, or enumeration.
 
-Single-agent tests keep their current configuration. Only the new Claude scenario enables `Agent`;
+Single-agent tests keep their current configuration. Only the subagent Claude scenarios enable `Agent`, `SendMessage`, and `TaskOutput`;
 only the new Codex scenario enables multi-agent tools. Neither changes production launch defaults.
 
 CI should run the existing affected targets; no live-inference job or new secret is needed. CI runs these assertions against the pinned binaries. A first failure is diagnostic evidence to inspect,
