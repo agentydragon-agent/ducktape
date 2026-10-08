@@ -30,7 +30,7 @@ from finance.augur.dev_server import build_dev_app
 from finance.evidence.markets import Platform
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual import deterministic_browser_context, stability_style
+from util.testing.frontend_visual import deterministic_browser_context
 from util.testing.page_capture import wait_for_stable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_capture import VisualPage
@@ -439,20 +439,15 @@ async def view(page: Page, capture_name: str) -> AsyncIterator[VisualPage]:
         view.errors.assert_none(context=capture_name)
 
 
-async def _open_page(page: Page, url: str) -> None:
-    await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-    await page.add_style_tag(content=stability_style())
-
-
 @pytest.fixture
 async def comparison_view(view: VisualPage, augur_server: str) -> VisualPage:
-    await _open_page(view.page, f"{augur_server}{_COMPARISON_URL}")
+    await view.page.goto(f"{augur_server}{_COMPARISON_URL}", wait_until="domcontentloaded", timeout=60_000)
     await _wait_for_scenario_comparison(view.page)
     return view
 
 
 async def test_product_cash_runway(view: VisualPage, augur_server: str) -> None:
-    await _open_page(view.page, f"{augur_server}/product?n=32")
+    await view.page.goto(f"{augur_server}/product?n=32", wait_until="domcontentloaded", timeout=60_000)
     await _wait_for_product_page(view.page)
     await _select_first_rollout(view.page)
     await _wait_for_product_chart_geometry(view.page)
@@ -461,7 +456,7 @@ async def test_product_cash_runway(view: VisualPage, augur_server: str) -> None:
 
 
 async def test_product_property_lifecycle(view: VisualPage, augur_server: str) -> None:
-    await _open_page(view.page, f"{augur_server}{_PROPERTY_LIFECYCLE_URL}")
+    await view.page.goto(f"{augur_server}{_PROPERTY_LIFECYCLE_URL}", wait_until="domcontentloaded", timeout=60_000)
     await _wait_for_property_panel(view.page)
     await view.page.evaluate("() => window.scrollTo(0, 0)")
     await view.capture(full_page=True, animations="disabled", scale="css")
@@ -494,14 +489,14 @@ async def test_product_scenario_focus(comparison_view: VisualPage) -> None:
 
 
 async def test_product_distribution_failures(view: VisualPage, augur_server: str) -> None:
-    await _open_page(view.page, f"{augur_server}{_FAILURE_URL}")
+    await view.page.goto(f"{augur_server}{_FAILURE_URL}", wait_until="domcontentloaded", timeout=60_000)
     await _wait_for_distribution_failures(view.page)
     await view.page.evaluate("() => window.scrollTo(0, 0)")
     await view.capture(full_page=True, animations="disabled", scale="css")
 
 
 async def test_calibration_page(view: VisualPage, augur_server: str) -> None:
-    await _open_page(view.page, f"{augur_server}/product?tab=calibration")
+    await view.page.goto(f"{augur_server}/product?tab=calibration", wait_until="domcontentloaded", timeout=60_000)
     await _wait_for_calibration_page(view.page)
     await view.page.evaluate("() => window.scrollTo(0, 0)")
     await view.capture(full_page=True, animations="disabled", scale="css")
