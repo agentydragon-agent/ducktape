@@ -203,3 +203,59 @@ frames alongside it. Add deterministic adapter tests for normalization/replay on
 exists; do not replace the real-binary tests with adapter mocks. Keep read-only presentation separate
 from independently controlling children, and do not manufacture a complete transcript from a parent
 summary.
+
+## Codex multi-agent v2 discovery extension
+
+`//agentplane/harness_tests/codex:test_v2_discovery` adds a separate configuration matrix
+on the existing Codex **0.157.0** pin: `features.multi_agent=true` and
+`features.multi_agent_v2=true`. The existing app-server driver already uses v2 JSON-RPC
+methods; this extension specifically changes the **multi-agent feature/tool surface** from
+`multi_agent_v1` to `collaboration`. It is not a production adapter or pin change.
+
+| Case                           | Assertions / evidence                                                                                                             | Status                                          |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Root creation                  | `thread/start` mints ID; root has no parent; loaded enumeration includes it                                                       | Verified `8f5c39f4`                             |
+| Native child launch            | `collaboration.spawn_agent`, task name and `fork_turns=none`; `subAgentActivity.agentThreadId` agrees with child model-request ID | Verified `8f5c39f4`                             |
+| Live child snapshot            | `thread/read` identifies parent and shared session tree, active status; paginated loaded enumeration includes root and child      | Verified `8f5c39f4`                             |
+| Completed child, clean restart | Await native completed turn, restart server, resume root, enumerate and read historical child without resuming it                 | Verified `8f5c39f4`                             |
+| Completed child, crash         | Same read-only recovery after killing the server                                                                                  | Verified `8f5c39f4`                             |
+| Active child, crash            | Hold model request unanswered, kill server, observe request closure; recover identity/history without child reactivation          | Verified `8f5c39f4`                             |
+| Live client reconnect          | Retain server process, reconnect a separate client, compare enumeration and subscriptions                                         | Planned; stdio process restart is not this case |
+| Alternate context/ancestry     | Context fork, concurrent children, grandchild, explicit child attachment and input                                                | Planned                                         |
+
+Verified on `8f5c39f4`: Bazel tests/build, pre-commit, Gazelle, build/import checks, and
+visual review passed. The visual-diff report is neutral and uses a fallback baseline;
+it is not proof of unchanged visuals.
+
+### Observed discovery and recovery contract
+
+- Launch emits `item/completed` with `item.type=subAgentActivity`, `kind=started`,
+  `agentThreadId`, and `agentPath=/root/probe`; enclosing `params.threadId` identifies
+  the parent. V1's `senderThreadId` / `receiverThreadIds` shape does not apply here.
+- Native captures also contain child `agentMessage` output under the child's own thread
+  ID and parent-stream `subAgentActivity(kind=completed)`. The test pins spawn identity
+  and completed-child history; these additional live output shapes were inspected in traces.
+- After restarting and resuming the root, loaded enumeration contains the root, not the
+  child. A broad `thread/list(sourceKinds=["subAgent"], modelProviders=[])` returns no
+  rows in these cases. **Explicit `thread/list(parentThreadId=...)` does find the original
+  child.** An empty broad listing is not proof of missing identity or history.
+- `thread/read(includeTurns=true)` retains the original child ID, `parentThreadId`, and
+  source ancestry. Completed-child history retains the answer and a `completed` turn
+  after both clean exit and crash. An active child killed with its model response held
+  unanswered reads back with an **`interrupted` historical turn**, null `completedAt`,
+  and no answer. Runtime status is **`notLoaded`** in all three cases; that load state
+  alone is not terminal-fate evidence.
+- While live, the child's `sessionId` equals the root's. An unloaded read after restart
+  instead reports `sessionId` equal to the child thread ID. Do not use that field alone
+  as a durable tree key; retain the original thread ID and explicit parent linkage.
+- Recovery uses paginated read-only enumeration and history reads. It does not send
+  `turn/start`, resume the child, or invoke `followup_task` or a model-driven status tool.
+  Reads leave loaded enumeration unchanged, followed by a 250 ms no-model-request
+  observation. This bounded observation is not a guarantee against arbitrary delayed work.
+
+Native request/response traces and `recovery.json` retain exact fields for each case.
+The fixture uses the pinned real CLI against a loopback scripted Responses endpoint,
+without live inference credentials. These results support a runner projection of native
+child identity, ancestry, load state, and historical turn outcome as separate facts.
+They do not establish live reconnect semantics, independent child control, or recovery
+without native persisted state; those remain separate matrix items.

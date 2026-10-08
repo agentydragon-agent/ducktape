@@ -27,6 +27,18 @@ class InputMessage(BaseModel):
         return self.content if isinstance(self.content, str) else "".join(part.text for part in self.content)
 
 
+class EncryptedAgentContent(BaseModel):
+    type: Literal["encrypted_content"]
+    encrypted_content: str
+
+
+class AgentMessage(BaseModel):
+    type: Literal["agent_message"]
+    author: str
+    recipient: str
+    content: list[Annotated[InputText | EncryptedAgentContent, Field(discriminator="type")]]
+
+
 class FunctionCall(BaseModel):
     type: Literal["function_call"]
     call_id: str
@@ -51,7 +63,9 @@ class Reasoning(BaseModel):
     encrypted_content: str | None = None
 
 
-InputItem = Annotated[InputMessage | FunctionCall | FunctionCallOutput | Reasoning, Field(discriminator="type")]
+InputItem = Annotated[
+    InputMessage | AgentMessage | FunctionCall | FunctionCallOutput | Reasoning, Field(discriminator="type")
+]
 
 
 class Tool(BaseModel):
