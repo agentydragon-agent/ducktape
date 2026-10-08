@@ -7,6 +7,7 @@ import json
 import os
 import signal
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -118,10 +119,9 @@ class AsyncNativeProcess:
         # Keep ordinary successful exit graceful: recovery probes rely on it.
         if exc_type is not None and self.alive():
             assert self.process is not None
-            try:
+            # The group can exit between the liveness check and signal.
+            with suppress(ProcessLookupError):
                 os.killpg(self.process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass  # The process group exited between the liveness check and signal.
         await self.close()
 
     async def send(self, frame: BaseModel) -> None:

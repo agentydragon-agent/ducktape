@@ -74,14 +74,18 @@ async def test_assertion_failure_reaps_process_group_and_retains_trace(tmp_path)
     process = AsyncNativeProcess(
         tmp_path, [sys.executable, "-c", HUNG_TREE], cwd=tmp_path, environment=dict(os.environ)
     )
+    async def fail() -> None:
+        async with process:
+            assert await process.frames().next() == {"ready": True}
+            raise AssertionError("probe failed")
+
     async with asyncio.timeout(5):
         with pytest.raises(AssertionError, match="probe failed"):
-            async with process:
-                assert await process.frames().next() == {"ready": True}
-                raise AssertionError("probe failed")
+            await fail()
     assert not process.alive()
     assert process.process is not None
-    assert process.process.returncode is not None and process.process.returncode < 0
+    assert process.process.returncode is not None
+    assert process.process.returncode < 0
     assert process.stdout_frames() == [{"ready": True}]
     # The descendant inherited stdout. Reaching here also proves that the
     # reader drained to EOF rather than hanging on an abandoned descendant.
