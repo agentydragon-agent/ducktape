@@ -65,7 +65,6 @@ py_test(
         "//util/bazel:runfiles",
         "//util/testing:asgi",
         "//util/testing:frontend_visual",
-        "//util/testing:stable_capture",
         "//util/testing:undeclared_outputs",
         "//util/testing:visual_capture",
         "@pypi//fastapi",
