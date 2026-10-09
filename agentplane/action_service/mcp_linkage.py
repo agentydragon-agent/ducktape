@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.catalog import Key
 from agentplane.action_service.db import McpLinkageFlowRow, McpOAuthTokenStateRow, McpServerLinkageRow, SessionMaker
 from agentplane.action_service.models import OperatorPrincipal, operator_or_none
+from util.urls import HttpsUrlString
 
 logger = logging.getLogger(__name__)
 _REFRESH_SKEW = timedelta(minutes=1)
@@ -78,22 +79,13 @@ class McpClientMetadataSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    url: str = Field(min_length=1)
+    url: HttpsUrlString = Field(min_length=1)
     client_name: str = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_url(self) -> McpClientMetadataSettings:
         parsed = urlsplit(self.url)
-        if (
-            parsed.scheme != "https"
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.port is not None
-            or parsed.query
-            or parsed.fragment
-            or parsed.path != "/oauth/client-metadata.json"
-        ):
+        if parsed.port is not None or parsed.path != "/oauth/client-metadata.json":
             raise ValueError("mcp_client_metadata.url must be an HTTPS URL at /oauth/client-metadata.json")
         if str(AnyHttpUrl(self.url)) != self.url:
             raise ValueError("mcp_client_metadata.url must use its canonical URL form")
