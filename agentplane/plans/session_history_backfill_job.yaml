@@ -1,13 +1,24 @@
 # Deliberately NOT included in kustomization.yaml: apply only after #9456 deploys
 # with history_ingestion_enabled=false and after replacing :unset with a pinned image.
-# A failed import stops; inspect the Job and correct the issue before a deliberate rerun.
+# Transient pod/node failures may retry; data conflicts (exit code 2) stop for inspection.
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: agentplane-session-history-backfill-v1
   namespace: agentplane-staging
 spec:
-  backoffLimit: 0
+  backoffLimit: 3
+  podFailurePolicy:
+    rules:
+      - action: FailJob
+        onExitCodes:
+          containerName: backfill
+          operator: In
+          values: [2]
+      - action: Ignore
+        onPodConditions:
+          - type: DisruptionTarget
+            status: "True"
   template:
     metadata:
       labels:

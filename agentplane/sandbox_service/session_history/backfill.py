@@ -8,9 +8,10 @@ Re-run after live app ingestion catches up, before enabling shadow ingestion.
 import asyncio
 import json
 import logging
+from time import monotonic
 from uuid import UUID
 
-from google.protobuf.json_format import ParseDict
+from google.protobuf.json_format import ParseDict, ParseError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
@@ -25,6 +26,8 @@ from agentplane.sandbox_service.session_history.store import HistoryConflictErro
 
 logger = logging.getLogger(__name__)
 PAGE_SIZE = 128
+PROGRESS_INTERVAL = 8192
+DATA_CONFLICT_EXIT_CODE = 2
 
 
 class Settings(BaseSettings):
@@ -37,7 +40,7 @@ class Settings(BaseSettings):
 async def import_log(
     source: AsyncEngine, destination: AsyncEngine, *, namespace: str, log_id: UUID, sandbox: str, runner_id: str
 ) -> int:
-    """Copy a bounded source prefix per call, validating any pre-existing bytes.
+    """Copy a bounded source prefix per call, checking the persisted checkpoint and first Event.
 
     For a service-owned ID the app stores the public UUID in event_log.session_id,
     not the private r-UUID runner locator. Existing reservations preserve that locator.
@@ -64,7 +67,40 @@ async def import_log(
             text("SELECT COALESCE(MAX(cursor), 0) FROM event WHERE thread_id = :id"), {"id": log_id}
         )
         assert isinstance(ceiling, int)
-        cursor = 0
+        cursor, first = await store.read(log_id, after_cursor=0, limit=1)
+        if cursor > ceiling:
+            raise HistoryConflictError(f"Service cursor {cursor} exceeds app cursor {ceiling} for Session {log_id}")
+        if cursor:
+            # The saved prefix was committed in contiguous, validated batches. Check both
+            # boundaries before skipping it; a separate full parity pass checks the interior.
+            _, last = await store.read(log_id, after_cursor=cursor - 1, limit=1)
+            if len(first) != 1 or len(last) != 1:
+                raise HistoryConflictError(f"stored checkpoint missing for Session {log_id}")
+            source_boundaries = (
+                await connection.execute(
+                    text(
+                        "SELECT cursor, payload::text FROM event WHERE thread_id = :id "
+                        "AND cursor IN (1, :cursor) ORDER BY cursor"
+                    ),
+                    {"id": log_id, "cursor": cursor},
+                )
+            ).all()
+            if len(source_boundaries) != (1 if cursor == 1 else 2):
+                raise HistoryConflictError(f"app checkpoint boundary missing for Session {log_id}")
+            saved_boundaries = [first[0]] if cursor == 1 else [first[0], last[0]]
+            for (source_cursor, payload), saved in zip(source_boundaries, saved_boundaries, strict=True):
+                entry = ParseDict(json.loads(payload), event_log_pb2.EventEntry())
+                if (
+                    entry.cursor != source_cursor
+                    or entry.SerializeToString(deterministic=True) != saved.SerializeToString(deterministic=True)
+                ):
+                    raise HistoryConflictError(
+                        f"app checkpoint boundary changed at {source_cursor} for Session {log_id}"
+                    )
+        logger.info("Session %s: stored=%d app_ceiling=%d", log_id, cursor, ceiling)
+        started = monotonic()
+        checkpoint = cursor
+        next_progress = cursor + PROGRESS_INTERVAL
         while cursor < ceiling:
             rows = (
                 await connection.execute(
@@ -83,6 +119,17 @@ async def import_log(
                 raise HistoryConflictError(f"mismatched Event cursor for Session {log_id}")
             await store.append(log_id, entries)
             cursor = entries[-1].cursor
+            if cursor >= next_progress:
+                logger.info(
+                    "Session %s: stored=%d/%d new=%d rate=%.1f Events/s",
+                    log_id,
+                    cursor,
+                    ceiling,
+                    cursor - checkpoint,
+                    (cursor - checkpoint) / max(monotonic() - started, 0.001),
+                )
+                next_progress = cursor + PROGRESS_INTERVAL
+    logger.info("Session %s: completed through %d (+%d Events)", log_id, cursor, cursor - checkpoint)
     stored, _ = await store.read(log_id, after_cursor=0, limit=1)
     if stored < ceiling:
         raise HistoryConflictError(f"incomplete import for Session {log_id}: {stored} < {ceiling}")
@@ -108,7 +155,11 @@ async def backfill(source: AsyncEngine, destination: AsyncEngine, *, namespace: 
             )
             count += 1
             last_id = log_id
-        logger.info("Imported %d Sessions (%d app Events scanned); live writes require a follow-up pass", count, events)
+        logger.info(
+            "Visited %d Sessions (%d app Events at captured ceilings); live writes require a follow-up pass",
+            count,
+            events,
+        )
 
 
 async def run(settings: Settings) -> None:
@@ -124,7 +175,12 @@ async def run(settings: Settings) -> None:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(run(Settings()))
+    try:
+        asyncio.run(run(Settings()))
+    except (ValueError, ParseError):
+        # Broken data or incompatible prefix cannot be fixed by a pod restart.
+        logger.exception("History import rejected inconsistent data")
+        raise SystemExit(DATA_CONFLICT_EXIT_CODE) from None
 
 
 if __name__ == "__main__":
