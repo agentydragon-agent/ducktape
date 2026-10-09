@@ -10,6 +10,19 @@ runner is available. [The runner specification](../runner/SPEC.md) describes the
 runner contract; the target below is not a claim that every recovery case works today.
 Protocol changes are atomic monorepo cutovers, with no old-runner/data compatibility.
 
+## Sandbox isolation boundary
+
+The **Sandbox**, not an individual Thread or Session within it, is the security isolation
+boundary. Sessions co-resident in a Sandbox share filesystem, workspace, credentials and the
+Sandbox's ServiceAccount authority. Do not claim confidentiality or independent execution
+permissions between them, even if their histories have different read labels or their harnesses
+run as different processes. Admit Sessions with incompatible trust or credential requirements
+only into separate Sandboxes. No sandboxing-within-a-Sandbox is planned; a future change to this
+boundary would require its own isolation mechanism and a separate security review, not a new
+Session label or archive ACL. Scoped archive reads can restrict _external_ callers, but cannot
+isolate co-resident processes. See the [scoped-read proposal](scoped_session_reads.md#sandbox-trust-boundary)
+and its [placement enforcement task](../plans/task_dag.md#sandbox_compartment_boundary--enforce-sandbox-placement-boundary).
+
 ## Product requirements
 
 Agentplane manages Sandboxes and presents Threads as conversations. A user must be
