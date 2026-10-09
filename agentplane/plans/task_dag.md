@@ -1591,7 +1591,7 @@ acknowledge an inbox merely because its icon is displayed.
 
 **Unranked UI improvement:** show how long ago a Thread's last turn completed (and optionally
 its last activity) in the Thread UI, including a compact sidebar cue. A configurable color/icon
-or other accessible indicator could suggest whether the next turn is *likely* to reuse a warm
+or other accessible indicator could suggest whether the next turn is _likely_ to reuse a warm
 LLM-provider prompt cache. Show the underlying timestamp or age as text as well; color alone
 must not carry the meaning. Update elapsed-time displays without requiring Thread activity,
 with a reduced-motion treatment if the indicator animates.
