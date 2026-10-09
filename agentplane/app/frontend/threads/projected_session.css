@@ -231,7 +231,8 @@
   }
 }
 
-/* Three neutral evidence stages, with detail only on hover/focus/touch. The tooltip is
+/* Three evidence stages: solid is settled (grey success, red failure); hollow is
+   waiting or unreached. Detail appears only on hover/focus/touch. The tooltip is
    CSS-only for hover: a streaming row must not mount a ResizeObserver-backed portal under
    a resting pointer (see EvidenceToggle). Its position does not change the message layout. */
 .agentplane-command-progress {
@@ -284,6 +285,7 @@
 }
 
 .agentplane-command-light[data-state="failed"] {
+  background: var(--mantine-color-red-6);
   border-color: var(--mantine-color-red-6);
 }
 
