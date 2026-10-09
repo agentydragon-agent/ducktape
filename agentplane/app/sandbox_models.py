@@ -24,7 +24,7 @@ from util.agent_sandbox import SANDBOX_API, OperatingMode
 
 # gazelle:include_dep @pypi//protobuf
 
-Slug = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=57)]
+SandboxName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=57)]
 
 
 class KubernetesGrantView(BaseModel):
@@ -90,7 +90,7 @@ class NewSandbox(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    slug: Slug = Field(description="Human-chosen name stem; a random suffix makes the Sandbox name unique.")
+    name: SandboxName = Field(description="Kubernetes Sandbox CR name, unique in this namespace.")
     template: str = Field(min_length=1, description="SandboxTemplate whose Pod and volume shape this Sandbox copies.")
     egress_policies: list[str] = Field(default_factory=list, description="EgressPolicy names to grant.")
     action_policy_sets: list[str] = Field(
@@ -152,6 +152,7 @@ class SandboxView(BaseModel):
     kubernetes_grants_ready: bool
     kubernetes_grant_error: str | None
     launch_grants_pending: bool
+    initializing: bool = False
     deleting: bool = False
     pod: PodView | None = None
 
@@ -166,6 +167,7 @@ def sandbox_has_ready_pod(view: SandboxView) -> bool:
     if (
         view.deleting
         or view.operating_mode != OperatingMode.RUNNING
+        or view.initializing
         or view.launch_grants_pending
         or not view.kubernetes_grants_ready
         or view.kubernetes_grant_error is not None

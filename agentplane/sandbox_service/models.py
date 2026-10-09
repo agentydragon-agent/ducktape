@@ -11,6 +11,10 @@ class SandboxNotFoundError(InventoryError):
         self.name = name
 
 
+class SandboxConflictError(InventoryError):
+    """A name belongs to another Create or initialization is still in progress."""
+
+
 class SandboxRunningError(InventoryError):
     """Deletion is refused while the sandbox runs; the message is what the UI shows the operator."""
 

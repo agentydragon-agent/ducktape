@@ -41,6 +41,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     sandbox,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
+from agentplane.subjects import ServiceAccountRef
 
 
 def _grant(name: str) -> RoleBindingGrant:
@@ -48,11 +49,17 @@ def _grant(name: str) -> RoleBindingGrant:
 
 
 async def _sandbox(
-    inventory: SandboxInventory, core: FakeCoreV1Api, names: list[str], catalog: Mapping[str, KubernetesGrant]
+    inventory: SandboxInventory,
+    core: FakeCoreV1Api,
+    names: list[str],
+    catalog: Mapping[str, KubernetesGrant],
+    *,
+    name: str = "haku",
 ) -> tuple[str, list[ResolvedGrant]]:
     selected = resolve_grants(names, catalog)
     view = await inventory.create(
-        CreateSandboxRequest(slug="haku", template=TEMPLATE, kubernetes_grants=names),
+        CreateSandboxRequest(name=name, template=TEMPLATE, kubernetes_grants=names),
+        caller=ServiceAccountRef(namespace=NAMESPACE, name="test-caller"),
         annotations={
             KUBERNETES_GRANTS_ANNOTATION: json.dumps(
                 [MessageToDict(grant, preserving_proto_field_name=True) for grant in selected]
@@ -62,6 +69,8 @@ async def _sandbox(
         if any(grant.grant.kind == "ClusterRoleBinding" or grant.grant.namespace != NAMESPACE for grant in selected)
         else None,
     )
+    await inventory.ensure_service_account(view)
+    await inventory.complete_initialization(view)
     core.pods[view.name] = pod(view.name, phase="Running", ready=True, ip="10.0.0.1")
     return view.name, selected
 
@@ -82,8 +91,8 @@ async def test_distinct_sandboxes_bind_only_their_own_service_accounts() -> None
     custom, core, rbac = FakeCustomObjectsApi(), FakeCoreV1Api(), FakeRbac()
     inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
     catalog = {"config": _grant("config-reader")}
-    first, selection = await _sandbox(inventory, core, ["config"], catalog)
-    second, _ = await _sandbox(inventory, core, ["config"], catalog)
+    first, selection = await _sandbox(inventory, core, ["config"], catalog, name="haku-first")
+    second, _ = await _sandbox(inventory, core, ["config"], catalog, name="haku-second")
     bindings = KubernetesBindings(inventory, cast(Any, rbac))
     assert not (await inventory.get(first)).kubernetes_grants_ready
     await bindings.reconcile_once()

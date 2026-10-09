@@ -41,7 +41,7 @@ import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { StaleNotice } from "./stream_status";
 
 const EMPTY_FORM: NewSandbox = {
-  slug: "",
+  name: "",
   template: "",
   egress_policies: [],
   action_policy_sets: [],
@@ -239,8 +239,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         />
         <TextInput
           label="Name"
-          value={form.slug}
-          onChange={(e) => setForm({ ...form, slug: e.currentTarget.value })}
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.currentTarget.value })}
           style={{ flex: "1 1 10rem" }}
         />
         <Select
@@ -298,7 +298,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Button
           onClick={() => void create()}
           disabled={
-            !form.slug ||
+            !form.name ||
             !form.template ||
             kubernetesGrantCatalogState !== "ready" ||
             Boolean(selectedPreset && (!thread.model || !modelOptions.some((option) => option.model === thread.model)))

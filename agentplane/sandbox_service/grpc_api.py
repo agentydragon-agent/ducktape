@@ -23,7 +23,7 @@ from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.command_relay import admit_running_command
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError, RunnerEndpoint
 from agentplane.sandbox_service.egress_views import BindingNotFoundError, UnknownPolicyError
-from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
+from agentplane.sandbox_service.models import InventoryError, SandboxConflictError, SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.session_history.store import HistoryNotFoundError, Store
@@ -89,6 +89,8 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
     except SandboxNotFoundError, BindingNotFoundError, HistoryNotFoundError:
         await context.abort(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
+    except SandboxConflictError:
+        await context.abort(grpc.StatusCode.ALREADY_EXISTS, "sandbox name or initialization conflicts")
     except ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError:
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection")
     except TimeoutError, OpenTimeoutError:
@@ -178,9 +180,10 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     async def CreateSandbox(
         self, request: protocol_pb2.CreateSandboxRequest, context: grpc.aio.ServicerContext
     ) -> protocol_pb2.Sandbox:
-        async with self.request(context, timeout_s=self.resources.lifecycle_timeout_s):
+        async with errors(context), asyncio.timeout(self.resources.lifecycle_timeout_s):
+            principal = await self.resources.authenticate(context)
             provisioning = self.resources.provisioning
-            return await provisioning.create(request)
+            return await provisioning.create(request, caller=principal)
 
     async def checked_sandbox(self, request: protocol_pb2.SandboxRequest) -> tuple[Provisioning, Sandbox]:
         provisioning = self.resources.provisioning

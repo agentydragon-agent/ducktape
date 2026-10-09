@@ -44,7 +44,7 @@ from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBindingGrant, RoleRef
-from agentplane.sandbox_service.testing.backend import backend, seed_runner
+from agentplane.sandbox_service.testing.backend import Endpoint, backend, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
@@ -234,12 +234,13 @@ def test_get_returns_the_row_or_404(client: TestClient) -> None:
 
 
 def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
-    response = client.post("/sandboxes", json={"slug": "demo", "template": TEMPLATE})
+    response = client.post("/sandboxes", json={"name": "demo", "template": TEMPLATE})
 
     assert response.status_code == 201
     row = response.json()
-    assert row["name"].startswith("demo-")
-    assert row["operating_mode"] == "Running"
+    assert row["name"] == "demo"
+    assert row["operating_mode"] == "Suspended"
+    assert row["initializing"] is True
     assert row["pod"] is None
     assert ("sandboxes", row["name"]) in custom_objects.objects
     # Nothing was picked, so nothing may leave it.
@@ -251,12 +252,12 @@ def test_templates_list_the_concrete_choices_for_the_create_form(client: TestCli
 
 
 def test_create_records_the_concrete_session_defaults_and_bootstrap(
-    client: TestClient, custom_objects: FakeCustomObjectsApi
+    client: TestClient, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi
 ) -> None:
     response = client.post(
         "/sandboxes",
         json={
-            "slug": "coder",
+            "name": "coder",
             "template": TEMPLATE,
             "egress_policies": ["github"],
             "action_policy_sets": ["github-reads"],
@@ -284,6 +285,7 @@ def test_create_records_the_concrete_session_defaults_and_bootstrap(
         },
         "bootstrap": "mkdir -p /state/workspaces",
     }
+    sandbox_endpoint.reconcile()
     (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["github"]
     annotation = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["annotations"]
@@ -291,15 +293,16 @@ def test_create_records_the_concrete_session_defaults_and_bootstrap(
 
 
 def test_create_binds_the_sandbox_to_its_action_policy_sets(
-    client: TestClient, custom_objects: FakeCustomObjectsApi
+    client: TestClient, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi
 ) -> None:
     """One ActionPolicyBinding per launched Sandbox, owned by it and naming the ServiceAccount it
     runs as: what its harness may do without the operator, as the Action Service reads it. Reading the policy back is the Action Service's answer through the operator
     federation (`test_action_api.py`), so a token caller is refused it."""
     row = client.post(
-        "/sandboxes", json={"slug": "coder", "template": TEMPLATE, "action_policy_sets": ["github-reads"]}
+        "/sandboxes", json={"name": "coder", "template": TEMPLATE, "action_policy_sets": ["github-reads"]}
     ).json()
 
+    sandbox_endpoint.reconcile()
     sandbox_uid = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["uid"]
     (written,) = [obj for (kind, _), obj in custom_objects.objects.items() if kind == "actionpolicybindings"]
     assert written["metadata"]["name"] == f"ap-init-{UUID(sandbox_uid).hex}"
@@ -307,7 +310,8 @@ def test_create_binds_the_sandbox_to_its_action_policy_sets(
     assert written["metadata"]["ownerReferences"][0]["uid"] == sandbox_uid
     assert written["spec"] == {"subject": {"namespace": NAMESPACE, "name": row["name"]}, "policySets": ["github-reads"]}
 
-    client.post("/sandboxes", json={"slug": "plain", "template": TEMPLATE})
+    client.post("/sandboxes", json={"name": "plain", "template": TEMPLATE})
+    sandbox_endpoint.reconcile()
     assert len([kind for kind, _ in custom_objects.objects if kind == "actionpolicybindings"]) == 1
 
 
@@ -331,7 +335,7 @@ def test_kubernetes_grant_picker_requires_an_approved_name_and_operator(
         ({"kubernetes_grants": ["config"]}, 403),
         ({"kubernetes_grants": ["config"], "role_ref": {"kind": "Role", "name": "admin"}}, 422),
     ):
-        response = client.post("/sandboxes", json={"slug": "coder", "template": TEMPLATE, **body})
+        response = client.post("/sandboxes", json={"name": "coder", "template": TEMPLATE, **body})
         assert response.status_code == status_code, response.text
     assert set(core_v1.service_accounts) == before
     assert not any(kind == "rolebindings" for kind, _ in custom_objects.objects)
@@ -339,6 +343,7 @@ def test_kubernetes_grant_picker_requires_an_approved_name_and_operator(
 
 def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_account(
     client: TestClient,
+    sandbox_endpoint: Endpoint,
     sandbox_grants: dict[str, KubernetesGrant],
     sandbox_rbac: FakeRbac,
     custom_objects: FakeCustomObjectsApi,
@@ -353,12 +358,15 @@ def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_acc
     app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
     try:
         response = client.post(
-            "/sandboxes", json={"slug": "coder", "template": TEMPLATE, "kubernetes_grants": ["config"]}
+            "/sandboxes", json={"name": "coder", "template": TEMPLATE, "kubernetes_grants": ["config"]}
         )
     finally:
         app.dependency_overrides.pop(require_caller)
     assert response.status_code == 201, response.text
     row = response.json()
+    assert row["initializing"] is True
+    sandbox_endpoint.reconcile()
+    row = client.get(f"/sandboxes/{row['name']}").json()
     assert row["kubernetes_grants_ready"] is True
     assert row["kubernetes_grants"][0]["grant"]["role_ref"] == {"kind": "Role", "name": "config-reader"}
     (bound,) = sandbox_rbac.bindings.values()
@@ -379,23 +387,25 @@ def _written_bindings(custom_objects: FakeCustomObjectsApi) -> list[tuple[str, l
 
 
 def test_the_launch_pick_of_action_policy_sets_is_the_operators(
-    client: TestClient, custom_objects: FakeCustomObjectsApi
+    client: TestClient, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi
 ) -> None:
     """An explicit empty list binds nothing, while a concrete choice binds exactly that list."""
-    unbound = client.post("/sandboxes", json={"slug": "coder", "template": TEMPLATE, "action_policy_sets": []})
+    unbound = client.post("/sandboxes", json={"name": "coder", "template": TEMPLATE, "action_policy_sets": []})
     assert unbound.status_code == 201, unbound.text
+    sandbox_endpoint.reconcile()
     assert _written_bindings(custom_objects) == []
 
     picked = client.post(
         "/sandboxes",
-        json={"slug": "plain", "template": TEMPLATE, "action_policy_sets": ["github-reads", "github-writes"]},
+        json={"name": "plain", "template": TEMPLATE, "action_policy_sets": ["github-reads", "github-writes"]},
     )
+    sandbox_endpoint.reconcile()
     assert picked.status_code == 201, picked.text
     assert _written_bindings(custom_objects) == [(picked.json()["name"], ["github-reads", "github-writes"])]
 
     sandboxes_before = [name for kind, name in custom_objects.objects if kind == "sandboxes"]
     refused = client.post(
-        "/sandboxes", json={"slug": "plain", "template": TEMPLATE, "action_policy_sets": ["vanished"]}
+        "/sandboxes", json={"name": "vanished", "template": TEMPLATE, "action_policy_sets": ["vanished"]}
     )
     assert refused.status_code == 422, refused.text
     assert [name for kind, name in custom_objects.objects if kind == "sandboxes"] == sandboxes_before
@@ -409,12 +419,13 @@ def test_policy_sets_list_the_namespace_for_the_create_form(client: TestClient) 
 
 
 def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
-    client: TestClient, custom_objects: FakeCustomObjectsApi
+    client: TestClient, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    response = client.post("/sandboxes", json={"slug": "demo", "template": TEMPLATE, "egress_policies": ["pypi"]})
+    response = client.post("/sandboxes", json={"name": "demo", "template": TEMPLATE, "egress_policies": ["pypi"]})
 
     assert response.status_code == 201, response.text
     row = response.json()
+    sandbox_endpoint.reconcile()
     # The new sandbox's egress is its own pick and nothing else: no binding names it in advance.
     (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["pypi"]
@@ -426,17 +437,21 @@ def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
 
 
 @pytest.mark.parametrize("default_egress_policies", [["github"]])
-def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(client: TestClient) -> None:
+def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(
+    client: TestClient, sandbox_endpoint: Endpoint
+) -> None:
     """The model endpoint is what this is for in the deployment: without it a sandbox has no agent,
     so it is not the caller's to leave out — nor, having picked it, to be granted twice. The
     parameter overrides the `default_egress_policies` fixture the client is built from."""
-    unpicked = client.post("/sandboxes", json={"slug": "plain", "template": TEMPLATE}).json()
+    unpicked = client.post("/sandboxes", json={"name": "plain", "template": TEMPLATE}).json()
+    sandbox_endpoint.reconcile()
     (binding,) = client.get(f"/sandboxes/{unpicked['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["github"]
 
     picked = client.post(
-        "/sandboxes", json={"slug": "asked", "template": TEMPLATE, "egress_policies": ["github", "pypi"]}
+        "/sandboxes", json={"name": "asked", "template": TEMPLATE, "egress_policies": ["github", "pypi"]}
     ).json()
+    sandbox_endpoint.reconcile()
     (binding,) = client.get(f"/sandboxes/{picked['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["github", "pypi"]
 
@@ -444,13 +459,13 @@ def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(client: 
 @pytest.mark.parametrize(
     "body",
     [
-        {"slug": "demo"},
-        {"slug": "Demo", "template": TEMPLATE},
-        {"slug": "-demo", "template": TEMPLATE},
-        {"slug": "a" * 58, "template": TEMPLATE},
-        {"slug": "demo", "template": TEMPLATE, "harness": "claude"},
+        {"name": "demo"},
+        {"name": "Demo", "template": TEMPLATE},
+        {"name": "-demo", "template": TEMPLATE},
+        {"name": "a" * 58, "template": TEMPLATE},
+        {"name": "demo", "template": TEMPLATE, "harness": "claude"},
     ],
-    ids=["no-template", "uppercase-slug", "leading-dash-slug", "slug-too-long-for-a-dns-label", "harness-on-sandbox"],
+    ids=["no-template", "uppercase-name", "leading-dash-name", "name-too-long-for-a-dns-label", "harness-on-sandbox"],
 )
 def test_create_rejects_invalid_requests(client: TestClient, custom_objects: FakeCustomObjectsApi, body: dict) -> None:
     response = client.post("/sandboxes", json=body)
@@ -486,7 +501,7 @@ def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assemb
     created = client.post(
         "/sandboxes",
         json={
-            "slug": "coder",
+            "name": "coder",
             "template": TEMPLATE,
             "session_defaults": {
                 "harness": "HARNESS_CODEX",
@@ -832,7 +847,7 @@ def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
     # And at launch the names resolve before the Sandbox exists, so a typo leaves none behind.
     assert (
         client.post(
-            "/sandboxes", json={"slug": "demo", "template": TEMPLATE, "egress_policies": ["vanished"]}
+            "/sandboxes", json={"name": "demo", "template": TEMPLATE, "egress_policies": ["vanished"]}
         ).status_code
         == 422
     )
@@ -876,7 +891,7 @@ def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> Non
     """Guarded from the app, not from a proxy in front of it: no header a caller sets is trusted."""
     assert client.get("/sandboxes", headers={"Authorization": ""}).status_code == 401
     assert client.get("/sandboxes", headers={"Authorization": "Bearer wrong"}).status_code == 401
-    assert client.post("/sandboxes", json={"slug": "x"}, headers={"Authorization": ""}).status_code == 401
+    assert client.post("/sandboxes", json={"name": "x"}, headers={"Authorization": ""}).status_code == 401
     # The forgeable header the API server's service proxy used to forward buys nothing now.
     assert client.get("/sandboxes", headers={"Authorization": "", "x-authentik-username": "root"}).status_code == 401
     assert client.get("/healthz", headers={"Authorization": ""}).status_code == 204

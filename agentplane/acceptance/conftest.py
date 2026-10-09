@@ -133,24 +133,24 @@ async def sandbox(client: Client) -> AsyncIterator[Callable[..., Awaitable[Sandb
     created: list[str] = []
 
     async def create(
-        slug: str,
+        name: str,
         *,
         template: str | None = None,
-        policies: list[str] | None = None,
+        egress_policies: list[str] | None = None,
         session_defaults: SessionDefaults | None = None,
         bootstrap: str = "",
     ) -> SandboxView:
         if template is None:
             [template] = await client.templates()
-        values: dict[str, object] = {
-            "slug": slug,
-            "template": template,
-            "session_defaults": session_defaults,
-            "bootstrap": bootstrap,
-        }
-        if policies is not None:
-            values["policies"] = policies
-        view = await client.create_sandbox(NewSandbox.model_validate(values))
+        view = await client.create_sandbox(
+            NewSandbox(
+                name=name,
+                template=template,
+                egress_policies=egress_policies or [],
+                session_defaults=session_defaults,
+                bootstrap=bootstrap,
+            )
+        )
         created.append(view.name)
         return await _running(client, view.name)
 

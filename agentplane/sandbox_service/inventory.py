@@ -11,10 +11,10 @@ claim or warm pool sits in between.
 from __future__ import annotations
 
 import asyncio
-import secrets
-import string
+import json
 from typing import cast
 
+from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,6 +22,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.sandbox_service.binding_storage import read_binding
 from agentplane.sandbox_service.kubernetes_views import (
+    CREATE_INTENT,
+    INITIALIZING,
     KUBERNETES_GRANTS_ERROR_ANNOTATION,
     KUBERNETES_GRANTS_READY_ANNOTATION,
     MANAGED_LABEL,
@@ -31,17 +33,15 @@ from agentplane.sandbox_service.kubernetes_views import (
     sandbox_view,
     sandbox_views,
 )
-from agentplane.sandbox_service.models import SandboxNotFoundError, SandboxRunningError
+from agentplane.sandbox_service.models import SandboxConflictError, SandboxNotFoundError, SandboxRunningError
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox, SandboxBinding
 from agentplane.sandbox_service.session_config import LaunchGrants
+from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL, OperatingMode
 from util.kubernetes import CustomObjectsClient
 
 _MERGE_PATCH = "application/merge-patch+json"
 
-# Five lowercase alphanumerics, like `generateName`; the slug bound keeps the name a DNS label.
-_SUFFIX_LENGTH = 5
-_SUFFIX_ALPHABET = string.ascii_lowercase + string.digits
 
 # Kubernetes-boundary models: the subset of each CR the inventory reads, parsed once off the wire.
 
@@ -121,29 +121,23 @@ class SandboxInventory:
         *,
         annotations: dict[str, str] | None = None,
         finalizers: list[str] | None = None,
+        caller: ServiceAccountRef,
     ) -> Sandbox:
+        # This immutable receipt distinguishes a retry from another caller's same-name Create.
+        # Resolve an existing CR before looking up the template: templates may change or disappear.
+        intent = self._intent(spec, caller)
+        name = spec.name
+        try:
+            existing = await self._sandbox(name)
+        except SandboxNotFoundError:
+            existing = None
+        if existing is not None:
+            self._check_intent(existing, intent)
+            return await self.get(name)
         template = _Template.model_validate(
             await self._custom_objects.get_namespaced_custom_object(
                 *EXTENSIONS_API, self._namespace, TEMPLATES_PLURAL, spec.template
             )
-        )
-        suffix = "".join(secrets.choice(_SUFFIX_ALPHABET) for _ in range(_SUFFIX_LENGTH))
-        name = f"{spec.slug}-{suffix}"
-        # Before the Sandbox, because its Pod names this ServiceAccount: a Pod whose ServiceAccount
-        # does not exist is refused admission, and the token projected for the proxy's audience is
-        # minted for it. The owner reference cannot be set yet -- the Sandbox has no UID until it is
-        # created -- so it is patched on directly afterwards and the account is deleted if the
-        # Sandbox never appears, rather than being left for nothing to collect.
-        await self._core_v1.create_namespaced_service_account(
-            self._namespace,
-            k8s_client.V1ServiceAccount(
-                metadata=k8s_client.V1ObjectMeta(
-                    # The Action Service admits an account only while it carries its caller label,
-                    # so a sandbox without this one authenticates and reaches no route.
-                    name=name,
-                    labels={MANAGED_LABEL: "true", CALLER_LABEL: "true"},
-                )
-            ),
         )
         body = {
             "apiVersion": SANDBOX_API.api_version,
@@ -151,45 +145,131 @@ class SandboxInventory:
             "metadata": {
                 "name": name,
                 "labels": {MANAGED_LABEL: "true"},
-                **({"annotations": annotations} if annotations else {}),
+                "annotations": {**(annotations or {}), CREATE_INTENT: intent, INITIALIZING: "true"},
                 **({"finalizers": finalizers} if finalizers else {}),
             },
-            # No shutdownTime and Retain: the app owns deletion, nothing expires a sandbox behind it.
             "spec": {
                 "podTemplate": _running_as(template.spec.pod_template, name),
                 "volumeClaimTemplates": template.spec.volume_claim_templates,
                 "shutdownPolicy": "Retain",
+                "operatingMode": "Suspended",
             },
         }
         try:
             created = await self._custom_objects.create_namespaced_custom_object(
                 *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, body
             )
-        except Exception:
-            await self._core_v1.delete_namespaced_service_account(name, self._namespace)
-            raise
+        except Exception as error:
+            # Even a transport error may mean the create committed. Never clean up a
+            # same-name object here; the retry/reconciler checks the persisted receipt.
+            try:
+                existing = await self._sandbox(name)
+            except SandboxNotFoundError:
+                raise error
+            self._check_intent(existing, intent)
+            return await self.get(name)
         sandbox = SandboxResource.model_validate(created)
-        await self._core_v1.patch_namespaced_service_account(
-            name,
-            self._namespace,
-            {
-                "metadata": {
-                    "ownerReferences": [
-                        {
-                            "apiVersion": SANDBOX_API.api_version,
-                            "kind": "Sandbox",
-                            "name": name,
-                            "uid": str(sandbox.metadata.uid),
-                            "controller": False,
-                            "blockOwnerDeletion": False,
-                        }
-                    ]
-                }
-            },
-        )
-        # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
+        # The Pod cannot start until provisioning removes INITIALIZING and resumes it.
         api_client = self._core_v1.api_client  # type: ignore[attr-defined]
         return sandbox_view(sandbox, None, api_client=api_client)
+
+    async def retry(self, spec: CreateSandboxRequest, *, caller: ServiceAccountRef) -> Sandbox | None:
+        """Find the recorded Create before resolving mutable template/policy catalogues."""
+        try:
+            existing = await self._sandbox(spec.name)
+        except SandboxNotFoundError:
+            return None
+        self._check_intent(existing, self._intent(spec, caller))
+        return await self.get(spec.name)
+
+    @staticmethod
+    def _intent(spec: CreateSandboxRequest, caller: ServiceAccountRef) -> str:
+        return json.dumps(
+            {"caller": caller.model_dump(), "request": MessageToDict(spec, preserving_proto_field_name=True)},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    @staticmethod
+    def _check_intent(sandbox: SandboxResource, intent: str) -> None:
+        if sandbox.metadata.deletion_timestamp or sandbox.metadata.annotations.get(CREATE_INTENT) != intent:
+            raise SandboxConflictError(sandbox.metadata.name)
+
+    async def initialization_pending(self, name: str) -> bool:
+        return INITIALIZING in (await self._sandbox(name)).metadata.annotations
+
+    async def ensure_service_account(self, sandbox: Sandbox) -> None:
+        """A CR-first creation leaves no unowned account; compare UIDs before accepting one."""
+        owner = k8s_client.V1OwnerReference(
+            api_version=SANDBOX_API.api_version,
+            kind="Sandbox",
+            name=sandbox.name,
+            uid=sandbox.uid,
+            controller=False,
+            block_owner_deletion=False,
+        )
+        try:
+            account = await self._core_v1.read_namespaced_service_account(sandbox.name, self._namespace)
+        except k8s_client.ApiException as error:
+            if error.status != 404:
+                raise
+        else:
+            if (
+                (account.metadata.owner_references or []) != [owner]
+                or any((account.metadata.labels or {}).get(key) != "true" for key in (MANAGED_LABEL, CALLER_LABEL))
+                or account.metadata.deletion_timestamp is not None
+            ):
+                raise SandboxConflictError(sandbox.name)
+            return
+        try:
+            await self._core_v1.create_namespaced_service_account(
+                self._namespace,
+                k8s_client.V1ServiceAccount(
+                    metadata=k8s_client.V1ObjectMeta(
+                        name=sandbox.name,
+                        labels={MANAGED_LABEL: "true", CALLER_LABEL: "true"},
+                        owner_references=[owner],
+                    )
+                ),
+            )
+        except Exception as error:
+            # An ambiguous write or concurrent retry: re-read and verify; never adopt.
+            try:
+                account = await self._core_v1.read_namespaced_service_account(sandbox.name, self._namespace)
+            except k8s_client.ApiException as read_error:
+                if read_error.status == 404:
+                    raise error
+                raise
+            if (
+                (account.metadata.owner_references or []) != [owner]
+                or any((account.metadata.labels or {}).get(key) != "true" for key in (MANAGED_LABEL, CALLER_LABEL))
+                or account.metadata.deletion_timestamp is not None
+            ):
+                raise SandboxConflictError(sandbox.name) from None
+
+    async def complete_initialization(self, sandbox: Sandbox) -> None:
+        current = await self._sandbox(sandbox.name)
+        if current.metadata.uid != sandbox.uid or current.metadata.deletion_timestamp:
+            raise SandboxConflictError(sandbox.name)
+        if INITIALIZING not in current.metadata.annotations:
+            return
+        if PROVISIONING_ANNOTATION in current.metadata.annotations:
+            return
+        if current.spec.operating_mode != OperatingMode.SUSPENDED:
+            raise SandboxConflictError(sandbox.name)
+        # One conditional patch changes both fields: neither a crashed caller nor a
+        # competing lifecycle operation can expose a running, unprovisioned Pod.
+        await self._patch(
+            sandbox.name,
+            {
+                "metadata": {
+                    "uid": sandbox.uid,
+                    "resourceVersion": current.metadata.resource_version,
+                    "annotations": {INITIALIZING: None},
+                },
+                "spec": {"operatingMode": "Running"},
+            },
+        )
 
     async def pending_grants(self, name: str) -> LaunchGrants | None:
         raw = (await self._sandbox(name)).metadata.annotations.get(PROVISIONING_ANNOTATION)
@@ -237,9 +317,7 @@ class SandboxInventory:
         """Delete a suspended Sandbox; the controller removes its Pod and PVC, and with them
         everything on the volume. A running one is refused, so the irreversible step is a
         deliberate second one for a browser and for an agent calling the API alike."""
-        sandbox = await self._sandbox(name)
-        if uid is not None and sandbox.metadata.uid != uid:
-            raise SandboxNotFoundError(name)
+        sandbox = await self._mutable_sandbox(name, uid=uid)
         if sandbox.spec.operating_mode != OperatingMode.SUSPENDED:
             raise SandboxRunningError(name)
         await self._custom_objects.delete_namespaced_custom_object(
@@ -251,10 +329,17 @@ class SandboxInventory:
         )
 
     async def _set_operating_mode(self, name: str, mode: OperatingMode, *, uid: str | None = None) -> None:
+        sandbox = await self._mutable_sandbox(name, uid=uid)
+        await self._patch(name, {"metadata": {"uid": str(sandbox.metadata.uid)}, "spec": {"operatingMode": mode}})
+
+    async def _mutable_sandbox(self, name: str, *, uid: str | None) -> SandboxResource:
+        """Require the named incarnation to have finished initialization before lifecycle changes."""
         sandbox = await self._sandbox(name)
         if uid is not None and sandbox.metadata.uid != uid:
             raise SandboxNotFoundError(name)
-        await self._patch(name, {"metadata": {"uid": str(sandbox.metadata.uid)}, "spec": {"operatingMode": mode}})
+        if INITIALIZING in sandbox.metadata.annotations:
+            raise SandboxConflictError(name)
+        return sandbox
 
     async def _patch(self, name: str, patch: dict[str, object]) -> None:
         await self._custom_objects.patch_namespaced_custom_object(

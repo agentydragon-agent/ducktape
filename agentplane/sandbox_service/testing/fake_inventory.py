@@ -131,7 +131,11 @@ class FakeCustomObjectsApi:
         assert _content_type == "application/merge-patch+json"
         assert isinstance(body, dict)
         target = await self.get_namespaced_custom_object("", "", namespace, plural, name)
+        version = body.get("metadata", {}).get("resourceVersion")
+        if version is not None and version != target["metadata"].get("resourceVersion"):
+            raise k8s_client.ApiException(status=409)
         merge_patch(target, body)
+        target["metadata"]["resourceVersion"] = str(int(target["metadata"].get("resourceVersion", "1")) + 1)
         if target["metadata"].get("deletionTimestamp") and not target["metadata"].get("finalizers"):
             del self.objects[(plural, name)]
         self.patches.append((plural, name, body))
@@ -176,6 +180,13 @@ class FakeCoreV1Api:
             raise k8s_client.ApiException(status=409)
         self.service_accounts[name] = body
         return body
+
+    async def read_namespaced_service_account(self, name: str, namespace: str) -> k8s_client.V1ServiceAccount:
+        assert namespace == NAMESPACE
+        try:
+            return self.service_accounts[name]
+        except KeyError:
+            raise k8s_client.ApiException(status=404) from None
 
     async def patch_namespaced_service_account(
         self, name: str, namespace: str, body: dict[str, Any]

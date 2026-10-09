@@ -4,7 +4,7 @@ The server has its own event loop so synchronous HTTP TestClients cannot starve 
 Only the endpoint and public client escape this fixture, never provisioning implementations.
 """
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,6 +60,7 @@ class Authentication:
 class Endpoint:
     target: str
     token_file: Path
+    reconcile: Callable[[], None]
 
     def client(self) -> SandboxServiceClient:
         return SandboxServiceClient(
@@ -109,7 +110,7 @@ def backend(
         ),
     )
     with start_blocking_portal() as portal, portal.wrap_async_context_manager(service(resources)) as target:
-        yield Endpoint(target, token_file)
+        yield Endpoint(target, token_file, lambda: portal.call(resources.provisioning.reconcile_once))
 
 
 def seed_runner(

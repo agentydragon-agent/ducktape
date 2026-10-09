@@ -9,6 +9,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { api, type SandboxPresetView, type SandboxView } from "./client";
 import type { ActionPolicySetView } from "./actions/client";
 import { SandboxList } from "./sandboxes";
+import { deletable } from "./lifecycle";
+import { sandboxSummary } from "./sandbox_status";
 
 vi.mock("./live", () => ({
   liveSandboxesUrl: () => "/live/sandboxes",
@@ -38,6 +40,7 @@ const CREATED: SandboxView = {
   kubernetes_grants_ready: true,
   kubernetes_grant_error: null,
   launch_grants_pending: false,
+  initializing: false,
   deleting: false,
   pod: null,
 };
@@ -243,4 +246,13 @@ it("keeps the creation form and reports rejection without navigating", async () 
   expect(onOpen).not.toHaveBeenCalled();
   expect(input(container, "Name").value).toBe("test-not-created");
   expect(container.textContent).toContain("Test creation refused");
+});
+
+it("distinguishes an initializing CR from a user-suspended sandbox", () => {
+  const initializing: SandboxView = { ...CREATED, operating_mode: "Suspended", initializing: true };
+  expect(sandboxSummary(initializing)).toEqual({ label: "Initializing", kind: "pending" });
+  expect(deletable(initializing)).toBe(false);
+  const suspended: SandboxView = { ...initializing, initializing: false };
+  expect(sandboxSummary(suspended)).toEqual({ label: "Suspended", kind: "suspended" });
+  expect(deletable(suspended)).toBe(true);
 });

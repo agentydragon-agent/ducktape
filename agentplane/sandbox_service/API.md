@@ -40,9 +40,13 @@ The same service-caller allowlist gates every RPC. Provisioning is always enable
   separate fields; the service does not synthesize one status from them.
 - `ListTemplates`: available SandboxTemplates. The app renders its configured grant catalog locally.
 - `CreateSandbox`: concrete template, egress policy selections, Action policy sets, Kubernetes grants,
-  optional session defaults, and bootstrap.
-  Grant intent is stored on the Sandbox so reconciliation can recover partial provisioning without
-  the app. The RPC returns after provisioning orchestration, not necessarily after Pod readiness.
+  optional session defaults, and bootstrap. The requested `name` is the Kubernetes Sandbox CR name.
+  Retry with the same name and exact choices while that CR exists; a different caller or request
+  conflicts. Create first records intent on a Suspended CR, then ensures its UID-owned ServiceAccount
+  and grants before resuming. A persisted initialization marker lets reconciliation recover without
+  the app. The RPC returns when the CR is persisted; ServiceAccount, grants, and Pod readiness
+  are asynchronous.
+  After deletion, a new CR under the same name cannot prove whether an earlier Create succeeded.
 - `GrantEgress`: UID-pinned Sandbox destination and egress policy names; returns the created binding name.
   `RevokeEgress`: binding name; retains the refusal to delete Git-owned bindings. Both require the
   same service-caller authorization as other operations.
