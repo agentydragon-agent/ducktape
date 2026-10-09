@@ -71,6 +71,17 @@ Same narrow evidence-first rule for Codex; no dependency on completing Claude re
 
 When the supported public history API can replace private rollout parsing. Refresh the selected CLI pin and prove retained/absent/revised/unknown semantics; see [investigation](../debug/codex_app_server_history_apis.md).
 
+### `LLM_INGRESS_REQUEST_RECENCY` — direct outbound request timing
+
+If event-derived Thread recency proves too approximate, consider recording a metadata-only
+request timestamp at the authenticated LLM ingress when forwarding toward LiteLLM. Today ingress
+verifies Sandbox/Pod identity, **not Session identity**: multiple Threads in the same Sandbox can
+make only a Sandbox-level timestamp trustworthy. Per-Thread measurement would first need a trusted
+Session attribution path; do not use caller-supplied Thread headers or label shared-Sandbox traffic
+as one Thread's requests. A forwarded request is still not proof the provider accepted it or that
+its cache was hit. Review retention and read authorization before persisting timestamps; do not log
+prompts or credentials for this indicator. This does not block the event-derived UI candidate.
+
 ### `CLAUDE_FRESH_RESUME_CACHE_SPIKE` — prefix/reasoning and cache evidence
 
 On a measured fresh-process cost problem or portability proposal. Separate cache cost from correctness; a successful native resume is not provider cache reuse.

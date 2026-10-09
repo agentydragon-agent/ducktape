@@ -42,6 +42,8 @@ class EventLog(Base):
     model: Mapped[str] = mapped_column(Text)
     cwd: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    # App-owned projection, not an observed provider request or cache receipt.
+    last_model_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Thread(Base):

@@ -214,6 +214,29 @@
   flex-shrink: 0;
 }
 
+/* Inline with composer actions when there is room, otherwise at the scrollable
+   history tail (visible on phones without reserving space beneath the composer). */
+.agentplane-composer-model-activity {
+  padding-inline: var(--mantine-spacing-xs);
+  margin-left: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.agentplane-thread-tail-model-activity {
+  display: none;
+}
+
+@media (max-width: 1199px) {
+  .agentplane-composer-model-activity {
+    display: none;
+  }
+
+  .agentplane-thread-tail-model-activity {
+    display: block;
+  }
+}
+
 @media (max-width: 760px) {
   .agentplane-composer-settings {
     flex: 1 1 0;

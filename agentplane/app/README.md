@@ -292,6 +292,18 @@ The favicon draws the same marks but never moves, and the tab title leads with a
 the thread's status (`»` running, `●` idle, `!` last turn errored, `⏻` harness down, `○` not live, `×` failed). A favicon is only seen in a
 background tab, where browsers throttle timers, so both change on status events rather than on a clock.
 
+The Thread composer shows an approximate age of this Thread's latest model-originated activity
+beside its send controls on wider screens, or at the scrollable Thread history tail on narrow screens.
+The app updates `event_log.last_model_activity_at` in the same fenced transaction as event
+folding, using assistant/reasoning output and generated tool calls/arguments; it ignores tool
+output, user input, harness bookkeeping and turn completion. A migration backfills existing
+logs. The timestamp is a **proxy** for LLM-request recency: model output can arrive well after
+an upstream request, and a request with no model output may not be represented. The UI does
+not report a provider request time or a cache hit. The value remains meaningful during a
+long-running tool or an active turn, and is unknown when no qualifying event was observed.
+Ingress-side measurement, if needed, is [deferred](plans/task_freezer.md#llm_ingress_request_recency--direct-outbound-request-timing)
+because ingress can authenticate a Sandbox, but not distinguish its co-resident Threads.
+
 ## Shutdown
 
 SIGTERM begins a drain as Uvicorn's shutdown starts: `/readyz` answers 503 (`/healthz` stays a

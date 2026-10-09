@@ -25,6 +25,46 @@ from agentplane.runner.harness import Harness
 # gazelle:include_dep @pypi//protobuf
 
 
+async def test_thread_list_model_activity_ignores_long_tool_and_replays(
+    store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
+) -> None:
+    thread = await event_logs.open("sb-1", "session-activity", SPEC)
+    first = [
+        event_entry(1, turn_started=event_pb2.TurnStarted(turn_id="turn", model=SPEC.model)),
+        event_entry(2, item_started=event_pb2.ItemStarted(item_id="call", kind=event_pb2.ITEM_KIND_TOOL_CALL)),
+        event_entry(3, tool_arguments=event_pb2.ToolArguments(item_id="call", arguments_json='{"command":"sleep"}')),
+    ]
+    await ingestion.record(thread, first, lease=lease)
+    initial = await store.get_thread(thread)
+    assert initial is not None
+    assert initial.last_model_activity_at == first[-1].event.at.ToDatetime(tzinfo=UTC)
+    tool = [
+        event_entry(4, tool_output_delta=event_pb2.ToolOutputDelta(item_id="call", text="still running")),
+        event_entry(
+            5, item_completed=event_pb2.ItemCompleted(item_id="call", tool=event_pb2.ToolResult(output="done"))
+        ),
+        event_entry(6, turn_completed=event_pb2.TurnCompleted(turn_id="turn")),
+    ]
+    await ingestion.record(thread, tool, lease=lease)
+    await ingestion.record(thread, tool, lease=lease)  # Replayed entries change no projection.
+    assert (await store.list_threads())[0].last_model_activity_at == first[-1].event.at.ToDatetime(tzinfo=UTC)
+    later = event_entry(9, text_delta=event_pb2.TextDelta(item_id="answer", text="hello"))
+    await ingestion.record(
+        thread,
+        [
+            event_entry(7, turn_started=event_pb2.TurnStarted(turn_id="next")),
+            event_entry(
+                8, item_started=event_pb2.ItemStarted(item_id="answer", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            ),
+            later,
+        ],
+        lease=lease,
+    )
+    final = await store.get_thread(thread)
+    assert final is not None
+    assert final.last_model_activity_at == later.event.at.ToDatetime(tzinfo=UTC)
+
+
 async def test_threads_list_with_their_progress(
     store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
 ) -> None:

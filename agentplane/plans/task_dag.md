@@ -660,12 +660,6 @@ app/Sandbox Service database changes inherits the migration hold; non-mutating U
 delivered and acknowledged states. Reconnect against backend state; any countdown is an estimate.
 Independent of compact delivered-message rendering. Never acknowledge from viewing the sidebar.
 
-### `THREAD_CACHE_WARMTH` — last-turn age with an honest heuristic
-
-**Candidate.** Show authoritative last-turn age and optional provider-specific likely-cache-warmth,
-with unknown state. It is not observed provider cache evidence. Accessible/reduced-motion behavior
-and active/missing/completed-turn cases suffice; no new storage authority.
-
 ### `THREAD_BROWSE_PAGINATE` — bounded history browsing
 
 **Candidate; data changes wait for migration.** Paginate/search the Thread listing with authorized
