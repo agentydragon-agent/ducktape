@@ -129,6 +129,7 @@ py_test(
     name = "test_controller",
     srcs = ["test_controller.py"],
     deps = [
+        ":conftest",
         ":controller",
         ":models",
         ":provisioning",
@@ -136,7 +137,6 @@ py_test(
         "//agentplane/sandbox_service:protocol_pb2",
         "//util:agent_sandbox",
         "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
