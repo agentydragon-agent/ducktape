@@ -799,26 +799,17 @@ evidence without blocking ordinary messaging and UI work.
 
 ### `RUNNER_IMAGE_UPGRADE_PROOF` — same-storage image replacement evidence
 
-First test the existing Sandbox CR/PVC lifecycle without claiming a supported API:
-quiesce/fence the runner, pause the Sandbox, patch its stored `podTemplate` image,
-resume on the **same storage**, and check Claude and Codex native state, journal
-prefix/cursors and pending-command behavior. Exercise an incompatible image and
-rollback. Pin whether the controller actually replaces the Pod and preserves the
-state mount; failure is a finding for the eventual workflow, not permission to
-reconstruct native sessions from app history.
+**Codex same-storage image replacement is validated** by the
+[staging probe](../docs/runner_image_upgrade_evidence.md). Pause, patching the
+Sandbox CR runner image, and resuming the original Thread produced a replacement
+Pod on the same state PVC and a successful hosted build from the continued Thread.
+This is evidence for the upgrade approach, not yet a supported upgrade API.
 
-**Observed staging proof (2026-10-09 UTC):** an operator paused an existing Codex
-Thread Sandbox; its Pod terminated while its state PVC remained Bound. An atomic
-JSON Patch with UID, suspended-mode and old-image preconditions changed only
-the runner container image in the stored Sandbox `podTemplate`. Resuming the
-same Sandbox created a replacement Pod (new Pod UID) with the new image
-and the **same PVC UID**. The original Thread continued and a hosted
-`bbr build //:rbe_linux_x64`
-succeeded. This validates pause/patch/resume on the same storage as a viable
-runner-update path for that Codex Thread; it does **not** yet establish
-Claude parity, exact native history and journal cursor continuity,
-pending-command semantics, or incompatible-image rollback. Keep those
-checks in this proof before making the operator workflow supported.
+Remaining proof before `RUNNER_IMAGE_ROLLOUT`: exercise the Claude path,
+incompatible-image rollback, and pending-command/fencing behavior, and pin the
+native-history and journal-cursor invariants needed for a supported workflow.
+Do not infer those properties from the Codex smoke test or reconstruct native
+sessions from app history.
 
 TODO: add an operator-approved `kubernetes_admin` JSON Patch Action (or contribute a
 patch tool upstream) before letting agents perform this step. The deployed
