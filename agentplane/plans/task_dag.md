@@ -26,6 +26,14 @@ sessions from crossing trust domains. None requires the hosted runtime pivot.
 
 Other priorities and candidates:
 
+- **Notifications: keep the current service boundary.** Delivery workers remain in-process with
+  the HTTP service. Do not extract a worker Deployment merely for architectural isolation;
+  revisit only if worker deaths cause observed operational trouble. Prefer fixing specific
+  failures within the existing supervision, durable claims/retries and health checks first.
+  `NOTIFICATION_WORKER_ISOLATION` is conditional, not a next implementation task.
+  `NOTIFICATION_GITHUB_RETENTION` is also deferred: the measured storage growth is not currently
+  considered a significant problem. Neither is an immediate follow-up to the completed webhook work.
+
 - **P2:** driver-hosted tools (`DT`). This does not block the current API-level
   acceptance closure.
 - **Unranked future harness capabilities:** project skills and commands, web search,
@@ -66,8 +74,8 @@ flowchart TB
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
     NOTIFICATION_ACTION_FEED["Deferred optimization<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
-    NOTIFICATION_GITHUB_RETENTION["Storage follow-up<br/>bound GitHub webhook receipt payloads<br/>preserve dedup and subscription replay"]:::future
-    NOTIFICATION_WORKER_ISOLATION["Deferred reliability refactor<br/>separate notification HTTP and delivery workers<br/>independent failure domains"]:::future
+    NOTIFICATION_GITHUB_RETENTION["Deferred storage follow-up<br/>not a current operational priority<br/>preserve dedup and subscription replay"]:::future
+    NOTIFICATION_WORKER_ISOLATION["Conditional reconsideration only<br/>keep workers in the HTTP service<br/>revisit if worker deaths cause trouble"]:::decision
     NOTIFICATION_NOTICE_PACING["Incremental improvement<br/>stage-aware notice pacing<br/>avoid redundant busy-turn notices"]:::future
     HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
     NOTIFICATION_SOURCE_WIRING["Conditional future refactor<br/>extract shared source wiring<br/>from concrete implementations"]:::future
@@ -1382,31 +1390,26 @@ second tool-request lifecycle; the settled harness behavior and the seam are in
 
 ### `NOTIFICATION_WORKER_ISOLATION` — separate notification API and delivery workers
 
-**Deferred reliability improvement:** the notification HTTP server currently starts delivery
-workers in its lifespan. A fatal worker failure takes an HTTP replica out of service; if it repeats
-on both replicas, inbox reads, acknowledgements, subscription management and GitHub webhook
-receipt are unavailable even though the API and database may still be healthy. The worker
-supervision in [#9390](https://github.com/agentydragon/ducktape/pull/9390) makes crashes
-observable and restartable but intentionally does not change this failure domain.
+**Not selected for implementation.** Keep delivery workers in the notification service.
+Another Deployment adds operational complexity; a shared failure domain alone is not a reason
+to extract it. Existing worker supervision, durable claims/retries and health checks remain the
+intended design. Fix specific failures in place when practical.
 
-Run the continuous delivery loop and PostgreSQL wakeup listener in a separate, multi-replica
-worker Deployment. The HTTP Deployment handles authenticated API calls and webhook ingress
-without owning worker tasks; its readiness/liveness reflect only its own ability to serve.
-Give worker pods their own liveness/readiness and restart policy; no client-facing Service is
-needed for them. Keep source-specific webhook verification in the API, worker-side source
-reconciliation and delivery in workers, and scope credentials/RBAC/secret mounts to each role.
-Retain the existing PostgreSQL inbox, claim fencing, retry and `NOTIFY`-as-wakeup semantics:
-workers must resume due work after a missed wakeup or replica restart rather than rely on
-process-local queues. Do not promise exactly-once external delivery solely from a lease.
+**Reconsideration trigger:** worker deaths cause observed operational trouble, such as repeated
+API unavailability or interrupted webhook ingress. Record the failure frequency and impact,
+diagnose the cause, and compare an in-process fix with extraction before selecting a refactor.
+Do not manufacture a live failure-injection exercise as a prerequisite or treat this item as
+an outstanding acceptance blocker.
 
-**Acceptance:** kill a worker during delivery and prove the API still serves reads and explicit
-acknowledgements and can durably receive new webhook events. Verify surviving/restarted workers
-resume due inboxes across replicas without concurrent ownership, with errors visible and queue
-age/backlog monitored. Exercise independent rollouts and worker-only failure/restart without
-restarting or draining healthy HTTP pods. Diagnose any current worker crash separately; this
-split is not its root-cause fix.
+If that evidence warrants a split, separate HTTP serving from the delivery loops while retaining
+the existing PostgreSQL state, claims, fencing and wakeup semantics; no new queue or service API
+is implied. Prove worker failure/recovery and independent API availability with automated tests.
+This conditional direction is not authorization to start the extraction now.
 
 ### `NOTIFICATION_GITHUB_RETENTION` — bound GitHub delivery receipt storage
+
+**Deferred by operator priority:** not a significant current problem and not the next project.
+Retain the design constraints below for when storage pressure or operator priority warrants work.
 
 **Measured staging growth (2026-10-09 UTC):** `notifications` was about 941 MiB;
 `github_delivery` alone was 907 MiB (roughly 147k rows). `entry` was 27 MiB.

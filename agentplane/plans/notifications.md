@@ -5,6 +5,14 @@ remaining acceptance and future decisions. For implemented behavior and deployme
 [service README](../notification_service/README.md), [App notification diagnostics](../app/README.md#notification-diagnostics),
 and the [staging acceptance record](../notification_service/docs/staging_github_acceptance.md).
 
+## Current priority and service boundary
+
+Keep delivery workers in the notification service. Separate worker deployment is not planned
+unless worker deaths cause actual operational trouble; fix specific failures in place first.
+See the conditional [`NOTIFICATION_WORKER_ISOLATION`](task_dag.md#notification_worker_isolation--separate-notification-api-and-delivery-workers)
+item. GitHub receipt retention is also deferred, not a current priority. Neither item should be
+presented as the immediate next project merely because the webhook work is complete.
+
 ## Remaining live verification
 
 - [ ] Audit remaining event/permission coverage, including PR lifecycle/reviews, pushes/ref changes,
@@ -62,7 +70,9 @@ If idle polling becomes a priority, replace the notification source's five-secon
 - Consider automatic Action following or a submission convenience flag, backed by durable authorized
   intent and reconciliation rather than a best-effort second request.
 - Consider narrower GitHub repository/event grants instead of shared access to every App installation.
-- Bound raw GitHub receipt retention without breaking subscription boundaries, association evidence or delivery-ID deduplication.
+- Deferred, not a current priority: bound raw GitHub receipt retention without breaking subscription
+  boundaries, association evidence or delivery-ID deduplication. See
+  [`NOTIFICATION_GITHUB_RETENTION`](task_dag.md#notification_github_retention--bound-github-delivery-receipt-storage).
 - Additional sources/scopes: personal GitHub Notifications API, repository subjects, workflow-specific
   filters, tags/releases and deployment/environment subscriptions. No promise of complete historical replay.
 - Notification-triggered provisioning/resume, offline-delivery guarantees and wake budgets.
