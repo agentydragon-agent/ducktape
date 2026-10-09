@@ -234,12 +234,20 @@ remain recoverable.
 Tana is a reverse-engineered gateway with unknown limits; vendor model names are
 not evidence of equivalent capacity. Temporarily omit its three routes from the
 served roster rather than invent metadata. The Tana key lane/fallback and generated
-Claude wrapper selection are removed together. The pinned client key is explicitly
-blocked (an empty LiteLLM model allowlist alone is not deny-all), and its team has
-no fallback. Key/team identity, credentials, gateway implementation/registration,
-wrapper renderer and stored state remain; no deployment is paused or deleted.
+Claude wrapper selection are removed together. The dedicated client key and team
+are removed from Terraform, revoking the client key and deleting those records;
+key/team identity and accounting continuity are not preserved. Their encrypted
+credential files, backend credentials, gateway implementation/registration,
+wrapper renderer and stored application data remain; no deployment is paused or deleted.
+
+The initial blocked-key approach in #9587 applied the block and cleared the team
+fallback, but Terraform failed to converge: the provider rewrites `models = []`
+for a team-associated key to `["all-team-models"]`, contradicting the planned empty
+list. Removing the unused key/team avoids that provider mismatch without unblocking
+or manually editing Terraform state.
 
 TODO(#9574): before re-enabling, review whether the gateway can support defensible
 metadata (or explicitly accept unknown limits), restore the served routes and
-consumer selections, restore the key allowlist/fallback, then unblock the key.
+consumer selections, and recreate the client key/team with a reviewed allowlist
+and fallback. Retained encrypted key material alone does not authorize access.
 No inference or capacity testing was performed as part of parking.

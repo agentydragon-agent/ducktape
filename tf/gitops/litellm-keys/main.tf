@@ -29,6 +29,9 @@ terraform {
 # cluster/docs/troubleshooting.md § "Resource ID Desync After Wiping a Backing
 # Datastore".
 #
+# Pinned client keys below must start with `sk-`: LiteLLM rejects other bearer
+# token shapes before lookup ("LiteLLM Virtual Key expected").
+#
 # Deliberately NOT minted yet: a Haku (orchestrator) key — Haku receives its
 # own Anthropic API model allowlist when its LLM path moves behind LiteLLM.
 
@@ -196,55 +199,20 @@ resource "kubernetes_secret" "public_coder_agent" {
   }
 }
 
-# ============================================================================
-# tana-clients — scoped key for laptop tana-claude (Tana-UI models via LiteLLM)
-# ============================================================================
-# Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted with the
-# shared narrow client-key age key (the existing tf-runner
-# SOPS_AGE_KEY). The laptop tana-claude wrapper reads it from its sops-nix secret file.
-# The main LiteLLM proxy calls Tana in-process, so this scoped client key never
-# carries the Tana Firebase credential.
-#
-# Gotcha for every pinned key here: the value must start with `sk-`. LiteLLM rejects any
-# other bearer token before it looks the key up at all, as a guard against replayed token
-# hashes ("LiteLLM Virtual Key expected. Received=..., expected to start with 'sk-'",
-# proxy/auth/user_api_key_auth.py). A key minted without the prefix fails every request
-# with a 401 that names authentication rather than the key's shape.
-
-data "sops_file" "tana_clients_key" {
-  source_file = "${path.module}/litellm-tana-clients-key.yaml"
-}
-
-resource "litellm_team" "tana_clients" {
-  team_alias = "tana-clients"
-  # TODO(#9574): Tana exposure is parked. Retain this team's identity, but no fallback.
-  router_settings = { fallbacks = [] }
-}
-
-resource "litellm_key" "tana_clients" {
-  key_alias = "tana-clients"
-  key       = data.sops_file.tana_clients_key.data["litellm_tana_key"]
-  # Empty models alone is not deny-all in LiteLLM. Explicitly block the retained
-  # pinned key; do not destroy its identity/history or rotate the credential.
-  # TODO(#9574): Restore the reviewed lane/allowlist before unblocking.
-  blocked = true
-  models  = []
-  team_id = litellm_team.tana_clients.id
-  metadata = {
-    consumer = "laptop-tana-claude"
-  }
-}
+# Tana's dedicated client key/team are intentionally absent while its routes are
+# parked (#9574). Retain the encrypted key file for recovery; re-enablement requires
+# recreating the key/team with a reviewed allowlist, not merely restoring the wrapper.
 
 # ============================================================================
 # claude-subscription-clients — scoped key for the laptop litellm-claude wrapper
 # ============================================================================
-# Same Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted with the
+# Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted with the
 # shared narrow client-key age key. The laptop litellm-claude wrapper reads it via
 # its sops-nix secret file. CLIProxyAPI holds the Claude OAuth session, so this
 # scoped key never carries it.
 #
 # One deliberate difference from its sibling client keys: no team, so no `model = "*"`
-# fallback. Those exist on the tana/codex/gemini lanes because Claude Code names Claude
+# fallback. Those exist on the codex/gemini lanes because Claude Code names Claude
 # models a non-Claude lane cannot serve, which cannot happen here.
 
 data "sops_file" "claude_subscription_clients_key" {
