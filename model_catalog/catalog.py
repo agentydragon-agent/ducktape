@@ -555,7 +555,10 @@ OLLAMA_EMBEDDING_ROUTE = Route(
     # provenance and truncation semantics: litellm_metadata.md#ollama-embedding-input-metadata-2026-10-09.
     # TODO: Verify full-input embedding and the boundary with truncation disabled;
     # this is GGUF-declared context, not tested capacity (batch/EOS limits may be lower).
-    Model(ollama.QWEN_EMBEDDING.tag.replace(":", "-"), limits=EmbeddingLimits(max_input_tokens=40_960)),
+    Model(
+        ollama.QWEN_EMBEDDING.tag.replace(":", "-"),
+        limits=EmbeddingLimits(max_input_tokens=ollama.QWEN_EMBEDDING.gguf_context_length),
+    ),
     OLLAMA_EMBED,
     upstream_model=ollama.QWEN_EMBEDDING.tag,
     publish_limits=True,

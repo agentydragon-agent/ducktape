@@ -338,3 +338,60 @@ omits these four IDs, while the inspected
 [remote snapshot `63a4f3f2f333`](https://github.com/BerriAI/litellm/blob/63a4f3f2f3334bbd239c4c3e4c3302b63b02f71d/model_prices_and_context_window.json)
 contains them. Pricing ownership remains with that catalogue; do not treat missing
 runtime pricing as zero cost or assume accounting is verified by token metadata.
+
+## Ollama GGUF context audit (2026-10-09)
+
+A read-only audit of Ollama **0.34.4** used `/api/version`, `/api/tags` and
+`/api/show`. The neutral source declarations in `ollama.py` now own the installed
+GGUF `gguf_context_length` facts. The existing embedding input projection consumes
+that fact instead of repeating its number; its published value is unchanged.
+
+| Installed tag                          | GGUF context key          | Declared context | Baked `num_ctx` |
+| -------------------------------------- | ------------------------- | ---------------: | --------------: |
+| `qwen3.8-flash-next-iq4xs:latest`      | `qwen4exp.context_length` |           262144 |          131072 |
+| `qwen3.8-flash-next-iq4xs-256k:latest` | `qwen4exp.context_length` |           262144 |          262144 |
+| `gpt-oss:20b`                          | `gptoss.context_length`   |           131072 |          absent |
+| `gpt-oss:120b`                         | `gptoss.context_length`   |           131072 |          absent |
+| `gemma4:31b-it-q8_0`                   | `gemma4.context_length`   |           262144 |          absent |
+| `qwen3-embedding:4b`                   | `qwen3.context_length`    |            40960 |          absent |
+
+The Qwen variants share one source model declaration. These are **dated installed
+artifact facts**, not guarantees about future pulls of mutable tags. `/api/tags`
+reported these manifest SHA-256 digests (not GGUF blob digests):
+
+```text
+qwen3.8-flash-next-iq4xs:latest      828a9556d513518bd2ab4ea89d3a28673547258ac6ae223d108163bc35a80efb
+qwen3.8-flash-next-iq4xs-256k:latest 14604e8e5a94e208a9ce10f148398914dec3c55c27741597c708339d22b6d753
+gpt-oss:20b                        17052f91a42e97930aa6e28a6c6c06a983e6a58dbb00434885a0cf5313e376f7
+gpt-oss:120b                       a951a23b46a1f6093dafee2ea481d634b4e31ac720a8a16f3f91e04f5a40ecd9
+gemma4:31b-it-q8_0                 53dd8459790f8795177444daa9e33f417e03c0d1cdedb80b6c73898603d20aef
+qwen3-embedding:4b                 df5bd2e3c74cd8d069d21dc038f1b359fcdc9458fce1c99bd43c9eb1518ff907
+```
+
+### Why chat limits remain unpublished
+
+[Ollama 0.34.4 runner creation](https://github.com/ollama/ollama/blob/b2da9e468af2479058ae18c6d908ed29de410684/llm/server.go#L98-L108)
+clamps a requested `num_ctx` to a positive GGUF context length when the request
+exceeds it. Thus the retained native GPT-OSS 20B 256K/512K/1M route labels are
+**requested allocations, not evidence of those effective capacities**. The larger
+OpenAI exposures remain parked; this audit does not change the retained native
+routes or authorize restoring the OpenAI ones.
+
+The source deployment's default context allocation is 131072; an absent baked
+option does not establish a model's served capacity. The `/v1` path still cannot
+select native `options.num_ctx`, while the Qwen 256K tag has a baked allocation.
+Neither the allocation nor GGUF context supplies an independent chat output
+ceiling, and context must accommodate prompt, generated tokens and overhead.
+We do not manufacture a generative input/output pair from these numbers, introduce
+request caps, or change the pair-or-none publication contract in `design.md`.
+
+Published coverage therefore remains **64/80 entries** (60 generative pairs and
+four embedding input-only declarations). The 13 Ollama chat entries still have no
+catalogue-owned token limits; two audio and one image entry also remain unresolved.
+`publish_limits` is still transitional, not switched on by this source audit.
+
+TODO(#9574): choose defensible chat publication semantics before projecting GGUF
+context into client-facing limits. Full-input, output and joint-capacity boundaries
+remain **untested**. No inference, model loading, allocation/provisioning changes or
+capacity probes were performed. `/api/ps` before and after showed only the already
+loaded Qwen 256K model; the shared service was not idle.
