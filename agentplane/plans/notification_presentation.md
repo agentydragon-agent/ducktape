@@ -1,10 +1,10 @@
 # Notification presentation and input metadata
 
-Status: immediate-dispatch and spool-reconciliation direction selected; remaining contract details
-need review. Implementation blocked on the in-flight Session Event archive ownership cutover. The [task DAG](task_dag.md#notification_presentation--compact-notification-rendering)
-tracks the sequenced phases below. Contract design can proceed during backfill, but no new Sandbox
-Service/app database work starts before that cutover. This plan replaces the earlier proposal to carry presentation metadata through
-runner commands and journals.
+Status: follow-up to [generic command admission](command_admission.md), not part of its initial
+persistence/routing or outbound-channel rollout. The [task DAG](task_dag.md#notification_presentation--compact-notification-rendering)
+tracks the dependencies. Review metadata/provenance after admission settles; do not add notification
+fields or producer integration to the admission foundation. This plan replaces the earlier proposal
+to carry presentation metadata through runner commands and journals.
 
 ## Goal and boundaries
 
@@ -24,13 +24,15 @@ introduce another service, or provide notification-triggered startup/wake.
 
 ## Submission API
 
-Expose a Sandbox Service input-submission request rather than nesting a raw runner Command in the
-public request. Illustrative JSON (not a choice of HTTP over the existing service transport):
+Extend the service command-submission envelope without changing the runner Command. Illustrative
+JSON (not a choice of HTTP over the existing service transport):
 
 ```json
 {
-  "command_id": "...",
-  "text": "Agentplane inbox notice: ...",
+  "command": {
+    "commandId": "...",
+    "submitInput": { "text": "Agentplane inbox notice: ..." }
+  },
   "metadata": {
     "notification_notice": {
       "inbox_id": "...",
@@ -47,12 +49,10 @@ identity if the command ID already uniquely identifies that notice. A notice may
 sources. Start with stable inbox/range references; add only bounded source descriptors needed for
 presentation, not full provider payloads or a single misleading source label for a batch.
 
-Sandbox Service validates and persists the submission, then immediately constructs and sends the
-existing runner Command from command ID and text only, within the same RPC. The service submission
-and runner Command are distinct types/records: use an explicit allowlisted conversion, not a shared
-metadata-bearing object forwarded to the runner. The RPC returns OK only with runner admission,
-not merely because the service persisted the submission. Other runner operations need not be
-redesigned for this feature.
+Sandbox Service persists the complete service envelope and immediately sends only a copy of its
+runner Command. Notification metadata is valid only on `submit_input`; controls continue through
+the same admission surface without it. The RPC returns OK only on runner admission, not merely
+service persistence. Metadata never enters the runner or harness.
 
 ## Trusted provenance
 
@@ -71,89 +71,18 @@ Provenance means the service submitted this notice, not that provider text is tr
 provenance from text prefixes. Metadata is excluded from model input, but is not thereby secret:
 read APIs must enforce session access and return only authorized fields.
 
-## Current command path: no app-backend queue to retire
+## Admission dependency and metadata persistence
 
-Source inspection at `c38998b5` found a browser outbox, not an app database command queue:
+[Durable command admission](command_admission.md) owns the base persistence, immediate-dispatch,
+retry and spool-reconciliation contract for all runner commands. This notification extension is a
+later phase, outside the initial command-admission PR; it must not add another input-only queue.
+The source trace and admission recovery requirements live in that owning plan.
 
-- The composer creates a command ID and `LocalCommands.remember()` persists the full immutable
-  command in browser `localStorage` before HTTP or clearing the composer. Unadmitted commands can
-  be retried on mount, connectivity recovery or explicit retry, with the same ID and contents.
-- The app command endpoint checks archived admission evidence, then relays through Sandbox Service.
-  `ThreadContent.admitted_command()` explicitly implements an archive lookup, not an outbox.
-- Sandbox Service's `admit_running_command()` attaches to an existing running session and waits for
-  the exact runner admission receipt. It does not enqueue offline work or start a stopped harness.
-- The runner journals admission before scheduling native work; its durable commands and execution
-  scheduling are a separate responsibility that this plan does not replace.
-
-See [browser recovery](../app/frontend/threads/local_commands.ts),
-[submission/retry](../app/frontend/threads/thread_commands.tsx),
-[app relay](../app/threads/bridge.py), [archive lookup](../app/threads/view/content.py),
-[service relay](../sandbox_service/command_relay.py) and [runner journal](../runner/journal.py).
-These are source findings, not proof of the deployed version. Do not add an app queue drain or
-retirement phase based on the earlier assumption that such a backend queue existed. Keep browser
-recovery for requests that never reached the service; reconcile its handoff with service receipts.
-
-## Persistence, immediate dispatch and reconciliation
-
-Sandbox Service owns a durable submission record containing scoped Session identity, command ID,
-immutable text, typed metadata, authenticated provenance, acceptance time and admission status/evidence.
-Inspect existing service storage before choosing the concrete schema; reuse suitable owning records
-without conflating the service submission with the runner's stripped-down Command. Do not introduce
-an independent metadata database. Inbox/source references are identifiers, not cross-service foreign
-keys. Subscription cancellation or inbox expiration must not erase retained input annotations. Keep metadata as an immutable accepted snapshot rather than deriving
-historical annotations from mutable subscription state.
-
-### One submission RPC
-
-1. Authenticate and authorize destination and metadata before persistence or dispatch.
-2. Atomically persist command and metadata as `pending_admission`.
-3. Immediately attempt dispatch of the runner Command, with the same command ID, in this RPC.
-4. On a matching durable `CommandAdmitted` receipt, record `admitted` and return OK with the receipt.
-5. On a definitive refusal proving non-admission, record `rejected` and return an error.
-6. On timeout, transport loss, cancellation or crash, leave `pending_admission`; an error must not
-   claim rejection when admission may already have happened.
-
-`pending_admission` means the service retained the submission but has not recorded a definitive
-admission outcome. It combines not-yet-sent and possibly-sent cases; no separate persisted `unsent`
-or `dispatching` lifecycle state is needed. It does not prove that cancellation is safe or promise
-background delivery. Attempt/error diagnostics may be retained separately. Runner admission is not
-harness confirmation or execution success.
-
-### Immutable retries and spool evidence
-
-Session identity plus command ID identifies a submission. Identical validated retries reuse it;
-different command contents or metadata conflict, never overwrite. Authorization applies to retries.
-An admitted retry returns the retained receipt. Pending retries reconcile admission evidence or
-attempt the identical runner command using existing runner deduplication; never mint a replacement
-ID to resolve uncertainty. Concurrent retries must converge on the same submission and receipt.
-
-Use the planned service-owned runner spool/Event ingestion and replay to reconcile admission even
-when the RPC reply is lost or the service restarts. Direct RPC receipts and ingested admissions are
-two paths to the same durable fact and must converge idempotently. Catch-up must not advance past
-reconciliation work in a way that strands a pending submission after a crash. Absence from a lagging
-archive is not proof of runner rejection. Subsequent Events remain the evidence for harness effects.
-No dedicated runner command-status RPC is required for this design.
-
-Service-owned spool ingestion is part of the event-storage migration, not an asserted deployed
-capability. Coordinate with its owner and verify ingestion/replay integration before claiming this
-recovery guarantee; do not introduce a temporary dependency on app ingestion or app tables.
-
-This is immediate dispatch with durable submission evidence, not a new background execution queue.
-Do not add a retry worker, automatic dispatch merely on reconnect, or session startup/wake. Caller
-retries and ingestion of outcomes from already-attempted commands are distinct from such behavior.
-
-### Remaining contract review and migration gate
-
-The [Session Event archive migration](session_archive_placement.md) must finish its ownership
-handoff before new submission persistence work under the current DAG hold. This design does not
-approve an exception. Reuse its Session identity and ingestion authority.
-
-Before implementation, settle the concrete service schema/auth integration and notice fields,
-submission retention/deletion, and retryable pre-admission failures versus terminal rejections
-(including stopped sessions and conflicting command IDs). Preserve uncertainty where an earlier
-attempt might have been admitted; a later failed attempt must not erase valid admission evidence.
-The immediate-dispatch/single pending-state/spool-reconciliation direction above is selected, not
-an open choice of offline queue or a second command authority.
+After the admission contract settles, extend its service-owned record with typed metadata and
+server-stamped producer provenance. Preserve an immutable accepted snapshot across replay, inbox
+expiration and subscription cancellation; no cross-service database joins or live inbox are required
+for historical rendering. Conflicting metadata on a repeated command ID must conflict, not overwrite.
+Review schema/auth integration, notice fields and retention with the owning command model.
 
 ## Correlation and read path
 
@@ -196,16 +125,17 @@ rendering and must not give the app dispatch ownership.
 
 ## Implementation sequence and acceptance
 
-The [DAG](task_dag.md#2-service-owned-inputs-and-notification-presentation) owns status and edges:
+The [DAG](task_dag.md#2-service-owned-command-admission-and-later-notification-presentation) owns status and edges:
 
-1. `SESSION_INPUT_CONTRACT`: review typed API, acceptance/dispatch semantics and storage against the
-   migrated session model. This design can run during backfill; it must not add a parallel database.
-2. `SESSION_INPUT_SUBMISSION`: after `THREAD_ARCHIVE_OWNERSHIP` and contract review, implement
-   authorized, immutable submissions, immediate dispatch, and spool-based admission reconciliation.
-3. `SESSION_INPUT_METADATA_READ` and `NOTIFICATION_NOTICE_METADATA`: independently implement
-   authorized status/annotation reads and producer attachments after the submission API exists.
-   `SESSION_INPUT_STATUS_UI` then adds the service-retained command-state dot independently of notice rendering.
-4. `NOTIFICATION_PRESENTATION`: integrate compact frontend rendering after both paths are available.
+1. `SESSION_COMMAND_CONTRACT`, `SESSION_COMMAND_CORE` and `SESSION_COMMAND_SUBMISSION`: review and
+   implement generic durable command admission with the coordinated outbound-channel sequence. Draft code is permitted; merge/deployment remain gated on archive ownership.
+2. `SESSION_COMMAND_STATUS_READ` and `SESSION_COMMAND_STATUS_UI`: expose authorized admission status
+   and the service-retained state dot, independently of notification rendering.
+3. `SESSION_INPUT_METADATA`: after generic admission settles, add typed annotations and producer
+   authorization. This is not part of the initial command-admission PR.
+4. `SESSION_INPUT_METADATA_READ` and `NOTIFICATION_NOTICE_METADATA`: authorized annotation reads and
+   producer integration after the metadata extension exists.
+5. `NOTIFICATION_PRESENTATION`: compact rendering after metadata reads and producer integration.
 
 Tests cover ordinary input, restricted provenance, destination authorization, identical/conflicting
 retries (including concurrent requests), crashes around dispatch, pending/rejected inputs, replay

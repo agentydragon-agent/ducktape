@@ -115,14 +115,62 @@ RPC protocol. Do not claim this TODO is implemented because a connection test su
 
 ## Outbound control-channel design
 
-**Proposed decision, not an implemented migration.**
+**Operator-supported direction; concrete protocol review remains open, not an implemented migration.**
+The 2026-10-09 PDT discussion selects coordinated planning of durable command admission and runner
+dial-out, with an authenticated long-lived WebSocket recommended. Claude RemoteIO inspires the
+connection direction, not Agentplane's wire protocol, authorization or delivery guarantees.
 [`RUNNER_TRANSPORT_DESIGN`](task_dag.md#runner_transport_design--runner-dial-out-and-connection-lifecycle)
-compares service-initiated runner RPCs with a runner-initiated channel to Sandbox Service, co-designed
-with VM control networking. Claude RemoteIO demonstrates the latter connection direction; it is not
-an Agentplane protocol or evidence for our authorization, delivery or failure semantics. Review
-bidirectional gRPC, WebSocket or another narrowly justified transport against existing proxy support,
-not a new generic messaging platform. Provide a recommended sequence/network diagram and explicit
-operator decision before implementation.
+resolves framing/versioning, bootstrap authentication, ownership/fencing and replay/backpressure
+before implementation. Validate WS support on the actual proxy path; revisit bidirectional gRPC
+only for a concrete transport constraint, not a new generic messaging platform.
+
+```mermaid
+sequenceDiagram
+    participant C as Caller
+    participant S as Sandbox Service
+    participant R as Runner
+    R->>S: Authenticate and establish outbound WS
+    S->>R: Resume spool after committed archive cursor
+    C->>S: SubmitCommand RPC
+    S->>S: Persist pending_admission
+    S->>R: Command with stable ID
+    R->>R: Journal durable admission
+    R->>S: Correlated admission receipt
+    S->>S: Record admitted
+    S->>C: OK with receipt (not execution result)
+    R->>S: Independent spool Events
+    S->>S: Commit archive prefix and reconcile admissions
+    S->>R: Acknowledge committed archive prefix
+```
+
+Receipts and spool Events may race; the diagram is illustrative, not a required cross-stream order.
+Command insertion and spool listening are independent logical operations on this connection, not
+reverse unary gRPC calls. Neither creates a Session or resumes a stopped harness. Define lifecycle
+message mappings separately. A replay cursor is not part of command submission identity.
+
+### Coordinated implementation and rollout
+
+The [admission plan](command_admission.md) owns persistence/retry semantics. Implement its core
+against a transport interface while implementing both channel peers against the reviewed contract.
+Do not require an intermediate inbound `InsertCommand`/`ListenSpool` migration or couple submission
+to `Attach` history replay. Retain useful runner admission/receipt internals and tests from prototypes.
+
+Deploy compatible service channel support first with existing routes unchanged, then a compatible
+runner image in a fresh outbound-enabled canary (`RUNNER_OUTBOUND_CANARY`). Verify the actual proxy
+path, authentication, reconnect, ownership/fencing and replay. Then integrate the public durable
+submission handler and independent archive ingestion (`SESSION_COMMAND_SUBMISSION`); both must pass
+before `RUNNER_OUTBOUND_ROLLOUT` expands to selected existing environments. This is not an atomic
+fleet deployment and does not require first moving every runner.
+
+One explicit route owns each environment/incarnation. Do not silently fall back per request or
+blindly resend ambiguous commands through an old route. Rollback preserves pending submissions,
+command IDs, journal/history and exclusive route ownership. Remove legacy command submission and
+inbound access only when all relevant consumers, including lifecycle callers, have moved.
+
+Draft code and isolated tests may proceed during backfill. This specific permission does not lift
+merge/schema-application/deployment gates on archive ownership and compatibility verification, or
+unrelated VM/service-change holds. No notification metadata, background dispatch or automatic wake
+is part of the initial admission/channel rollout.
 
 ### Authority is separate from connection direction
 
@@ -168,12 +216,12 @@ not prove that either direction is making application progress.
 
 ### VM sequencing and bounded validation
 
-Before `VM_CONTROL_NETWORKING`, choose inbound versus outbound control and state which guest ports,
+Before `VM_CONTROL_NETWORKING`, finalize the outbound control design and state which guest ports,
 endpoint discovery and network policies it replaces. Outbound control may simplify VM reachability,
 but guest access to LLM/Action APIs still needs its authorized relay. Image/resource-isolation work
-can proceed independently; service/persistence changes honor the archive-migration hold.
+can proceed independently; service/persistence merge and deployment honor the archive-migration hold.
 
-If selected, implement `RUNNER_OUTBOUND_CHANNEL` with automated peer tests for authentication denial,
+Implement `RUNNER_OUTBOUND_CHANNEL` after concrete protocol review with automated peer tests for authentication denial,
 ordinary disconnect/reconnect, stale-owner fencing, replay, token expiry and backpressure. Perform
 a bounded real-VM connection/reconnect/receipt check for the actual proxy/network path; do not require
 simultaneous node/database/guest failure drills. `RUNNER_OUTBOUND_ROLLOUT` then handles selected
