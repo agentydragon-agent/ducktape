@@ -74,6 +74,7 @@ export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
     !sandbox ||
     sandbox.deleting ||
     sandbox.operating_mode !== "Running" ||
+    sandbox.initializing ||
     sandbox.launch_grants_pending ||
     !sandbox.kubernetes_grants_ready ||
     sandbox.kubernetes_grant_error ||
@@ -100,6 +101,7 @@ export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
 
 export function sandboxSummary(sandbox: SandboxView): { label: string; kind: SandboxStatusKind } {
   if (sandbox.deleting) return { label: "Deleting", kind: "gone" };
+  if (sandbox.initializing) return { label: "Initializing", kind: "pending" };
   if (sandbox.operating_mode === "Suspended") return { label: "Suspended", kind: "suspended" };
   if (sandbox.kubernetes_grant_error) return { label: "Grant error", kind: "failed" };
   if (sandbox.launch_grants_pending || !sandbox.kubernetes_grants_ready)
@@ -173,6 +175,7 @@ function conditionLine(condition: RawCondition): string {
 export function sandboxStatusDetail(sandbox: SandboxView): string {
   const lines = [`Sandbox: ${sandboxSummary(sandbox).label}`];
   lines.push(...rawConditions(sandbox.status).map((condition) => `Sandbox condition · ${conditionLine(condition)}`));
+  if (sandbox.initializing) lines.push("Sandbox initialization pending; controller will provision it");
   if (sandbox.launch_grants_pending) lines.push("Launch grants pending");
   if (!sandbox.kubernetes_grants_ready) lines.push("Kubernetes grants are still being applied");
   if (sandbox.kubernetes_grant_error) lines.push(`Kubernetes grant error: ${sandbox.kubernetes_grant_error}`);

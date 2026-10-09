@@ -158,6 +158,16 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
         "thread_defaults": {"model": "test-model", "instructions": ""},
         "bootstrap": "printf ready",
     }
+    assert view.initializing
+    assert view.operating_mode == "Suspended"
+    assert not case.core.service_accounts
+    with pytest.raises(ServiceError) as pending:
+        await api.resume(view.name)
+    assert pending.value.code is grpc.StatusCode.ALREADY_EXISTS
+    await case.service.reconcile_once()
+    view = await api.get(view.name)
+    assert not view.initializing
+    assert view.operating_mode == "Running"
     assert view.kubernetes_grants_ready
     assert len(case.rbac.bindings) == 1
     assert await case.service.inventory.pending_grants(view.name) is None
@@ -217,13 +227,13 @@ async def test_invalid_protobuf_create_does_not_mutate(
 
 async def test_partial_create_recovers_from_kubernetes_state_without_app(case: Case) -> None:
     case.custom.fail_plural = "actionpolicybindings"
-    with pytest.raises(k8s_client.ApiException):
-        await case.service.create(
-            CreateSandboxRequest(
-                name="test", template=TEMPLATE, action_policy_sets=["test-actions"], kubernetes_grants=["test-read"]
-            ),
-            caller=ADMIN,
-        )
+    await case.service.create(
+        CreateSandboxRequest(
+            name="test", template=TEMPLATE, action_policy_sets=["test-actions"], kubernetes_grants=["test-read"]
+        ),
+        caller=ADMIN,
+    )
+    await case.service.reconcile_once()
     (view,) = await case.service.inventory.list_sandboxes()
     case.core.pods[view.name] = pod(view.name, phase="Running", ready=True, ip="10.0.0.1")
     assert (await case.service.inventory.get(view.name)).launch_grants_pending
@@ -245,10 +255,10 @@ async def test_partial_create_recovers_from_kubernetes_state_without_app(case: C
 
 async def test_foreign_binding_is_not_overwritten_and_provisioning_stays_pending(case: Case) -> None:
     case.custom.fail_plural = "actionpolicybindings"
-    with pytest.raises(k8s_client.ApiException):
-        await case.service.create(
-            CreateSandboxRequest(name="test", template=TEMPLATE, action_policy_sets=["test-actions"]), caller=ADMIN
-        )
+    await case.service.create(
+        CreateSandboxRequest(name="test", template=TEMPLATE, action_policy_sets=["test-actions"]), caller=ADMIN
+    )
+    await case.service.reconcile_once()
     (view,) = await case.service.inventory.list_sandboxes()
     binding = next(value for (kind, _), value in case.custom.objects.items() if kind == "egressbindings")
     binding["spec"]["policies"] = ["test-foreign"]
@@ -304,12 +314,13 @@ async def test_manual_egress_grants_cross_the_service_boundary(api: SandboxServi
 async def test_create_retry_finishes_initialization_after_lost_grants(case: Case) -> None:
     spec = CreateSandboxRequest(name="retry", template=TEMPLATE, action_policy_sets=["test-actions"])
     case.custom.fail_plural = "actionpolicybindings"
-    with pytest.raises(k8s_client.ApiException):
-        await case.service.create(spec, caller=ADMIN)
+    await case.service.create(spec, caller=ADMIN)
+    await case.service.reconcile_once()
     view = await case.service.inventory.get("retry")
     assert view.operating_mode == "Suspended"
     assert "retry" in case.core.service_accounts
     case.custom.fail_plural = None
+    await case.service.reconcile_once()
     completed = await case.service.create(spec, caller=ADMIN)
     assert completed.uid == view.uid
     assert completed.operating_mode == "Running"
@@ -332,6 +343,9 @@ async def test_create_retry_after_lost_service_account_reply(case: Case) -> None
     case.core.create_namespaced_service_account = committed_then_lost  # type: ignore[method-assign]
     spec = CreateSandboxRequest(name="sa-lost", template=TEMPLATE)
     view = await case.service.create(spec, caller=ADMIN)
+    assert view.initializing
+    await case.service.reconcile_once()
+    view = await case.service.inventory.get(view.name)
     assert view.operating_mode == "Running"
     assert list(case.core.service_accounts) == ["sa-lost"]
     assert (await case.service.create(spec, caller=ADMIN)).uid == view.uid
@@ -351,11 +365,13 @@ async def test_reconcile_after_final_resume_reply_is_lost(case: Case) -> None:
 
     case.custom.patch_namespaced_custom_object = patched_then_lost  # type: ignore[method-assign]
     spec = CreateSandboxRequest(name="last-patch", template=TEMPLATE)
-    with pytest.raises(k8s_client.ApiException):
-        await case.service.create(spec, caller=ADMIN)
     view = await case.service.create(spec, caller=ADMIN)
-    assert view.operating_mode == "Running"
-    assert await case.service.inventory.initialization_pending(view.name) is False
+    assert view.initializing
+    await case.service.reconcile_once()  # The patch commits but its response is lost.
+    await case.service.reconcile_once()  # A restart sees the already-running CR.
+    current = await case.service.inventory.get(view.name)
+    assert current.operating_mode == "Running"
+    assert not current.initializing
 
 
 if __name__ == "__main__":

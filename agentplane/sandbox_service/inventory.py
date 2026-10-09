@@ -22,6 +22,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.sandbox_service.binding_storage import read_binding
 from agentplane.sandbox_service.kubernetes_views import (
+    CREATE_INTENT,
+    INITIALIZING,
     KUBERNETES_GRANTS_ERROR_ANNOTATION,
     KUBERNETES_GRANTS_READY_ANNOTATION,
     MANAGED_LABEL,
@@ -40,8 +42,6 @@ from util.kubernetes import CustomObjectsClient
 
 _MERGE_PATCH = "application/merge-patch+json"
 
-CREATE_INTENT = "agentplane.allegedly.works/create-intent"
-INITIALIZING = "agentplane.allegedly.works/initializing"
 
 # Kubernetes-boundary models: the subset of each CR the inventory reads, parsed once off the wire.
 

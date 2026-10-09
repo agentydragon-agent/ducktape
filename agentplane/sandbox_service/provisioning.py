@@ -49,8 +49,7 @@ class Provisioning:
             raise ValueError("unsupported harness")
         existing = await self.inventory.retry(spec, caller=caller)
         if existing is not None:
-            await self.ensure(existing)
-            return await self.inventory.get(existing.name)
+            return existing
         grants = resolve_grants(list(spec.kubernetes_grants), self.grants)
         policies = self.egress.launch_policies(list(spec.egress_policies))
         await self.egress.require_policies(policies)
@@ -74,7 +73,7 @@ class Provisioning:
             annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps(
                 [MessageToDict(grant, preserving_proto_field_name=True) for grant in grants]
             )
-        view = await self.inventory.create(
+        return await self.inventory.create(
             spec,
             caller=caller,
             annotations=annotations or None,
@@ -85,8 +84,6 @@ class Provisioning:
             )
             else None,
         )
-        await self.ensure(view)
-        return await self.inventory.get(view.name)
 
     async def ensure(self, sandbox: Sandbox) -> None:
         if sandbox.deleting:

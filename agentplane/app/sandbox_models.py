@@ -152,6 +152,7 @@ class SandboxView(BaseModel):
     kubernetes_grants_ready: bool
     kubernetes_grant_error: str | None
     launch_grants_pending: bool
+    initializing: bool = False
     deleting: bool = False
     pod: PodView | None = None
 
@@ -166,6 +167,7 @@ def sandbox_has_ready_pod(view: SandboxView) -> bool:
     if (
         view.deleting
         or view.operating_mode != OperatingMode.RUNNING
+        or view.initializing
         or view.launch_grants_pending
         or not view.kubernetes_grants_ready
         or view.kubernetes_grant_error is not None

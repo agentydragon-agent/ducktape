@@ -24,6 +24,8 @@ from agentplane.sandbox_service.protocol_pb2 import (
 from util.agent_sandbox import OperatingMode
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
+CREATE_INTENT = "agentplane.allegedly.works/create-intent"
+INITIALIZING = "agentplane.allegedly.works/initializing"
 SANDBOX_BINDING_ANNOTATION = "agentplane.allegedly.works/sandbox-binding"
 PROVISIONING_ANNOTATION = "agentplane.allegedly.works/pending-launch-grants"
 KUBERNETES_GRANTS_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants"
@@ -98,6 +100,7 @@ def _view(sandbox: SandboxResource, pod: k8s_client.V1Pod | None, *, api_client:
         namespace=sandbox.metadata.namespace,
         status=_struct(sandbox.status) if sandbox.status is not None else None,
         launch_grants_pending=PROVISIONING_ANNOTATION in sandbox.metadata.annotations,
+        initializing=INITIALIZING in sandbox.metadata.annotations,
         service_account=ServiceAccount(
             namespace=sandbox.metadata.namespace, name=sandbox.spec.pod_template.spec.service_account_name
         ),

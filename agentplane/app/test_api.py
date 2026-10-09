@@ -44,7 +44,7 @@ from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBindingGrant, RoleRef
-from agentplane.sandbox_service.testing.backend import backend, seed_runner
+from agentplane.sandbox_service.testing.backend import Endpoint, backend, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
@@ -239,7 +239,8 @@ def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCust
     assert response.status_code == 201
     row = response.json()
     assert row["name"] == "demo"
-    assert row["operating_mode"] == "Running"
+    assert row["operating_mode"] == "Suspended"
+    assert row["initializing"] is True
     assert row["pod"] is None
     assert ("sandboxes", row["name"]) in custom_objects.objects
     # Nothing was picked, so nothing may leave it.
@@ -251,7 +252,7 @@ def test_templates_list_the_concrete_choices_for_the_create_form(client: TestCli
 
 
 def test_create_records_the_concrete_session_defaults_and_bootstrap(
-    client: TestClient, custom_objects: FakeCustomObjectsApi
+    client: TestClient, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi
 ) -> None:
     response = client.post(
         "/sandboxes",
@@ -284,6 +285,7 @@ def test_create_records_the_concrete_session_defaults_and_bootstrap(
         },
         "bootstrap": "mkdir -p /state/workspaces",
     }
+    sandbox_endpoint.reconcile()
     (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["github"]
     annotation = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["annotations"]
@@ -291,7 +293,7 @@ def test_create_records_the_concrete_session_defaults_and_bootstrap(
 
 
 def test_create_binds_the_sandbox_to_its_action_policy_sets(
-    client: TestClient, custom_objects: FakeCustomObjectsApi
+    client: TestClient, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi
 ) -> None:
     """One ActionPolicyBinding per launched Sandbox, owned by it and naming the ServiceAccount it
     runs as: what its harness may do without the operator, as the Action Service reads it. Reading the policy back is the Action Service's answer through the operator
@@ -300,6 +302,7 @@ def test_create_binds_the_sandbox_to_its_action_policy_sets(
         "/sandboxes", json={"name": "coder", "template": TEMPLATE, "action_policy_sets": ["github-reads"]}
     ).json()
 
+    sandbox_endpoint.reconcile()
     sandbox_uid = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["uid"]
     (written,) = [obj for (kind, _), obj in custom_objects.objects.items() if kind == "actionpolicybindings"]
     assert written["metadata"]["name"] == f"ap-init-{UUID(sandbox_uid).hex}"
@@ -308,6 +311,7 @@ def test_create_binds_the_sandbox_to_its_action_policy_sets(
     assert written["spec"] == {"subject": {"namespace": NAMESPACE, "name": row["name"]}, "policySets": ["github-reads"]}
 
     client.post("/sandboxes", json={"name": "plain", "template": TEMPLATE})
+    sandbox_endpoint.reconcile()
     assert len([kind for kind, _ in custom_objects.objects if kind == "actionpolicybindings"]) == 1
 
 
@@ -339,6 +343,7 @@ def test_kubernetes_grant_picker_requires_an_approved_name_and_operator(
 
 def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_account(
     client: TestClient,
+    sandbox_endpoint: Endpoint,
     sandbox_grants: dict[str, KubernetesGrant],
     sandbox_rbac: FakeRbac,
     custom_objects: FakeCustomObjectsApi,
@@ -359,6 +364,9 @@ def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_acc
         app.dependency_overrides.pop(require_caller)
     assert response.status_code == 201, response.text
     row = response.json()
+    assert row["initializing"] is True
+    sandbox_endpoint.reconcile()
+    row = client.get(f"/sandboxes/{row['name']}").json()
     assert row["kubernetes_grants_ready"] is True
     assert row["kubernetes_grants"][0]["grant"]["role_ref"] == {"kind": "Role", "name": "config-reader"}
     (bound,) = sandbox_rbac.bindings.values()
@@ -379,17 +387,19 @@ def _written_bindings(custom_objects: FakeCustomObjectsApi) -> list[tuple[str, l
 
 
 def test_the_launch_pick_of_action_policy_sets_is_the_operators(
-    client: TestClient, custom_objects: FakeCustomObjectsApi
+    client: TestClient, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi
 ) -> None:
     """An explicit empty list binds nothing, while a concrete choice binds exactly that list."""
     unbound = client.post("/sandboxes", json={"name": "coder", "template": TEMPLATE, "action_policy_sets": []})
     assert unbound.status_code == 201, unbound.text
+    sandbox_endpoint.reconcile()
     assert _written_bindings(custom_objects) == []
 
     picked = client.post(
         "/sandboxes",
         json={"name": "plain", "template": TEMPLATE, "action_policy_sets": ["github-reads", "github-writes"]},
     )
+    sandbox_endpoint.reconcile()
     assert picked.status_code == 201, picked.text
     assert _written_bindings(custom_objects) == [(picked.json()["name"], ["github-reads", "github-writes"])]
 
@@ -409,12 +419,13 @@ def test_policy_sets_list_the_namespace_for_the_create_form(client: TestClient) 
 
 
 def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
-    client: TestClient, custom_objects: FakeCustomObjectsApi
+    client: TestClient, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi
 ) -> None:
     response = client.post("/sandboxes", json={"name": "demo", "template": TEMPLATE, "egress_policies": ["pypi"]})
 
     assert response.status_code == 201, response.text
     row = response.json()
+    sandbox_endpoint.reconcile()
     # The new sandbox's egress is its own pick and nothing else: no binding names it in advance.
     (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["pypi"]
@@ -426,17 +437,21 @@ def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
 
 
 @pytest.mark.parametrize("default_egress_policies", [["github"]])
-def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(client: TestClient) -> None:
+def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(
+    client: TestClient, sandbox_endpoint: Endpoint
+) -> None:
     """The model endpoint is what this is for in the deployment: without it a sandbox has no agent,
     so it is not the caller's to leave out — nor, having picked it, to be granted twice. The
     parameter overrides the `default_egress_policies` fixture the client is built from."""
     unpicked = client.post("/sandboxes", json={"name": "plain", "template": TEMPLATE}).json()
+    sandbox_endpoint.reconcile()
     (binding,) = client.get(f"/sandboxes/{unpicked['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["github"]
 
     picked = client.post(
         "/sandboxes", json={"name": "asked", "template": TEMPLATE, "egress_policies": ["github", "pypi"]}
     ).json()
+    sandbox_endpoint.reconcile()
     (binding,) = client.get(f"/sandboxes/{picked['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["github", "pypi"]
 

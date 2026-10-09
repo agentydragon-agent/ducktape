@@ -44,7 +44,8 @@ The same service-caller allowlist gates every RPC. Provisioning is always enable
   Retry with the same name and exact choices while that CR exists; a different caller or request
   conflicts. Create first records intent on a Suspended CR, then ensures its UID-owned ServiceAccount
   and grants before resuming. A persisted initialization marker lets reconciliation recover without
-  the app. The RPC returns after provisioning orchestration, not necessarily after Pod readiness.
+  the app. The RPC returns when the CR is persisted; ServiceAccount, grants, and Pod readiness
+  are asynchronous.
   After deletion, a new CR under the same name cannot prove whether an earlier Create succeeded.
 - `GrantEgress`: UID-pinned Sandbox destination and egress policy names; returns the created binding name.
   `RevokeEgress`: binding name; retains the refusal to delete Git-owned bindings. Both require the
