@@ -114,3 +114,15 @@ export class ScrollCapture {
 
 /** One capture across the page: it survives switching between threads. */
 export const scrollCapture: ScrollCapture = new ScrollCapture();
+
+/** On-device diagnostics only: nothing is uploaded. Row keys can contain identifying metadata. */
+export function downloadScrollDiagnostics(recording: ScrollRecording): void {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(recording, null, 2)], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `agentplane-scroll-diagnostics-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}

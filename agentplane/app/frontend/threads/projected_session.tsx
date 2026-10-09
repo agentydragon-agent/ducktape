@@ -55,7 +55,7 @@ import {
 import { revealEvidenceOnTap } from "./thread_evidence";
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { markThreadViewEvent, LayoutSettle, type FollowReason } from "./thread_view_timing";
-import { scrollCapture } from "./scroll_diagnostics";
+import { downloadScrollDiagnostics, scrollCapture } from "./scroll_diagnostics";
 import { rememberRowHeight, rememberedRowHeight } from "./history_sizes";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "../thread_status_indicator";
@@ -955,18 +955,6 @@ function VirtualizedHistory({
       )}
     </div>
   );
-}
-
-/** On-device diagnostics only: nothing is uploaded. Row keys can contain identifying metadata. */
-function downloadScrollDiagnostics(recording: NonNullable<ReturnType<typeof scrollCapture.stopRecording>>): void {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(recording, null, 2)], { type: "application/json" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `agentplane-scroll-diagnostics-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function HistoryDebugTools(): JSX.Element {
