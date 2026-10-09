@@ -30,12 +30,11 @@ from agentplane.notification_service.service import DestinationRejectedError, Se
 from agentplane.notification_service.sources.actions import SourceNotOwnedError
 from agentplane.notification_service.sources.github import (
     PAYLOAD_MODELS,
-    GitHubRetryError,
-    GitHubUnavailableError,
     InvalidSignatureError,
     MissingWebhookRepositoryError,
     UnsupportedWebhookEventError,
 )
+from agentplane.notification_service.sources.github_client import GitHubRetryError, GitHubUnavailableError
 from agentplane.notification_service.store import ConflictError, NotFoundError, QuotaError
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver

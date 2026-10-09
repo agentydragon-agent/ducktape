@@ -13,7 +13,8 @@ from agentplane.notification_service.api import create_app
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import Settings
 from agentplane.notification_service.sources.actions import Actions
-from agentplane.notification_service.sources.github import GitHub, github_http_client
+from agentplane.notification_service.sources.github import GitHub
+from agentplane.notification_service.sources.github_client import GitHubClient
 from agentplane.notification_service.store import Store
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -50,9 +51,8 @@ async def serve(settings: Settings) -> None:
             )
             github = None
             if settings.github is not None:
-                github_http = await github_stack.enter_async_context(github_http_client(settings.github))
-                github = GitHub(github_http, settings.github)
-                github.start()
+                client = await github_stack.enter_async_context(GitHubClient.open(settings.github))
+                github = GitHub(client)
             app = create_app(
                 Service(
                     Store(engine),

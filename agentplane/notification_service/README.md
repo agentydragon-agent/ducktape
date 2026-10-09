@@ -100,3 +100,10 @@ embedded credentials, query strings or fragments are rejected; redirects remain 
 The configured endpoint receives App JWTs and installation tokens: only use trusted endpoints,
 and use fixture credentials for local mock services. These are deployment-owned settings,
 not subscription-controlled destinations, and do not alter egress authorization.
+
+`GitHubClient` in `sources/github_client.py` owns the async HTTP lifetime, configured endpoint,
+App JWTs, installation-token cache and typed REST resource methods. The notification provider
+owns webhook verification, durable access/subject observations, leases, backoff scheduling and
+matching. Client calls surface rate limits immediately; they do not sleep/retry inside a lease.
+The client can accept an injected `httpx.AsyncClient` for transport tests; deployment startup
+uses `GitHubClient.open(settings.github)` to validate the key and close the configured transport.

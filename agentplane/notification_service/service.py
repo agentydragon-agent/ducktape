@@ -21,8 +21,8 @@ from agentplane.notification_service.models import (
 )
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import Actions, SourceNotOwnedError
-from agentplane.notification_service.sources.github import (
-    GitHub,
+from agentplane.notification_service.sources.github import GitHub
+from agentplane.notification_service.sources.github_client import (
     GitHubAccessError,
     GitHubRetryError,
     GitHubSourceChangedError,
