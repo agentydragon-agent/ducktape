@@ -13,8 +13,16 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.action_service.models import ActionEventView
 from agentplane.notification_service.db import (
-    Entry, GitHubDelivery, GitHubInstallation, GitHubRepository, GitHubRepositoryAccess, GitHubSubject,
-    Inbox, Match, Notice, Subscription,
+    Entry,
+    GitHubDelivery,
+    GitHubInstallation,
+    GitHubRepository,
+    GitHubRepositoryAccess,
+    GitHubSubject,
+    Inbox,
+    Match,
+    Notice,
+    Subscription,
 )
 from agentplane.notification_service.models import (
     ActionsEvent,
@@ -187,20 +195,36 @@ class Store:
                     select(func.coalesce(func.max(GitHubDelivery.position), 0))
                 )
                 assert github_start_position is not None
-                await session.execute(insert(GitHubInstallation).values(
-                    app_id=binding.app_id, installation_id=binding.installation_id, generation=0
-                ).on_conflict_do_nothing())
-                await session.execute(insert(GitHubRepository).values(
-                    repository_id=binding.repository_id, full_name=body.source.repository
-                ).on_conflict_do_nothing())
-                await session.execute(insert(GitHubRepositoryAccess).values(
-                    app_id=binding.app_id, installation_id=binding.installation_id,
-                    repository_id=binding.repository_id, generation=0
-                ).on_conflict_do_nothing())
-                await session.execute(insert(GitHubSubject).values(
-                    repository_id=binding.repository_id, kind=body.source.subject.kind,
-                    subject_key=subject_key(body.source), generation=0
-                ).on_conflict_do_nothing())
+                await session.execute(
+                    insert(GitHubInstallation)
+                    .values(app_id=binding.app_id, installation_id=binding.installation_id, generation=0)
+                    .on_conflict_do_nothing()
+                )
+                await session.execute(
+                    insert(GitHubRepository)
+                    .values(repository_id=binding.repository_id, full_name=body.source.repository)
+                    .on_conflict_do_nothing()
+                )
+                await session.execute(
+                    insert(GitHubRepositoryAccess)
+                    .values(
+                        app_id=binding.app_id,
+                        installation_id=binding.installation_id,
+                        repository_id=binding.repository_id,
+                        generation=0,
+                    )
+                    .on_conflict_do_nothing()
+                )
+                await session.execute(
+                    insert(GitHubSubject)
+                    .values(
+                        repository_id=binding.repository_id,
+                        kind=body.source.subject.kind,
+                        subject_key=subject_key(body.source),
+                        generation=0,
+                    )
+                    .on_conflict_do_nothing()
+                )
             row = Subscription(
                 id=uuid4(),
                 inbox_id=inbox.id,

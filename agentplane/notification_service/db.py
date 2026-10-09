@@ -53,7 +53,11 @@ class Subscription(Base):
         UniqueConstraint("inbox_id", "idempotency_key"),
         ForeignKeyConstraint(
             ["github_app_id", "github_installation_id", "github_repository_id"],
-            ["github_repository_access.app_id", "github_repository_access.installation_id", "github_repository_access.repository_id"],
+            [
+                "github_repository_access.app_id",
+                "github_repository_access.installation_id",
+                "github_repository_access.repository_id",
+            ],
         ),
         ForeignKeyConstraint(
             ["github_repository_id", "github_subject_kind", "github_subject_key"],

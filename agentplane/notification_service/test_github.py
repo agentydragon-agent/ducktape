@@ -28,7 +28,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.notification_service.api import authenticated_caller, create_app
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.db import (
-    GitHubDelivery, GitHubInstallation, GitHubRepository, GitHubRepositoryAccess, GitHubSubject, Inbox, Subscription,
+    GitHubDelivery,
+    GitHubInstallation,
+    GitHubRepository,
+    GitHubRepositoryAccess,
+    GitHubSubject,
+    Inbox,
+    Subscription,
 )
 from agentplane.notification_service.models import DestinationRef, SourceFailureKind, Subscribe, SubscriptionUpdate
 from agentplane.notification_service.service import Service
@@ -891,10 +897,14 @@ async def test_subscriptions_share_normalized_github_entities(store: Store, prov
     # A subscription cannot claim a subject or installation/repository grant that does not exist.
     with pytest.raises(IntegrityError):
         async with store.sessions.begin() as session:
-            await session.execute(update(Subscription).where(Subscription.id == first.id).values(github_subject_key="999"))
+            await session.execute(
+                update(Subscription).where(Subscription.id == first.id).values(github_subject_key="999")
+            )
     with pytest.raises(IntegrityError):
         async with store.sessions.begin() as session:
-            await session.execute(update(Subscription).where(Subscription.id == first.id).values(github_installation_id=999))
+            await session.execute(
+                update(Subscription).where(Subscription.id == first.id).values(github_installation_id=999)
+            )
 
 
 if __name__ == "__main__":
