@@ -32,7 +32,9 @@ nor should unsupported facts quietly fall back to raw-API catalogue metadata.
 | `gemini-claude`                                   |         1048576 |          65536 |
 | `antigravity-claude`                              |         1048576 |          65536 |
 | `litellm-claude`                                  |         omitted |        omitted |
-| `tana-claude`                                     |         omitted |        omitted |
+
+`tana-claude` has no active generated selection while Tana exposure is parked
+(#9574); its renderer and credentials are retained.
 
 In the inspected Nix Claude Code **2.1.283**, the context override is an assumed
 pre-reserve window for custom models; recognized model metadata can take precedence.

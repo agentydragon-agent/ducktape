@@ -21,8 +21,6 @@ from model_catalog.catalog import (
     OLLAMA_CHAT_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
     SERVED_ROUTES,
-    TANA_HAIKU,
-    TANA_ROUTES,
     Route,
     RouteAlias,
 )
@@ -69,7 +67,6 @@ class ModelLaneRoutes:
 KEY_MODEL_LANES = {
     "gpt6_oai_lane_models": ModelLaneRoutes(allowed=GPT6_RESPONSES_ROUTES),
     "gpt6_codex_client_models": ModelLaneRoutes(allowed=GPT6_MESSAGES_ROUTES),
-    "tana_client_models": ModelLaneRoutes(allowed=TANA_ROUTES, fallbacks=(TANA_HAIKU,)),
     "codex_client_models": ModelLaneRoutes(allowed=CHATGPT_MESSAGES_ROUTES, fallbacks=(GPT6_LUNA_MESSAGES,)),
     "claude_client_models": ModelLaneRoutes(allowed=ANTHROPIC_SUBSCRIPTION_ROUTES),
     "embedding_client_models": ModelLaneRoutes(allowed=EMBEDDING_ROUTES),

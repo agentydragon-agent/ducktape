@@ -727,7 +727,9 @@ MISTRAL_ROUTES = tuple(Route(model, MISTRAL_CHAT, publish_limits=True) for model
 SERVED_ROUTES: tuple[Route | RouteAlias, ...] = (
     *_OLLAMA_PROXY_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
-    *TANA_ROUTES,
+    # TODO(#9574): Tana limits are unknown for this reverse-engineered gateway.
+    # Restore exposure with its key lane/fallback and wrapper only after review.
+    # *TANA_ROUTES,
     *CHATGPT_MESSAGES_ROUTES,
     *CHATGPT_RESPONSES_ROUTES,
     *ANTHROPIC_SUBSCRIPTION_ROUTES,
