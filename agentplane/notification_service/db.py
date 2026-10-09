@@ -52,6 +52,15 @@ class Subscription(Base):
         UniqueConstraint("inbox_id", "idempotency_key"),
         CheckConstraint("creation ? 'source'", name="subscription_creation_source"),
         CheckConstraint(
+            "error_kind IN ('rate_limited', 'unavailable', 'access_denied', 'source_changed', 'processing_error')",
+            name="subscription_error_kind",
+        ),
+        CheckConstraint(
+            "(error IS NULL AND error_kind IS NULL AND error_since IS NULL AND error_observed_at IS NULL) OR "
+            "(error IS NOT NULL AND error_kind IS NOT NULL AND error_since IS NOT NULL AND error_observed_at IS NOT NULL)",
+            name="subscription_error_state",
+        ),
+        CheckConstraint(
             "CASE creation #>> '{source,provider}' "
             "WHEN 'actions' THEN actions_after_sequence IS NOT NULL AND github_start_position IS NULL "
             "AND github_binding IS NULL "
@@ -76,6 +85,10 @@ class Subscription(Base):
     # Next source reconciliation, not a runner delivery timestamp; None waits for a new event.
     next_attempt: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None]
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_kind: Mapped[str | None]
+    error_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Entry(Base):

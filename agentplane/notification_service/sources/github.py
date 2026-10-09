@@ -49,7 +49,15 @@ class GitHubUnavailableError(Exception):
     """Disabled provider or confirmed loss of repository/installation access."""
 
 
-class GitHubNotInstalledError(GitHubUnavailableError):
+class GitHubAccessError(GitHubUnavailableError):
+    """Access is denied or the installation is suspended."""
+
+
+class GitHubSourceChangedError(GitHubUnavailableError):
+    """The authorized repository, installation or commit identity changed."""
+
+
+class GitHubNotInstalledError(GitHubAccessError):
     """The App's installation lookup returned 404 for this repository."""
 
 
@@ -281,7 +289,7 @@ class GitHub:
         if response.status_code == 401:
             self.tokens.clear()
         if response.status_code in (401, 403, 404):
-            raise GitHubUnavailableError(
+            raise GitHubAccessError(
                 f"GitHub App access unavailable (HTTP {response.status_code}); check credentials and permissions"
             )
         response.raise_for_status()
@@ -307,7 +315,7 @@ class GitHub:
             raise GitHubNotInstalledError("GitHub App has no accessible installation for this repository")
         installation = Installation.model_validate_json(response.content)
         if installation.suspended_at is not None:
-            raise GitHubUnavailableError("GitHub App installation is suspended")
+            raise GitHubAccessError("GitHub App installation is suspended")
         headers = await self.installation_headers(installation.id)
         repository = Repository.model_validate_json((await self.request("GET", f"/repos/{name}", headers)).content)
         return GitHubBinding(
@@ -333,7 +341,7 @@ class GitHub:
                         logger.warning("PR fork %s is not covered: %s", pr.head.repo.full_name, error)
                     else:
                         if fork.repository_id != pr.head.repo.id:
-                            raise GitHubUnavailableError("GitHub fork repository identity changed")
+                            raise GitHubSourceChangedError("GitHub fork repository identity changed")
                         context.installations[fork.repository_id] = fork.installation_id
             case BranchSubject(name=name):
                 response = await self.request(
@@ -350,7 +358,7 @@ class GitHub:
                     (await self.request("GET", f"/repos/{source.repository}/commits/{sha}", headers)).content
                 )
                 if commit.sha != sha:
-                    raise GitHubUnavailableError("GitHub commit identity changed")
+                    raise GitHubSourceChangedError("GitHub commit identity changed")
                 context.heads.add(sha)
         return context
 
@@ -386,7 +394,7 @@ class GitHub:
     async def reconcile(self, store: Store, claim: Inbox, subscription: Subscription, source: GitHubSource) -> None:
         context = await self.context(source)
         if context.binding != GitHubBinding.model_validate(subscription.github_binding):
-            raise GitHubUnavailableError("GitHub source installation/repository changed; recreate the subscription")
+            raise GitHubSourceChangedError("GitHub source installation/repository changed; recreate the subscription")
         delivery = GitHubDelivery
         direct: ColumnElement[bool] = false()
         heads: ColumnElement[bool] = delivery.head_sha.in_(context.heads)

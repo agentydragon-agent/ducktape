@@ -21,6 +21,7 @@ from agentplane.notification_service.models import (
     ActionsEvent,
     ActionsSource,
     DestinationRef,
+    SourceFailureKind,
     Subscribe,
     SubscriptionUpdate,
 )
@@ -190,8 +191,13 @@ async def test_remove_pause_migration_preserves_inbox_and_stopped_intent(
 
     async with engine.begin() as connection:
         await connection.run_sync(round_trip)
+    # The old schema has no success-observation column; upgrading must not fabricate its value.
     expected = before.model_copy(
-        update={"cancelled": paused or cancelled, "version": before.version + int(paused and not cancelled)}
+        update={
+            "cancelled": paused or cancelled,
+            "version": before.version + int(paused and not cancelled),
+            "last_success_at": None,
+        }
     )
     assert await store.subscribe(PRINCIPAL, BODY) == expected
     assert await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == inbox_before
@@ -388,6 +394,71 @@ async def test_retention_gap_is_visible_and_replay_keeps_tombstone(store: Store)
     assert source is not None
     await store.record(claim, source, events())
     assert (await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)).inbox.last_cursor == 3
+
+
+@pytest.mark.parametrize("existing_events", [False, True])
+async def test_health_is_durable_introspection_without_inbox_events(
+    store: Store, engine: AsyncEngine, existing_events: bool
+) -> None:
+    subscription = await store.subscribe(PRINCIPAL, BODY)
+    claim = await store.claim()
+    assert claim is not None
+    source = await store.source(claim)
+    assert source is not None
+    if existing_events:
+        await store.record(claim, source, events())
+        assert await store.notice(claim) is not None
+    before = await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
+    recovered = Store(engine)
+    previous_kind = None
+    previous_since = None
+    for kind, error, delay in [
+        (SourceFailureKind.RATE_LIMITED, "HTTP 429", 120),
+        (SourceFailureKind.RATE_LIMITED, "HTTP 429 again", 300),
+        (SourceFailureKind.ACCESS_DENIED, "access revoked", 60),
+    ]:
+        await recovered.source_failed(claim, source, error, delay, kind=kind)
+        view = await recovered.subscription(PRINCIPAL.account, subscription.id)
+        assert (view.error_kind, view.error) == (kind, error)
+        assert view.error_since is not None
+        assert view.error_observed_at is not None
+        assert view.error_since <= view.error_observed_at
+        if kind == previous_kind:
+            assert view.error_since == previous_since
+        elif previous_since is not None:
+            assert view.error_since >= previous_since
+        previous_kind, previous_since = kind, view.error_since
+        assert view.retry_at is not None
+        assert view.retry_at > datetime.now(UTC) + timedelta(seconds=delay - 10)
+        assert await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before
+        await recovered.notice(claim)
+        assert await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before
+    await recovered.record(claim, source, [])
+    view = await recovered.subscription(PRINCIPAL.account, subscription.id)
+    assert (view.error_kind, view.error, view.retry_at) == (None, None, None)
+    assert view.last_success_at is not None
+    assert await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before
+    await recovered.change(PRINCIPAL.account, subscription.id, None)
+    await recovered.source_failed(claim, source, "late response")
+    assert (await recovered.subscription(PRINCIPAL.account, subscription.id)).error_kind is None
+    assert await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before
+
+
+async def test_overlapping_sources_have_independent_current_health(store: Store) -> None:
+    first = await store.subscribe(PRINCIPAL, BODY)
+    second = await store.subscribe(PRINCIPAL, BODY.model_copy(update={"idempotency_key": "overlap"}))
+    claim = await store.claim()
+    assert claim is not None
+    async with store.sessions() as session:
+        source = await session.get(Subscription, first.id)
+    assert source is not None
+    await store.source_failed(claim, source, "HTTP 429", kind=SourceFailureKind.RATE_LIMITED)
+    assert (await store.subscription(PRINCIPAL.account, first.id)).error_kind == SourceFailureKind.RATE_LIMITED
+    assert (await store.subscription(PRINCIPAL.account, second.id)).error_kind is None
+    page = await store.read(PRINCIPAL.account, first.inbox_id, 0, 128)
+    assert not page.entries
+    assert page.inbox.last_cursor == 0
+    assert await store.notice(claim) is None
 
 
 if __name__ == "__main__":
