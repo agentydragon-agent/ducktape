@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { LayoutSettle } from "./history_trace";
+import { HistoryTrace, LayoutSettle } from "./history_trace";
 
 describe("LayoutSettle", () => {
   beforeEach(() => {
@@ -58,4 +58,22 @@ describe("LayoutSettle", () => {
     frames(20);
     expect(changes).toEqual([true]);
   });
+});
+
+it("emits User Timing marks only when the test harness enables recording", () => {
+  const mark = vi.fn();
+  vi.stubGlobal("performance", { mark });
+  try {
+    const trace = new HistoryTrace();
+    trace.record({ kind: "load-older" });
+    expect(mark).not.toHaveBeenCalled();
+    window.__agentplaneHistoryTestRecording = true;
+    trace.record({ kind: "follow", following: false, reason: "wheel-up" });
+    expect(mark).toHaveBeenCalledWith("agentplane:history:follow", {
+      detail: { kind: "follow", following: false, reason: "wheel-up" },
+    });
+  } finally {
+    delete window.__agentplaneHistoryTestRecording;
+    vi.unstubAllGlobals();
+  }
 });

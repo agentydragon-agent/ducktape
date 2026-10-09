@@ -571,13 +571,9 @@ function VirtualizedHistory({
     layoutSettle.current = settle;
     element.dataset.layoutSettled = "false";
     publishMode();
-    window.agentplaneHistoryTrace = () => historyTrace.events();
-    window.agentplaneHistoryEstimateErrors = () => historyTrace.estimateErrors();
     return () => {
       settle.dispose();
       layoutSettle.current = null;
-      delete window.agentplaneHistoryTrace;
-      delete window.agentplaneHistoryEstimateErrors;
     };
   }, [publishMode]);
   useLayoutEffect(() => {

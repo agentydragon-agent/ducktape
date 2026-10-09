@@ -1,7 +1,7 @@
 /**
  * What `VirtualizedHistory` publishes about itself, for tests and for chasing a reader-position
- * bug: a flight recorder of its scroll and layout decisions, and whether its layout has come to
- * rest.
+ * bug: User Timing marks for its scroll and layout decisions, and whether its layout has come
+ * to rest. The Playwright harness installs the test-only mark collector before the app loads.
  */
 
 /** Why the history started or stopped following the tail. */
@@ -32,48 +32,18 @@ export type HistoryEvent =
   | { kind: "measure"; key: string; estimate: number; measured: number; first: boolean; remembered: boolean }
   | { kind: "settled"; settled: boolean };
 
-export interface TimedHistoryEvent {
-  /** `performance.now()`, in milliseconds. */
-  at: number;
-  event: HistoryEvent;
-}
-
 declare global {
   interface Window {
-    /** The recent events of the history on screen, oldest first; absent while none is mounted. */
-    agentplaneHistoryTrace?: () => readonly TimedHistoryEvent[];
-    /** `measured - estimate`, in pixels, for each row's first reading since the page loaded. */
-    agentplaneHistoryEstimateErrors?: () => readonly EstimateError[];
+    /** Set by the Playwright init script before the app loads, not by production code. */
+    __agentplaneHistoryTestRecording?: boolean;
   }
 }
 
-/** Long enough for every scroll event of a few seconds of gesture plus a thread opening. */
-const CAPACITY = 2000;
-const ERROR_CAPACITY = 20_000;
-
-export interface EstimateError {
-  error: number;
-  remembered: boolean;
-}
-
+/** Emits browser User Timing marks only when the test harness enables them. */
 export class HistoryTrace {
-  readonly #events: TimedHistoryEvent[] = [];
-  readonly #estimateErrors: EstimateError[] = [];
-
   record(event: HistoryEvent): void {
-    this.#events.push({ at: performance.now(), event });
-    if (this.#events.length > CAPACITY) this.#events.shift();
-    if (event.kind === "measure" && event.first && this.#estimateErrors.length < ERROR_CAPACITY) {
-      this.#estimateErrors.push({ error: event.measured - event.estimate, remembered: event.remembered });
-    }
-  }
-
-  events(): readonly TimedHistoryEvent[] {
-    return this.#events;
-  }
-
-  estimateErrors(): readonly EstimateError[] {
-    return this.#estimateErrors;
+    if (!window.__agentplaneHistoryTestRecording) return;
+    performance.mark(`agentplane:history:${event.kind}`, { detail: event });
   }
 }
 

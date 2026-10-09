@@ -1,5 +1,5 @@
-"""The thread history's flight recorder (frontend/threads/history_trace.ts), read back from a
-Playwright page as typed events.
+"""The history's User Timing marks (frontend/threads/history_trace.ts), collected by the
+Playwright init script (history_probe.js) and read back as typed events.
 
 `HistoryEvent` there and the models here are one contract: an event kind or field added on either
 side fails the parse of the other, loudly, rather than being dropped from a failure's dump."""

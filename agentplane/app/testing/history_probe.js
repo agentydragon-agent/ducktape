@@ -15,6 +15,37 @@
   // Rows that touch are normal; more than this apart or overlapping is a layout that has not caught up.
   const TOLERANCE_PX = 1;
 
+  // The Playwright init script enables the app's User Timing marks before app startup.
+  // Browser tests own the observer and bounded buffers; production never sets this flag.
+  window.__agentplaneHistoryTestRecording = true;
+  const historyEvents = [];
+  const historyErrors = [];
+  const onHistoryMarks = (entries) => {
+    for (const entry of entries) {
+      if (!entry.name.startsWith("agentplane:history:")) continue;
+      const event = entry.detail;
+      historyEvents.push({ at: entry.startTime, event });
+      if (historyEvents.length > 2000) historyEvents.shift();
+      if (event.kind === "measure" && event.first && historyErrors.length < 20_000) {
+        historyErrors.push({ error: event.measured - event.estimate, remembered: event.remembered });
+      }
+      // Browser tests already retain the relevant decisions. Avoid accumulating a second,
+      // unbounded copy in the browser's performance timeline.
+      performance.clearMarks(entry.name);
+    }
+  };
+  const historyObserver = new PerformanceObserver((list) => onHistoryMarks(list.getEntries()));
+  historyObserver.observe({ type: "mark", buffered: true });
+  const flushHistory = () => onHistoryMarks(historyObserver.takeRecords());
+  window.agentplaneHistoryTrace = () => {
+    flushHistory();
+    return historyEvents;
+  };
+  window.agentplaneHistoryEstimateErrors = () => {
+    flushHistory();
+    return historyErrors;
+  };
+
   const probe = {
     navigatedAt: performance.timeOrigin,
     frames: 0,
@@ -63,7 +94,7 @@
     }
   }).observe({ type: "layout-shift", buffered: true });
 
-  // When the page's reads of rows and bodies finished, on the clock `HistoryTrace` stamps events
+  // When the page's reads of rows and bodies finished, on the clock User Timing stamps events
   // with, to tell a layout change that follows data arriving from one that does not.
   new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {

@@ -20,9 +20,11 @@ timing:
   flight and no row is still loading its text (`aria-busy="true"`, which grows the row when the text
   arrives); `false` while rows are still being measured. A test that needs a line's resting position
   waits for it (`holding_still` does) rather than counting frames.
-- `window.agentplaneHistoryTrace()`: the history's last 2,000 scroll and layout decisions
-  (`history_trace.ts`), always on. A failing browser test prints the relevant slice, and every
-  browser test writes the whole recording as `<test>-history-trace.jsonl`.
+- In browser tests, `history_probe.js` enables Agentplane User Timing marks before the app loads
+  and observes the last 2,000 scroll and layout decisions. It exposes
+  `window.agentplaneHistoryTrace()` **in tests only**. A failing test prints the relevant slice;
+  every browser test saves `<test>-history-trace.jsonl`. The browser probe also records available
+  layout-shift entries.
 
 `agentplane/app/testing/history_probe.js` is injected into every browser test's pages and writes
 `<test>-history-probe.json` to the undeclared outputs: per frame, rows overlapping or leaving a gap
