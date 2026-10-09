@@ -121,6 +121,7 @@ GITHUB_AGENTYDRAGON_AGENT_POLICY = "github-agentydragon-agent"
 GITHUB_CLONE_POLICY = "github-clone"
 GITHUB_ACTIONS_LOGS_POLICY = "github-actions-logs"
 BUILDBUDDY_POLICY = "buildbuddy"
+PUBLIC_CODER_VISUALS_POLICY = "public-coder-pr-visuals"
 PUBLIC_INTERNET_POLICY = "public-internet"
 
 
@@ -477,6 +478,21 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             # credentialRef here -- this is the same shape as `packages` below. GET-only:
             # retrieving a log or artifact archive, never uploading one.
             EgressPolicySpecRules(hosts=["*.blob.core.windows.net"], methods=[EgressPolicySpecRulesMethods.GET])
+        ],
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-public-coder-pr-visuals",
+        metadata=ApiObjectMetadata(name=PUBLIC_CODER_VISUALS_POLICY, namespace=namespace),
+        rules=[
+            # PR visual review publishes public before/after screenshots under this path.
+            # No credential is sent: GET-only for the report and its image assets, not
+            # general access to the S3 host or arbitrary object storage operations.
+            EgressPolicySpecRules(
+                hosts=["s3.allegedly.works"],
+                methods=[EgressPolicySpecRulesMethods.GET],
+                paths=["/pr-visuals/**"],
+            )
         ],
     )
     EgressPolicy(
