@@ -928,9 +928,7 @@ it.each([
   if (outcome === "noop") {
     expect(bubble?.parentElement?.querySelector(".agentplane-command-progress")).toBeNull();
     expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe("No-op");
-    expect(bubble?.parentElement?.querySelector('[role="status"]')?.getAttribute("title")).toBe(
-      "harness was stopping"
-    );
+    expect(bubble?.parentElement?.querySelector('[role="status"]')?.getAttribute("title")).toBe("harness was stopping");
   } else {
     expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
       status
