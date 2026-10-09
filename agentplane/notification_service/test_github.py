@@ -55,12 +55,7 @@ from agentplane.notification_service.models import (
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, NoticeDebounceSettings, Settings
 from agentplane.notification_service.sources.actions import Actions
-from agentplane.notification_service.sources.github import (
-    GitHub,
-    IssuePayload,
-    RefPayload,
-    correlation,
-)
+from agentplane.notification_service.sources.github import GitHub, IssuePayload, RefPayload, correlation
 from agentplane.notification_service.sources.github_client import (
     GitHubAccessError,
     GitHubClient,

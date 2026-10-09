@@ -85,20 +85,14 @@ class MissingWebhookRepositoryError(ValueError):
     pass
 
 
-
-
-
 class Envelope(Upstream):
     installation: Installation
     repository: Repository | None = None
     action: str | None = Field(default=None, max_length=64)
 
 
-
-
 class PullRequestPayload(Envelope):
     pull_request: PullRequest
-
 
 
 class IssuePayload(Envelope):
@@ -156,9 +150,6 @@ class PushPayload(Envelope):
 class RefPayload(Envelope):
     ref: str
     ref_type: Literal["branch", "tag"]
-
-
-
 
 
 @dataclass
@@ -233,9 +224,7 @@ class GitHub:
     async def repository(self, name: str) -> GitHubBinding:
         installation = await self.client.installation(name)
         repository = await self.client.repository(name, installation.id)
-        return GitHubBinding(
-            app_id=self.settings.app_id, installation_id=installation.id, repository_id=repository.id
-        )
+        return GitHubBinding(app_id=self.settings.app_id, installation_id=installation.id, repository_id=repository.id)
 
     async def context(self, source: GitHubSource) -> Context:
         binding = await self.repository(source.repository)

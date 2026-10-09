@@ -125,7 +125,7 @@ class GitHubClient:
 
     @classmethod
     @asynccontextmanager
-    async def open(cls, settings: GitHubSettings) -> AsyncIterator["GitHubClient"]:
+    async def open(cls, settings: GitHubSettings) -> AsyncIterator[GitHubClient]:
         async with httpx.AsyncClient(
             base_url=str(settings.api_url), timeout=settings.request_timeout_s, follow_redirects=False
         ) as http:
