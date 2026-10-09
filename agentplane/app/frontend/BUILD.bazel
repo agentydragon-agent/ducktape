@@ -911,7 +911,6 @@ agentplane_vitest_test(
         ":client",
         ":live",
         ":sidebar",
-        "//agentplane/app/frontend/threads:scroll_diagnostics",
         ":stream_status",
         ":thread_groups",
         ":thread_status",
@@ -922,6 +921,7 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/threads:scroll_diagnostics",
     ],
 )
 
