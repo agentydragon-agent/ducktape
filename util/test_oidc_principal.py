@@ -22,14 +22,14 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from mcp_infra.oidc_principal import (
+from util.net import bind_free_port
+from util.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     DexOidcPrincipalResolver,
     InvalidOidcPrincipalError,
     OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
 )
-from util.net import bind_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
@@ -137,6 +137,27 @@ async def test_resolves_only_issuer_and_subject_from_access_token(
 
     assert result == VerifiedOidcPrincipal(issuer=_ISSUER, subject=_SUBJECT)
     assert state.requests == 1
+
+
+async def test_issuer_comparison_preserves_original_url_spelling(
+    jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey]
+) -> None:
+    _state, jwks_uri = jwks_server
+    # Distinct StringOrURI identifiers: https://www.rfc-editor.org/rfc/rfc7519.html#section-2
+    issuer = "https://AUTH.example.test:443"
+    resolver = AuthentikOidcPrincipalResolver(
+        expected_issuer=issuer,
+        discovered_issuer=issuer,
+        jwks_uri=jwks_uri,
+        signing_algorithms=["RS256"],
+        client_id=_CLIENT_ID,
+    )
+    result = await resolver.resolve(_token_response(_token(signing_keys[0], claims=_claims(iss=issuer))))
+    assert result.issuer == issuer
+    with pytest.raises(InvalidOidcPrincipalError):
+        await resolver.resolve(
+            _token_response(_token(signing_keys[0], claims=_claims(iss="https://auth.example.test/")))
+        )
 
 
 @pytest.mark.parametrize("with_azp", [False, True])
@@ -481,7 +502,7 @@ async def test_jwks_transport_failure_is_verification_unavailable(
     def fail(*_args: object, **_kwargs: object) -> httpx.Response:
         raise httpx.RemoteProtocolError("incomplete response")
 
-    monkeypatch.setattr("mcp_infra.oidc_principal.httpx.get", fail)
+    monkeypatch.setattr("util.oidc_principal.httpx.get", fail)
     with pytest.raises(OidcPrincipalVerificationUnavailableError):
         await _resolver("https://auth.example.test/jwks").resolve(_token_response(_token(signing_keys[0])))
 
@@ -494,7 +515,7 @@ async def test_jwks_key_conversion_overflow_is_verification_unavailable(
     def fail(_document: object) -> None:
         raise OverflowError
 
-    monkeypatch.setattr("mcp_infra.oidc_principal.PyJWKSet.from_dict", fail)
+    monkeypatch.setattr("util.oidc_principal.PyJWKSet.from_dict", fail)
     with pytest.raises(OidcPrincipalVerificationUnavailableError):
         await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0])))
 
@@ -512,7 +533,7 @@ async def test_jwks_redirect_target_is_never_requested(
         assert follow_redirects is False
         return httpx.Response(302, headers={"Location": target}, request=httpx.Request("GET", url))
 
-    monkeypatch.setattr("mcp_infra.oidc_principal.httpx.get", redirect)
+    monkeypatch.setattr("util.oidc_principal.httpx.get", redirect)
     with pytest.raises(OidcPrincipalVerificationUnavailableError):
         await _resolver(source).resolve(_token_response(_token(signing_keys[0])))
 
@@ -620,7 +641,7 @@ def test_constructor_rejects_discovery_or_configuration_mismatch() -> None:
         {"client_id": "  "},
     ]
     for override in invalid_overrides:
-        with pytest.raises(ValueError, match=r"issuer|jwks|algorithm|client_id|RS256"):
+        with pytest.raises(ValueError, match=r"issuer|jwks|algorithm|client_id|RS256|URL"):
             AuthentikOidcPrincipalResolver(**(base | override))
 
 
