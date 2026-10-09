@@ -161,6 +161,9 @@ hooks in a sandboxed Nix derivation, using the exact tool closure included in th
 image workflow runs that check and a thin non-root container smoke test for the assembled
 filesystem, entrypoint and tool availability. These prove local tooling, not authenticated BuildBuddy execution;
 a deployed sandbox must separately prove the normal proxy/CA/credential route for `bbr`.
-No credentials are embedded in the image. Builds/tests should use RBE; adding tools does not
-isolate their processes or memory from the harness. VM-backed resource/process isolation remains
-separate work under `SANDBOX_VM_ISOLATION`.
+No credentials are embedded in the image. The staging container workflow is BuildBuddy-hosted
+builds, not a local Bazel client with remote actions. Local Bazel execution is deferred until
+VM-backed environments; package availability does not imply permission to run it. Adding tools
+does not isolate their processes or memory from the harness. VM-backed resource/process isolation
+remains separate work under `SANDBOX_VM_ISOLATION`. See the
+[BuildBuddy execution policy and validation](../docs/buildbuddy_remote_auth.md#validation-and-execution-policy).

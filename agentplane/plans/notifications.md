@@ -7,6 +7,13 @@ and the [staging acceptance record](../notification_service/docs/staging_github_
 
 ## Remaining live verification
 
+- [ ] Diagnose recurring staging webhook HTTP 400 rejections. Current access logs omit the delivery
+      ID, event kind and rejection reason; successful rollout does not establish correct ingestion
+      of those deliveries. Add bounded, payload-free rejection diagnostics if necessary.
+- [ ] Verify shared GitHub refresh reuse across overlapping live subscriptions and service restarts,
+      and failure/backoff visibility through agent introspection and the frontend. CI coverage and
+      a successful deployed status read do not establish these live behaviors.
+
 - [ ] Audit remaining event/permission coverage, including PR lifecycle/reviews, pushes/ref changes,
       installation lifecycle, revoked access and fork-head correlation. An uninstalled fork is not
       covered merely because its base repository is installed. Successful ducktape subscriptions do
@@ -53,10 +60,6 @@ If idle polling becomes a priority, replace the notification source's five-secon
 - Authenticated discovery of App-accessible repositories and source capabilities:
   [#8981](https://github.com/agentydragon/ducktape/issues/8981). Distinguish accessible repositories,
   active subscriptions and healthy delivery without exposing other agents' subscriptions.
-
-- Bootstrap GitHub head/fork associations, then maintain them from durable webhooks instead of
-  refetching current heads on every matching pass. Keep authorization/revocation checks separate;
-  define recovery for missed deliveries and out-of-order head changes before removing API refreshes.
 
 - Consider removing `lifetime_days`. Prefer no automatic expiry; if retained, make it opt-in with
   agent warning/expiry-notification semantics.
