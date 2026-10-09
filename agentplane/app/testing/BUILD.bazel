@@ -126,8 +126,8 @@ py_library(
 )
 
 py_library(
-    name = "history_trace",
-    srcs = ["history_trace.py"],
+    name = "thread_view_marks",
+    srcs = ["thread_view_marks.py"],
     deps = [
         "@pypi//playwright",
         "@pypi//pydantic",
@@ -141,7 +141,7 @@ py_library(
     deps = [
         ":electric_service",
         ":history_probe",
-        ":history_trace",
+        ":thread_view_marks",
         ":http2_proxy",
         ":replication_process",
         ":replication_source",

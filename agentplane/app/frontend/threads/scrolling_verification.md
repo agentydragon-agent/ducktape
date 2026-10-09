@@ -22,8 +22,8 @@ timing:
   waits for it (`holding_still` does) rather than counting frames.
 - In browser tests, `history_probe.js` enables Agentplane User Timing marks before the app loads
   and observes the last 2,000 scroll and layout decisions. It exposes
-  `window.agentplaneHistoryTrace()` **in tests only**. A failing test prints the relevant slice;
-  every browser test saves `<test>-history-trace.jsonl`. The browser probe also records available
+  `window.__threadViewTiming.events()` **in tests only**. A failing test prints the relevant slice;
+  every browser test saves `<test>-thread-view-marks.jsonl`. The browser probe also records available
   layout-shift entries.
 
 `agentplane/app/testing/history_probe.js` is injected into every browser test's pages and writes

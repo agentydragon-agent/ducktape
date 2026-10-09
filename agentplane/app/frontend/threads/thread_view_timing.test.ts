@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { HistoryTrace, LayoutSettle } from "./history_trace";
+import { markThreadViewEvent, LayoutSettle } from "./thread_view_timing";
 
 describe("LayoutSettle", () => {
   beforeEach(() => {
@@ -64,16 +64,15 @@ it("emits User Timing marks only when the test harness enables recording", () =>
   const mark = vi.fn();
   vi.stubGlobal("performance", { mark });
   try {
-    const trace = new HistoryTrace();
-    trace.record({ kind: "load-older" });
+    markThreadViewEvent({ kind: "load-older" });
     expect(mark).not.toHaveBeenCalled();
-    window.__agentplaneHistoryTestRecording = true;
-    trace.record({ kind: "follow", following: false, reason: "wheel-up" });
-    expect(mark).toHaveBeenCalledWith("agentplane:history:follow", {
+    window.__agentplaneThreadViewMarksEnabled = true;
+    markThreadViewEvent({ kind: "follow", following: false, reason: "wheel-up" });
+    expect(mark).toHaveBeenCalledWith("agentplane:thread-view:follow", {
       detail: { kind: "follow", following: false, reason: "wheel-up" },
     });
   } finally {
-    delete window.__agentplaneHistoryTestRecording;
+    delete window.__agentplaneThreadViewMarksEnabled;
     vi.unstubAllGlobals();
   }
 });

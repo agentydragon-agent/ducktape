@@ -29,7 +29,7 @@ from playwright.async_api import (
 from sqlalchemy import select, update
 
 from agentplane.app.database import connect
-from agentplane.app.testing import history_trace
+from agentplane.app.testing import thread_view_marks
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
 from agentplane.app.testing.replication_process import app_process
@@ -227,7 +227,7 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
         for number in (1, 0):
             await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
             await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible(timeout=30_000)
-        remembered = [entry.error for entry in await history_trace.estimate_errors(page) if entry.remembered]
+        remembered = [entry.error for entry in await thread_view_marks.estimate_errors(page) if entry.remembered]
         assert remembered, "no row on the return was laid out from what the first visit read"
         assert max(abs(error) for error in remembered) <= 2, remembered
 
@@ -1206,7 +1206,7 @@ async def holding_still(page: Page, line: Locator, *, rest_first: bool = True) -
             )
     except TimeoutError:
         raise AssertionError(
-            f"{line} never came to rest; the history's last events:\n{await history_trace.recent(page, 40)}"
+            f"{line} never came to rest; the history's last events:\n{await thread_view_marks.recent(page, 40)}"
         ) from None
     try:
         yield
@@ -1217,11 +1217,11 @@ async def holding_still(page: Page, line: Locator, *, rest_first: bool = True) -
     finally:
         await watch.dispose()
     assert not outcome["detached"], (
-        f"{line} left the page; the history's last events:\n{await history_trace.recent(page, 60)}"
+        f"{line} left the page; the history's last events:\n{await thread_view_marks.recent(page, 60)}"
     )
     assert outcome["drift"] <= 2, (
         f"{line} moved {outcome['drift']}px from where it was clicked; the history's last events:\n"
-        f"{await history_trace.recent(page, 60)}"
+        f"{await thread_view_marks.recent(page, 60)}"
     )
 
 
@@ -1567,7 +1567,7 @@ async def expect_history_bottom(page: Page) -> None:
         )
     except PlaywrightTimeoutError:
         raise AssertionError(
-            f"the history never reached its bottom; its last events:\n{await history_trace.recent(page, 60)}"
+            f"the history never reached its bottom; its last events:\n{await thread_view_marks.recent(page, 60)}"
         ) from None
 
 

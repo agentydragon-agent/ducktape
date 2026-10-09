@@ -41,16 +41,16 @@ agentplane_vitest_test(
 )
 
 ts_library(
-    name = "history_trace",
-    srcs = ["history_trace.ts"],
+    name = "thread_view_timing",
+    srcs = ["thread_view_timing.ts"],
     tsconfig = TSCONFIG,
 )
 
 agentplane_vitest_test(
-    name = "history_trace_test",
-    srcs = ["history_trace.test.ts"],
+    name = "thread_view_timing_test",
+    srcs = ["thread_view_timing.test.ts"],
     deps = [
-        ":history_trace",
+        ":thread_view_timing",
         "//:node_modules/vitest",
     ],
 )
@@ -114,7 +114,7 @@ ts_library(
         ":chronological_debug",
         ":history_rows",
         ":history_sizes",
-        ":history_trace",
+        ":thread_view_timing",
         ":projected_session_css",
         ":retained_disclosures",
         ":thread_cards",

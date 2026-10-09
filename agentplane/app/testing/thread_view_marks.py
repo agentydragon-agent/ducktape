@@ -1,7 +1,7 @@
-"""The history's User Timing marks (frontend/threads/history_trace.ts), collected by the
+"""The history's User Timing marks (frontend/threads/thread_view_timing.ts), collected by the
 Playwright init script (history_probe.js) and read back as typed events.
 
-`HistoryEvent` there and the models here are one contract: an event kind or field added on either
+`ThreadViewEvent` there and the models here are one contract: an event kind or field added on either
 side fails the parse of the other, loudly, rather than being dropped from a failure's dump."""
 
 import asyncio
@@ -98,15 +98,15 @@ class Settled(_Recorded):
     settled: bool
 
 
-HistoryEvent = Annotated[
+ThreadViewEvent = Annotated[
     Follow | Scroll | ScrollEnd | Resize | Click | Anchor | Restore | Prepend | LoadOlder | Measure | Settled,
     Field(discriminator="kind"),
 ]
 
 
-class TimedHistoryEvent(_Recorded):
+class TimedThreadViewEvent(_Recorded):
     at: float = Field(description="`performance.now()` in the page, in milliseconds.")
-    event: HistoryEvent
+    event: ThreadViewEvent
 
 
 class EstimateError(_Recorded):
@@ -114,27 +114,27 @@ class EstimateError(_Recorded):
     remembered: bool = Field(description="Whether the estimate was an earlier visit's reading, not the flat guess.")
 
 
-_EVENTS = TypeAdapter(list[TimedHistoryEvent])
+_EVENTS = TypeAdapter(list[TimedThreadViewEvent])
 _ESTIMATE_ERRORS = TypeAdapter(list[EstimateError])
 
 
-async def events(page: Page, since: float = 0.0) -> list[TimedHistoryEvent]:
-    """The history's recorded decisions at or after `since`, a `performance.now()` reading."""
+async def events(page: Page, since: float = 0.0) -> list[TimedThreadViewEvent]:
+    """The thread view's recorded decisions at or after `since`, a `performance.now()` reading."""
     return _EVENTS.validate_python(
         await page.evaluate(
-            "since => (window.agentplaneHistoryTrace?.() ?? []).filter(entry => entry.at >= since)", since
+            "since => (window.__threadViewTiming?.events() ?? []).filter(entry => entry.at >= since)", since
         )
     )
 
 
 async def estimate_errors(page: Page) -> list[EstimateError]:
     return _ESTIMATE_ERRORS.validate_python(
-        await page.evaluate("() => window.agentplaneHistoryEstimateErrors?.() ?? []")
+        await page.evaluate("() => window.__threadViewTiming?.estimateErrors() ?? []")
     )
 
 
-def as_json_lines(recorded: Sequence[TimedHistoryEvent]) -> str:
-    """One line per event, in the names the page's own `agentplaneHistoryTrace()` shows."""
+def as_json_lines(recorded: Sequence[TimedThreadViewEvent]) -> str:
+    """One line per event, in the names the test harness's User Timing observer shows."""
     return "\n".join(entry.model_dump_json(by_alias=True) for entry in recorded)
 
 

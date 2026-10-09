@@ -17,12 +17,12 @@
 
   // The Playwright init script enables the app's User Timing marks before app startup.
   // Browser tests own the observer and bounded buffers; production never sets this flag.
-  window.__agentplaneHistoryTestRecording = true;
+  window.__agentplaneThreadViewMarksEnabled = true;
   const historyEvents = [];
   const historyErrors = [];
   const onHistoryMarks = (entries) => {
     for (const entry of entries) {
-      if (!entry.name.startsWith("agentplane:history:")) continue;
+      if (!entry.name.startsWith("agentplane:thread-view:")) continue;
       const event = entry.detail;
       historyEvents.push({ at: entry.startTime, event });
       if (historyEvents.length > 2000) historyEvents.shift();
@@ -37,13 +37,15 @@
   const historyObserver = new PerformanceObserver((list) => onHistoryMarks(list.getEntries()));
   historyObserver.observe({ type: "mark", buffered: true });
   const flushHistory = () => onHistoryMarks(historyObserver.takeRecords());
-  window.agentplaneHistoryTrace = () => {
-    flushHistory();
-    return historyEvents;
-  };
-  window.agentplaneHistoryEstimateErrors = () => {
-    flushHistory();
-    return historyErrors;
+  window.__threadViewTiming = {
+    events: () => {
+      flushHistory();
+      return historyEvents;
+    },
+    estimateErrors: () => {
+      flushHistory();
+      return historyErrors;
+    },
   };
 
   const probe = {
@@ -213,7 +215,7 @@
     };
   };
   const estimateErrors = () => {
-    const all = window.agentplaneHistoryEstimateErrors?.() ?? [];
+    const all = window.__threadViewTiming?.estimateErrors() ?? [];
     return {
       guessed: errorStats(all.filter((entry) => !entry.remembered)),
       remembered: errorStats(all.filter((entry) => entry.remembered)),

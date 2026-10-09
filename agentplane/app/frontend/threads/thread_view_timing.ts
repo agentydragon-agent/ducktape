@@ -1,5 +1,5 @@
 /**
- * What `VirtualizedHistory` publishes about itself, for tests and for chasing a reader-position
+ * What `VirtualizedHistory` marks for inspection, for tests and for chasing a reader-position
  * bug: User Timing marks for its scroll and layout decisions, and whether its layout has come
  * to rest. The Playwright harness installs the test-only mark collector before the app loads.
  */
@@ -15,8 +15,8 @@ export type FollowReason =
   | "touch-up"
   | "disclosure-click";
 
-/** Mirrored by the typed events in agentplane/app/testing/history_trace.py. */
-export type HistoryEvent =
+/** Mirrored by the typed events in agentplane/app/testing/thread_view_marks.py. */
+export type ThreadViewEvent =
   | { kind: "follow"; following: boolean; reason: FollowReason }
   | { kind: "scroll"; scrollTop: number; scrollHeight: number; followed: boolean }
   | { kind: "scrollend"; restoring: boolean; capturing: boolean }
@@ -35,20 +35,15 @@ export type HistoryEvent =
 declare global {
   interface Window {
     /** Set by the Playwright init script before the app loads, not by production code. */
-    __agentplaneHistoryTestRecording?: boolean;
+    __agentplaneThreadViewMarksEnabled?: boolean;
   }
 }
 
 /** Emits browser User Timing marks only when the test harness enables them. */
-export class HistoryTrace {
-  record(event: HistoryEvent): void {
-    if (!window.__agentplaneHistoryTestRecording) return;
-    performance.mark(`agentplane:history:${event.kind}`, { detail: event });
-  }
+export function markThreadViewEvent(event: ThreadViewEvent): void {
+  if (!window.__agentplaneThreadViewMarksEnabled) return;
+  performance.mark(`agentplane:thread-view:${event.kind}`, { detail: event });
 }
-
-/** One for the page: it outlives the history component, so it spans a switch between threads. */
-export const historyTrace: HistoryTrace = new HistoryTrace();
 
 /** A layout counts as at rest once this many frames pass without it changing. */
 const QUIET_FRAMES = 5;
