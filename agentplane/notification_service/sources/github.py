@@ -261,11 +261,18 @@ PAYLOAD_MODELS: dict[str, type[Envelope]] = {
 }
 
 
-def api_headers(bearer: str) -> dict[str, str]:
+def github_http_client(settings: GitHubSettings) -> httpx.AsyncClient:
+    """Use deployment-owned transport settings; never forward credentials through redirects."""
+    return httpx.AsyncClient(
+        base_url=str(settings.api_url), timeout=settings.request_timeout_s, follow_redirects=False
+    )
+
+
+def api_headers(bearer: str, api_version: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {bearer}",
         "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
+        "X-GitHub-Api-Version": api_version,
     }
 
 
@@ -319,7 +326,7 @@ class GitHub:
         bearer = jwt.encode(
             {"iat": now - 30, "exp": now + 540, "iss": str(self.settings.app_id)}, private_key, algorithm="RS256"
         )
-        return api_headers(bearer)
+        return api_headers(bearer, self.settings.api_version.isoformat())
 
     def start(self) -> None:
         # Validate the App private key before HTTP readiness; Settings validates the signing secret.
@@ -371,7 +378,7 @@ class GitHub:
                 )
                 token = Token.model_validate_json(response.content)
                 self.tokens[installation_id] = token
-        return api_headers(token.token.get_secret_value())
+        return api_headers(token.token.get_secret_value(), self.settings.api_version.isoformat())
 
     async def repository(self, name: str) -> tuple[GitHubBinding, dict[str, str]]:
         response = await self.request("GET", f"/repos/{name}/installation", self.app_headers(), allow_missing=True)

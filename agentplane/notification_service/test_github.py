@@ -6,7 +6,7 @@ import hmac
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import create_autospec, patch
 from uuid import UUID, uuid4
@@ -65,6 +65,7 @@ from agentplane.notification_service.sources.github import (
     RefPayload,
     Repository,
     correlation,
+    github_http_client,
     rate_limit_delay,
 )
 from agentplane.notification_service.sources.github_models import (
@@ -141,6 +142,7 @@ def signed(payload: dict[str, JsonValue], event: str, delivery: UUID | None = No
 class Upstream:
     public_key: bytes
     head: str | None = HEAD
+    api_version: str = "2022-11-28"
     revoked: bool = False
     limited: bool = False
     fork: bool = False
@@ -149,7 +151,7 @@ class Upstream:
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         assert request.headers["Accept"] == "application/vnd.github+json"
-        assert request.headers["X-GitHub-Api-Version"] == "2022-11-28"
+        assert request.headers["X-GitHub-Api-Version"] == self.api_version
         path = request.url.path
         self.requests.append(path)
         if path.endswith(("/installation", "/access_tokens")):
@@ -220,6 +222,32 @@ async def provider() -> AsyncIterator[tuple[GitHub, Upstream]]:
         github = GitHub(http, settings)
         github.start()
         yield github, upstream
+
+
+async def test_github_configured_transport_and_version(provider: tuple[GitHub, Upstream]) -> None:
+    github, upstream = provider
+    assert str(github.settings.api_url) == "https://api.github.com/"
+    assert github.settings.request_timeout_s == 5
+    assert github.settings.api_version == date(2022, 11, 28)
+    configured = GitHubSettings.model_validate(
+        github.settings.model_dump() | {
+            "api_url": "http://github.test/api/v3", "request_timeout_s": 2.5, "api_version": "2026-01-01"
+        }
+    )
+    async with github_http_client(configured) as client:
+        request = client.build_request("GET", "/repos/owner/repo")
+        assert str(request.url) == "http://github.test/api/v3/repos/owner/repo"
+        assert client.timeout == httpx.Timeout(2.5)
+        assert not client.follow_redirects
+    upstream.api_version = "2026-01-01"
+    overridden = GitHub(github.http, configured)
+    overridden.start()
+    # The mock upstream checks the configured header on App JWT requests, token creation,
+    # and installation-token repository/subject requests, not just one helper's output.
+    await overridden.context(SOURCE)
+    assert "/repos/owner/repo/installation" in upstream.requests
+    assert any(path.endswith("/access_tokens") for path in upstream.requests)
+    assert "/repos/owner/repo/pulls/7" in upstream.requests
 
 
 async def ingest(github: GitHub, store: Store, payload: dict[str, JsonValue], event: str = "issue_comment") -> None:
