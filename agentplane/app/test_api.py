@@ -405,7 +405,7 @@ def test_the_launch_pick_of_action_policy_sets_is_the_operators(
 
     sandboxes_before = [name for kind, name in custom_objects.objects if kind == "sandboxes"]
     refused = client.post(
-        "/sandboxes", json={"name": "plain", "template": TEMPLATE, "action_policy_sets": ["vanished"]}
+        "/sandboxes", json={"name": "vanished", "template": TEMPLATE, "action_policy_sets": ["vanished"]}
     )
     assert refused.status_code == 422, refused.text
     assert [name for kind, name in custom_objects.objects if kind == "sandboxes"] == sandboxes_before

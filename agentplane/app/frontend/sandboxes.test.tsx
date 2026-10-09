@@ -40,6 +40,7 @@ const CREATED: SandboxView = {
   kubernetes_grants_ready: true,
   kubernetes_grant_error: null,
   launch_grants_pending: false,
+  initializing: false,
   deleting: false,
   pod: null,
 };

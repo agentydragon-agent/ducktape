@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -205,14 +207,18 @@ async def test_create_intent_conflicts_and_caller_cannot_adopt_name(inventory: S
         await inventory.create(CreateSandboxRequest(name="same", template="other"), caller=CALLER)
 
 
-async def test_retry_recovers_lost_cr_reply(inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi) -> None:
+async def test_retry_recovers_lost_cr_reply(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
     original = custom_objects.create_namespaced_custom_object
 
-    async def committed_then_lost(*args: object) -> dict[str, object]:
-        await original(*args)
+    async def committed_then_lost(
+        group: str, version: str, namespace: str, plural: str, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        await original(group, version, namespace, plural, body)
         raise k8s_client.ApiException(status=503)
 
-    custom_objects.create_namespaced_custom_object = committed_then_lost  # type: ignore[method-assign]
+    monkeypatch.setattr(custom_objects, "create_namespaced_custom_object", committed_then_lost)
     spec = CreateSandboxRequest(name="recover", template="agentplane-test-runner")
     view = await inventory.create(spec, caller=CALLER)
     retry = await inventory.retry(spec, caller=CALLER)
@@ -228,6 +234,47 @@ async def test_service_account_conflicts_with_stale_uid(inventory: SandboxInvent
     core_v1.service_accounts["same"].metadata.owner_references[0].uid = str(uuid4())
     with pytest.raises(SandboxConflictError):
         await inventory.ensure_service_account(view)
+
+
+async def test_concurrent_creates_share_one_cr_or_conflict_on_intent(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = custom_objects.create_namespaced_custom_object
+    release = asyncio.Event()
+    arrived = 0
+
+    async def collide(group: str, version: str, namespace: str, plural: str, body: dict[str, Any]) -> dict[str, Any]:
+        nonlocal arrived
+        if plural == "sandboxes":
+            arrived += 1
+            if arrived == 2:
+                release.set()
+            await release.wait()
+        return await original(group, version, namespace, plural, body)
+
+    monkeypatch.setattr(custom_objects, "create_namespaced_custom_object", collide)
+    spec = CreateSandboxRequest(name="concurrent", template="agentplane-test-runner")
+    first, second = await asyncio.gather(inventory.create(spec, caller=CALLER), inventory.create(spec, caller=CALLER))
+    assert first.uid == second.uid
+    assert len([key for key in custom_objects.objects if key[0] == "sandboxes"]) == 1
+
+
+async def test_deleted_name_is_reusable_but_not_the_old_uid(
+    inventory: SandboxInventory, core_v1: FakeCoreV1Api
+) -> None:
+    spec = CreateSandboxRequest(name="reused", template="agentplane-test-runner")
+    previous = await inventory.create(spec, caller=CALLER)
+    await inventory.ensure_service_account(previous)
+    await inventory.complete_initialization(previous)
+    await inventory.suspend(previous.name, uid=previous.uid)
+    await inventory.delete(previous.name, uid=previous.uid)
+    # The real API server garbage-collects the ServiceAccount by the old CR UID.
+    await core_v1.delete_namespaced_service_account(previous.name, NAMESPACE)
+    next_view = await inventory.create(spec, caller=CALLER)
+    assert next_view.uid != previous.uid
+    await inventory.ensure_service_account(next_view)
+    with pytest.raises(SandboxConflictError):
+        await inventory.ensure_service_account(previous)
 
 
 if __name__ == "__main__":

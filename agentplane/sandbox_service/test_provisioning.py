@@ -161,9 +161,8 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
     assert view.initializing
     assert view.operating_mode == "Suspended"
     assert not case.core.service_accounts
-    with pytest.raises(ServiceError) as pending:
+    with pytest.raises(RunnerError):
         await api.resume(view.name)
-    assert pending.value.code is grpc.StatusCode.ALREADY_EXISTS
     await case.service.reconcile_once()
     view = await api.get(view.name)
     assert not view.initializing
@@ -328,19 +327,19 @@ async def test_create_retry_finishes_initialization_after_lost_grants(case: Case
     assert (await case.service.create(spec, caller=ADMIN)).uid == view.uid
 
 
-async def test_create_retry_after_lost_service_account_reply(case: Case) -> None:
+async def test_create_retry_after_lost_service_account_reply(case: Case, monkeypatch: pytest.MonkeyPatch) -> None:
     original = case.core.create_namespaced_service_account
     called = False
 
-    async def committed_then_lost(*args: object) -> object:
+    async def committed_then_lost(namespace: str, body: k8s_client.V1ServiceAccount) -> k8s_client.V1ServiceAccount:
         nonlocal called
-        created = await original(*args)
+        created = await original(namespace, body)
         if not called:
             called = True
             raise k8s_client.ApiException(status=503)
         return created
 
-    case.core.create_namespaced_service_account = committed_then_lost  # type: ignore[method-assign]
+    monkeypatch.setattr(case.core, "create_namespaced_service_account", committed_then_lost)
     spec = CreateSandboxRequest(name="sa-lost", template=TEMPLATE)
     view = await case.service.create(spec, caller=ADMIN)
     assert view.initializing
@@ -351,19 +350,21 @@ async def test_create_retry_after_lost_service_account_reply(case: Case) -> None
     assert (await case.service.create(spec, caller=ADMIN)).uid == view.uid
 
 
-async def test_reconcile_after_final_resume_reply_is_lost(case: Case) -> None:
+async def test_reconcile_after_final_resume_reply_is_lost(case: Case, monkeypatch: pytest.MonkeyPatch) -> None:
     original = case.custom.patch_namespaced_custom_object
     lost = False
 
-    async def patched_then_lost(*args: object, **kwargs: object) -> object:
+    async def patched_then_lost(
+        group: str, version: str, namespace: str, plural: str, name: str, body: object, *, _content_type: str
+    ) -> object:
         nonlocal lost
-        result = await original(*args, **kwargs)
-        if not lost and isinstance(args[5], dict) and args[5].get("spec", {}).get("operatingMode") == "Running":
+        result = await original(group, version, namespace, plural, name, body, _content_type=_content_type)
+        if not lost and isinstance(body, dict) and body.get("spec", {}).get("operatingMode") == "Running":
             lost = True
             raise k8s_client.ApiException(status=503)
         return result
 
-    case.custom.patch_namespaced_custom_object = patched_then_lost  # type: ignore[method-assign]
+    monkeypatch.setattr(case.custom, "patch_namespaced_custom_object", patched_then_lost)
     spec = CreateSandboxRequest(name="last-patch", template=TEMPLATE)
     view = await case.service.create(spec, caller=ADMIN)
     assert view.initializing
