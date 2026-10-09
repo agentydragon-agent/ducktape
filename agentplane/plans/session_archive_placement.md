@@ -1,10 +1,17 @@
 # Session Event archive placement and first cutover
 
-Status: **proposed implementation decision** for the raw-archive extraction. This is
-not an implemented migration or a permission grant. The separate [task DAG](task_dag.md)
-([expanded in #9411](https://github.com/agentydragon/ducktape/pull/9411)) tracks the
-store, one-off backfill, live ingestion, app cutover and scoped-read enforcement as
-independently finishable work.
+Status: **selected placement; migration in flight**, not a future placement decision. Service-owned
+store/import/shadow-copy code and opt-in app reads exist. The operator reported partial backfill on
+2026-10-09; the [task DAG](task_dag.md#current-state-and-scheduling) records the scoped progress snapshot,
+not a completion claim. It tracks import verification, live writer handoff, raw reads, app projection
+cutover, ownership capstone and old-table retirement separately. No agent read grants are implied.
+
+Unrelated Sandbox Service database additions and app database surgery wait for the ownership
+capstone. New input/metadata work follows it; old app-table cleanup and identity cutover additionally
+gate app migration squashing. Coordinate with the running migration owner rather than starting a
+second importer. The [import runbook](../sandbox_service/session_history/BACKFILL.md) owns operational
+instructions. Detailed failure cases use automated tests; live checks address the actual handoff and
+data-preservation boundary, not hypothetical compound disasters.
 
 ## Choice
 

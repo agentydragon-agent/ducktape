@@ -1,4 +1,10 @@
-# App raw history read handoff (draft; opt-in code only)
+# App raw history read handoff (opt-in code; migration in flight)
+
+The [DAG migration lane](task_dag.md#1-finish-the-history-migration-before-expanding-persistence)
+separates `THREAD_ARCHIVE_BACKFILL`, `THREAD_ARCHIVE_INGEST`, `THREAD_ARCHIVE_READ_CUTOVER`,
+`THREAD_ARCHIVE_UI_CUTOVER`, `THREAD_ARCHIVE_OWNERSHIP` and `APP_RAW_HISTORY_RETIRE`.
+Backfill is reported in progress; this document does not claim any live switch has been enabled.
+New service input/metadata tables and unrelated app schema changes wait for the ownership capstone.
 
 `ReadSessionEvents` is bounded to 1000 entries and the explicitly configured
 Sandbox Service `history_reader_accounts`. A public UUID is not authorization.

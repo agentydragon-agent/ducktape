@@ -2,8 +2,8 @@
 
 Status: **implementation deferred** while session-event ownership moves into Sandbox Service.
 This is the single evidence inventory, proposed design and hardening burndown for
-[`NATIVE_SUBAGENT_THREADS`](task_dag.md#native_subagent_threads--adopt-harness-native-subagents-as-threads).
-The [active burndown](#active-hardening-burndown) is near-term work; the
+[`NATIVE_SUBAGENT_THREADS`](task_freezer.md#native_subagent_threads--as-linked-agentplane-threads).
+The [hardening inventory](#deferred-hardening-inventory) is historical/deferred, not a dispatch queue; the
 [shared design](#proposed-shared-design) is not a shipped runner contract or a priority change.
 
 ## Observed behavior and characterization gaps
@@ -841,9 +841,13 @@ Concrete gates for this implementation (not satisfied merely by the characteriza
   and unknown task kinds remain distinguishable. No reconstruction from prose is labeled native
   lifecycle evidence; no child is restarted to make its status observable.
 
-## Active hardening burndown
+## Deferred hardening inventory
 
-Near-term work extends the characterization suite and its shared fixtures, not the deferred
+This retained inventory is not a live priority or PR-status board. Check current evidence before
+promoting a concrete gap from the [freezer](task_freezer.md#harness-features-and-native-research).
+Finishing archive migration does not automatically unfreeze native-subagent work.
+
+Potential work extends the characterization suite and its shared fixtures, not the deferred
 shared-session implementation. It does not add a session authority or event store. The automatic current-versus-candidate upgrade lane is excluded.
 
 ### Landed foundation
@@ -860,20 +864,11 @@ shared-session implementation. It does not add a session authority or event stor
 - **Exceptional process cleanup (#9455):** assertion/cancellation, descendants and trace retention;
   successful exit remains graceful and deliberate `crash()` remains parent-only.
 
-### In review
-
-- **Relocation (#9457):** move RemoteIO to `agentplane/harness_tests/x/claude_remote_io/`. Its
-  prerequisites #9454 and #9461 have merged; require green CI on the synchronized relocation-only diff.
-- **Fixture refactor (#9464):** remove five failure-only crash wrappers in Claude subagent and
-  RemoteIO stdio tests. Preserve explicit crash checkpoints and protocol assertions; use shared
-  exceptional cleanup. Draft until #9457 merges, the remaining diff is cleanup-only, and native
-  cleanup, Claude tool and relocated stdio tests pass. This does not finish all setup deduplication.
-
-### Next work and acceptance
+### Candidate gaps, not acceptance obligations
 
 1. **Codex v2 live reconnect:** disconnect only the client during an active turn and after completion.
    Capture identity, history and lifecycle evidence on reconnect without submitting work as a status
-   query. Independent of relocation and the session-event migration.
+   query. Independent of the session-event migration.
 2. **Input correlation and interrupt races:** script overlapping inputs and interleaved results for
    both harnesses; attribute each completion. Synchronize interrupt-before-start, active and completion
    boundaries. Reproduce and diagnose the observed Codex input-during-turn race.

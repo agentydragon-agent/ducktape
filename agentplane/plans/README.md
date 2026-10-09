@@ -4,6 +4,10 @@ Agentplane is running on staging. Implemented contracts live beside the app, run
 Action Service, LLM ingress, acceptance suite, and durable evidence under [`../docs/`](../docs/).
 This directory contains current design gates, genuinely deferred decisions, and north-star context;
 the [task DAG](task_dag.md) is authoritative for status and dependencies.
+[Maintenance conventions](../AGENTS.md#task-dag-maintenance) distinguish dispatchable phases,
+operator decisions and proportional acceptance from the [low-priority freezer](task_freezer.md).
+The ongoing Session Event archive backfill/cutover blocks unrelated service/app database changes;
+design work can proceed. See the DAG for the reported snapshot and explicit unblock conditions.
 
 **Dependency rule:** the integration app is a user-facing client. Other services must not depend on
 its APIs, private tables, implementation, process, or bootstrap, including in v1. The accepted
@@ -15,8 +19,8 @@ execution sequence. This is a priority decision, not a technical dependency.
 
 ## Open plans and gates
 
-- [Native session discovery](native_session_discovery.md) — harness characterization evidence, active
-  hardening burndown, and deferred shared-session design with identity, attribution and durability gates
+- [Native session discovery](native_session_discovery.md) — harness characterization evidence and deferred
+  shared-session design with identity, attribution and durability gates
 - [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (eviction, pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
 - [Task DAG](task_dag.md) — remaining work and proposed priorities, including unranked future
   harness-capability candidates, deployed acceptance, UI/history, and native recovery
@@ -28,8 +32,9 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [KubeVirt execution environments](kubevirt_environments.md) — selectable VM environments, guest runner,
   launcher proxy, resource isolation, persistent state and implementation gates
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
-- [Sandbox Service](sandbox_service.md) — extract independent sandbox lifecycle/session access before
-  notification v1; [discovery/access notes](runner_discovery.md) retain network-policy access and the runner-auth TODO
+- [Sandbox Service](sandbox_service.md) — independent sandbox lifecycle/session access;
+  [Session archive migration](session_archive_placement.md) and [input metadata](notification_presentation.md)
+  are sequenced follow-ups; [discovery/access notes](runner_discovery.md) retain network-policy access and the runner-auth TODO
 - [Subscriptions and notifications](notifications.md) — standalone service design: SA-authorized session scope,
   explicit inbox acknowledgement, shipped Actions/GitHub delivery, remaining reliability acceptance,
   and deferred Kubernetes monitoring, automatic following and wake
@@ -52,4 +57,5 @@ architecture, pending Thread identity continuity, native recovery, and optional
 app-first acceptance. [Thread view synchronization](../docs/thread_view_sync.md)
 owns the proposed conversation model and sync-engine integration, on-demand Raw, history/catch-up and
 frontend state; it is distinct from the implemented raw-replay API.
-Deployed acceptance is tracked in the DAG; code or CI evidence alone does not satisfy it.
+Require bounded deployed acceptance only for an identified deployment-specific uncertainty; existing
+automated evidence suffices for covered behavior. Do not reopen waived or operator-accepted checks.

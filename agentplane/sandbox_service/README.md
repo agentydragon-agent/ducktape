@@ -51,7 +51,7 @@ a Sandbox. Read/follow availability is limited to the surviving runner log.
 
 The production app requires `sandbox_service_target` and a projected workload token. Its directory,
 bridge, and ingester use the service client with no direct-runner fallback. UI preset selection,
-read-only Kubernetes projections, PostgreSQL archive, and ingestion checkpoints remain app-owned.
+read-only Kubernetes projections, UI folds remain app-owned; PostgreSQL raw history and its ingestion are in the separate migration below.
 App tests use the service-owned gRPC fixtures; there is no alternate direct-runner app directory.
 App/service integration acceptance uses native harnesses and the existing app database archive.
 
@@ -67,9 +67,11 @@ validation, and the staging preservation/rollback gate must complete before roll
 Flux independently switch RBAC/network policies while an old app image is still running. See the
 [handoff checklist](../plans/sandbox_service.md#production-handoff-checklist).
 
-The service owns no session-log archive. Runner logs remain on their state volume; clients needing
-independent retention must archive events themselves. The app keeps its existing PostgreSQL
-archive and checkpoints. Archive migration is not a required follow-up.
+Runner journals remain on their state volume as execution evidence. The initial app-owned archive is now being
+migrated to service-owned PostgreSQL; see [archive cutover](../plans/session_archive_placement.md).
+Store/import/shadow-copy code and opt-in reads are present, but the in-flight backfill is not a
+completed write/read handoff. Preserve app history until the explicit ownership/retirement gates.
+The runner journal still authors execution Events.
 
 TODO: proper runner RPC authentication/TLS. V1 uses network isolation for service-to-runner traffic,
 not runner command RBAC. App-to-service calls already require a Pod-bound workload TokenReview.

@@ -1,12 +1,28 @@
 # KubeVirt execution environments
 
 Status: provider implementation and production integration acceptance remain open under
-[`SANDBOX_VM_ISOLATION`](task_dag.md#sandbox_vm_isolation--selectable-vm-backed-sandbox-isolation).
+[`SANDBOX_VM_ISOLATION`](task_dag.md#sandbox_vm_isolation--vm-integration-capstone).
 The disposable pinned-stack prototype and guest runtime acceptance are recorded in
 [`platform evidence`](../debug/kubevirt/evidence.md) and
 [`guest runtime acceptance`](../debug/kubevirt/runtime-20261003.md). They do not exercise the
 production Sandbox Service or production egress gateway. KubeVirt remains the recommended first
 VM provider.
+
+## Control-transport decision before network integration
+
+Co-sequence VM control networking with
+[`RUNNER_TRANSPORT_DESIGN`](task_dag.md#runner_transport_design--runner-dial-out-and-connection-lifecycle).
+The diagram below shows the inbound-control baseline, not an irreversible choice for v1. Compare
+it with the runner dialing Sandbox Service over an authenticated persistent channel, similar in
+connection direction to Claude RemoteIO. This could avoid exposing/routing a guest runner service;
+it does not eliminate the egress relay or its credential boundary. See the
+[connection lifecycle design questions](runner_discovery.md#outbound-control-channel-design).
+
+Choose transport, heartbeat/liveness semantics, replica connection ownership, reconnect and fencing
+before `VM_CONTROL_NETWORKING`. Implement `RUNNER_OUTBOUND_CHANNEL` only if selected; migrate existing
+container runners separately under `RUNNER_OUTBOUND_ROLLOUT`. Image/storage and process-boundary work
+can proceed independently. This decision does not remove the runner journal or choose central command
+admission. New service persistence remains behind the archive-migration hold.
 
 ## Proposed shape
 
@@ -41,8 +57,8 @@ flowchart LR
 ```
 
 Sandbox Service owns lifecycle, grants, destination resolution, and access to sessions. Runner SQLite
-remains the only admitted-command/Event authority. The app remains a client and independent archive;
-VM startup, recovery, and notifications must work with the app unavailable. There is no VM-specific
+remains the only admitted-command/Event authority. The service-owned archive migration retains copied Events independently of VM storage; the app
+remains its presentation client. VM startup, recovery and notifications must work with the app unavailable. There is no VM-specific
 command queue or new credential issuer.
 
 ## Existing seams
@@ -268,30 +284,37 @@ environments and the Sandbox Service extraction's staging-preservation requireme
 
 ## Implementation slices and gates
 
-These are proposed independently reviewable PR slices, not a priority change to the task DAG. Move
-them into dispatchable DAG nodes when this deferred track is scheduled. Image packaging and provider
-contract work can proceed independently; lifecycle acceptance requires the integrated provider and image.
+The [DAG VM lane](task_dag.md#4-vm-environment-phases) now sequences these separately:
 
-| Slice                    | Deliverable and exit evidence                                                                                                                                                                                                                                                                                                           |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Platform proof           | Prototype evidence covers launcher admission, proxy-only token mounts, guest routing, control ingress, cross-environment denial and rotating tokens on the pinned stack. Remaining proof is admission outage/failure isolation and production-policy behavior changed by integration.                                                   |
-| Image and storage        | Published digest-pinned guest with runner/harness versions recorded; blank disk initialization, retained state and workspace bounds; runner starts without package downloads or real credentials. Verify the actual image with both harnesses.                                                                                          |
-| Provider and API         | Typed kind/templates/destinations, KubeVirt inventory/reconciliation, owner-chain discovery, grants/finalizers, scoped RBAC and app watchers/UI. Existing container semantics still pass. Reconcile after service restart and under concurrent replicas, with the integration app unavailable.                                          |
-| Guest resource isolation | Enforced aggregate harness budgets and runner launch/fencing integration. Force memory, process and disk exhaustion; prove runner/journal survival and truthful harness failure. Tool-only survival is a separately measured capability.                                                                                                |
-| Lifecycle acceptance     | Both harnesses through real LLM ingress and Action Service; stop/start, Pod replacement, proxy restart/token rotation, guest crash, runner crash, image change, deletion/export, and negative access. Confirm stable environment identity, changed incarnation identity, retained Events, and no invented or duplicate command effects. |
+- `RUNNER_TRANSPORT_DESIGN`: review dial-out versus inbound control and connection lifecycle before
+  committing VM control routing; separate from runner durability redesign.
+- `RUNNER_OUTBOUND_CHANNEL`: conditional implementation retaining command/Event semantics;
+  `RUNNER_OUTBOUND_ROLLOUT` covers a subsequent bounded transition of existing environments.
+- `VM_CONTROL_NETWORKING`: implement the chosen route after the transport decision and provider,
+  depending on outbound transport only if selected. Gate integrated VM lifecycle on this path.
+- `VM_IMAGE`: digest-pinned guest and bounded retained storage, tested with both harnesses.
+- `VM_PROVIDER`: typed provider/API, reconciliation, grants and UI. Coordinate production service
+  changes after the archive ownership handoff; design and image work can proceed independently.
+- `VM_EGRESS`: integrate the already-selected launcher admission/proxy path with production policy.
+- `VM_PROCESS_ISOLATION`: enforce/test harness-process boundaries and aggregate resource budgets
+  after image/provider support. This is the concrete agent-kills-itself risk, not a cosmetic VM switch.
+- `VM_LIFECYCLE`: integrate image/provider/control networking/egress/isolation and perform bounded
+  deployed checks.
+- `SANDBOX_VM_ISOLATION`: capstone for the selectable environment and its documented guarantees.
+- `LOCAL_BAZEL`: separate downstream enablement, never authorized by installed tools alone.
 
-Production acceptance must test Kyverno admission failure and its scope, missing/expired tokens,
-replacement Pods, forged environment labels, and attempts to reach another environment's
-relay/control port. The disposable prototype already covers reinvocation, owner forgery, valid token
-rotation, and cross-environment reachability. Verify revocation using actual TokenReview semantics;
-deletion must not be described as instantaneous token invalidation without measurement. Inspect
-rendered credentials/mounts without logging bearer values.
+Reuse completed prototype evidence. Unit/service/native tests cover routine retries, concurrent
+replicas, policy denials, lifecycle error handling and replay. Deployment checks target uncertainties
+that those tests cannot resolve: actual KVM/Cilium/storage integration, proxy-only credential mounts,
+production admission failure scope, denied cross-environment access and token replacement semantics.
+Do not log bearer values or call Pod deletion instantaneous token revocation without evidence.
 
-For crash acceptance, separately kill a tool, harness, runner, guest and launcher; distinguish
-surviving control from durable recovery. Capture exact image/runner/harness versions, VM/VMI/Pod UIDs,
-storage backend, resource limits, readiness timings and journal evidence. Measure cold/warm startup,
-shutdown and scheduling overhead before choosing defaults. Unit and Docker/RBE tests cover provider
-and runner logic; they cannot substitute for KVM/Cilium/storage acceptance on the deployed stack.
+Verify both harnesses through actual service routes, retained-state stop/start and a representative
+replacement. Record versions, identities and cursor continuity. For the new isolation guarantee,
+exercise representative tool/harness termination and bounded resource exhaustion; distinguish
+surviving control from durable recovery. Do not require the Cartesian product of tool, harness,
+runner, guest, launcher, proxy and server failures. Further live fault injection needs an identified
+unresolved platform risk and a bounded stopping condition, not an open-ended release gate.
 
 The prototype resolved initial sidecar-admission, guest-routing and disk-initialization questions.
 Production implementation can proceed on the selected Kyverno path. A per-environment companion
