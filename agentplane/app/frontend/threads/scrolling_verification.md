@@ -20,21 +20,23 @@ timing:
   flight and no row is still loading its text (`aria-busy="true"`, which grows the row when the text
   arrives); `false` while rows are still being measured. A test that needs a line's resting position
   waits for it (`holding_still` does) rather than counting frames.
-- In browser tests, `history_probe.js` enables Agentplane User Timing marks before the app loads
+- In browser tests, `thread_view_marks.js` enables Agentplane User Timing marks before the app loads
   and observes the last 2,000 scroll and layout decisions. It exposes
   `window.__threadViewTiming.events()` **in tests only**. A failing test prints the relevant slice;
-  every browser test saves `<test>-thread-view-marks.jsonl`. The browser probe also records available
-  layout-shift, long-task and long-animation-frame entries.
+  every browser test saves `<test>-thread-view-marks.jsonl`.
 - In the production UI, Debug tools > Start recording enables the same `agentplane:thread-view:*`
   `performance.mark()` calls in the browser Performance timeline, plus supported browser timing
   entries. Stop and download writes JSON for analysis, **not** an importable Chrome profile.
   Nothing is uploaded. Row keys in mark details may be sensitive; review before sharing.
 
-`agentplane/app/testing/history_probe.js` is injected into every browser test's pages and writes
-`<test>-history-probe.json` to the undeclared outputs: per frame, rows overlapping or leaving a gap
-(layout not yet caught up with measurement), content that moved on screen more than scrolling
-explains, the browser's layout-instability entries, and when the page's `/sync/` reads finished. Rows are positioned with `transform`, which
-the layout-instability API does not count, hence the per-frame comparison. Set
+For deeper layout investigations, set `--test_env=AGENTPLANE_HISTORY_PROBE=1` to inject
+`agentplane/app/testing/history_probe.js` and write `<test>-history-probe.json` to the
+undeclared outputs. Unlike the lightweight mark collector, this per-frame probe is not
+installed by default: it scans each visible row on every frame. It reports overlapping or
+separated rows (layout not yet caught up with measurement), content that moved on screen more than
+scrolling explains, browser layout-instability and long-frame entries, and when `/sync/` reads
+finished. Rows are positioned with `transform`, which the layout-instability API does not count;
+hence the per-frame comparison. Set
 `--test_env=AGENTPLANE_CPU_THROTTLE=4` to run the page that many times slower, which makes timing
 races show up in one run instead of one in thirty.
 

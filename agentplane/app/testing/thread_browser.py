@@ -60,7 +60,10 @@ async def page(
             # streaming cursors and breathing labels. Keep those out of image diffs
             # without freezing the live clock or changing replication/scroll behavior.
             async with await browser.new_context(viewport=viewport.size, reduced_motion="reduce") as context:
-                await context.add_init_script(path=history_probe.script_path())
+                capture_geometry = history_probe.enabled()
+                await context.add_init_script(path=thread_view_marks.script_path())
+                if capture_geometry:
+                    await context.add_init_script(path=history_probe.script_path())
                 await context.add_init_script(path=get_required_path("_main/agentplane/app/testing/thread_page.js"))
                 await context.tracing.start(screenshots=True, snapshots=True, sources=True)
                 opened = await context.new_page()
@@ -71,9 +74,10 @@ async def page(
                     yield opened
                     assert not errors, errors
                 finally:
-                    await history_probe.write_results(
-                        opened, undeclared_outputs_dir() / f"{request.node.name}-history-probe.json"
-                    )
+                    if capture_geometry:
+                        await history_probe.write_results(
+                            opened, undeclared_outputs_dir() / f"{request.node.name}-history-probe.json"
+                        )
                     await thread_view_marks.write(
                         opened, undeclared_outputs_dir() / f"{request.node.name}-thread-view-marks.jsonl"
                     )
