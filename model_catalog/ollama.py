@@ -11,7 +11,14 @@ DEFAULT_NUM_CTX = 128 * 1024
 
 @dataclass(frozen=True)
 class Model:
+    """Installed GGUF declaration, not a measured input/output budget.
+
+    gguf_context_length is independent of requested num_ctx allocations.
+    See litellm_metadata.md for the dated artifact audit and capacity caveats.
+    """
+
     tag: str
+    gguf_context_length: int
     display_name: str | None = None
 
 
@@ -33,14 +40,16 @@ class ChatVariant:
         return self.alias or self.model.tag
 
 
-QWEN_IQ4XS = Model("qwen3.8-flash-next-iq4xs:latest", "Qwen3.8 Flash Next IQ4_XS")
+QWEN_IQ4XS = Model(
+    "qwen3.8-flash-next-iq4xs:latest", gguf_context_length=262_144, display_name="Qwen3.8 Flash Next IQ4_XS"
+)
 QWEN_IQ4XS_128K = ChatVariant(QWEN_IQ4XS, 128 * 1024)
 # /v1 ignores native options.num_ctx, so provision a separate alias for this size.
 QWEN_IQ4XS_256K = ChatVariant(QWEN_IQ4XS, 256 * 1024, "qwen3.8-flash-next-iq4xs-256k:latest")
-GPT_OSS_20B = Model("gpt-oss:20b", "GPT-OSS 20B")
-GPT_OSS_120B = Model("gpt-oss:120b", "GPT-OSS 120B")
-GEMMA4 = Model("gemma4:31b-it-q8_0", "Gemma 4 31B")
-QWEN_EMBEDDING = Model("qwen3-embedding:4b")
+GPT_OSS_20B = Model("gpt-oss:20b", gguf_context_length=131_072, display_name="GPT-OSS 20B")
+GPT_OSS_120B = Model("gpt-oss:120b", gguf_context_length=131_072, display_name="GPT-OSS 120B")
+GEMMA4 = Model("gemma4:31b-it-q8_0", gguf_context_length=262_144, display_name="Gemma 4 31B")
+QWEN_EMBEDDING = Model("qwen3-embedding:4b", gguf_context_length=40_960)
 
 # qwen3.8-flash-next-q4: 125B-total/6B-active MoE, Unsloth Dynamic UD-Q4_K_XL quant
 # (metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL, 112GB), native 256K context. Disabled
