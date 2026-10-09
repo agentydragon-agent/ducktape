@@ -6106,10 +6106,6 @@ spec:
         - configMap:
             name: agentplane-sandbox-tool-config
           name: tool-config
-        - name: buildbuddy-api-key
-          secret:
-            defaultMode: 288
-            secretName: buildbuddy-api-key
         - name: egress-token
           projected:
             sources:
@@ -6125,6 +6121,10 @@ spec:
                   audience: agentplane-notifications
                   expirationSeconds: 600
                   path: notifications-token
+        - name: buildbuddy-api-key
+          secret:
+            defaultMode: 288
+            secretName: buildbuddy-api-key
   volumeClaimTemplates:
     - metadata:
         name: state

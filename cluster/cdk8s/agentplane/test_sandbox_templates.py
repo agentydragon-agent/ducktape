@@ -93,7 +93,11 @@ def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner
         )
         presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
         key_copies = [
-            doc for doc in docs if doc["kind"] == "ExternalSecret" and doc["metadata"]["name"] == "buildbuddy-api-key"
+            doc
+            for doc in docs
+            if doc["kind"] == "ExternalSecret"
+            and doc["metadata"]["name"] == "buildbuddy-api-key"
+            and doc["metadata"]["namespace"] == namespace
         ]
         if namespace != "agentplane-staging":
             assert not key_copies
