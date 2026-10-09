@@ -19,6 +19,11 @@ class PullRequestSubject(Model):
     number: int = Field(gt=0)
 
 
+class IssueSubject(Model):
+    kind: Literal["issue"]
+    number: int = Field(gt=0)
+
+
 class BranchSubject(Model):
     kind: Literal["branch"]
     name: str = Field(min_length=1, max_length=255)
@@ -29,7 +34,7 @@ class CommitSubject(Model):
     sha: str = Field(pattern=r"^[0-9a-f]{40}$")
 
 
-type Subject = Annotated[PullRequestSubject | BranchSubject | CommitSubject, Field(discriminator="kind")]
+type Subject = Annotated[PullRequestSubject | IssueSubject | BranchSubject | CommitSubject, Field(discriminator="kind")]
 
 
 class EventName(StrEnum):
@@ -44,9 +49,11 @@ class EventName(StrEnum):
     CREATE = "create"
     DELETE = "delete"
     WORKFLOW_RUN = "workflow_run"
+    WORKFLOW_JOB = "workflow_job"
+    ISSUES = "issues"
 
 
-CI_EVENTS = frozenset({EventName.CHECK_RUN, EventName.CHECK_SUITE, EventName.STATUS, EventName.WORKFLOW_RUN})
+CI_EVENTS = frozenset({EventName.CHECK_RUN, EventName.CHECK_SUITE, EventName.STATUS, EventName.WORKFLOW_RUN, EventName.WORKFLOW_JOB})
 PR_EVENTS = frozenset(
     {
         EventName.PULL_REQUEST,
@@ -55,6 +62,7 @@ PR_EVENTS = frozenset(
         EventName.PULL_REQUEST_REVIEW_COMMENT,
     }
 )
+ISSUE_EVENTS = frozenset({EventName.ISSUES, EventName.ISSUE_COMMENT})
 REF_EVENTS = frozenset({EventName.PUSH, EventName.CREATE, EventName.DELETE})
 
 
@@ -92,6 +100,8 @@ class GitHubSource(Model):
         allowed = CI_EVENTS
         if isinstance(self.subject, PullRequestSubject):
             allowed |= PR_EVENTS
+        elif isinstance(self.subject, IssueSubject):
+            allowed = ISSUE_EVENTS
         elif isinstance(self.subject, BranchSubject):
             allowed |= REF_EVENTS
         if self.events is not None and any(event.event not in allowed for event in self.events):
@@ -102,6 +112,8 @@ class GitHubSource(Model):
     def filters(self) -> Set[EventFilter]:
         if self.events is not None:
             return self.events
+        if isinstance(self.subject, IssueSubject):
+            return {EventFilter(event=event) for event in ISSUE_EVENTS}
         events = {EventFilter(event=EventName.STATUS), EventFilter(event=EventName.CHECK_RUN, actions={"completed"})}
         if isinstance(self.subject, PullRequestSubject):
             events |= {EventFilter(event=event) for event in PR_EVENTS}
@@ -127,7 +139,7 @@ class GitHubBinding(Model):
 
 def subject_key(subject: Subject) -> str:
     match subject:
-        case PullRequestSubject(number=number):
+        case PullRequestSubject(number=number) | IssueSubject(number=number):
             return str(number)
         case BranchSubject(name=name):
             return name

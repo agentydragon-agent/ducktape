@@ -57,7 +57,9 @@ from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSett
 from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.sources.github import (
     GitHub,
+    GitHubAccessError,
     GitHubRetryError,
+    GitHubSourceChangedError,
     GitHubUnavailableError,
     IssuePayload,
     RefPayload,
@@ -71,6 +73,7 @@ from agentplane.notification_service.sources.github_models import (
     EventFilter,
     EventName,
     GitHubSource,
+    IssueSubject,
     PullRequestSubject,
 )
 from agentplane.notification_service.store import ConflictError, NotFoundError, Store
@@ -189,6 +192,8 @@ class Upstream:
                     },
                 },
             )
+        if "/issues/" in path:
+            return httpx.Response(200, json={"number": int(path.rsplit("/", 1)[1])})
         if "/git/ref/" in path:
             return (
                 httpx.Response(404) if self.head is None else httpx.Response(200, json={"object": {"sha": self.head}})
@@ -821,7 +826,7 @@ async def test_branch_activity_and_fixed_commit(store: Store, provider: tuple[Gi
 
 
 @pytest.mark.parametrize(
-    "event", [EventName.CHECK_RUN, EventName.CHECK_SUITE, EventName.STATUS, EventName.WORKFLOW_RUN]
+    "event", [EventName.CHECK_RUN, EventName.CHECK_SUITE, EventName.STATUS, EventName.WORKFLOW_RUN, EventName.WORKFLOW_JOB]
 )
 async def test_native_ci_references_supply_durable_associations(
     store: Store, provider: tuple[GitHub, Upstream], event: EventName
@@ -842,8 +847,8 @@ async def test_native_ci_references_supply_durable_associations(
             payload |= {"action": "completed", event: {"head_sha": NEXT, "pull_requests": [{"number": 7}]}}
         case EventName.STATUS:
             payload |= {"sha": NEXT, "branches": [{"name": "devel"}]}
-        case EventName.WORKFLOW_RUN:
-            payload |= {"action": "completed", "workflow_run": {"head_sha": NEXT, "head_branch": "devel"}}
+        case EventName.WORKFLOW_RUN | EventName.WORKFLOW_JOB:
+            payload |= {"action": "completed", event: {"head_sha": NEXT, "head_branch": "devel"}}
     # The empty-reference check arrives before its association, and upstream still reports HEAD.
     await ingest(github, store, check(NEXT), "check_run")
     await ingest(github, store, payload, event)
@@ -861,6 +866,123 @@ async def test_native_ci_references_supply_durable_associations(
     assert second.payload == payload
     assert (default_sub.id in second.subscriptions) == (event in {EventName.CHECK_RUN, EventName.STATUS})
     assert explicit_sub.id in second.subscriptions
+
+
+@pytest.mark.parametrize("event", ["issues", "workflow_job"])
+async def test_new_events_signed_http(store: Store, provider: tuple[GitHub, Upstream], event: str) -> None:
+    github, _ = provider
+    service = create_autospec(Service, instance=True)
+    service.github = github
+    service.store = store
+    app = create_app(service, create_autospec(WorkloadPrincipalResolver))
+    payload: dict[str, JsonValue] = {
+        "installation": {"id": 11}, "repository": {"id": 100, "full_name": "owner/repo"},
+        "action": "opened" if event == "issues" else "completed",
+    }
+    payload |= {"issue": {"number": 7}} if event == "issues" else {"workflow_job": {"head_sha": HEAD}}
+    raw, headers = signed(payload, event)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://notifications") as client:
+        rejected = await client.post("/v1/webhooks/github", content=raw, headers=headers | {"X-Hub-Signature-256": "bad"})
+        assert rejected.status_code == 401
+        accepted = await client.post("/v1/webhooks/github", content=raw, headers=headers)
+        assert accepted.status_code == 202
+        assert accepted.json() == {"accepted": True, "duplicate": False}
+        assert (await client.post("/v1/webhooks/github", content=raw, headers=headers)).json()["duplicate"]
+        malformed, malformed_headers = signed({"installation": {"id": 11}}, event)
+        assert (await client.post("/v1/webhooks/github", content=malformed, headers=malformed_headers)).status_code == 400
+    async with store.sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(GitHubDelivery)) == 1
+
+
+async def test_issue_lifecycle_comments_and_pr_separation(store: Store, provider: tuple[GitHub, Upstream]) -> None:
+    github, _ = provider
+    issue_source = GitHubSource(provider="github", repository="owner/repo", subject=IssueSubject(kind="issue", number=7))
+    specs = [
+        issue_source,
+        issue_source.model_copy(update={"events": {EventFilter(event=EventName.ISSUES, actions={"closed"})}}),
+        SOURCE,
+    ]
+    subscriptions = [
+        await store.subscribe(PRINCIPAL, subscription(spec, key=f"source-{i}"), (await github.context(spec)).binding)
+        for i, spec in enumerate(specs)
+    ]
+    # GitHub's issue_comment envelope distinguishes issue and PR comments by the PR marker.
+    ordinary = comment() | {"issue": {"number": 7}}
+    payloads = [ordinary | {"action": "opened"}, ordinary | {"action": "closed"}, ordinary, comment()]
+    for payload, event in zip(payloads, ["issues", "issues", "issue_comment", "issue_comment"], strict=True):
+        await ingest(github, store, payload, event)
+    await ingest(github, store, ordinary | {"issue": {"number": 8}}, "issues")
+    claim = await store.claim()
+    assert claim is not None
+    for sub, spec in zip(subscriptions, specs, strict=True):
+        async with store.sessions() as session:
+            row = await session.get(Subscription, sub.id)
+        assert row is not None
+        await github.reconcile(store, claim, row, spec)
+    page = await store.read(PRINCIPAL.account, subscriptions[0].inbox_id, 0, 128)
+    assert [entry.payload for entry in page.entries] == payloads
+    assert [set(entry.subscriptions) for entry in page.entries] == [
+        {subscriptions[0].id},
+        {subscriptions[0].id, subscriptions[1].id},
+        {subscriptions[0].id},
+        {subscriptions[2].id},
+    ]
+
+
+async def test_issue_subject_rejects_pr_and_missing_issue(provider: tuple[GitHub, Upstream]) -> None:
+    github, upstream = provider
+    source = GitHubSource(provider="github", repository="owner/repo", subject=IssueSubject(kind="issue", number=7))
+    upstream.responses["/repos/owner/repo/issues/7"] = httpx.Response(200, json={"number": 7, "pull_request": {}})
+    with pytest.raises(GitHubSourceChangedError):
+        await github.context(source)
+    upstream.responses["/repos/owner/repo/issues/7"] = httpx.Response(404)
+    with pytest.raises(GitHubAccessError):
+        await github.context(source)
+
+
+@pytest.mark.parametrize("kind", ["pull_request", "branch", "commit"])
+async def test_workflow_job_sha_matching_and_action_filter(
+    store: Store, provider: tuple[GitHub, Upstream], kind: str
+) -> None:
+    github, _ = provider
+    subject = {
+        "pull_request": PullRequestSubject(kind="pull_request", number=7),
+        "branch": BranchSubject(kind="branch", name="devel"),
+        "commit": CommitSubject(kind="commit", sha=HEAD),
+    }[kind]
+    source = GitHubSource(
+        provider="github", repository="owner/repo", subject=subject,
+        events={EventFilter(event=EventName.WORKFLOW_JOB, actions={"completed"})},
+    )
+    sub = await store.subscribe(PRINCIPAL, subscription(source), (await github.context(source)).binding)
+    payload: dict[str, JsonValue] = {
+        "installation": {"id": 11}, "repository": {"id": 100, "full_name": "owner/repo"},
+        "action": "completed", "workflow_job": {"head_sha": HEAD, "head_branch": None, "id": 123, "run_id": 456},
+    }
+    await ingest(github, store, payload | {"action": "in_progress"}, "workflow_job")
+    await ingest(github, store, payload | {"workflow_job": {"head_sha": NEXT}}, "workflow_job")
+    raw, headers = signed(payload, "workflow_job")
+    assert await github.ingest(store, "workflow_job", UUID(headers["X-GitHub-Delivery"]), headers["X-Hub-Signature-256"], raw)
+    assert not await github.ingest(store, "workflow_job", UUID(headers["X-GitHub-Delivery"]), headers["X-Hub-Signature-256"], raw)
+    claim = await store.claim()
+    assert claim is not None
+    async with store.sessions() as session:
+        row = await session.get(Subscription, sub.id)
+    assert row is not None
+    await github.reconcile(store, claim, row, source)
+    page = await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
+    assert [entry.payload for entry in page.entries] == [payload]
+
+
+def test_issue_and_ci_filter_vocabulary() -> None:
+    issue = IssueSubject(kind="issue", number=7)
+    with pytest.raises(ValidationError, match="event is not supported"):
+        GitHubSource(provider="github", repository="owner/repo", subject=issue,
+                     events={EventFilter(event=EventName.WORKFLOW_JOB)})
+    with pytest.raises(ValidationError, match="event is not supported"):
+        GitHubSource(provider="github", repository="owner/repo", subject=SOURCE.subject,
+                     events={EventFilter(event=EventName.ISSUES)})
+    assert EventName.WORKFLOW_JOB not in {event.event for event in SOURCE.filters}
 
 
 async def test_cancellation_fences_accepted_github_work(store: Store, provider: tuple[GitHub, Upstream]) -> None:
