@@ -73,10 +73,17 @@ This adopts provider-reported metadata using the Gemini interpretation above; it
 is not eight new capacity measurements. Routes, authorization, request caps, client
 budgets, defaults, pricing, and paused integrations are unchanged.
 
-Claude/GPT-OSS are deliberately excluded: their historical pairs remain unpublished
-until the input-versus-combined interpretation is resolved. The image model has no
-pair to adopt. Fresh raw values alone do not justify filling those gaps. Track the
-remaining source/disposition decisions in [#9574](https://github.com/agentydragon/ducktape/issues/9574).
+Claude Opus/Sonnet now publish **250000 / 64000**, and GPT-OSS **131072 / 32768**,
+from the recorded response, following [CLIProxyAPI's declared mapping](https://github.com/router-for-me/CLIProxyAPI/blob/7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974/internal/registry/model_registry.go#L1451-L1476)
+of `ContextLength` to `max_input_tokens`. We expose these explicitly in LiteLLM:
+its [Anthropic discovery](https://github.com/BerriAI/litellm/blob/v1.100.1/litellm/llms/anthropic/common_utils.py#L847-L875)
+keeps model IDs, not backend limits. **TODO: boundary behavior and joint input/output
+capacity remain untested.** These are gateway declarations, not proof of independent
+budgets or simultaneous maxima. No output subtraction or client-budget change is implied.
+
+The pinned executor still drops request output caps for non-Claude models, including
+GPT-OSS; publishing metadata does not fix that separate issue. The image route still
+has no reported pair. Remaining work: [#9574](https://github.com/agentydragon/ducktape/issues/9574).
 
 ## Bounded serving-path check
 
