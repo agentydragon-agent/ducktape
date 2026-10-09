@@ -407,6 +407,21 @@ the claim's row locks, so revocation still fails unstarted work. Removed groups/
 incompatible schemas remain terminal. New requests to known unavailable groups return an explicit
 unavailable error (HTTP 503), not unknown-action. Replica-local health is never stored in Postgres.
 
+### Execution schema-check diagnostics
+
+A failed execution-time `tools/list` keeps `kind=mcp_unavailable` and adds the exception type,
+elapsed schema-check time and connection age (since client initialization) to the retained execution
+error and a warning log. A directly raised HTTP status exception also supplies its status code.
+SDK-wrapped exceptions remain opaque; use the HTTP client's existing status log for correlation
+rather than traversing arbitrary exception graphs. No exception text, headers, URLs, response bodies
+or raw MCP session IDs are copied into these diagnostics.
+
+This is observability, not a retry or network-policy change. For an operator-authorized reproduction,
+compare read-only `tools/list` immediately after connection, after an idle interval on that connection,
+and on a fresh connection after failure. Correlate with backend/proxy evidence; do not automatically
+retry `tools/call` or report recovery merely because catalog refresh succeeds. Deployment and live
+reproduction require separate authorization; unit/HTTP-peer tests do not establish the live cause.
+
 Operators manage linkage at `GET /v1/operator/mcp-servers`
 (every configured server's status), `GET /v1/operator/mcp-servers/{server_id}/linkage`, and
 `POST .../linkage/start` and `POST .../linkage/disconnect`; the provider returns to the

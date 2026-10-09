@@ -85,6 +85,8 @@ class FakeMcpServer:
             }
         ]
         self.list_unavailable = False
+        self.list_error_body = b""
+        self.list_error_headers: dict[str, str] = {}
         self.call_unavailable = False
         self.tool_error = False
 
@@ -123,7 +125,7 @@ class FakeMcpServer:
         result: dict[str, Any]
         if method == "tools/list":
             if self.list_unavailable:
-                return Response(status_code=503)
+                return Response(self.list_error_body, status_code=503, headers=self.list_error_headers)
             result = {"tools": self.tools}
         elif method == "tools/call":
             if self.call_unavailable:
@@ -337,12 +339,26 @@ async def test_http_list_failure_refuses_dispatch(
     executor: McpActionGroupExecutor,
     fake_server: FakeMcpServer,
     execution_request: ExecutionRequest,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     fake_server.list_unavailable = True
+    fake_server.list_error_body = b"upstream connect error: reset before headers; bearer test-body-secret"
+    fake_server.list_error_headers = {"server": "envoy", "set-cookie": "test-cookie-secret"}
     result = await executor.execute(execution_request, execution_lease)
     assert result.state is ExecutionState.FAILED
     assert result.error is not None
     assert result.error["kind"] == "mcp_unavailable"
+    diagnostics = result.error["diagnostics"]
+    assert isinstance(diagnostics, dict)
+    assert isinstance(diagnostics["exception_type"], str)
+    for key in ("connection_age_s", "request_duration_s"):
+        duration = diagnostics[key]
+        assert isinstance(duration, (int, float))
+        assert duration >= 0
+    assert "MCP execution schema check failed" in caplog.text
+    for secret in ("test-body-secret", "test-cookie-secret"):
+        assert secret not in json.dumps(result.error)
+        assert secret not in caplog.text
     assert fake_server.calls == []
 
 

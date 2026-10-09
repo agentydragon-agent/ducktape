@@ -18,6 +18,7 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from time import monotonic
 from typing import Annotated, Any, Literal, cast
 
 import httpx2
@@ -26,7 +27,7 @@ import mcp.types
 from fastmcp.client import Client, ClientTransport
 from fastmcp.client.messages import MessageHandler
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, field_validator
 from tenacity import RetryCallState, Retrying, wait_random_exponential
 
 from agentplane.action_service.catalog import (
@@ -153,6 +154,7 @@ class _Connection:
     inflight: int = 0
     idle: asyncio.Event = field(default_factory=asyncio.Event)
     failed: bool = False
+    connected_at: float = field(default_factory=monotonic)
 
     def __post_init__(self) -> None:
         self.idle.set()
@@ -359,6 +361,7 @@ class McpActionGroupExecutor(Executor):
         except BaseException:
             await self._close_connection(connection)
             raise
+        connection.connected_at = monotonic()
         self._connection = connection
 
     async def _supervise(self) -> None:
@@ -571,6 +574,7 @@ class McpActionGroupExecutor(Executor):
             )
 
         client = connection.client
+        discovery_started = monotonic()
         try:
             async with asyncio.timeout(self._lifecycle_timeout.total_seconds()):
                 tools = await client.list_tools()
@@ -588,8 +592,24 @@ class McpActionGroupExecutor(Executor):
                 error={"kind": "mcp_invalid_schema", "message": "backend tool schema is invalid"},
             )
         except Exception as error:
+            diagnostics: dict[str, JsonValue] = {
+                "exception_type": type(error).__name__,
+                "connection_age_s": round(discovery_started - connection.connected_at, 3),
+                "request_duration_s": round(monotonic() - discovery_started, 3),
+            }
+            if isinstance(error, httpx2.HTTPStatusError):
+                diagnostics["http_status"] = error.response.status_code
+            # Never log exception text/tracebacks: SDK wrappers can include credentials or URLs.
+            logger.warning("MCP execution schema check failed group=%s diagnostics=%s", group_key, diagnostics)
             self._session_failed(connection, error)
-            return self._unavailable_result()
+            return ExecutionResult(
+                state=ExecutionState.FAILED,
+                error={
+                    "kind": "mcp_unavailable",
+                    "message": "could not verify the current tool schema",
+                    "diagnostics": diagnostics,
+                },
+            )
         tool = actions.get(name)
         if tool is None:
             return ExecutionResult(
