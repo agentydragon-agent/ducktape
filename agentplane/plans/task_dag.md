@@ -24,11 +24,8 @@ ServiceAccount access to selected Session history and derived Thread views now. 
 durable archive source and `SANDBOX_COMPARTMENT_BOUNDARY` prevents co-resident
 sessions from crossing trust domains. None requires the hosted runtime pivot.
 
-Proposed execution order for the Thread correctness/UI track:
+Other priorities and candidates:
 
-- **Thread UI:** the staged submission indicator (`SUBMISSION_STAGE_INDICATOR`) follows
-  `COMMAND_DISPATCHED_EVENT` and shares its test changes with
-  [#9063](https://github.com/agentydragon/ducktape/issues/9063).
 - **P2:** driver-hosted tools (`DT`). This does not block the current API-level
   acceptance closure.
 - **Unranked future harness capabilities:** project skills and commands, web search,
@@ -130,11 +127,10 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Deferred combined UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox selected, Thread fields editable"]:::future
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
+    COMMAND_PROGRESS_WIDGET["Unranked UI<br/>shared in-progress command indicator<br/>input, model, reasoning effort"]:::future
     THREAD_OPEN_RELOAD_RECOVERY["Open recovery follow-up<br/>runner committed but mapping absent<br/>safe reload reconciliation"]:::future
     BOOTSTRAP_PROGRESS_CONTRACT["Planned contract<br/>one bootstrap attempt with durable progress/result<br/>no HTTP-held script execution"]:::future
     SANDBOX_CREATE_RECONCILE["Lifecycle acceptance<br/>lost Create reply and partial grants<br/>current UID, no deleted-object tombstone"]:::future
-    COMMAND_DISPATCHED_EVENT["Missing observation<br/>runner handed the command to the harness<br/>journal-only today; needs an Event"]:::future
-    SUBMISSION_STAGE_INDICATOR["Planned UI<br/>staged submission indicator<br/>which of five stages, not two strings"]:::future
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CLAUDE_FRESH_RESUME_CACHE_SPIKE["Independent Claude spike<br/>fresh-process resume from copied native state<br/>prefix/reasoning and cache evidence"]:::future
@@ -210,7 +206,6 @@ flowchart TB
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     CODEX_RECOVERY -. required recovery evidence .-> CODEX_RECOVERY_PROTOCOL
     COMMAND_QUEUE_DECISION -. if app-first acceptance chosen .-> THREAD_COMMAND_DELIVERY
-    COMMAND_DISPATCHED_EVENT --> SUBMISSION_STAGE_INDICATOR
     THREAD_COMMAND_DELIVERY --> THREAD_OUTBOX_CUTOVER
     THREAD_OUTBOX_CUTOVER --> NEWTHREAD_DURABLE
     NEWTHREAD_DURABLE --> UISHELL_NEWTHREAD_SANDBOX
@@ -686,30 +681,26 @@ sequence. Review them for independently useful changes to salvage into appropria
 slices; do not stack new work on their deferred queue design. Preserve the runner's
 own journal in either option.
 
-### `COMMAND_DISPATCHED_EVENT` — make "the runner sent this to the harness" an observation
+### `COMMAND_PROGRESS_WIDGET` — shared progress for in-flight commands
 
-The third submission stage is unobservable. The runner records it in its own SQLite —
-`Command.dispatch_planned` in `agentplane/runner/journal.py`, written by `dispatch_planned()` at the
-points in `agentplane/runner/session.py` where an input goes to the adapter, sometimes with a
-`native_correlation` such as a Codex `turn_id` — and none of it reaches the app: no observation in
-`agentplane/protocol/event.proto`, no fold row, so no consumer can tell "queued in the runner" from
-"handed to the harness", which is what an operator waiting on a steer means. Add the Event, its fold
-and view handling, and runner tests pinning its ordering against `CommandAdmitted` for both harnesses.
-Keep `native_correlation` runner-local unless a consumer is named for it; a native id is not an
-app-level promise.
+**Unranked future UI improvement:** show one compact, accessible progress treatment for
+pending user input, model changes, and reasoning-effort changes. Reuse the same widget
+beside an input bubble or command card; include the requested model or effort in the
+command card. Do not create a parallel progress log or duplicate a command when its
+local copy becomes a projected history row.
 
-### `SUBMISSION_STAGE_INDICATOR` — show which submission stage a pending command is in
+Advance only through observable states: retained locally (including admission
+unconfirmed after a lost reply), runner admission confirmed by `CommandAdmitted`, and
+the operation-specific effect or terminal failure/no-op. Input confirmation,
+`ModelChanged`, and `ReasoningEffortChanged` settle their respective commands; a
+model or effort change may remain pending until a native selection confirms it.
+Neither the HTTP reply alone nor the runner's internal `dispatch_planned` flag proves
+the harness received the command; no dispatch Event or protocol change is needed.
+Stop the spinner on terminal outcomes while preserving failure/no-op explanations.
 
-Replace the two-state copy in `agentplane/app/frontend/threads/thread_commands.tsx` and
-`thread_cards.tsx` — `"Saved locally · awaiting admission"` and `"Saved · awaiting effect"` — with an
-indicator that names its stage: the browser holds it, the app has it, the runner was sent it, the
-runner admitted it, the harness has taken effect. Four of the five are observable now; the third
-waits on `COMMAND_DISPATCHED_EVENT`. Prefer a fixed-angular-position advancing indicator — a dot or
-breathing spinner whose position _is_ the stage — over longer prose, with the exact stage and its
-age in the hover/expanded copy. Keep the wording honest: nothing tells the app that the model's
-context contains the input, so the last stage stays "awaiting effect" and never claims the model has
-seen it. Pin the state machine and its transitions in tests, not the strings —
-[#9063](https://github.com/agentydragon/ducktape/issues/9063) removes the existing wording pins.
+Acceptance: exercise the shared state transitions, retry/reconnect and reload from
+local plus projected state, commands sent from another browser, and mobile/desktop
+renderings. Keep the stage names accessible without pinning incidental wording.
 
 ### `CLAUDE_RECOVERY` — native execution before durable runner evidence
 
