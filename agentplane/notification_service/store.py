@@ -12,7 +12,10 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.action_service.models import ActionEventView
-from agentplane.notification_service.db import Entry, GitHubDelivery, Inbox, Match, Notice, Subscription
+from agentplane.notification_service.db import (
+    Entry, GitHubDelivery, GitHubInstallation, GitHubRepository, GitHubRepositoryAccess, GitHubSubject,
+    Inbox, Match, Notice, Subscription,
+)
 from agentplane.notification_service.models import (
     ActionsEvent,
     ActionsSource,
@@ -30,7 +33,7 @@ from agentplane.notification_service.models import (
     SubscriptionUpdate,
     SubscriptionView,
 )
-from agentplane.notification_service.sources.github_models import GitHubBinding, GitHubEvent, GitHubSource
+from agentplane.notification_service.sources.github_models import GitHubBinding, GitHubEvent, GitHubSource, subject_key
 from agentplane.notification_service.updates import Wakeups, notify
 from agentplane.protocol import event_log_pb2
 from agentplane.subjects import ServiceAccountRef
@@ -184,6 +187,20 @@ class Store:
                     select(func.coalesce(func.max(GitHubDelivery.position), 0))
                 )
                 assert github_start_position is not None
+                await session.execute(insert(GitHubInstallation).values(
+                    app_id=binding.app_id, installation_id=binding.installation_id, generation=0
+                ).on_conflict_do_nothing())
+                await session.execute(insert(GitHubRepository).values(
+                    repository_id=binding.repository_id, full_name=body.source.repository
+                ).on_conflict_do_nothing())
+                await session.execute(insert(GitHubRepositoryAccess).values(
+                    app_id=binding.app_id, installation_id=binding.installation_id,
+                    repository_id=binding.repository_id, generation=0
+                ).on_conflict_do_nothing())
+                await session.execute(insert(GitHubSubject).values(
+                    repository_id=binding.repository_id, kind=body.source.subject.kind,
+                    subject_key=subject_key(body.source), generation=0
+                ).on_conflict_do_nothing())
             row = Subscription(
                 id=uuid4(),
                 inbox_id=inbox.id,
@@ -193,7 +210,11 @@ class Store:
                 version=1,
                 actions_after_sequence=actions_after_sequence,
                 github_start_position=github_start_position,
-                github_binding=binding.model_dump(mode="json") if binding else None,
+                github_app_id=binding.app_id if binding else None,
+                github_installation_id=binding.installation_id if binding else None,
+                github_repository_id=binding.repository_id if binding else None,
+                github_subject_kind=body.source.subject.kind if isinstance(body.source, GitHubSource) else None,
+                github_subject_key=subject_key(body.source) if isinstance(body.source, GitHubSource) else None,
                 cancelled=False,
                 expires_at=now + timedelta(days=body.lifetime_days),
                 next_attempt=now,
@@ -689,7 +710,7 @@ class Store:
             )
             now = datetime.now(UTC)
             active = (
-                (Subscription.github_binding["app_id"].astext == str(app_id))
+                (Subscription.github_app_id == app_id)
                 & ~Subscription.cancelled
                 & (Subscription.expires_at > func.now())
             )

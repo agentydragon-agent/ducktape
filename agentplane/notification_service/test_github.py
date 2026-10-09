@@ -27,7 +27,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.notification_service.api import authenticated_caller, create_app
 from agentplane.notification_service.database_migrate import RUNNER
-from agentplane.notification_service.db import GitHubDelivery, Inbox, Subscription
+from agentplane.notification_service.db import (
+    GitHubDelivery, GitHubInstallation, GitHubRepository, GitHubRepositoryAccess, GitHubSubject, Inbox, Subscription,
+)
 from agentplane.notification_service.models import DestinationRef, SourceFailureKind, Subscribe, SubscriptionUpdate
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, NoticeDebounceSettings, Settings
@@ -276,7 +278,7 @@ async def test_redelivery_after_restart_replays_one_committed_receipt(
 
 
 @pytest.mark.parametrize(
-    "values", [{"actions_after_sequence": 0}, {"github_start_position": None}, {"github_binding": None}]
+    "values", [{"actions_after_sequence": 0}, {"github_start_position": None}, {"github_app_id": None}]
 )
 async def test_github_subscription_state_is_source_specific(
     store: Store, provider: tuple[GitHub, Upstream], values: dict[str, int | None]
@@ -868,6 +870,31 @@ github: null
     config.unlink()
     with pytest.raises(ValueError, match="regular file"):
         Settings(database_url="postgresql://unused", _cli_parse_args=False)
+
+
+async def test_subscriptions_share_normalized_github_entities(store: Store, provider: tuple[GitHub, Upstream]) -> None:
+    github, _ = provider
+    binding = (await github.context(SOURCE)).binding
+    first = await store.subscribe(PRINCIPAL, subscription(), binding)
+    second = await store.subscribe(PRINCIPAL, subscription(key="overlap"), binding)
+    other = SOURCE.model_copy(update={"subject": PullRequestSubject(kind="pull_request", number=8)})
+    await store.subscribe(PRINCIPAL, subscription(other, key="another-pr"), binding)
+    assert first.id != second.id
+    async with store.sessions() as session:
+        for entity in (GitHubInstallation, GitHubRepository, GitHubRepositoryAccess):
+            assert await session.scalar(select(func.count()).select_from(entity)) == 1
+        assert await session.scalar(select(func.count()).select_from(GitHubSubject)) == 2
+        assert await session.scalar(select(func.count()).select_from(Subscription)) == 3
+        row = await session.get(Subscription, first.id)
+        assert row is not None
+        assert row.github_binding == binding.model_dump(mode="json")
+    # A subscription cannot claim a subject or installation/repository grant that does not exist.
+    with pytest.raises(IntegrityError):
+        async with store.sessions.begin() as session:
+            await session.execute(update(Subscription).where(Subscription.id == first.id).values(github_subject_key="999"))
+    with pytest.raises(IntegrityError):
+        async with store.sessions.begin() as session:
+            await session.execute(update(Subscription).where(Subscription.id == first.id).values(github_installation_id=999))
 
 
 if __name__ == "__main__":

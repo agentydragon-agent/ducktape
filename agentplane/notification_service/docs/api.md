@@ -249,3 +249,28 @@ These updates never append inbox entries, advance cursors or prepare agent notic
 shows current source observations separately from subscription lifecycle and delivery status.
 Shared GitHub access/repair failures belong to their shared records, not duplicated subscription
 errors; subscription-owned observations describe that subscription's processing.
+
+## GitHub entity ownership
+
+GitHub subscription bindings reference shared repository-access and subject rows through composite
+foreign keys. An App/installation/repository grant is distinct from a repository/subject identity;
+the common repository ID prevents a subscription from binding a subject to an unrelated repository.
+The immutable creation JSON is the original request for idempotency, not a mutable repository cache.
+Repository names are observations, not primary keys. Matching installation IDs remain mandatory.
+
+`github_installation` owns the App/installation identity and access invalidation generation.
+`github_repository` owns the numeric repository identity and observed name.
+`github_repository_access` owns validation timestamps (`checked_at`, `valid_until`), validation
+failure facts, retry schedule and refresh lease for an App/installation/repository grant.
+`github_subject` owns repair observations and lease for a PR, branch or commit.
+`github_subject_revision` holds additive associations keyed by subject, head repository and SHA;
+an association cannot grant access to the head repository.
+
+Subscription `last_success_at` and current failure describe that subscription's processing. Shared
+access or repair failures belong on the grant or subject, and the API must project those conditions
+rather than duplicate them into every affected subscription.
+
+The normalized binding migration preserves subscription IDs, inboxes, event checkpoints and raw
+receipts. It does not claim historical validation times. Reverse migration refuses to discard
+shared observations or revision associations.
+
