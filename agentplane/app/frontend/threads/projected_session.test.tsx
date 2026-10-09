@@ -868,15 +868,13 @@ it.each([
     })
   );
   const bubble = container.querySelector<HTMLElement>(`.agentplane-user-bubble[data-message-phase="${phase}"]`);
-  if (outcome === "noop") {
-    expect(bubble?.parentElement?.querySelector(".agentplane-command-progress")).toBeNull();
-    expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe(status);
-    expect(bubble?.parentElement?.querySelector('[role="status"]')?.getAttribute("title")).toBe(status);
-  } else {
-    expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
-      status
-    );
-  }
+  const plainOutcome = bubble?.parentElement?.querySelector(".agentplane-command-noop");
+  expect(plainOutcome?.textContent).toBe(outcome === "noop" ? status : undefined);
+  expect(plainOutcome?.getAttribute("title")).toBe(outcome === "noop" ? status : undefined);
+  expect(bubble?.parentElement?.querySelector(".agentplane-command-progress") === null).toBe(outcome === "noop");
+  expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
+    outcome === "noop" ? undefined : status
+  );
   const dismiss = buttonIn(bubble?.parentElement, "Dismiss");
   expect(dismiss).toBeDefined();
   await act(async () => dismiss?.click());
