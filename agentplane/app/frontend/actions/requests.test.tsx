@@ -314,7 +314,14 @@ describe("global Action affordance", () => {
       const pr = {
         ...first,
         action: { group: "github", name: "create_pull_request" },
-        arguments: { owner: "example", repo: "repo", title: "Update docs", head: "feature", base: "devel", body: "Important description" },
+        arguments: {
+          owner: "example",
+          repo: "repo",
+          title: "Update docs",
+          head: "feature",
+          base: "devel",
+          body: "Important description",
+        },
       };
       await send([pr]);
       expect(container.querySelector(".action-affordance-notice")?.textContent).toContain("description: open Review");

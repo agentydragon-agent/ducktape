@@ -66,7 +66,7 @@ async def test_compact_pod_approval(view: VisualPage, app: AgentplaneFixture, ex
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 @pytest.mark.parametrize(
-    "group,name,arguments,visible",
+    ("group", "name", "arguments", "visible"),
     [
         (
             "kubernetes_admin",
@@ -96,7 +96,14 @@ async def test_compact_pod_approval(view: VisualPage, app: AgentplaneFixture, ex
         (
             "github",
             "create_pull_request",
-            {"owner": "example", "repo": "repo", "title": "Update docs", "head": "docs", "base": "devel", "draft": True},
+            {
+                "owner": "example",
+                "repo": "repo",
+                "title": "Update docs",
+                "head": "docs",
+                "base": "devel",
+                "draft": True,
+            },
             "Update docs",
         ),
     ],

@@ -94,12 +94,24 @@ const compactCases: Array<{ group: string; name: string; args: Record<string, un
     group: "github",
     name: "create_pull_request",
     args: {
-      owner: "example", repo: "repo", title: "Update docs", head: "feature", base: "devel", body: "",
-      draft: true, maintainer_can_modify: false, reviewers: ["reviewer1"],
+      owner: "example",
+      repo: "repo",
+      title: "Update docs",
+      head: "feature",
+      base: "devel",
+      body: "",
+      draft: true,
+      maintainer_can_modify: false,
+      reviewers: ["reviewer1"],
     },
     visible: [
-      "example/repo", "Update docs", "feature → devel", "description: empty", "draft: yes",
-      "maintainer edits: no", "reviewer1",
+      "example/repo",
+      "Update docs",
+      "feature → devel",
+      "description: empty",
+      "draft: yes",
+      "maintainer edits: no",
+      "reviewer1",
     ],
   },
 ];
@@ -124,9 +136,16 @@ describe("compact approval widgets", () => {
     expect(
       compactActionArguments({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })
     ).not.toBeNull();
-    expect(compactApprovalArguments({ group: "kubernetes_admin", name: "resources_delete" }, {
-      apiVersion: "v1", kind: "Pod", name: "api-0",
-    })).toBeNull(); // The backend's configured namespace would otherwise be hidden.
+    expect(
+      compactApprovalArguments(
+        { group: "kubernetes_admin", name: "resources_delete" },
+        {
+          apiVersion: "v1",
+          kind: "Pod",
+          name: "api-0",
+        }
+      )
+    ).toBeNull(); // The backend's configured namespace would otherwise be hidden.
     expect(compactApprovalArguments({ group: "ssh", name: "exec" }, SSH_EXEC_ARGUMENTS)).toBeNull();
     expect(compactApprovalArguments({ group: "__proto__", name: "constructor" }, {})).toBeNull();
   });

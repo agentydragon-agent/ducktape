@@ -2560,13 +2560,14 @@ class HarnessEventSource extends EventTarget {
       return;
     }
     if (url.pathname === "/actions/stream") {
-      const pending = previewAction !== null
-        ? [previewAction]
-        : includeCompactPodAction
-          ? [COMPACT_POD_ACTION]
-          : includePendingActions
-            ? ACTIONS.filter((request) => request.state === "decision_pending")
-            : [];
+      const pending =
+        previewAction !== null
+          ? [previewAction]
+          : includeCompactPodAction
+            ? [COMPACT_POD_ACTION]
+            : includePendingActions
+              ? ACTIONS.filter((request) => request.state === "decision_pending")
+              : [];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(pending) }));
       return;
     }
