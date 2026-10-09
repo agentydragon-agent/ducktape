@@ -38,6 +38,7 @@ from agentplane.action_service.connections import (
     ConnectionConflictError,
     ConnectionNotFoundError,
     ConnectionRename,
+    ConnectionRebind,
     ConnectionVersion,
 )
 from agentplane.action_service.db import ActionConflictError, ActionNotFoundError, ExternalGrantNotAuthorizedError
@@ -616,6 +617,11 @@ def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
         del request
         return _error(status.HTTP_409_CONFLICT, str(error))
 
+    @app.exception_handler(GrantRejectedError)
+    async def rebind_rejected(request: Request, error: GrantRejectedError) -> JSONResponse:
+        del request
+        return _error(status.HTTP_400_BAD_REQUEST, str(error))
+
     @app.get("/v1/operator/caller-service-accounts", dependencies=[Depends(_operator)])
     async def caller_service_accounts() -> list[ServiceAccountRef]:
         return authority.caller_service_accounts()
@@ -648,6 +654,15 @@ def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
     async def rename_connection(connection_id: UUID, body: ConnectionRename) -> Connection:
         return await authority.rename(
             connection_id, expected_version=body.expected_version, display_name=body.display_name
+        )
+
+    @app.post("/v1/operator/connections/{connection_id}/rebind")
+    async def rebind_connection(
+        connection_id: UUID, body: ConnectionRebind, principal: Annotated[OperatorPrincipal, Depends(_operator)]
+    ) -> Connection:
+        return await authority.rebind(
+            connection_id, expected_version=body.expected_version,
+            caller=body.service_account, operator=principal,
         )
 
     @app.post("/v1/operator/connections/{connection_id}/unbind", dependencies=[Depends(_operator)])

@@ -1,4 +1,4 @@
-import { Alert, Button, Group, Stack, Table, Text } from "@mantine/core";
+import { Alert, Button, Group, Select, Stack, Table, Text } from "@mantine/core";
 import { followStream, type StreamConnection } from "../live_stream";
 import { type JSX, useCallback, useEffect, useState } from "react";
 
@@ -30,6 +30,7 @@ export function Connections({ service = connectionService }: { service?: Connect
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unlinking, setUnlinking] = useState<Connection | null>(null);
+  const [rebinding, setRebinding] = useState<{ row: Connection; target: string; confirm: boolean } | null>(null);
   const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
 
   const load = useCallback(async (): Promise<void> => {
@@ -42,6 +43,7 @@ export function Connections({ service = connectionService }: { service?: Connect
   const refresh = useCallback(async (): Promise<void> => {
     setBusy(true);
     setUnlinking(null);
+    setRebinding(null);
     try {
       await load();
       setError(null);
@@ -67,6 +69,36 @@ export function Connections({ service = connectionService }: { service?: Connect
       onConnection: setConnection,
     });
   }, []);
+
+  async function confirmRebind(): Promise<void> {
+    if (rebinding === null) return;
+    const target = accounts.find((account) => serviceAccountKey(account) === rebinding.target);
+    if (!target) {
+      setError("Selected ServiceAccount is no longer eligible. Refresh before retrying.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const updated = await service.rebind(rebinding.row, target);
+      setRows((current) => current.map((row) => (row.id === updated.id ? updated : row)));
+      setRebinding(null);
+      setError(null);
+    } catch (failure) {
+      if (failure instanceof ConnectionRequestError && failure.status === 409) {
+        setRebinding(null);
+        try {
+          await load();
+          setError("Connection changed elsewhere. Review its new binding before trying again. Nothing was retried.");
+        } catch (refreshFailure) {
+          setError(`Connection changed elsewhere. Refresh failed: ${displayableError(refreshFailure)}. Nothing was retried.`);
+        }
+      } else {
+        setError(displayableError(failure));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function confirmUnlink(): Promise<void> {
     if (unlinking === null) return;
@@ -100,9 +132,9 @@ export function Connections({ service = connectionService }: { service?: Connect
   return (
     <Stack>
       <Text c="dimmed" size="sm">
-        Named external clients and the ServiceAccount their most recent grant acts as. Unlink revokes authority without
-        deleting history or stopping already claimed work; changing the bound ServiceAccount requires a fresh
-        authorization.
+        Named external clients and the ServiceAccount they currently act as. Changing an account keeps existing client
+        tokens usable for future requests; already-submitted Actions retain their original authority. Unlink revokes
+        access without stopping already claimed work.
       </Text>
       {connection.phase === "reconnecting" && (
         <Text role="status">Connection lost; showing last OAuth clients. Reconnecting…</Text>
@@ -127,6 +159,9 @@ export function Connections({ service = connectionService }: { service?: Connect
             {rows.map((row) => {
               const grant = currentGrant(row);
               const unbound = row.grants.every((candidate) => candidate.status === "revoked");
+              const currentCaller = row.bound_caller ?? (unbound ? null : grant?.caller ?? null);
+              const currentKey = currentCaller ? serviceAccountKey(currentCaller) : null;
+              const selected = rebinding?.row.id === row.id ? rebinding.target : currentKey;
               return (
                 <Table.Tr key={row.id} data-connection-id={row.id}>
                   <Table.Td>
@@ -136,18 +171,35 @@ export function Connections({ service = connectionService }: { service?: Connect
                     </Text>
                   </Table.Td>
                   <Table.Td>
-                    {grant ? (
-                      <>
-                        <Text>{serviceAccountKey(grant.caller)}</Text>
-                        {!isEligibleCaller(grant.caller, accounts) && (
-                          <Text size="xs" c="orange">
-                            ServiceAccount not labeled as an Action caller
-                          </Text>
+                    {currentCaller ? (
+                      <Stack gap={2}>
+                        <Select
+                          aria-label={`Service account for ${row.display_name}`}
+                          value={selected}
+                          onChange={(value) => {
+                            if (value) setRebinding({ row, target: value, confirm: false });
+                          }}
+                          data={[
+                            ...accounts.map((account) => ({ value: serviceAccountKey(account), label: serviceAccountKey(account) })),
+                            ...(!isEligibleCaller(currentCaller, accounts)
+                              ? [{ value: currentKey!, label: currentKey!, disabled: true }]
+                              : []),
+                          ]}
+                          disabled={busy || unbound}
+                          size="xs"
+                          w={240}
+                        />
+                        {!isEligibleCaller(currentCaller, accounts) && (
+                          <Text size="xs" c="orange">ServiceAccount not labeled as an Action caller</Text>
                         )}
-                      </>
-                    ) : (
-                      "—"
-                    )}
+                        {rebinding?.row.id === row.id && rebinding.target !== currentKey && (
+                          <Group gap="xs">
+                            <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>Cancel</Button>
+                            <Button size="xs" disabled={busy} onClick={() => setRebinding({ ...rebinding, confirm: true })}>Apply</Button>
+                          </Group>
+                        )}
+                      </Stack>
+                    ) : "—"}
                   </Table.Td>
                   <Table.Td>
                     {unlinking?.id === row.id ? (
@@ -178,6 +230,18 @@ export function Connections({ service = connectionService }: { service?: Connect
             })}
           </Table.Tbody>
         </Table>
+      )}
+      {rebinding?.confirm && (
+        <Alert color="orange" title={`Change ${rebinding.row.display_name}'s ServiceAccount?`}>
+          <Text size="sm">
+            Existing client tokens will act as {rebinding.target} on future requests. Pending Actions admitted under the
+            previous account will not be silently upgraded; already claimed executions continue.
+          </Text>
+          <Group mt="xs">
+            <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>Cancel</Button>
+            <Button size="xs" loading={busy} onClick={() => void confirmRebind()}>Confirm change</Button>
+          </Group>
+        </Alert>
       )}
       {unlinking && (
         <Alert color="orange" title={`Unlink ${unlinking.display_name}?`}>
