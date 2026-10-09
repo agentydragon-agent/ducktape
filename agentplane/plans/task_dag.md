@@ -568,13 +568,6 @@ Sandbox after response loss. Test conflicts, concurrent retries and ordinary par
 not promise exactly-once across deletion using a name lookup alone. Prerequisite for agent launch,
 not a request to add a second provisioning database.
 
-### `COMMAND_PROGRESS_WIDGET` — show admission versus effect
-
-**Candidate.** One accessible progress widget for input/model/effort commands, driven by existing
-Events. Distinguish uncertain submission, admitted and effect/terminal outcomes; no fabricated
-native receipt or duplicate command when local state becomes a projected row. Test reload/reconnect
-and terminal errors plus visual cases; no runner protocol extension required.
-
 ### `THREAD_NOTIFICATION_INDICATOR` — pending notice status in the sidebar
 
 **Candidate.** Expose authorized pending/next-eligible notice state and distinguish queued,
