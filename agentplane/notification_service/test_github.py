@@ -565,7 +565,7 @@ async def test_primary_limit_uses_reset_without_retry_after(provider: tuple[GitH
     )
     headers = github.client.app_headers()
     with (
-        patch("agentplane.notification_service.sources.github.time.time", return_value=1000.25),
+        patch("agentplane.notification_service.sources.github_client.time.time", return_value=1000.25),
         pytest.raises(GitHubRetryError, match=f"HTTP {status}") as failure,
     ):
         await github.client.request("GET", "/repos/owner/repo/installation", headers)
