@@ -100,9 +100,11 @@ async def test_watch_lists_from_resource_version_and_requeues_each_current_name(
     assert seen[0][1]["resource_version"] == "42"
     assert seen[0][1]["label_selector"] == "agentplane.allegedly.works/managed=true"
     assert list(result._queue._queue) == ["a", "b", ""]  # one sweep for the deletion
-    # A reconnect relists even unchanged objects; no process-local snapshot is an authority.
+    # A reconnect relists even unchanged objects and notices deletions during watch gaps.
+    provisioner.inventory.listed = [{"metadata": {"name": "a"}}]
     await result._watch._cycle(kind)
     assert list(result._queue._queue) == ["a", "b", ""]
+    assert result._seen == {"a"}
 
 
 async def test_worker_reconciles_current_uid_and_deletion() -> None:
@@ -136,10 +138,12 @@ async def test_retry_is_per_name_and_new_event_is_not_lost() -> None:
         # An update while the first reconcile is blocked must cause a second pass.
         result._apply("a", {"metadata": {"name": "a"}})
         provisioner.release.set()
-        await _until(lambda: len(provisioner.ensured) >= 2)
-        # The first failure schedules a retry; a fresh event takes precedence over that timer.
+        await _until(lambda: result._attempts.get("a") == 1)
+        # An event cannot bypass the first failure's backoff (e.g. our own error annotation).
         result._apply("a", {"metadata": {"name": "a"}})
-        await _until(lambda: len(provisioner.ensured) >= 3)
+        await asyncio.wait_for(result._queue.join(), 2)
+        assert provisioner.ensured == ["a"]
+        await _until(lambda: len(provisioner.ensured) == 2)
         await asyncio.wait_for(result._queue.join(), 2)
         assert result._attempts == {}
     finally:

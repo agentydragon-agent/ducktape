@@ -20,11 +20,6 @@ from util.kubernetes_watch import ListWatch, WatchedKind
 logger = logging.getLogger(__name__)
 
 
-def _no_cached_names() -> set[str]:
-    """A relist must requeue every CR, including unchanged ones after a restart."""
-    return set()
-
-
 _SWEEP = ""  # Kubernetes Sandbox names cannot be empty.
 
 
@@ -34,6 +29,8 @@ class SandboxController:
         self._resync_seconds = resync_seconds
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._queued: set[str] = set()
+        self._seen: set[str] = set()
+        self._uids: dict[str, str] = {}
         self._attempts: dict[str, int] = {}
         self._retries: dict[str, asyncio.Task[None]] = {}
         self._watch = ListWatch(
@@ -44,7 +41,7 @@ class SandboxController:
                     args=(*SANDBOX_API, provisioning.inventory.namespace, SANDBOXES_PLURAL),
                     kwargs={"label_selector": f"{MANAGED_LABEL}=true"},
                     key=lambda obj: str(obj["metadata"]["name"]),
-                    names=_no_cached_names,
+                    names=self._names,
                     apply=self._apply,
                 ),
             ),
@@ -58,17 +55,30 @@ class SandboxController:
             self._queued.add(name)
             self._queue.put_nowait(name)
 
+    def _names(self) -> set[str]:
+        return set(self._seen)
+
     def _apply(self, name: str, obj: dict[str, Any] | None) -> None:
         if obj is None:
-            # Deletion, or a managed label removed: cross-namespace bindings need an orphan sweep.
+            self._seen.discard(name)
+            self._uids.pop(name, None)
+            retry = self._retries.pop(name, None)
+            if retry is not None:
+                retry.cancel()
+            self._attempts.pop(name, None)
+            # Deletion (including one missed during a watch gap) needs orphan cleanup.
             self._enqueue(_SWEEP)
         else:
+            self._seen.add(name)
+            uid = str(obj["metadata"].get("uid", ""))
+            if self._uids.get(name) != uid:
+                # Name reuse starts fresh, never inheriting an older incarnation's backoff.
+                self._uids[name] = uid
+                retry = self._retries.pop(name, None)
+                if retry is not None:
+                    retry.cancel()
+                self._attempts.pop(name, None)
             self._enqueue(name)
-        # An event supersedes a delayed retry; the worker always reads the current CR.
-        retry = self._retries.pop(name, None)
-        if retry is not None:
-            retry.cancel()
-        self._attempts.pop(name, None)
 
     async def _on_change(self, kind: WatchedKind) -> None:
         pass  # WatchedKind.apply enqueues the affected name, not the entire kind.
@@ -95,7 +105,9 @@ class SandboxController:
     async def _retry(self, name: str, delay: float) -> None:
         try:
             await asyncio.sleep(delay)
-            self._enqueue(name)
+            if self._retries.get(name) is asyncio.current_task():
+                self._retries.pop(name, None)
+                self._enqueue(name)
         finally:
             if self._retries.get(name) is asyncio.current_task():
                 self._retries.pop(name, None)
@@ -105,6 +117,10 @@ class SandboxController:
             name = await self._queue.get()
             self._queued.discard(name)  # Events arriving during reconciliation need a second pass.
             try:
+                # An event observed during backoff is retained by the delayed requeue. This
+                # avoids a tight loop when our own failed reconciliation wrote an annotation.
+                if name in self._retries:
+                    continue
                 await (self._sweep() if name == _SWEEP else self._reconcile(name))
             except asyncio.CancelledError:
                 raise
