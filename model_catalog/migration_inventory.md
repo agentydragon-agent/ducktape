@@ -3,8 +3,9 @@
 Companion to the [design](design.md). This records files and consumers requiring
 review, not a commitment to change every file. **Only explicitly approved dispositions
 are decisions**; all other keep/move/merge/delete options remain open.
-The [tracking issue](https://github.com/agentydragon/ducktape/issues/9121) owns PR/rollout
-status and the complete parked-integration inventory.
+The [tracking issue](https://github.com/agentydragon/ducktape/issues/9574) owns PR/rollout
+status and links to the historical parked-integration inventory in
+[#9121](https://github.com/agentydragon/ducktape/issues/9121).
 
 ## Consumer inventory and side effects
 
@@ -129,19 +130,22 @@ input/output overrides**. The first no-patch slice completes those 12 overrides 
 legacy output alias. GPT-5.4/5.5 on both wires are now retired by operator request,
 leaving 86 public entries. The 33 direct Anthropic/Gemini/Mistral/Groq chat entries
 now also publish sourced pairs; see the [source ledger](litellm_metadata.md#direct-provider-sources-2026-10-05).
-Thus 45 entries have explicit overrides; the remaining migration is not complete:
+The eight Antigravity Gemini text routes now publish pairs from the recorded
+[Google response](antigravity_limits.md#fresh-google-metadata-2026-10-05-1201-utc),
+including Flash Lite 3.5. Thus **53 entries** have explicit overrides; the remaining
+migration and the provenance audit of provisional subscription pairs are not complete:
 
-| Routes                                             | Source / next decision                                                                                                                                                                                                                                |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ChatGPT GPT-6 and GPT-5.6, both wires (12 entries) | Existing configured numbers remain; complete schema aliases now. Their mixed historical/client provenance still needs the shared-limit semantic cleanup.                                                                                              |
-| Anthropic subscription; Tana Claude                | Account/gateway paths need an explicit source choice. Same vendor slug alone does not establish equivalence to direct-API metadata.                                                                                                                   |
-| Antigravity                                        | Adopt the already-recorded fresh Google response deliberately, retaining family-specific semantics. Flash Lite 3.5 now has a pair; image output has no pair in that response. No extra probes are needed just to rediscover this.                     |
-| Ollama chat variants                               | `num_ctx` is allocation, not an input/output pair. GPT-OSS 20B 256K/512K/1M OpenAI-wire routes lack corresponding baked aliases. Choose meaningful served metadata or ask which variants to pause; do not turn route-name sizes into capacity claims. |
-| Gemini and Ollama embeddings; Groq transcription   | Declare applicable metadata by mode. Gemini input ceilings already have source comments; embedding dimensions and audio constraints are not generative output-token limits. Preserve the durable embedding alias.                                     |
+| Routes                                             | Source / next decision                                                                                                                                                                                                                                              |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ChatGPT GPT-6 and GPT-5.6, both wires (12 entries) | Existing configured numbers remain; complete schema aliases now. Their mixed historical/client provenance still needs the shared-limit semantic cleanup.                                                                                                            |
+| Anthropic subscription; Tana Claude                | Account/gateway paths need an explicit source choice. Same vendor slug alone does not establish equivalence to direct-API metadata.                                                                                                                                 |
+| Antigravity                                        | Gemini text publication is complete from the recorded response. Claude/GPT-OSS still need input-versus-combined interpretation; their old pairs remain unpublished. The image model has no reported pair. Do not copy those raw fields into new input-limit claims. |
+| Ollama chat variants                               | `num_ctx` is allocation, not an input/output pair. GPT-OSS 20B 256K/512K/1M OpenAI-wire routes lack corresponding baked aliases. Choose meaningful served metadata or ask which variants to pause; do not turn route-name sizes into capacity claims.               |
+| Gemini and Ollama embeddings; Groq transcription   | Declare applicable metadata by mode. Gemini input ceilings already have source comments; embedding dimensions and audio constraints are not generative output-token limits. Preserve the durable embedding alias.                                                   |
 
 These are **remaining data/disposition decisions**, not a second runtime registry.
 The `publish_limits` flag is transitional and should disappear once retained declarations
-are complete. Update this inventory as implementation lands; keep PR status in #9121.
+are complete. Update this inventory as implementation lands; keep PR status in #9574.
 
 ## Documentation consolidation
 
@@ -158,7 +162,7 @@ model-limit semantics in both places.
 | `model_catalog/README.md`                         | Short neutral-package entry point: module responsibilities, generation entry points, links to the design and deployment guide                                                                   |
 | `cluster/docs/model_catalog.md`                   | **Candidate, not approved:** current cluster bindings and projections, where to change deployment selections, regeneration/check commands, and cluster-specific pause/restoration procedures    |
 | `model_catalog/debug/harness_model_metadata.md`   | **[Location approved](#approved-file-disposition-cross-layer-harness-audit):** historical version-scoped cross-layer audit, linked as evidence rather than treated as current deployment policy |
-| Tracking issue #9121                              | Work/PR status and complete parked-integration inventory, linking to the relevant restoration instructions                                                                                      |
+| Tracking issue #9574                              | Current work/PR status; links to #9121's historical parked-state inventory and restoration instructions                                                                                         |
 
 ### Candidate treatment of the existing cluster guide
 

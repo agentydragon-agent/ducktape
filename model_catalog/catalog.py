@@ -321,34 +321,19 @@ _HAIKU = Model("claude-haiku-4-5-20251001", "Haiku 4.5")
 # True, -low/-lite/plain/-image as False). OpenClaw consumes this capability flag;
 # the Agentplane projection separately uses the route's declared effort choices.
 #
-# Source mapping: Google's maxTokens -> TokenLimits.max_input_tokens;
-# maxOutputTokens -> TokenLimits.max_output_tokens. For gemini-3.1-flash-lite, maxTokens
-# is an INPUT allowance, not input+output: the live check crossed that combined
-# total. Do not subtract the output allowance from it. Claude/GPT-OSS were not
-# covered by that check; source/probe evidence is in model_catalog/antigravity_limits.md.
-# The pinned snapshot below is historical; that document also records fresh Google
-# metadata from 2026-10-05. Refreshing provider metadata must not change client budgets.
+# Gemini pairs use our account's 2026-10-05 fetchAvailableModels response, not
+# direct-Gemini API limits. Frozen evidence (three Google endpoints agreed):
+# https://github.com/agentydragon/ducktape/blob/90a149e5b0a02da6cda65bfb802baebc8464f9cd/model_catalog/antigravity_limits.md#fresh-google-metadata-2026-10-05-1201-utc
+# maxTokens -> max_input_tokens; maxOutputTokens -> max_output_tokens. The bounded
+# Flash Lite 3.1 check supports an INPUT allowance, not input+output: do not subtract
+# output from it. The other Gemini pairs are sourced metadata, not capacity probes.
+# Preserve Google's 65535/65536 output distinction and consumer-owned budgets.
 #
-# The input/output declarations below are Google metadata for each model as
-# served through Antigravity, not a public-API figure borrowed from Anthropic/OpenAI/a
-# third-party host -- and deliberately not the result of a live binary-search probe
-# (openai_utils/probe_context_window.py) run against claude-opus-4-6-thinking on
-# 2026-09-26, which found requests up to ~575k tokens "accepted" with a
-# correctly-echoed input_tokens count. That accept is real but its meaning is NOT
-# settled: it shows the server didn't reject the oversized request, not that the model
-# actually attended to all of it. Silent server-side truncation beyond the declared
-# capacity (still reporting the full sent count for billing) is a plausible
-# explanation and reads identically to a genuine accept, but it is unconfirmed --
-# no experiment here distinguishes "really uses 575k" from "silently drops everything
-# past ~200k." The declared figures below come from `third_party/cli_proxy_api`'s vendored CLIProxyAPI
-# source (github.com/router-for-me/CLIProxyAPI, pinned commit 7fac6b15bcfe), which
-# ships `cmd/fetch_antigravity_models` -- a tool that calls Google's own
-# `/v1internal:fetchAvailableModels` endpoint (the same private Cloud Code API the live
-# executor uses) with a real Antigravity OAuth token and records its `maxTokens`/
-# `maxOutputTokens` fields verbatim into `internal/registry/models/models.json`'s
-# `antigravity` section (checked 2026-09-26). `None` marks a model missing from that
-# file entirely (gemini-3.5-flash-lite) or present with both fields null
-# (gemini-3.1-flash-image, an image-output model) -- left for a follow-up.
+# Claude/GPT-OSS retain the historical CLIProxyAPI snapshot's declarations below,
+# unpublished: fresh raw fields exist, but their input-versus-combined semantics
+# are unresolved. Neither their old values nor a successful oversized request
+# establishes attended capacity. The image model has no reported pair. See
+# model_catalog/antigravity_limits.md for sources, caveats and the remaining decisions.
 
 
 _ANTIGRAVITY_OPUS = Model(
@@ -369,7 +354,12 @@ _ANTIGRAVITY_FLASH_LITE_31 = Model(
     reasoning=False,
     limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_535),
 )
-_ANTIGRAVITY_FLASH_LITE_35 = Model(id="gemini-3.5-flash-lite", display_name="Gemini 3.5 Flash Lite", reasoning=False)
+_ANTIGRAVITY_FLASH_LITE_35 = Model(
+    id="gemini-3.5-flash-lite",
+    display_name="Gemini 3.5 Flash Lite",
+    reasoning=False,
+    limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_535),
+)
 
 _ANTIGRAVITY_PRO = Model(
     id="gemini-pro-agent",
@@ -595,9 +585,9 @@ ANTHROPIC_API_ROUTES = (OPUS_API, SONNET_API, FABLE_API, HAIKU_API)
 ANTIGRAVITY_MESSAGES = Upstream(Provider.ANTIGRAVITY, "anthropic", "messages", supports_function_calling=True)
 ANTIGRAVITY_OPUS = Route(_ANTIGRAVITY_OPUS, ANTIGRAVITY_MESSAGES, reasoning_efforts=_ANTHROPIC_EFFORTS)
 ANTIGRAVITY_SONNET = Route(_ANTIGRAVITY_SONNET, ANTIGRAVITY_MESSAGES, reasoning_efforts=_ANTHROPIC_EFFORTS)
-ANTIGRAVITY_PRO = Route(_ANTIGRAVITY_PRO, ANTIGRAVITY_MESSAGES)
-ANTIGRAVITY_FLASH_LITE_31 = Route(_ANTIGRAVITY_FLASH_LITE_31, ANTIGRAVITY_MESSAGES)
-ANTIGRAVITY_FLASH_LITE = Route(_ANTIGRAVITY_FLASH_LITE_35, ANTIGRAVITY_MESSAGES)
+ANTIGRAVITY_PRO = Route(_ANTIGRAVITY_PRO, ANTIGRAVITY_MESSAGES, publish_limits=True)
+ANTIGRAVITY_FLASH_LITE_31 = Route(_ANTIGRAVITY_FLASH_LITE_31, ANTIGRAVITY_MESSAGES, publish_limits=True)
+ANTIGRAVITY_FLASH_LITE = Route(_ANTIGRAVITY_FLASH_LITE_35, ANTIGRAVITY_MESSAGES, publish_limits=True)
 ANTIGRAVITY_FLASH_36 = Route(
     Model(
         id="gemini-3.6-flash-high",
@@ -606,6 +596,7 @@ ANTIGRAVITY_FLASH_36 = Route(
         limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
     ),
     ANTIGRAVITY_MESSAGES,
+    publish_limits=True,
 )
 ANTIGRAVITY_FLASH_37 = Route(
     Model(
@@ -615,6 +606,7 @@ ANTIGRAVITY_FLASH_37 = Route(
         limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
     ),
     ANTIGRAVITY_MESSAGES,
+    publish_limits=True,
 )
 ANTIGRAVITY_FLASH_38 = Route(
     Model(
@@ -624,6 +616,7 @@ ANTIGRAVITY_FLASH_38 = Route(
         limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
     ),
     ANTIGRAVITY_MESSAGES,
+    publish_limits=True,
 )
 ANTIGRAVITY_FLASH_3 = Route(
     Model(
@@ -633,6 +626,7 @@ ANTIGRAVITY_FLASH_3 = Route(
         limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
     ),
     ANTIGRAVITY_MESSAGES,
+    publish_limits=True,
 )
 ANTIGRAVITY_FLASH_IMAGE = Route(
     Model(id="gemini-3.1-flash-image", display_name="Gemini 3.1 Flash Image", reasoning=False), ANTIGRAVITY_MESSAGES
@@ -645,6 +639,7 @@ ANTIGRAVITY_PRO_LOW = Route(
         limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_535),
     ),
     ANTIGRAVITY_MESSAGES,
+    publish_limits=True,
 )
 ANTIGRAVITY_GPT_OSS_120B_MEDIUM = Route(
     Model(

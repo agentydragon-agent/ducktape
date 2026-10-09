@@ -38,5 +38,5 @@ See [consumer wiring](../cluster/docs/model_catalog.md) for projections and chec
   most fates remain open, including the cluster guide's.
 - Supporting research: [LiteLLM metadata](litellm_metadata.md),
   [Antigravity limits](antigravity_limits.md), and [client budgets](client_budgets.md).
-- [Tracking issue #9121](https://github.com/agentydragon/ducktape/issues/9121): PR/rollout
+- [Tracking issue #9574](https://github.com/agentydragon/ducktape/issues/9574): PR/rollout
   status and parked integrations, including restoration obligations.
