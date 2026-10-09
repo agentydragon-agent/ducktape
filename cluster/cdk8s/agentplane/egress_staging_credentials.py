@@ -445,8 +445,9 @@ def _activitywatch_read(
         description=(
             "The static bearer of the central ActivityWatch server's read route "
             "(cluster/docs/activitywatch/README.md), copied into this namespace by ESO. The "
-            "route's own proxy admits it on GETs and on POST /api/0/query/ only, so it cannot "
-            "write; what it reads is every device's window titles, URLs and AFK history."
+            "route's own proxy admits it on GETs and on POST to its query endpoint (with or "
+            "without the trailing slash) only, so it cannot write; what it reads is every "
+            "device's window titles, URLs and AFK history."
         ),
         source=Source.secret_ref(name="activitywatch-read-token", key="token"),
         targets=[
@@ -461,19 +462,25 @@ def _activitywatch_read(
         "egresspolicy-activitywatch-read",
         metadata=ApiObjectMetadata(name=ACTIVITYWATCH_READ_POLICY, namespace=namespace),
         rules=[
-            # The API half of what the read route admits; its web UI stays unreachable. The query
-            # endpoint needs its trailing slash: without it the route 301s, and a client following
-            # that turns the POST into a GET.
+            # The API half of what the read route admits; its web UI stays unreachable.
             EgressPolicySpecRules(
                 hosts=["activitywatch-read.allegedly.works"],
                 methods=[EgressPolicySpecRulesMethods.GET],
                 paths=["/api/0/**"],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="activitywatch-read"),
             ),
+            # Both spellings of the query endpoint, so the trailing slash is not load-bearing here
+            # either. The route used to admit `/api/0/query/` alone, which meant a POST to the short
+            # spelling died at this fence -- `403 denied; reason=no-rule` -- before the route could
+            # 301 it, so the redirect the route emits could never rescue it. The route now answers
+            # both (see `location = /api/0/query` in cluster/k8s/activitywatch/bearer-proxy.conf.template),
+            # and this rule matches it. Two paths are needed rather than one glob: `*` does not cross
+            # a `/` and `/api/0/query/**` does not match the bare `/api/0/query`, so a single pattern
+            # cannot cover both without also admitting `/api/0/queryanything`.
             EgressPolicySpecRules(
                 hosts=["activitywatch-read.allegedly.works"],
                 methods=[EgressPolicySpecRulesMethods.POST],
-                paths=["/api/0/query/"],
+                paths=["/api/0/query", "/api/0/query/"],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="activitywatch-read"),
             ),
         ],
