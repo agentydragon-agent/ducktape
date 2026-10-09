@@ -35,7 +35,7 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     view = await sandbox(
         "accept-public-coder",
         template=preset.template,
-        policies=preset.policies,
+        egress_policies=preset.policies,
         session_defaults=SessionDefaults(instructions=INSTRUCTIONS).over(preset.session_defaults),
         bootstrap=preset.bootstrap,
     )
