@@ -222,7 +222,7 @@ class EventLogStore:
             page = await self._history_reader.read_session_observations(
                 str(thread_id), before_cursor=before_cursor, after_cursor=after_cursor, limit=limit
             )
-            rows = page.observations
+            observations = page.observations
             # Service history is a contiguous, immutable prefix. Boundaries need no
             # app raw lookups and refer to the watermark captured by this response.
             if after_cursor is not None:
@@ -231,12 +231,14 @@ class EventLogStore:
             else:
                 end = page.last_cursor if before_cursor is None else min(page.last_cursor, max(0, before_cursor - 1))
                 start = max(1, end - limit + 1)
-            if [row.cursor for row in rows] != list(range(start, end + 1)):
+            if [row.cursor for row in observations] != list(range(start, end + 1)):
                 raise ConnectionError("invalid service observation page")
             return ObservationPage(
-                observations=[ArchivedObservation(cursor=str(row.cursor), kind=row.kind) for row in rows],
-                next_before_cursor=str(rows[0].cursor) if rows and rows[0].cursor > 1 else None,
-                next_after_cursor=str(rows[-1].cursor) if rows and rows[-1].cursor < page.last_cursor else None,
+                observations=[ArchivedObservation(cursor=str(row.cursor), kind=row.kind) for row in observations],
+                next_before_cursor=str(observations[0].cursor) if observations and observations[0].cursor > 1 else None,
+                next_after_cursor=str(observations[-1].cursor)
+                if observations and observations[-1].cursor < page.last_cursor
+                else None,
             )
         async with self._sessions() as session:
             query = select(Event.cursor, Event.kind).where(Event.thread_id == thread_id)
