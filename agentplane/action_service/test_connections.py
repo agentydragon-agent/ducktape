@@ -32,6 +32,7 @@ from agentplane.action_service.db import (
     ActionStore,
     ConnectionGrantRow,
     ConnectionRebindRow,
+    ConnectionRow,
     make_sessionmaker,
 )
 from agentplane.action_service.models import ActionRequestInput, OperatorPrincipal, service_account_key
@@ -186,6 +187,33 @@ async def test_rebind_preserves_history_of_grant_inserted_by_legacy_replica(engi
         assert grant.original_caller == PERSONAL.model_dump(mode="json")
         assert grant.caller == OTHER.model_dump(mode="json")
     assert (await service.get(connection.id)).grants[0].caller == PERSONAL
+
+
+async def test_legacy_created_connection_keeps_token_usable_and_can_rebind(engine: AsyncEngine) -> None:
+    service = authority(engine)
+    request = binding()
+    await service.bind(request)
+    await service.activate(request.grant_id)
+    connection = (await service.list())[0]
+    async with make_sessionmaker(engine).begin() as db:
+        row = await db.get(ConnectionRow, connection.id)
+        assert row is not None
+        row.bound_caller = None  # A legacy replica did not know this column.
+        grant = await db.get(ConnectionGrantRow, request.grant_id)
+        assert grant is not None
+        grant.original_caller = None
+    assert (await service.resolve(request.grant_id, issuer=ISSUER, client_id=request.client_id)).caller == PERSONAL
+    legacy = await service.get(connection.id)
+    assert legacy.bound_caller == PERSONAL
+    rebound = await service.rebind(
+        connection.id,
+        expected_version=legacy.version,
+        caller=OTHER,
+        operator=OperatorPrincipal(issuer="https://operator.example", subject="test-operator"),
+    )
+    assert rebound.bound_caller == OTHER
+    assert rebound.grants[0].caller == PERSONAL
+    assert (await service.resolve(request.grant_id, issuer=ISSUER, client_id=request.client_id)).caller == OTHER
 
 
 async def test_legacy_reconnect_cannot_acquire_stale_connection_binding(engine: AsyncEngine) -> None:

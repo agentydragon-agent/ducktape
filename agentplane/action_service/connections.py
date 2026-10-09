@@ -286,9 +286,14 @@ class ConnectionAuthority:
             return False
 
     def _effective_grant(self, grant: ConnectionGrantRow, connection: ConnectionRow) -> Grant:
-        if connection.bound_caller is None:
+        # Older replicas can still create a Connection during the rolling deploy.
+        # They omit bound_caller; only version zero may use the grant as fallback.
+        bound = connection.bound_caller
+        if bound is None and connection.binding_version == 0:
+            bound = grant.caller
+        if bound is None:
             raise GrantRejectedError("connection has no bound caller")
-        caller = ServiceAccountRef.model_validate(connection.bound_caller)
+        caller = ServiceAccountRef.model_validate(bound)
         # An older replica may have reconnected this Connection without updating
         # bound_caller. Never silently give that new grant the stale binding.
         if ServiceAccountRef.model_validate(grant.caller) != caller:
@@ -350,10 +355,13 @@ class ConnectionAuthority:
                 raise GrantRejectedError("connection has a pending grant")
             if not any(grant.status == GrantStatus.ACTIVE for grant in grants):
                 raise GrantRejectedError("connection has no active grant")
-            if row.bound_caller is None:
+            previous_binding = row.bound_caller
+            if previous_binding is None and row.binding_version == 0:
+                previous_binding = next(grant.caller for grant in grants if grant.status == GrantStatus.ACTIVE)
+            if previous_binding is None:
                 raise GrantRejectedError("connection is unbound")
             self.require_caller(caller)
-            previous = ServiceAccountRef.model_validate(row.bound_caller)
+            previous = ServiceAccountRef.model_validate(previous_binding)
             if previous == caller:
                 return _view(row, grants)
             now = datetime.now(UTC)
@@ -435,6 +443,9 @@ def _original_grant(row: ConnectionGrantRow) -> Grant:
 
 
 def _view(row: ConnectionRow, grants: list[ConnectionGrantRow]) -> Connection:
+    bound = row.bound_caller
+    if bound is None and row.binding_version == 0:
+        bound = next((grant.caller for grant in reversed(grants) if grant.status != GrantStatus.REVOKED), None)
     return Connection(
         id=row.id,
         display_name=row.display_name,
@@ -442,5 +453,5 @@ def _view(row: ConnectionRow, grants: list[ConnectionGrantRow]) -> Connection:
         created_at=row.created_at,
         updated_at=row.updated_at,
         grants=[_original_grant(grant) for grant in grants],
-        bound_caller=ServiceAccountRef.model_validate(row.bound_caller) if row.bound_caller is not None else None,
+        bound_caller=ServiceAccountRef.model_validate(bound) if bound is not None else None,
     )

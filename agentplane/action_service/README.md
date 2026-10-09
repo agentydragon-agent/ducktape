@@ -51,6 +51,8 @@ immutable original grant history in `original_caller`, and records the operator 
 `grant.caller` mirrors the current bound account in the same transaction, so older replicas
 cannot resolve a rebound token as the previous account; `original_caller` retains the
 original grant identity (nullable during rollout for legacy inserts, filled at rebind).
+Connections created by legacy replicas without `bound_caller` use their active grant
+while binding version is zero, so their tokens continue working through the rollout.
 Pending grants cannot be rebound. Older replicas do not know
 the binding version and may admit a new request that a newer replica refuses to dispatch
 during the rollout; retrying after rollout is safe. New readers fail closed if a
