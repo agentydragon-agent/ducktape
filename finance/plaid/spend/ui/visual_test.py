@@ -452,9 +452,9 @@ async def test_header_menu_at_right_with_sign_out(page: Page, dashboard_url: str
     container = page.locator("header .mantine-Container-root")
     container_bounds = await container.bounding_box()
     button_bounds = await menu_button.bounding_box()
-    assert container_bounds is not None and button_bounds is not None
-    assert abs(button_bounds["x"] + button_bounds["width"] -
-               container_bounds["x"] - container_bounds["width"]) < 20
+    assert container_bounds is not None
+    assert button_bounds is not None
+    assert abs(button_bounds["x"] + button_bounds["width"] - container_bounds["x"] - container_bounds["width"]) < 20
     await expect(page.get_by_role("button", name="Sign out")).to_have_count(0)
     await menu_button.click()
     sign_out = page.get_by_role("menuitem", name="Sign out")
