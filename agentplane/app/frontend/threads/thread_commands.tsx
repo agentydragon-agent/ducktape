@@ -116,6 +116,30 @@ function progressStage(outcome: string | null, admitted: boolean, issue?: Comman
   return issue?.kind === "unconfirmed" ? "unconfirmed" : "local";
 }
 
+/** No-op is a settled result, not a fourth progress state. Keep the reason accessible
+ * without making the message gutter or one-line control card expand. */
+function CommandOutcome({
+  stage,
+  subject: commandSubject,
+  reason,
+  local,
+}: {
+  stage: CommandStage;
+  subject: CommandSubject;
+  reason?: string | null;
+  local?: boolean;
+}): JSX.Element {
+  if (stage === "noop") {
+    const label = reason ? `No-op: ${reason}` : "No-op";
+    return (
+      <Text size="xs" c="dimmed" role="status" aria-label={label} title={reason ?? undefined}>
+        No-op
+      </Text>
+    );
+  }
+  return <CommandProgress stage={stage} subject={commandSubject} reason={reason} local={local} />;
+}
+
 export function SelectedCommandOutcomes({
   commands,
   store,
@@ -199,7 +223,7 @@ export function PendingInputMessages({
             pending={outcome === null}
             progress={
               effected ? undefined : (
-                <CommandProgress
+                <CommandOutcome
                   stage={progressStage(outcome, admitted, issue)}
                   subject="input"
                   reason={failed || noop ? outcomeReason : issue?.message}
@@ -227,7 +251,7 @@ export function PendingInputMessages({
             entity={row}
             phase={failed ? "failed" : noop ? "noop" : "confirmed"}
             progress={
-              <CommandProgress
+              <CommandOutcome
                 stage={failed ? "failed" : noop ? "noop" : "effected"}
                 subject="input"
                 reason={row.state.outcome_reason}
@@ -285,7 +309,7 @@ function SelectedCommandRows({
               <Text size="sm" className="agentplane-command-card-description">
                 {description}
               </Text>
-              <CommandProgress
+              <CommandOutcome
                 stage={progressStage(
                   row && "outcome" in row.state ? row.state.outcome : null,
                   admitted,
@@ -375,7 +399,7 @@ export function ProjectedCommandRows({
                     ? "Interrupt turn"
                     : "Shut down harness"}
             </Text>
-            <CommandProgress
+            <CommandOutcome
               stage={progressStage(row.state.outcome, true)}
               subject={subject(row.state.operation)}
               reason={row.state.outcome_reason}

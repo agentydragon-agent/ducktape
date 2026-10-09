@@ -818,9 +818,92 @@ it("shows the failure and reason for a server-only command", async () => {
   expect(pending?.querySelector('[data-stage="failed"] [data-state="failed"]')).not.toBeNull();
 });
 
+it("renders a server-only no-op control as a settled label, not a progress light", async () => {
+  const container = await render(
+    threadState({
+      rows: [
+        viewState(),
+        entity(
+          "command",
+          {
+            operation: "change_model",
+            outcome: "noop",
+            outcome_cursor: "1",
+            outcome_reason: "model already selected",
+            requested_value: "current-model",
+          },
+          {}
+        ),
+      ],
+    })
+  );
+  const row = pendingRow(container, "test-entity");
+  expect(row.textContent).toContain("Change model to current-model");
+  expect(row.querySelector(".agentplane-command-progress")).toBeNull();
+  expect(row.querySelector('[role="status"]')?.textContent).toBe("No-op");
+  expect(row.querySelector('[role="status"]')?.getAttribute("title")).toBe("model already selected");
+});
+
+it("renders a locally retained no-op control without a progress light", async () => {
+  new LocalCommands(THREAD.id).remember(
+    create(CommandSchema, {
+      commandId: "test-entity",
+      operation: { case: "changeModel", value: { model: "current-model" } },
+    })
+  );
+  const container = await render(
+    threadState({
+      rows: [
+        viewState(),
+        entity(
+          "command",
+          {
+            operation: "change_model",
+            outcome: "noop",
+            outcome_cursor: "1",
+            outcome_reason: "model already selected",
+            requested_value: "current-model",
+          },
+          {}
+        ),
+      ],
+    })
+  );
+  const row = pendingRow(container, "test-entity");
+  expect(row.querySelector(".agentplane-command-progress")).toBeNull();
+  expect(row.querySelector('[role="status"]')?.textContent).toBe("No-op");
+  expect(buttonIn(row, "Dismiss")).toBeDefined();
+});
+
+it("renders a locally retained no-op input without a progress light", async () => {
+  new LocalCommands(THREAD.id).remember(message("test-entity"));
+  const container = await render(
+    threadState({
+      rows: [
+        viewState(),
+        entity(
+          "command",
+          {
+            operation: "submit_input",
+            outcome: "noop",
+            outcome_cursor: "1",
+            outcome_reason: "nothing to do",
+            requested_value: null,
+          },
+          { inputRef: reference("noop-input", "command_input") }
+        ),
+      ],
+    })
+  );
+  const row = pendingRow(container, "test-entity");
+  expect(row.querySelector(".agentplane-command-progress")).toBeNull();
+  expect(row.querySelector('[role="status"]')?.textContent).toBe("No-op");
+  expect(buttonIn(row, "Dismiss")).toBeDefined();
+});
+
 it.each([
   ["failed", "failed", "Failed: runner unavailable"],
-  ["noop", "noop", "Not applied: harness was stopping"],
+  ["noop", "noop", "No-op: harness was stopping"],
   ["effected", "confirmed", "Agent confirmed message"],
 ] as const)("shows a server-only %s input as a dismissible right-side message", async (outcome, phase, status) => {
   const container = await render(
@@ -842,9 +925,17 @@ it.each([
     })
   );
   const bubble = container.querySelector<HTMLElement>(`.agentplane-user-bubble[data-message-phase="${phase}"]`);
-  expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
-    status
-  );
+  if (outcome === "noop") {
+    expect(bubble?.parentElement?.querySelector(".agentplane-command-progress")).toBeNull();
+    expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe("No-op");
+    expect(bubble?.parentElement?.querySelector('[role="status"]')?.getAttribute("title")).toBe(
+      "harness was stopping"
+    );
+  } else {
+    expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
+      status
+    );
+  }
   const dismiss = buttonIn(bubble?.parentElement, "Dismiss");
   expect(dismiss).toBeDefined();
   await act(async () => dismiss?.click());

@@ -223,6 +223,10 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     model_row = page.locator('[data-command-id="progress-model"]')
     await expect(model_row).to_contain_text("test-model-next")
     await expect(model_row.locator(".agentplane-command-card-line .agentplane-command-progress")).to_be_visible()
+    for command_id in ("progress-noop", "progress-noop-input"):
+        no_op = page.locator(f'[data-command-id="{command_id}"]')
+        await expect(no_op.get_by_text("No-op")).to_be_visible()
+        await expect(no_op.locator(".agentplane-command-progress")).to_have_count(0)
     await input_row.scroll_into_view_if_needed()
     await view.capture()
     await view.capture(name=f"{view.capture_name}_controls", target=page.get_by_role("region", name="Pending commands"))

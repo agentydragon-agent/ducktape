@@ -4,7 +4,7 @@ import { type JSX, useState } from "react";
 export type CommandStage = "local" | "unconfirmed" | "admitted" | "effected" | "failed" | "noop" | "refused";
 export type CommandSubject = "input" | "model" | "effort" | "other";
 
-type LightState = "done" | "waiting" | "uncertain" | "failed" | "noop" | "future";
+type LightState = "done" | "waiting" | "uncertain" | "failed" | "future";
 
 export function CommandProgress({
   stage,
@@ -12,7 +12,7 @@ export function CommandProgress({
   reason,
   local = false,
 }: {
-  stage: CommandStage;
+  stage: Exclude<CommandStage, "noop">;
   subject: CommandSubject;
   reason?: string | null;
   /** This browser actually retained the command; server-only rows cannot claim that. */
@@ -27,13 +27,12 @@ export function CommandProgress({
         : subject === "effort"
           ? "effort change"
           : "result";
-  const labels: Record<CommandStage, string> = {
+  const labels: Record<Exclude<CommandStage, "noop">, string> = {
     local: "Saved in browser · waiting for runner to accept",
     unconfirmed: "Runner receipt unconfirmed",
     admitted: `Runner accepted · waiting for ${waitingFor}`,
     effected: subject === "input" ? "Agent confirmed message" : "Applied",
     failed: "Failed",
-    noop: "Not applied",
     refused: "Command refused",
   };
   const label = `${stage === "local" && !local ? "Waiting for runner to accept" : labels[stage]}${reason ? `: ${reason}` : ""}`;
@@ -47,11 +46,9 @@ export function CommandProgress({
         ? "future"
         : stage === "failed" || stage === "refused"
           ? "failed"
-          : stage === "noop"
-            ? "noop"
-            : stage === "unconfirmed"
-              ? "uncertain"
-              : "waiting"
+          : stage === "unconfirmed"
+            ? "uncertain"
+            : "waiting"
   );
   return (
     <span

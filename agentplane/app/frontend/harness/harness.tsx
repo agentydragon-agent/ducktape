@@ -1147,11 +1147,14 @@ function endedAttachmentRows(threadId: string): Record<string, unknown>[] {
 function commandProgressRows(threadId: string): Record<string, unknown>[] {
   const model = command(2, "progress-model", "change_model", "pending");
   const effort = command(3, "progress-effort", "change_reasoning_effort", "failed", "Not supported by harness");
+  const noop = command(4, "progress-noop", "change_model", "noop", "Model already selected");
   return [
     { ...viewState(5, "t-progress"), thread_id: threadId },
     { ...model, state: { ...(model.state as object), requested_value: "test-model-next" } },
     { ...effort, state: { ...(effort.state as object), requested_value: "high" } },
-    command(4, "progress-input", "submit_input", "pending", null, "Please review this change."),
+    { ...noop, state: { ...(noop.state as object), requested_value: "current-model" } },
+    command(6, "progress-input", "submit_input", "pending", null, "Please review this change."),
+    command(7, "progress-noop-input", "submit_input", "noop", "Nothing to do", "Already handled."),
   ];
 }
 

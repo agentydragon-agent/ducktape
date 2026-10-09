@@ -287,8 +287,7 @@
   border-color: var(--mantine-color-red-6);
 }
 
-.agentplane-command-light[data-state="uncertain"],
-.agentplane-command-light[data-state="noop"] {
+.agentplane-command-light[data-state="uncertain"] {
   border-style: dashed;
 }
 
