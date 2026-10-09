@@ -171,21 +171,8 @@ function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): JSX.Eleme
   );
 }
 
-/** A clock label for inferred model activity, never a cache-hit or provider-request claim. */
-function modelActivityAge(value: string | null | undefined, now: number): string {
-  if (!value) return "?";
-  const at = Date.parse(value);
-  if (!Number.isFinite(at) || at > now + 60_000) return "?";
-  const minutes = Math.max(0, Math.floor((now - at) / 60_000));
-  if (minutes < 1) return "now";
-  if (minutes < 60) return `${minutes}m`;
-  if (minutes < 1440) return `${Math.floor(minutes / 60)}h`;
-  return `${Math.floor(minutes / 1440)}d`;
-}
-
 function ThreadRow({
   thread,
-  now,
   sandbox,
   fresh,
   current,
@@ -193,7 +180,6 @@ function ThreadRow({
   onToggleArchived,
 }: {
   thread: ThreadView;
-  now: number;
   sandbox: SandboxView | null;
   fresh: boolean;
   current: boolean;
@@ -202,7 +188,6 @@ function ThreadRow({
 }): JSX.Element {
   const label = thread.name ?? thread.session_id;
   const readonly = sandbox === null;
-  const activity = modelActivityAge(thread.last_model_activity_at, now);
   const status = threadStatusFromSnapshot(thread, sandbox ?? undefined, fresh);
   const harnessRunning = status.kind === "running" || status.kind === "idle" || status.kind === "turn_error";
   const className = [
@@ -221,7 +206,7 @@ function ThreadRow({
       className={className}
       role="button"
       tabIndex={0}
-      title={`${readonly ? "Sandbox deleted — read only · " : ""}Inferred model activity: ${activity}`}
+      title={readonly ? "Sandbox deleted — read only" : undefined}
       onClick={() => onOpen(thread)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -232,18 +217,6 @@ function ThreadRow({
     >
       <ThreadStatusIndicator kind={status.kind} label={status.label} size="small" />
       <span className="agentplane-sidebar-row-name">{label}</span>
-      <Tooltip
-        label={
-          activity === "?"
-            ? "No model activity timestamp recorded"
-            : `Inferred model activity ${new Date(thread.last_model_activity_at ?? "").toLocaleString()}; not a measured provider request or cache hit`
-        }
-        withArrow
-      >
-        <span className="agentplane-sidebar-row-activity" aria-label={`Inferred model activity: ${activity}`}>
-          {activity}
-        </span>
-      </Tooltip>
       <Tooltip
         label={thread.archived ? "Unarchive" : harnessRunning ? "Stop the harness before archiving" : "Archive"}
         withArrow
@@ -275,7 +248,6 @@ function ThreadRow({
 
 function ThreadGroupSection({
   group,
-  now,
   fresh,
   current,
   currentSandbox,
@@ -284,7 +256,6 @@ function ThreadGroupSection({
   onToggleArchived,
 }: {
   group: ThreadGroup;
-  now: number;
   fresh: boolean;
   current: string | null;
   currentSandbox: boolean;
@@ -325,7 +296,6 @@ function ThreadGroupSection({
         <ThreadRow
           key={thread.id}
           thread={thread}
-          now={now}
           sandbox={group.sandbox}
           fresh={fresh}
           current={current === thread.id}
@@ -361,11 +331,6 @@ function SidebarView({
   const threadRoute = useMatch("/threads/:threadId");
   const sandboxRoute = useMatch("/sandboxes/:name");
   const [includeArchived, setIncludeArchived] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(interval);
-  }, []);
   const { width, setWidth, resizeBy } = useSidebarWidth();
   const data = live.snapshot;
   const fresh = snapshotFresh(live);
@@ -478,7 +443,6 @@ function SidebarView({
           <ThreadGroupSection
             key={group.sandboxName}
             group={group}
-            now={now}
             fresh={fresh}
             current={current}
             currentSandbox={sandboxRoute?.params.name === group.sandboxName}

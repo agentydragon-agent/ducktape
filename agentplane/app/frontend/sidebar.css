@@ -181,14 +181,6 @@
   white-space: nowrap;
 }
 
-.agentplane-sidebar-row-activity {
-  flex: 0 0 auto;
-  font-size: var(--mantine-font-size-xs);
-  color: var(--mantine-color-dimmed);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-}
-
 .agentplane-sidebar-row-action {
   opacity: 0;
 }

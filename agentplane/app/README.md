@@ -292,7 +292,7 @@ The favicon draws the same marks but never moves, and the tab title leads with a
 the thread's status (`»` running, `●` idle, `!` last turn errored, `⏻` harness down, `○` not live, `×` failed). A favicon is only seen in a
 background tab, where browsers throttle timers, so both change on status events rather than on a clock.
 
-The sidebar also shows an approximate age of this Thread's latest model-originated activity.
+The Thread composer shows an approximate age of this Thread's latest model-originated activity.
 The app updates `event_log.last_model_activity_at` in the same fenced transaction as event
 folding, using assistant/reasoning output and generated tool calls/arguments; it ignores tool
 output, user input, harness bookkeeping and turn completion. A migration backfills existing

@@ -962,6 +962,18 @@ function VirtualizedHistory({
   );
 }
 
+/** The app's event-derived hint, not a measured provider send or cache hit. */
+function modelActivityAge(at: string | null | undefined, now: number): string {
+  if (!at) return "unknown";
+  const time = Date.parse(at);
+  if (!Number.isFinite(time) || time > now + 60_000) return "unknown";
+  const minutes = Math.max(0, Math.floor((now - time) / 60_000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
+  return `${Math.floor(minutes / 1440)}d ago`;
+}
+
 function ProjectedSessionBody({
   threadId,
   entities,
@@ -978,6 +990,12 @@ function ProjectedSessionBody({
   onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const activityAge = modelActivityAge(thread.last_model_activity_at, Math.max(clock, Date.now()));
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const sync = useThreadSync().useThread();
   const commands = useProjectedCommands(threadId, entities);
@@ -1276,6 +1294,21 @@ function ProjectedSessionBody({
             </ActionIcon>
           </Group>
         </Group>
+        <Text
+          className="agentplane-composer-model-activity"
+          size="xs"
+          c="dimmed"
+          ta="right"
+          px="xs"
+          aria-label={`Last inferred model activity: ${activityAge}`}
+          title={
+            thread.last_model_activity_at && activityAge !== "unknown"
+              ? `${new Date(thread.last_model_activity_at).toLocaleString()} · Inferred from model-originated Thread events, not a measured provider request or cache hit`
+              : "No model-originated Thread event observed; provider requests are not measured here"
+          }
+        >
+          Model activity: {activityAge}
+        </Text>
       </Stack>
     </RetainedDisclosureProvider>
   );
