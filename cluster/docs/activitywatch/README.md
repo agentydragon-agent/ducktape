@@ -74,13 +74,23 @@ Humans browse through the Authentik-protected `activitywatch.allegedly.works` ro
 Agents use the bearer-gated read route below; it is deliberately separate from the human
 session path.
 
-Gotchas (bite every consumer): `/api/0/query` accepts **both** spellings — with and without the
-trailing slash — for GET and POST alike, via an anchored `location ~ ^/api/0/query/?$` block in
-each proxy. Before that block, a prefix location ending in `/` made nginx implicit-301 the short
-form to nginx's own cleartext listen port, which the Gateway cannot serve, and the egress fence
-refused the no-slash POST outright, so the redirect could never be followed; prefer the trailing
-slash in new code anyway. Transient TLS connection resets occur (~1/20 calls) — retry once; bucket
-`last_updated` is always `null` on this server — derive recency from each bucket's newest event.
+Gotchas (bite every consumer):
+
+- The query body is `{"timeperiods": ["<start>/<end>"], "query": ["<awq>"]}` — **both values are
+  arrays of strings**, the timeperiod one ISO 8601 interval. `timeperiod` singular, a float, an epoch
+  pair, or `query` as a bare string each get a Rocket 422 that names neither field. Inside `query`,
+  **`;` terminates each statement**; without it you get a `ParsingError`, which does name the token.
+- `GET` on the query endpoint answers **404** in either spelling — aw-server implements it POST-only,
+  despite the route table above reading "GET + POST". Query with `POST`. The trailing slash is
+  optional (both spellings reach the same handler); prefer it, it is what the server documents.
+- **No event cap** on `query_bucket` or on `events` REST (which honours an explicit `limit=`): one
+  9-day `query_bucket` returned 36,848 events. The window is the whole cost — a 4-month one streams
+  ~75 MB and dies in JSON parsing.
+- `last_updated` is always `null` in `/api/0/buckets` — take recency from each bucket's newest event.
+- A `503` at a flat **5.0 s** reading `reset reason: connection timeout` is the Gateway failing to
+  connect to this pod, not this pod refusing you: a healthy read is ~0.1 s. Retry it. Rare and
+  bursty on this route — one 503 in the first 40 reads today, none in the ~200 after it — so budget a
+  couple of retries and trust no fixed rate.
 
 ### Read route (static bearer)
 
