@@ -1147,7 +1147,11 @@ async def test_webhook_racing_bootstrap_keeps_both_revision_associations(
     request = github.request
 
     async def race(
-        method: str, path: str, headers: dict[str, str], *, json: dict[str, JsonValue] | None = None,
+        method: str,
+        path: str,
+        headers: dict[str, str],
+        *,
+        json: dict[str, JsonValue] | None = None,
         allow_missing: bool = False,
     ) -> httpx.Response:
         response = await request(method, path, headers, json=json, allow_missing=allow_missing)
@@ -1179,7 +1183,11 @@ async def test_access_refresh_is_single_flight_across_workers(
     upstream.requests.clear()
 
     async def paused(
-        method: str, path: str, headers: dict[str, str], *, json: dict[str, JsonValue] | None = None,
+        method: str,
+        path: str,
+        headers: dict[str, str],
+        *,
+        json: dict[str, JsonValue] | None = None,
         allow_missing: bool = False,
     ) -> httpx.Response:
         if path == "/repositories/100":
@@ -1286,12 +1294,15 @@ async def test_normalization_backfills_retained_head_evidence_without_grants(
         config.set_main_option("script_location", str(RUNNER.migrations_dir))
         config.attributes["connection"] = connection
         command.downgrade(config, "0007_subscription_health")
-        connection.execute(text("""
+        connection.execute(
+            text("""
             INSERT INTO github_delivery (app_id, delivery_id, installation_id, repository_id, event,
                 action, head_sha, subjects, digest, payload, received_at)
             VALUES (42, :delivery, 11, 100, 'pull_request', 'synchronize', :sha,
                 ARRAY['pull_request:7'], :digest, CAST(:payload AS jsonb), now())
-        """), {"delivery": uuid4(), "sha": NEXT, "digest": b"x" * 32, "payload": json.dumps(payload)})
+        """),
+            {"delivery": uuid4(), "sha": NEXT, "digest": b"x" * 32, "payload": json.dumps(payload)},
+        )
         RUNNER.run_for_connection(connection)
         RUNNER.run_for_connection(connection)
 
