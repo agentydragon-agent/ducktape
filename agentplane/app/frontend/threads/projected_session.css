@@ -350,6 +350,15 @@
   }
 }
 
+/* Settled no-op reasons stay available without widening the message gutter or control card. */
+.agentplane-command-noop {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The requested setting and its compact progress lights share one line, including on phones. */
 .agentplane-command-card-line {
   min-width: 0;

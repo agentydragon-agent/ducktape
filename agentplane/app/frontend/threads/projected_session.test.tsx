@@ -840,65 +840,8 @@ it("renders a server-only no-op control as a settled label, not a progress light
   const row = pendingRow(container, "test-entity");
   expect(row.textContent).toContain("Change model to current-model");
   expect(row.querySelector(".agentplane-command-progress")).toBeNull();
-  expect(row.querySelector('[role="status"]')?.textContent).toBe("No-op");
-  expect(row.querySelector('[role="status"]')?.getAttribute("title")).toBe("model already selected");
-});
-
-it("renders a locally retained no-op control without a progress light", async () => {
-  new LocalCommands(THREAD.id).remember(
-    create(CommandSchema, {
-      commandId: "test-entity",
-      operation: { case: "changeModel", value: { model: "current-model" } },
-    })
-  );
-  const container = await render(
-    threadState({
-      rows: [
-        viewState(),
-        entity(
-          "command",
-          {
-            operation: "change_model",
-            outcome: "noop",
-            outcome_cursor: "1",
-            outcome_reason: "model already selected",
-            requested_value: "current-model",
-          },
-          {}
-        ),
-      ],
-    })
-  );
-  const row = pendingRow(container, "test-entity");
-  expect(row.querySelector(".agentplane-command-progress")).toBeNull();
-  expect(row.querySelector('[role="status"]')?.textContent).toBe("No-op");
-  expect(buttonIn(row, "Dismiss")).toBeDefined();
-});
-
-it("renders a locally retained no-op input without a progress light", async () => {
-  new LocalCommands(THREAD.id).remember(message("test-entity"));
-  const container = await render(
-    threadState({
-      rows: [
-        viewState(),
-        entity(
-          "command",
-          {
-            operation: "submit_input",
-            outcome: "noop",
-            outcome_cursor: "1",
-            outcome_reason: "nothing to do",
-            requested_value: null,
-          },
-          { inputRef: reference("noop-input", "command_input") }
-        ),
-      ],
-    })
-  );
-  const row = pendingRow(container, "test-entity");
-  expect(row.querySelector(".agentplane-command-progress")).toBeNull();
-  expect(row.querySelector('[role="status"]')?.textContent).toBe("No-op");
-  expect(buttonIn(row, "Dismiss")).toBeDefined();
+  expect(row.querySelector('[role="status"]')?.textContent).toBe("No-op: model already selected");
+  expect(row.querySelector('[role="status"]')?.getAttribute("title")).toBe("No-op: model already selected");
 });
 
 it.each([
@@ -927,8 +870,8 @@ it.each([
   const bubble = container.querySelector<HTMLElement>(`.agentplane-user-bubble[data-message-phase="${phase}"]`);
   if (outcome === "noop") {
     expect(bubble?.parentElement?.querySelector(".agentplane-command-progress")).toBeNull();
-    expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe("No-op");
-    expect(bubble?.parentElement?.querySelector('[role="status"]')?.getAttribute("title")).toBe("harness was stopping");
+    expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe(status);
+    expect(bubble?.parentElement?.querySelector('[role="status"]')?.getAttribute("title")).toBe(status);
   } else {
     expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
       status

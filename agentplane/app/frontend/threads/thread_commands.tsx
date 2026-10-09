@@ -116,8 +116,8 @@ function progressStage(outcome: string | null, admitted: boolean, issue?: Comman
   return issue?.kind === "unconfirmed" ? "unconfirmed" : "local";
 }
 
-/** No-op is a settled result, not a fourth progress state. Keep the reason accessible
- * without making the message gutter or one-line control card expand. */
+/** No-op is a settled result, not a fourth progress state. Keep its reason readable,
+ * with ellipsis in narrow gutters and a title for the complete text. */
 function CommandOutcome({
   stage,
   subject: commandSubject,
@@ -132,8 +132,8 @@ function CommandOutcome({
   if (stage === "noop") {
     const label = reason ? `No-op: ${reason}` : "No-op";
     return (
-      <Text size="xs" c="dimmed" role="status" aria-label={label} title={reason ?? undefined}>
-        No-op
+      <Text size="xs" c="dimmed" className="agentplane-command-noop" role="status" title={reason ? label : undefined}>
+        {label}
       </Text>
     );
   }
