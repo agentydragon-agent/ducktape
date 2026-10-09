@@ -143,7 +143,7 @@ function CommandOutcome({
   return <CommandProgress stage={stage} subject={commandSubject} reason={reason} local={local} unsent={unsent} />;
 }
 
-export function SelectedCommandOutcomes({
+export function LocalControlCommands({
   commands,
   entities,
   store,
@@ -157,9 +157,18 @@ export function SelectedCommandOutcomes({
   deliver: (value: LocalCommand) => Promise<void>;
 }): JSX.Element | null {
   const controls = commands.filter((value) => value.command.operation.case !== "submitInput");
-  const rows = useThreadSync().useCommandRows(controls.slice(0, 128).map((value) => value.command.commandId));
+  const rows = useThreadSync().useCommandRows(controls.map((value) => value.command.commandId));
   if (controls.length === 0) return null;
-  return <SelectedCommandRows rows={rows} entities={entities} commands={controls} store={store} errors={errors} deliver={deliver} />;
+  return (
+    <LocalControlRows
+      rows={rows}
+      entities={entities}
+      commands={controls}
+      store={store}
+      errors={errors}
+      deliver={deliver}
+    />
+  );
 }
 
 /** Keep unadmitted input and input outcomes without confirmed messages at the history tail. */
@@ -176,7 +185,7 @@ export function PendingInputMessages({
   store: LocalCommands;
   deliver: (value: LocalCommand) => Promise<void>;
 }): JSX.Element | null {
-  const inputCommands = commands.slice(0, 128).filter((value) => value.command.operation.case === "submitInput");
+  const inputCommands = commands.filter((value) => value.command.operation.case === "submitInput");
   const rows = useThreadSync().useCommandRows(inputCommands.map((value) => value.command.commandId));
   const byId = new Map(rows.map((row) => [row.entityId, row]));
   useEffect(() => store.observeCommandIds(new Set(rows.map((row) => row.entityId))), [rows, store]);
@@ -272,7 +281,7 @@ export function PendingInputMessages({
 
 /** Locally retained controls have no place in the server timeline until their projected row
  * arrives. Keep them at the history tail, then let that row take over at its cursor. */
-function SelectedCommandRows({
+function LocalControlRows({
   rows,
   entities,
   commands,
@@ -290,45 +299,51 @@ function SelectedCommandRows({
   useEffect(() => {
     store.observeCommandIds(new Set(rows.map((row) => row.entityId)));
   }, [rows, store]);
-  const projectedIds = new Set([...rows, ...entities.filter((row) => row.entityKind === "command")].map((row) => row.entityId));
+  const projectedIds = new Set(
+    [...rows, ...entities.filter((row) => row.entityKind === "command")].map((row) => row.entityId)
+  );
   return (
     <Stack gap="xs">
-      {commands.filter((value) => !projectedIds.has(value.command.commandId)).map((value) => {
-        const operation = value.command.operation;
-        const admitted = value.admission !== null;
-        const issue = errors.get(value.command.commandId);
-        return (
-          <ControlCommandFrame key={value.command.commandId} id={value.command.commandId}>
-            <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap">
-              <Text size="sm" className="agentplane-command-card-description">
-                {operation.case === "changeModel"
-                  ? `Change model to ${operation.value.model}`
-                  : operation.case === "changeReasoningEffort"
-                    ? `Set reasoning effort to ${operation.value.effort}`
-                    : operation.case === "interruptTurn"
-                      ? `Interrupt turn ${operation.value.turnId}`
-                      : "Shut down harness"}
-              </Text>
-              <CommandOutcome
-                stage={progressStage(null, admitted, issue)}
-                subject={subject(operation.case ?? "")}
-                reason={admitted ? undefined : issue?.message}
-                local
-                unsent={!value.attempted}
-              />
-              {!admitted && (
-                <Button
-                  size="xs"
-                  variant="subtle"
-                  onClick={() => (value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId))}
-                >
-                  {value.attempted ? "Retry" : "Cancel"}
-                </Button>
-              )}
-            </Group>
-          </ControlCommandFrame>
-        );
-      })}
+      {commands
+        .filter((value) => !projectedIds.has(value.command.commandId))
+        .map((value) => {
+          const operation = value.command.operation;
+          const admitted = value.admission !== null;
+          const issue = errors.get(value.command.commandId);
+          return (
+            <ControlCommandFrame key={value.command.commandId} id={value.command.commandId}>
+              <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap">
+                <Text size="sm" className="agentplane-command-card-description">
+                  {operation.case === "changeModel"
+                    ? `Change model to ${operation.value.model}`
+                    : operation.case === "changeReasoningEffort"
+                      ? `Set reasoning effort to ${operation.value.effort}`
+                      : operation.case === "interruptTurn"
+                        ? `Interrupt turn ${operation.value.turnId}`
+                        : "Shut down harness"}
+                </Text>
+                <CommandOutcome
+                  stage={progressStage(null, admitted, issue)}
+                  subject={subject(operation.case ?? "")}
+                  reason={admitted ? undefined : issue?.message}
+                  local
+                  unsent={!value.attempted}
+                />
+                {!admitted && (
+                  <Button
+                    size="xs"
+                    variant="subtle"
+                    onClick={() =>
+                      value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
+                    }
+                  >
+                    {value.attempted ? "Retry" : "Cancel"}
+                  </Button>
+                )}
+              </Group>
+            </ControlCommandFrame>
+          );
+        })}
     </Stack>
   );
 }
@@ -344,7 +359,13 @@ function ControlCommandFrame({ id, children }: { id: string; children: JSX.Eleme
 }
 
 /** The projected control is a chronological entry, whether pending or settled. */
-export function ProjectedControlCommand({ threadId, row }: { threadId: string; row: ThreadEntity }): JSX.Element | null {
+export function ProjectedControlCommand({
+  threadId,
+  row,
+}: {
+  threadId: string;
+  row: ThreadEntity;
+}): JSX.Element | null {
   if (row.entityKind !== "command" || !("outcome" in row.state) || row.state.operation === "submit_input") return null;
   return (
     <ControlCommandFrame id={row.entityId}>

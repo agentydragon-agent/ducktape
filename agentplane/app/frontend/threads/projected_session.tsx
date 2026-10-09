@@ -49,7 +49,7 @@ import { CollapsibleCard, EntityCard, itemStatus, pendingSentMessage } from "./t
 import {
   PendingInputMessages,
   ProjectedControlCommand,
-  SelectedCommandOutcomes,
+  LocalControlCommands,
   useProjectedCommands,
 } from "./thread_commands";
 import { revealEvidenceOnTap } from "./thread_evidence";
@@ -997,19 +997,19 @@ function ProjectedSessionBody({
             : 0
       )
   );
-  const selectedCommandIds = commands.local.commands.slice(0, 128);
-  const pendingCommands = (
+  const localCommands = commands.local.commands;
+  const commandTail = (
     <Stack gap="xs">
       <PendingInputMessages
-        commands={selectedCommandIds}
+        commands={localCommands}
         entities={entities}
         errors={commands.errors}
         store={commands.store}
         deliver={commands.deliver}
       />
-      {selectedCommandIds.length > 0 && (
-        <SelectedCommandOutcomes
-          commands={selectedCommandIds}
+      {localCommands.length > 0 && (
+        <LocalControlCommands
+          commands={localCommands}
           entities={entities}
           store={commands.store}
           errors={commands.errors}
@@ -1075,7 +1075,7 @@ function ProjectedSessionBody({
         <VirtualizedHistory
           threadId={threadId}
           rows={rows}
-          tail={pendingCommands}
+          tail={commandTail}
           running={running}
           activeTurn={activeTurn}
           history={history}
