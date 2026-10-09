@@ -13,6 +13,8 @@ import { ItemKind, RecoveryDisposition } from "../../../protocol/event_pb";
 import type * as ClientModule from "../client";
 import { command, getThread, models, resumeThread, type SandboxView, type ThreadView } from "../client";
 import { historyRows, rowKey } from "./history_rows";
+import { markThreadViewEvent } from "./thread_view_timing";
+import { scrollCapture } from "./scroll_diagnostics";
 import { SandboxesLiveProvider, ThreadsLiveProvider, useRequiredThreadsLive } from "../live";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../markdown";
@@ -287,6 +289,60 @@ async function openMenuItem(container: HTMLDivElement, text: string): Promise<HT
   if (!item) throw new Error(`Missing menu item ${text}`);
   return item;
 }
+
+it("downloads opt-in scroll performance marks from the composer", async () => {
+  const createObjectURL = vi.fn(() => "blob:trace");
+  const revokeObjectURL = vi.fn();
+  const NativeURL = URL;
+  vi.stubGlobal(
+    "URL",
+    class extends NativeURL {
+      static createObjectURL = createObjectURL;
+      static revokeObjectURL = revokeObjectURL;
+    }
+  );
+  const nativePerformance = performance;
+  const mark = vi.fn();
+  vi.stubGlobal("performance", {
+    now: () => nativePerformance.now(),
+    timeOrigin: nativePerformance.timeOrigin,
+    mark,
+    getEntriesByType: () => [],
+    clearMarks: vi.fn(),
+  });
+  const container = await render();
+  const open = async (label: string) => {
+    await act(async () => button(container, label).click());
+  };
+  const item = (text: string) => {
+    const found = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+      (element) => element.textContent === text
+    );
+    if (!found) throw new Error(`Missing ${text}`);
+    return found;
+  };
+  const click = async (text: string) => {
+    await act(async () => item(text).click());
+  };
+  // Browsers initiate the download by clicking a temporary anchor; no network request is made.
+  const clickLink = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  await open("Debug tools");
+  await click("Start recording");
+  expect(button(container, "Debug tools (recording)")).toBeTruthy();
+  markThreadViewEvent({ kind: "load-older" });
+  await open("Debug tools (recording)");
+  await click("Mark a jump");
+  expect(mark).toHaveBeenCalledWith("agentplane:thread-view:marker", { detail: { kind: "marker" } });
+  await open("Debug tools (recording)");
+  await click("Stop and download recording");
+  expect(scrollCapture.isRecording()).toBe(false);
+  expect(createObjectURL).toHaveBeenCalledOnce();
+  expect(clickLink).toHaveBeenCalledOnce();
+  expect(document.querySelector('a[href="blob:trace"]')).toBeNull();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(revokeObjectURL).toHaveBeenCalledOnce();
+  clickLink.mockRestore();
+});
 
 function sentOperations(): unknown[] {
   return vi.mocked(command).mock.calls.map(([, value]) => value.operation);

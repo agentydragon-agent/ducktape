@@ -39,8 +39,25 @@ class Follow(_Recorded):
 class Scroll(_Recorded):
     kind: Literal["scroll"]
     scroll_top: float
+    previous_top: float
     scroll_height: float
+    client_height: float
     followed: bool
+
+
+class Input(_Recorded):
+    kind: Literal["input"]
+    source: Literal["wheel", "key", "touch", "pointer"]
+    direction: Literal["up", "down", "unknown"]
+    scroll_top: float
+
+
+class VirtualSize(_Recorded):
+    kind: Literal["virtual-size"]
+    before: float
+    after: float
+    sync: bool
+    following: bool
 
 
 class ScrollEnd(_Recorded):
@@ -80,8 +97,19 @@ class Prepend(_Recorded):
     added: int
 
 
+class Marker(_Recorded):
+    kind: Literal["marker"]
+
+
 class LoadOlder(_Recorded):
     kind: Literal["load-older"]
+
+
+class OlderState(_Recorded):
+    kind: Literal["older-state"]
+    loading: bool
+    available: bool
+    row_count: int
 
 
 class Measure(_Recorded):
@@ -99,7 +127,21 @@ class Settled(_Recorded):
 
 
 ThreadViewEvent = Annotated[
-    Follow | Scroll | ScrollEnd | Resize | Click | Anchor | Restore | Prepend | LoadOlder | Measure | Settled,
+    Follow
+    | Scroll
+    | Input
+    | VirtualSize
+    | ScrollEnd
+    | Resize
+    | Click
+    | Anchor
+    | Restore
+    | Prepend
+    | Marker
+    | LoadOlder
+    | OlderState
+    | Measure
+    | Settled,
     Field(discriminator="kind"),
 ]
 
@@ -119,7 +161,7 @@ _ESTIMATE_ERRORS = TypeAdapter(list[EstimateError])
 
 
 async def events(page: Page, since: float = 0.0) -> list[TimedThreadViewEvent]:
-    """The thread view's recorded decisions at or after `since`, a `performance.now()` reading."""
+    """The history's recorded decisions at or after `since`, a `performance.now()` reading."""
     return _EVENTS.validate_python(
         await page.evaluate(
             "since => (window.__threadViewTiming?.events() ?? []).filter(entry => entry.at >= since)", since

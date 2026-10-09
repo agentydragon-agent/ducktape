@@ -67,6 +67,7 @@
     sumShiftPx: 0,
     layoutShiftSum: 0,
     layoutShifts: [],
+    browserTimings: [],
     syncResponses: [],
     events: [],
   };
@@ -95,6 +96,16 @@
       }
     }
   }).observe({ type: "layout-shift", buffered: true });
+
+  for (const type of ["longtask", "long-animation-frame"]) {
+    if (!PerformanceObserver.supportedEntryTypes.includes(type)) continue;
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (probe.browserTimings.length >= 500) break;
+        probe.browserTimings.push({ type: entry.entryType, startTime: entry.startTime, duration: entry.duration });
+      }
+    }).observe({ type, buffered: true });
+  }
 
   // When the page's reads of rows and bodies finished, on the clock User Timing stamps events
   // with, to tell a layout change that follows data arriving from one that does not.

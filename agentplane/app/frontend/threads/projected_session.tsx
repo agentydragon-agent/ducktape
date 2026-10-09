@@ -55,6 +55,7 @@ import {
 import { revealEvidenceOnTap } from "./thread_evidence";
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { markThreadViewEvent, LayoutSettle, type FollowReason } from "./thread_view_timing";
+import { scrollCapture } from "./scroll_diagnostics";
 import { rememberRowHeight, rememberedRowHeight } from "./history_sizes";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "../thread_status_indicator";
@@ -256,6 +257,14 @@ function VirtualizedHistory({
   activeTurn: string | null;
   history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
 }): JSX.Element {
+  useEffect(() => {
+    markThreadViewEvent({
+      kind: "older-state",
+      loading: history.loadingOlder,
+      available: history.olderAvailable,
+      rowCount: rows.length,
+    });
+  }, [history.loadingOlder, history.olderAvailable, rows.length]);
   const viewport = useRef<HTMLDivElement>(null);
   const contents = useRef<HTMLDivElement>(null);
   const tailContent = useRef<HTMLDivElement>(null);
@@ -419,6 +428,13 @@ function VirtualizedHistory({
     onChange: (instance, sync) => {
       const total = instance.getTotalSize();
       if (total !== lastTotalSize.current) {
+        markThreadViewEvent({
+          kind: "virtual-size",
+          before: lastTotalSize.current,
+          after: total,
+          sync,
+          following: atBottom.current,
+        });
         lastTotalSize.current = total;
         layoutChanged();
       }
@@ -714,6 +730,12 @@ function VirtualizedHistory({
       onWheel={(event) => {
         cancelRestoration();
         const element = event.currentTarget;
+        markThreadViewEvent({
+          kind: "input",
+          source: "wheel",
+          direction: event.deltaY < 0 ? "up" : "down",
+          scrollTop: element.scrollTop,
+        });
         const canScroll =
           (event.deltaY < 0 && element.scrollTop > 0) ||
           (event.deltaY > 0 && element.scrollTop < element.scrollHeight - element.clientHeight);
@@ -726,13 +748,27 @@ function VirtualizedHistory({
       }}
       onKeyDown={(event) => {
         cancelRestoration();
+        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) {
+          markThreadViewEvent({
+            kind: "input",
+            source: "key",
+            direction: ["ArrowUp", "PageUp", "Home"].includes(event.key) ? "up" : "down",
+            scrollTop: event.currentTarget.scrollTop,
+          });
+        }
         if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) expectUserScroll();
         if (["ArrowUp", "PageUp", "Home"].includes(event.key)) setFollowing(false, "key-up");
       }}
       onKeyUp={() => {
         if (!scrolledSinceInput.current) captureNextScroll.current = false;
       }}
-      onPointerDown={() => {
+      onPointerDown={(event) => {
+        markThreadViewEvent({
+          kind: "input",
+          source: "pointer",
+          direction: "unknown",
+          scrollTop: event.currentTarget.scrollTop,
+        });
         cancelRestoration();
         pointerScrolling.current = true;
         expectUserScroll();
@@ -751,6 +787,13 @@ function VirtualizedHistory({
       }}
       onTouchMove={(event) => {
         const next = event.touches[0]?.clientY;
+        markThreadViewEvent({
+          kind: "input",
+          source: "touch",
+          direction:
+            next !== undefined && touchY.current !== null ? (next > touchY.current ? "up" : "down") : "unknown",
+          scrollTop: event.currentTarget.scrollTop,
+        });
         expectUserScroll();
         if (next !== undefined && touchY.current !== null && next > touchY.current) setFollowing(false, "touch-up");
         touchY.current = next ?? null;
@@ -798,7 +841,9 @@ function VirtualizedHistory({
         markThreadViewEvent({
           kind: "scroll",
           scrollTop: element.scrollTop,
+          previousTop: previousScrollTop.current,
           scrollHeight: element.scrollHeight,
+          clientHeight: element.clientHeight,
           followed,
         });
         if (followed) {
@@ -909,6 +954,63 @@ function VirtualizedHistory({
         </div>
       )}
     </div>
+  );
+}
+
+/** On-device diagnostics only: nothing is uploaded. Row keys can contain identifying metadata. */
+function downloadScrollDiagnostics(recording: NonNullable<ReturnType<typeof scrollCapture.stopRecording>>): void {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(recording, null, 2)], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `agentplane-scroll-diagnostics-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function HistoryDebugTools(): JSX.Element {
+  const [recording, setRecording] = useState(() => scrollCapture.isRecording());
+  return (
+    <Menu position="top-start" withinPortal withArrow shadow="md">
+      <Menu.Target>
+        <ActionIcon
+          className="agentplane-composer-debug"
+          size="sm"
+          variant={recording ? "filled" : "subtle"}
+          color={recording ? "red" : "gray"}
+          aria-label={recording ? "Debug tools (recording)" : "Debug tools"}
+          title="Scroll debug tools"
+        >
+          <IconHistory size={16} />
+        </ActionIcon>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Menu.Label>Scroll diagnostics (saved on this device only)</Menu.Label>
+        {recording ? (
+          <Menu.Item
+            onClick={() => {
+              const capture = scrollCapture.stopRecording();
+              setRecording(false);
+              if (capture) downloadScrollDiagnostics(capture);
+            }}
+          >
+            Stop and download recording
+          </Menu.Item>
+        ) : (
+          <Menu.Item
+            onClick={() => {
+              scrollCapture.startRecording();
+              setRecording(true);
+            }}
+          >
+            Start recording
+          </Menu.Item>
+        )}
+        {recording && <Menu.Item onClick={() => markThreadViewEvent({ kind: "marker" })}>Mark a jump</Menu.Item>}
+        <Menu.Label>Review row keys and metadata before sharing.</Menu.Label>
+      </Menu.Dropdown>
+    </Menu>
   );
 }
 
@@ -1103,6 +1205,7 @@ function ProjectedSessionBody({
         />
         <Group className="agentplane-composer-controls" justify="space-between" gap="xs" wrap="nowrap" pb="xs">
           <Group className="agentplane-composer-settings" gap="xs" wrap="nowrap">
+            <HistoryDebugTools />
             {canResume && (
               <Button size="xs" aria-label="Resume harness" loading={resuming} onClick={() => void resume()}>
                 Resume harness

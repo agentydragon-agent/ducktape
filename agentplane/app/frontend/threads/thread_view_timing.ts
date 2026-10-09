@@ -18,7 +18,21 @@ export type FollowReason =
 /** Mirrored by the typed events in agentplane/app/testing/thread_view_marks.py. */
 export type ThreadViewEvent =
   | { kind: "follow"; following: boolean; reason: FollowReason }
-  | { kind: "scroll"; scrollTop: number; scrollHeight: number; followed: boolean }
+  | {
+      kind: "scroll";
+      scrollTop: number;
+      previousTop: number;
+      scrollHeight: number;
+      clientHeight: number;
+      followed: boolean;
+    }
+  | {
+      kind: "input";
+      source: "wheel" | "key" | "touch" | "pointer";
+      direction: "up" | "down" | "unknown";
+      scrollTop: number;
+    }
+  | { kind: "virtual-size"; before: number; after: number; sync: boolean; following: boolean }
   | { kind: "scrollend"; restoring: boolean; capturing: boolean }
   /** The history's content or tail changed size. `pinned`: it was followed to the bottom. */
   | { kind: "resize"; scrollTop: number; scrollHeight: number; pinned: boolean }
@@ -26,7 +40,9 @@ export type ThreadViewEvent =
   | { kind: "anchor"; key: string; offset: number }
   | { kind: "restore"; key: string; correction: number | null }
   | { kind: "prepend"; added: number }
+  | { kind: "marker" }
   | { kind: "load-older" }
+  | { kind: "older-state"; loading: boolean; available: boolean; rowCount: number }
   /** A row's height was read. `estimate` is what the virtualizer laid it out with before: a
    * remembered reading of an earlier visit if `remembered`, else a flat guess. */
   | { kind: "measure"; key: string; estimate: number; measured: number; first: boolean; remembered: boolean }
@@ -39,9 +55,26 @@ declare global {
   }
 }
 
-/** Emits browser User Timing marks only when the test harness enables them. */
+const MAX_CAPTURE_MARKS = 20_000;
+let capture: { recorded: number; dropped: number } | null = null;
+
+/** Enabled by the on-device recorder. Tests use their own flag, set before app startup. */
+export function startThreadViewMarks(): void {
+  capture = { recorded: 0, dropped: 0 };
+}
+
+export function stopThreadViewMarks(): number {
+  const dropped = capture?.dropped ?? 0;
+  capture = null;
+  return dropped;
+}
+
 export function markThreadViewEvent(event: ThreadViewEvent): void {
-  if (!window.__agentplaneThreadViewMarksEnabled) return;
+  if (!capture && !window.__agentplaneThreadViewMarksEnabled) return;
+  if (capture && capture.recorded++ >= MAX_CAPTURE_MARKS) {
+    capture.dropped++;
+    return;
+  }
   performance.mark(`agentplane:thread-view:${event.kind}`, { detail: event });
 }
 

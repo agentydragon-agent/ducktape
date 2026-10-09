@@ -41,6 +41,23 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "scroll_diagnostics",
+    srcs = ["scroll_diagnostics.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":thread_view_timing"],
+)
+
+agentplane_vitest_test(
+    name = "scroll_diagnostics_test",
+    srcs = ["scroll_diagnostics.test.ts"],
+    deps = [
+        ":scroll_diagnostics",
+        ":thread_view_timing",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "thread_view_timing",
     srcs = ["thread_view_timing.ts"],
     tsconfig = TSCONFIG,
@@ -61,6 +78,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":thread_sync",
+        ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/protocol:event_pb",
     ],
@@ -73,6 +91,7 @@ agentplane_vitest_test(
         ":history_rows",
         ":thread_entity_fixture",
         ":thread_sync",
+        ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/protocol:event_pb",
@@ -116,6 +135,7 @@ ts_library(
         ":history_sizes",
         ":projected_session_css",
         ":retained_disclosures",
+        ":scroll_diagnostics",
         ":thread_cards",
         ":thread_commands",
         ":thread_evidence",
@@ -160,9 +180,11 @@ agentplane_vitest_test(
         ":local_commands",
         ":projected_session",
         ":retained_disclosures",
+        ":scroll_diagnostics",
         ":thread_entity_fixture",
         ":thread_state_fixture",
         ":thread_sync",
+        ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -271,6 +293,7 @@ agentplane_vitest_test(
         ":thread_entity_fixture",
         ":thread_state_fixture",
         ":thread_sync",
+        ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

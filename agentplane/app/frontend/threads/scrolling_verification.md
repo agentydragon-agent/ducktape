@@ -24,7 +24,11 @@ timing:
   and observes the last 2,000 scroll and layout decisions. It exposes
   `window.__threadViewTiming.events()` **in tests only**. A failing test prints the relevant slice;
   every browser test saves `<test>-thread-view-marks.jsonl`. The browser probe also records available
-  layout-shift entries.
+  layout-shift, long-task and long-animation-frame entries.
+- In the production UI, Debug tools > Start recording enables the same `agentplane:thread-view:*`
+  `performance.mark()` calls in the browser Performance timeline, plus supported browser timing
+  entries. Stop and download writes JSON for analysis, **not** an importable Chrome profile.
+  Nothing is uploaded. Row keys in mark details may be sensitive; review before sharing.
 
 `agentplane/app/testing/history_probe.js` is injected into every browser test's pages and writes
 `<test>-history-probe.json` to the undeclared outputs: per frame, rows overlapping or leaving a gap
