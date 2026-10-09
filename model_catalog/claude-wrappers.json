@@ -18,7 +18,7 @@
     "model": "google/goog-generate/gemini-3.7-flash"
   },
   "litellm-claude": {
-    "haikuModel": "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
-    "model": "anthropic-max20/ant-messages/claude-sonnet-5"
+    "haikuModel": "anthropic-max20/ant-messages/claude-haiku-5-5",
+    "model": "anthropic-max20/ant-messages/claude-sonnet-5-5"
   }
 }

@@ -134,9 +134,9 @@ The eight Antigravity Gemini text routes now publish pairs from the recorded
 [Google response](antigravity_limits.md#fresh-google-metadata-2026-10-05-1201-utc),
 including Flash Lite 3.5. Parking the three larger GPT-OSS 20B OpenAI-compatible
 exposures and the three Tana routes leaves **80 public entries**. Adding Claude/GPT-OSS gateway declarations
-brings generative publication to **56 pairs**; the two Gemini
+and refreshing the four Claude subscription routes brings generative publication to **60 pairs**; the two Gemini
 embedding routes, durable alias and Ollama embedding route now publish input-only
-metadata, making **60 entries with explicit token overrides**. Ollama uses the
+metadata, making **64 entries with explicit token overrides**. Ollama uses the
 GGUF-reported ceiling with truncation disabled; full-input/boundary behavior is
 explicitly untested ([record](litellm_metadata.md#ollama-embedding-input-metadata-2026-10-09)). The remaining
 migration and the provenance audit of provisional subscription pairs are not complete:
@@ -144,7 +144,7 @@ migration and the provenance audit of provisional subscription pairs are not com
 | Routes                                             | Source / next decision                                                                                                                                                                                                                         |
 | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ChatGPT GPT-6 and GPT-5.6, both wires (12 entries) | Existing configured numbers remain; complete schema aliases now. Their mixed historical/client provenance still needs the shared-limit semantic cleanup.                                                                                       |
-| Anthropic subscription                             | Account/gateway paths need an explicit source choice. Same vendor slug alone does not establish equivalence to direct-API metadata.                                                                                                            |
+| Anthropic subscription                             | Opus/Sonnet/Haiku 5.5 and Fable 5.1 publish sourced gateway declarations. Live registration, account availability and beta-dependent/joint capacity remain untested; see the source ledger.                                                    |
 | Antigravity                                        | Gemini text and Claude/GPT-OSS publication is complete from the recorded response and gateway convention. Claude/GPT-OSS input boundaries and joint capacity remain untested. The image model still needs metadata or an explicit disposition. |
 | Ollama chat variants                               | `num_ctx` is allocation, not an input/output pair. GPT-OSS 20B 256K/512K/1M OpenAI exposures are parked; their native variants remain. Establish metadata for retained routes without turning labels or allocations into capacity claims.      |
 | Groq transcription                                 | Declare applicable audio metadata without inventing a generative output ceiling. Embedding input declarations are published; the Ollama declaration still requires the explicitly deferred live verification.                                  |

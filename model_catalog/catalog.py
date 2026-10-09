@@ -292,16 +292,31 @@ TANA_HAIKU = Route(
     Model("claude-haiku-4-5", "Haiku 4.5"), TANA_MESSAGES, upstream_model="tana/claude-haiku-4-5-20251001"
 )
 
-# Current-generation Anthropic roster, verified against the authenticated /v1/models
-# endpoint. Feeds Haku OpenClaw and the Terraform claude lane (litellm/keys.py), and is
-# the exposed set for the cliproxyapi Claude-subscription `anthropic-max20/ant-messages/*` route: cliproxyapi's Claude
-# OAuth session serves older generations too, but we expose only this current group — the
-# subscription and direct API share these identities, not capacity evidence. Only
-# the direct-API routes below add API limits; subscription declarations stay unknown.
+# Direct-API identities retain their separately sourced declarations below. Do not
+# upgrade them or copy subscription gateway limits merely because vendor names match.
 _OPUS = Model("claude-opus-5", "Opus 5")
 _SONNET = Model("claude-sonnet-5", "Sonnet 5")
 _FABLE = Model("claude-fable-5", "Fable 5")
 _HAIKU = Model("claude-haiku-4-5-20251001", "Haiku 4.5")
+
+# Latest Claude-subscription family entries in the gateway catalogue (2026-10-09):
+# https://github.com/router-for-me/models/blob/e63af9856bda19828dfe93a6fa0559a5ab32965c/models.json
+# CLIProxyAPI publishes context_length as max_input_tokens and max_completion_tokens
+# as max_tokens. These are gateway declarations, not Max20 account measurements.
+# TODO(#9574): verify live registration/availability, beta-dependent input boundaries
+# and joint input/output capacity. No request caps or client budgets are inferred.
+_SUBSCRIPTION_OPUS = Model(
+    "claude-opus-5-5", "Opus 5.5", TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
+)
+_SUBSCRIPTION_SONNET = Model(
+    "claude-sonnet-5-5", "Sonnet 5.5", TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
+)
+_SUBSCRIPTION_FABLE = Model(
+    "claude-fable-5-1", "Fable 5.1", TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
+)
+_SUBSCRIPTION_HAIKU = Model(
+    "claude-haiku-5-5", "Haiku 5.5", TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
+)
 
 
 # Google's Antigravity OAuth session in CLIProxyAPI (agentydragon@gmail.com, added
@@ -575,15 +590,23 @@ CHATGPT_RESPONSES_ROUTES = (
     ),
 )
 ANTHROPIC_SUBSCRIPTION = Upstream(Provider.ANTHROPIC_MAX20, "anthropic", "messages", supports_function_calling=True)
-OPUS_SUBSCRIPTION = Route(_OPUS, ANTHROPIC_SUBSCRIPTION, reasoning_efforts=_ANTHROPIC_EFFORTS)
-SONNET_SUBSCRIPTION = Route(_SONNET, ANTHROPIC_SUBSCRIPTION, reasoning_efforts=_ANTHROPIC_EFFORTS)
-FABLE_SUBSCRIPTION = Route(_FABLE, ANTHROPIC_SUBSCRIPTION, reasoning_efforts=_ANTHROPIC_EFFORTS)
-HAIKU_SUBSCRIPTION = Route(_HAIKU, ANTHROPIC_SUBSCRIPTION, reasoning_efforts=_ANTHROPIC_EFFORTS)
+OPUS_SUBSCRIPTION = Route(
+    _SUBSCRIPTION_OPUS, ANTHROPIC_SUBSCRIPTION, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
+)
+SONNET_SUBSCRIPTION = Route(
+    _SUBSCRIPTION_SONNET, ANTHROPIC_SUBSCRIPTION, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
+)
+FABLE_SUBSCRIPTION = Route(
+    _SUBSCRIPTION_FABLE, ANTHROPIC_SUBSCRIPTION, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
+)
+HAIKU_SUBSCRIPTION = Route(
+    _SUBSCRIPTION_HAIKU, ANTHROPIC_SUBSCRIPTION, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
+)
 ANTHROPIC_SUBSCRIPTION_ROUTES = (OPUS_SUBSCRIPTION, SONNET_SUBSCRIPTION, FABLE_SUBSCRIPTION, HAIKU_SUBSCRIPTION)
 # Direct-API limits copied from the exact unprefixed Claude model IDs in:
 # https://github.com/BerriAI/litellm/blob/02f61c9c420b9aa9de10ff673098ad7132b78f5b/model_prices_and_context_window.json
-# Copy the input/output fields, not a combined window. replace() keeps names/slugs
-# shared without attaching raw-API facts to the subscription models above.
+# Copy the input/output fields, not a combined window. These model values are
+# separate from the newer, independently sourced subscription models above.
 ANTHROPIC_API = Upstream(Provider.ANTHROPIC_API, "anthropic", "messages", supports_function_calling=True)
 OPUS_API = Route(
     replace(_OPUS, limits=TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)),
