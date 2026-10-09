@@ -208,3 +208,8 @@
   gap: 6px;
   flex: 0 0 auto;
 }
+
+/* Keep debugging by the lower-left edge; navigation and connection status stay on the right. */
+.agentplane-sidebar-debug {
+  margin-right: auto;
+}

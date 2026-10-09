@@ -55,7 +55,6 @@ import {
 import { revealEvidenceOnTap } from "./thread_evidence";
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { markThreadViewEvent, LayoutSettle, type FollowReason } from "./thread_view_timing";
-import { downloadScrollDiagnostics, scrollCapture } from "./scroll_diagnostics";
 import { rememberRowHeight, rememberedRowHeight } from "./history_sizes";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "../thread_status_indicator";
@@ -963,51 +962,6 @@ function VirtualizedHistory({
   );
 }
 
-function HistoryDebugTools(): JSX.Element {
-  const [recording, setRecording] = useState(() => scrollCapture.isRecording());
-  return (
-    <Menu position="top-start" withinPortal withArrow shadow="md">
-      <Menu.Target>
-        <ActionIcon
-          className="agentplane-composer-debug"
-          size="sm"
-          variant={recording ? "filled" : "subtle"}
-          color={recording ? "red" : "gray"}
-          aria-label={recording ? "Debug tools (recording)" : "Debug tools"}
-          title="Scroll debug tools"
-        >
-          <IconHistory size={16} />
-        </ActionIcon>
-      </Menu.Target>
-      <Menu.Dropdown>
-        <Menu.Label>Scroll diagnostics (saved on this device only)</Menu.Label>
-        {recording ? (
-          <Menu.Item
-            onClick={() => {
-              const capture = scrollCapture.stopRecording();
-              setRecording(false);
-              if (capture) downloadScrollDiagnostics(capture);
-            }}
-          >
-            Stop and download recording
-          </Menu.Item>
-        ) : (
-          <Menu.Item
-            onClick={() => {
-              scrollCapture.startRecording();
-              setRecording(true);
-            }}
-          >
-            Start recording
-          </Menu.Item>
-        )}
-        {recording && <Menu.Item onClick={() => markThreadViewEvent({ kind: "marker" })}>Mark a jump</Menu.Item>}
-        <Menu.Label>Review row keys and metadata before sharing.</Menu.Label>
-      </Menu.Dropdown>
-    </Menu>
-  );
-}
-
 function ProjectedSessionBody({
   threadId,
   entities,
@@ -1206,7 +1160,6 @@ function ProjectedSessionBody({
         />
         <Group className="agentplane-composer-controls" justify="space-between" gap="xs" wrap="nowrap" pb="xs">
           <Group className="agentplane-composer-settings" gap="xs" wrap="nowrap">
-            <HistoryDebugTools />
             {canResume && (
               <Button size="xs" aria-label="Resume harness" loading={resuming} onClick={() => void resume()}>
                 Resume harness
