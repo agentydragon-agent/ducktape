@@ -74,10 +74,15 @@ case, fork/revocation behavior, redelivery deduplication, or shared refresh reus
 CI coverage is separate from live proof. Remaining work stays in the
 [notification plan](../../plans/notifications.md#remaining-live-verification).
 
-## Failure/backoff acceptance scope
+## Waived live acceptance exercises
 
 The operator waived deliberate live GitHub failure/backoff injection on 2026-10-09. Error and
 retry-deadline projection through subscription introspection and frontend diagnostics is already
 implemented and covered by automated tests/rendered fixtures; successful status projection was
 checked in staging. No further induced-failure exercise is required for acceptance. This is a
 scope decision, not a claim that a live failure/recovery scenario was performed.
+
+The operator also waived live verification of shared GitHub refresh reuse across overlapping
+subscriptions and service restarts. Existing automated coverage is sufficient for this behavior;
+there is no remaining deployed-environment exercise or acceptance blocker. This does not claim
+that a live refresh-reuse/restart test was performed or remove the automated regression tests.
