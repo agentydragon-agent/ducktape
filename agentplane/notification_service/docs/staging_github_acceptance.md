@@ -37,7 +37,6 @@ found 154 webhook 400 responses and 352 webhook 202 responses across the two rep
 rejections were recurring, not a single startup blip. At that point the access log did not
 identify an event or rejection reason. The diagnosis and fix are recorded below.
 
-
 ## Workflow-job and issue delivery — 2026-10-09
 
 Rejection diagnostics from [#9528](https://github.com/agentydragon/ducktape/pull/9528), deployed as
