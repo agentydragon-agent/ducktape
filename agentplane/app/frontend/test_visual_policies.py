@@ -16,7 +16,7 @@ from agentplane.app.frontend.visual_assertions import (
     _select_reconnect,
 )
 from util.testing.page_capture import wait_for_stable
-from util.testing.viewports import DESKTOP, MOBILE
+from util.testing.viewports import DESKTOP, MOBILE, Viewport
 from util.testing.visual_capture import VisualPage
 
 # gazelle:include_dep //util/testing:visual_fixtures
@@ -35,6 +35,43 @@ async def test_inline_action_review(view: VisualPage, app: AgentplaneFixture) ->
     await expect(page.get_by_role("button", name="Hide pending action details")).to_be_visible()
     await expect(page.locator(".action-affordance-notice .agentplane-code-block").first).to_be_visible()
     await view.capture()
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
+async def test_compact_pod_approval(view: VisualPage, app: AgentplaneFixture, expanded: bool) -> None:
+    await app.show_compact_pod_action()
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+    notice = page.get_by_role("region", name="Pending action approvals")
+    await expect(notice.get_by_text("Get pods · namespace")).to_be_visible()
+    await expect(notice.get_by_text("test-apps")).to_be_visible()
+    await expect(notice.get_by_text("app=demo")).to_be_visible()
+    await expect(notice.get_by_text("status.phase=Running")).to_be_visible()
+    if expanded:
+        await notice.get_by_role("button", name="Review pending actions").click()
+        await expect(notice.get_by_text("List pods in namespace")).to_be_visible()
+        await expect(notice.get_by_text("Exact arguments (unredacted)")).to_be_visible()
+        await expect(notice.get_by_role("button", name="Deny")).to_be_visible()
+    else:
+        await expect(notice.get_by_role("button", name="Approve")).to_be_visible()
+        await expect(notice.get_by_role("button", name="Deny")).to_have_count(0)
+    await view.capture()
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_wide_action_decisions(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    await app.show_pending_actions()
+    await app.mount_app("/actions")
+    page = view.page
+    approve = page.get_by_role("button", name="Approve").first
+    deny = page.get_by_role("button", name="Deny").first
+    await expect(approve).to_be_visible()
+    await expect(deny).to_be_visible()
+    if viewport == DESKTOP:
+        assert await approve.evaluate("element => element.getBoundingClientRect().width") >= 112
+        assert await deny.evaluate("element => element.getBoundingClientRect().width") >= 112
+    await view.capture(target=page.locator("#app"))
 
 
 async def test_inline_action_review_scrolls_to_decisions_actions_attention_composer_long_desktop(

@@ -826,6 +826,17 @@ const ACTIONS: ActionRequestView[] = [
   },
 ];
 
+// A single losslessly rendered request, for compact approval screenshots.
+const COMPACT_POD_ACTION: ActionRequestView = {
+  ...ACTIONS[1]!,
+  id: "70000000-0000-4000-8000-000000000009",
+  action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+  arguments: { namespace: "test-apps", labelSelector: "app=demo", fieldSelector: "status.phase=Running" },
+  title: "inspect running demo pods",
+  description: "Read-only inspection of the demo workload.",
+  idempotency_key: "visual-pods-compact-pending",
+};
+
 const CONVERSATION_SOURCE = "visual-runner";
 const CONVERSATION_EPOCH = "20260921";
 const payloadBodies = new Map<string, string>();
@@ -2549,7 +2560,11 @@ class HarnessEventSource extends EventTarget {
       return;
     }
     if (url.pathname === "/actions/stream") {
-      const pending = includePendingActions ? ACTIONS.filter((request) => request.state === "decision_pending") : [];
+      const pending = includeCompactPodAction
+        ? [COMPACT_POD_ACTION]
+        : includePendingActions
+          ? ACTIONS.filter((request) => request.state === "decision_pending")
+          : [];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(pending) }));
       return;
     }
@@ -2592,6 +2607,7 @@ let threadDatabaseConnected = true;
 let dropThreadStream = false;
 let dropInventoryStream = false;
 let includePendingActions = false;
+let includeCompactPodAction = false;
 let watchHealth = FRESH;
 
 function mount(element: ReactNode): void {
@@ -2631,6 +2647,9 @@ const visualHarness = {
   },
   showPendingActions(): void {
     includePendingActions = true;
+  },
+  showCompactPodAction(): void {
+    includeCompactPodAction = true;
   },
   paginateActionHistory(): void {
     pageActionHistory = true;
