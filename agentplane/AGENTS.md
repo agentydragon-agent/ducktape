@@ -60,10 +60,8 @@ status and dependencies. Keep their links and decisions consistent when changing
 - Record in-flight work and who/source reported it, with a timestamp and scope. A partial backfill,
   merged implementation or successful unit test is not a completed rollout. Do not invent current
   state from an old log. Remove finished nodes; keep evidence in the owning component docs.
-- While the Session Event archive migration is in progress, do not start unrelated Sandbox Service
-  database additions or app database surgery. Coordinate migration changes with its owner. Design,
-  independent UI work and tests against established contracts can proceed; implementation needing
-  new persistence waits for the archive ownership cutover and any relevant table-retirement phase.
+- Keep temporary rollout holds, migration sequencing and task-specific exceptions in the task DAG
+  and owning component plans, not in `AGENTS.md`. This file contains durable contribution rules.
 - Acceptance must address the changed contract and credible risk. Preserve security-denial,
   revocation, isolation, data-preservation and ordinary retry/reconnect/concurrency tests. Prefer
   deterministic automated coverage; require live checks only for an identified deployment-specific
