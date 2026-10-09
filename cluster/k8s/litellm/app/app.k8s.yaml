@@ -273,38 +273,50 @@ data:
           max_input_tokens: 372000
           max_output_tokens: 128000
           max_tokens: 128000
-      - model_name: anthropic-max20/ant-messages/claude-opus-5
+      - model_name: anthropic-max20/ant-messages/claude-opus-5-5
         litellm_params:
-          model: anthropic/claude-opus-5
+          model: anthropic/claude-opus-5-5
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
           api_key: os.environ/CLIPROXY_CLIENT_KEY
         model_info:
           mode: chat
           supports_function_calling: true
-      - model_name: anthropic-max20/ant-messages/claude-sonnet-5
+          max_input_tokens: 1000000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: anthropic-max20/ant-messages/claude-sonnet-5-5
         litellm_params:
-          model: anthropic/claude-sonnet-5
+          model: anthropic/claude-sonnet-5-5
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
           api_key: os.environ/CLIPROXY_CLIENT_KEY
         model_info:
           mode: chat
           supports_function_calling: true
-      - model_name: anthropic-max20/ant-messages/claude-fable-5
+          max_input_tokens: 1000000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: anthropic-max20/ant-messages/claude-fable-5-1
         litellm_params:
-          model: anthropic/claude-fable-5
+          model: anthropic/claude-fable-5-1
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
           api_key: os.environ/CLIPROXY_CLIENT_KEY
         model_info:
           mode: chat
           supports_function_calling: true
-      - model_name: anthropic-max20/ant-messages/claude-haiku-4-5-20251001
+          max_input_tokens: 1000000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: anthropic-max20/ant-messages/claude-haiku-5-5
         litellm_params:
-          model: anthropic/claude-haiku-4-5-20251001
+          model: anthropic/claude-haiku-5-5
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
           api_key: os.environ/CLIPROXY_CLIENT_KEY
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 1000000
+          max_output_tokens: 128000
+          max_tokens: 128000
       - model_name: anthropic-api/ant-messages/claude-opus-5
         litellm_params:
           model: anthropic/claude-opus-5

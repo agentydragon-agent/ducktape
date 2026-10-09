@@ -70,7 +70,10 @@ def test_large_gpt_oss_variants_only_serve_native_requests(context_kib: int) -> 
 
 
 def test_equal_model_slugs_do_not_collapse_account_routes() -> None:
-    subscription, direct = ANTHROPIC_SUBSCRIPTION_ROUTES[0], ANTHROPIC_API_ROUTES[0]
+    direct = ANTHROPIC_API_ROUTES[0]
+    # Construct a shared slug with unknown subscription limits: production rosters
+    # can advance independently, but account identity must still prevent leakage.
+    subscription = replace(ANTHROPIC_SUBSCRIPTION_ROUTES[0], model=Model(direct.model.id), publish_limits=False)
     assert subscription.model.id == direct.model.id
     assert subscription.model.limits is None
     assert direct.model.limits is not None
