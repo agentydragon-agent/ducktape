@@ -336,24 +336,24 @@ _HAIKU = Model("claude-haiku-4-5-20251001", "Haiku 4.5")
 # output from it. The other Gemini pairs are sourced metadata, not capacity probes.
 # Preserve Google's 65535/65536 output distinction and consumer-owned budgets.
 #
-# Claude/GPT-OSS retain the historical CLIProxyAPI snapshot's declarations below,
-# unpublished: fresh raw fields exist, but their input-versus-combined semantics
-# are unresolved. Neither their old values nor a successful oversized request
-# establishes attended capacity. The image model has no reported pair. See
-# model_catalog/antigravity_limits.md for sources, caveats and the remaining decisions.
+# Claude/GPT-OSS use the same dated response and CLIProxyAPI's declared mapping
+# of ContextLength to max_input_tokens. LiteLLM does not inherit backend model-list
+# limits, so we publish them explicitly. See antigravity_limits.md for provenance.
+# TODO: Input boundaries and joint input/output capacity are untested; these are
+# gateway declarations, not capacity measurements. The image model has no pair.
 
 
 _ANTIGRAVITY_OPUS = Model(
     id="claude-opus-4-6-thinking",
     display_name="Claude Opus 4.6 (Thinking)",
     reasoning=True,
-    limits=TokenLimits(max_input_tokens=200_000, max_output_tokens=64_000),
+    limits=TokenLimits(max_input_tokens=250_000, max_output_tokens=64_000),
 )
 _ANTIGRAVITY_SONNET = Model(
     id="claude-sonnet-4-6",
     display_name="Claude Sonnet 4.6 (Thinking)",
     reasoning=True,
-    limits=TokenLimits(max_input_tokens=200_000, max_output_tokens=64_000),
+    limits=TokenLimits(max_input_tokens=250_000, max_output_tokens=64_000),
 )
 _ANTIGRAVITY_FLASH_LITE_31 = Model(
     id="gemini-3.1-flash-lite",
@@ -607,8 +607,12 @@ HAIKU_API = Route(
 )
 ANTHROPIC_API_ROUTES = (OPUS_API, SONNET_API, FABLE_API, HAIKU_API)
 ANTIGRAVITY_MESSAGES = Upstream(Provider.ANTIGRAVITY, "anthropic", "messages", supports_function_calling=True)
-ANTIGRAVITY_OPUS = Route(_ANTIGRAVITY_OPUS, ANTIGRAVITY_MESSAGES, reasoning_efforts=_ANTHROPIC_EFFORTS)
-ANTIGRAVITY_SONNET = Route(_ANTIGRAVITY_SONNET, ANTIGRAVITY_MESSAGES, reasoning_efforts=_ANTHROPIC_EFFORTS)
+ANTIGRAVITY_OPUS = Route(
+    _ANTIGRAVITY_OPUS, ANTIGRAVITY_MESSAGES, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
+)
+ANTIGRAVITY_SONNET = Route(
+    _ANTIGRAVITY_SONNET, ANTIGRAVITY_MESSAGES, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
+)
 ANTIGRAVITY_PRO = Route(_ANTIGRAVITY_PRO, ANTIGRAVITY_MESSAGES, publish_limits=True)
 ANTIGRAVITY_FLASH_LITE_31 = Route(_ANTIGRAVITY_FLASH_LITE_31, ANTIGRAVITY_MESSAGES, publish_limits=True)
 ANTIGRAVITY_FLASH_LITE = Route(_ANTIGRAVITY_FLASH_LITE_35, ANTIGRAVITY_MESSAGES, publish_limits=True)
@@ -670,9 +674,10 @@ ANTIGRAVITY_GPT_OSS_120B_MEDIUM = Route(
         id="gpt-oss-120b-medium",
         display_name="GPT-OSS 120B (Medium)",
         reasoning=True,
-        limits=TokenLimits(max_input_tokens=114_000, max_output_tokens=32_768),
+        limits=TokenLimits(max_input_tokens=131_072, max_output_tokens=32_768),
     ),
     ANTIGRAVITY_MESSAGES,
+    publish_limits=True,
 )
 ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_OPUS,
