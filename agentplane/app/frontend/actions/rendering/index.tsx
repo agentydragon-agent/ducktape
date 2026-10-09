@@ -27,7 +27,9 @@ interface ActionRendering {
 const REGISTRY: ReadonlyMap<string, ReadonlyMap<string, ActionRendering>> = new Map([
   [
     "kubernetes_admin",
-    new Map<string, ActionRendering>([["pods_list_in_namespace", { arguments: podsInNamespacePreview, compactApproval: podsInNamespaceCompact }]]),
+    new Map<string, ActionRendering>([
+      ["pods_list_in_namespace", { arguments: podsInNamespacePreview, compactApproval: podsInNamespaceCompact }],
+    ]),
   ],
   // x/ssh_mcp_server/server.py, under the group name staging configures it as.
   ["ssh", new Map<string, ActionRendering>([["exec", { arguments: execArgumentsPreview, result: execResultPreview }]])],
