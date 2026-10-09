@@ -16,6 +16,7 @@ py_library(
     srcs = ["store.py"],
     deps = [
         ":db",
+        ":submissions",
         "//agentplane/protocol:event_log_pb2",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
@@ -167,6 +168,39 @@ py_test(
         "//:conftest",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service:conftest",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "submissions",
+    srcs = ["submissions.py"],
+    deps = [
+        ":db",
+        "//agentplane:subjects",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_submissions",
+    srcs = ["test_submissions.py"],
+    deps = [
+        ":conftest",
+        ":store",
+        ":submissions",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
         "//agentplane/sandbox_service:conftest",
         "@pypi//protobuf",
         "@pypi//pytest",
