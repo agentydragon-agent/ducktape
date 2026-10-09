@@ -1,4 +1,6 @@
-# Staging GitHub acceptance — 2026-10-04
+# Staging GitHub acceptance
+
+## Initial delivery acceptance — 2026-10-04
 
 App **5188971** is enabled; the operator confirmed installation on all their repositories.
 [Rollout proof](https://github.com/agentydragon/ducktape/issues/8956#issuecomment-5983967691): 2/2 ready replicas, successful migrations, Flux healthy; no database reset.
@@ -32,6 +34,43 @@ live restart/revocation/fork acceptance.
 
 Rollout logs also showed webhook HTTP 400 rejections. A subsequent bounded 35-minute log read
 found 154 webhook 400 responses and 352 webhook 202 responses across the two replicas;
-rejections are recurring, not a single startup blip. The current access log does not identify
-an event or rejection reason. Diagnosis and remaining live verification stay open in the
+rejections were recurring, not a single startup blip. At that point the access log did not
+identify an event or rejection reason. The diagnosis and fix are recorded below.
+
+
+## Workflow-job and issue delivery — 2026-10-09
+
+Rejection diagnostics from [#9528](https://github.com/agentydragon/ducktape/pull/9528), deployed as
+`devel-20261009042853-3ee90b7`, identified 142 unsupported `workflow_job` events and one unsupported
+`issues` event in the inspected sample. No signature or schema-validation failures appeared in
+that sample. This diagnoses the observed rejections, not every possible ingress failure.
+
+Support landed in [#9531](https://github.com/agentydragon/ducktape/pull/9531). Staging ran image
+`devel-20261009051250-b7234b2` with 2/2 updated, ready and available replicas, zero restarts,
+and both migration init containers exiting 0. A bounded post-rollout log read contained 166
+webhook responses, all HTTP 202, with no rejection diagnostics. The live source schema exposed
+`workflow_job`, `issues` and the `issue` subject. This is a sampled observation, not a guarantee
+that all future deliveries succeed.
+
+Live verification on `agentydragon/ducktape`:
+
+- An explicit `workflow_job` subscription on branch `devel` received a real completed
+  [Actions job](https://github.com/agentydragon/ducktape/actions/runs/37888498514/job/113683830200)
+  (`announce`, run 37888498514, head `afd8a805dc660ff2786956432996be903061b871`). The entry matched
+  the test subscription and reached the session inbox at cursor 1436; it was explicitly acknowledged.
+- An ordinary issue subscription to existing issue #8956 passed authorization, shared subject
+  refresh and subscription processing without errors, confirming the installation's issue access.
+- Operator-authorized test issue [#9535](https://github.com/agentydragon/ducktape/issues/9535)
+  produced `issues.opened`,
+  [`issue_comment.created`](https://github.com/agentydragon/ducktape/issues/9535#issuecomment-6074921995),
+  and `issues.closed` at inbox cursors 1437–1439. Each matched the issue-only test subscription;
+  the comment ID and content matched the test comment. The opened webhook arrived after subscription
+  creation; this is live receipt, not historical replay.
+- The test issue is closed, all temporary subscriptions are cancelled, and the inbox was explicitly
+  acknowledged through cursor 1439. No test workflow or repository code change was needed.
+
+These observations close live delivery acceptance for the exercised workflow-job and ordinary
+issue lifecycle/comment paths. They do not establish every action filter, issue/PR exclusion
+case, fork/revocation behavior, redelivery deduplication, or shared refresh reuse across restarts;
+CI coverage is separate from live proof. Remaining work stays in the
 [notification plan](../../plans/notifications.md#remaining-live-verification).
