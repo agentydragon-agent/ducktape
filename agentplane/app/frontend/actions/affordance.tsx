@@ -76,13 +76,12 @@ export function ComposerPendingActions(): JSX.Element | null {
             </Text>
             {inline ? (
               <Stack gap={2}>
-                <Text size="xs" style={{ overflowWrap: "anywhere" }}>
-                  {pending[0].action.group} / {pending[0].action.name}
+                <Text className="action-affordance-context" size="xs" style={{ overflowWrap: "anywhere" }}>
+                  {pending[0].action.group} / {pending[0].action.name} · {pending[0].title}
+                  {pending[0].description ? ` · ${pending[0].description}` : ""}
+                  {pending[0].caller ? ` · requested by ${serviceAccountKey(pending[0].caller)}` : ""}
                 </Text>
                 {inline}
-                <Text size="xs">{pending[0].title}</Text>
-                {pending[0].description && <Text size="xs">{pending[0].description}</Text>}
-                {pending[0].caller && <Text size="xs">requested by {serviceAccountKey(pending[0].caller)}</Text>}
               </Stack>
             ) : (
               <Text size="xs" c="dimmed" lineClamp={1}>

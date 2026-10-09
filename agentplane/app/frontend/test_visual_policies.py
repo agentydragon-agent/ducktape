@@ -44,6 +44,11 @@ async def test_compact_pod_approval(view: VisualPage, app: AgentplaneFixture, ex
     await app.mount_thread(IDLE_THREAD)
     page = view.page
     notice = page.get_by_role("region", name="Pending action approvals")
+    context = notice.locator(".action-affordance-context")
+    await expect(context).to_contain_text(
+        "kubernetes_admin / pods_list_in_namespace · inspect running demo pods"
+        " · Read-only inspection of the demo workload. · requested by agentplane-visual/ready-sandbox"
+    )
     await expect(notice.get_by_text("Get pods · namespace")).to_be_visible()
     await expect(notice.get_by_text("test-apps")).to_be_visible()
     await expect(notice.get_by_text("app=demo")).to_be_visible()
