@@ -1058,7 +1058,7 @@ async def thread_event_stream(
         raise ThreadNotFoundError(thread_id)
     # EventSource reconnect carries its verified wire position, overriding a stale query.
     cursor = last_event_id if last_event_id is not None else after
-    if cursor > thread.last_cursor:
+    if cursor > await event_logs.read_watermark(thread_id):
         raise HTTPException(status.HTTP_409_CONFLICT, "cursor is beyond the archived Thread prefix")
     return StreamingResponse(
         shutdown.until(stream.follow(event_logs, updates.changes[Channel.THREADS], thread_id, after_cursor=cursor)),

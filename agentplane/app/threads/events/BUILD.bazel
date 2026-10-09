@@ -64,3 +64,22 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_stream",
+    size = "medium",
+    srcs = ["test_stream.py"],
+    requires_docker = True,
+    deps = [
+        ":event_log",
+        ":stream",
+        "//:conftest",
+        "//agentplane/app:changes",
+        "//agentplane/app:conftest",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

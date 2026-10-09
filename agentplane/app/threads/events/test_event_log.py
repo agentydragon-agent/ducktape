@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 from typing import cast
+from uuid import UUID
 
 import pytest
 import pytest_bazel
@@ -60,7 +61,7 @@ async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
     assert await event_logs.last_cursor(other) == 0
 
 
-async def test_remote_history_read_fails_closed_when_service_prefix_lags(
+async def test_remote_history_reads_its_own_committed_prefix(
     engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
 ) -> None:
     thread_id = await event_logs.open("sb-1", "s-1", SPEC)
@@ -81,13 +82,55 @@ async def test_remote_history_read_fails_closed_when_service_prefix_lags(
 
     reader = Reader()
     remote = EventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
-    with pytest.raises(ConnectionError, match="behind"):
-        await remote.events(thread_id, limit=1)
+    assert await remote.events(thread_id, limit=1) == []
+    assert await remote.read_watermark(thread_id) == 0
+    with pytest.raises(ConnectionError, match="not committed"):
+        await remote.observation_entry(thread_id, 1)
     reader.last_cursor = 1
     assert await remote.events(thread_id, limit=1) == [entry]
     observed = await remote.observation_entry(thread_id, 1)
     assert observed is not None
     assert observed.entry["cursor"] == "1"
+    reader.last_cursor = 2
+    assert await remote.read_watermark(thread_id) == 2
+    assert await remote.last_cursor(thread_id) == 1
+
+
+async def test_service_read_does_not_chase_a_growing_watermark(engine: AsyncEngine) -> None:
+    thread_id = UUID("00000000-0000-0000-0000-000000000001")
+    calls = []
+
+    class Reader:
+        async def read_session_events(
+            self, session_id: str, *, after_cursor: int = 0, limit: int = 128
+        ) -> protocol_pb2.ReadSessionEventsResponse:
+            calls.append(after_cursor)
+            # A second page may advertise a newer head, but the call's ceiling is 2.
+            end = 2 if after_cursor == 0 else 3
+            return protocol_pb2.ReadSessionEventsResponse(
+                last_cursor=end,
+                entries=[event_entry(after_cursor + 1, harness_stderr=event_pb2.HarnessStderr(text="x"))],
+            )
+
+    remote = EventLogStore(engine, history_reader=cast(SandboxServiceClient, Reader()))
+    assert [e.cursor for e in await remote.events(thread_id, limit=10)] == [1, 2]
+    assert calls == [0, 1]
+
+
+@pytest.mark.parametrize("case", ["gap", "beyond_watermark", "resume_ahead"])
+async def test_service_read_rejects_invalid_pages(engine: AsyncEngine, case: str) -> None:
+    thread_id = UUID("00000000-0000-0000-0000-000000000001")
+
+    class Reader:
+        async def read_session_events(
+            self, session_id: str, *, after_cursor: int = 0, limit: int = 128
+        ) -> protocol_pb2.ReadSessionEventsResponse:
+            entries = [] if case != "beyond_watermark" else [event_entry(1)]
+            return protocol_pb2.ReadSessionEventsResponse(last_cursor=1 if case == "gap" else 0, entries=entries)
+
+    remote = EventLogStore(engine, history_reader=cast(SandboxServiceClient, Reader()))
+    with pytest.raises(ConnectionError):
+        await remote.events(thread_id, after_cursor=1 if case == "resume_ahead" else 0, limit=1)
 
 
 async def test_concurrent_replicas_create_one_thread(event_logs: EventLogStore, replica: Replica) -> None:

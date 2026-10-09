@@ -168,3 +168,42 @@ py_library(
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
+
+py_library(
+    name = "history_projector",
+    srcs = ["history_projector.py"],
+    deps = [
+        ":models",
+        "//agentplane/app:database_updates",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/app/threads/events:ingestion_lease",
+        "//agentplane/app/threads/view:recording",
+        "//agentplane/sandbox_service:client",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_history_projector",
+    size = "medium",
+    srcs = ["test_history_projector.py"],
+    requires_docker = True,
+    deps = [
+        ":history_projector",
+        ":ingestion",
+        ":models",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/app/testing:thread_test_support",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/app/threads/events:ingestion_lease",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

@@ -96,9 +96,10 @@ actual migration. An incomplete source prefix or unresolved legacy locator is a 
 **Blocked on verified backfill and ingestion parity.** Deploy the service reader before enabling
 the app's opt-in history switch. Check raw paging, stream resume, old native evidence and denial to
 non-authorized service accounts. Lag must remain explicit, not fall back to stale app rows. This
-read-only step does not establish sole write ownership or permit deleting app tables. Coordinate
-the app-known cursor with the service committed prefix; a one-time equality check under concurrent
-ingestion is insufficient for the fail-closed reader.
+read-only step does not establish sole write ownership or permit deleting app tables. The draft reader captures a service watermark instead of chasing the app raw cursor; its
+projection primitive resumes the existing UI checkpoint without copying raw Events. Source fencing,
+supervisor wiring, metadata/lifecycle handoff and end-to-end interruption tests remain rollout gates;
+see the [handoff primitives](session_history_read_cutover.md#draft-app-consumer-handoff-primitives-not-a-rollout-switch).
 
 ### `THREAD_ARCHIVE_UI_CUTOVER` — app becomes an archive consumer
 

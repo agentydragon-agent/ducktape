@@ -12,8 +12,9 @@ Sandbox Service `history_reader_accounts`. A public UUID is not authorization.
 The app's service identity is the only configured reader; notification service
 and sandboxes cannot call it. The app's `history_reads_enabled` switch is off
 by default. When enabled, `/events`, `/events/stream` and expanded raw observation entries read the service and
-fail closed if its prefix lags the app's known cursor: they never silently
-fall back to another source. Thread folds, chronological observation metadata and feed state still come from the app.
+read a fixed committed service prefix rather than chasing the independently advancing app cursor.
+A requested resume cursor beyond the service prefix remains an explicit error; reads never silently
+fall back to app rows. Thread folds, chronological observation metadata and feed state still come from the app.
 This is therefore a staged **read migration**, not permission for agents to
 read Sessions or permission to delete the app raw tables.
 
@@ -38,3 +39,30 @@ and service ingest independently does not make the fail-closed read switch safe:
 app read/projection cursor with the service's committed prefix before switching. Keep runner
 execution and at least one ingestion path active; fence only the old app consumer at its recorded
 final cursor under a reviewed handoff. No global quiet period or automatic stale-table rollback.
+
+## Draft app consumer handoff primitives (not a rollout switch)
+
+The draft adds a service-watermark-bounded raw reader and `HistoryProjector.project_batch`.
+The projector resumes the existing `ThreadCheckpoint`, folds at most 128 service Events under
+an app ingestion lease, and advances UI state/checkpoint atomically without writing app `Event`
+rows. Replays resume from the committed UI position; fold failures leave the checkpoint unchanged
+and cannot block the independent service raw ingester. It is deliberately not scheduled by app
+startup. No configuration default or deployed flag changes in this draft.
+
+Before wiring or enabling it:
+
+1. Implement a durable ingestion-source fence that mixed-version app replicas honor. The existing
+   sandbox lease fences individual batches but does not by itself prevent an old replica from
+   reacquiring a lease and resuming runner-backed ingestion. Capture the final app raw cursor under
+   that fence; wait until the service covers it before releasing the service-backed consumer.
+2. Add the resumable supervisor, retry/error/lag reporting and discovery for all retained Threads,
+   including deleted Sandboxes. It must work with runners unreachable. Do not make a fresh runner
+   attachment a prerequisite for archive projection.
+3. Move chronological observation metadata and Thread/feed cursors/lifecycle away from app raw
+   `Event` rows. Preserve UI checkpoint/source/epoch and existing Thread URLs. The raw SSE path now
+   waits for a terminal app suffix instead of spinning or prematurely ending while service lags;
+   this is not yet service-owned lifecycle evidence.
+4. Test owner takeover, replica restart and migration interruption end-to-end, then perform the
+   reviewed cutover with app raw tables retained. Never enable both competing projection paths.
+
+This draft is useful before shadow convergence, but does not satisfy the archive-ownership gate.

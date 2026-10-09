@@ -145,27 +145,45 @@ class EventLogStore:
                 or 0
             )
 
+    async def read_watermark(self, thread_id: UUID) -> int:
+        """Return the selected archive's committed cursor, not the UI projection's cursor."""
+        local = await self.last_cursor(thread_id)
+        if self._history_reader is None:
+            return local
+        page = await self._history_reader.read_session_events(str(thread_id), after_cursor=local, limit=1)
+        return page.last_cursor
+
     async def events(self, thread_id: UUID, *, after_cursor: int = 0, limit: int) -> list[event_log_pb2.EventEntry]:
         """Up to `limit` entries after the cursor, in cursor order; a reader pages until a short page."""
         if self._history_reader is not None:
-            # A missing/lagging service prefix is an error, never a reason to
-            # serve stale app events as a silent fallback. App folds still copy
-            # runner events until the separate write-authority handoff.
+            # Fix the page ceiling at the first service response. Independent app
+            # ingestion may advance meanwhile; it is not this reader's watermark.
             result: list[event_log_pb2.EventEntry] = []
             cursor = after_cursor
+            through: int | None = None
             while len(result) < limit:
+                requested = min(limit - len(result), 1000)
+                if through is not None:
+                    requested = min(requested, through - cursor)
+                    if requested == 0:
+                        break
                 page = await self._history_reader.read_session_events(
-                    str(thread_id), after_cursor=cursor, limit=min(limit - len(result), 1000)
+                    str(thread_id), after_cursor=cursor, limit=requested
                 )
-                if page.last_cursor < await self.last_cursor(thread_id):
-                    raise ConnectionError("Sandbox Service history is behind the app's confirmed prefix")
+                if through is None:
+                    through = page.last_cursor
+                if page.last_cursor < through or cursor > page.last_cursor:
+                    raise ConnectionError("Sandbox Service history regressed behind the reader's cursor")
+                if len(page.entries) > requested or any(
+                    entry.cursor != cursor + index + 1 or entry.cursor > page.last_cursor
+                    for index, entry in enumerate(page.entries)
+                ):
+                    raise ConnectionError("Sandbox Service history page is not contiguous or exceeds its watermark")
                 if not page.entries:
-                    if cursor < page.last_cursor:
+                    if cursor < through:
                         raise ConnectionError("Sandbox Service omitted entries from a published prefix")
                     break
-                if any(entry.cursor != cursor + index + 1 for index, entry in enumerate(page.entries)):
-                    raise ConnectionError("Sandbox Service history page is not contiguous")
-                result.extend(page.entries)
+                result.extend(entry for entry in page.entries if entry.cursor <= through)
                 cursor = result[-1].cursor
             return result
         async with self._sessions() as session:
@@ -221,15 +239,15 @@ class EventLogStore:
             if cursor < 1:
                 return None
             page = await self._history_reader.read_session_events(str(thread_id), after_cursor=cursor - 1, limit=1)
-            if page.last_cursor < await self.last_cursor(thread_id):
-                raise ConnectionError("Sandbox Service history is behind the app's confirmed prefix")
+            if page.last_cursor < cursor <= await self.last_cursor(thread_id):
+                raise ConnectionError("Requested observation is not committed in Sandbox Service history yet")
             if not page.entries:
                 if cursor <= page.last_cursor:
                     raise ConnectionError("Sandbox Service omitted a published entry")
                 return None
             entry = page.entries[0]
-            if entry.cursor != cursor:
-                raise ConnectionError("Sandbox Service returned a noncontiguous entry")
+            if len(page.entries) != 1 or entry.cursor != cursor or entry.cursor > page.last_cursor:
+                raise ConnectionError("Sandbox Service returned an entry outside the requested committed position")
             return ArchivedObservationEntry(cursor=str(cursor), entry=MessageToDict(entry))
         async with self._sessions() as session:
             payload = await session.scalar(
