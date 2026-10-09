@@ -1,25 +1,23 @@
 // How an Action's call draws for the operator. Widgets for particular Actions are registered by the
 // Action's identity `(group, name)`: one for its request (the arguments), one for its response (the
 // value its tool returned), or both. The group is the name the Action Service configures a backend
-// under, so an entry follows that name rather than the server's own. Adding one is a module beside
-// this for the group's widgets and a row in REGISTRY. Rendering validates the arguments and
+// under, so an entry follows that name rather than the server's own. Add a module in the
+// matching group directory and a row in REGISTRY. Rendering validates the arguments and
 // falls back where no widget matches; inline approval is an independent, explicit opt-in.
 import type { ReactNode } from "react";
 
 import { type CallToolResult, CallToolResultView, toolValue } from "../call_tool_result";
 import type { ActionRequestView } from "../client";
 import { renderPreview, type ArgumentsPreview } from "./entry";
-import { canApprovePullRequestInline, createPullRequestCompact } from "./github_compact";
-import { podsInNamespaceCompact, podsInNamespacePreview } from "./kubernetes";
-import {
-  eventsListCompact,
-  podsLogCompact,
-  resourcesDeleteCompact,
-  resourcesGetCompact,
-  resourcesListCompact,
-} from "./kubernetes_more";
+import { canApprovePullRequestInline, createPullRequestCompact } from "./github/create_pull_request";
+import { eventsListCompact } from "./kubernetes_admin/events_list";
+import { podsInNamespaceCompact, podsInNamespacePreview } from "./kubernetes_admin/pods_list_in_namespace";
+import { podsLogCompact } from "./kubernetes_admin/pods_log";
+import { resourcesDeleteCompact } from "./kubernetes_admin/resources_delete";
+import { resourcesGetCompact } from "./kubernetes_admin/resources_get";
+import { resourcesListCompact } from "./kubernetes_admin/resources_list";
 import { renderResultPreview, type ResultPreview } from "./result_entry";
-import { execArgumentsPreview, execResultPreview } from "./ssh";
+import { execArgumentsPreview, execResultPreview } from "./ssh/exec";
 
 type ActionIdentity = ActionRequestView["action"];
 
@@ -38,7 +36,10 @@ const REGISTRY: ReadonlyMap<string, ReadonlyMap<string, ActionRendering>> = new 
   [
     "kubernetes_admin",
     new Map<string, ActionRendering>([
-      ["pods_list_in_namespace", { arguments: podsInNamespacePreview, compact: podsInNamespaceCompact, canApproveInline: () => true }],
+      [
+        "pods_list_in_namespace",
+        { arguments: podsInNamespacePreview, compact: podsInNamespaceCompact, canApproveInline: () => true },
+      ],
       ["resources_get", { compact: resourcesGetCompact, canApproveInline: () => true }],
       ["resources_list", { compact: resourcesListCompact, canApproveInline: () => true }],
       ["resources_delete", { compact: resourcesDeleteCompact, canApproveInline: () => true }],

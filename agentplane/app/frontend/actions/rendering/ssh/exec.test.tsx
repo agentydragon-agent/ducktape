@@ -2,10 +2,10 @@
 import { act, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { mount } from "../testing";
-import { renderPreview } from "./entry";
-import { renderResultPreview } from "./result_entry";
-import { execArgumentsPreview, execResultPreview } from "./ssh";
+import { mount } from "../../testing";
+import { renderPreview } from "../entry";
+import { renderResultPreview } from "../result_entry";
+import { execArgumentsPreview, execResultPreview } from "./exec";
 
 const ARGUMENTS = { host: "test-host.example", user: "test-user", command: "echo test-output" };
 const VALUE = {

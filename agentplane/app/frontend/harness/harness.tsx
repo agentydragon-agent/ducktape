@@ -609,7 +609,7 @@ const ACTIONS: ActionRequestView[] = [
   },
   {
     id: "70000000-0000-4000-8000-000000000006",
-    // The ssh group in MCP_GROUPS: its `exec` Action has widgets of its own (actions/rendering/ssh.tsx).
+    // The ssh group in MCP_GROUPS: its `exec` Action has widgets of its own (actions/rendering/ssh/exec.tsx).
     action: { group: "ssh", name: "exec" },
     arguments: {
       host: "test-archive-host",

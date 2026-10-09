@@ -2,7 +2,7 @@ import { Code, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { definePreview, type ArgumentsPreview } from "./entry";
+import { definePreview, type ArgumentsPreview } from "../entry";
 
 // Unknown arguments fail closed rather than making an unshown parameter actionable.
 const podsInNamespace = z.strictObject({

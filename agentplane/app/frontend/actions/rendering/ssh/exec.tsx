@@ -4,10 +4,10 @@ import { Badge, Group, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { CodeBlock } from "../../code_block";
-import { CommandCallView, OutputBlock } from "../../command_view";
-import { definePreview, type ArgumentsPreview, type PreviewProps } from "./entry";
-import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "./result_entry";
+import { CodeBlock } from "../../../code_block";
+import { CommandCallView, OutputBlock } from "../../../command_view";
+import { definePreview, type ArgumentsPreview, type PreviewProps } from "../entry";
+import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "../result_entry";
 
 // The tool's input schema. Strict, because the widget draws only these: a call carrying any other
 // argument shows as its JSON, so nothing it would run with goes unseen.

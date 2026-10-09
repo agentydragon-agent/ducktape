@@ -1,8 +1,8 @@
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { Chip, CompactCall } from "./chips";
-import { definePreview, type ArgumentsPreview } from "./entry";
+import { Chip, CompactCall } from "../chips";
+import { definePreview, type ArgumentsPreview } from "../entry";
 
 // A nonempty description cannot be reviewed safely in a few lines. These calls stay expanded.
 // Other optional arguments must all be displayed, including review requests and edit permissions.

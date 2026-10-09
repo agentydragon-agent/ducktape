@@ -149,7 +149,9 @@ describe("compact rendering and inline approval", () => {
       )
     ).toBe(false); // The backend's configured namespace would otherwise be hidden.
     expect(canApproveInline({ group: pr.group, name: pr.name }, { ...pr.args, title: "x".repeat(121) })).toBe(false);
-    expect(canApproveInline({ group: pr.group, name: pr.name }, { ...pr.args, reviewers: Array(5).fill("reviewer") })).toBe(false);
+    expect(
+      canApproveInline({ group: pr.group, name: pr.name }, { ...pr.args, reviewers: Array(5).fill("reviewer") })
+    ).toBe(false);
     expect(canApproveInline({ group: "ssh", name: "exec" }, SSH_EXEC_ARGUMENTS)).toBe(false);
     expect(canApproveInline({ group: "__proto__", name: "constructor" }, {})).toBe(false);
   });
