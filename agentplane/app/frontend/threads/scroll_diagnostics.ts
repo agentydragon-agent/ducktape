@@ -113,4 +113,4 @@ export class ScrollCapture {
 }
 
 /** One capture across the page: it survives switching between threads. */
-export const scrollCapture = new ScrollCapture();
+export const scrollCapture: ScrollCapture = new ScrollCapture();
