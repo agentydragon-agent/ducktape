@@ -267,14 +267,21 @@ export function Connections({
                     </Table.Td>
                     <Table.Td>
                       {unlinking?.id === row.id ? (
-                        <Group gap="xs" justify="flex-end" wrap="nowrap">
-                          <Button variant="subtle" size="xs" disabled={busy} onClick={() => setUnlinking(null)}>
-                            Cancel
-                          </Button>
-                          <Button color="red" size="xs" loading={busy} onClick={() => void confirmUnlink()}>
-                            Confirm unlink
-                          </Button>
-                        </Group>
+                        <Alert color="orange" title={`Unlink ${row.display_name}?`}>
+                          <Text size="sm">
+                            Revoke this Connection’s active and pending grants. Its name, immutable IDs, and grant
+                            history remain. Already claimed executions are not stopped. Fresh authorization is required
+                            to regain access.
+                          </Text>
+                          <Group mt="xs" justify="flex-end">
+                            <Button variant="subtle" size="xs" disabled={busy} onClick={() => setUnlinking(null)}>
+                              Cancel
+                            </Button>
+                            <Button color="red" size="xs" loading={busy} onClick={() => void confirmUnlink()}>
+                              Confirm unlink
+                            </Button>
+                          </Group>
+                        </Alert>
                       ) : (
                         <Group justify="flex-end">
                           <Button
@@ -304,12 +311,6 @@ export function Connections({
             })}
           </Table.Tbody>
         </Table>
-      )}
-      {unlinking && (
-        <Alert color="orange" title={`Unlink ${unlinking.display_name}?`}>
-          Revoke this Connection’s active and pending grants. Its name, immutable IDs, and grant history remain. Already
-          claimed executions are not stopped. Fresh authorization is required to regain access.
-        </Alert>
       )}
     </Stack>
   );
