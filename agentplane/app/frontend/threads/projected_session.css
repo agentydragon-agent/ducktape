@@ -412,3 +412,15 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Controls belong to the conversation, not a separate region below the timeline. */
+.agentplane-control-command-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.agentplane-control-command-card {
+  max-width: min(85%, 34rem);
+  min-width: 0;
+  background: var(--mantine-color-default-hover);
+}

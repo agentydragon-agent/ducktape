@@ -791,6 +791,38 @@ it("redelivers an unconfirmed command when the browser comes back online", async
   expect(progressLabel(container, "offline")).toContain("Runner accepted · waiting for agent confirmation");
 });
 
+it("moves a local control into chronological history once projected and retains its effected outcome", async () => {
+  const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  new LocalCommands(THREAD.id).remember(
+    create(CommandSchema, {
+      commandId: "inline-model",
+      operation: { case: "changeModel", value: { model: "next-model" } },
+    })
+  );
+  const container = await render();
+  const local = pendingRow(container, "inline-model");
+  expect(local.closest('[aria-label="Thread history"]')).not.toBeNull();
+  expect(local.querySelector('[data-stage="local"]')).not.toBeNull();
+
+  const projected = entity("command", {
+    operation: "change_model",
+    outcome: "effected",
+    outcome_cursor: "2",
+    outcome_reason: null,
+    requested_value: "next-model",
+  }, {});
+  projected.entityId = "inline-model";
+  projected.cursor = "2";
+  await rerender(container, threadState({ rows: [viewState(), projected] }));
+  expect(container.querySelectorAll('[data-command-id="inline-model"]')).toHaveLength(1);
+  const settled = pendingRow(container, "inline-model");
+  expect(settled.closest('[data-thread-anchor="2"]')).not.toBeNull();
+  expect(settled.querySelector(".agentplane-command-check")).not.toBeNull();
+  expect(settled.textContent).toContain("Change model to next-model");
+  expect(new LocalCommands(THREAD.id).getSnapshot().commands).toHaveLength(0);
+  online.mockRestore();
+});
+
 it("shows a server-only pending command as saved, not as a local delivery", async () => {
   const container = await render(
     threadState({
@@ -810,8 +842,9 @@ it("shows a server-only pending command as saved, not as a local delivery", asyn
       ],
     })
   );
-  const pending = container.querySelector('[aria-label="Pending commands"]');
-  expect(pending?.textContent).toContain("Change model to next-model");
+  const pending = pendingRow(container, "test-entity");
+  expect(pending.closest('[aria-label="Thread history"]')).not.toBeNull();
+  expect(pending.textContent).toContain("Change model to next-model");
   expect(pending?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
     "Runner accepted · waiting for model change"
   );
@@ -839,8 +872,9 @@ it("shows the failure and reason for a server-only command", async () => {
       ],
     })
   );
-  const pending = container.querySelector('[aria-label="Pending commands"]');
-  expect(pending?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
+  const pending = pendingRow(container, "test-entity");
+  expect(pending.closest('[aria-label="Thread history"]')).not.toBeNull();
+  expect(pending.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
     "Failed: model unavailable"
   );
   expect(pending?.querySelector('[data-stage="failed"] [data-state="failed"]')).not.toBeNull();

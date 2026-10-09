@@ -945,14 +945,9 @@ function useWindow(): EpochWindow {
   return shown;
 }
 
-/** Keep pending commands and terminal failures visible after reload, including commands from other browsers. */
+/** Keep control commands at their admission cursor, including settled outcomes after reload. */
 function threadRow(row: ThreadEntity): boolean {
-  return (
-    row.entityKind !== "command" ||
-    row.pending ||
-    ("outcome" in row.state &&
-      (row.state.operation === "submit_input" || row.state.outcome === "failed" || row.state.outcome === "noop"))
-  );
+  return row.entityKind !== "command" || row.pending || "outcome" in row.state;
 }
 
 // How many threads a reader can leave and come back to without their windows being read again.

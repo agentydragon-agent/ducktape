@@ -1,4 +1,4 @@
-import { Button, Group, Paper, Stack, Text } from "@mantine/core";
+import { Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
 import { type Command } from "../../../protocol/command_pb";
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
@@ -145,11 +145,13 @@ function CommandOutcome({
 
 export function SelectedCommandOutcomes({
   commands,
+  entities,
   store,
   errors,
   deliver,
 }: {
   commands: LocalCommand[];
+  entities: ThreadEntity[];
   store: LocalCommands;
   errors: ReadonlyMap<string, CommandIssue>;
   deliver: (value: LocalCommand) => Promise<void>;
@@ -157,7 +159,7 @@ export function SelectedCommandOutcomes({
   const controls = commands.filter((value) => value.command.operation.case !== "submitInput");
   const rows = useThreadSync().useCommandRows(controls.slice(0, 128).map((value) => value.command.commandId));
   if (controls.length === 0) return null;
-  return <SelectedCommandRows rows={rows} commands={controls} store={store} errors={errors} deliver={deliver} />;
+  return <SelectedCommandRows rows={rows} entities={entities} commands={controls} store={store} errors={errors} deliver={deliver} />;
 }
 
 /** Keep unadmitted input and input outcomes without confirmed messages at the history tail. */
@@ -268,14 +270,18 @@ export function PendingInputMessages({
   );
 }
 
+/** Locally retained controls have no place in the server timeline until their projected row
+ * arrives. Keep them at the history tail, then let that row take over at its cursor. */
 function SelectedCommandRows({
   rows,
+  entities,
   commands,
   store,
   errors,
   deliver,
 }: {
   rows: ThreadEntity[];
+  entities: ThreadEntity[];
   commands: LocalCommand[];
   store: LocalCommands;
   errors: ReadonlyMap<string, CommandIssue>;
@@ -284,46 +290,29 @@ function SelectedCommandRows({
   useEffect(() => {
     store.observeCommandIds(new Set(rows.map((row) => row.entityId)));
   }, [rows, store]);
-  const byId = new Map(rows.map((row) => [row.entityId, row]));
+  const projectedIds = new Set([...rows, ...entities.filter((row) => row.entityKind === "command")].map((row) => row.entityId));
   return (
-    <Stack role="region" aria-label="Pending commands" gap="xs">
-      {commands.map((value) => {
-        const row = byId.get(value.command.commandId);
-        // Once the server has admitted the command and is still working on it, it has a cursor and
-        // renders inline in history as a pending message bubble instead -- same as any other
-        // pending submitInput command, whether or not this browser is the one tracking it locally.
-        if (row && pendingSentMessage(row)) return null;
-        const admitted = row !== undefined || value.admission !== null;
-        const terminal = row && "outcome" in row.state && ["failed", "noop"].includes(row.state.outcome);
+    <Stack gap="xs">
+      {commands.filter((value) => !projectedIds.has(value.command.commandId)).map((value) => {
         const operation = value.command.operation;
-        const description =
-          operation.case === "changeModel"
-            ? `Change model to ${operation.value.model}`
-            : operation.case === "changeReasoningEffort"
-              ? `Set reasoning effort to ${operation.value.effort}`
-              : operation.case === "interruptTurn"
-                ? `Interrupt turn ${operation.value.turnId}`
-                : "Shut down harness";
+        const admitted = value.admission !== null;
+        const issue = errors.get(value.command.commandId);
         return (
-          <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
+          <ControlCommandFrame key={value.command.commandId} id={value.command.commandId}>
             <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap">
               <Text size="sm" className="agentplane-command-card-description">
-                {description}
+                {operation.case === "changeModel"
+                  ? `Change model to ${operation.value.model}`
+                  : operation.case === "changeReasoningEffort"
+                    ? `Set reasoning effort to ${operation.value.effort}`
+                    : operation.case === "interruptTurn"
+                      ? `Interrupt turn ${operation.value.turnId}`
+                      : "Shut down harness"}
               </Text>
               <CommandOutcome
-                stage={progressStage(
-                  row && "outcome" in row.state ? row.state.outcome : null,
-                  admitted,
-                  errors.get(value.command.commandId)
-                )}
+                stage={progressStage(null, admitted, issue)}
                 subject={subject(operation.case ?? "")}
-                reason={
-                  terminal && row && "outcome" in row.state
-                    ? row.state.outcome_reason
-                    : !admitted
-                      ? errors.get(value.command.commandId)?.message
-                      : undefined
-                }
+                reason={admitted ? undefined : issue?.message}
                 local
                 unsent={!value.attempted}
               />
@@ -337,76 +326,53 @@ function SelectedCommandRows({
                 </Button>
               )}
             </Group>
-            {terminal && row?.inputRef && <Body reference={row.inputRef} format="text" />}
-          </Paper>
+          </ControlCommandFrame>
         );
       })}
     </Stack>
   );
 }
 
-/** Server-side commands this browser did not retain locally, excluding submit-input commands
- * already displayed inline in the ordered history. */
-export function ProjectedCommandRows({
-  threadId,
-  entities,
-  localCommands,
-}: {
-  threadId: string;
-  entities: ThreadEntity[];
-  localCommands: LocalCommand[];
-}): JSX.Element | null {
-  const localCommandIds = new Set(localCommands.map((value) => value.command.commandId));
-  const confirmedCommandIds = new Set(
-    entities
-      .filter((row) => row.entityKind === "confirmed_input")
-      .flatMap((row) => ("origin_command_ids" in row.state ? row.state.origin_command_ids : []))
-  );
-  const projectedCommands = entities.filter(
-    (row): row is ThreadEntity & { state: Extract<ThreadEntity["state"], { outcome: string }> } =>
-      row.entityKind === "command" &&
-      "outcome" in row.state &&
-      !localCommandIds.has(row.entityId) &&
-      !confirmedCommandIds.has(row.entityId) &&
-      !pendingSentMessage(row)
-  );
-  const otherCommands = projectedCommands.filter((row) => row.state.operation !== "submit_input");
-  if (otherCommands.length === 0) return null;
+function ControlCommandFrame({ id, children }: { id: string; children: JSX.Element | JSX.Element[] }): JSX.Element {
   return (
-    <Stack role="region" aria-label="Pending commands" gap="xs" onClick={revealEvidenceOnTap}>
-      {otherCommands.map((row) => (
-        <Paper
-          key={row.entityId}
-          data-command-id={row.entityId}
-          p="xs"
-          withBorder
-          className="agentplane-evidence-owner"
-        >
-          <EvidenceToggle entity={row} />
-          <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap" pr="xl">
-            <Text size="sm" className="agentplane-command-card-description">
-              {row.state.operation === "change_model"
+    <Box className="agentplane-control-command-row" data-command-id={id}>
+      <Paper p="xs" withBorder className="agentplane-control-command-card">
+        {children}
+      </Paper>
+    </Box>
+  );
+}
+
+/** The projected control is a chronological entry, whether pending or settled. */
+export function ProjectedControlCommand({ threadId, row }: { threadId: string; row: ThreadEntity }): JSX.Element | null {
+  if (row.entityKind !== "command" || !("outcome" in row.state) || row.state.operation === "submit_input") return null;
+  return (
+    <ControlCommandFrame id={row.entityId}>
+      <Box className="agentplane-evidence-owner" onClick={revealEvidenceOnTap}>
+        <EvidenceToggle entity={row} />
+        <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap" pr="xl">
+          <Text size="sm" className="agentplane-command-card-description">
+            {row.state.operation === "change_model"
+              ? row.state.requested_value
+                ? `Change model to ${row.state.requested_value}`
+                : "Model change"
+              : row.state.operation === "change_reasoning_effort"
                 ? row.state.requested_value
-                  ? `Change model to ${row.state.requested_value}`
-                  : "Model change"
-                : row.state.operation === "change_reasoning_effort"
-                  ? row.state.requested_value
-                    ? `Set reasoning effort to ${row.state.requested_value}`
-                    : "Reasoning effort change"
-                  : row.state.operation === "interrupt_turn"
-                    ? "Interrupt turn"
-                    : "Shut down harness"}
-            </Text>
-            <CommandOutcome
-              stage={progressStage(row.state.outcome, true)}
-              subject={subject(row.state.operation)}
-              reason={row.state.outcome_reason}
-            />
-          </Group>
-          {row.inputRef && <Body reference={row.inputRef} format="text" />}
-          <EvidencePanel threadId={threadId} entity={row} />
-        </Paper>
-      ))}
-    </Stack>
+                  ? `Set reasoning effort to ${row.state.requested_value}`
+                  : "Reasoning effort change"
+                : row.state.operation === "interrupt_turn"
+                  ? "Interrupt turn"
+                  : "Shut down harness"}
+          </Text>
+          <CommandOutcome
+            stage={progressStage(row.state.outcome, true)}
+            subject={subject(row.state.operation)}
+            reason={row.state.outcome_reason}
+          />
+        </Group>
+        {row.inputRef && <Body reference={row.inputRef} format="text" />}
+        <EvidencePanel threadId={threadId} entity={row} />
+      </Box>
+    </ControlCommandFrame>
   );
 }
