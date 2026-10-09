@@ -1,6 +1,8 @@
-"""Measuring the thread history from a Playwright page: a probe injected before the page loads
-(history_probe.js) and an optional CPU throttle, so that timing-dependent behaviour shows up in
-one run rather than one in thirty."""
+"""Opt-in per-frame thread-history probe and optional browser CPU throttle.
+
+Set AGENTPLANE_HISTORY_PROBE=1 to collect expensive layout diagnostics; the lightweight
+User Timing marks are collected independently by thread_view_marks.js.
+"""
 
 import asyncio
 import json
@@ -17,6 +19,11 @@ logger = logging.getLogger(__name__)
 
 # How many times slower than the machine the page runs, e.g. `--test_env=AGENTPLANE_CPU_THROTTLE=4`.
 _THROTTLE_ENV = "AGENTPLANE_CPU_THROTTLE"
+
+
+def enabled() -> bool:
+    """Collect expensive per-frame diagnostics only for explicit investigations."""
+    return os.environ.get("AGENTPLANE_HISTORY_PROBE") == "1"
 
 
 def script_path() -> Path:
