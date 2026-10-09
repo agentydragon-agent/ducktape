@@ -28,7 +28,7 @@ from agentplane.runner.harness import Harness
 async def test_thread_list_model_activity_ignores_long_tool_and_replays(
     store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
 ) -> None:
-    thread = await event_logs.open("sb-activity", "session-activity", SPEC)
+    thread = await event_logs.open("sb-1", "session-activity", SPEC)
     first = [
         event_entry(1, turn_started=event_pb2.TurnStarted(turn_id="turn", model=SPEC.model)),
         event_entry(2, item_started=event_pb2.ItemStarted(item_id="call", kind=event_pb2.ITEM_KIND_TOOL_CALL)),

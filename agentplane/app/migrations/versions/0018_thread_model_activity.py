@@ -5,7 +5,6 @@ appearing unknown until their next model output; future events update the projec
 in the same ingestion transaction as the fold.
 """
 
-import sqlalchemy as sa
 from alembic import op
 
 revision = "0018_thread_model_activity"
@@ -15,7 +14,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("event_log", sa.Column("last_model_activity_at", sa.DateTime(timezone=True), nullable=True))
+    # Earlier-migration replay tests can stamp an older head on an otherwise current schema.
+    op.execute("ALTER TABLE event_log ADD COLUMN IF NOT EXISTS last_model_activity_at timestamptz")
     op.execute(
         """
         UPDATE event_log AS log SET last_model_activity_at = latest.at

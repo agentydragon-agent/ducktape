@@ -171,8 +171,5 @@ py_library(
 py_library(
     name = "0018_thread_model_activity",
     srcs = ["0018_thread_model_activity.py"],
-    deps = [
-        "@pypi//alembic",
-        "@pypi//sqlalchemy",
-    ],
+    deps = ["@pypi//alembic"],
 )
