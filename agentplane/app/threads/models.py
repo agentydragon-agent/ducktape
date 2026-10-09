@@ -29,6 +29,9 @@ class EventLog(Base):
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     sandbox: Mapped[str] = mapped_column(Text)
+    # Durable per-Thread handoff barrier, independent of replaceable sandbox leases.
+    # NULL: runner-backed app ingestion; otherwise the immutable final app raw cursor.
+    raw_ingestion_fenced_at_cursor: Mapped[int | None] = mapped_column(BigInteger)
     session_id: Mapped[str] = mapped_column(Text)
     harness: Mapped[Harness] = mapped_column(
         SqlEnum(

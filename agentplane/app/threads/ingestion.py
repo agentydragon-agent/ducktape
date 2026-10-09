@@ -15,8 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events import event_log, ingestion_lease
-from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, FeedError
+from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, FeedError, RunnerSession
 from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
+from agentplane.app.threads.history_projector import HistoryProjector
 from agentplane.app.threads.sessions import SandboxNotReachableError, SandboxSessions
 from agentplane.app.threads.view import fold
 from agentplane.app.threads.view.recording import ThreadFoldError, record_thread_fold, set_operational
@@ -258,8 +259,16 @@ class Ingester:
     """Copies the runner sessions of every running sandbox into the event log: one lease per sandbox
     across app replicas, and one `Feed` per session under it."""
 
-    def __init__(self, *, runners: SandboxSessions, event_logs: EventLogStore, ingestion: Ingestion) -> None:
+    def __init__(
+        self,
+        *,
+        runners: SandboxSessions,
+        event_logs: EventLogStore,
+        ingestion: Ingestion,
+        history_projector: HistoryProjector | None = None,
+    ) -> None:
         self._runners = runners
+        self._history_projector = history_projector
         self._event_logs = event_logs
         self._ingestion = ingestion
         self._feeds: dict[tuple[str, str], Feed] = {}
@@ -291,14 +300,17 @@ class Ingester:
     async def reconcile(self) -> None:
         """Renew ownership of the running sandboxes and discover sessions opened through any replica."""
         async with self._reconcile_lock:
-            running = self._runners.running()
+            running = set(self._runners.running())
+            fenced = await self._event_logs.fenced_sessions()
+            if self._history_projector is not None:
+                running.update(locator.sandbox for locator in fenced.values())
             for sandbox in set(self._leases) - running:
                 await self._release(sandbox)
             async with asyncio.TaskGroup() as tasks:
                 for sandbox in sorted(running):
-                    tasks.create_task(self._reconcile_sandbox(sandbox))
+                    tasks.create_task(self._reconcile_sandbox(sandbox, fenced))
 
-    async def _reconcile_sandbox(self, sandbox: str) -> None:
+    async def _reconcile_sandbox(self, sandbox: str, fenced: dict[UUID, RunnerSession]) -> None:
         try:
             async with asyncio.timeout(10):
                 lease = self._leases.get(sandbox)
@@ -310,6 +322,19 @@ class Ingester:
                     if lease is None:
                         return
                     self._leases[sandbox] = lease
+                # Stop this replica's obsolete feed before projection. The DB fence
+                # also rejects delayed writes from old replicas and renewed leases.
+                selected = {thread: locator for thread, locator in fenced.items() if locator.sandbox == sandbox}
+                for locator in selected.values():
+                    feed = self._feeds.pop((sandbox, locator.session_id), None)
+                    if feed is not None:
+                        await feed.close()
+                if self._history_projector is not None:
+                    async with asyncio.TaskGroup() as tasks:
+                        for thread_id in selected:
+                            tasks.create_task(self._project_history(thread_id, lease))
+                if sandbox not in self._runners.running():
+                    return
                 try:
                     async with asyncio.timeout(5):
                         client = self._runners.client(sandbox)
@@ -322,6 +347,8 @@ class Ingester:
                                 continue
                             await feed.close()
                         thread_id = await self._event_logs.open(sandbox, summary.session_id, summary.spec)
+                        if thread_id in fenced:
+                            continue
                         snapshot = await self._event_logs.feed_state(thread_id)
                         # A semantic replay failure is durable evidence that this runner's prefix is
                         # unsafe. A new coordinator or app replica must not call set_attached() and
@@ -355,6 +382,27 @@ class Ingester:
                     logger.warning("sandbox %s ingestion discovery unavailable", sandbox, exc_info=True)
         except SQLAlchemyError, OSError, TimeoutError:
             logger.warning("sandbox %s ingestion reconciliation failed; will retry", sandbox, exc_info=True)
+
+    async def _project_history(self, thread_id: UUID, lease: IngestionLease) -> None:
+        assert self._history_projector is not None
+        try:
+            progress = await self._history_projector.project_batch(thread_id, lease=lease)
+            logger.debug(
+                "service projection %s: through=%s service=%s",
+                thread_id,
+                progress.through_cursor,
+                progress.service_cursor,
+            )
+        except (
+            EventReplicationError,
+            IngestionLeaseLostError,
+            SQLAlchemyError,
+            grpc.aio.AioRpcError,
+            ConnectionError,
+            ValueError,
+        ):
+            # One failed UI fold must not stop other Threads or the service archive.
+            logger.warning("service projection stalled for %s; checkpoint retained", thread_id, exc_info=True)
 
     async def _release(self, sandbox: str) -> None:
         for key in [key for key in self._feeds if key[0] == sandbox]:

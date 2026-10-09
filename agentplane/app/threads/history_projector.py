@@ -1,4 +1,4 @@
-"""Bounded service-history projection primitive; deliberately not wired into app startup.
+"""Bounded service-history projection; startup scheduling is disabled by default.
 
 The rollout must fence runner-backed ingestion before scheduling this worker. Reuse the
 app lease and existing UI checkpoint; never acquire runner storage or copy raw Event rows.
@@ -14,7 +14,7 @@ from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events import ingestion_lease
 from agentplane.app.threads.events.event_log import EventReplicationError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
-from agentplane.app.threads.models import ThreadCheckpoint
+from agentplane.app.threads.models import EventLog, ThreadCheckpoint
 from agentplane.app.threads.view.recording import record_thread_fold
 from agentplane.sandbox_service.client import SandboxServiceClient
 
@@ -42,9 +42,14 @@ class HistoryProjector:
                 )
                 or 0
             )
+            barrier = await session.scalar(
+                select(EventLog.raw_ingestion_fenced_at_cursor).where(EventLog.id == thread_id)
+            )
+        if barrier is None:
+            raise EventReplicationError("app raw writer must be fenced before service projection")
         page = await self._reader.read_session_events(str(thread_id), after_cursor=after, limit=128)
-        if page.last_cursor < after:
-            raise ConnectionError("Sandbox Service has not covered the projection checkpoint")
+        if page.last_cursor < max(after, barrier):
+            raise ConnectionError("Sandbox Service has not covered the final raw cursor and projection checkpoint")
         if len(page.entries) > 128 or any(
             entry.cursor != after + index + 1
             or entry.cursor > page.last_cursor
@@ -59,6 +64,11 @@ class HistoryProjector:
             # Serializes with other writes under this sandbox lease, including a
             # delayed batch from an old owner. Do not hold the fence over the RPC.
             await ingestion_lease.fence(session, lease, thread_id)
+            persisted_barrier = await session.scalar(
+                select(EventLog.raw_ingestion_fenced_at_cursor).where(EventLog.id == thread_id)
+            )
+            if persisted_barrier != barrier:
+                raise EventReplicationError("raw ingestion fence changed during projection fetch")
             current = (
                 await session.scalar(
                     select(ThreadCheckpoint.through_cursor).where(ThreadCheckpoint.thread_id == thread_id)

@@ -36,6 +36,7 @@ from agentplane.app.settings import Settings
 from agentplane.app.shutdown import Drain, drain_of
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.history_projector import HistoryProjector
 from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
@@ -160,7 +161,12 @@ async def async_main(settings: Settings) -> None:
         event_logs = EventLogStore(engine, history_reader=inventory if settings.history_reads_enabled else None)
         content = ContentStore(engine)
         runners = SandboxSessions(live, inventory)
-        ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine))
+        ingester = Ingester(
+            runners=runners,
+            event_logs=event_logs,
+            ingestion=Ingestion(engine),
+            history_projector=HistoryProjector(engine, inventory) if settings.history_projection_enabled else None,
+        )
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
 
         operator_actions = (

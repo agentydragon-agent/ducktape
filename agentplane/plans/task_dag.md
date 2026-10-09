@@ -97,8 +97,8 @@ actual migration. An incomplete source prefix or unresolved legacy locator is a 
 the app's opt-in history switch. Check raw paging, stream resume, old native evidence and denial to
 non-authorized service accounts. Lag must remain explicit, not fall back to stale app rows. This
 read-only step does not establish sole write ownership or permit deleting app tables. The draft reader captures a service watermark instead of chasing the app raw cursor; its
-projection primitive resumes the existing UI checkpoint without copying raw Events. Source fencing,
-supervisor wiring, metadata/lifecycle handoff and end-to-end interruption tests remain rollout gates;
+projection primitive resumes the existing UI checkpoint without copying raw Events. The draft also adds a durable per-Thread raw fence and a default-off supervisor using existing
+leases; metadata/lifecycle handoff, UI lag/error reporting and end-to-end interruption tests remain gates;
 see the [handoff primitives](session_history_read_cutover.md#draft-app-consumer-handoff-primitives-not-a-rollout-switch).
 
 ### `THREAD_ARCHIVE_UI_CUTOVER` — app becomes an archive consumer

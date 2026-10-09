@@ -146,6 +146,16 @@ class EventLogStore:
                 or 0
             )
 
+    async def fenced_sessions(self) -> dict[UUID, RunnerSession]:
+        """Retained Threads to project, including those whose Sandbox no longer exists."""
+        async with self._sessions() as session:
+            rows = await session.execute(
+                select(EventLog.id, EventLog.sandbox, EventLog.session_id).where(
+                    EventLog.raw_ingestion_fenced_at_cursor.is_not(None)
+                )
+            )
+            return {row.id: RunnerSession(row.sandbox, row.session_id) for row in rows}
+
     async def read_watermark(self, thread_id: UUID) -> int:
         """Return the selected archive's committed cursor, not the UI projection's cursor."""
         local = await self.last_cursor(thread_id)

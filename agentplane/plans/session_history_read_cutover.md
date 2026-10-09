@@ -46,18 +46,22 @@ The draft adds a service-watermark-bounded raw reader and `HistoryProjector.proj
 The projector resumes the existing `ThreadCheckpoint`, folds at most 128 service Events under
 an app ingestion lease, and advances UI state/checkpoint atomically without writing app `Event`
 rows. Replays resume from the committed UI position; fold failures leave the checkpoint unchanged
-and cannot block the independent service raw ingester. It is deliberately not scheduled by app
-startup. No configuration default or deployed flag changes in this draft.
+and cannot block the independent service raw ingester. The existing app lease coordinator can now schedule it with the default-off
+`history_projection_enabled` setting, including retained Threads whose Sandbox is gone. It never
+fences on startup. No deployed flag changes in this draft.
 
 Before wiring or enabling it:
 
-1. Implement a durable ingestion-source fence that mixed-version app replicas honor. The existing
-   sandbox lease fences individual batches but does not by itself prevent an old replica from
-   reacquiring a lease and resuming runner-backed ingestion. Capture the final app raw cursor under
-   that fence; wait until the service covers it before releasing the service-backed consumer.
-2. Add the resumable supervisor, retry/error/lag reporting and discovery for all retained Threads,
-   including deleted Sandboxes. It must work with runners unreachable. Do not make a fresh runner
-   attachment a prerequisite for archive projection.
+1. Review/test the new per-Thread durable fence. `fence_raw_ingestion` locks the Thread mapping,
+   drains in-flight app raw/feed-state writes, and records their final cursor. Database triggers
+   reject later legacy writes even after a lease is reacquired by an old binary. This adds a
+   nullable metadata column and triggers only; no automatic fence/data rewrite. Downgrade refuses
+   to remove an active fence. The projector waits for service coverage of that final raw cursor.
+2. Validate the default-off supervisor under owner takeover and mixed replicas. It shares the
+   existing sandbox lease coordinator rather than competing for a second lease, discovers fenced
+   retained Threads independently of live runner discovery, and retries from their UI checkpoints.
+   Fold failures are logged and isolated per Thread; durable UI lag/error presentation is still
+   needed. Existing raw feed tasks are stopped for fenced Threads, not for their unfenced siblings.
 3. Move chronological observation metadata and Thread/feed cursors/lifecycle away from app raw
    `Event` rows. Preserve UI checkpoint/source/epoch and existing Thread URLs. The raw SSE path now
    waits for a terminal app suffix instead of spinning or prematurely ending while service lags;
