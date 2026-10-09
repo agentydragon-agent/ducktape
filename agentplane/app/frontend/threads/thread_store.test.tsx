@@ -481,7 +481,9 @@ it("keeps a failed settings command in the shared window after a different brows
     </Shown>
   );
   await vi.waitFor(() =>
-    expect(container.querySelector('[data-testid="projected-commands"]')?.textContent).toBe("model-from-another-browser")
+    expect(container.querySelector('[data-testid="projected-commands"]')?.textContent).toBe(
+      "model-from-another-browser"
+    )
   );
 });
 
