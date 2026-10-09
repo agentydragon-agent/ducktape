@@ -402,6 +402,7 @@ def chart(app: App) -> Chart:
         name="runner-ducktape",
         image="git.allegedly.works/ducktape-ci/runner-ducktape",
         buildbuddy_secret=True,
+        extra_harness_env=("BBR_BUILDBUDDY_API_KEY_FILE",),
         description=(
             "Public ducktape development: the runner and harnesses plus the repository's shared "
             "bb/bbr, Bazelisk, pre-commit, formatters and Gazelle. Same container isolation and "

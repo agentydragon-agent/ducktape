@@ -31,7 +31,7 @@ def test_ducktape_pr_instructions_are_shared_once() -> None:
 
 
 def test_ducktape_preset_clones_and_installs_hooks_without_direnv() -> None:
-    cfg = config()
+    cfg = staging.ENV.app_config
     script = cfg.thread_presets["public-coder-ducktape-codex"].setup_script
     assert "git clone --depth 1 --branch devel --single-branch" in script
     assert "https://github.com/agentydragon/ducktape.git ." in script

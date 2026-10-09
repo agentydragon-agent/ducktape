@@ -8,10 +8,9 @@ workaround is still open.
 ## Staging-only direct-key stopgap
 
 The staging `runner-ducktape` template projects the existing canonical BuildBuddy key through
-ESO into its **workload container only**. `bbr` reads the projected file immediately before
-starting `bb remote` and passes the value in the child process environment; a dry run does
-not read it. The existing BuildBuddy egress policy still limits the sandbox's destination
-hosts. This does **not** keep the key secret from agent-controlled sandbox code or the
+ESO into its **workload container only**. It exposes the file path to the harness but
+does not change `bbr` itself; consuming the key from that file is a separate change.
+The existing BuildBuddy egress policy still limits the sandbox's destination hosts. This does **not** keep the key secret from agent-controlled sandbox code or the
 BuildBuddy-hosted runner: `bb remote` embeds it in the hosted Bazel command. It must not be
 represented as credential isolation, and the generic runner and egress sidecar do not mount
 it. Revoking the canonical key affects all its consumers; this change does not introduce

@@ -10,6 +10,7 @@ resource in the Kustomization, so image-pins/ covers them too.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import cast
 from urllib.parse import urlsplit
 
@@ -468,10 +469,12 @@ class RunnerTemplate(Construct):
         image: str,
         description: str,
         buildbuddy_secret: bool = False,
+        extra_harness_env: Sequence[str] = (),
     ) -> None:
         super().__init__(scope, id)
         self.env = env
         self.buildbuddy_secret = buildbuddy_secret
+        self.extra_harness_env = extra_harness_env
         self._add_sandbox_template(name=name, image=image, description=description)
 
     def _runner_container(self, image: str) -> SandboxTemplateSpecPodTemplateSpecContainers:
@@ -488,7 +491,13 @@ class RunnerTemplate(Construct):
         # repeating a value the deployment has no business choosing.
         harness_env = list(
             dict.fromkeys(
-                ["HOME", "PATH", *self.env.sandbox_workload_env, *(var.name for var in sandbox_pod.egress_env())]
+                [
+                    "HOME",
+                    "PATH",
+                    *self.env.sandbox_workload_env,
+                    *(var.name for var in sandbox_pod.egress_env()),
+                    *self.extra_harness_env,
+                ]
             )
         )
         args = [
@@ -508,8 +517,6 @@ class RunnerTemplate(Construct):
         ]
         for entry in harness_env:
             args.extend(["--harness-env", entry])
-        if self.buildbuddy_secret:
-            args.extend(["--harness-env", "BBR_BUILDBUDDY_API_KEY_FILE"])
         for name in self.env.harness_inherited_env:
             args.extend(["--harness-inherit-env", name])
         return SandboxTemplateSpecPodTemplateSpecContainers(
