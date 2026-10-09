@@ -55,13 +55,20 @@ mutations. A `read` grant does not imply eventual `send` or `create` authority.
 
 ## Sandbox trust boundary
 
-Sessions in one Sandbox share its filesystem, ServiceAccount, working directories and
-potentially secrets. A filtered history API cannot claim to isolate two co-resident
-Sessions of different compartments. Assign a Sandbox trust domain before opening its
+The Sandbox is the security isolation boundary; it is not a choice left open by this
+scoped-read proposal. Sessions in one Sandbox share its filesystem, ServiceAccount,
+working directories and potentially secrets. Do not assume co-resident Sessions can
+be kept separate, regardless of compartment labels or filtered history APIs. Work
+requiring incompatible trust or credentials must use separate Sandboxes. A finer
+boundary would need a separately designed and reviewed isolation mechanism inside
+the Sandbox, which is not planned here.
+
+For this proposed scoped-read policy, assign a Sandbox trust domain before opening its
 first classified Session and refuse incompatible Opens from _any_ caller, including
 direct Sandbox Service users and races on different service replicas. A Sandbox may
 contain multiple Sessions within that domain, but matching compartments alone do not
 prove that differently privileged work can safely share credentials or files.
+Classification limits external history reads; it does not confer intra-Sandbox isolation.
 
 Do not expose scoped SA reads as a confidentiality guarantee until the admission
 boundary is enforced. Existing mixed or unknown co-resident Sessions remain

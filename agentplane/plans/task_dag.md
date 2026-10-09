@@ -33,7 +33,7 @@ authorize notification metadata work. Keep the exception here and in component p
 
 **Next useful parallel work:** prepare the command-admission/outbound-channel contracts and operator-reviewable
 multiagent/read-policy decisions. The previously requested scoped-read design remains useful now;
-its implementation waits for the archive and trust-boundary decisions. No new multiagent transport,
+its implementation waits for the archive and trust-boundary enforcement. No new multiagent transport,
 native-subagent integration, offline command queue, or extra worker service is selected here.
 
 States: **in flight** means reported work is underway; **decision** needs a reviewed outcome;
@@ -355,8 +355,7 @@ APIs. Do not equate creating a resource, reading history, sending a message or r
 flowchart TD
     MULTIAGENT_MODEL[Decision: identities, relationships and native-child boundary]
     THREAD_READ_POLICY_DESIGN[Decision: history read grants]
-    SANDBOX_COMPARTMENT_DESIGN[Decision: co-resident trust domains]
-    SANDBOX_COMPARTMENT_BOUNDARY[Blocked: enforce selected trust boundary]
+    SANDBOX_COMPARTMENT_BOUNDARY[Blocked: enforce Sandbox placement boundary]
     THREAD_ARCHIVE_OWNERSHIP[Archive ownership cutover]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     AGENT_MESSAGING_DESIGN[Decision: send/receive RBAC and inbox vs direct delivery]
@@ -368,11 +367,10 @@ flowchart TD
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
     MULTIAGENT_MODEL --> THREAD_READ_POLICY_DESIGN
-    MULTIAGENT_MODEL --> SANDBOX_COMPARTMENT_DESIGN
     MULTIAGENT_MODEL --> AGENT_MESSAGING_DESIGN
     MULTIAGENT_MODEL --> THREAD_CREATE_POLICY
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
-    SANDBOX_COMPARTMENT_DESIGN --> SANDBOX_COMPARTMENT_BOUNDARY
+    THREAD_READ_POLICY_DESIGN --> SANDBOX_COMPARTMENT_BOUNDARY
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
     SANDBOX_COMPARTMENT_BOUNDARY --> THREAD_READ_POLICY
     THREAD_ARCHIVE_OWNERSHIP --> THREAD_READ_POLICY
@@ -394,30 +392,30 @@ flowchart TD
 Sandboxes and Sessions, with creator, manager and parent/provenance represented separately. Ask
 the operator to choose addressing/ownership and delegation semantics. No permission inheritance
 from an organizational edge or preset. Review how native harness children could later be ingested:
-linked execution in the same trust domain versus independently provisioned agents, addressability,
-observability and which controls must remain unavailable. Native integration itself stays frozen;
-this decision must allow explicit exclusion rather than require its implementation.
+linked execution in the same Sandbox trust boundary versus independently provisioned Sandboxes,
+addressability, observability and which controls must remain unavailable. Native integration itself
+stays frozen; this decision must allow explicit exclusion rather than require its implementation.
 
 ### `THREAD_READ_POLICY_DESIGN` — scoped history read policy
 
 **Decision; draft in parallel with the shared model.** Review compartments versus exact-session
 grants, who classifies/reclassifies histories and grants/revokes access, and caller replacement
-semantics. Defaults expose no existing histories to workloads. Select raw read/list/follow scope;
-read does not imply send/create, and no folded-read API is required for v1. Decide how revocation
+semantics. Neither grant model isolates Sessions sharing a Sandbox (see the
+[isolation boundary](../docs/thread_layering.md#sandbox-isolation-boundary)). Defaults expose
+no existing histories to workloads. Select raw read/list/follow scope; read does not imply
+send/create, and no folded-read API is required for v1. Decide how revocation
 applies to live feeds, discovery and linked evidence. Do not block this on a messaging transport.
 
-### `SANDBOX_COMPARTMENT_DESIGN` — co-residency rule
+### `SANDBOX_COMPARTMENT_BOUNDARY` — enforce Sandbox placement boundary
 
-**Decision.** Choose how a Sandbox's filesystem, credentials and shared ServiceAccount constrain
-session compartments. Review whether incompatible sessions are prohibited from co-residing and
-who may assign or change that scope. An archive ACL cannot isolate co-resident processes.
-
-### `SANDBOX_COMPARTMENT_BOUNDARY` — enforce the selected boundary
-
-**Blocked on the co-residency decision; new tables also wait for archive ownership.** Apply the
-rule at Open, adoption and replacement; reject incompatible placement. Test shared filesystem/SA
-cases and denied placements. Keep VM isolation a separate capability, not a fictional fix for
-shared credentials inside one VM.
+**Blocked on the reviewed scoped-read policy; new tables also wait for archive ownership.**
+The Sandbox is the security isolation boundary: co-resident Sessions share filesystem, credentials,
+and ServiceAccount authority, regardless of archive-read classifications. Enforce compatible
+placement for any proposed scoped-read policy at Open, adoption and replacement, rejecting
+placements whose claimed isolation depends on separating co-resident Sessions. Test shared
+filesystem/SA cases and denied placements. Keep VM isolation a separate capability, not a
+fictional fix for shared credentials inside one VM. See the
+[Sandbox boundary](../docs/thread_layering.md#sandbox-isolation-boundary).
 
 ### `THREAD_READ_POLICY` — authorized retained-history access
 
@@ -464,8 +462,10 @@ multi-replica retry cases belong in automated tests; no real provider outage req
 
 **Decision.** Review caller scope to open in an existing Sandbox, accepted defaults, quotas,
 creator visibility and revocation. Use the service-reserved Session identity, not a caller-invented
-public UUID. Decide whether launch-and-open is a composition of separate grants, never an implicit
-read/send/launch permission. This contract need not choose a durable offline command queue.
+public UUID. Opening in an existing Sandbox grants no isolation from its other Sessions; require a
+separate Sandbox when incompatible trust or credentials are needed. Decide whether launch-and-open
+is a composition of separate grants, never an implicit read/send/launch permission. This contract
+need not choose a durable offline command queue.
 
 ### `THREAD_CREATE_AUTHORIZATION` — implement session-create grants
 
@@ -475,7 +475,8 @@ lookup at the service boundary; test forbidden targets/overrides and a lost crea
 ### `AGENT_LAUNCH_POLICY_DESIGN` — Sandbox launch and delegation policy
 
 **Decision.** Review which callers can use which templates and resource budgets, mounts, images,
-secrets, egress and Kubernetes/Action grants; presets are defaults, not authority. Define manager,
+secrets, egress and Kubernetes/Action grants; presets are defaults, not authority. A new Sandbox is
+required for an independent isolation boundary; adding a Session within one is not. Define manager,
 lifetime, parent termination, quota/fanout and revocation without automatic privilege inheritance.
 Choose policy ownership and audit records before adding tables. State separately whether the
 operation also opens a session; if so, depend on `THREAD_CREATE_AUTHORIZATION` for that composition.
