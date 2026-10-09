@@ -521,8 +521,15 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
                 paths=["/v1/**"],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="aiquota-read"),
             ),
-            # The public Gateway returned 502 from the sandbox; use the same read
-            # bearer over the cluster Service rather than widening API authority.
+            # A second route over the cluster Service, beside the public one, because the public
+            # Gateway leg intermittently loses connections to this API's pod in the other region -- a
+            # flat-5.0 s `503 ... connection timeout`. Bursty, not a steady rate: 3 in its first 40
+            # reads today, none in the 180 after. Budget a couple of retries; trust no fixed rate.
+            # Two spelling traps, both re-verified 2026-10-09: the rule matches the host string
+            # exactly, so the short `aiquota-api.cli-proxy-api` is refused `no-rule`; and the bare
+            # FQDN dials port 80, which this backend's Cilium grant (8080 only) does not admit, so it
+            # blackholes into a client timeout rather than refusing. Spell it
+            # `aiquota-api.cli-proxy-api.svc.cluster.local:8080`.
             EgressPolicySpecRules(
                 hosts=[AIQUOTA_SERVICE.fqdn],
                 cluster_internal=True,
