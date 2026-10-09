@@ -31,7 +31,7 @@ from agentplane.action_service.db import (
     ActionNotFoundError,
     ActionStore,
     ConnectionGrantRow,
-    ConnectionRebindRow,
+    ConnectionBindingChangeRow,
     ConnectionRow,
     make_sessionmaker,
 )
@@ -131,7 +131,7 @@ async def test_rebind_keeps_token_and_history_but_not_old_pending_action_authori
         assert stored is not None
         assert stored.caller == OTHER.model_dump(mode="json")  # Legacy replicas resolve the current SA.
         assert stored.original_caller == PERSONAL.model_dump(mode="json")
-        log = list(await db.scalars(select(ConnectionRebindRow)))
+        log = list(await db.scalars(select(ConnectionBindingChangeRow)))
         assert len(log) == 1
         assert (log[0].operator_issuer, log[0].operator_subject) == (operator.issuer, operator.subject)
         assert log[0].previous_caller == PERSONAL.model_dump(mode="json")
