@@ -407,6 +407,14 @@ choice. Unlink instead revokes active/pending authority without deleting history
 already claimed executions. An ineligible current account is flagged separately from the grant's
 lifecycle status. The tab does not offer renaming a Connection.
 
+Each current account has a **View grants** disclosure, reusing the Sandbox egress and Action-policy
+renderers. The operator-only `GET /caller-grants/{namespace}/{name}` composes existing account-scoped
+CR views and the Action Service's effective-policy answer; no Sandbox, Connection record or active
+caller-admission label is required for that read. The UI is a manually refreshable snapshot, not a
+watch. Missing references, expiry and unsynced/unavailable Action policy stay visible; an unavailable
+Action Service does not hide egress bindings. The disclosure is read-only and does not calculate
+arbitrary Kubernetes RBAC. Existing Sandbox grant editing and live updates are unchanged.
+
 The BFF proxies `GET /connections[/{id}]`, `PATCH /connections/{id}`,
 `POST /connections/{id}/rebind`, `POST /connections/{id}/unbind`, and
 `GET /connection-service-accounts` through the same request-bound

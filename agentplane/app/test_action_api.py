@@ -54,7 +54,7 @@ from agentplane.app.action_policy import (
     ActionPolicyView,
     BindingProvenance,
 )
-from agentplane.app.api import create_app
+from agentplane.app.api import CallerGrantView, create_app
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.consent import ConsentAllow
 from agentplane.app.database import connect
@@ -74,7 +74,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, sandbox
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, egress_binding, sandbox
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     WorkloadPrincipal,
@@ -541,6 +541,45 @@ async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_account_o
         )
         assert [(p.binding, p.policy_set, p.index) for p in view.auto_approve_if] == [("live-launch", "test-reads", 0)]
     assert as_agent.action_policy == ActionPolicyUnavailable(code="operator_session_required")
+
+
+@pytest.mark.parametrize("operator_connection", ["configured", "disabled"])
+async def test_caller_grants_without_a_sandbox(
+    review: Review, custom_objects: FakeCustomObjectsApi, operator_connection: str
+) -> None:
+    _bind_live_sandbox(review.policies)
+    for namespace, name in ((NAMESPACE, "external"), ("other-namespace", "unrelated")):
+        custom_objects.objects[("egressbindings", name)] = egress_binding(
+            name,
+            subjects=[{"namespace": namespace, "name": "live"}],
+            policies=["missing-policy"],
+            expires_at="2000-01-01T00:00:00Z",
+        )
+    # No Sandbox, OAuth Connection or caller-admission label is needed to inspect bindings.
+    assert not any(kind == "sandboxes" for kind, _ in custom_objects.objects)
+    await review.browser.get("/auth/login")
+    response = await review.browser.get(f"/caller-grants/{NAMESPACE}/live")
+    assert response.status_code == 200
+    view = CallerGrantView.model_validate(response.json())
+    assert [binding.name for binding in view.egress_bindings] == ["external"]
+    assert view.egress_bindings[0].missing_policies == ["missing-policy"]
+    assert view.egress_bindings[0].expires_at == datetime(2000, 1, 1, tzinfo=UTC)
+    if operator_connection == "disabled":
+        assert view.action_policy == ActionPolicyUnavailable(code="operator_federation_not_configured")
+    else:
+        assert isinstance(view.action_policy, ActionPolicyView)
+        assert [binding.name for binding in view.action_policy.bindings] == ["live-launch"]
+        assert view.action_policy.bindings[0].missing_policy_sets == ["gone"]
+    other = await review.browser.get("/caller-grants/other-namespace/live")
+    other.raise_for_status()
+    assert [binding["name"] for binding in other.json()["egress_bindings"]] == ["unrelated"]
+
+
+async def test_caller_grants_require_an_operator_session(review: Review) -> None:
+    async with _served(review.app) as url, httpx.AsyncClient(base_url=url) as client:
+        path = f"/caller-grants/{NAMESPACE}/live"
+        assert (await client.get(path)).status_code == 401
+        assert (await client.get(path, headers=AGENT_AUTH)).status_code == 403
 
 
 @pytest.mark.parametrize("operator_connection", ["disabled", "target-subject-mismatch", "wrong-audience"])

@@ -217,6 +217,25 @@ async def test_sandbox_status_raw_switches(view: VisualPage, app: AgentplaneFixt
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_external_caller_grants(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/")
+    page = view.page
+    if page.viewport_size and page.viewport_size["width"] < 600:
+        await page.get_by_role("button", name="Toggle navigation").click()
+    await page.get_by_role("button", name="Settings").click()
+    await page.get_by_role("button", name="View grants", exact=True).first.click()
+    grants = page.get_by_role("region", name="Grants for agentplane-test/personal")
+    await expect(grants.get_by_role("heading", name="Egress", exact=True)).to_be_visible()
+    await expect(grants.get_by_role("heading", name="Action policy", exact=True)).to_be_visible()
+    await expect(grants.get_by_role("button", name="Refresh grants")).to_be_visible()
+    await expect(grants.get_by_role("button", name="Revoke", exact=True)).to_have_count(0)
+    await expect(grants.get_by_role("button", name="Rules", exact=True).first).to_be_visible()
+    await grants.get_by_role("button", name="Rules", exact=True).first.click()
+    assert await page.locator(".mantine-Modal-content").evaluate("el => el.scrollWidth <= el.clientWidth")
+    await view.capture(target=page.locator(".mantine-Modal-content"))
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_connections_settings_modal_connections(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     await view.check(context="fixture ready")

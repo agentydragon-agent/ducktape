@@ -175,6 +175,18 @@ export class ConnectionRequestError extends Error {
   }
 }
 
+export type CallerGrantView = components["schemas"]["CallerGrantView"];
+export type CallerGrantReader = (account: CallerServiceAccount, signal: AbortSignal) => Promise<CallerGrantView>;
+
+export const readCallerGrants: CallerGrantReader = async (account, signal) => {
+  const { data, error } = await api.GET("/caller-grants/{namespace}/{name}", {
+    params: { path: account },
+    signal,
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+};
+
 export interface ConnectionService {
   list(): Promise<Connection[]>;
   callerServiceAccounts(): Promise<CallerServiceAccount[]>;

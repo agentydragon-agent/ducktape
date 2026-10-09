@@ -1,7 +1,7 @@
 import { Alert, Button, Group, Select, Stack, Table, Text } from "@mantine/core";
 import "./connections.css";
 import { followStream, type StreamConnection } from "../live_stream";
-import { type JSX, useCallback, useEffect, useState } from "react";
+import { Fragment, type JSX, useCallback, useEffect, useState } from "react";
 
 import {
   ConnectionRequestError,
@@ -10,9 +10,13 @@ import {
   isEligibleCaller,
   serviceAccountKey,
   type CallerServiceAccount,
+  type CallerGrantReader,
+  readCallerGrants,
   type Connection,
   type ConnectionService,
 } from "../client";
+
+import { CallerGrants } from "../caller_grants";
 
 type Grant = Connection["grants"][number];
 
@@ -24,7 +28,14 @@ function currentGrant(connection: Connection): Grant | undefined {
   );
 }
 
-export function Connections({ service = connectionService }: { service?: ConnectionService }): JSX.Element {
+export function Connections({
+  service = connectionService,
+  readGrants = readCallerGrants,
+}: {
+  service?: ConnectionService;
+  readGrants?: CallerGrantReader;
+}): JSX.Element {
+  const [expandedGrants, setExpandedGrants] = useState<string | null>(null);
   const [rows, setRows] = useState<Connection[]>([]);
   const [accounts, setAccounts] = useState<CallerServiceAccount[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -166,7 +177,8 @@ export function Connections({ service = connectionService }: { service?: Connect
               const currentKey = currentCaller ? serviceAccountKey(currentCaller) : null;
               const selected = rebinding?.row.id === row.id ? rebinding.target : currentKey;
               return (
-                <Table.Tr key={row.id} data-connection-id={row.id}>
+                <Fragment key={row.id}>
+                <Table.Tr data-connection-id={row.id}>
                   <Table.Td>
                     <Text fw={600} style={{ overflowWrap: "anywhere" }}>
                       {row.display_name}
@@ -203,6 +215,15 @@ export function Connections({ service = connectionService }: { service?: Connect
                           size="xs"
                           className="agentplane-connection-account-select"
                         />
+                        <Button
+                          size="compact-xs"
+                          variant="subtle"
+                          aria-expanded={expandedGrants === row.id}
+                          aria-controls={`caller-grants-${row.id}`}
+                          onClick={() => setExpandedGrants(expandedGrants === row.id ? null : row.id)}
+                        >
+                          {expandedGrants === row.id ? "Hide grants" : "View grants"}
+                        </Button>
                         {!isEligibleCaller(currentCaller, accounts) && (
                           <Text size="xs" c="orange">
                             ServiceAccount not labeled as an Action caller
@@ -252,6 +273,16 @@ export function Connections({ service = connectionService }: { service?: Connect
                     )}
                   </Table.Td>
                 </Table.Tr>
+                {expandedGrants === row.id && currentCaller && (
+                  <Table.Tr>
+                    <Table.Td colSpan={3}>
+                      <div id={`caller-grants-${row.id}`}>
+                        <CallerGrants key={currentKey} account={currentCaller} read={readGrants} />
+                      </div>
+                    </Table.Td>
+                  </Table.Tr>
+                )}
+                </Fragment>
               );
             })}
           </Table.Tbody>

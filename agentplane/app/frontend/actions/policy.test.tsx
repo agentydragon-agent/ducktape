@@ -36,8 +36,8 @@ const EMPTY: ActionPolicyView = {
 
 it("says an unbound sandbox waits for the operator on every Action", async () => {
   await render(EMPTY);
-  expect(container.textContent).toContain("No binding names this sandbox");
-  expect(container.textContent).toContain("every Action from this sandbox waits for the operator");
+  expect(container.textContent).toContain("No binding names this ServiceAccount");
+  expect(container.textContent).toContain("every Action from this ServiceAccount waits for the operator");
   expect(container.querySelector("[role=alert]")).toBeNull();
 });
 

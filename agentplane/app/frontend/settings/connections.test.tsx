@@ -2,9 +2,10 @@
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { ConnectionRequestError, type ConnectionService } from "../client";
+import { ConnectionRequestError, type ConnectionService, type CallerGrantReader } from "../client";
 import { Connections } from "./connections";
 import { sampleConnection } from "../connections_fixture";
 
@@ -16,7 +17,7 @@ afterEach(async () => {
     container.remove();
   }
 });
-async function render(service: ConnectionService): Promise<HTMLDivElement> {
+async function render(service: ConnectionService, readGrants?: CallerGrantReader): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -24,7 +25,7 @@ async function render(service: ConnectionService): Promise<HTMLDivElement> {
   await act(async () =>
     root.render(
       <MantineProvider env="test">
-        <Connections service={service} />
+        <MemoryRouter><Connections service={service} readGrants={readGrants} /></MemoryRouter>
       </MantineProvider>
     )
   );
@@ -117,4 +118,17 @@ it("distinguishes loading failures from an empty inventory", async () => {
   const container = await render(api);
   expect(container.textContent).toContain("Service unavailable");
   expect(container.textContent).not.toContain("No OAuth clients yet");
+});
+
+it("expands grants for the current caller even when its admission label is missing", async () => {
+  const read = vi.fn<CallerGrantReader>(async () => ({
+    egress_bindings: [], action_policy: { synced: true, bindings: [], auto_approve_if: [] },
+  }));
+  const container = await render(service(), read);
+  expect(read).not.toHaveBeenCalled();
+  await act(async () => button(container, "View grants").click());
+  expect(read.mock.calls[0][0]).toEqual(sampleConnection().grants[0].caller);
+  expect(container.textContent).toContain("Grants for agentplane-test/personal");
+  await act(async () => button(container, "Hide grants").click());
+  expect(container.textContent).not.toContain("Grants for agentplane-test/personal");
 });

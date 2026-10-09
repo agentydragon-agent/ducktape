@@ -50,7 +50,7 @@ class ActionPolicyBindingView(BaseModel):
 
 
 class ActionPolicyView(BaseModel):
-    """The Action Service's answer for the Sandbox's UID: what it would evaluate at admission, from
+    """The Action Service's answer for a ServiceAccount: what it would evaluate at admission, from
     the objects as its informer holds them. Deny wins over approve; a request matching nothing takes
     the human path."""
 
@@ -61,7 +61,7 @@ class ActionPolicyView(BaseModel):
         "nothing auto-decides then, whatever the objects say."
     )
     bindings: list[ActionPolicyBindingView] = Field(
-        description="The unexpired, valid bindings whose subject is the live Sandbox, in name order."
+        description="The unexpired, valid bindings whose subject is the requested ServiceAccount, in name order."
     )
     auto_approve_if: list[EffectivePolicyView] = Field(description="In evaluation order; the first match approves.")
 
