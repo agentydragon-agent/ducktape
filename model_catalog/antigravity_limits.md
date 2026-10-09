@@ -61,6 +61,23 @@ The Flash Lite probe below supplies separate evidence about Gemini semantics.
 Do not change consumer budgets, authorize new models, or expose internal entries
 merely because they appear in this response.
 
+## Adopted publication and remaining scope
+
+The eight retained Gemini text routes now publish this response's pairs through
+ordinary LiteLLM configuration: `max_input_tokens`, `max_output_tokens`, and legacy
+`max_tokens` derived from that same output declaration. Flash Lite 3.5 gains its
+previously missing pair. The 65535/65536 distinction is preserved, including where
+an Antigravity slug matches a direct-Gemini API slug with a different allowance.
+
+This adopts provider-reported metadata using the Gemini interpretation above; it
+is not eight new capacity measurements. Routes, authorization, request caps, client
+budgets, defaults, pricing, and paused integrations are unchanged.
+
+Claude/GPT-OSS are deliberately excluded: their historical pairs remain unpublished
+until the input-versus-combined interpretation is resolved. The image model has no
+pair to adopt. Fresh raw values alone do not justify filling those gaps. Track the
+remaining source/disposition decisions in [#9574](https://github.com/agentydragon/ducktape/issues/9574).
+
 ## Bounded serving-path check
 
 On **2026-10-05**, the cheap-experiments key admitted Antigravity's 3.1/3.5 Flash

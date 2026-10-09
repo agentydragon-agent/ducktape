@@ -10,7 +10,7 @@ Configuration changes remain separately proposed in
 records the design and findings; it does not enable those changes or the long-context
 experiment.
 
-Tracking and revival inventory: [#9121](https://github.com/agentydragon/ducktape/issues/9121).
+Current work: [#9574](https://github.com/agentydragon/ducktape/issues/9574); historical revival inventory: [#9121](https://github.com/agentydragon/ducktape/issues/9121).
 
 The program is **non-duplicated model configuration across the neutral catalogue,
 cdk8s, cluster services, Nix, and clients**. Slugs, account provenance, pretty names,
@@ -40,7 +40,7 @@ in force; listing a file does not authorize modifying, deleting or re-enabling i
 - [Client budgets](client_budgets.md): Claude/OpenClaw/Codex semantics, Agentplane wiring,
   subscription-path evidence and the separate, proposed long-context experiment and costs.
 
-The [tracking issue](https://github.com/agentydragon/ducktape/issues/9121) owns changing
+The [tracking issue](https://github.com/agentydragon/ducktape/issues/9574) owns changing
 PR/rollout status and the complete parked-integration inventory. Research documents retain
 dated evidence; they do not independently authorize changes to limits, budgets or routes.
 
@@ -51,7 +51,7 @@ dated evidence; they do not independently authorize changes to limits, budgets o
 The Nix Claude gateway wrappers (#9112), Public Coder OpenClaw (#9116), and Agentplane
 Claude offerings (#9127) were paused to **reduce the active compatibility obligations
 while simplifying the roster and its consumers**. Their retained code/state and revival
-requirements remain tracked in #9121. These were not prerequisites for a standalone
+requirements remain tracked in #9574. These were not prerequisites for a standalone
 long-context feature, permission to delete shared routes, or permanent retirements.
 Keep the requested Nix renderers and Public Coder PVCs; do not spend this refactor
 building compatibility machinery for paused paths before deciding what to revive.
@@ -460,7 +460,7 @@ Keep the overall refactor net-negative in code/plumbing where possible.
 ## Approved pauses and remaining decisions
 
 Approved pause scope as of 2026-10-05. A merge is not proof of machine activation or Flux
-rollout. The [tracking issue](https://github.com/agentydragon/ducktape/issues/9121)
+rollout. The [tracking issue](https://github.com/agentydragon/ducktape/issues/9574)
 maintains deployment status, the full parked inventory, and restoration requirements.
 
 | Integration                      | Approved scope                                                                                   | Retained for restoration                                                                                                                        |

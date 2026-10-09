@@ -74,7 +74,12 @@ def test_same_slug_on_different_accounts_keeps_distinct_limits() -> None:
     assert shared_slugs
     for google, antigravity in shared_slugs:
         assert google.model.limits is not None
-        assert antigravity.model.limits is None
+        assert antigravity.model.limits is not None
+        assert google.model.limits != antigravity.model.limits
+        assert (
+            model_entry(google)["model_info"]["max_output_tokens"]
+            != model_entry(antigravity)["model_info"]["max_output_tokens"]
+        )
 
 
 @pytest.mark.parametrize("publish_limits", [False, True])
