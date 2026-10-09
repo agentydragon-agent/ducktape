@@ -20,7 +20,7 @@ from agentplane.app.frontend.visual_assertions import (
     _rollout_start,
 )
 from util.testing.page_capture import wait_for_stable
-from util.testing.viewports import DESKTOP, MOBILE, MOBILE_TOUCH
+from util.testing.viewports import DESKTOP, MOBILE, MOBILE_TOUCH, Viewport
 from util.testing.visual_capture import VisualPage
 
 # gazelle:include_dep //util/testing:visual_fixtures
@@ -207,6 +207,58 @@ async def test_debug_history_latest_session_raw(view: VisualPage, app: Agentplan
     page = view.page
     await _open_debug_history(page)
     await view.capture(target=view.page.locator("#app"))
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
+async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    await app.command_progress()
+    await app.mount_thread(RUNNING_THREAD)
+    await view.check(context="fixture ready")
+    page = view.page
+    input_row = page.locator('[data-command-id="progress-input"]')
+    await expect(input_row.locator('[data-stage="admitted"]')).to_be_visible()
+    await expect(input_row.locator(".agentplane-command-light")).to_have_count(3)
+    detail = input_row.get_by_role("tooltip")
+    await expect(detail).to_be_hidden()
+    model_row = page.locator('[data-command-id="progress-model"]')
+    await expect(model_row).to_contain_text("test-model-next")
+    await expect(model_row.locator(".agentplane-command-card-line .agentplane-command-progress")).to_be_visible()
+    for command_id in ("progress-noop", "progress-noop-input"):
+        no_op = page.locator(f'[data-command-id="{command_id}"]')
+        await expect(no_op.get_by_text("No-op")).to_be_visible()
+        await expect(no_op.locator(".agentplane-command-progress")).to_have_count(0)
+    await input_row.scroll_into_view_if_needed()
+    await view.capture()
+    await view.capture(name=f"{view.capture_name}_controls", target=page.get_by_role("region", name="Pending commands"))
+    input_indicator = input_row.locator(".agentplane-command-progress-hit")
+    if viewport.has_touch:
+        await input_indicator.tap()
+        await expect(input_row.locator('[data-touch-open="true"]')).to_be_visible()
+    else:
+        await input_indicator.hover()
+    await expect(detail).to_be_visible()
+    await expect(detail).to_be_in_viewport(ratio=1)
+    await view.capture(name=f"{view.capture_name}_detail")
+    effort_row = page.locator('[data-command-id="progress-effort"]')
+    effort_indicator = effort_row.locator(".agentplane-command-progress-hit")
+    if viewport.has_touch:
+        await effort_indicator.tap()
+        await expect(effort_row.locator('[data-touch-open="true"]')).to_be_visible()
+    else:
+        await effort_indicator.hover()
+    await expect(effort_row.get_by_role("tooltip")).to_be_visible()
+    await expect(effort_row.get_by_role("tooltip")).to_be_in_viewport(ratio=1)
+    await view.capture(name=f"{view.capture_name}_effort_detail")
+    applied_input = page.locator('[data-command-id="progress-applied-input"]')
+    input_hit = applied_input.locator(".agentplane-command-progress-hit")
+    await expect(applied_input.locator(".agentplane-command-light")).to_have_count(0)
+    await expect(input_hit).to_have_css("opacity", "0")
+    if viewport.has_touch:
+        await applied_input.locator(".agentplane-user-bubble").tap()
+    else:
+        await applied_input.locator(".agentplane-user-bubble").hover()
+    await expect(input_hit).to_have_css("opacity", "1")
+    await view.capture(name=f"{view.capture_name}_applied_input", target=applied_input)
 
 
 async def test_debug_history_latest_session_pending_raw(view: VisualPage, app: AgentplaneFixture) -> None:

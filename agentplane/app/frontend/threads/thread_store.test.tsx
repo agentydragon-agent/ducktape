@@ -113,7 +113,13 @@ function command(id: string, index: number): Json {
     ...item(index),
     entity_kind: "command",
     entity_id: id,
-    state: JSON.stringify({ operation: "submit_input", outcome: "failed", outcome_cursor: "9", outcome_reason: null }),
+    state: JSON.stringify({
+      operation: "submit_input",
+      outcome: "failed",
+      outcome_cursor: "9",
+      outcome_reason: null,
+      requested_value: null,
+    }),
   };
 }
 
@@ -450,6 +456,36 @@ function reconnecting(container: HTMLElement): boolean {
 function thread(sync: FakeSync, count: number, epoch = "epoch-1"): void {
   sync.entities = [viewState(sync.through, epoch), ...Array.from({ length: count }, (_, n) => item(n + 1, epoch))];
 }
+
+it("keeps a failed settings command in the shared window after a different browser sent it", async () => {
+  const sync = stubSync();
+  const failed = command("model-from-another-browser", 2);
+  failed.state = JSON.stringify({
+    operation: "change_model",
+    outcome: "failed",
+    outcome_cursor: "3",
+    outcome_reason: "Model unavailable",
+    requested_value: "next-model",
+  });
+  sync.entities = [viewState(sync.through), failed];
+  const container = await renderThread(
+    <Shown>
+      {(rows) => (
+        <p data-testid="projected-commands">
+          {rows
+            .filter((row) => row.entityKind === "command")
+            .map((row) => row.entityId)
+            .join(",")}
+        </p>
+      )}
+    </Shown>
+  );
+  await vi.waitFor(() =>
+    expect(container.querySelector('[data-testid="projected-commands"]')?.textContent).toBe(
+      "model-from-another-browser"
+    )
+  );
+});
 
 it("opens one shape on the tail and pages older rows into it", async () => {
   const sync = stubSync();

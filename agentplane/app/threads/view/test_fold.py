@@ -218,6 +218,7 @@ def test_effort_change_settles_its_command_and_updates_controls() -> None:
     )
     assert store.state.controls.applied_reasoning_effort == "high"
     assert store.commands["effort-1"].outcome == CommandOutcome.EFFECTED
+    assert store.commands["effort-1"].requested_value == "high"
     assert result.lifecycle_upserts[0].observation == "reasoning_effort_changed"
 
 
@@ -309,6 +310,7 @@ def test_commands_settle_coalesced_input_and_observed_model_effect(script: list[
     assert store.commands["input-1"].outcome is CommandOutcome.EFFECTED
     assert store.commands["input-2"].outcome is CommandOutcome.EFFECTED
     assert store.commands["model-1"].outcome is CommandOutcome.EFFECTED
+    assert store.commands["model-1"].requested_value == "model-b"
     assert store.state.controls.applied_model == "model-b"
     assert store.state.controls.active_turn_id is None
     assert [(e.entity_cursor, e.observation_cursor) for e in store.evidence if e.entity_cursor in (1, 2, 15)] == [

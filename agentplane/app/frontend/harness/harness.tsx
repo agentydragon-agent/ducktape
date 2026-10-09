@@ -984,7 +984,13 @@ function command(
     "command",
     id,
     cursor,
-    { operation, outcome, outcome_cursor: outcome === "pending" ? null : String(cursor), outcome_reason: reason },
+    {
+      operation,
+      outcome,
+      outcome_cursor: outcome === "pending" ? null : String(cursor),
+      outcome_reason: reason,
+      requested_value: null,
+    },
     { pending: outcome === "pending", input_ref: text === null ? null : payload(cursor, id, "command_input", text) }
   );
 }
@@ -1148,6 +1154,22 @@ function endedAttachmentRows(threadId: string): Record<string, unknown>[] {
   });
 }
 
+/** Close-packed command states so the semaphore and its real labels can be inspected on a phone. */
+function commandProgressRows(threadId: string): Record<string, unknown>[] {
+  const model = command(2, "progress-model", "change_model", "pending");
+  const effort = command(3, "progress-effort", "change_reasoning_effort", "failed", "Not supported by harness");
+  const noop = command(4, "progress-noop", "change_model", "noop", "Model already selected");
+  return [
+    { ...viewState(5, "t-progress"), thread_id: threadId },
+    { ...model, state: { ...(model.state as object), requested_value: "test-model-next" } },
+    { ...effort, state: { ...(effort.state as object), requested_value: "high" } },
+    { ...noop, state: { ...(noop.state as object), requested_value: "current-model" } },
+    command(9, "progress-applied-input", "submit_input", "effected", null, "Applied input."),
+    command(6, "progress-input", "submit_input", "pending", null, "Please review this change."),
+    command(7, "progress-noop-input", "submit_input", "noop", "Nothing to do", "Already handled."),
+  ];
+}
+
 /**
  * The statuses the main thread fixture does not produce on its own: a standalone failed tool call, a
  * run whose reasoning is still streaming beside a tool call, and queued commands. Both runs render
@@ -1179,8 +1201,14 @@ function statesRows(threadId: string, outcomes = false): Record<string, unknown>
       output: "42 passed",
       turn: "t2",
     }),
-    command(24, "queued-model", "change_model", outcomes ? "failed" : "pending", "Model unavailable"),
-    command(25, "queued-interrupt", "interrupt_turn", outcomes ? "noop" : "pending", "Target turn already ended"),
+    command(24, "queued-model", "change_model", outcomes ? "failed" : "pending", outcomes ? "Model unavailable" : null),
+    command(
+      25,
+      "queued-interrupt",
+      "interrupt_turn",
+      outcomes ? "noop" : "pending",
+      outcomes ? "Target turn already ended" : null
+    ),
     // Admitted and still pending, so it renders inline as a pending message bubble rather than in
     // the pending-commands box below -- see projected_session.tsx's pendingSentMessage.
     command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),
@@ -2838,6 +2866,9 @@ const visualHarness = {
   },
   standardHistory(longPreview: boolean, longBody: boolean): void {
     threadEntityRows = (id) => (id === THREADS[2].id ? statesRows(id) : standardRows(id, longPreview, longBody));
+  },
+  commandProgress(): void {
+    threadEntityRows = commandProgressRows;
   },
   pendingCommands(): void {
     threadEntityRows = (id) => statesRows(id);

@@ -316,8 +316,8 @@ it("sends the draft on Enter and clears it", async () => {
   expect(field.value).toBe("");
   const bubble = container.querySelector<HTMLElement>('.agentplane-user-bubble[data-message-phase="local"]');
   expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe("hello");
-  expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe(
-    "Saved locally · awaiting admission"
+  expect(bubble?.parentElement?.querySelector('[role="status"] button')?.getAttribute("aria-label")).toBe(
+    "Saved in browser · waiting for runner to accept"
   );
   expect(bubble?.querySelector('[role="status"]')).toBeNull();
   expect(buttonIn(bubble?.parentElement, "Retry")).toBeDefined();
@@ -659,6 +659,10 @@ function pendingRow(container: HTMLDivElement, commandId: string): HTMLElement {
   return row;
 }
 
+function progressLabel(container: HTMLDivElement, commandId: string): string | null | undefined {
+  return pendingRow(container, commandId).querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label");
+}
+
 function retry(container: HTMLDivElement, commandId: string): HTMLButtonElement {
   const found = [...pendingRow(container, commandId).querySelectorAll("button")].find(
     (candidate) => candidate.textContent === "Retry"
@@ -676,7 +680,43 @@ it("does not send a retained command whose admission it already holds", async ()
   vi.mocked(command).mockImplementation(admit);
   const container = await render();
   expect(sentIds()).toEqual(["retained-unadmitted"]);
-  expect(pendingRow(container, "retained-admitted").textContent).toContain("Saved · awaiting effect");
+  expect(progressLabel(container, "retained-admitted")).toBe("Runner accepted · waiting for agent confirmation");
+  expect(
+    [...pendingRow(container, "retained-admitted").querySelectorAll(".agentplane-command-light")].map((light) =>
+      light.getAttribute("data-state")
+    )
+  ).toEqual(["done", "done", "waiting"]);
+});
+
+it("opens compact command detail on touch and closes on blur or Escape", async () => {
+  new LocalCommands(THREAD.id).remember(message("touch"));
+  const container = await render();
+  const progress = pendingRow(container, "touch").querySelector<HTMLElement>(".agentplane-command-progress");
+  const indicator = progress?.querySelector<HTMLButtonElement>(".agentplane-command-progress-hit");
+  expect(indicator?.getAttribute("aria-label")).toBeTruthy();
+  expect(progress?.querySelectorAll(".agentplane-command-light")).toHaveLength(3);
+  expect(progress?.hasAttribute("data-touch-open")).toBe(false);
+  const tap = () => {
+    const event = new Event("pointerdown", { bubbles: true });
+    Object.defineProperty(event, "pointerType", { value: "touch" });
+    indicator?.dispatchEvent(event);
+  };
+  await act(async () => tap());
+  expect(progress?.getAttribute("data-touch-open")).toBe("true");
+  await act(async () => tap());
+  expect(progress?.hasAttribute("data-touch-open")).toBe(false);
+  await act(async () => tap());
+  await act(async () => {
+    indicator?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(progress?.hasAttribute("data-touch-open")).toBe(false);
+  await act(async () => {
+    indicator?.focus();
+    tap();
+  });
+  expect(progress?.getAttribute("data-touch-open")).toBe("true");
+  await act(async () => indicator?.blur());
+  expect(progress?.hasAttribute("data-touch-open")).toBe(false);
 });
 
 it("shows a delivery that outlives its deadline as unconfirmed and retriable", async () => {
@@ -690,16 +730,24 @@ it("shows a delivery that outlives its deadline as unconfirmed and retriable", a
     )
     .mockImplementationOnce(admit);
   const container = await render();
-  expect(pendingRow(container, "hung").textContent).toContain("Saved locally · awaiting admission");
+  expect(progressLabel(container, "hung")).toContain("Saved in browser · waiting for runner to accept");
+  expect(
+    [...pendingRow(container, "hung").querySelectorAll(".agentplane-command-light")].map((light) =>
+      light.getAttribute("data-state")
+    )
+  ).toEqual(["done", "waiting", "future"]);
+  expect(pendingRow(container, "hung").querySelectorAll("[data-state=waiting]")).toHaveLength(1);
 
   await act(async () => expire(new DOMException("signal timed out", "TimeoutError")));
-  expect(pendingRow(container, "hung").textContent).toContain("signal timed out");
+  expect(progressLabel(container, "hung")).toContain("Runner receipt unconfirmed");
+  expect(pendingRow(container, "hung").querySelector('[data-state="uncertain"]')).not.toBeNull();
+  expect(progressLabel(container, "hung")).toContain("signal timed out");
   expect(sentIds()).toEqual(["hung"]);
 
   await act(async () => retry(container, "hung").click());
   expect(sentIds()).toEqual(["hung", "hung"]);
-  expect(pendingRow(container, "hung").textContent).toContain("Saved · awaiting effect");
-  expect(pendingRow(container, "hung").textContent).not.toContain("signal timed out");
+  expect(progressLabel(container, "hung")).toContain("Runner accepted · waiting for agent confirmation");
+  expect(progressLabel(container, "hung")).not.toContain("signal timed out");
 });
 
 it("redelivers an unconfirmed command when the browser comes back online", async () => {
@@ -708,12 +756,12 @@ it("redelivers an unconfirmed command when the browser comes back online", async
     .mockRejectedValueOnce(new Error("the sandbox's runner is not answering"))
     .mockImplementationOnce(admit);
   const container = await render();
-  expect(pendingRow(container, "offline").textContent).toContain("the sandbox's runner is not answering");
+  expect(progressLabel(container, "offline")).toContain("the sandbox's runner is not answering");
   expect(sentIds()).toEqual(["offline"]);
 
   await act(async () => window.dispatchEvent(new Event("online")));
   expect(sentIds()).toEqual(["offline", "offline"]);
-  expect(pendingRow(container, "offline").textContent).toContain("Saved · awaiting effect");
+  expect(progressLabel(container, "offline")).toContain("Runner accepted · waiting for agent confirmation");
 });
 
 it("shows a server-only pending command as saved, not as a local delivery", async () => {
@@ -723,15 +771,25 @@ it("shows a server-only pending command as saved, not as a local delivery", asyn
         viewState(),
         entity(
           "command",
-          { operation: "change_model", outcome: "pending", outcome_cursor: null, outcome_reason: null },
+          {
+            operation: "change_model",
+            outcome: "pending",
+            outcome_cursor: null,
+            outcome_reason: null,
+            requested_value: "next-model",
+          },
           {}
         ),
       ],
     })
   );
   const pending = container.querySelector('[aria-label="Pending commands"]');
-  expect(pending?.textContent).toContain("Saved · awaiting effect");
-  expect(pending?.textContent).not.toContain("Saved locally");
+  expect(pending?.textContent).toContain("Change model to next-model");
+  expect(pending?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
+    "Runner accepted · waiting for model change"
+  );
+  expect(pending?.textContent).not.toContain("Saved in browser");
+  expect(pending?.querySelector('[data-stage="admitted"]')).not.toBeNull();
   expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
 });
 
@@ -742,20 +800,55 @@ it("shows the failure and reason for a server-only command", async () => {
         viewState(),
         entity(
           "command",
-          { operation: "change_model", outcome: "failed", outcome_cursor: "1", outcome_reason: "model unavailable" },
+          {
+            operation: "change_model",
+            outcome: "failed",
+            outcome_cursor: "1",
+            outcome_reason: "model unavailable",
+            requested_value: null,
+          },
           {}
         ),
       ],
     })
   );
   const pending = container.querySelector('[aria-label="Pending commands"]');
-  expect(pending?.textContent).toContain("Model change failed: model unavailable");
+  expect(pending?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
+    "Failed: model unavailable"
+  );
+  expect(pending?.querySelector('[data-stage="failed"] [data-state="failed"]')).not.toBeNull();
+});
+
+it("renders a server-only no-op control as a settled label, not a progress light", async () => {
+  const container = await render(
+    threadState({
+      rows: [
+        viewState(),
+        entity(
+          "command",
+          {
+            operation: "change_model",
+            outcome: "noop",
+            outcome_cursor: "1",
+            outcome_reason: "model already selected",
+            requested_value: "current-model",
+          },
+          {}
+        ),
+      ],
+    })
+  );
+  const row = pendingRow(container, "test-entity");
+  expect(row.textContent).toContain("Change model to current-model");
+  expect(row.querySelector(".agentplane-command-progress")).toBeNull();
+  expect(row.querySelector('[role="status"]')?.textContent).toBe("No-op: model already selected");
+  expect(row.querySelector('[role="status"]')?.getAttribute("title")).toBe("No-op: model already selected");
 });
 
 it.each([
-  ["failed", "failed", "Input failed: runner unavailable"],
-  ["noop", "noop", "Input not applied: harness was stopping"],
-  ["effected", "confirmed", "Input applied"],
+  ["failed", "failed", "Failed: runner unavailable"],
+  ["noop", "noop", "No-op: harness was stopping"],
+  ["effected", "confirmed", "Agent confirmed message"],
 ] as const)("shows a server-only %s input as a dismissible right-side message", async (outcome, phase, status) => {
   const container = await render(
     threadState({
@@ -768,6 +861,7 @@ it.each([
             outcome,
             outcome_cursor: "2",
             outcome_reason: outcome === "effected" ? null : status.split(": ")[1],
+            requested_value: null,
           },
           { inputRef: reference("failed-input", "command_input") }
         ),
@@ -775,7 +869,19 @@ it.each([
     })
   );
   const bubble = container.querySelector<HTMLElement>(`.agentplane-user-bubble[data-message-phase="${phase}"]`);
-  expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe(status);
+  const plainOutcome = bubble?.parentElement?.querySelector(".agentplane-command-noop");
+  expect(plainOutcome?.textContent).toBe(outcome === "noop" ? status : undefined);
+  expect(plainOutcome?.getAttribute("title")).toBe(outcome === "noop" ? status : undefined);
+  expect(bubble?.parentElement?.querySelector(".agentplane-command-progress") === null).toBe(outcome === "noop");
+  expect(bubble?.parentElement?.querySelectorAll(".agentplane-command-light")).toHaveLength(
+    outcome === "effected" || outcome === "noop" ? 0 : 3
+  );
+  expect(bubble?.parentElement?.querySelectorAll(".agentplane-command-check")).toHaveLength(
+    outcome === "effected" ? 1 : 0
+  );
+  expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
+    outcome === "noop" ? undefined : status
+  );
   const dismiss = buttonIn(bubble?.parentElement, "Dismiss");
   expect(dismiss).toBeDefined();
   await act(async () => dismiss?.click());
@@ -790,7 +896,13 @@ it("keeps a still-pending sent message out of the pending-commands box, since it
         viewState(),
         entity(
           "command",
-          { operation: "submit_input", outcome: "pending", outcome_cursor: null, outcome_reason: null },
+          {
+            operation: "submit_input",
+            outcome: "pending",
+            outcome_cursor: null,
+            outcome_reason: null,
+            requested_value: null,
+          },
           { inputRef: reference("test-message", "command_input") }
         ),
       ],

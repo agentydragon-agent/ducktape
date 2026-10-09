@@ -101,6 +101,7 @@ class ThreadCommandState(BaseModel):
     outcome: fold.CommandOutcome
     outcome_cursor: str | None
     outcome_reason: str | None
+    requested_value: str | None = None
 
 
 class _ThreadEntityViewFields(BaseModel):

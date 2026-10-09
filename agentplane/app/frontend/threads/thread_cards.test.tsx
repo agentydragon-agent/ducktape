@@ -578,7 +578,13 @@ describe("EntityCard", () => {
     const container = await renderCard(
       entity(
         "command",
-        { operation: "submit_input", outcome: "pending", outcome_cursor: null, outcome_reason: null },
+        {
+          operation: "submit_input",
+          outcome: "pending",
+          outcome_cursor: null,
+          outcome_reason: null,
+          requested_value: null,
+        },
         { inputRef: reference("test-message", "command_input") }
       ),
       { "test-message:command_input": PROSE }
@@ -587,7 +593,9 @@ describe("EntityCard", () => {
     expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe(PROSE);
     // The bubble holds only the message, so it is the same once the status goes and nothing moves.
     expect(bubble?.textContent).toBe(PROSE);
-    expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe("Saved · awaiting effect");
+    expect(bubble?.parentElement?.querySelector('[role="status"] button')?.getAttribute("aria-label")).toBe(
+      "Runner accepted · waiting for agent confirmation"
+    );
   });
 
   it.each<[string, Observation, string]>([

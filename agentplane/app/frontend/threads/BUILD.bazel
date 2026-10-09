@@ -243,6 +243,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":command_calls",
+        ":command_progress",
         ":history_rows",
         ":retained_disclosures",
         ":step_line",
@@ -282,10 +283,25 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "command_progress",
+    srcs = [
+        "command_progress.tsx",
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "thread_commands",
     srcs = ["thread_commands.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":command_progress",
         ":local_commands",
         ":thread_cards",
         ":thread_evidence",

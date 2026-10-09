@@ -9,6 +9,7 @@ import { HighlightedText } from "../json_view";
 import { Markdown } from "../markdown";
 import { RawSwitch } from "../raw_switch";
 import { oneLine, parseCommandCall } from "./command_calls";
+import { CommandProgress } from "./command_progress";
 import { lifecyclePresentation } from "./history_rows";
 import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
 import { RetainedDisclosure, useRetainedDisclosure } from "./retained_disclosures";
@@ -127,18 +128,15 @@ export function VerbatimText({ text }: { text: string }): JSX.Element {
   );
 }
 
-/** The operator's input, including provisional sends. The status, error and action sit together in the
- * gutter before the bubble, so the bubble reads the same, and does not move, when they go; local text
+/** The operator's input, including provisional sends. Progress and action sit in the
+ * gutter before the bubble, so the bubble reads the same when they go; local text
  * uses no event evidence until runner admission gives it an ordered Event. */
 export function UserInputBubble({
   threadId,
   entity,
   commandId,
   text,
-  status,
-  statusColor = "dimmed",
-  error,
-  note,
+  progress,
   pending = false,
   phase,
   action,
@@ -147,10 +145,7 @@ export function UserInputBubble({
   entity?: ThreadEntity;
   commandId?: string;
   text?: string;
-  status?: string;
-  statusColor?: MantineColor;
-  error?: string;
-  note?: string;
+  progress?: JSX.Element;
   pending?: boolean;
   phase?: "local" | "pending" | "failed" | "noop" | "confirmed";
   action?: { label: string; onClick: () => void };
@@ -165,23 +160,9 @@ export function UserInputBubble({
       style={{ width: "100%" }}
       data-command-id={commandId ?? entity?.entityId}
     >
-      {(status || error || note || action) && (
-        <Stack className="agentplane-user-message-aside" gap={2} align="flex-end">
-          {status && (
-            <Text size="xs" c={statusColor} role="status">
-              {status}
-            </Text>
-          )}
-          {error && (
-            <Text size="xs" c="red" role="alert">
-              {error}
-            </Text>
-          )}
-          {note && (
-            <Text size="xs" c="dimmed">
-              {note}
-            </Text>
-          )}
+      {(progress || action) && (
+        <Stack className="agentplane-user-message-aside" gap={2} align="flex-start">
+          {progress}
           {action && (
             <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
               {action.label}
@@ -193,7 +174,7 @@ export function UserInputBubble({
         className="agentplane-user-bubble agentplane-evidence-owner"
         data-message-phase={phase}
         data-has-action={action ? "true" : undefined}
-        data-has-aside={status || error || note || action ? "true" : undefined}
+        data-has-aside={progress || action ? "true" : undefined}
         p="sm"
         style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
       >
@@ -554,7 +535,13 @@ export function EntityCard({
   }
   if (pendingSentMessage(entity)) {
     return (
-      <UserInputBubble threadId={threadId} entity={entity} phase="pending" pending status="Saved · awaiting effect" />
+      <UserInputBubble
+        threadId={threadId}
+        entity={entity}
+        phase="pending"
+        pending
+        progress={<CommandProgress stage="admitted" subject="input" />}
+      />
     );
   }
   if (entity.entityKind === "lifecycle" && "observation" in entity.state) {
