@@ -266,6 +266,9 @@ async def test_connection_sa_rebind_confirmation(view: VisualPage, app: Agentpla
     confirm = page.get_by_role("button", name="Confirm change")
     await expect(confirm).to_be_visible()
     await expect(page.get_by_text("Existing client tokens will act as", exact=False)).to_be_visible()
+    row = page.locator("[data-connection-id]").filter(has_text="Claude desktop")
+    await expect(row.get_by_role("button", name="Confirm change")).to_be_visible()
+    await expect(row.get_by_role("button", name="Apply")).to_have_count(0)
     if page.viewport_size and page.viewport_size["width"] < 600:
         assert await page.locator(".mantine-Modal-content").evaluate("el => el.scrollWidth <= el.clientWidth")
         await confirm.scroll_into_view_if_needed()

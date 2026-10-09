@@ -229,7 +229,7 @@ export function Connections({
                               ServiceAccount not labeled as an Action caller
                             </Text>
                           )}
-                          {rebinding?.row.id === row.id && rebinding.target !== currentKey && (
+                          {rebinding?.row.id === row.id && rebinding.target !== currentKey && !rebinding.confirm && (
                             <Group gap="xs">
                               <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>
                                 Cancel
@@ -242,6 +242,23 @@ export function Connections({
                                 Apply
                               </Button>
                             </Group>
+                          )}
+                          {rebinding?.confirm && rebinding.row.id === row.id && (
+                            <Alert color="orange" title={`Change ${row.display_name}'s ServiceAccount?`}>
+                              <Text size="sm">
+                                Existing client tokens will act as {rebinding.target} on future requests. Pending
+                                Actions admitted under the previous account will not be silently upgraded; already
+                                claimed executions continue.
+                              </Text>
+                              <Group mt="xs">
+                                <Button size="xs" variant="subtle" disabled={busy} onClick={() => setRebinding(null)}>
+                                  Cancel
+                                </Button>
+                                <Button size="xs" loading={busy} onClick={() => void confirmRebind()}>
+                                  Confirm change
+                                </Button>
+                              </Group>
+                            </Alert>
                           )}
                         </Stack>
                       ) : (
@@ -287,22 +304,6 @@ export function Connections({
             })}
           </Table.Tbody>
         </Table>
-      )}
-      {rebinding?.confirm && (
-        <Alert color="orange" title={`Change ${rebinding.row.display_name}'s ServiceAccount?`}>
-          <Text size="sm">
-            Existing client tokens will act as {rebinding.target} on future requests. Pending Actions admitted under the
-            previous account will not be silently upgraded; already claimed executions continue.
-          </Text>
-          <Group mt="xs">
-            <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>
-              Cancel
-            </Button>
-            <Button size="xs" loading={busy} onClick={() => void confirmRebind()}>
-              Confirm change
-            </Button>
-          </Group>
-        </Alert>
       )}
       {unlinking && (
         <Alert color="orange" title={`Unlink ${unlinking.display_name}?`}>
