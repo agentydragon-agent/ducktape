@@ -660,9 +660,7 @@ function pendingRow(container: HTMLDivElement, commandId: string): HTMLElement {
 }
 
 function progressLabel(container: HTMLDivElement, commandId: string): string | null | undefined {
-  return pendingRow(container, commandId)
-    .querySelector(".agentplane-command-progress-hit")
-    ?.getAttribute("aria-label");
+  return pendingRow(container, commandId).querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label");
 }
 
 function retry(container: HTMLDivElement, commandId: string): HTMLButtonElement {
@@ -682,9 +680,7 @@ it("does not send a retained command whose admission it already holds", async ()
   vi.mocked(command).mockImplementation(admit);
   const container = await render();
   expect(sentIds()).toEqual(["retained-unadmitted"]);
-  expect(progressLabel(container, "retained-admitted")).toBe(
-    "Runner accepted · waiting for agent confirmation"
-  );
+  expect(progressLabel(container, "retained-admitted")).toBe("Runner accepted · waiting for agent confirmation");
   expect(
     [...pendingRow(container, "retained-admitted").querySelectorAll(".agentplane-command-light")].map((light) =>
       light.getAttribute("data-state")
@@ -816,7 +812,9 @@ it("shows the failure and reason for a server-only command", async () => {
     })
   );
   const pending = container.querySelector('[aria-label="Pending commands"]');
-  expect(pending?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe("Failed: model unavailable");
+  expect(pending?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
+    "Failed: model unavailable"
+  );
   expect(pending?.querySelector('[data-stage="failed"] [data-state="failed"]')).not.toBeNull();
 });
 
@@ -844,7 +842,9 @@ it.each([
     })
   );
   const bubble = container.querySelector<HTMLElement>(`.agentplane-user-bubble[data-message-phase="${phase}"]`);
-  expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(status);
+  expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
+    status
+  );
   const dismiss = buttonIn(bubble?.parentElement, "Dismiss");
   expect(dismiss).toBeDefined();
   await act(async () => dismiss?.click());
