@@ -676,8 +676,14 @@ it("does not send a retained command whose admission it already holds", async ()
   vi.mocked(command).mockImplementation(admit);
   const container = await render();
   expect(sentIds()).toEqual(["retained-unadmitted"]);
-  expect(pendingRow(container, "retained-admitted").textContent).toContain("Runner accepted · waiting for agent confirmation");
-  expect([...pendingRow(container, "retained-admitted").querySelectorAll(".agentplane-command-light")].map((light) => light.getAttribute("data-state"))).toEqual(["done", "done", "waiting"]);
+  expect(pendingRow(container, "retained-admitted").textContent).toContain(
+    "Runner accepted · waiting for agent confirmation"
+  );
+  expect(
+    [...pendingRow(container, "retained-admitted").querySelectorAll(".agentplane-command-light")].map((light) =>
+      light.getAttribute("data-state")
+    )
+  ).toEqual(["done", "done", "waiting"]);
 });
 
 it("shows a delivery that outlives its deadline as unconfirmed and retriable", async () => {
@@ -692,7 +698,11 @@ it("shows a delivery that outlives its deadline as unconfirmed and retriable", a
     .mockImplementationOnce(admit);
   const container = await render();
   expect(pendingRow(container, "hung").textContent).toContain("Saved in browser · waiting for runner to accept");
-  expect([...pendingRow(container, "hung").querySelectorAll(".agentplane-command-light")].map((light) => light.getAttribute("data-state"))).toEqual(["done", "waiting", "future"]);
+  expect(
+    [...pendingRow(container, "hung").querySelectorAll(".agentplane-command-light")].map((light) =>
+      light.getAttribute("data-state")
+    )
+  ).toEqual(["done", "waiting", "future"]);
 
   await act(async () => expire(new DOMException("signal timed out", "TimeoutError")));
   expect(pendingRow(container, "hung").textContent).toContain("Runner receipt unconfirmed");
@@ -727,7 +737,13 @@ it("shows a server-only pending command as saved, not as a local delivery", asyn
         viewState(),
         entity(
           "command",
-          { operation: "change_model", outcome: "pending", outcome_cursor: null, outcome_reason: null, requested_value: "next-model" },
+          {
+            operation: "change_model",
+            outcome: "pending",
+            outcome_cursor: null,
+            outcome_reason: null,
+            requested_value: "next-model",
+          },
           {}
         ),
       ],

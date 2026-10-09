@@ -1181,7 +1181,13 @@ function statesRows(threadId: string, outcomes = false): Record<string, unknown>
       turn: "t2",
     }),
     command(24, "queued-model", "change_model", outcomes ? "failed" : "pending", outcomes ? "Model unavailable" : null),
-    command(25, "queued-interrupt", "interrupt_turn", outcomes ? "noop" : "pending", outcomes ? "Target turn already ended" : null),
+    command(
+      25,
+      "queued-interrupt",
+      "interrupt_turn",
+      outcomes ? "noop" : "pending",
+      outcomes ? "Target turn already ended" : null
+    ),
     // Admitted and still pending, so it renders inline as a pending message bubble rather than in
     // the pending-commands box below -- see projected_session.tsx's pendingSentMessage.
     command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),

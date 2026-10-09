@@ -217,7 +217,7 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     page = view.page
     input_row = page.locator('[data-command-id="progress-input"]')
     await expect(input_row.locator('[data-stage="admitted"]')).to_be_visible()
-    await expect(input_row.locator('.agentplane-command-light')).to_have_count(3)
+    await expect(input_row.locator(".agentplane-command-light")).to_have_count(3)
     await expect(input_row.get_by_text("Runner accepted · waiting for agent confirmation")).to_be_visible()
     await expect(page.locator('[data-command-id="progress-model"]')).to_contain_text("test-model-next")
     await expect(page.locator('[data-command-id="progress-effort"]')).to_contain_text("Not supported by harness")

@@ -587,7 +587,9 @@ describe("EntityCard", () => {
     expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe(PROSE);
     // The bubble holds only the message, so it is the same once the status goes and nothing moves.
     expect(bubble?.textContent).toBe(PROSE);
-    expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe("Runner accepted · waiting for agent confirmation");
+    expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe(
+      "Runner accepted · waiting for agent confirmation"
+    );
   });
 
   it.each<[string, Observation, string]>([

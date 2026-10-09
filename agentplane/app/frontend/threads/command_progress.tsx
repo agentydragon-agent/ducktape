@@ -37,7 +37,8 @@ export function CommandProgress({
   };
   const label = `${stage === "local" && !local ? "Waiting for runner to accept" : labels[stage]}${reason ? `: ${reason}` : ""}`;
   // The first light means submitted, not proof that another browser saved it locally.
-  const current = stage === "local" || stage === "unconfirmed" || stage === "refused" ? 2 : stage === "effected" ? 4 : 3;
+  const current =
+    stage === "local" || stage === "unconfirmed" || stage === "refused" ? 2 : stage === "effected" ? 4 : 3;
   const lights: LightState[] = [1, 2, 3].map((step) =>
     step < current
       ? "done"
@@ -60,7 +61,9 @@ export function CommandProgress({
       <div
         className="agentplane-command-lights"
         role="img"
-        aria-label={["Submitted", "Runner acceptance", "Effect confirmed"].map((name, index) => `${name}: ${lights[index]}`).join("; ")}
+        aria-label={["Submitted", "Runner acceptance", "Effect confirmed"]
+          .map((name, index) => `${name}: ${lights[index]}`)
+          .join("; ")}
       >
         {lights.map((state, index) => (
           <span key={index} className="agentplane-command-light" data-state={state} />
