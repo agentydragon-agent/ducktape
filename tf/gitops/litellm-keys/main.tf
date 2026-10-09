@@ -227,9 +227,9 @@ resource "litellm_key" "tana_clients" {
   # Empty models alone is not deny-all in LiteLLM. Explicitly block the retained
   # pinned key; do not destroy its identity/history or rotate the credential.
   # TODO(#9574): Restore the reviewed lane/allowlist before unblocking.
-  blocked   = true
-  models    = []
-  team_id   = litellm_team.tana_clients.id
+  blocked = true
+  models  = []
+  team_id = litellm_team.tana_clients.id
   metadata = {
     consumer = "laptop-tana-claude"
   }
