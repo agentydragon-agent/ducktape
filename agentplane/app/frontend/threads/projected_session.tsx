@@ -48,8 +48,8 @@ import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure }
 import { CollapsibleCard, EntityCard, itemStatus, pendingSentMessage } from "./thread_cards";
 import {
   PendingInputMessages,
-  ProjectedCommandRows,
-  SelectedCommandOutcomes,
+  ProjectedControlCommand,
+  LocalControlCommands,
   useProjectedCommands,
 } from "./thread_commands";
 import { revealEvidenceOnTap } from "./thread_evidence";
@@ -216,7 +216,13 @@ export function HistoryRowView({
     row.kind === "entity" ||
     (row.entities.length === 1 &&
       (row.kind === "lifecycle_group" || ("kind" in first.state && first.state.kind === ItemKind.REASONING)));
-  if (lone) return <EntityCard threadId={threadId} entity={first} live={live(first)} />;
+  if (lone) {
+    return first.entityKind === "command" && !pendingSentMessage(first) ? (
+      <ProjectedControlCommand threadId={threadId} row={first} />
+    ) : (
+      <EntityCard threadId={threadId} entity={first} live={live(first)} />
+    );
+  }
   return row.kind === "run" ? (
     <RunView threadId={threadId} entities={row.entities} live={live} />
   ) : (
@@ -977,7 +983,12 @@ function ProjectedSessionBody({
   }, [thread.harness]);
   const rows = historyRows(
     entities
-      .filter((row) => ["item", "confirmed_input", "lifecycle"].includes(row.entityKind) || pendingSentMessage(row))
+      .filter(
+        (row) =>
+          ["item", "confirmed_input", "lifecycle"].includes(row.entityKind) ||
+          (row.entityKind === "command" &&
+            (pendingSentMessage(row) || ("operation" in row.state && row.state.operation !== "submit_input")))
+      )
       .sort((left, right) =>
         decimalBigInt(left.cursor) < decimalBigInt(right.cursor)
           ? -1
@@ -986,15 +997,26 @@ function ProjectedSessionBody({
             : 0
       )
   );
-  const selectedCommandIds = commands.local.commands.slice(0, 128);
-  const pendingInputMessages = (
-    <PendingInputMessages
-      commands={selectedCommandIds}
-      entities={entities}
-      errors={commands.errors}
-      store={commands.store}
-      deliver={commands.deliver}
-    />
+  const localCommands = commands.local.commands;
+  const commandTail = (
+    <Stack gap="xs">
+      <PendingInputMessages
+        commands={localCommands}
+        entities={entities}
+        errors={commands.errors}
+        store={commands.store}
+        deliver={commands.deliver}
+      />
+      {localCommands.length > 0 && (
+        <LocalControlCommands
+          commands={localCommands}
+          entities={entities}
+          store={commands.store}
+          errors={commands.errors}
+          deliver={commands.deliver}
+        />
+      )}
+    </Stack>
   );
 
   // Two Enters before the cleared draft renders would otherwise submit the same text twice, under
@@ -1053,20 +1075,11 @@ function ProjectedSessionBody({
         <VirtualizedHistory
           threadId={threadId}
           rows={rows}
-          tail={pendingInputMessages}
+          tail={commandTail}
           running={running}
           activeTurn={activeTurn}
           history={history}
         />
-        <ProjectedCommandRows threadId={threadId} entities={entities} localCommands={commands.local.commands} />
-        {selectedCommandIds.length > 0 && (
-          <SelectedCommandOutcomes
-            commands={selectedCommandIds}
-            store={commands.store}
-            errors={commands.errors}
-            deliver={commands.deliver}
-          />
-        )}
         {operational?.feed_error && (
           <Text role="alert" c="red">
             {operational.feed_error.cursor === null

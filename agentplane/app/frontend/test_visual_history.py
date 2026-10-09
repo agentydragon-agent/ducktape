@@ -229,7 +229,17 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
         await expect(no_op.locator(".agentplane-command-progress")).to_have_count(0)
     await input_row.scroll_into_view_if_needed()
     await view.capture()
-    await view.capture(name=f"{view.capture_name}_controls", target=page.get_by_role("region", name="Pending commands"))
+    effected = page.locator('[data-command-id="progress-effected"]')
+    await expect(effected).to_contain_text("applied-model")
+    await expect(effected.locator(".agentplane-command-check")).to_have_count(1)
+    history = page.get_by_role("region", name="Thread history")
+    for row in (model_row, effected):
+        assert await row.evaluate("node => !!node.closest('[aria-label=\"Thread history\"]')")
+    assert await model_row.evaluate(
+        "node => node.closest('[data-thread-anchor]').dataset.threadAnchor"
+    ) < await effected.evaluate("node => node.closest('[data-thread-anchor]').dataset.threadAnchor")
+    await model_row.scroll_into_view_if_needed()
+    await view.capture(name=f"{view.capture_name}_controls", target=history)
     input_indicator = input_row.locator(".agentplane-command-progress-hit")
     if viewport.has_touch:
         await input_indicator.tap()

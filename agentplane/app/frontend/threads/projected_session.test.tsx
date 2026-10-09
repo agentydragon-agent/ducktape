@@ -225,7 +225,8 @@ function page(
   const sync: ThreadSync = {
     Thread: ({ children }) => <>{children}</>,
     useThread: () => state,
-    useCommandRows: () => [],
+    useCommandRows: (ids) =>
+      state.window?.rows.filter((row) => row.entityKind === "command" && ids.includes(row.entityId)) ?? [],
     usePayload: () => ({ body: null, error: null, retry: () => {} }),
   };
   return (
@@ -653,7 +654,7 @@ function sentIds(): string[] {
   return vi.mocked(command).mock.calls.map(([, value]) => value.commandId);
 }
 
-function pendingRow(container: HTMLDivElement, commandId: string): HTMLElement {
+function pendingRow(container: Element, commandId: string): HTMLElement {
   const row = container.querySelector<HTMLElement>(`[data-command-id="${commandId}"]`);
   if (!row) throw new Error(`Missing pending command ${commandId}`);
   return row;
@@ -791,81 +792,112 @@ it("redelivers an unconfirmed command when the browser comes back online", async
   expect(progressLabel(container, "offline")).toContain("Runner accepted · waiting for agent confirmation");
 });
 
-it("shows a server-only pending command as saved, not as a local delivery", async () => {
-  const container = await render(
-    threadState({
-      rows: [
-        viewState(),
-        entity(
-          "command",
-          {
-            operation: "change_model",
-            outcome: "pending",
-            outcome_cursor: null,
-            outcome_reason: null,
-            requested_value: "next-model",
-          },
-          {}
-        ),
-      ],
+it("moves a local control into chronological history once projected and retains its effected outcome", async () => {
+  const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  new LocalCommands(THREAD.id).remember(
+    create(CommandSchema, {
+      commandId: "inline-model",
+      operation: { case: "changeModel", value: { model: "next-model" } },
     })
   );
-  const pending = container.querySelector('[aria-label="Pending commands"]');
-  expect(pending?.textContent).toContain("Change model to next-model");
-  expect(pending?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
+  const container = await render();
+  const local = pendingRow(container, "inline-model");
+  expect(local.closest('[aria-label="Thread history"]')).not.toBeNull();
+  expect(local.querySelector('[data-stage="local"]')).not.toBeNull();
+
+  const projected = entity(
+    "command",
+    {
+      operation: "change_model",
+      outcome: "effected",
+      outcome_cursor: "2",
+      outcome_reason: null,
+      requested_value: "next-model",
+    },
+    {}
+  );
+  projected.entityId = "inline-model";
+  projected.cursor = "2";
+  await rerender(container, threadState({ rows: [viewState(), projected] }));
+  expect(container.querySelectorAll('[data-command-id="inline-model"]')).toHaveLength(0);
+  const [historyEntry] = await renderHistory([projected], false);
+  const settled = historyEntry.querySelector<HTMLElement>('[data-command-id="inline-model"]')!;
+  expect(settled).not.toBeNull();
+  expect(settled.querySelector(".agentplane-command-check")).not.toBeNull();
+  expect(settled.textContent).toContain("Change model to next-model");
+  expect(new LocalCommands(THREAD.id).getSnapshot().commands).toHaveLength(0);
+  online.mockRestore();
+});
+
+it("shows a server-only pending command as saved, not as a local delivery", async () => {
+  const [section] = await renderHistory(
+    [
+      entity(
+        "command",
+        {
+          operation: "change_model",
+          outcome: "pending",
+          outcome_cursor: null,
+          outcome_reason: null,
+          requested_value: "next-model",
+        },
+        {}
+      ),
+    ],
+    false
+  );
+  const pending = pendingRow(section, "test-entity");
+  expect(pending.textContent).toContain("Change model to next-model");
+  expect(pending.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
     "Runner accepted · waiting for model change"
   );
-  expect(pending?.textContent).not.toContain("Saved in browser");
-  expect(pending?.querySelector('[data-stage="admitted"]')).not.toBeNull();
-  expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
+  expect(pending.textContent).not.toContain("Saved in browser");
+  expect(pending.querySelector('[data-stage="admitted"]')).not.toBeNull();
+  expect([...section.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
 });
 
 it("shows the failure and reason for a server-only command", async () => {
-  const container = await render(
-    threadState({
-      rows: [
-        viewState(),
-        entity(
-          "command",
-          {
-            operation: "change_model",
-            outcome: "failed",
-            outcome_cursor: "1",
-            outcome_reason: "model unavailable",
-            requested_value: null,
-          },
-          {}
-        ),
-      ],
-    })
+  const [section] = await renderHistory(
+    [
+      entity(
+        "command",
+        {
+          operation: "change_model",
+          outcome: "failed",
+          outcome_cursor: "1",
+          outcome_reason: "model unavailable",
+          requested_value: null,
+        },
+        {}
+      ),
+    ],
+    false
   );
-  const pending = container.querySelector('[aria-label="Pending commands"]');
-  expect(pending?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
+  const pending = pendingRow(section, "test-entity");
+  expect(pending.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
     "Failed: model unavailable"
   );
-  expect(pending?.querySelector('[data-stage="failed"] [data-state="failed"]')).not.toBeNull();
+  expect(pending.querySelector('[data-stage="failed"] [data-state="failed"]')).not.toBeNull();
 });
 
 it("renders a server-only no-op control as a settled label, not a progress light", async () => {
-  const container = await render(
-    threadState({
-      rows: [
-        viewState(),
-        entity(
-          "command",
-          {
-            operation: "change_model",
-            outcome: "noop",
-            outcome_cursor: "1",
-            outcome_reason: "model already selected",
-            requested_value: "current-model",
-          },
-          {}
-        ),
-      ],
-    })
+  const [section] = await renderHistory(
+    [
+      entity(
+        "command",
+        {
+          operation: "change_model",
+          outcome: "noop",
+          outcome_cursor: "1",
+          outcome_reason: "model already selected",
+          requested_value: "current-model",
+        },
+        {}
+      ),
+    ],
+    false
   );
-  const row = pendingRow(container, "test-entity");
+  const row = pendingRow(section, "test-entity");
   expect(row.textContent).toContain("Change model to current-model");
   expect(row.querySelector(".agentplane-command-progress")).toBeNull();
   expect(row.querySelector('[role="status"]')?.textContent).toBe("No-op: model already selected");
