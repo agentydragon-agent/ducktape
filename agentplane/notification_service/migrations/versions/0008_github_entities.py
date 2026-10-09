@@ -143,7 +143,7 @@ def upgrade() -> None:
         INSERT INTO github_subject_revision (repository_id, kind, subject_key, head_repository_id, sha)
         SELECT DISTINCT s.repository_id, s.kind, s.subject_key, d.repository_id, d.head_sha
         FROM github_delivery d JOIN github_subject s ON s.repository_id = d.repository_id
-            AND d.subjects @> ARRAY[s.kind || ':' || s.subject_key]
+            AND d.subjects @> ARRAY[s.kind || ':' || s.subject_key]::varchar[]
         WHERE d.head_sha IS NOT NULL ON CONFLICT DO NOTHING
     """)
     op.execute("""
@@ -151,7 +151,7 @@ def upgrade() -> None:
         SELECT DISTINCT s.repository_id, s.kind, s.subject_key,
             (d.payload #>> '{pull_request,head,repo,id}')::bigint, d.head_sha
         FROM github_delivery d JOIN github_subject s ON s.repository_id = d.repository_id
-            AND d.subjects @> ARRAY[s.kind || ':' || s.subject_key]
+            AND d.subjects @> ARRAY[s.kind || ':' || s.subject_key]::varchar[]
         JOIN github_repository r ON r.repository_id = (d.payload #>> '{pull_request,head,repo,id}')::bigint
         WHERE d.head_sha IS NOT NULL ON CONFLICT DO NOTHING
     """)
