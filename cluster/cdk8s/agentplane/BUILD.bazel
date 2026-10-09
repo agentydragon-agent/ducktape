@@ -5,16 +5,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 
 py_library(
-    name = "rbac",
-    srcs = ["rbac.py"],
-    deps = [
-        ":environment",
-        "//cluster/cdk8s:namespaces",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "electric",
     srcs = ["electric.py"],
     deps = [
@@ -406,7 +396,6 @@ py_library(
         ":app_settings",
         ":egress",
         ":egress_staging_credentials",
-        ":rbac",
         ":sandbox_pod",
         "//agentplane/app:action_federation",
         "//agentplane/app:main",
@@ -456,12 +445,13 @@ py_library(
         ":environment",
         ":llm_ingress",
         ":notifications",
-        ":rbac",
         ":sandbox_pod",
         ":sandbox_service",
         "//agentplane:subjects",
         "//cluster/cdk8s:fleet_rules",
+        "//cluster/cdk8s:namespaces",
         "@pypi//cdk8s",
+        "@pypi//constructs",
     ],
 )
 
