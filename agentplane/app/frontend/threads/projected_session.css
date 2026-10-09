@@ -279,12 +279,11 @@
 }
 
 .agentplane-command-light[data-state="waiting"] {
-  background: var(--mantine-color-text);
+  border-color: var(--mantine-color-text);
   animation: agentplane-command-pulse 1.5s ease-in-out infinite;
 }
 
 .agentplane-command-light[data-state="failed"] {
-  background: var(--mantine-color-red-6);
   border-color: var(--mantine-color-red-6);
 }
 
