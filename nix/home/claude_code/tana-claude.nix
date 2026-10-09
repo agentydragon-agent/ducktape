@@ -7,7 +7,10 @@
 { pkgs, config }:
 let
   inherit (pkgs) lib;
-  models = (lib.importJSON ../../../model_catalog/claude-wrappers.json).tana-claude;
+  # Keep the renderer, but fail clearly if imported while the route selection is parked.
+  models =
+    (lib.importJSON ../../../model_catalog/claude-wrappers.json).tana-claude
+      or (throw "tana-claude is parked (#9574); review gateway limits and restore its routes/key lane before enabling");
 in
 import ./gateway.nix { inherit pkgs lib; } "tana-claude" {
   baseUrl = "https://litellm.allegedly.works";

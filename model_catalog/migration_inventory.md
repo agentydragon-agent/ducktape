@@ -133,7 +133,7 @@ now also publish sourced pairs; see the [source ledger](litellm_metadata.md#dire
 The eight Antigravity Gemini text routes now publish pairs from the recorded
 [Google response](antigravity_limits.md#fresh-google-metadata-2026-10-05-1201-utc),
 including Flash Lite 3.5. Parking the three larger GPT-OSS 20B OpenAI-compatible
-exposures leaves **83 public entries**. Adding Claude/GPT-OSS gateway declarations
+exposures and the three Tana routes leaves **80 public entries**. Adding Claude/GPT-OSS gateway declarations
 brings generative publication to **56 pairs**; the two Gemini
 embedding routes, durable alias and Ollama embedding route now publish input-only
 metadata, making **60 entries with explicit token overrides**. Ollama uses the
@@ -144,7 +144,7 @@ migration and the provenance audit of provisional subscription pairs are not com
 | Routes                                             | Source / next decision                                                                                                                                                                                                                         |
 | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ChatGPT GPT-6 and GPT-5.6, both wires (12 entries) | Existing configured numbers remain; complete schema aliases now. Their mixed historical/client provenance still needs the shared-limit semantic cleanup.                                                                                       |
-| Anthropic subscription; Tana Claude                | Account/gateway paths need an explicit source choice. Same vendor slug alone does not establish equivalence to direct-API metadata.                                                                                                            |
+| Anthropic subscription                             | Account/gateway paths need an explicit source choice. Same vendor slug alone does not establish equivalence to direct-API metadata.                                                                                                            |
 | Antigravity                                        | Gemini text and Claude/GPT-OSS publication is complete from the recorded response and gateway convention. Claude/GPT-OSS input boundaries and joint capacity remain untested. The image model still needs metadata or an explicit disposition. |
 | Ollama chat variants                               | `num_ctx` is allocation, not an input/output pair. GPT-OSS 20B 256K/512K/1M OpenAI exposures are parked; their native variants remain. Establish metadata for retained routes without turning labels or allocations into capacity claims.      |
 | Groq transcription                                 | Declare applicable audio metadata without inventing a generative output ceiling. Embedding input declarations are published; the Ollama declaration still requires the explicitly deferred live verification.                                  |
@@ -228,3 +228,18 @@ this entire design into the cluster guide, create a third overview, or keep two 
 specifications. Completion means the documentation
 is accurate and non-duplicated, neutral semantics have one home, and paused integrations
 remain recoverable.
+
+### Tana exposure parked (2026-10-09)
+
+Tana is a reverse-engineered gateway with unknown limits; vendor model names are
+not evidence of equivalent capacity. Temporarily omit its three routes from the
+served roster rather than invent metadata. The Tana key lane/fallback and generated
+Claude wrapper selection are removed together. The pinned client key is explicitly
+blocked (an empty LiteLLM model allowlist alone is not deny-all), and its team has
+no fallback. Key/team identity, credentials, gateway implementation/registration,
+wrapper renderer and stored state remain; no deployment is paused or deleted.
+
+TODO(#9574): before re-enabling, review whether the gateway can support defensible
+metadata (or explicitly accept unknown limits), restore the served routes and
+consumer selections, restore the key allowlist/fallback, then unblock the key.
+No inference or capacity testing was performed as part of parking.

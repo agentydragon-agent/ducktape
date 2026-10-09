@@ -217,21 +217,18 @@ data "sops_file" "tana_clients_key" {
 
 resource "litellm_team" "tana_clients" {
   team_alias = "tana-clients"
-  router_settings = {
-    # Claude Code background Anthropic API slugs fall back to the cheap tana haiku tier.
-    fallbacks = [
-      {
-        model           = "*"
-        fallback_models = var.model_lanes.tana_client_models.fallback_models
-      }
-    ]
-  }
+  # TODO(#9574): Tana exposure is parked. Retain this team's identity, but no fallback.
+  router_settings = { fallbacks = [] }
 }
 
 resource "litellm_key" "tana_clients" {
   key_alias = "tana-clients"
   key       = data.sops_file.tana_clients_key.data["litellm_tana_key"]
-  models    = var.model_lanes.tana_client_models.allowed_models
+  # Empty models alone is not deny-all in LiteLLM. Explicitly block the retained
+  # pinned key; do not destroy its identity/history or rotate the credential.
+  # TODO(#9574): Restore the reviewed lane/allowlist before unblocking.
+  blocked   = true
+  models    = []
   team_id   = litellm_team.tana_clients.id
   metadata = {
     consumer = "laptop-tana-claude"

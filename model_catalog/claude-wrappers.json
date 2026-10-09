@@ -20,9 +20,5 @@
   "litellm-claude": {
     "haikuModel": "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
     "model": "anthropic-max20/ant-messages/claude-sonnet-5"
-  },
-  "tana-claude": {
-    "haikuModel": "tana/ant-messages/claude-haiku-4-5",
-    "model": "tana/ant-messages/claude-sonnet-4-6"
   }
 }

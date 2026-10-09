@@ -12,8 +12,6 @@ from model_catalog.catalog import (
     GPT6_LUNA_MESSAGES,
     HAIKU_SUBSCRIPTION,
     SONNET_SUBSCRIPTION,
-    TANA_HAIKU,
-    TANA_SONNET,
     Route,
 )
 from model_catalog.policies import KEY_MODEL_LANES, ModelLaneRoutes
@@ -67,7 +65,6 @@ def claude_wrapper_models() -> dict[str, dict[str, str | int]]:
             # Preserve this wrapper's 65,536, independently of account metadata.
             max_output_tokens=65_536,
         ),
-        "tana-claude": _wrapper(TANA_SONNET, TANA_HAIKU, KEY_MODEL_LANES["tana_client_models"]),
     }
 
 

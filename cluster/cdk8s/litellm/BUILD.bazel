@@ -133,6 +133,7 @@ py_test(
     deps = [
         ":config",
         "//:conftest",
+        "//model_catalog:catalog",
         "@pypi//pytest_bazel",
     ],
 )
