@@ -19,6 +19,7 @@ from agentplane.app.threads.view.recording import record_thread_fold
 from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep //agentplane/sandbox_service:protocol_pb2
 
 
 @dataclass(frozen=True)

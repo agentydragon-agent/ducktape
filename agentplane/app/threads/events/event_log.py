@@ -32,6 +32,7 @@ from agentplane.sandbox_service.client import SandboxServiceClient
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep //agentplane/sandbox_service:protocol_pb2
 
 
 class EventReplicationError(ValueError):
