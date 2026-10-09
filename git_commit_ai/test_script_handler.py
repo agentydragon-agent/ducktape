@@ -10,7 +10,8 @@ from pydantic import BaseModel
 
 from agent_core.events import ToolCallOutput
 from agent_core.loop_control import InjectItems, NoAction
-from agent_core.script_handler import (
+from agent_core.tool_provider import ToolResult
+from git_commit_ai.script_handler import (
     ScriptBuilder,
     ScriptError,
     ScriptEvent,
@@ -20,7 +21,6 @@ from agent_core.script_handler import (
     find_tool_result_typed,
     script_handler,
 )
-from agent_core.tool_provider import ToolResult
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import FunctionCallItem, UserMessage
 from util.exec.models import BaseExecResult, Exited
