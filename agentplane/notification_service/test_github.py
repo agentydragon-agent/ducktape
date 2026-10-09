@@ -6,7 +6,7 @@ import hmac
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import create_autospec, patch
 from uuid import UUID, uuid4
@@ -55,16 +55,14 @@ from agentplane.notification_service.models import (
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, NoticeDebounceSettings, Settings
 from agentplane.notification_service.sources.actions import Actions
-from agentplane.notification_service.sources.github import (
-    GitHub,
+from agentplane.notification_service.sources.github import GitHub, IssuePayload, RefPayload, correlation
+from agentplane.notification_service.sources.github_client import (
     GitHubAccessError,
+    GitHubClient,
     GitHubRetryError,
     GitHubSourceChangedError,
     GitHubUnavailableError,
-    IssuePayload,
-    RefPayload,
     Repository,
-    correlation,
     rate_limit_delay,
 )
 from agentplane.notification_service.sources.github_models import (
@@ -141,6 +139,7 @@ def signed(payload: dict[str, JsonValue], event: str, delivery: UUID | None = No
 class Upstream:
     public_key: bytes
     head: str | None = HEAD
+    api_version: str = "2022-11-28"
     revoked: bool = False
     limited: bool = False
     fork: bool = False
@@ -149,7 +148,7 @@ class Upstream:
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         assert request.headers["Accept"] == "application/vnd.github+json"
-        assert request.headers["X-GitHub-Api-Version"] == "2022-11-28"
+        assert request.headers["X-GitHub-Api-Version"] == self.api_version
         path = request.url.path
         self.requests.append(path)
         if path.endswith(("/installation", "/access_tokens")):
@@ -217,9 +216,72 @@ async def provider() -> AsyncIterator[tuple[GitHub, Upstream]]:
     async with httpx.AsyncClient(
         base_url="https://api.github.test", transport=httpx.MockTransport(upstream.handle)
     ) as http:
-        github = GitHub(http, settings)
-        github.start()
+        github = GitHub(GitHubClient(http, settings))
+        github.client.start()
         yield github, upstream
+
+
+async def test_github_configured_transport_and_version(provider: tuple[GitHub, Upstream]) -> None:
+    github, upstream = provider
+    assert str(github.settings.api_url) == "https://api.github.com/"
+    assert github.settings.request_timeout_s == 5
+    assert github.settings.api_version == date(2022, 11, 28)
+    configured = GitHubSettings.model_validate(
+        github.settings.model_dump()
+        | {"api_url": "http://github.test/api/v3", "request_timeout_s": 2.5, "api_version": "2026-01-01"}
+    )
+    async with GitHubClient.open(configured) as client:
+        request = client.http.build_request("GET", "/repos/owner/repo")
+        assert str(request.url) == "http://github.test/api/v3/repos/owner/repo"
+        assert client.http.timeout == httpx.Timeout(2.5)
+        assert not client.http.follow_redirects
+    assert client.http.is_closed
+    upstream.api_version = "2026-01-01"
+    overridden = GitHub(GitHubClient(github.client.http, configured))
+    overridden.client.start()
+    # The mock upstream checks the configured header on App JWT requests, token creation,
+    # and installation-token repository/subject requests, not just one helper's output.
+    await overridden.context(SOURCE)
+    assert "/repos/owner/repo/installation" in upstream.requests
+    assert any(path.endswith("/access_tokens") for path in upstream.requests)
+    assert "/repos/owner/repo/pulls/7" in upstream.requests
+
+
+async def test_github_client_shares_and_invalidates_installation_tokens(provider: tuple[GitHub, Upstream]) -> None:
+    github, upstream = provider
+    client = github.client
+    await asyncio.gather(
+        client.repository("owner/repo", 11),
+        client.pull_request("owner/repo", 7, 11),
+        client.issue("owner/repo", 8, 11),
+        client.branch("owner/repo", "devel", 11),
+        client.commit("owner/repo", HEAD, 11),
+    )
+    token_path = "/app/installations/11/access_tokens"
+    assert upstream.requests.count(token_path) == 1
+    client.tokens[11].expires_at = datetime.now(UTC)
+    await client.repository_by_id(100, 11)
+    assert upstream.requests.count(token_path) == 2
+    upstream.responses["/repos/owner/repo"] = httpx.Response(401)
+    with pytest.raises(GitHubAccessError):
+        await client.repository("owner/repo", 11)
+    assert not client.tokens
+    del upstream.responses["/repos/owner/repo"]
+    await client.repository("owner/repo", 11)
+    assert upstream.requests.count(token_path) == 3
+
+
+async def test_github_client_never_follows_redirects(provider: tuple[GitHub, Upstream]) -> None:
+    github, upstream = provider
+    # Even an injected HTTP client with redirects enabled must not forward the credentials.
+    github.client.http.follow_redirects = True
+    upstream.responses["/repos/owner/repo"] = httpx.Response(
+        302, headers={"location": "https://untrusted.test/capture"}
+    )
+    with pytest.raises(httpx.HTTPStatusError) as error:
+        await github.client.repository("owner/repo", 11)
+    assert error.value.response.status_code == 302
+    assert "/capture" not in upstream.requests
 
 
 async def ingest(github: GitHub, store: Store, payload: dict[str, JsonValue], event: str = "issue_comment") -> None:
@@ -380,7 +442,7 @@ async def test_redelivery_after_restart_replays_one_committed_receipt(
 
     # Reconstruct both the provider and store before the inbox worker processes the receipt.
     recovered = Store(engine)
-    restarted = GitHub(github.http, github.settings)
+    restarted = GitHub(GitHubClient(github.client.http, github.settings))
     assert not await restarted.ingest(recovered, "issue_comment", delivery_id, signature, raw)
     claim = await recovered.claim()
     assert claim is not None
@@ -501,12 +563,12 @@ async def test_primary_limit_uses_reset_without_retry_after(provider: tuple[GitH
     upstream.responses["/repos/owner/repo/installation"] = httpx.Response(
         status, headers={"x-ratelimit-remaining": "0", "x-ratelimit-reset": "3600"}, text="private upstream body"
     )
-    headers = github.app_headers()
+    headers = github.client.app_headers()
     with (
-        patch("agentplane.notification_service.sources.github.time.time", return_value=1000.25),
+        patch("agentplane.notification_service.sources.github_client.time.time", return_value=1000.25),
         pytest.raises(GitHubRetryError, match=f"HTTP {status}") as failure,
     ):
-        await github.request("GET", "/repos/owner/repo/installation", headers)
+        await github.client.request("GET", "/repos/owner/repo/installation", headers)
     assert failure.value.retry_seconds == 2600
     assert "private upstream body" not in str(failure.value)
 
@@ -574,7 +636,7 @@ async def test_rate_limit_retry_survives_ingress_and_restart(
             recovered,
             service.actions,
             service.sandboxes,
-            GitHub(github.http, github.settings),
+            GitHub(GitHubClient(github.client.http, github.settings)),
             notice_debounce=service.notice_debounce,
             stale_confirmation_s=30,
         )
@@ -707,7 +769,7 @@ async def test_late_correlation_survives_restart_and_does_not_block_other_events
     async with store.sessions.begin() as session:
         await session.execute(update(GitHubDelivery).values(received_at=datetime.now(UTC) - timedelta(days=2)))
     recovered = Store(engine)
-    restarted = GitHub(github.http, github.settings)
+    restarted = GitHub(GitHubClient(github.client.http, github.settings))
     if ci_first:
         await ingest(restarted, recovered, association, event)
     else:
@@ -1211,7 +1273,7 @@ async def test_shared_refresh_requests_survive_restart(
     assert upstream.requests.count("/repos/owner/repo/pulls/8") == 1
     requests = list(upstream.requests)
     recovered = Store(engine)
-    restarted = GitHub(github.http, github.settings)
+    restarted = GitHub(GitHubClient(github.client.http, github.settings))
     await ingest(restarted, recovered, comment())
     for sub in [first, second]:
         async with recovered.sessions() as session:
@@ -1378,7 +1440,7 @@ async def test_webhook_racing_bootstrap_keeps_both_revision_associations(
     assert claim is not None
     row = await store.source(claim)
     assert row is not None
-    request = github.request
+    request = github.client.request
 
     async def race(
         method: str,
@@ -1393,7 +1455,7 @@ async def test_webhook_racing_bootstrap_keeps_both_revision_associations(
             await ingest(github, store, pr(NEXT), "pull_request")
         return response
 
-    with patch.object(github, "request", side_effect=race):
+    with patch.object(github.client, "request", side_effect=race):
         await github.reconcile(store, claim, row, source)
     page = await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
     assert [entry.payload for entry in page.entries] == [check(NEXT), check(HEAD)]
@@ -1413,7 +1475,7 @@ async def test_access_refresh_is_single_flight_across_workers(
     github, upstream = provider
     await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
     entered, resume = asyncio.Event(), asyncio.Event()
-    request = github.request
+    request = github.client.request
     upstream.requests.clear()
 
     async def paused(
@@ -1430,11 +1492,11 @@ async def test_access_refresh_is_single_flight_across_workers(
         return await request(method, path, headers, json=json, allow_missing=allow_missing)
 
     key = AccessKey(42, 11, 100)
-    with patch.object(github, "request", side_effect=paused):
+    with patch.object(github.client, "request", side_effect=paused):
         async with asyncio.TaskGroup() as tasks:
             first = tasks.create_task(github.refresh_access(store, key))
             await entered.wait()
-            other = GitHub(github.http, github.settings)
+            other = GitHub(GitHubClient(github.client.http, github.settings))
             with pytest.raises(RefreshDeferredError):
                 await other.refresh_access(Store(engine), key)
             resume.set()

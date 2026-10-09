@@ -1,6 +1,7 @@
 """Standalone notification API and workers. All dependencies are independently owned backends."""
 
 import asyncio
+from contextlib import AsyncExitStack
 
 import httpx
 import uvicorn
@@ -13,6 +14,7 @@ from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import Settings
 from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.sources.github import GitHub
+from agentplane.notification_service.sources.github_client import GitHubClient
 from agentplane.notification_service.store import Store
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -40,16 +42,17 @@ async def serve(settings: Settings) -> None:
         async with (
             k8s_client.ApiClient() as kube,
             httpx.AsyncClient(base_url=settings.actions.url, timeout=5, follow_redirects=False) as http,
-            httpx.AsyncClient(base_url="https://api.github.com", timeout=5, follow_redirects=False) as github_http,
+            AsyncExitStack() as github_stack,
         ):
             principals = WorkloadPrincipalResolver(
                 authentication=k8s_client.AuthenticationV1Api(kube),
                 audience=settings.token_audience,
                 allowed_service_account_namespaces={settings.namespace},
             )
-            github = GitHub(github_http, settings.github) if settings.github is not None else None
-            if github is not None:
-                github.start()
+            github = None
+            if settings.github is not None:
+                client = await github_stack.enter_async_context(GitHubClient.open(settings.github))
+                github = GitHub(client)
             app = create_app(
                 Service(
                     Store(engine),

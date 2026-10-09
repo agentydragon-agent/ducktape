@@ -1,21 +1,16 @@
-"""GitHub App authentication, signed ingress, and provider-owned subject matching."""
+"""Signed GitHub ingress and durable notification matching, using the async GitHub client."""
 
 import asyncio
 import hashlib
 import hmac
 import logging
-import math
-import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from email.utils import parsedate_to_datetime
 from typing import Literal
-from urllib.parse import quote
 from uuid import UUID
 
 import httpx
-import jwt
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, TypeAdapter
+from pydantic import Field, JsonValue, TypeAdapter
 from sqlalchemy import ColumnElement, false, or_, select, true
 from sqlalchemy.dialects.postgresql import insert
 
@@ -41,7 +36,19 @@ from agentplane.notification_service.github_state import (
     github_lock,
 )
 from agentplane.notification_service.models import SourceFailureKind
-from agentplane.notification_service.settings import GitHubSettings
+from agentplane.notification_service.sources.github_client import (
+    GitHubAccessError,
+    GitHubClient,
+    GitHubNotInstalledError,
+    GitHubRetryError,
+    GitHubSourceChangedError,
+    GitHubUnavailableError,
+    Installation,
+    Issue,
+    PullRequest,
+    Repository,
+    Upstream,
+)
 from agentplane.notification_service.sources.github_models import (
     CI_EVENTS,
     ISSUE_EVENTS,
@@ -55,62 +62,15 @@ from agentplane.notification_service.sources.github_models import (
     GitHubSource,
     IssueSubject,
     PullRequestSubject,
-    RepositoryName,
     Subject,
     subject_key,
 )
 from agentplane.notification_service.store import Store
 
-# RS256 is loaded dynamically by PyJWT.
-# gazelle:include_dep @pypi//cryptography
-
 logger = logging.getLogger(__name__)
 
 _PAYLOAD = TypeAdapter(dict[str, JsonValue])
 SUPPORTED_EVENTS = CI_EVENTS | PR_EVENTS | REF_EVENTS | ISSUE_EVENTS
-
-
-class GitHubUnavailableError(Exception):
-    """Disabled provider or confirmed loss of repository/installation access."""
-
-
-class GitHubAccessError(GitHubUnavailableError):
-    """Access is denied or the installation is suspended."""
-
-
-class GitHubSourceChangedError(GitHubUnavailableError):
-    """The authorized repository, installation or commit identity changed."""
-
-
-class GitHubNotInstalledError(GitHubAccessError):
-    """The App's installation lookup returned 404 for this repository."""
-
-
-class GitHubRetryError(Exception):
-    def __init__(self, status_code: int, retry_seconds: int) -> None:
-        self.retry_seconds = retry_seconds
-        super().__init__(f"GitHub rate limited (HTTP {status_code}); retry in {retry_seconds}s")
-
-
-def rate_limit_delay(headers: httpx.Headers, now: float) -> int:
-    # GitHub primary limits use an epoch reset; secondary limits may supply Retry-After.
-    # Neither deadline may be shortened by our fallback or a maximum-delay clamp.
-    delay = 60
-    retry_after = headers.get("retry-after", "")
-    if retry_after.isascii() and retry_after.isdecimal():
-        delay = max(delay, int(retry_after))
-    elif retry_after:
-        try:
-            deadline = parsedate_to_datetime(retry_after)
-        except ValueError, OverflowError:
-            pass
-        else:
-            if deadline.tzinfo is not None:
-                delay = max(delay, math.ceil(deadline.timestamp() - now))
-    reset = headers.get("x-ratelimit-reset", "")
-    if headers.get("x-ratelimit-remaining") == "0" and reset.isascii() and reset.isdecimal():
-        delay = max(delay, math.ceil(int(reset) - now))
-    return delay
 
 
 class InvalidSignatureError(Exception):
@@ -125,43 +85,14 @@ class MissingWebhookRepositoryError(ValueError):
     pass
 
 
-class Upstream(BaseModel):
-    model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
-
-
-class Installation(Upstream):
-    id: int = Field(gt=0)
-    suspended_at: datetime | None = None
-
-
-class Repository(Upstream):
-    id: int = Field(gt=0)
-    full_name: RepositoryName
-
-
 class Envelope(Upstream):
     installation: Installation
     repository: Repository | None = None
     action: str | None = Field(default=None, max_length=64)
 
 
-class Revision(Upstream):
-    sha: str
-    repo: Repository | None = None
-
-
-class PullRequest(Upstream):
-    number: int
-    head: Revision
-
-
 class PullRequestPayload(Envelope):
     pull_request: PullRequest
-
-
-class Issue(Upstream):
-    number: int
-    pull_request: dict[str, JsonValue] | None = None
 
 
 class IssuePayload(Envelope):
@@ -221,19 +152,6 @@ class RefPayload(Envelope):
     ref_type: Literal["branch", "tag"]
 
 
-class GitRef(Upstream):
-    object: Revision
-
-
-class Commit(Upstream):
-    sha: str
-
-
-class Token(Upstream):
-    token: SecretStr
-    expires_at: datetime
-
-
 @dataclass
 class Context:
     binding: GitHubBinding
@@ -259,14 +177,6 @@ PAYLOAD_MODELS: dict[str, type[Envelope]] = {
     "installation": Envelope,
     "installation_repositories": Envelope,
 }
-
-
-def api_headers(bearer: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {bearer}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
 
 
 def correlation(payload: Envelope) -> tuple[str | None, list[Subject]]:
@@ -307,105 +217,26 @@ def correlation(payload: Envelope) -> tuple[str | None, list[Subject]]:
 
 
 class GitHub:
-    def __init__(self, http: httpx.AsyncClient, settings: GitHubSettings) -> None:
-        self.http, self.settings = http, settings
-        self.tokens: dict[int, Token] = {}
-        self.token_lock = asyncio.Lock()
-        self.ingress_slots = asyncio.Semaphore(settings.webhook_concurrency)
+    def __init__(self, client: GitHubClient) -> None:
+        self.client, self.settings = client, client.settings
+        self.ingress_slots = asyncio.Semaphore(self.settings.webhook_concurrency)
 
-    def app_headers(self) -> dict[str, str]:
-        private_key = self.settings.private_key.get_secret_value()
-        now = int(time.time())
-        bearer = jwt.encode(
-            {"iat": now - 30, "exp": now + 540, "iss": str(self.settings.app_id)}, private_key, algorithm="RS256"
-        )
-        return api_headers(bearer)
-
-    def start(self) -> None:
-        # Validate the App private key before HTTP readiness; Settings validates the signing secret.
-        self.app_headers()
-
-    async def request(
-        self,
-        method: str,
-        path: str,
-        headers: dict[str, str],
-        *,
-        json: dict[str, JsonValue] | None = None,
-        allow_missing: bool = False,
-    ) -> httpx.Response:
-        # No redirects: credentials must never follow repository redirects to another origin.
-        response = await self.http.request(method, path, headers=headers, json=json)
-        if response.status_code == 429 or (
-            response.status_code == 403
-            and (response.headers.get("x-ratelimit-remaining") == "0" or "retry-after" in response.headers)
-        ):
-            raise GitHubRetryError(response.status_code, rate_limit_delay(response.headers, time.time()))
-        if allow_missing and response.status_code == 404:
-            return response
-        if response.status_code == 401:
-            self.tokens.clear()
-        if response.status_code in (401, 403, 404):
-            raise GitHubAccessError(
-                f"GitHub App access unavailable (HTTP {response.status_code}); check credentials and permissions"
-            )
-        response.raise_for_status()
-        return response
-
-    async def installation_headers(self, installation_id: int) -> dict[str, str]:
-        async with self.token_lock:
-            token = self.tokens.get(installation_id)
-            if token is None or token.expires_at <= datetime.now(UTC) + timedelta(minutes=5):
-                response = await self.request(
-                    "POST",
-                    f"/app/installations/{installation_id}/access_tokens",
-                    self.app_headers(),
-                    json={
-                        "permissions": {
-                            "metadata": "read",
-                            "contents": "read",
-                            "pull_requests": "read",
-                            "issues": "read",
-                        }
-                    },
-                )
-                token = Token.model_validate_json(response.content)
-                self.tokens[installation_id] = token
-        return api_headers(token.token.get_secret_value())
-
-    async def repository(self, name: str) -> tuple[GitHubBinding, dict[str, str]]:
-        response = await self.request("GET", f"/repos/{name}/installation", self.app_headers(), allow_missing=True)
-        if response.status_code == 404:
-            raise GitHubNotInstalledError("GitHub App has no accessible installation for this repository")
-        installation = Installation.model_validate_json(response.content)
-        if installation.suspended_at is not None:
-            raise GitHubAccessError("GitHub App installation is suspended")
-        headers = await self.installation_headers(installation.id)
-        repository = Repository.model_validate_json((await self.request("GET", f"/repos/{name}", headers)).content)
-        return GitHubBinding(
-            app_id=self.settings.app_id, installation_id=installation.id, repository_id=repository.id
-        ), headers
-
-    async def issue(self, repository: str, number: int, headers: dict[str, str]) -> None:
-        issue = Issue.model_validate_json(
-            (await self.request("GET", f"/repos/{repository}/issues/{number}", headers)).content
-        )
-        if issue.number != number or issue.pull_request is not None:
-            raise GitHubSourceChangedError("GitHub issue identity changed or refers to a pull request")
+    async def repository(self, name: str) -> GitHubBinding:
+        installation = await self.client.installation(name)
+        repository = await self.client.repository(name, installation.id)
+        return GitHubBinding(app_id=self.settings.app_id, installation_id=installation.id, repository_id=repository.id)
 
     async def context(self, source: GitHubSource) -> Context:
-        binding, headers = await self.repository(source.repository)
+        binding = await self.repository(source.repository)
         context = Context(binding, {binding.repository_id: binding.installation_id}, set())
         match source.subject:
             case PullRequestSubject(number=number):
-                pr = PullRequest.model_validate_json(
-                    (await self.request("GET", f"/repos/{source.repository}/pulls/{number}", headers)).content
-                )
+                pr = await self.client.pull_request(source.repository, number, binding.installation_id)
                 context.heads.add(pr.head.sha)
                 if pr.head.repo is not None and pr.head.repo.id != binding.repository_id:
                     # A base installation does not grant authority over an uninstalled fork.
                     try:
-                        fork, _ = await self.repository(pr.head.repo.full_name)
+                        fork = await self.repository(pr.head.repo.full_name)
                     except GitHubNotInstalledError as error:
                         logger.warning("PR fork %s is not covered: %s", pr.head.repo.full_name, error)
                     else:
@@ -413,23 +244,13 @@ class GitHub:
                             raise GitHubSourceChangedError("GitHub fork repository identity changed")
                         context.installations[fork.repository_id] = fork.installation_id
             case IssueSubject(number=number):
-                await self.issue(source.repository, number, headers)
+                await self.client.issue(source.repository, number, binding.installation_id)
             case BranchSubject(name=name):
-                response = await self.request(
-                    "GET",
-                    f"/repos/{source.repository}/git/ref/heads/{quote(name, safe='')}",
-                    headers,
-                    allow_missing=True,
-                )
-                if response.status_code != 404:
-                    response.raise_for_status()
-                    context.heads.add(GitRef.model_validate_json(response.content).object.sha)
+                branch = await self.client.branch(source.repository, name, binding.installation_id)
+                if branch is not None:
+                    context.heads.add(branch.object.sha)
             case CommitSubject(sha=sha):
-                commit = Commit.model_validate_json(
-                    (await self.request("GET", f"/repos/{source.repository}/commits/{sha}", headers)).content
-                )
-                if commit.sha != sha:
-                    raise GitHubSourceChangedError("GitHub commit identity changed")
+                await self.client.commit(source.repository, sha, binding.installation_id)
                 context.heads.add(sha)
         return context
 
@@ -497,19 +318,10 @@ class GitHub:
         lease = await state.acquire(key)
         if lease is not None:
             try:
-                headers = await self.installation_headers(key.installation_id)
-                repository = Repository.model_validate_json(
-                    (await self.request("GET", f"/repositories/{key.repository_id}", headers)).content
-                )
-                installation = Installation.model_validate_json(
-                    (
-                        await self.request("GET", f"/repos/{repository.full_name}/installation", self.app_headers())
-                    ).content
-                )
+                repository = await self.client.repository_by_id(key.repository_id, key.installation_id)
+                installation = await self.client.installation(repository.full_name)
                 if repository.id != key.repository_id or installation.id != key.installation_id:
                     raise GitHubSourceChangedError("GitHub repository/installation identity changed")
-                if installation.suspended_at is not None:
-                    raise GitHubAccessError("GitHub App installation is suspended")
             except (httpx.HTTPError, ValueError, GitHubUnavailableError, GitHubRetryError) as error:
                 await self.refresh_failed(state, lease, error)
             await state.succeed(lease, repository_name=repository.full_name)
@@ -528,23 +340,20 @@ class GitHub:
             return key
         revisions = []
         try:
-            headers = await self.installation_headers(base.key.installation_id)
             async with store.sessions() as session:
                 repository = await session.get(GitHubRepository, key.repository_id)
                 assert repository is not None
                 name = repository.full_name
             match source.subject:
                 case PullRequestSubject(number=number):
-                    pr = PullRequest.model_validate_json(
-                        (await self.request("GET", f"/repos/{name}/pulls/{number}", headers)).content
-                    )
+                    pr = await self.client.pull_request(name, number, base.key.installation_id)
                     # Base-repository CI may build the fork head. The fork association requires
                     # an explicit upstream repository identity; SHA equality does not grant access.
                     revisions.append(HeadRevision(key.repository_id, name, pr.head.sha))
                     if pr.head.repo is not None and pr.head.repo.id != key.repository_id:
                         revisions.append(HeadRevision(pr.head.repo.id, pr.head.repo.full_name, pr.head.sha))
                         try:
-                            fork, _ = await self.repository(pr.head.repo.full_name)
+                            fork = await self.repository(pr.head.repo.full_name)
                         except GitHubNotInstalledError:
                             pass
                         else:
@@ -572,23 +381,13 @@ class GitHub:
                                     .on_conflict_do_nothing()
                                 )
                 case IssueSubject(number=number):
-                    await self.issue(name, number, headers)
+                    await self.client.issue(name, number, base.key.installation_id)
                 case BranchSubject(name=branch):
-                    response = await self.request(
-                        "GET", f"/repos/{name}/git/ref/heads/{quote(branch, safe='')}", headers, allow_missing=True
-                    )
-                    if response.status_code != 404:
-                        revisions.append(
-                            HeadRevision(
-                                key.repository_id, name, GitRef.model_validate_json(response.content).object.sha
-                            )
-                        )
+                    ref = await self.client.branch(name, branch, base.key.installation_id)
+                    if ref is not None:
+                        revisions.append(HeadRevision(key.repository_id, name, ref.object.sha))
                 case CommitSubject(sha=sha):
-                    commit = Commit.model_validate_json(
-                        (await self.request("GET", f"/repos/{name}/commits/{sha}", headers)).content
-                    )
-                    if commit.sha != sha:
-                        raise GitHubSourceChangedError("GitHub commit identity changed")
+                    await self.client.commit(name, sha, base.key.installation_id)
                     revisions.append(HeadRevision(key.repository_id, name, sha))
         except (httpx.HTTPError, ValueError, GitHubUnavailableError, GitHubRetryError) as error:
             await self.refresh_failed(state, lease, error)

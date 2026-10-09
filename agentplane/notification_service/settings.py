@@ -1,9 +1,10 @@
 """YAML deployment configuration; GitHub secrets are supplied through Secret-backed environment variables."""
 
 import os
+from datetime import date
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 # gazelle:include_dep @pypi//pyyaml
@@ -22,6 +23,13 @@ class ActionsSettings(BaseModel):
 
 class GitHubSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    api_url: AnyHttpUrl = Field(
+        default=AnyHttpUrl("https://api.github.com"),
+        description="Trusted GitHub REST API base URL; receives App JWTs and installation tokens. Supports a path prefix.",
+    )
+    request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
+    api_version: date = Field(default=date(2022, 11, 28), description="GitHub REST API version header date.")
+
     app_id: int = Field(gt=0, description="Public numeric GitHub App ID; not a secret.")
     private_key: SecretStr = Field(
         min_length=1, description="PEM App private key, supplied through a Secret-backed environment variable."
@@ -44,6 +52,18 @@ class GitHubSettings(BaseModel):
         le=64,
         description="Maximum concurrent webhook requests per replica, held through durable commit; saturation returns 503.",
     )
+
+    @field_validator("api_url")
+    @classmethod
+    def api_url_without_credentials_or_query(cls, value: AnyHttpUrl) -> AnyHttpUrl:
+        if (
+            value.username is not None
+            or value.password is not None
+            or value.query is not None
+            or value.fragment is not None
+        ):
+            raise ValueError("GitHub API URL must not contain credentials, query or fragment")
+        return value
 
 
 class SandboxServiceSettings(BaseModel):

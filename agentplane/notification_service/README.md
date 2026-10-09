@@ -87,3 +87,23 @@ installation tokens request it alongside Metadata, Contents and Pull requests re
 `issues` and `workflow_job` webhook events when configuring the App. Workflow-job notifications
 are opt-in; ordinary issue subscriptions default to lifecycle events and comments. See the
 [ingestion and matching contract](docs/api.md#github-webhook-ingestion-and-matching).
+
+### GitHub API transport overrides
+
+The optional `github` Pydantic settings also own `api_url` (default `https://api.github.com`),
+`request_timeout_s` (default 5, positive and finite), and `api_version` (default `2022-11-28`).
+Set them in deployment YAML or override them with
+`AGENTPLANE_NOTIFICATIONS_GITHUB__API_URL`, `AGENTPLANE_NOTIFICATIONS_GITHUB__REQUEST_TIMEOUT_S`,
+and `AGENTPLANE_NOTIFICATIONS_GITHUB__API_VERSION`. Restart the service after changes.
+HTTP(S) mock endpoints and REST path prefixes such as `/api/v3` are supported. URLs with
+embedded credentials, query strings or fragments are rejected; redirects remain disabled.
+The configured endpoint receives App JWTs and installation tokens: only use trusted endpoints,
+and use fixture credentials for local mock services. These are deployment-owned settings,
+not subscription-controlled destinations, and do not alter egress authorization.
+
+`GitHubClient` in `sources/github_client.py` owns the async HTTP lifetime, configured endpoint,
+App JWTs, installation-token cache and typed REST resource methods. The notification provider
+owns webhook verification, durable access/subject observations, leases, backoff scheduling and
+matching. Client calls surface rate limits immediately; they do not sleep/retry inside a lease.
+The client can accept an injected `httpx.AsyncClient` for transport tests; deployment startup
+uses `GitHubClient.open(settings.github)` to validate the key and close the configured transport.
