@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
@@ -49,6 +50,8 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # gazelle:include_dep @pypi//protobuf
 
+logger = logging.getLogger(__name__)
+
 
 @pytest.mark.parametrize("busy", [False, True])
 @pytest.mark.parametrize("failed_before_rpc", [False, True])
@@ -63,9 +66,12 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     model: ScriptedModel,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    failed_native_journal: None,
     busy: bool,
     failed_before_rpc: bool,
 ) -> None:
+    caplog.set_level(logging.INFO, logger=__name__)
     owner = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
     delegate = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="notifications")
     other = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="other")
@@ -216,15 +222,25 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     # not spend claims scanning it, even when the admission response is lost.
                     history_cursor = 0
                     for index in range(130):
-                        receipt = await native.command(
-                            "notifications",
-                            command_pb2.Command(
-                                command_id=f"old-{index}",
-                                interrupt_turn=command_pb2.InterruptTurn(turn_id="nonexistent-turn"),
-                            ),
-                            after_cursor=history_cursor,
+                        command = command_pb2.Command(
+                            command_id=f"old-{index}",
+                            interrupt_turn=command_pb2.InterruptTurn(turn_id="nonexistent-turn"),
                         )
+                        logger.info(
+                            "notification journal seed %d/130: submitting command_id=%s operation=%s after_cursor=%d",
+                            index + 1,
+                            command.command_id,
+                            command.WhichOneof("operation"),
+                            history_cursor,
+                        )
+                        receipt = await native.command("notifications", command, after_cursor=history_cursor)
                         history_cursor = receipt.cursor
+                        logger.info(
+                            "notification journal seed %d/130: admitted command_id=%s cursor=%d",
+                            index + 1,
+                            command.command_id,
+                            history_cursor,
+                        )
                     assert history_cursor > 128
                     original = Runner.command
                     lost = False

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import shlex
 import shutil
@@ -72,8 +73,11 @@ SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
 
 
 @pytest.fixture
-async def failed_native_journal(request: pytest.FixtureRequest, runner: RunnerHandle) -> AsyncIterator[None]:
+async def failed_native_journal(
+    request: pytest.FixtureRequest, runner: RunnerHandle, caplog: pytest.LogCaptureFixture
+) -> AsyncIterator[None]:
     """Preserve native history and journal evidence when an app-level bridge case fails."""
+    caplog.set_level(logging.INFO, logger="httpx")
     yield
     report = request.node.stash.get(_CALL_REPORT, None)
     if report is None or not report.failed:
@@ -209,7 +213,7 @@ async def app_url(
 
 
 async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_event_id(
-    app_url: str, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    app_url: str, model: ScriptedModel, spec: protocol_pb2.SessionSpec, failed_native_journal: None
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         opened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
@@ -1036,7 +1040,7 @@ async def test_command_relay_waits_for_runner_admission_before_closing(
 
 
 async def test_command_admission_timeout_is_not_an_internal_server_error(
-    app_url: str, spec: protocol_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch
+    app_url: str, spec: protocol_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch, failed_native_journal: None
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         opened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
