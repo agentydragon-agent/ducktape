@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { Chip, CompactCall } from "../chips";
+import { CompactCall } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
 import { resource, ResourceChips } from "./resource_common";
