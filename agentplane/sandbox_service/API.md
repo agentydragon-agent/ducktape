@@ -53,9 +53,18 @@ The same service-caller allowlist gates every RPC. Provisioning is always enable
 - `SuspendSandbox`, `ResumeSandbox`, `DeleteSandbox`: explicit owner/name/UID-pinned mutations.
   Resume refuses incomplete provisioning; deletion requires suspension.
 
-Create is **not currently idempotent**. After a timeout or lost response, reconcile inventory rather
-than blindly retrying. The client disables gRPC retries and adds no application retry loop. Existing
-Kubernetes ownership labels, stored bindings, identities, and PVC policy remain unchanged.
+Create retries by exact caller, name, and request while the CR exists; after deletion no
+name-only receipt can prove whether a past Create succeeded. The client disables automatic gRPC
+retries. Existing Kubernetes ownership labels, stored bindings, identities, and PVC policy remain
+unchanged.
+
+The Sandbox Service controller lists and watches its managed Sandbox CRs from a Kubernetes
+`resourceVersion`. It queues changed names, reads the current incarnation for each reconciliation,
+and rate-limits failures per name. A startup and periodic full sweep repairs missed events and
+orphaned external grants even while the watch is unavailable. Multiple replicas may reconcile the
+same name: mutations use UID/resourceVersion guards and are safe to replay. The upstream Sandbox
+controller owns `status` and Pod lifecycle; Agentplane's Create intent and progress live in its
+namespaced annotations, not competing Sandbox status conditions.
 
 ## Sessions and commands
 

@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import cast
+from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
 from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
@@ -88,6 +89,11 @@ class SandboxInventory:
     @property
     def namespace(self) -> str:
         return self._namespace
+
+    @property
+    def sandbox_list(self) -> Callable[..., Awaitable[dict[str, Any]]]:
+        """Use the same Kubernetes list API for a resourceVersion-based watch."""
+        return self._custom_objects.list_namespaced_custom_object
 
     async def list_templates(self) -> list[str]:
         """The concrete templates an operator may choose for one Sandbox."""

@@ -13,6 +13,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service.controller import SandboxController
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources, add_service
@@ -113,7 +114,7 @@ async def serve_with_engine(settings: Settings, configuration: k8s_client.Config
         async def healthz() -> dict[str, str]:
             return {"status": "ok"}
 
-        reconcile = asyncio.create_task(provisioning.run(), name="sandbox-provisioning")
+        reconcile = asyncio.create_task(SandboxController(provisioning).run(), name="sandbox-provisioning")
         history = (
             asyncio.create_task(
                 HistoryIngester(

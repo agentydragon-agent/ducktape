@@ -4,7 +4,6 @@ The app may select form presets, but this service owns concrete grants and launc
 Existing labels/finalizers and deletion semantics are retained for an in-place ownership handoff.
 """
 
-import asyncio
 import json
 import logging
 import re
@@ -115,11 +114,3 @@ class Provisioning:
                 await self.ensure(sandbox)
             except Exception:
                 logging.getLogger(__name__).exception("provisioning incomplete for %s", sandbox.name)
-
-    async def run(self, *, interval_seconds: float = 30) -> None:
-        while True:
-            try:
-                await self.reconcile_once()
-            except Exception:
-                logging.getLogger(__name__).exception("provisioning reconciliation failed")
-            await asyncio.sleep(interval_seconds)
