@@ -90,10 +90,9 @@ async def import_log(
             saved_boundaries = [first[0]] if cursor == 1 else [first[0], last[0]]
             for (source_cursor, payload), saved in zip(source_boundaries, saved_boundaries, strict=True):
                 entry = ParseDict(json.loads(payload), event_log_pb2.EventEntry())
-                if (
-                    entry.cursor != source_cursor
-                    or entry.SerializeToString(deterministic=True) != saved.SerializeToString(deterministic=True)
-                ):
+                if entry.cursor != source_cursor or entry.SerializeToString(
+                    deterministic=True
+                ) != saved.SerializeToString(deterministic=True):
                     raise HistoryConflictError(
                         f"app checkpoint boundary changed at {source_cursor} for Session {log_id}"
                     )
@@ -177,7 +176,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
     try:
         asyncio.run(run(Settings()))
-    except (ValueError, ParseError):
+    except ValueError, ParseError:
         # Broken data or incompatible prefix cannot be fixed by a pod restart.
         logger.exception("History import rejected inconsistent data")
         raise SystemExit(DATA_CONFLICT_EXIT_CODE) from None

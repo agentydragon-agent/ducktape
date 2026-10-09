@@ -63,8 +63,7 @@ async def test_legacy_and_reserved_session_backfill_can_replay(engine: AsyncEngi
     page_starts: list[int] = []
 
     def record_page(
-        _connection: object, clause: object, _multiparams: object,
-        params: dict[str, object], _options: object,
+        _connection: object, clause: object, _multiparams: object, params: dict[str, object], _options: object
     ) -> None:
         if "cursor > :cursor" in str(clause) and "FROM event" in str(clause):
             page_starts.append(cast(int, params["cursor"]))
