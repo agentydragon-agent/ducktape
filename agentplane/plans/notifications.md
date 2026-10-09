@@ -53,6 +53,7 @@ If idle polling becomes a priority, replace the notification source's five-secon
   [`CRON_NOTIFICATIONS`](task_dag.md#cron_notifications--scheduled-notifications-for-agents).
 
 - Structured notification-message provenance for eventual compact frontend rendering:
+  [design and acceptance](notification_presentation.md);
   [`NOTIFICATION_PRESENTATION`](task_dag.md#notification_presentation--structured-metadata-and-compact-notification-rendering).
   Preserve full agent-facing text and raw evidence; never identify notices by text prefix alone.
 
