@@ -303,7 +303,7 @@ function ReasoningPreview({
 
 /** A sent message once the server has accepted it and is working on it, but before the harness's
  * own confirmed_input entity lands -- the moment the message is fully ordered in history (it has a
- * cursor) and no longer needs the composer's Retry/Dismiss affordances, so it can read as the
+ * cursor) and no longer needs the composer's delivery affordances, so it can read as the
  * eventual bubble rather than as a command awaiting an outcome. */
 export function pendingSentMessage(entity: ThreadEntity): boolean {
   return (

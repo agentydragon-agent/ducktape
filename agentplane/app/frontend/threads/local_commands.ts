@@ -6,19 +6,18 @@ import { EventEntrySchema, type EventEntry } from "../../../protocol/event_log_p
 export interface LocalCommand {
   command: Command;
   submittedAt: number;
+  /** Persisted before an HTTP attempt; older records are conservatively treated as attempted. */
+  attempted: boolean;
   /** HTTP admission evidence can be ahead of the consumed Event prefix. It never advances it. */
   admission: EventEntry | null;
 }
 
 export interface LocalCommandSnapshot {
   commands: LocalCommand[];
-  /** Locally dismissed terminal outcomes stay hidden in this browser across reloads. */
-  dismissedCommandIds: string[];
   error: string | null;
 }
 
 export const MAX_RETAINED_COMMANDS = 128;
-const MAX_DISMISSED_COMMANDS = 256;
 
 function decode(text: string): LocalCommand {
   const value = JSON.parse(text) as Record<string, unknown>;
@@ -29,12 +28,16 @@ function decode(text: string): LocalCommand {
   if (!command.commandId || !command.operation.case) throw new Error("Invalid locally retained Command");
   const admission = value.admission === null ? null : fromJson(EventEntrySchema, value.admission as JsonValue);
   if (admission) checkAdmission(command, admission);
-  return { submittedAt: value.submittedAt, command, admission };
+  if (value.attempted !== undefined && typeof value.attempted !== "boolean") {
+    throw new Error("Invalid locally retained delivery state");
+  }
+  return { submittedAt: value.submittedAt, attempted: value.attempted ?? true, command, admission };
 }
 
 function encode(value: LocalCommand): string {
   return JSON.stringify({
     submittedAt: value.submittedAt,
+    attempted: value.attempted,
     command: toJson(CommandSchema, value.command),
     admission: value.admission ? toJson(EventEntrySchema, value.admission) : null,
   });
@@ -59,13 +62,11 @@ export function checkAdmission(command: Command, admission: EventEntry): void {
  * The immutable Thread scope is also the HTTP submission target. */
 export class LocalCommands {
   private readonly prefix: string;
-  private readonly dismissedKey: string;
-  private snapshot: LocalCommandSnapshot = { commands: [], dismissedCommandIds: [], error: null };
+  private snapshot: LocalCommandSnapshot = { commands: [], error: null };
   private readonly listeners = new Set<() => void>();
 
   constructor(readonly threadId: string) {
     this.prefix = `agentplane.pending:${encodeURIComponent(threadId)}:`;
-    this.dismissedKey = `agentplane.dismissed:${encodeURIComponent(threadId)}`;
     this.reload();
   }
 
@@ -96,16 +97,37 @@ export class LocalCommands {
     }
     if (this.snapshot.commands.length >= MAX_RETAINED_COMMANDS) {
       throw new Error(
-        `Dismiss or finish a retained command before submitting another (maximum ${MAX_RETAINED_COMMANDS})`
+        `Wait for retained commands to finish before submitting another (maximum ${MAX_RETAINED_COMMANDS})`
       );
     }
-    if (this.snapshot.dismissedCommandIds.includes(command.commandId)) {
-      this.writeDismissed(this.snapshot.dismissedCommandIds.filter((id) => id !== command.commandId));
-    }
-    const value: LocalCommand = { command, submittedAt: Date.now(), admission: null };
+    const value: LocalCommand = { command, submittedAt: Date.now(), attempted: false, admission: null };
     localStorage.setItem(this.key(command.commandId), encode(value));
     this.reload();
     return value;
+  }
+
+  /** Record the attempt *before* sending: a lost response can never become a cancellable draft. */
+  markAttempted(id: string): boolean {
+    const key = this.key(id);
+    const raw = localStorage.getItem(key);
+    if (raw === null) return false;
+    const value = decode(raw);
+    if (value.admission) return false;
+    if (!value.attempted) {
+      localStorage.setItem(key, encode({ ...value, attempted: true }));
+      this.reload();
+    }
+    return true;
+  }
+
+  /** Only a command with no HTTP attempt can be cancelled by this browser. */
+  cancelUnsent(id: string): boolean {
+    const key = this.key(id);
+    const raw = localStorage.getItem(key);
+    if (raw === null || decode(raw).attempted) return false;
+    localStorage.removeItem(key);
+    this.reload();
+    return true;
   }
 
   acknowledge(command: Command, admission: EventEntry): void {
@@ -129,7 +151,6 @@ export class LocalCommands {
         commands: this.snapshot.commands.map((value) =>
           value.command.commandId === command.commandId ? { ...value, admission } : value
         ),
-        dismissedCommandIds: this.snapshot.dismissedCommandIds,
         error: String(error),
       };
       for (const listener of this.listeners) listener();
@@ -171,18 +192,6 @@ export class LocalCommands {
     if (changed) this.reload();
   }
 
-  dismiss(id: string): void {
-    if (!this.snapshot.dismissedCommandIds.includes(id)) {
-      this.writeDismissed([...this.snapshot.dismissedCommandIds, id].slice(-MAX_DISMISSED_COMMANDS));
-    }
-    localStorage.removeItem(this.key(id));
-    this.reload();
-  }
-
-  isDismissed(id: string): boolean {
-    return this.snapshot.dismissedCommandIds.includes(id);
-  }
-
   private key(id: string): string {
     return `${this.prefix}${encodeURIComponent(id)}`;
   }
@@ -195,22 +204,12 @@ export class LocalCommands {
   }
 
   private onStorage = (event: StorageEvent): void => {
-    if (event.key === null || event.key.startsWith(this.prefix) || event.key === this.dismissedKey) this.reload();
+    if (event.key === null || event.key.startsWith(this.prefix)) this.reload();
   };
-
-  private writeDismissed(ids: string[]): void {
-    localStorage.setItem(this.dismissedKey, JSON.stringify(ids));
-  }
 
   private reload(): void {
     try {
       const commands: LocalCommand[] = [];
-      const dismissedRaw = localStorage.getItem(this.dismissedKey);
-      const dismissedValue: unknown = dismissedRaw === null ? [] : JSON.parse(dismissedRaw);
-      if (!Array.isArray(dismissedValue) || dismissedValue.some((id) => typeof id !== "string")) {
-        throw new Error("Invalid locally dismissed command ids");
-      }
-      const dismissedCommandIds = [...new Set(dismissedValue as string[])].slice(-MAX_DISMISSED_COMMANDS);
       const known = new Map(this.snapshot.commands.map((value) => [value.command.commandId, value]));
       for (let index = 0; index < localStorage.length; index++) {
         const key = localStorage.key(index);
@@ -233,7 +232,7 @@ export class LocalCommands {
         (left, right) =>
           left.submittedAt - right.submittedAt || left.command.commandId.localeCompare(right.command.commandId)
       );
-      this.snapshot = { commands, dismissedCommandIds, error: null };
+      this.snapshot = { commands, error: null };
     } catch (error) {
       // Leave both the stored bytes and the last readable view intact; do not silently discard
       // input because storage is unavailable or a local record cannot be decoded.
