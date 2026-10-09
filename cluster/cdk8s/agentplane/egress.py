@@ -489,9 +489,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             # No credential is sent: GET-only for the report and its image assets, not
             # general access to the S3 host or arbitrary object storage operations.
             EgressPolicySpecRules(
-                hosts=["s3.allegedly.works"],
-                methods=[EgressPolicySpecRulesMethods.GET],
-                paths=["/pr-visuals/**"],
+                hosts=["s3.allegedly.works"], methods=[EgressPolicySpecRulesMethods.GET], paths=["/pr-visuals/**"]
             )
         ],
     )

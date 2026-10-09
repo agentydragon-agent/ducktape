@@ -3521,6 +3521,7 @@ data:
           - github-clone
           - github-actions-logs
           - buildbuddy
+          - public-coder-pr-visuals
           - agentplane-testing
         action_policy_sets:
           - public-github-reads
