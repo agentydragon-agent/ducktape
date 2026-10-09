@@ -279,8 +279,10 @@ def correlation(payload: Envelope) -> tuple[str | None, list[Subject]]:
         case IssuePayload(issue=issue):
             return None, [IssueSubject(kind="issue", number=issue.number)]
         case WorkflowJobPayload(workflow_job=job):
-            subjects = [BranchSubject(kind="branch", name=job.head_branch)] if job.head_branch is not None else []
-            return job.head_sha, subjects
+            job_subjects: list[Subject] = []
+            if job.head_branch is not None:
+                job_subjects.append(BranchSubject(kind="branch", name=job.head_branch))
+            return job.head_sha, job_subjects
         case PushPayload(ref=ref, after=sha) if ref.startswith("refs/heads/"):
             return (None if sha == "0" * 40 else sha), [
                 BranchSubject(kind="branch", name=ref.removeprefix("refs/heads/"))

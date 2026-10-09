@@ -75,6 +75,7 @@ from agentplane.notification_service.sources.github_models import (
     GitHubSource,
     IssueSubject,
     PullRequestSubject,
+    Subject,
 )
 from agentplane.notification_service.store import ConflictError, NotFoundError, Store
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient
@@ -948,16 +949,18 @@ async def test_issue_subject_rejects_pr_and_missing_issue(provider: tuple[GitHub
         await github.context(source)
 
 
-@pytest.mark.parametrize("kind", ["pull_request", "branch", "commit"])
+@pytest.mark.parametrize(
+    "subject",
+    [
+        PullRequestSubject(kind="pull_request", number=7),
+        BranchSubject(kind="branch", name="devel"),
+        CommitSubject(kind="commit", sha=HEAD),
+    ],
+)
 async def test_workflow_job_sha_matching_and_action_filter(
-    store: Store, provider: tuple[GitHub, Upstream], kind: str
+    store: Store, provider: tuple[GitHub, Upstream], subject: Subject
 ) -> None:
     github, _ = provider
-    subject = {
-        "pull_request": PullRequestSubject(kind="pull_request", number=7),
-        "branch": BranchSubject(kind="branch", name="devel"),
-        "commit": CommitSubject(kind="commit", sha=HEAD),
-    }[kind]
     source = GitHubSource(
         provider="github",
         repository="owner/repo",
