@@ -23,6 +23,20 @@ def refresh_columns() -> list[sa.Column]:
     ]
 
 
+def refresh_constraints(prefix: str) -> tuple[sa.CheckConstraint, ...]:
+    return (
+        sa.CheckConstraint(
+            "error_kind IN ('rate_limited', 'unavailable', 'access_denied', 'source_changed', 'processing_error')",
+            name=f"{prefix}_error_kind",
+        ),
+        sa.CheckConstraint(
+            "(error IS NULL AND error_kind IS NULL AND error_since IS NULL AND error_observed_at IS NULL) OR "
+            "(error IS NOT NULL AND error_kind IS NOT NULL AND error_since IS NOT NULL AND error_observed_at IS NOT NULL)",
+            name=f"{prefix}_error_state",
+        ),
+    )
+
+
 def upgrade() -> None:
     op.create_table(
         "github_installation",
@@ -37,6 +51,7 @@ def upgrade() -> None:
     )
     op.create_table(
         "github_repository_access",
+        *refresh_constraints("github_access"),
         sa.Column("app_id", sa.BigInteger(), primary_key=True),
         sa.Column("installation_id", sa.BigInteger(), primary_key=True),
         sa.Column("repository_id", sa.BigInteger(), sa.ForeignKey("github_repository.repository_id"), primary_key=True),
@@ -51,6 +66,7 @@ def upgrade() -> None:
     )
     op.create_table(
         "github_subject",
+        *refresh_constraints("github_subject"),
         sa.Column("repository_id", sa.BigInteger(), sa.ForeignKey("github_repository.repository_id"), primary_key=True),
         sa.Column("kind", sa.String(), primary_key=True),
         sa.Column("subject_key", sa.String(), primary_key=True),

@@ -20,7 +20,7 @@ from alembic.config import Config
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import JsonValue, SecretStr, ValidationError
-from sqlalchemy import func, select, update
+from sqlalchemy import ColumnElement, func, select, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -36,6 +36,7 @@ from agentplane.notification_service.db import (
     Inbox,
     Subscription,
 )
+from agentplane.notification_service.github_state import AccessKey, GitHubState, RefreshDeferred, RefreshLease, SubjectKey
 from agentplane.notification_service.models import DestinationRef, SourceFailureKind, Subscribe, SubscriptionUpdate
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, NoticeDebounceSettings, Settings
@@ -85,6 +86,14 @@ def comment(number: int = 7) -> dict[str, JsonValue]:
         "repository": {"id": 100, "full_name": "owner/repo"},
         "issue": {"number": number, "pull_request": {"url": "https://api.github.com/repos/owner/repo/pulls/7"}},
         "comment": {"body": "kept verbatim"},
+    }
+
+
+def pr(sha: str) -> dict[str, JsonValue]:
+    return {
+        "action": "synchronize", "installation": {"id": 11},
+        "repository": {"id": 100, "full_name": "owner/repo"},
+        "pull_request": {"number": 7, "head": {"sha": sha, "repo": {"id": 100, "full_name": "owner/repo"}}},
     }
 
 
@@ -345,7 +354,8 @@ async def test_replay_boundary_overlapping_matches_and_revocation(
         row = await session.get(Subscription, first.id)
     assert row is not None
     upstream.revoked = True
-    with pytest.raises(GitHubUnavailableError):
+    await ingest(github, store, {"installation": {"id": 11}, "action": "suspend"}, "installation")
+    with pytest.raises(RefreshDeferred):
         await github.reconcile(store, claim, row, SOURCE)
     after = await store.read(PRINCIPAL.account, first.inbox_id, 0, 128)
     assert after.entries == page.entries
@@ -422,26 +432,33 @@ async def test_rate_limit_retry_survives_ingress_and_restart(
             assert retry_at is not None
             assert before + timedelta(seconds=120) <= retry_at <= datetime.now(UTC) + timedelta(seconds=120)
         view = await store.subscription(PRINCIPAL.account, sub.id)
-        assert view.error == "GitHub rate limited (HTTP 403); retry in 120s"
-        assert view.retry_at == retry_at
-        assert f"subscription={sub.id}" in caplog.text
+        assert view.error is None
+        assert view.retry_at is None
+        assert view.github is not None
+        access = view.github.access[0]
+        assert access.error == "GitHub rate limited (HTTP 403); retry in 120s"
+        assert access.retry_at == retry_at
+        assert "GitHub shared refresh failed" in caplog.text
         assert "retry_seconds=120" in caplog.text
         page = await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
         assert not page.entries
         assert page.inbox.last_cursor == 0
         assert page.notice is None
-        assert view.error_kind == SourceFailureKind.RATE_LIMITED
+        assert access.error_kind == SourceFailureKind.RATE_LIMITED
 
         requests = len(upstream.requests)
         await ingest(github, store, comment())
         assert await service.step()
         assert len(upstream.requests) == requests
-        assert (await store.subscription(PRINCIPAL.account, sub.id)).retry_at == retry_at
+        waiting = await store.subscription(PRINCIPAL.account, sub.id)
+        assert waiting.github is not None
+        assert waiting.github.access[0].retry_at == retry_at
         assert await store.get_next_work_at() == retry_at
 
         # Advance the durable deadline, then recover with no process-local provider/store state
         # and no further webhook to wake the source.
         async with store.sessions.begin() as session:
+            await session.execute(update(GitHubRepositoryAccess).values(next_attempt=datetime.now(UTC)))
             await session.execute(
                 update(Subscription).where(Subscription.id == sub.id).values(next_attempt=datetime.now(UTC))
             )
@@ -579,7 +596,7 @@ async def test_late_correlation_survives_restart_and_does_not_block_other_events
     page = await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
     assert [entry.payload for entry in page.entries] == ([check(HEAD)] if ci_first else [association, check(HEAD)])
     async with store.sessions() as session:
-        assert await session.scalar(select(Subscription.next_attempt).where(Subscription.id == sub.id)) is None
+        assert await session.scalar(select(Subscription.next_attempt).where(Subscription.id == sub.id)) is not None
     await store.release(claim, None)
     # The next association/receipt arrives long after the former grace window, with fresh objects.
     async with store.sessions.begin() as session:
@@ -665,6 +682,9 @@ async def test_retained_fork_receipt_requires_current_installation_access(
     await github.reconcile(store, claim, row, SOURCE)
     assert not (await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).entries
     del upstream.responses["/repos/fork/repo/installation"]
+    # Missing installation coverage is repaired on the bounded shared subject deadline.
+    async with store.sessions.begin() as session:
+        await session.execute(update(GitHubSubject).values(last_success_at=datetime.now(UTC) - timedelta(hours=1)))
     await ingest(github, store, comment())
     row = await store.source(claim)
     assert row is not None
@@ -698,7 +718,7 @@ async def test_branch_activity_and_fixed_commit(store: Store, provider: tuple[Gi
     assert len((await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).entries) == (3 if kind == "branch" else 1)
     if kind == "commit":
         async with store.sessions() as session:
-            assert await session.scalar(select(Subscription.next_attempt).where(Subscription.id == sub.id)) is None
+            assert await session.scalar(select(Subscription.next_attempt).where(Subscription.id == sub.id)) is not None
 
 
 @pytest.mark.parametrize(
@@ -770,7 +790,7 @@ async def test_webhook_wakes_idle_source_and_fences_concurrent_ingress(
     assert row is not None
     await github.reconcile(store, claim, row, SOURCE)
     await store.release(claim, None)
-    assert await store.get_next_work_at() is None  # No GitHub polling deadline while idle.
+    assert await store.get_next_work_at() is not None  # Bounded repair even without further webhooks.
     await store.change(PRINCIPAL.account, sub.id, SubscriptionUpdate(version=sub.version, lifetime_days=7))
     claim = await store.claim()
     assert claim is not None
@@ -778,7 +798,7 @@ async def test_webhook_wakes_idle_source_and_fences_concurrent_ingress(
     assert row is not None  # Renewal also schedules an idle source, without waiting for a webhook.
     await github.reconcile(store, claim, row, SOURCE)
     await store.release(claim, None)
-    assert await store.get_next_work_at() is None
+    assert await store.get_next_work_at() is not None
     async with store.wakeups.listener.listen():
         with store.wakeups.subscribe() as changed:
             await ingest(github, store, comment())
@@ -790,7 +810,12 @@ async def test_webhook_wakes_idle_source_and_fences_concurrent_ingress(
         assert source is not None
         # Simulate another receipt committed after the worker took its source snapshot.
         await ingest(github, store, comment())
-        await store.record_github(claim, source, [], more=False)
+        fence = await github.refresh_access(store, AccessKey(42, 11, 100))
+        key = SubjectKey(100, "pull_request", "7")
+        async with store.sessions() as session:
+            subject = await key.load(session)
+        await store.record_github(claim, source, [], more=False, fences=[fence], subject_key=key,
+            subject_generation=subject.generation, repair_at=datetime.now(UTC) + timedelta(seconds=600))
         await store.release(claim, None)
         claim = await store.claim()
         assert claim is not None
@@ -801,7 +826,7 @@ async def test_webhook_wakes_idle_source_and_fences_concurrent_ingress(
         async with store.sessions() as session:
             source = await session.get(Subscription, sub.id)
             assert source is not None
-            assert source.next_attempt is None
+            assert source.next_attempt is not None
 
 
 async def test_github_data_prevents_lossy_downgrade(
@@ -905,6 +930,202 @@ async def test_subscriptions_share_normalized_github_entities(store: Store, prov
             await session.execute(
                 update(Subscription).where(Subscription.id == first.id).values(github_installation_id=999)
             )
+
+
+async def test_shared_refresh_requests_survive_restart(store: Store, engine: AsyncEngine, provider: tuple[GitHub, Upstream]) -> None:
+    github, upstream = provider
+    binding = (await github.context(SOURCE)).binding
+    first = await store.subscribe(PRINCIPAL, subscription(), binding)
+    second = await store.subscribe(PRINCIPAL, subscription(key="overlap"), binding)
+    another = SOURCE.model_copy(update={"subject": PullRequestSubject(kind="pull_request", number=8)})
+    third = await store.subscribe(PRINCIPAL, subscription(another, key="another"), binding)
+    upstream.requests.clear()
+    claim = await store.claim()
+    assert claim is not None
+    for sub, spec in [(first, SOURCE), (second, SOURCE), (third, another)]:
+        async with store.sessions() as session:
+            row = await session.get(Subscription, sub.id)
+        assert row is not None
+        await github.reconcile(store, claim, row, spec)
+    assert upstream.requests.count("/repos/owner/repo/installation") == 1
+    assert upstream.requests.count("/repos/owner/repo") == 1
+    assert upstream.requests.count("/repos/owner/repo/pulls/7") == 1
+    assert upstream.requests.count("/repos/owner/repo/pulls/8") == 1
+    requests = list(upstream.requests)
+    recovered = Store(engine)
+    restarted = GitHub(github.http, github.settings)
+    await ingest(restarted, recovered, comment())
+    for sub in [first, second]:
+        async with recovered.sessions() as session:
+            row = await session.get(Subscription, sub.id)
+        assert row is not None
+        await restarted.reconcile(recovered, claim, row, SOURCE)
+    assert upstream.requests == requests
+    page = await recovered.read(PRINCIPAL.account, first.inbox_id, 0, 128)
+    assert len(page.entries) == 1
+    assert set(page.entries[0].subscriptions) == {first.id, second.id}
+
+
+async def test_shared_refresh_lease_takeover_and_failure_episode(store: Store, provider: tuple[GitHub, Upstream]) -> None:
+    github, _ = provider
+    sub = await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
+    state = GitHubState(store.sessions, 600)
+    key = AccessKey(42, 11, 100)
+    leases = await asyncio.gather(state.acquire(key), state.acquire(key), return_exceptions=True)
+    winners = [lease for lease in leases if isinstance(lease, RefreshLease)]
+    assert len(winners) == 1
+    assert sum(isinstance(lease, RefreshDeferred) for lease in leases) == 1
+    old = winners[0]
+    async with store.sessions.begin() as session:
+        await session.execute(update(GitHubRepositoryAccess).values(claim_until=datetime.now(UTC) - timedelta(seconds=1)))
+    lease = await state.acquire(key)
+    assert lease is not None
+    with pytest.raises(RefreshDeferred):
+        await state.succeed(old)
+    with pytest.raises(RefreshDeferred):
+        await state.fail(old, SourceFailureKind.UNAVAILABLE, "stale failure", 60)
+    until = await state.fail(lease, SourceFailureKind.RATE_LIMITED, "limited", 120)
+    view = await store.subscription(PRINCIPAL.account, sub.id)
+    assert view.github is not None
+    initial = view.github.access[0]
+    assert initial.retry_at == until
+    assert not initial.currently_valid
+    with pytest.raises(RefreshDeferred) as deferred:
+        await state.acquire(key)
+    assert deferred.value.until == until
+    async with store.sessions.begin() as session:
+        await session.execute(update(GitHubRepositoryAccess).values(next_attempt=datetime.now(UTC)))
+    lease = await state.acquire(key)
+    assert lease is not None
+    await state.fail(lease, SourceFailureKind.RATE_LIMITED, "still limited", 120)
+    view = await store.subscription(PRINCIPAL.account, sub.id)
+    assert view.github is not None
+    assert view.github.access[0].error_since == initial.error_since
+    assert view.github.access[0].error_observed_at >= initial.error_observed_at
+    async with store.sessions.begin() as session:
+        await session.execute(update(GitHubRepositoryAccess).values(next_attempt=datetime.now(UTC)))
+    lease = await state.acquire(key)
+    assert lease is not None
+    await state.succeed(lease)
+    view = await store.subscription(PRINCIPAL.account, sub.id)
+    assert view.github is not None
+    assert view.github.access[0].currently_valid
+    assert view.github.access[0].error is None
+    assert view.error is None
+    assert not (await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).entries
+
+
+@pytest.mark.parametrize("event", ["installation", "installation_repositories"])
+async def test_invalidation_fences_inflight_refresh(store: Store, provider: tuple[GitHub, Upstream], event: str) -> None:
+    github, _ = provider
+    sub = await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
+    state = GitHubState(store.sessions, 600)
+    key = AccessKey(42, 11, 100)
+    lease = await state.acquire(key)
+    assert lease is not None
+    await ingest(github, store, {"installation": {"id": 11}, "action": "removed"}, event)
+    with pytest.raises(RefreshDeferred):
+        await state.succeed(lease)
+    view = await store.subscription(PRINCIPAL.account, sub.id)
+    assert view.github is not None
+    assert not view.github.access[0].currently_valid
+    replacement = await state.acquire(key)
+    assert replacement is not None
+    await state.succeed(replacement)
+    assert await state.acquire(key) is None
+
+
+@pytest.mark.parametrize("invalidate", [False, True])
+async def test_access_fenced_again_at_match_commit(store: Store, provider: tuple[GitHub, Upstream], invalidate: bool) -> None:
+    github, _ = provider
+    sub = await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
+    await ingest(github, store, comment())
+    claim = await store.claim()
+    assert claim is not None
+    row = await store.source(claim)
+    assert row is not None
+    read = store.github_deliveries
+
+    async def race(source: Subscription, predicate: ColumnElement[bool]) -> list[GitHubDelivery]:
+        receipts = await read(source, predicate)
+        assert len(receipts) == 1
+        if invalidate:
+            await ingest(github, store, {"installation": {"id": 11}, "action": "suspend"}, "installation")
+        else:
+            async with store.sessions.begin() as session:
+                await session.execute(update(GitHubRepositoryAccess).values(valid_until=datetime.now(UTC)))
+        return receipts
+
+    with patch.object(store, "github_deliveries", side_effect=race):
+        await github.reconcile(store, claim, row, SOURCE)
+    page = await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
+    assert not page.entries
+    assert page.inbox.last_cursor == 0
+    assert page.notice is None
+    assert await store.source(claim) is not None
+
+
+async def test_shared_errors_project_without_copying_into_subscriptions(store: Store, provider: tuple[GitHub, Upstream]) -> None:
+    github, upstream = provider
+    binding = (await github.context(SOURCE)).binding
+    first = await store.subscribe(PRINCIPAL, subscription(), binding)
+    second = await store.subscribe(PRINCIPAL, subscription(key="other"), binding)
+    upstream.limited = True
+    claim = await store.claim()
+    assert claim is not None
+    for sub in [first, second]:
+        async with store.sessions() as session:
+            row = await session.get(Subscription, sub.id)
+        assert row is not None
+        with pytest.raises(RefreshDeferred) as deferred:
+            await github.reconcile(store, claim, row, SOURCE)
+        await store.source_deferred(claim, row, deferred.value.until)
+    views = await store.subscriptions(PRINCIPAL.account)
+    assert len(views) == 2
+    assert views[0].github == views[1].github
+    assert views[0].github is not None
+    assert views[0].github.access[0].error_kind == SourceFailureKind.RATE_LIMITED
+    assert all(view.error is None and view.last_success_at is None for view in views)
+    async with store.sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(GitHubRepositoryAccess)) == 1
+        rows = list(await session.scalars(select(Subscription)))
+        assert all(row.error is None and row.error_kind is None for row in rows)
+    page = await store.read(PRINCIPAL.account, first.inbox_id, 0, 128)
+    assert page.inbox.last_cursor == page.inbox.acknowledged == 0
+    assert not page.entries
+    assert page.notice is None
+
+
+async def test_webhook_racing_bootstrap_keeps_both_revision_associations(store: Store, provider: tuple[GitHub, Upstream]) -> None:
+    github, upstream = provider
+    source = SOURCE.model_copy(update={"events": {EventFilter(event=EventName.CHECK_RUN)}})
+    sub = await store.subscribe(PRINCIPAL, subscription(source), (await github.context(source)).binding)
+    await ingest(github, store, check(NEXT), "check_run")
+    await ingest(github, store, check(HEAD), "check_run")
+    claim = await store.claim()
+    assert claim is not None
+    row = await store.source(claim)
+    assert row is not None
+    request = github.request
+
+    async def race(method: str, path: str, headers: dict[str, str], **kwargs: JsonValue) -> httpx.Response:
+        response = await request(method, path, headers, **kwargs)
+        if path.endswith("/pulls/7"):
+            await ingest(github, store, pr(NEXT), "pull_request")
+        return response
+
+    with patch.object(github, "request", side_effect=race):
+        await github.reconcile(store, claim, row, source)
+    page = await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
+    assert [entry.payload for entry in page.entries] == [check(NEXT), check(HEAD)]
+    calls = list(upstream.requests)
+    await ingest(github, store, pr(HEAD), "pull_request")  # Delayed older observation cannot erase NEXT.
+    await ingest(github, store, check(NEXT), "check_run")
+    row = await store.source(claim)
+    assert row is not None
+    await github.reconcile(store, claim, row, source)
+    assert upstream.requests == calls
+    assert (await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).inbox.last_cursor == 3
 
 
 if __name__ == "__main__":

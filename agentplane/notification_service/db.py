@@ -199,9 +199,24 @@ class GitHubRefresh:
     claim_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+def refresh_constraints(prefix: str) -> tuple[CheckConstraint, ...]:
+    return (
+        CheckConstraint(
+            "error_kind IN ('rate_limited', 'unavailable', 'access_denied', 'source_changed', 'processing_error')",
+            name=f"{prefix}_error_kind",
+        ),
+        CheckConstraint(
+            "(error IS NULL AND error_kind IS NULL AND error_since IS NULL AND error_observed_at IS NULL) OR "
+            "(error IS NOT NULL AND error_kind IS NOT NULL AND error_since IS NOT NULL AND error_observed_at IS NOT NULL)",
+            name=f"{prefix}_error_state",
+        ),
+    )
+
+
 class GitHubRepositoryAccess(GitHubRefresh, Base):
     __tablename__ = "github_repository_access"
     __table_args__ = (
+        *refresh_constraints("github_access"),
         ForeignKeyConstraint(
             ["app_id", "installation_id"], ["github_installation.app_id", "github_installation.installation_id"]
         ),
@@ -217,7 +232,10 @@ class GitHubRepositoryAccess(GitHubRefresh, Base):
 
 class GitHubSubject(GitHubRefresh, Base):
     __tablename__ = "github_subject"
-    __table_args__ = (CheckConstraint("kind IN ('pull_request', 'branch', 'commit')", name="github_subject_kind"),)
+    __table_args__ = (
+        *refresh_constraints("github_subject"),
+        CheckConstraint("kind IN ('pull_request', 'branch', 'commit')", name="github_subject_kind"),
+    )
     repository_id: Mapped[int] = mapped_column(ForeignKey("github_repository.repository_id"), primary_key=True)
     kind: Mapped[str] = mapped_column(primary_key=True)
     subject_key: Mapped[str] = mapped_column(primary_key=True)

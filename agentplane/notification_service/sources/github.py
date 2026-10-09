@@ -17,9 +17,16 @@ import httpx
 import jwt
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, TypeAdapter
 from sqlalchemy import ColumnElement, false, or_, select, true
-from sqlalchemy.orm import aliased
+from sqlalchemy.dialects.postgresql import insert
 
-from agentplane.notification_service.db import GitHubDelivery, Inbox, Subscription
+from agentplane.notification_service.db import (
+    GitHubDelivery, GitHubInstallation, GitHubRepository, GitHubRepositoryAccess, GitHubSubjectRevision, Inbox, Subscription,
+)
+from agentplane.notification_service.github_state import (
+    AccessFence, AccessKey, GitHubState, HeadRevision, RefreshDeferred, RefreshLease, SubjectKey,
+    access_valid, github_lock,
+)
+from agentplane.notification_service.models import SourceFailureKind
 from agentplane.notification_service.settings import GitHubSettings
 from agentplane.notification_service.sources.github_models import (
     CI_EVENTS,
@@ -33,6 +40,7 @@ from agentplane.notification_service.sources.github_models import (
     GitHubSource,
     PullRequestSubject,
     RepositoryName,
+    subject_key,
 )
 from agentplane.notification_service.store import Store
 
@@ -378,6 +386,16 @@ class GitHub:
         if event in SUPPORTED_EVENTS and envelope.repository is None:
             raise ValueError("repository event requires a repository")
         sha, subjects = correlation(envelope)
+        associations = []
+        if envelope.repository is not None and sha is not None:
+            repository = envelope.repository
+            revisions = [HeadRevision(repository.id, repository.full_name, sha)]
+            if isinstance(envelope, PullRequestPayload) and envelope.pull_request.head.repo is not None:
+                head = envelope.pull_request.head.repo
+                revisions.append(HeadRevision(head.id, head.full_name, sha))
+            for subject in subjects:
+                kind, key = subject.split(":", 1)
+                associations.append((SubjectKey(repository.id, kind, key), revisions))
         return await store.ingest_github(
             self.settings.app_id,
             delivery_id,
@@ -389,71 +407,170 @@ class GitHub:
             action=envelope.action,
             head_sha=sha,
             subjects=subjects,
+            repository_name=envelope.repository.full_name if envelope.repository else None,
+            associations=associations,
         )
 
+    async def refresh_failed(self, state: GitHubState, lease: RefreshLease, error: Exception) -> None:
+        kind = SourceFailureKind.PROCESSING_ERROR
+        if isinstance(error, GitHubRetryError):
+            kind = SourceFailureKind.RATE_LIMITED
+        elif isinstance(error, GitHubAccessError):
+            kind = SourceFailureKind.ACCESS_DENIED
+        elif isinstance(error, GitHubSourceChangedError):
+            kind = SourceFailureKind.SOURCE_CHANGED
+        elif isinstance(error, httpx.TransportError) or (
+            isinstance(error, httpx.HTTPStatusError) and error.response.status_code >= 500
+        ):
+            kind = SourceFailureKind.UNAVAILABLE
+        message = str(error) if isinstance(error, (GitHubUnavailableError, GitHubRetryError)) else type(error).__name__
+        delay = error.retry_seconds if isinstance(error, GitHubRetryError) else 60
+        until = await state.fail(lease, kind, message, delay)
+        logger.warning("GitHub shared refresh failed: key=%s cause=%s retry_seconds=%s", lease.key, message, delay)
+        raise RefreshDeferred(until)
+
+    async def refresh_access(self, store: Store, key: AccessKey) -> AccessFence:
+        state = GitHubState(store.sessions, self.settings.freshness_seconds)
+        lease = await state.acquire(key)
+        if lease is not None:
+            async with store.sessions() as session:
+                repository = await session.get(GitHubRepository, key.repository_id)
+                assert repository is not None
+                name = repository.full_name
+            try:
+                binding, _ = await self.repository(name)
+                if (binding.app_id, binding.installation_id, binding.repository_id) != (
+                    key.app_id, key.installation_id, key.repository_id
+                ):
+                    raise GitHubSourceChangedError("GitHub repository/installation identity changed")
+            except (httpx.HTTPError, ValueError, GitHubUnavailableError, GitHubRetryError) as error:
+                await self.refresh_failed(state, lease, error)
+            await state.succeed(lease)
+        async with store.sessions() as session:
+            row = await key.load(session)
+            if not await access_valid(session, row, datetime.now(UTC)):
+                raise RefreshDeferred(datetime.now(UTC))
+            assert row.validated_installation_generation is not None
+            return AccessFence(key, row.generation, row.validated_installation_generation)
+
+    async def refresh_subject(self, store: Store, source: GitHubSource, base: AccessFence) -> SubjectKey:
+        key = SubjectKey(base.key.repository_id, source.subject.kind, subject_key(source))
+        state = GitHubState(store.sessions, self.settings.freshness_seconds)
+        lease = await state.acquire(key)
+        if lease is None:
+            return key
+        revisions = []
+        try:
+            headers = await self.installation_headers(base.key.installation_id)
+            async with store.sessions() as session:
+                repository = await session.get(GitHubRepository, key.repository_id)
+                assert repository is not None
+                name = repository.full_name
+            match source.subject:
+                case PullRequestSubject(number=number):
+                    pr = PullRequest.model_validate_json(
+                        (await self.request("GET", f"/repos/{name}/pulls/{number}", headers)).content
+                    )
+                    # Base-repository CI may build the fork head. The fork association requires
+                    # an explicit upstream repository identity; SHA equality does not grant access.
+                    revisions.append(HeadRevision(key.repository_id, name, pr.head.sha))
+                    if pr.head.repo is not None and pr.head.repo.id != key.repository_id:
+                        revisions.append(HeadRevision(pr.head.repo.id, pr.head.repo.full_name, pr.head.sha))
+                        try:
+                            fork, _ = await self.repository(pr.head.repo.full_name)
+                        except GitHubNotInstalledError:
+                            pass
+                        else:
+                            if fork.repository_id != pr.head.repo.id:
+                                raise GitHubSourceChangedError("GitHub fork repository identity changed")
+                            async with store.sessions.begin() as session:
+                                await github_lock(session)
+                                await session.execute(insert(GitHubInstallation).values(
+                                    app_id=fork.app_id, installation_id=fork.installation_id
+                                ).on_conflict_do_nothing())
+                                await session.execute(insert(GitHubRepository).values(
+                                    repository_id=fork.repository_id, full_name=pr.head.repo.full_name
+                                ).on_conflict_do_nothing())
+                                await session.execute(insert(GitHubRepositoryAccess).values(
+                                    app_id=fork.app_id, installation_id=fork.installation_id,
+                                    repository_id=fork.repository_id
+                                ).on_conflict_do_nothing())
+                case BranchSubject(name=branch):
+                    response = await self.request("GET", f"/repos/{name}/git/ref/heads/{quote(branch, safe='')}", headers, allow_missing=True)
+                    if response.status_code != 404:
+                        revisions.append(HeadRevision(key.repository_id, name, GitRef.model_validate_json(response.content).object.sha))
+                case CommitSubject(sha=sha):
+                    commit = Commit.model_validate_json((await self.request("GET", f"/repos/{name}/commits/{sha}", headers)).content)
+                    if commit.sha != sha:
+                        raise GitHubSourceChangedError("GitHub commit identity changed")
+                    revisions.append(HeadRevision(key.repository_id, name, sha))
+        except (httpx.HTTPError, ValueError, GitHubUnavailableError, GitHubRetryError) as error:
+            await self.refresh_failed(state, lease, error)
+        await state.succeed(lease, fences=[base], revisions=revisions)
+        return key
+
     async def reconcile(self, store: Store, claim: Inbox, subscription: Subscription, source: GitHubSource) -> None:
-        context = await self.context(source)
-        if context.binding != GitHubBinding.model_validate(subscription.github_binding):
-            raise GitHubSourceChangedError("GitHub source installation/repository changed; recreate the subscription")
+        binding = GitHubBinding.model_validate(subscription.github_binding)
+        if binding.app_id != self.settings.app_id:
+            raise GitHubSourceChangedError("GitHub App changed; recreate the subscription")
+        base = await self.refresh_access(store, AccessKey(binding.app_id, binding.installation_id, binding.repository_id))
+        key = await self.refresh_subject(store, source, base)
+        fences = [base]
+        async with store.sessions() as session:
+            subject = await key.load(session)
+            assert subject.last_success_at is not None
+            repair_at = subject.last_success_at + timedelta(seconds=self.settings.freshness_seconds)
+            subject_generation = subject.generation
+            revisions = select(GitHubSubjectRevision.head_repository_id).where(
+                GitHubSubjectRevision.repository_id == key.repository_id,
+                GitHubSubjectRevision.kind == key.kind,
+                GitHubSubjectRevision.subject_key == key.subject_key,
+            )
+            grants = list(await session.scalars(select(GitHubRepositoryAccess).where(
+                GitHubRepositoryAccess.app_id == binding.app_id,
+                GitHubRepositoryAccess.repository_id.in_(revisions),
+                GitHubRepositoryAccess.repository_id != binding.repository_id,
+            )))
+        for grant in grants:
+            try:
+                fences.append(await self.refresh_access(store, AccessKey(grant.app_id, grant.installation_id, grant.repository_id)))
+            except RefreshDeferred as deferred:
+                repair_at = min(repair_at, deferred.until)
+        async with store.sessions() as session:
+            for fence in fences:
+                access = await fence.key.load(session)
+                assert access.valid_until is not None
+                repair_at = min(repair_at, access.valid_until)
         delivery = GitHubDelivery
         direct: ColumnElement[bool] = false()
-        heads: ColumnElement[bool] = delivery.head_sha.in_(context.heads)
-        subject: str | None
-        match source.subject:
-            case PullRequestSubject(number=number):
-                subject = f"pull_request:{number}"
-            case BranchSubject(name=name):
-                subject = f"branch:{name}"
-            case CommitSubject():
-                subject = None
-        if subject is not None:
-            direct = (delivery.repository_id == context.binding.repository_id) & delivery.subjects.contains([subject])
-            association = aliased(GitHubDelivery)
-            # Association lookup is independent of subscription/processing position. A late PR/push
-            # can explain an earlier receipt, even after a restart or many unrelated deliveries.
-            known_heads = select(association.head_sha).where(
-                association.app_id == context.binding.app_id,
-                association.repository_id == context.binding.repository_id,
-                association.installation_id == context.binding.installation_id,
-                association.subjects.contains([subject]),
-                association.head_sha.is_not(None),
-            )
-            heads |= delivery.head_sha.in_(known_heads)
-        selected = or_(
-            *(
-                (delivery.event == selector.event)
-                & (delivery.action.in_(selector.actions) if selector.actions is not None else true())
-                for selector in source.filters
-            )
-        )
-        accessible = or_(
-            *(
-                (delivery.repository_id == repository) & (delivery.installation_id == installation)
-                for repository, installation in context.installations.items()
-            )
-        )
-        deliveries = await store.github_deliveries(
-            subscription,
-            (delivery.app_id == context.binding.app_id)
-            & accessible
-            & selected
-            & (direct | (delivery.event.in_(CI_EVENTS) & heads)),
+        if not isinstance(source.subject, CommitSubject):
+            direct = (delivery.repository_id == binding.repository_id) & delivery.subjects.contains([f"{key.kind}:{key.subject_key}"])
+        revision = GitHubSubjectRevision
+        heads = select(revision.sha).where(
+            revision.repository_id == key.repository_id,
+            revision.kind == key.kind,
+            revision.subject_key == key.subject_key,
+            revision.head_repository_id == delivery.repository_id,
+            revision.sha == delivery.head_sha,
+        ).exists()
+        selected = or_(*(
+            (delivery.event == selector.event)
+            & (delivery.action.in_(selector.actions) if selector.actions is not None else true())
+            for selector in source.filters
+        ))
+        accessible = or_(*(
+            (delivery.repository_id == fence.key.repository_id) & (delivery.installation_id == fence.key.installation_id)
+            for fence in fences
+        ))
+        deliveries = await store.github_deliveries(subscription,
+            (delivery.app_id == binding.app_id) & accessible & selected & (direct | (delivery.event.in_(CI_EVENTS) & heads))
         )
         matched = []
         for receipt in deliveries:
             assert receipt.repository_id is not None
-            matched.append(
-                (
-                    receipt,
-                    GitHubEvent(
-                        provider="github",
-                        app_id=receipt.app_id,
-                        delivery_id=receipt.delivery_id,
-                        repository_id=receipt.repository_id,
-                        event=EventName(receipt.event),
-                        action=receipt.action,
-                    ),
-                )
-            )
-        # Only matching, previously undelivered receipts occupy the bounded page.
-        await store.record_github(claim, subscription, matched, more=len(deliveries) == 128)
+            matched.append((receipt, GitHubEvent(
+                provider="github", app_id=receipt.app_id, delivery_id=receipt.delivery_id,
+                repository_id=receipt.repository_id, event=EventName(receipt.event), action=receipt.action,
+            )))
+        await store.record_github(claim, subscription, matched, more=len(deliveries) == 128,
+            fences=fences, subject_key=key, subject_generation=subject_generation, repair_at=repair_at)

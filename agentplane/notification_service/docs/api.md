@@ -175,8 +175,9 @@ Payload SHA, not inbox order, identifies the revision involved.
 
 Event and action filters are unordered sets. Reordering or repeating identical selectors does not
 change subscription identity; JSON responses and stored creation specifications use canonical ordering.
-An installation-lookup 404 leaves a PR fork uncovered and logs that limitation. Other access failures,
-including authentication errors and suspended installations, surface as subscription errors.
+An installation-lookup 404 leaves a PR fork uncovered until a subsequent subject repair discovers
+coverage. Authentication errors, suspended installations and refresh backoff are exposed through
+shared access/subject observations in subscription introspection.
 
 Any authenticated workload may subscribe to repositories accessible through this App, including private
 repositories; normal inbox ownership still applies. Revocation/suspension/identity changes stop new matching
@@ -267,9 +268,38 @@ failure facts, retry schedule and refresh lease for an App/installation/reposito
 an association cannot grant access to the head repository.
 
 Subscription `last_success_at` and current failure describe that subscription's processing. Shared
-access or repair failures belong on the grant or subject, and the API must project those conditions
-rather than duplicate them into every affected subscription.
+access or repair failures belong on the grant or subject. GET/list and operator status expose them
+in `github.access` and `github.subject`, independently of the subscription's processing fields.
+Each observation includes current failure facts, retry deadline and refresh lease deadline. Access
+observations also expose validation time, expiry and `currently_valid` as of the read; this is not
+a promise about later delivery. No refresh failure or recovery creates an inbox entry.
 
 The normalized binding migration preserves subscription IDs, inboxes, event checkpoints and raw
 receipts. It does not claim historical validation times. Reverse migration refuses to discard
 shared observations or revision associations.
+
+
+### Durable GitHub refresh and matching
+
+`github.freshness_seconds` bounds cached access validation and subject repair (default 600 seconds,
+configurable from 60 to 3600). Successful processing schedules the earliest access expiry or subject
+repair deadline, including when no webhook arrives. A missing webhook is repaired for current
+subject metadata, not replayed as an activity event.
+
+Workers claim shared access/subject refreshes through PostgreSQL leases. Other workers reuse the
+observation or defer until the persisted retry/lease deadline; no network call occurs under a database
+lock. A worker that loses its lease cannot overwrite a newer success or failure. Signed installation
+and installation-repository lifecycle events invalidate cached access and in-flight refreshes with
+generation fences. Ordinary activity webhooks add repository-qualified SHA associations; delayed
+observations cannot erase newer associations.
+
+Matching uses durable observations and makes no GitHub API calls while they remain fresh. Every
+inbox append rechecks the access generations and expiry under the same transaction lock used by
+invalidation. Stale access fails closed. Fork SHA associations alone never authorize a fork receipt:
+its repository and installation must also match a separately validated grant. A missing head
+repository in a PR payload does not infer fork identity. Shared failures remain queryable after a
+restart and never become per-subscription copies or inbox history.
+
+These are current-state tables, not temporal versions. `github_subject_revision` accumulates observed
+membership without ordering or a current-head marker. Retained webhook receipts remain the event
+journal; repository names, access observations, refresh failures and leases are updated in place.
