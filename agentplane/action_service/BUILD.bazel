@@ -51,15 +51,10 @@ py_library(
 py_library(
     name = "mcp_linkage",
     srcs = ["mcp_linkage.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
     deps = [
-        ":catalog",
         ":db",
+        ":mcp_settings",
         ":models",
-        "//util:urls",
         "@pypi//fastmcp_slim",
         "@pypi//httpx2",
         "@pypi//mcp",
@@ -117,6 +112,7 @@ py_library(
     deps = [
         ":db",
         ":models",
+        ":push_settings",
         ":updates",
         "@pypi//cryptography",
         "@pypi//httpx",
@@ -187,10 +183,6 @@ py_library(
 py_library(
     name = "main",
     srcs = ["main.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
     deps = [
         ":api",
         ":auth",
@@ -201,15 +193,14 @@ py_library(
         ":mcp_linkage",
         ":oauth",
         ":operator_oidc",
-        ":operator_oidc_settings",
         ":policy_evaluation",
         ":policy_informer",
         ":push",
         ":runtime",
         ":service",
+        ":settings",
         ":updates",
         "//agentplane:kubernetes_watch",
-        "//agentplane:subjects",
         "//agentplane/action_service/github_policy:visibility",
         "//agentplane/action_service/sandbox:inventory",
         "//agentplane/workload_auth:principal",
@@ -217,9 +208,6 @@ py_library(
         "//util:kubernetes",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
         "@pypi//uvicorn",
     ],
 )
@@ -480,6 +468,7 @@ py_test(
         ":policy_informer",
         ":runtime",
         ":service",
+        ":settings",
         ":updates",
         "//:conftest",
         "//agentplane:crd_group",
@@ -519,9 +508,10 @@ py_test(
         ":mcp_executor",
         ":mcp_linkage",
         ":models",
-        ":oauth",
+        ":oauth_settings",
         ":runtime",
         ":service",
+        ":settings",
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/action_service/testing:lifecycle",
@@ -871,7 +861,7 @@ py_library(
     deps = [
         ":connections",
         ":enrollments",
-        ":models",
+        ":oauth_settings",
         "//mcp_infra:oidc_principal",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:fastmcp_proxy",
@@ -904,6 +894,7 @@ py_test(
         ":mcp_frontend",
         ":models",
         ":oauth",
+        ":oauth_settings",
         ":policy_informer",
         ":service",
         ":updates",
@@ -941,6 +932,7 @@ py_test(
         ":db",
         ":models",
         ":push",
+        ":push_settings",
         ":updates",
         "//:conftest",
         "//agentplane:subjects",
@@ -961,6 +953,7 @@ py_test(
         ":conftest",
         ":db",
         ":mcp_linkage",
+        ":mcp_settings",
         ":models",
         ":updates",
         "//:conftest",
@@ -986,6 +979,7 @@ py_test(
         ":conftest",
         ":db",
         ":mcp_linkage",
+        ":mcp_settings",
         ":models",
         ":service",
         ":updates",
@@ -1172,6 +1166,29 @@ py_test(
 )
 
 py_library(
+    name = "mcp_settings",
+    srcs = ["mcp_settings.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
+    deps = [
+        ":catalog",
+        "//util:urls",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "oauth_settings",
+    srcs = ["oauth_settings.py"],
+    deps = [
+        ":models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "operator_oidc_settings",
     srcs = ["operator_oidc_settings.py"],
     visibility = [
@@ -1179,4 +1196,31 @@ py_library(
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "push_settings",
+    srcs = ["push_settings.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
+    deps = [
+        ":catalog",
+        ":mcp_settings",
+        ":oauth_settings",
+        ":operator_oidc_settings",
+        ":push_settings",
+        "//agentplane:subjects",
+        "//agentplane/action_service/github_policy:visibility",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
+    ],
 )
