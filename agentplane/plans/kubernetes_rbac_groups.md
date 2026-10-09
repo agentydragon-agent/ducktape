@@ -101,6 +101,35 @@ Do not transfer SA ownership, duplicate the controller's binding names, or repla
 Flux bindings without an explicit migration. An isolated test with an externally owned SA,
 namespace addition/removal and definition deletion would answer the compatibility question.
 
+### Wider search: virtual membership and other controllers
+
+A broader GitHub repository search found
+[rbacsync](https://github.com/cruise-automation/rbacsync), a closer conceptual precedent for
+**virtual** (not Kubernetes-authentication) groups. Its
+[`bindings` and `memberships`](https://github.com/cruise-automation/rbacsync/blob/master/pkg/apis/rbacsync/v1alpha/types.go)
+map a group name to a RoleRef and a set of native Kubernetes RBAC subjects; the generated
+binding directly lists the resolved subjects. Memberships accept `rbacv1.Subject` (including
+an SA with its namespace); the controller
+[updates subject lists and prunes owned bindings](https://github.com/cruise-automation/rbacsync/blob/master/pkg/controller/controller.go).
+This demonstrates that group-like membership can be implemented _without_ adding SAs to a
+Kubernetes authentication group. Its namespaced `RBACSyncConfig` generates RoleBindings
+**only in that config's namespace**; its cluster-scoped variant generates
+ClusterRoleBindings, not fan-out to selected namespaces. Both membership and binding
+configuration live in each config, rather than in a single subject-free definition with
+separate per-SA assignments across many namespaces. The repository is not archived, but its
+last recorded push in this review was December 2023; assess maintenance before considering
+adoption.
+
+[ricoberger/role-operator](https://github.com/ricoberger/role-operator) is a newer example
+that creates Roles and bindings for a list of subjects in explicitly named namespaces.
+Because one CR defines both rules and subjects, and it creates Roles rather than simply
+referencing our existing GitOps-owned ones, it is less aligned with our desired ownership
+split. [nxs-rbac-operator](https://github.com/nixys/nxs-rbac-operator) is another
+binding fan-out example for Users, Groups and SAs using namespace-name regexes, but its
+configuration is operator-wide and embeds the subjects directly in each rule. Neither
+provides our subject-free grant group plus independent runtime assignments out of the box.
+These are comparison examples, not endorsements or proof of full revocation behavior.
+
 ### Other binding-fan-out controllers
 
 [access-manager](https://github.com/ckotzbauer/access-manager) is particularly close to the
