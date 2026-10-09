@@ -317,11 +317,7 @@ class SandboxInventory:
         """Delete a suspended Sandbox; the controller removes its Pod and PVC, and with them
         everything on the volume. A running one is refused, so the irreversible step is a
         deliberate second one for a browser and for an agent calling the API alike."""
-        sandbox = await self._sandbox(name)
-        if uid is not None and sandbox.metadata.uid != uid:
-            raise SandboxNotFoundError(name)
-        if INITIALIZING in sandbox.metadata.annotations:
-            raise SandboxConflictError(name)
+        sandbox = await self._mutable_sandbox(name, uid=uid)
         if sandbox.spec.operating_mode != OperatingMode.SUSPENDED:
             raise SandboxRunningError(name)
         await self._custom_objects.delete_namespaced_custom_object(
@@ -333,12 +329,17 @@ class SandboxInventory:
         )
 
     async def _set_operating_mode(self, name: str, mode: OperatingMode, *, uid: str | None = None) -> None:
+        sandbox = await self._mutable_sandbox(name, uid=uid)
+        await self._patch(name, {"metadata": {"uid": str(sandbox.metadata.uid)}, "spec": {"operatingMode": mode}})
+
+    async def _mutable_sandbox(self, name: str, *, uid: str | None) -> SandboxResource:
+        """Require the named incarnation to have finished initialization before lifecycle changes."""
         sandbox = await self._sandbox(name)
         if uid is not None and sandbox.metadata.uid != uid:
             raise SandboxNotFoundError(name)
         if INITIALIZING in sandbox.metadata.annotations:
             raise SandboxConflictError(name)
-        await self._patch(name, {"metadata": {"uid": str(sandbox.metadata.uid)}, "spec": {"operatingMode": mode}})
+        return sandbox
 
     async def _patch(self, name: str, patch: dict[str, object]) -> None:
         await self._custom_objects.patch_namespaced_custom_object(
