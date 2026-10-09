@@ -136,8 +136,11 @@ data:
         litellm_params:
           model: ollama/qwen3-embedding:4b
           api_base: http://ollama.ollama.svc.cluster.local:11434
+          truncate: false
         model_info:
           mode: embedding
+          max_input_tokens: 40960
+          max_tokens: 40960
       - model_name: tana/ant-messages/claude-sonnet-4-6
         litellm_params:
           model: tana/tana/claude-sonnet-4-6/medium
