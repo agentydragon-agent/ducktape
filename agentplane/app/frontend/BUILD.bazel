@@ -504,7 +504,10 @@ js_library(
 
 ts_library(
     name = "connections",
-    srcs = ["css.d.ts", "settings/connections.tsx"],
+    srcs = [
+        "css.d.ts",
+        "settings/connections.tsx",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
