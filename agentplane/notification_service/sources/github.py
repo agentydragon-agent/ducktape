@@ -344,8 +344,6 @@ class GitHub:
         ), headers
 
     async def context(self, source: GitHubSource) -> Context:
-        # TODO: Bootstrap head/fork associations once, then maintain them from durable webhooks.
-        # Keep access revalidation separate, with an explicit repair path for missed deliveries.
         binding, headers = await self.repository(source.repository)
         context = Context(binding, {binding.repository_id: binding.installation_id}, set())
         match source.subject:
@@ -452,7 +450,9 @@ class GitHub:
                     (await self.request("GET", f"/repositories/{key.repository_id}", headers)).content
                 )
                 installation = Installation.model_validate_json(
-                    (await self.request("GET", f"/repos/{repository.full_name}/installation", self.app_headers())).content
+                    (
+                        await self.request("GET", f"/repos/{repository.full_name}/installation", self.app_headers())
+                    ).content
                 )
                 if repository.id != key.repository_id or installation.id != key.installation_id:
                     raise GitHubSourceChangedError("GitHub repository/installation identity changed")

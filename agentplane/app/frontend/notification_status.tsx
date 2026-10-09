@@ -95,7 +95,11 @@ function subscriptionState(sub: Subscription, observedAt?: string): Subscription
 
 function subscriptionLabel(sub: Subscription, observedAt?: string): string {
   const state = subscriptionState(sub, observedAt);
-  return state === "active" ? (sub.error_kind?.replaceAll("_", " ") ?? "no current source error") : state;
+  if (state !== "active") return state;
+  const errorKind = sub.error_kind ?? sub.github?.access.find((access) => access.error_kind)?.error_kind ?? sub.github?.subject.error_kind;
+  if (errorKind) return errorKind.replaceAll("_", " ");
+  if (sub.github?.access.some((access) => !access.currently_valid)) return "GitHub access not validated";
+  return "no current source error";
 }
 
 function sourceLabel(source: Source): string {

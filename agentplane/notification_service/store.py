@@ -89,7 +89,7 @@ class ClaimLostError(Exception):
 def refresh_status(row: RefreshRow) -> GitHubRefreshStatus:
     return GitHubRefreshStatus(
         last_success_at=row.last_success_at,
-        error_kind=row.error_kind,
+        error_kind=SourceFailureKind(row.error_kind) if row.error_kind else None,
         error=row.error,
         error_since=row.error_since,
         error_observed_at=row.error_observed_at,

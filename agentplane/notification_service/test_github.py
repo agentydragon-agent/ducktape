@@ -20,7 +20,7 @@ from alembic.config import Config
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import JsonValue, SecretStr, ValidationError
-from sqlalchemy import ColumnElement, func, select, update
+from sqlalchemy import ColumnElement, func, select, text, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
@@ -33,6 +33,7 @@ from agentplane.notification_service.db import (
     GitHubRepository,
     GitHubRepositoryAccess,
     GitHubSubject,
+    GitHubSubjectRevision,
     Inbox,
     Subscription,
 )
@@ -43,7 +44,13 @@ from agentplane.notification_service.github_state import (
     RefreshLease,
     SubjectKey,
 )
-from agentplane.notification_service.models import DestinationRef, EventIdentity, SourceFailureKind, Subscribe, SubscriptionUpdate
+from agentplane.notification_service.models import (
+    DestinationRef,
+    EventIdentity,
+    SourceFailureKind,
+    Subscribe,
+    SubscriptionUpdate,
+)
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, NoticeDebounceSettings, Settings
 from agentplane.notification_service.sources.actions import Actions
@@ -628,7 +635,7 @@ async def test_late_correlation_survives_restart_and_does_not_block_other_events
         row = await session.get(Subscription, sub.id)
     assert row is not None
     assert row.github_start_position == boundary
-    assert row.next_attempt is None
+    assert row.next_attempt is not None
     await restarted.reconcile(recovered, claim, row, source)
     assert (await recovered.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).entries == page.entries
 
@@ -1022,6 +1029,8 @@ async def test_shared_refresh_lease_takeover_and_failure_episode(
     view = await store.subscription(PRINCIPAL.account, sub.id)
     assert view.github is not None
     assert view.github.access[0].error_since == initial.error_since
+    assert view.github.access[0].error_observed_at is not None
+    assert initial.error_observed_at is not None
     assert view.github.access[0].error_observed_at >= initial.error_observed_at
     async with store.sessions.begin() as session:
         await session.execute(update(GitHubRepositoryAccess).values(next_attempt=datetime.now(UTC)))
@@ -1137,8 +1146,11 @@ async def test_webhook_racing_bootstrap_keeps_both_revision_associations(
     assert row is not None
     request = github.request
 
-    async def race(method: str, path: str, headers: dict[str, str], **kwargs: JsonValue) -> httpx.Response:
-        response = await request(method, path, headers, **kwargs)
+    async def race(
+        method: str, path: str, headers: dict[str, str], *, json: dict[str, JsonValue] | None = None,
+        allow_missing: bool = False,
+    ) -> httpx.Response:
+        response = await request(method, path, headers, json=json, allow_missing=allow_missing)
         if path.endswith("/pulls/7"):
             await ingest(github, store, pr(NEXT), "pull_request")
         return response
@@ -1166,11 +1178,14 @@ async def test_access_refresh_is_single_flight_across_workers(
     request = github.request
     upstream.requests.clear()
 
-    async def paused(method: str, path: str, headers: dict[str, str], **kwargs: JsonValue) -> httpx.Response:
+    async def paused(
+        method: str, path: str, headers: dict[str, str], *, json: dict[str, JsonValue] | None = None,
+        allow_missing: bool = False,
+    ) -> httpx.Response:
         if path == "/repositories/100":
             entered.set()
             await resume.wait()
-        return await request(method, path, headers, **kwargs)
+        return await request(method, path, headers, json=json, allow_missing=allow_missing)
 
     key = AccessKey(42, 11, 100)
     with patch.object(github, "request", side_effect=paused):
@@ -1202,6 +1217,7 @@ async def test_numeric_repository_identity_survives_rename(store: Store, provide
         assert repository is not None
         assert repository.full_name == "owner/renamed"
     view = await store.subscription(PRINCIPAL.account, sub.id)
+    assert isinstance(view.source, GitHubSource)
     assert view.source.repository == "owner/repo"  # Immutable idempotency input, not current identity.
     assert view.github is not None
     assert view.github.access[0].currently_valid
@@ -1217,13 +1233,18 @@ async def test_access_expiring_during_append_rolls_back_prefix(store: Store, pro
     assert row is not None
     append = store.append_event
 
-    async def expire(session: AsyncSession, inbox: Inbox, source: Subscription, identity: EventIdentity, payload: dict[str, JsonValue]) -> None:
+    async def expire(
+        session: AsyncSession,
+        inbox: Inbox,
+        source: Subscription,
+        identity: EventIdentity,
+        payload: dict[str, JsonValue],
+    ) -> None:
         await append(session, inbox, source, identity, payload)
         await session.execute(update(GitHubRepositoryAccess).values(valid_until=datetime.now(UTC)))
 
-    with patch.object(store, "append_event", side_effect=expire):
-        with pytest.raises(RefreshDeferredError):
-            await github.reconcile(store, claim, row, SOURCE)
+    with patch.object(store, "append_event", side_effect=expire), pytest.raises(RefreshDeferredError):
+        await github.reconcile(store, claim, row, SOURCE)
     page = await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
     assert page.inbox.last_cursor == 0
     assert page.entries == []
@@ -1241,8 +1262,58 @@ async def test_shared_failure_fields_are_constrained(
             await session.execute(update(table).values(error="partial observation"))
     with pytest.raises(IntegrityError):
         async with store.sessions.begin() as session:
-            await session.execute(update(table).values(error="bad kind", error_kind="healthy",
-                error_since=datetime.now(UTC), error_observed_at=datetime.now(UTC)))
+            await session.execute(
+                update(table).values(
+                    error="bad kind",
+                    error_kind="healthy",
+                    error_since=datetime.now(UTC),
+                    error_observed_at=datetime.now(UTC),
+                )
+            )
+
+
+async def test_normalization_backfills_retained_head_evidence_without_grants(
+    store: Store, engine: AsyncEngine, provider: tuple[GitHub, Upstream]
+) -> None:
+    github, _ = provider
+    source = SOURCE.model_copy(update={"events": {EventFilter(event=EventName.CHECK_RUN)}})
+    sub = await store.subscribe(PRINCIPAL, subscription(source), (await github.context(source)).binding)
+    payload = pr(NEXT)
+    payload["pull_request"] = {"number": 7, "head": {"sha": NEXT, "repo": {"id": 200, "full_name": "fork/repo"}}}
+
+    def upgrade_receipt(connection: Connection) -> None:
+        config = Config()
+        config.set_main_option("script_location", str(RUNNER.migrations_dir))
+        config.attributes["connection"] = connection
+        command.downgrade(config, "0007_subscription_health")
+        connection.execute(text("""
+            INSERT INTO github_delivery (app_id, delivery_id, installation_id, repository_id, event,
+                action, head_sha, subjects, digest, payload, received_at)
+            VALUES (42, :delivery, 11, 100, 'pull_request', 'synchronize', :sha,
+                ARRAY['pull_request:7'], :digest, CAST(:payload AS jsonb), now())
+        """), {"delivery": uuid4(), "sha": NEXT, "digest": b"x" * 32, "payload": json.dumps(payload)})
+        RUNNER.run_for_connection(connection)
+        RUNNER.run_for_connection(connection)
+
+    async with engine.begin() as connection:
+        await connection.run_sync(upgrade_receipt)
+    async with store.sessions() as session:
+        revisions = list(await session.scalars(select(GitHubSubjectRevision)))
+        assert {(row.head_repository_id, row.sha) for row in revisions} == {(100, NEXT), (200, NEXT)}
+        assert await session.scalar(select(func.count()).select_from(GitHubRepositoryAccess)) == 1
+    view = await store.subscription(PRINCIPAL.account, sub.id)
+    assert view.github is not None
+    assert not view.github.access[0].currently_valid
+    assert view.github.access[0].last_success_at is None
+    assert view.github.subject.last_success_at is None
+    await ingest(github, store, check(NEXT), "check_run")
+    claim = await store.claim()
+    assert claim is not None
+    row = await store.source(claim)
+    assert row is not None
+    await github.reconcile(store, claim, row, source)
+    page = await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
+    assert [entry.payload for entry in page.entries] == [check(NEXT)]
 
 
 if __name__ == "__main__":

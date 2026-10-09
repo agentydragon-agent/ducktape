@@ -115,6 +115,46 @@ def upgrade() -> None:
     op.execute(
         "INSERT INTO github_subject (repository_id, kind, subject_key, generation) SELECT DISTINCT github_repository_id, github_subject_kind, github_subject_key, 0 FROM subscription WHERE github_repository_id IS NOT NULL"
     )
+    # Retained receipts can explain CI for heads no longer returned by the current GitHub API.
+    op.execute("""
+        INSERT INTO github_repository (repository_id, full_name)
+        SELECT repository_id, min(payload #>> '{repository,full_name}') FROM github_delivery
+        WHERE repository_id IS NOT NULL AND payload #>> '{repository,full_name}' IS NOT NULL
+        GROUP BY repository_id ON CONFLICT DO NOTHING
+    """)
+    op.execute("""
+        INSERT INTO github_repository (repository_id, full_name)
+        SELECT (payload #>> '{pull_request,head,repo,id}')::bigint,
+            min(payload #>> '{pull_request,head,repo,full_name}') FROM github_delivery
+        WHERE payload #>> '{pull_request,head,repo,id}' IS NOT NULL
+            AND payload #>> '{pull_request,head,repo,full_name}' IS NOT NULL
+        GROUP BY (payload #>> '{pull_request,head,repo,id}')::bigint ON CONFLICT DO NOTHING
+    """)
+    op.execute("""
+        INSERT INTO github_subject (repository_id, kind, subject_key, generation)
+        SELECT DISTINCT d.repository_id, split_part(subject, ':', 1),
+            substring(subject from position(':' in subject) + 1), 0
+        FROM github_delivery d JOIN github_repository r ON r.repository_id = d.repository_id
+        CROSS JOIN LATERAL unnest(d.subjects) AS subject
+        WHERE split_part(subject, ':', 1) IN ('pull_request', 'branch')
+        ON CONFLICT DO NOTHING
+    """)
+    op.execute("""
+        INSERT INTO github_subject_revision (repository_id, kind, subject_key, head_repository_id, sha)
+        SELECT DISTINCT s.repository_id, s.kind, s.subject_key, d.repository_id, d.head_sha
+        FROM github_delivery d JOIN github_subject s ON s.repository_id = d.repository_id
+            AND d.subjects @> ARRAY[s.kind || ':' || s.subject_key]
+        WHERE d.head_sha IS NOT NULL ON CONFLICT DO NOTHING
+    """)
+    op.execute("""
+        INSERT INTO github_subject_revision (repository_id, kind, subject_key, head_repository_id, sha)
+        SELECT DISTINCT s.repository_id, s.kind, s.subject_key,
+            (d.payload #>> '{pull_request,head,repo,id}')::bigint, d.head_sha
+        FROM github_delivery d JOIN github_subject s ON s.repository_id = d.repository_id
+            AND d.subjects @> ARRAY[s.kind || ':' || s.subject_key]
+        JOIN github_repository r ON r.repository_id = (d.payload #>> '{pull_request,head,repo,id}')::bigint
+        WHERE d.head_sha IS NOT NULL ON CONFLICT DO NOTHING
+    """)
     op.drop_column("subscription", "github_binding")
     op.create_foreign_key(
         "subscription_github_access",
