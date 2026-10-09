@@ -22,9 +22,6 @@ write/read handoff is complete. See the [archive plan](session_archive_placement
 **Sequencing hold:** finish `THREAD_ARCHIVE_OWNERSHIP` before unrelated additions to the Sandbox
 Service database or app database surgery. App raw-table removal and schema consolidation have
 additional dependencies below. This is a start-work constraint, not just a gate on merging.
-The operator subsequently approved a narrow exception for input-submission implementation and
-isolated tests in a draft PR: no merge, database application or deployment before archive ownership
-and compatibility verification. See the [draft checklist](notification_presentation.md#draft-implementation-exception-and-review-checklist).
 Migration-owned changes continue; API/policy design and independent UI work can proceed without
 changing the migrating schema. Do not use a parallel command/metadata database to evade the hold.
 

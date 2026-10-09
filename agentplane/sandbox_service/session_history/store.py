@@ -237,7 +237,11 @@ class Store:
         back. An empty batch is a checkpoint read, not an inferred runner high-water mark.
         """
         async with self._sessions.begin() as session:
-            row = await session.scalar(select(SessionHistory).where(SessionHistory.id == session_id).with_for_update())
+            # Serialize prefix writers, but allow FK KEY SHARE checks from independent
+            # command acceptance. Neither the Session ID nor any locator key changes here.
+            row = await session.scalar(
+                select(SessionHistory).where(SessionHistory.id == session_id).with_for_update(key_share=True)
+            )
             if row is None:
                 raise HistoryNotFoundError(session_id)
             for entry in entries:

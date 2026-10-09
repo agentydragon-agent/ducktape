@@ -3,7 +3,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 exports_files([
     "0001_session_history.py",
     "0002_session_open_reservations.py",
-    "0003_input_submissions.py",
+    "0003_command_submissions.py",
 ])
 
 py_library(
@@ -25,8 +25,8 @@ py_library(
 )
 
 py_library(
-    name = "0003_input_submissions",
-    srcs = ["0003_input_submissions.py"],
+    name = "0003_command_submissions",
+    srcs = ["0003_command_submissions.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

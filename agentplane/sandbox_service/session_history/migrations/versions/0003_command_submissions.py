@@ -1,9 +1,9 @@
-"""Service-owned input submissions; draft, blocked on archive-ownership rollout."""
+"""Service-owned command submissions; draft, blocked on archive-ownership rollout."""
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0003_input_submissions"
+revision = "0003_command_submissions"
 down_revision = "0002_session_open_reservations"
 branch_labels = None
 depends_on = None
@@ -11,11 +11,10 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table(
-        "session_input_submission",
+        "command_submission",
         sa.Column("session_id", sa.Uuid(), sa.ForeignKey("session_history.id"), primary_key=True, nullable=False),
         sa.Column("command_id", sa.String(128), primary_key=True, nullable=False),
         sa.Column("runner_command", sa.LargeBinary(), nullable=False),
-        sa.Column("metadata_json", sa.String(), nullable=False),
         sa.Column("caller_namespace", sa.String(), nullable=False),
         sa.Column("caller_name", sa.String(), nullable=False),
         sa.Column("accepted_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
@@ -33,4 +32,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("session_input_submission")
+    op.drop_table("command_submission")

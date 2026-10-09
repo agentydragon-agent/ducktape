@@ -146,37 +146,3 @@ metadata out of runner commands; keep historical annotations after inbox expiry.
 integration without the app. Add frontend visual coverage and one bounded real-notice demonstration
 with unchanged agent-facing text. No provider-outage injection or repeated harness matrix is needed;
 rendering must not acknowledge the inbox.
-
-## Draft implementation exception and review checklist
-
-The operator approved preparing input-submission code and isolated tests in a draft PR while the
-history migration runs. This is a narrow exception to the start-work hold, not permission to merge,
-apply the new migration, deploy an image, or change the live backfill. Archive ownership and rollout
-compatibility remain merge/deployment gates. The draft is based on devel, not gate-removal cleanup.
-
-The initial code slice lives in `session_history/submissions.py`: a distinct typed input envelope,
-service-owned submission table, immediate-dispatch coordinator, and admission reconciliation in the
-same transaction as spool checkpointing. Direct receipts do not advance the archive cursor. The
-coordinator is internal and is **not yet wired into an RPC**; existing callers are unchanged.
-
-Before marking the implementation ready:
-
-- Wire the typed submission RPC and authorized status/metadata reads. Authenticate the caller and
-  authorize the concrete Session/Sandbox incarnation before any storage or dispatch, including
-  retries. Internal store methods are not public authorization boundaries.
-- Select and configure Notification Service's narrowly scoped attachment permission; do not accept
-  caller-provided producer identities or add a permissive default. Confirm notice fields against
-  its persisted delivery record. The draft inbox/cursor shape and size limits need that review.
-- Review permanent rejection versus retryable pre-admission unavailability. The internal draft
-  treats only an explicit `SubmissionRefusedError` as terminal; transport errors/cancellation stay
-  pending. Do not map broad runner errors (or stopped sessions) to terminal refusal without review.
-- Exercise two concurrent dispatch attempts, replica/process restart, destination authorization
-  denials, and existing command IDs predating a service submission. Confirm runner replay/receipt
-  recovery rather than treating an absent archive row as a negative acknowledgement.
-- Confirm retention/deletion and same-caller retry policy. The draft retains immutable caller
-  provenance and rejects a changed caller; broader delegated retry must be an explicit policy.
-- Review the ingestion dependency and migration numbering with the migration owner. Schema changes
-  are only tested in isolated databases until rollout is approved. Measure admission-reconciliation
-  overhead on ingestion before enabling it for large retained histories.
-- Add the frontend service-retained status dot separately; browser recovery remains necessary for
-  requests that never reached the service. No background dispatcher or automatic harness startup.

@@ -1,4 +1,4 @@
-"""Internal durable input acceptance; transport authorization remains the caller's responsibility.
+"""Internal durable command acceptance; transport authorization remains the caller's responsibility.
 
 Not exposed by an RPC yet. In particular, do not use a caller-supplied identity here: the
 future boundary must authenticate it and authorize the immutable Session destination first.
@@ -9,42 +9,46 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.protocol import command_pb2, event_log_pb2
-from agentplane.sandbox_service.session_history.db import InputSubmission, SessionHistory
+from agentplane.sandbox_service.session_history import db
 from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf
 
 
-class NotificationNotice(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+class CommandSubmission(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
 
-    inbox_id: UUID
-    through_cursor: int = Field(ge=0, le=2**63 - 1)
+    command: command_pb2.Command
 
+    @model_validator(mode="after")
+    def validate_command(self) -> Self:
+        if not 1 <= len(self.command.command_id) <= 128:
+            raise ValueError("command ID must contain 1 to 128 characters")
+        if self.command.WhichOneof("operation") is None:
+            raise ValueError("a supported command operation is required")
+        if self.command.ByteSize() > 1_048_576:
+            raise ValueError("command exceeds the submission size limit")
+        return self
 
-class InputMetadata(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    def copy_command(self) -> command_pb2.Command:
+        """Keep the service envelope out of the runner and retain unknown protobuf fields."""
+        result = command_pb2.Command()
+        result.CopyFrom(self.command)
+        return result
 
-    notification_notice: NotificationNotice | None = None
-
-
-class SubmitInput(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    command_id: str = Field(min_length=1, max_length=128)
-    text: str = Field(min_length=1, max_length=1_048_576)
-    metadata: InputMetadata = Field(default_factory=InputMetadata)
-
-    def runner_command(self) -> command_pb2.Command:
-        """Allowlisted conversion: service metadata/provenance never enters runner Commands."""
-        return command_pb2.Command(command_id=self.command_id, submit_input=command_pb2.SubmitInput(text=self.text))
+    def snapshot(self) -> CommandSubmission:
+        # A frozen Pydantic model does not freeze its nested mutable protobuf. Call before
+        # the first await, revalidating in case the caller mutated the command after creation.
+        return CommandSubmission(command=self.copy_command())
 
 
 class SubmissionConflictError(ValueError):
@@ -68,21 +72,25 @@ class SubmissionState(StrEnum):
 @dataclass(frozen=True)
 class Submission:
     state: SubmissionState
-    admission: bytes | None
+    admission: event_log_pb2.EventEntry | None
     rejection: str | None
 
     @classmethod
-    def from_row(cls, row: InputSubmission) -> Submission:
+    def from_row(cls, row: db.CommandSubmission) -> Submission:
         return cls(SubmissionState(row.state), row.admission, row.rejection)
 
-    def receipt(self) -> event_log_pb2.EventEntry:
+    def get_receipt(self) -> event_log_pb2.EventEntry:
         if self.admission is None:
             raise ValueError("submission has no admission receipt")
-        return event_log_pb2.EventEntry.FromString(self.admission)
+        result = event_log_pb2.EventEntry()
+        result.CopyFrom(self.admission)
+        return result
 
 
 async def reconcile_admission(session: AsyncSession, session_id: UUID, entry: event_log_pb2.EventEntry) -> None:
-    """Called under the SessionHistory lock, in the same transaction as spool checkpointing.
+    """Lock only the matching submission until the caller's transaction ends.
+
+    Spool ingestion calls this in the same transaction as checkpointing.
 
     Other command producers have no submission row and remain valid archive entries. Replay
     invokes this for duplicates too, allowing reconciliation to be repeated idempotently.
@@ -90,19 +98,24 @@ async def reconcile_admission(session: AsyncSession, session_id: UUID, entry: ev
     if not entry.event.HasField("command_admitted"):
         return
     command = entry.event.command_admitted.command
-    row = await session.get(InputSubmission, (session_id, command.command_id))
+    row = await session.scalar(
+        select(db.CommandSubmission)
+        .where(db.CommandSubmission.session_id == session_id, db.CommandSubmission.command_id == command.command_id)
+        .with_for_update()
+    )
     if row is None:
         return
     if not entry.cursor or not entry.origin.source_id or entry.origin.sequence != entry.cursor:
         raise SubmissionConflictError("invalid admission origin")
-    if command_pb2.Command.FromString(row.runner_command) != command:
-        raise SubmissionConflictError("admission differs from retained input")
-    payload = entry.SerializeToString(deterministic=True)
-    if row.admission is not None and row.admission != payload:
+    if row.runner_command != command:
+        raise SubmissionConflictError("admission differs from retained command")
+    if row.admission is not None and row.admission != entry:
         raise SubmissionConflictError("conflicting admission receipt")
     # Positive durable evidence wins over a racing refusal; never regress an admission.
     row.state = SubmissionState.ADMITTED
-    row.admission = payload
+    receipt = event_log_pb2.EventEntry()
+    receipt.CopyFrom(entry)
+    row.admission = receipt
     row.rejection = None
 
 
@@ -110,47 +123,36 @@ class SubmissionStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
 
-    async def _lock(self, session: AsyncSession, session_id: UUID) -> SessionHistory:
-        history = await session.scalar(select(SessionHistory).where(SessionHistory.id == session_id).with_for_update())
-        if history is None:
-            raise SubmissionNotFoundError(session_id)
-        return history
-
-    async def accept(
-        self,
-        session_id: UUID,
-        request: SubmitInput,
-        *,
-        caller: ServiceAccountRef,
-        notification_producers: frozenset[ServiceAccountRef],
-    ) -> Submission:
+    async def accept(self, session_id: UUID, request: CommandSubmission, *, caller: ServiceAccountRef) -> Submission:
         """Persist before runner contact. Destination authorization must precede this call.
 
         Caller provenance is server supplied, retained immutably, and checked on retries.
         This internal read/write API must not be exposed without the transport scope checks.
         """
-        if request.metadata.notification_notice is not None and caller not in notification_producers:
-            raise PermissionError("caller cannot attach notification provenance")
-        command = request.runner_command().SerializeToString(deterministic=True)
-        metadata = request.metadata.model_dump_json()
+        request = request.snapshot()
+        command = request.command
         async with self._sessions.begin() as session:
-            await self._lock(session, session_id)
-            row = await session.get(InputSubmission, (session_id, request.command_id))
-            if row is None:
-                row = InputSubmission(
+            if await session.get(db.SessionHistory, session_id) is None:
+                raise SubmissionNotFoundError(session_id)
+            # The unique key arbitrates only identical command IDs, not all Session work.
+            await session.execute(
+                insert(db.CommandSubmission)
+                .values(
                     session_id=session_id,
-                    command_id=request.command_id,
+                    command_id=request.command.command_id,
                     runner_command=command,
-                    metadata_json=metadata,
                     caller_namespace=caller.namespace,
                     caller_name=caller.name,
                     state=SubmissionState.PENDING_ADMISSION,
                 )
-                session.add(row)
-            elif (
-                command_pb2.Command.FromString(row.runner_command) != request.runner_command()
-                or row.metadata_json != metadata
-                or (row.caller_namespace, row.caller_name) != (caller.namespace, caller.name)
+                .on_conflict_do_nothing(index_elements=["session_id", "command_id"])
+            )
+            row = await session.get(db.CommandSubmission, (session_id, command.command_id))
+            if row is None:
+                raise SubmissionNotFoundError(command.command_id)
+            if row.runner_command != command or (row.caller_namespace, row.caller_name) != (
+                caller.namespace,
+                caller.name,
             ):
                 raise SubmissionConflictError("command ID already belongs to a different submission")
             return Submission.from_row(row)
@@ -158,31 +160,39 @@ class SubmissionStore:
     async def read(self, session_id: UUID, command_id: str) -> Submission:
         """Internal lookup only; the future status RPC must authorize Session access."""
         async with self._sessions() as session:
-            row = await session.get(InputSubmission, (session_id, command_id))
+            row = await session.get(db.CommandSubmission, (session_id, command_id))
             if row is None:
                 raise SubmissionNotFoundError(command_id)
             return Submission.from_row(row)
 
-    async def admitted(self, session_id: UUID, entry: event_log_pb2.EventEntry) -> Submission:
+    async def record_admission(self, session_id: UUID, entry: event_log_pb2.EventEntry) -> Submission:
+        receipt = event_log_pb2.EventEntry()
+        receipt.CopyFrom(entry)
+        entry = receipt
         if not entry.event.HasField("command_admitted"):
             raise SubmissionConflictError("expected a command admission receipt")
         async with self._sessions.begin() as session:
-            history = await self._lock(session, session_id)
+            history = await session.get(db.SessionHistory, session_id)
+            if history is None:
+                raise SubmissionNotFoundError(session_id)
             if history.source_id is not None and history.source_id != entry.origin.source_id:
                 raise SubmissionConflictError("admission source differs from Session history")
-            row = await session.get(InputSubmission, (session_id, entry.event.command_admitted.command.command_id))
+            await reconcile_admission(session, session_id, entry)
+            row = await session.get(db.CommandSubmission, (session_id, entry.event.command_admitted.command.command_id))
             if row is None:
                 raise SubmissionNotFoundError(entry.event.command_admitted.command.command_id)
-            await reconcile_admission(session, session_id, entry)
             # A direct receipt is not a contiguous archive prefix: do not advance last_cursor.
             return Submission.from_row(row)
 
-    async def rejected(self, session_id: UUID, command_id: str, reason: str) -> Submission:
+    async def record_rejection(self, session_id: UUID, command_id: str, reason: str) -> Submission:
         if not reason or len(reason) > 512:
             raise ValueError("a bounded, sanitized rejection reason is required")
         async with self._sessions.begin() as session:
-            await self._lock(session, session_id)
-            row = await session.get(InputSubmission, (session_id, command_id))
+            row = await session.scalar(
+                select(db.CommandSubmission)
+                .where(db.CommandSubmission.session_id == session_id, db.CommandSubmission.command_id == command_id)
+                .with_for_update()
+            )
             if row is None:
                 raise SubmissionNotFoundError(command_id)
             if row.state == SubmissionState.PENDING_ADMISSION:
@@ -191,13 +201,12 @@ class SubmissionStore:
             return Submission.from_row(row)
 
 
-async def submit_input(
+async def submit_command(
     store: SubmissionStore,
     session_id: UUID,
-    request: SubmitInput,
+    request: CommandSubmission,
     *,
     caller: ServiceAccountRef,
-    notification_producers: frozenset[ServiceAccountRef],
     dispatch: Callable[[command_pb2.Command], Awaitable[event_log_pb2.EventEntry]],
 ) -> event_log_pb2.EventEntry:
     """One caller-driven attempt, not a background queue or harness startup mechanism.
@@ -206,18 +215,19 @@ async def submit_input(
     proven non-admission can raise SubmissionRefusedError. All other exceptions (including
     cancellation) leave the durable state untouched for spool reconciliation or exact retry.
     """
-    current = await store.accept(session_id, request, caller=caller, notification_producers=notification_producers)
+    request = request.snapshot()
+    current = await store.accept(session_id, request, caller=caller)
     if current.state == SubmissionState.ADMITTED:
-        return current.receipt()
+        return current.get_receipt()
     if current.state == SubmissionState.REJECTED:
         raise SubmissionRefusedError(current.rejection)
     try:
-        receipt = await dispatch(request.runner_command())
+        receipt = await dispatch(request.copy_command())
     except SubmissionRefusedError as error:
-        current = await store.rejected(session_id, request.command_id, str(error))
+        current = await store.record_rejection(session_id, request.command.command_id, str(error))
         if current.state == SubmissionState.ADMITTED:
-            return current.receipt()
+            return current.get_receipt()
         raise
-    if receipt.event.command_admitted.command != request.runner_command():
+    if receipt.event.command_admitted.command != request.command:
         raise SubmissionConflictError("dispatcher returned a receipt for different work")
-    return (await store.admitted(session_id, receipt)).receipt()
+    return (await store.record_admission(session_id, receipt)).get_receipt()
