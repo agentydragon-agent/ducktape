@@ -24,11 +24,8 @@ ServiceAccount access to selected Session history and derived Thread views now. 
 durable archive source and `SANDBOX_COMPARTMENT_BOUNDARY` prevents co-resident
 sessions from crossing trust domains. None requires the hosted runtime pivot.
 
-Proposed execution order for the Thread correctness/UI track:
+Other priorities and candidates:
 
-- **Thread UI:** the staged submission indicator (`SUBMISSION_STAGE_INDICATOR`) follows
-  `COMMAND_DISPATCHED_EVENT` and shares its test changes with
-  [#9063](https://github.com/agentydragon/ducktape/issues/9063).
 - **P2:** driver-hosted tools (`DT`). This does not block the current API-level
   acceptance closure.
 - **Unranked future harness capabilities:** project skills and commands, web search,
@@ -133,8 +130,6 @@ flowchart TB
     THREAD_OPEN_RELOAD_RECOVERY["Open recovery follow-up<br/>runner committed but mapping absent<br/>safe reload reconciliation"]:::future
     BOOTSTRAP_PROGRESS_CONTRACT["Planned contract<br/>one bootstrap attempt with durable progress/result<br/>no HTTP-held script execution"]:::future
     SANDBOX_CREATE_RECONCILE["Lifecycle acceptance<br/>lost Create reply and partial grants<br/>current UID, no deleted-object tombstone"]:::future
-    COMMAND_DISPATCHED_EVENT["Missing observation<br/>runner handed the command to the harness<br/>journal-only today; needs an Event"]:::future
-    SUBMISSION_STAGE_INDICATOR["Planned UI<br/>staged submission indicator<br/>which of five stages, not two strings"]:::future
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CLAUDE_FRESH_RESUME_CACHE_SPIKE["Independent Claude spike<br/>fresh-process resume from copied native state<br/>prefix/reasoning and cache evidence"]:::future
@@ -210,7 +205,6 @@ flowchart TB
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     CODEX_RECOVERY -. required recovery evidence .-> CODEX_RECOVERY_PROTOCOL
     COMMAND_QUEUE_DECISION -. if app-first acceptance chosen .-> THREAD_COMMAND_DELIVERY
-    COMMAND_DISPATCHED_EVENT --> SUBMISSION_STAGE_INDICATOR
     THREAD_COMMAND_DELIVERY --> THREAD_OUTBOX_CUTOVER
     THREAD_OUTBOX_CUTOVER --> NEWTHREAD_DURABLE
     NEWTHREAD_DURABLE --> UISHELL_NEWTHREAD_SANDBOX
@@ -685,31 +679,6 @@ Keep #6625's outbox and #6985's mixed Thread-record design outside the current m
 sequence. Review them for independently useful changes to salvage into appropriate
 slices; do not stack new work on their deferred queue design. Preserve the runner's
 own journal in either option.
-
-### `COMMAND_DISPATCHED_EVENT` — make "the runner sent this to the harness" an observation
-
-The third submission stage is unobservable. The runner records it in its own SQLite —
-`Command.dispatch_planned` in `agentplane/runner/journal.py`, written by `dispatch_planned()` at the
-points in `agentplane/runner/session.py` where an input goes to the adapter, sometimes with a
-`native_correlation` such as a Codex `turn_id` — and none of it reaches the app: no observation in
-`agentplane/protocol/event.proto`, no fold row, so no consumer can tell "queued in the runner" from
-"handed to the harness", which is what an operator waiting on a steer means. Add the Event, its fold
-and view handling, and runner tests pinning its ordering against `CommandAdmitted` for both harnesses.
-Keep `native_correlation` runner-local unless a consumer is named for it; a native id is not an
-app-level promise.
-
-### `SUBMISSION_STAGE_INDICATOR` — show which submission stage a pending command is in
-
-Replace the two-state copy in `agentplane/app/frontend/threads/thread_commands.tsx` and
-`thread_cards.tsx` — `"Saved locally · awaiting admission"` and `"Saved · awaiting effect"` — with an
-indicator that names its stage: the browser holds it, the app has it, the runner was sent it, the
-runner admitted it, the harness has taken effect. Four of the five are observable now; the third
-waits on `COMMAND_DISPATCHED_EVENT`. Prefer a fixed-angular-position advancing indicator — a dot or
-breathing spinner whose position _is_ the stage — over longer prose, with the exact stage and its
-age in the hover/expanded copy. Keep the wording honest: nothing tells the app that the model's
-context contains the input, so the last stage stays "awaiting effect" and never claims the model has
-seen it. Pin the state machine and its transitions in tests, not the strings —
-[#9063](https://github.com/agentydragon/ducktape/issues/9063) removes the existing wording pins.
 
 ### `CLAUDE_RECOVERY` — native execution before durable runner evidence
 
