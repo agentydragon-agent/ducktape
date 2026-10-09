@@ -7,9 +7,8 @@ and the [staging acceptance record](../notification_service/docs/staging_github_
 
 ## Remaining live verification
 
-- [ ] Verify shared GitHub refresh reuse across overlapping live subscriptions and service restarts,
-      and failure/backoff visibility through agent introspection and the frontend. CI coverage and
-      a successful deployed status read do not establish these live behaviors.
+- [ ] Verify shared GitHub refresh reuse across overlapping live subscriptions and service restarts.
+      CI coverage and a successful deployed status read do not establish these live behaviors.
 
 - [ ] Audit remaining event/permission coverage, including PR lifecycle/reviews, pushes/ref changes,
       installation lifecycle, revoked access and fork-head correlation, plus live action-filter and
