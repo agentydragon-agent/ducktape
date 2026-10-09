@@ -339,7 +339,7 @@ def main() -> None:
 
     # Do not pass an env override unless a key file was explicitly configured.
     env = _bb_environment()
-    result = subprocess.run(cmd, check=False, **({"env": env} if env is not None else {}))
+    result = subprocess.run(cmd, check=False) if env is None else subprocess.run(cmd, check=False, env=env)
     if invocation_id is not None:
         print(
             f'bbr: invocation {invocation_id}  (bbapi {{target,"target log",artifact,invocation}} {invocation_id})',
