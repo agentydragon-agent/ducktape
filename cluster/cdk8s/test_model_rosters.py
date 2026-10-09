@@ -62,7 +62,7 @@ def test_large_gpt_oss_variants_only_serve_native_requests(context_kib: int) -> 
     ]
     # Parking the misleading wire must neither leave it served nor drop the native
     # variant's explicit allocation. Other models/wires are outside this pause.
-    assert [route for route in SERVED_ROUTES if route.model == native.model] == [native]
+    assert [route for route in SERVED_ROUTES if isinstance(route, Route) and route.model == native.model] == [native]
     assert model_entry(native)["litellm_params"]["extra_body"] == {"options": {"num_ctx": context_kib * 1024}}
 
 

@@ -2383,15 +2383,6 @@ data:
         - model: ollama/oai-chat/gpt-oss-20b-128k
           display_name: GPT-OSS 20B (128K)
           reasoning_efforts: []
-        - model: ollama/oai-chat/gpt-oss-20b-256k
-          display_name: GPT-OSS 20B (256K)
-          reasoning_efforts: []
-        - model: ollama/oai-chat/gpt-oss-20b-512k
-          display_name: GPT-OSS 20B (512K)
-          reasoning_efforts: []
-        - model: ollama/oai-chat/gpt-oss-20b-1m
-          display_name: GPT-OSS 20B (1M)
-          reasoning_efforts: []
         - model: ollama/oai-chat/gpt-oss-120b-128k
           display_name: GPT-OSS 120B (128K)
           reasoning_efforts: []
@@ -2405,9 +2396,6 @@ data:
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
           - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/oai-chat/gpt-oss-20b-256k
-          - ollama/oai-chat/gpt-oss-20b-512k
-          - ollama/oai-chat/gpt-oss-20b-1m
           - ollama/oai-chat/gpt-oss-120b-128k
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
     thread_presets:
