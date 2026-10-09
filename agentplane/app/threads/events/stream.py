@@ -43,9 +43,9 @@ async def follow(
                     yield _frame("event", MessageToDict(entry), event_id=entry.cursor)
                     cursor = entry.cursor
             snapshot = await event_logs.feed_state(thread_id)
-            if snapshot is not None and snapshot.end is not None:
-                if await event_logs.last_cursor(thread_id) > cursor:
-                    continue
+            # A terminal app snapshot may precede shadow catch-up. Wait for
+            # coverage without busy-polling or ending before the final suffix.
+            if snapshot is not None and snapshot.end is not None and await event_logs.last_cursor(thread_id) <= cursor:
                 match snapshot.end:
                     case FeedEnd():
                         yield _frame("end", {})

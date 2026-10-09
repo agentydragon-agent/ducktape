@@ -139,6 +139,7 @@ py_library(
         ":shutdown",
         "//agentplane:kubernetes_watch",
         "//agentplane/app/threads:bridge",
+        "//agentplane/app/threads:history_projector",
         "//agentplane/app/threads:ingestion",
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",

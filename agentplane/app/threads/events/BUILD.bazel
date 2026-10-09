@@ -14,6 +14,7 @@ py_library(
         "//agentplane/runner:harness",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
@@ -62,5 +63,24 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_stream",
+    size = "medium",
+    srcs = ["test_stream.py"],
+    requires_docker = True,
+    deps = [
+        ":event_log",
+        ":stream",
+        "//:conftest",
+        "//agentplane/app:changes",
+        "//agentplane/app:conftest",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
