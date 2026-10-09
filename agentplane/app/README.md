@@ -293,7 +293,7 @@ the thread's status (`»` running, `●` idle, `!` last turn errored, `⏻` harn
 background tab, where browsers throttle timers, so both change on status events rather than on a clock.
 
 The Thread composer shows an approximate age of this Thread's latest model-originated activity
-beside its send controls on wider screens, or in the More menu on narrow screens.
+beside its send controls on wider screens, or at the scrollable Thread history tail on narrow screens.
 The app updates `event_log.last_model_activity_at` in the same fenced transaction as event
 folding, using assistant/reasoning output and generated tool calls/arguments; it ignores tool
 output, user input, harness bookkeeping and turn completion. A migration backfills existing

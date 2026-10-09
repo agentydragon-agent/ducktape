@@ -1078,6 +1078,20 @@ function ProjectedSessionBody({
           deliver={commands.deliver}
         />
       )}
+      <Text
+        className="agentplane-thread-tail-model-activity"
+        size="xs"
+        c="dimmed"
+        ta="right"
+        aria-label={`Last inferred model activity: ${activityAge}`}
+        title={
+          thread.last_model_activity_at && activityAge !== "unknown"
+            ? `${new Date(thread.last_model_activity_at).toLocaleString()} · Inferred from model-originated Thread events, not a measured provider request or cache hit`
+            : "No model-originated Thread event observed; provider requests are not measured here"
+        }
+      >
+        Model activity: {activityAge}
+      </Text>
     </Stack>
   );
 
@@ -1251,18 +1265,7 @@ function ProjectedSessionBody({
                 <Menu.Item leftSection={<IconHistory size={15} />} onClick={() => openDebug()}>
                   Debug history
                 </Menu.Item>
-                <Menu.Divider className="agentplane-composer-model-activity-menu" />
-                <Menu.Label
-                  className="agentplane-composer-model-activity-menu"
-                  title={
-                    thread.last_model_activity_at && activityAge !== "unknown"
-                      ? `${new Date(thread.last_model_activity_at).toLocaleString()} · Inferred from model-originated Thread events, not a measured provider request or cache hit`
-                      : "No model-originated Thread event observed; provider requests are not measured here"
-                  }
-                >
-                  Model activity: {activityAge}
-                </Menu.Label>
-                <Menu.Divider className="agentplane-composer-model-activity-menu" />
+                <Menu.Divider />
                 <Menu.Item
                   color="red"
                   leftSection={<IconPower size={15} />}

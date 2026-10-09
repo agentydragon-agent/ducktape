@@ -318,6 +318,7 @@ it("shows inferred model activity in the composer controls, not in a separate ro
   expect(activity?.textContent).toContain("Model activity: 8m ago");
   expect(activity?.parentElement?.classList.contains("agentplane-composer-controls")).toBe(true);
   expect(activity?.nextElementSibling?.classList.contains("agentplane-composer-send")).toBe(true);
+  expect(container.querySelector(".agentplane-thread-tail-model-activity")?.textContent).toContain("8m ago");
   expect(activity?.getAttribute("title")).toContain("not a measured provider request or cache hit");
   expect(container.querySelector(".agentplane-sidebar-row-activity")).toBeNull();
 });
