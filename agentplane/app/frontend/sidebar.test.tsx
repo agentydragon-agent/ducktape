@@ -166,6 +166,31 @@ function location(): string | null | undefined {
   return container.querySelector('[data-testid="location"]')?.textContent;
 }
 
+it("shows inferred model activity without claiming a provider cache hit", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-01-01T12:10:00Z"));
+  await render(
+    [
+      thread({
+        id: "t-1",
+        sandbox: "test-sandbox",
+        session_id: "s-1",
+        name: "Observed",
+        last_model_activity_at: "2026-01-01T12:02:00Z",
+        active_turn_id: "active",
+      }),
+      thread({ id: "t-2", sandbox: "test-sandbox", session_id: "s-2", name: "Unknown", last_model_activity_at: null }),
+    ],
+    { "test-sandbox": sandbox("test-sandbox") },
+    { open: true }
+  );
+  expect(row("Observed").querySelector(".agentplane-sidebar-row-activity")?.textContent).toBe("8m");
+  expect(row("Observed").getAttribute("title")).toContain("Inferred model activity: 8m");
+  expect(row("Unknown").querySelector(".agentplane-sidebar-row-activity")?.textContent).toBe("?");
+  await act(async () => vi.advanceTimersByTime(60_000));
+  expect(row("Observed").querySelector(".agentplane-sidebar-row-activity")?.textContent).toBe("9m");
+});
+
 it("applies pushed renames and Sandbox state without marking a suspended harness live", async () => {
   const running = thread({
     id: "t-1",

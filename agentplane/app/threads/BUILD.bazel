@@ -158,3 +158,13 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_library(
+    name = "model_activity",
+    srcs = ["model_activity.py"],
+    deps = [
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)

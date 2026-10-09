@@ -160,6 +160,7 @@ def _view(
         archived=thread is not None and thread.archived,
         last_cursor=last_cursor or 0,
         last_event_at=last_at,
+        last_model_activity_at=log.last_model_activity_at,
         harness_state=protocol_pb2.HarnessState.Name(harness_state),
         setup_state=protocol_pb2.SetupState.Name(attachment.setup_state) if attachment is not None else None,
         active_turn_id=(attachment.active_turn_id or None) if attachment is not None else None,

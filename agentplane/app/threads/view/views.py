@@ -170,6 +170,10 @@ class ThreadView(BaseModel):
     archived: bool
     last_cursor: int = Field(description="The highest stored follow cursor; 0 while nothing is stored.")
     last_event_at: datetime | None = None
+    last_model_activity_at: datetime | None = Field(
+        default=None,
+        description="Inferred from this Thread's model-originated events; not an observed provider request or cache hit.",
+    )
     harness_state: str = Field(
         description="The protocol's HarnessState enum member, by name: HARNESS_STATE_RUNNING, "
         "HARNESS_STATE_STOPPED, or HARNESS_STATE_UNSPECIFIED while no feed has ever attached to this thread."

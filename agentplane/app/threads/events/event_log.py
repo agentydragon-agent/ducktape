@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
+from agentplane.app.threads.model_activity import is_model_activity
 from agentplane.app.threads.models import Event, EventLog, FeedState
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
@@ -321,6 +322,13 @@ async def append(
         inserted.append(entry)
         cursor = entry.cursor
         source_id = entry.origin.source_id
+    last_activity = next((entry for entry in reversed(inserted) if is_model_activity(entry.event)), None)
+    if last_activity is not None:
+        await session.execute(
+            update(EventLog)
+            .where(EventLog.id == thread_id)
+            .values(last_model_activity_at=last_activity.event.at.ToDatetime(tzinfo=UTC))
+        )
     return inserted
 
 

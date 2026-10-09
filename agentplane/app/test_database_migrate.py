@@ -1,6 +1,7 @@
 """The migration history against a real PostgreSQL: it refuses a database that differs from the models,
 re-running it is a no-op, and a database already stamped at an earlier revision is carried to the models."""
 
+import json
 import os
 import subprocess
 import sys
@@ -48,6 +49,52 @@ def test_tables_the_history_does_not_own_are_not_drift(db_url: str) -> None:
     """Histories can share a database, each with a version table of its own."""
     _execute(db_url, "CREATE TABLE another_history_test_table (id integer PRIMARY KEY)")
     RUNNER.apply(db_url)
+
+
+def test_model_activity_backfills_existing_threads_without_counting_tool_output(db_url: str) -> None:
+    engine = create_engine(RUNNER.sync_url(db_url))
+    thread = uuid.uuid4()
+    try:
+        with engine.begin() as connection:
+            # Simulate the previous head with a retained Thread and historical event prefix.
+            connection.execute(text("ALTER TABLE event_log DROP COLUMN last_model_activity_at"))
+            connection.execute(text("UPDATE alembic_version_app SET version_num = '0017_event_turn_completed_index'"))
+            connection.execute(
+                text(
+                    "INSERT INTO event_log (id, sandbox, session_id, harness, model, cwd, created_at) "
+                    "VALUES (:thread, 'sandbox', 'session', 'HARNESS_CODEX', 'model', '/', now())"
+                ),
+                {"thread": thread},
+            )
+            for cursor, kind, event in [
+                (1, "item_started", {"itemStarted": {"kind": "ITEM_KIND_TOOL_CALL"}}),
+                (2, "tool_arguments", {"toolArguments": {"argumentsJson": "{}"}}),
+                (3, "tool_output_delta", {"toolOutputDelta": {"text": "still running"}}),
+                (4, "turn_completed", {"turnCompleted": {}}),
+            ]:
+                connection.execute(
+                    text(
+                        "INSERT INTO event (thread_id, cursor, at, kind, payload) "
+                        "VALUES (:thread, :cursor, :at, :kind, CAST(:payload AS json))"
+                    ),
+                    {
+                        "thread": thread,
+                        "cursor": cursor,
+                        "at": f"2026-09-01T12:00:0{cursor}Z",
+                        "kind": kind,
+                        "payload": json.dumps({"event": event}),
+                    },
+                )
+        RUNNER.apply(db_url)
+        with engine.connect() as connection:
+            assert (
+                connection.scalar(
+                    text("SELECT last_model_activity_at FROM event_log WHERE id = :thread"), {"thread": thread}
+                ).isoformat()
+                == "2026-09-01T12:00:02+00:00"
+            )
+    finally:
+        engine.dispose()
 
 
 def _migrate_from_0015(db_url: str, column_type: str, stored: list[str]) -> list[str]:
