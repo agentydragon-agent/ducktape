@@ -183,7 +183,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
         async with errors(context), asyncio.timeout(self.resources.lifecycle_timeout_s):
             principal = await self.resources.authenticate(context)
             provisioning = self.resources.provisioning
-            return await provisioning.create(request, caller=f"{principal.namespace}/{principal.name}")
+            return await provisioning.create(request, caller=principal)
 
     async def checked_sandbox(self, request: protocol_pb2.SandboxRequest) -> tuple[Provisioning, Sandbox]:
         provisioning = self.resources.provisioning

@@ -41,6 +41,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     sandbox,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
+from agentplane.subjects import ServiceAccountRef
 
 
 def _grant(name: str) -> RoleBindingGrant:
@@ -53,6 +54,7 @@ async def _sandbox(
     selected = resolve_grants(names, catalog)
     view = await inventory.create(
         CreateSandboxRequest(name="haku", template=TEMPLATE, kubernetes_grants=names),
+        caller=ServiceAccountRef(namespace=NAMESPACE, name="test-caller"),
         annotations={
             KUBERNETES_GRANTS_ANNOTATION: json.dumps(
                 [MessageToDict(grant, preserving_proto_field_name=True) for grant in selected]

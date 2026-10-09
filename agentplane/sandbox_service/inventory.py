@@ -34,6 +34,7 @@ from agentplane.sandbox_service.kubernetes_views import (
 from agentplane.sandbox_service.models import SandboxConflictError, SandboxNotFoundError, SandboxRunningError
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox, SandboxBinding
 from agentplane.sandbox_service.session_config import LaunchGrants
+from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL, OperatingMode
 from util.kubernetes import CustomObjectsClient
 
@@ -120,7 +121,7 @@ class SandboxInventory:
         *,
         annotations: dict[str, str] | None = None,
         finalizers: list[str] | None = None,
-        caller: str = "sandbox-service",
+        caller: ServiceAccountRef,
     ) -> Sandbox:
         # This immutable receipt distinguishes a retry from another caller's same-name Create.
         # Resolve an existing CR before looking up the template: templates may change or disappear.
@@ -172,7 +173,7 @@ class SandboxInventory:
         api_client = self._core_v1.api_client  # type: ignore[attr-defined]
         return sandbox_view(sandbox, None, api_client=api_client)
 
-    async def retry(self, spec: CreateSandboxRequest, *, caller: str = "sandbox-service") -> Sandbox | None:
+    async def retry(self, spec: CreateSandboxRequest, *, caller: ServiceAccountRef) -> Sandbox | None:
         """Find the recorded Create before resolving mutable template/policy catalogues."""
         try:
             existing = await self._sandbox(spec.name)
@@ -182,9 +183,9 @@ class SandboxInventory:
         return await self.get(spec.name)
 
     @staticmethod
-    def _intent(spec: CreateSandboxRequest, caller: str) -> str:
+    def _intent(spec: CreateSandboxRequest, caller: ServiceAccountRef) -> str:
         return json.dumps(
-            {"caller": caller, "request": MessageToDict(spec, preserving_proto_field_name=True)},
+            {"caller": caller.model_dump(), "request": MessageToDict(spec, preserving_proto_field_name=True)},
             sort_keys=True,
             separators=(",", ":"),
         )

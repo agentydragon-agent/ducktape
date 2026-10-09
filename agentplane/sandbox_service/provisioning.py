@@ -26,6 +26,7 @@ from agentplane.sandbox_service.kubernetes_views import (
 )
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox, SandboxBinding
 from agentplane.sandbox_service.session_config import LaunchGrants
+from agentplane.subjects import ServiceAccountRef
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,7 @@ class Provisioning:
     grants: dict[str, KubernetesGrant]
     bindings: KubernetesBindings
 
-    async def create(self, spec: CreateSandboxRequest, *, caller: str = "sandbox-service") -> Sandbox:
+    async def create(self, spec: CreateSandboxRequest, *, caller: ServiceAccountRef) -> Sandbox:
         if not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", spec.name) or len(spec.name) > 57 or not spec.template:
             raise ValueError("valid name and template are required")
         if max(len(spec.bootstrap), len(spec.session_defaults.setup_script)) > 65_536:
