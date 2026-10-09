@@ -3,9 +3,11 @@ import IconBell from "@tabler/icons-react/dist/esm/icons/IconBell.mjs";
 import { type JSX, type ReactNode, useContext, useEffect, useId, useState } from "react";
 import { useNavigate } from "react-router";
 
+import { serviceAccountKey } from "../client";
 import { StaleNotice } from "../stream_status";
 import { TopbarActions } from "../topbar";
 import { actionService } from "./client";
+import { canApproveInline, compactActionArguments } from "./rendering/index";
 import { ActionRequestsContext, PendingActionCard, useActionRequests } from "./requests";
 
 /** One stream and decision state for the shell, the Actions page, and the thread composer. */
@@ -52,6 +54,13 @@ export function ComposerPendingActions(): JSX.Element | null {
 
   if (actions === null || pending.length === 0) return null;
 
+  // Never truncate the exact operation when offering an inline decision. Multiple requests
+  // stay review-only so the decision cannot be mistaken for a different request.
+  const compact =
+    pending.length === 1 && !pending[0].external_grant
+      ? compactActionArguments(pending[0].action, pending[0].arguments)
+      : null;
+  const inlineApproval = compact !== null && canApproveInline(pending[0].action, pending[0].arguments);
   const summary = pending
     .slice(0, 2)
     .map((request) => `${request.action.group} / ${request.action.name} · ${request.title}`)
@@ -66,11 +75,32 @@ export function ComposerPendingActions(): JSX.Element | null {
             <Text size="sm" fw={600}>
               {pending.length} action{pending.length === 1 ? "" : "s"} waiting for review
             </Text>
-            <Text size="xs" c="dimmed" lineClamp={1}>
-              {summary}
-              {extraCount > 0 ? ` · +${extraCount} more` : ""}
-            </Text>
+            {compact ? (
+              <Stack gap={2}>
+                <Text className="action-affordance-context" size="xs" style={{ overflowWrap: "anywhere" }}>
+                  {pending[0].action.group} / {pending[0].action.name} · {pending[0].title}
+                  {pending[0].description ? ` · ${pending[0].description}` : ""}
+                  {pending[0].caller ? ` · requested by ${serviceAccountKey(pending[0].caller)}` : ""}
+                </Text>
+                {compact}
+              </Stack>
+            ) : (
+              <Text size="xs" c="dimmed" lineClamp={1}>
+                {summary}
+                {extraCount > 0 ? ` · +${extraCount} more` : ""}
+              </Text>
+            )}
           </div>
+          {inlineApproval && !expanded && (
+            <Button
+              size="sm"
+              aria-label="Approve"
+              loading={actions.deciding === pending[0].id}
+              onClick={() => actions.decide(pending[0], "allow")}
+            >
+              Approve
+            </Button>
+          )}
           <Button
             variant="subtle"
             size="xs"

@@ -96,6 +96,15 @@ class AgentplaneFixture:
     async def show_pending_actions(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.showPendingActions()")
 
+    async def show_compact_pod_action(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.showCompactPodAction()")
+
+    async def show_action_preview(self, group: str, name: str, arguments: dict[str, object]) -> None:
+        await self.page.evaluate(
+            "([action, args]) => window.agentplaneVisual.showActionPreview(action, args)",
+            [{"group": group, "name": name}, arguments],
+        )
+
     async def paginate_action_history(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.paginateActionHistory()")
 

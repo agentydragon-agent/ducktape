@@ -204,11 +204,7 @@ ts_library(
 
 ts_library(
     name = "actions_requests",
-    srcs = [
-        "actions/requests.tsx",
-        # Ambient types for the per-icon Tabler subpaths imported by requests.tsx.
-        "tabler_icons.d.ts",
-    ],
+    srcs = ["actions/requests.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":actions_call",
@@ -217,7 +213,6 @@ ts_library(
         ":live_stream",
         ":stream_status",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -232,7 +227,9 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":actions_client",
+        ":actions_rendering",
         ":actions_requests",
+        ":client",
         ":stream_status",
         ":topbar",
         "//:node_modules/@mantine/core",
@@ -373,7 +370,7 @@ ts_library(
 )
 
 # Widgets for particular Actions' requests and responses, registered by the Action's identity:
-# actions/rendering/index.tsx dispatches, and each group's widgets are a module beside it.
+# actions/rendering/index.tsx dispatches; each Action widget lives under its group.
 ts_library(
     name = "actions_rendering",
     srcs = ["actions/rendering/index.tsx"],
@@ -382,10 +379,58 @@ ts_library(
         ":actions_call_tool_result",
         ":actions_client",
         ":actions_rendering_entry",
+        ":actions_rendering_github",
+        ":actions_rendering_kubernetes_admin",
         ":actions_rendering_result_entry",
         ":actions_rendering_ssh",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "actions_rendering_chips",
+    srcs = ["actions/rendering/chips.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "actions_rendering_github",
+    srcs = ["actions/rendering/github/create_pull_request.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_rendering_chips",
+        ":actions_rendering_entry",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "actions_rendering_kubernetes_admin",
+    srcs = [
+        "actions/rendering/kubernetes_admin/events_list.tsx",
+        "actions/rendering/kubernetes_admin/pods_list_in_namespace.tsx",
+        "actions/rendering/kubernetes_admin/pods_log.tsx",
+        "actions/rendering/kubernetes_admin/resource_common.tsx",
+        "actions/rendering/kubernetes_admin/resources_delete.tsx",
+        "actions/rendering/kubernetes_admin/resources_get.tsx",
+        "actions/rendering/kubernetes_admin/resources_list.tsx",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_rendering_chips",
+        ":actions_rendering_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
     ],
 )
 
@@ -413,7 +458,7 @@ ts_library(
 
 ts_library(
     name = "actions_rendering_ssh",
-    srcs = ["actions/rendering/ssh.tsx"],
+    srcs = ["actions/rendering/ssh/exec.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":actions_rendering_entry",
@@ -441,7 +486,7 @@ agentplane_vitest_test(
 
 agentplane_vitest_test(
     name = "actions_rendering_ssh_test",
-    srcs = ["actions/rendering/ssh.test.tsx"],
+    srcs = ["actions/rendering/ssh/exec.test.tsx"],
     deps = [
         ":actions_rendering_entry",
         ":actions_rendering_result_entry",

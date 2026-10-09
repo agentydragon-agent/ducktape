@@ -610,7 +610,7 @@ const ACTIONS: ActionRequestView[] = [
   },
   {
     id: "70000000-0000-4000-8000-000000000006",
-    // The ssh group in MCP_GROUPS: its `exec` Action has widgets of its own (actions/rendering/ssh.tsx).
+    // The ssh group in MCP_GROUPS: its `exec` Action has widgets of its own (actions/rendering/ssh/exec.tsx).
     action: { group: "ssh", name: "exec" },
     arguments: {
       host: "test-archive-host",
@@ -827,6 +827,17 @@ const ACTIONS: ActionRequestView[] = [
     },
   },
 ];
+
+// A single losslessly rendered request, for compact approval screenshots.
+const COMPACT_POD_ACTION: ActionRequestView = {
+  ...ACTIONS[1]!,
+  id: "70000000-0000-4000-8000-000000000009",
+  action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+  arguments: { namespace: "test-apps", labelSelector: "app=demo", fieldSelector: "status.phase=Running" },
+  title: "inspect running demo pods",
+  description: "Read-only inspection of the demo workload.",
+  idempotency_key: "visual-pods-compact-pending",
+};
 
 const CONVERSATION_SOURCE = "visual-runner";
 const CONVERSATION_EPOCH = "20260921";
@@ -2615,7 +2626,14 @@ class HarnessEventSource extends EventTarget {
       return;
     }
     if (url.pathname === "/actions/stream") {
-      const pending = includePendingActions ? ACTIONS.filter((request) => request.state === "decision_pending") : [];
+      const pending =
+        previewAction !== null
+          ? [previewAction]
+          : includeCompactPodAction
+            ? [COMPACT_POD_ACTION]
+            : includePendingActions
+              ? ACTIONS.filter((request) => request.state === "decision_pending")
+              : [];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(pending) }));
       return;
     }
@@ -2658,6 +2676,8 @@ let threadDatabaseConnected = true;
 let dropThreadStream = false;
 let dropInventoryStream = false;
 let includePendingActions = false;
+let includeCompactPodAction = false;
+let previewAction: ActionRequestView | null = null;
 let watchHealth = FRESH;
 
 function mount(element: ReactNode): void {
@@ -2697,6 +2717,18 @@ const visualHarness = {
   },
   showPendingActions(): void {
     includePendingActions = true;
+  },
+  showCompactPodAction(): void {
+    includeCompactPodAction = true;
+  },
+  showActionPreview(action: ActionRequestView["action"], args: ActionRequestView["arguments"]): void {
+    previewAction = {
+      ...COMPACT_POD_ACTION,
+      action,
+      arguments: args,
+      title: `review ${action.name}`,
+      description: "Check the exact call before approving.",
+    };
   },
   paginateActionHistory(): void {
     pageActionHistory = true;

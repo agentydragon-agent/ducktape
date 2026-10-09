@@ -1,6 +1,4 @@
-import { ActionIcon, Group, Paper, Stack, Text, Title } from "@mantine/core";
-import IconCheck from "@tabler/icons-react/dist/esm/icons/IconCheck.mjs";
-import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
+import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { createContext, type JSX, useCallback, useContext, useEffect, useState } from "react";
 
 import { displayableError } from "../client";
@@ -116,27 +114,27 @@ export function PendingActionCard({
           request={request}
           headerActions={
             <Group gap="xs" wrap="nowrap">
-              <ActionIcon
-                size="md"
+              <Button
+                className="action-decision-button"
+                aria-label="Deny"
+                size="sm"
                 variant="light"
                 color="red"
                 loading={deciding}
-                aria-label="Deny"
-                title="Deny"
                 onClick={() => onDecide(request, "deny")}
               >
-                <IconX size={18} />
-              </ActionIcon>
-              <ActionIcon
-                size="md"
+                Deny
+              </Button>
+              <Button
+                className="action-decision-button"
+                aria-label="Approve"
+                size="sm"
                 variant="filled"
                 loading={deciding}
-                aria-label="Approve"
-                title="Approve"
                 onClick={() => onDecide(request, "allow")}
               >
-                <IconCheck size={18} />
-              </ActionIcon>
+                Approve
+              </Button>
             </Group>
           }
           raw={raw}

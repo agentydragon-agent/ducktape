@@ -88,3 +88,9 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
+
+@media (min-width: 48em) {
+  .action-decision-button {
+    min-width: 7rem;
+  }
+}
