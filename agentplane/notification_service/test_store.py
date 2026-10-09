@@ -21,7 +21,7 @@ from agentplane.notification_service.models import (
     ActionsEvent,
     ActionsSource,
     DestinationRef,
-    SourceHealth,
+    SourceFailureKind,
     Subscribe,
     SubscriptionUpdate,
 )
@@ -405,14 +405,24 @@ async def test_health_is_durable_introspection_without_inbox_events(
         assert await store.notice(claim) is not None
     before = await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
     recovered = Store(engine)
-    for health, error, delay in [
-        (SourceHealth.BACKING_OFF, "HTTP 429", 120),
-        (SourceHealth.BACKING_OFF, "HTTP 503", 300),
-        (SourceHealth.ACCESS_ERROR, "access revoked", 60),
+    previous_kind = None
+    previous_since = None
+    for kind, error, delay in [
+        (SourceFailureKind.RATE_LIMITED, "HTTP 429", 120),
+        (SourceFailureKind.RATE_LIMITED, "HTTP 429 again", 300),
+        (SourceFailureKind.ACCESS_DENIED, "access revoked", 60),
     ]:
-        await recovered.source_failed(claim, source, error, delay, health=health)
+        await recovered.source_failed(claim, source, error, delay, kind=kind)
         view = await recovered.subscription(PRINCIPAL.account, subscription.id)
-        assert (view.health, view.error) == (health, error)
+        assert (view.error_kind, view.error) == (kind, error)
+        assert view.error_since is not None
+        assert view.error_observed_at is not None
+        assert view.error_since <= view.error_observed_at
+        if kind == previous_kind:
+            assert view.error_since == previous_since
+        elif previous_since is not None:
+            assert view.error_since >= previous_since
+        previous_kind, previous_since = kind, view.error_since
         assert view.retry_at is not None
         assert view.retry_at > datetime.now(UTC) + timedelta(seconds=delay - 10)
         assert await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before
@@ -420,11 +430,12 @@ async def test_health_is_durable_introspection_without_inbox_events(
         assert await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before
     await recovered.record(claim, source, [])
     view = await recovered.subscription(PRINCIPAL.account, subscription.id)
-    assert (view.health, view.error, view.retry_at) == (SourceHealth.HEALTHY, None, None)
+    assert (view.error_kind, view.error, view.retry_at) == (None, None, None)
+    assert view.last_success_at is not None
     assert await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before
     await recovered.change(PRINCIPAL.account, subscription.id, None)
     await recovered.source_failed(claim, source, "late response")
-    assert (await recovered.subscription(PRINCIPAL.account, subscription.id)).health == SourceHealth.HEALTHY
+    assert (await recovered.subscription(PRINCIPAL.account, subscription.id)).error_kind is None
     assert await recovered.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before
 
 
@@ -436,9 +447,9 @@ async def test_overlapping_sources_have_independent_current_health(store: Store)
     async with store.sessions() as session:
         source = await session.get(Subscription, first.id)
     assert source is not None
-    await store.source_failed(claim, source, "HTTP 429")
-    assert (await store.subscription(PRINCIPAL.account, first.id)).health == SourceHealth.BACKING_OFF
-    assert (await store.subscription(PRINCIPAL.account, second.id)).health == SourceHealth.HEALTHY
+    await store.source_failed(claim, source, "HTTP 429", kind=SourceFailureKind.RATE_LIMITED)
+    assert (await store.subscription(PRINCIPAL.account, first.id)).error_kind == SourceFailureKind.RATE_LIMITED
+    assert (await store.subscription(PRINCIPAL.account, second.id)).error_kind is None
     page = await store.read(PRINCIPAL.account, first.inbox_id, 0, 128)
     assert not page.entries
     assert page.inbox.last_cursor == 0

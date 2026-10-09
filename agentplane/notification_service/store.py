@@ -24,7 +24,7 @@ from agentplane.notification_service.models import (
     InboxView,
     NoticeView,
     SandboxNotificationStatus,
-    SourceHealth,
+    SourceFailureKind,
     Subscribe,
     SubscriptionStatus,
     SubscriptionUpdate,
@@ -68,7 +68,10 @@ def subscription_view(row: Subscription) -> SubscriptionView:
         version=row.version,
         cancelled=row.cancelled,
         expires_at=row.expires_at,
-        health=SourceHealth(row.health),
+        last_success_at=row.last_success_at,
+        error_kind=SourceFailureKind(row.error_kind) if row.error_kind else None,
+        error_since=row.error_since,
+        error_observed_at=row.error_observed_at,
         error=row.error,
         retry_at=row.next_attempt if row.error and not row.cancelled and row.expires_at > datetime.now(UTC) else None,
     )
@@ -358,7 +361,10 @@ class Store:
                                 source=Subscribe.model_validate(sub.creation).source,
                                 cancelled=sub.cancelled,
                                 expires_at=sub.expires_at,
-                                health=SourceHealth(sub.health),
+                                last_success_at=sub.last_success_at,
+                                error_kind=SourceFailureKind(sub.error_kind) if sub.error_kind else None,
+                                error_since=sub.error_since,
+                                error_observed_at=sub.error_observed_at,
                                 error=sub.error,
                                 next_source_check_at=sub.next_attempt,
                             )
@@ -562,18 +568,15 @@ class Store:
             )
             return row
 
-    async def record(
-        self, claim: Inbox, source: Subscription, events: list[ActionEventView], error: str | None = None
-    ) -> None:
+    async def record(self, claim: Inbox, source: Subscription, events: list[ActionEventView]) -> None:
         async with self.sessions.begin() as session:
             inbox = await self.fenced(session, claim)
             row = await session.get(Subscription, source.id)
             assert row is not None
             if row.cancelled or row.version != source.version or row.expires_at <= datetime.now(UTC):
                 return
-            row.next_attempt = datetime.now(UTC) + timedelta(seconds=30 if error else 5)
-            row.health = SourceHealth.BACKING_OFF if error else SourceHealth.HEALTHY
-            row.error = error
+            row.next_attempt = datetime.now(UTC) + timedelta(seconds=5)
+            self.source_succeeded(row)
             spec = Subscribe.model_validate(row.creation).source
             assert isinstance(spec, ActionsSource)
             assert row.actions_after_sequence is not None
@@ -614,6 +617,14 @@ class Store:
         if await session.get(Match, (subscription.id, existing.cursor)) is None:
             session.add(Match(subscription_id=subscription.id, cursor=existing.cursor))
 
+    @staticmethod
+    def source_succeeded(row: Subscription) -> None:
+        row.last_success_at = datetime.now(UTC)
+        row.error_kind = None
+        row.error = None
+        row.error_since = None
+        row.error_observed_at = None
+
     async def source_failed(
         self,
         claim: Inbox,
@@ -621,16 +632,20 @@ class Store:
         error: str,
         retry_seconds: int = 60,
         *,
-        health: SourceHealth = SourceHealth.BACKING_OFF,
+        kind: SourceFailureKind = SourceFailureKind.PROCESSING_ERROR,
     ) -> None:
         async with self.sessions.begin() as session:
             await self.fenced(session, claim)
             row = await session.get(Subscription, source.id)
             assert row is not None
             if not row.cancelled and row.version == source.version and row.expires_at > datetime.now(UTC):
-                row.next_attempt = datetime.now(UTC) + timedelta(seconds=retry_seconds)
-                row.health = health
+                now = datetime.now(UTC)
+                row.next_attempt = now + timedelta(seconds=retry_seconds)
+                if row.error_kind != kind:
+                    row.error_since = now
+                row.error_kind = kind
                 row.error = error
+                row.error_observed_at = now
                 await notify(session)
 
     async def ingest_github(
@@ -749,8 +764,7 @@ class Store:
                 await self.append_event(session, inbox, row, identity, delivery.payload)
             # An ingress commit during matching must not be overwritten by this worker's idle state.
             row.next_attempt = datetime.now(UTC) if more or row.generation != source.generation else None
-            row.health = SourceHealth.HEALTHY
-            row.error = None
+            self.source_succeeded(row)
             if matched:
                 inbox.updated_at = datetime.now(UTC)
             await notify(session)

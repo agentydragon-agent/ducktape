@@ -226,16 +226,26 @@ the debounce deadline. `next_work_at` is the worker's next scheduled inbox work,
 of notice delivery; `next_source_check_at` is only the individual subscription's reconciliation
 schedule. Offline runner states and event-dependent pacing have no guaranteed delivery time.
 
-## Current subscription health
+## Current source-processing observations
 
-`health` is `healthy`, `backing_off`, or `access_error`, independent of cancelled/expired lifecycle.
-It describes the last source-processing observation, not a guarantee of webhook coverage or runner
-availability. Subscription GET/list and the operator status stream expose the current health,
-safe error details and retry scheduling. Source failures update that state durably; successful
-processing clears the error and retry deadline. Access errors still retry so restoration can be
-discovered. Repeated errors can change the diagnostic details/deadline without changing health.
+Subscription GET/list and the operator stream expose `last_success_at`, `error_kind`, `error`,
+`error_since`, and `error_observed_at`. Failure kinds identify a cause: `rate_limited`, `unavailable`,
+`access_denied`, `source_changed`, or `processing_error`. Typed exceptions and HTTP status codes
+supply the classification; message text is not parsed. A successful committed pass clears all error
+fields and advances `last_success_at`. Before the first success, that timestamp is null.
 
-Health changes never append inbox entries, advance inbox cursors or prepare agent notices. The
-inbox contains subscribed provider events, not service-health history. The frontend displays
-current health separately from lifecycle; a backing-off subscription remains active for filtering.
-Operational failure diagnostics belong in service logs.
+Repeated failures of the same kind preserve `error_since` and update diagnostic details, last
+observation and retry deadline. A different kind starts a new `error_since`. Existing opaque errors
+are adopted as `processing_error` at migration time; their earlier observation times are unknown.
+The database constrains the error vocabulary and requires all four error fields to be jointly null
+or non-null. There is no persisted summary health enum.
+
+`next_attempt` is the durable scheduler deadline for retries or normal source work. API `retry_at`
+is derived only for a current failure on an active subscription. Cancelled/expired subscriptions
+retain their last observations without an active retry. Last successful processing does not prove
+complete webhook coverage, current remote authorization, or successful runner delivery.
+
+These updates never append inbox entries, advance cursors or prepare agent notices. The frontend
+shows current source observations separately from subscription lifecycle and delivery status.
+Shared GitHub access/repair failures belong to their shared records, not duplicated subscription
+errors; subscription-owned observations describe that subscription's processing.

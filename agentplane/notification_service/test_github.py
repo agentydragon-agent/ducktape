@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.notification_service.api import authenticated_caller, create_app
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.db import GitHubDelivery, Inbox, Subscription
-from agentplane.notification_service.models import DestinationRef, SourceHealth, Subscribe, SubscriptionUpdate
+from agentplane.notification_service.models import DestinationRef, SourceFailureKind, Subscribe, SubscriptionUpdate
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, NoticeDebounceSettings, Settings
 from agentplane.notification_service.sources.actions import Actions
@@ -422,7 +422,7 @@ async def test_rate_limit_retry_survives_ingress_and_restart(
         assert not page.entries
         assert page.inbox.last_cursor == 0
         assert page.notice is None
-        assert view.health == SourceHealth.BACKING_OFF
+        assert view.error_kind == SourceFailureKind.RATE_LIMITED
 
         requests = len(upstream.requests)
         await ingest(github, store, comment())
@@ -453,7 +453,8 @@ async def test_rate_limit_retry_survives_ingress_and_restart(
     assert view.error is None
     assert view.retry_at is None
     page = await recovered.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
-    assert view.health == SourceHealth.HEALTHY
+    assert view.error_kind is None
+    assert view.last_success_at is not None
     assert len(page.entries) == 2
     assert all(entry.payload == comment() for entry in page.entries)
     assert page.inbox.acknowledged == 0

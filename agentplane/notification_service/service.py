@@ -14,13 +14,19 @@ from agentplane.notification_service.db import Inbox, Notice
 from agentplane.notification_service.models import (
     ActionsSource,
     DestinationRef,
-    SourceHealth,
+    SourceFailureKind,
     Subscribe,
     SubscriptionView,
 )
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import Actions, SourceNotOwnedError
-from agentplane.notification_service.sources.github import GitHub, GitHubRetryError, GitHubUnavailableError
+from agentplane.notification_service.sources.github import (
+    GitHub,
+    GitHubAccessError,
+    GitHubRetryError,
+    GitHubSourceChangedError,
+    GitHubUnavailableError,
+)
 from agentplane.notification_service.store import ClaimLostError, ConflictError, QuotaError, Store
 from agentplane.protocol import command_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
@@ -35,6 +41,25 @@ from agentplane.workload_auth.principal import WorkloadPrincipal
 # gazelle:include_dep @pypi//protobuf
 
 logger = logging.getLogger(__name__)
+
+
+def source_failure_kind(failure: Exception) -> SourceFailureKind:
+    if isinstance(failure, GitHubRetryError):
+        return SourceFailureKind.RATE_LIMITED
+    if isinstance(failure, (GitHubAccessError, SourceNotOwnedError)):
+        return SourceFailureKind.ACCESS_DENIED
+    if isinstance(failure, GitHubSourceChangedError):
+        return SourceFailureKind.SOURCE_CHANGED
+    if isinstance(failure, (GitHubUnavailableError, httpx.TransportError)):
+        return SourceFailureKind.UNAVAILABLE
+    if isinstance(failure, httpx.HTTPStatusError):
+        if failure.response.status_code == 429:
+            return SourceFailureKind.RATE_LIMITED
+        if failure.response.status_code in (401, 403, 404):
+            return SourceFailureKind.ACCESS_DENIED
+        if failure.response.status_code >= 500:
+            return SourceFailureKind.UNAVAILABLE
+    return SourceFailureKind.PROCESSING_ERROR
 
 
 class DestinationRejectedError(Exception):
@@ -231,11 +256,7 @@ class Service:
                             source,
                             source_error,
                             retry_seconds,
-                            health=(
-                                SourceHealth.ACCESS_ERROR
-                                if isinstance(failure, (GitHubUnavailableError, SourceNotOwnedError))
-                                else SourceHealth.BACKING_OFF
-                            ),
+                            kind=source_failure_kind(failure),
                         )
                         logger.warning(
                             "notification source retry: inbox=%s subscription=%s cause=%s retry_seconds=%s",

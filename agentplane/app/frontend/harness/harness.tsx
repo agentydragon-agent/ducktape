@@ -1858,7 +1858,10 @@ routes.push(
                           source: { provider: "actions", request_id: "d49b85b5-849f-4e7d-a644-d4a8b8c16127" },
                           cancelled: false,
                           expires_at: new Date(NOW + HOUR).toISOString(),
-                          health: "healthy",
+                          last_success_at: ago(60000),
+                          error_kind: null,
+                          error_since: null,
+                          error_observed_at: null,
                           error: null,
                           next_source_check_at: new Date(NOW + 30000).toISOString(),
                         },
@@ -1871,12 +1874,15 @@ routes.push(
                           },
                           cancelled: true,
                           expires_at: ago(HOUR),
-                          health: "healthy",
+                          last_success_at: ago(60000),
+                          error_kind: null,
+                          error_since: null,
+                          error_observed_at: null,
                           error: null,
                           next_source_check_at: null,
                         },
-                        ...(["backing_off", "access_error"] as const).map((health, index) => ({
-                          id: `subscription-health-${health}`,
+                        ...(["rate_limited", "access_denied"] as const).map((kind, index) => ({
+                          id: `subscription-failure-${kind}`,
                           source: {
                             provider: "github",
                             repository: "owner/repo",
@@ -1884,9 +1890,12 @@ routes.push(
                           },
                           cancelled: false,
                           expires_at: new Date(NOW + HOUR).toISOString(),
-                          health,
+                          last_success_at: ago(60000),
+                          error_kind: kind,
+                          error_since: ago(30000),
+                          error_observed_at: ago(10000),
                           error:
-                            health === "backing_off"
+                            kind === "rate_limited"
                               ? "GitHub rate limited (HTTP 429)"
                               : "GitHub App access unavailable (HTTP 403)",
                           next_source_check_at: new Date(NOW + 60000).toISOString(),

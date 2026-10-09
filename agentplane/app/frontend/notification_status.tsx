@@ -15,7 +15,10 @@ type Subscription = {
   source: Source;
   cancelled: boolean;
   expires_at: string;
-  health: "healthy" | "backing_off" | "access_error";
+  last_success_at: string | null;
+  error_kind: "rate_limited" | "unavailable" | "access_denied" | "source_changed" | "processing_error" | null;
+  error_since: string | null;
+  error_observed_at: string | null;
   error: string | null;
   next_source_check_at: string | null;
 };
@@ -59,7 +62,7 @@ function subscriptionState(sub: Subscription, observedAt?: string): Subscription
 
 function subscriptionLabel(sub: Subscription, observedAt?: string): string {
   const state = subscriptionState(sub, observedAt);
-  return state === "active" ? sub.health.replaceAll("_", " ") : state;
+  return state === "active" ? (sub.error_kind?.replaceAll("_", " ") ?? "no current source error") : state;
 }
 
 function sourceLabel(source: Source): string {
@@ -285,9 +288,12 @@ export function NotificationStatus({
                             ? ` · ${sub.error ? "retry" : "next source check"} ${timestamp(sub.next_source_check_at)}`
                             : ""}
                         </Text>
+                        <Text size="xs" c="dimmed">
+                          {sub.last_success_at ? `Last successful processing: ${timestamp(sub.last_success_at)}` : "No successful processing recorded"}
+                        </Text>
                         {sub.error && (
                           <Text c="red" size="xs">
-                            Source: {sub.error}
+                            Source: {sub.error} · since {timestamp(sub.error_since!)} · last observed {timestamp(sub.error_observed_at!)}
                           </Text>
                         )}
                       </Stack>
