@@ -5870,11 +5870,31 @@ spec:
     matchLabels:
       app.kubernetes.io/name: agentplane-notifications
 ---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: buildbuddy-api-key
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: buildbuddy-api-key
+        property: api-key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: buildbuddy-api-key
+---
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
   annotations:
-    sandbox-actions.agentplane.allegedly.works/description: "Public ducktape development: the runner and harnesses plus the repository's shared bb/bbr, Bazelisk, pre-commit, formatters and Gazelle. Same container isolation and permissions as the generic runner; use remote execution for builds."
+    sandbox-actions.agentplane.allegedly.works/description: "Public ducktape development: the runner and harnesses plus the repository's shared bb/bbr, Bazelisk, pre-commit, formatters and Gazelle. Same container isolation and permissions as the generic runner except for a mounted BuildBuddy key; use remote execution for builds."
   name: runner-ducktape
   namespace: agentplane-staging
 spec:
@@ -5929,11 +5949,15 @@ spec:
             - REQUESTS_CA_BUNDLE
             - --harness-env
             - KUBECONFIG
+            - --harness-env
+            - BBR_BUILDBUDDY_API_KEY_FILE
             - --harness-inherit-env
             - TZDIR
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
+            - name: BBR_BUILDBUDDY_API_KEY_FILE
+              value: /run/buildbuddy/api-key
             - name: AGENTPLANE_MODEL_CONTEXT_WINDOWS
               value: '{"ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k":262144,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k":262144}'
             - name: HTTP_PROXY
@@ -5998,6 +6022,9 @@ spec:
               name: tool-config
               readOnly: true
               subPath: kubeconfig
+            - mountPath: /run/buildbuddy
+              name: buildbuddy-api-key
+              readOnly: true
           workingDir: /state
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
@@ -6059,6 +6086,10 @@ spec:
         - configMap:
             name: agentplane-sandbox-tool-config
           name: tool-config
+        - name: buildbuddy-api-key
+          secret:
+            defaultMode: 288
+            secretName: buildbuddy-api-key
         - name: egress-token
           projected:
             sources:
