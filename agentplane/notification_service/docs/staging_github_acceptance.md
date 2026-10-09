@@ -73,3 +73,11 @@ issue lifecycle/comment paths. They do not establish every action filter, issue/
 case, fork/revocation behavior, redelivery deduplication, or shared refresh reuse across restarts;
 CI coverage is separate from live proof. Remaining work stays in the
 [notification plan](../../plans/notifications.md#remaining-live-verification).
+
+## Failure/backoff acceptance scope
+
+The operator waived deliberate live GitHub failure/backoff injection on 2026-10-09. Error and
+retry-deadline projection through subscription introspection and frontend diagnostics is already
+implemented and covered by automated tests/rendered fixtures; successful status projection was
+checked in staging. No further induced-failure exercise is required for acceptance. This is a
+scope decision, not a claim that a live failure/recovery scenario was performed.
