@@ -51,9 +51,28 @@ def test_tables_the_history_does_not_own_are_not_drift(db_url: str) -> None:
     RUNNER.apply(db_url)
 
 
-def test_model_activity_backfills_existing_threads_without_counting_tool_output(db_url: str) -> None:
+@pytest.mark.parametrize(
+    ("kind", "event", "is_activity"),
+    [
+        ("tool_arguments", {"toolArguments": {"argumentsJson": "{}"}}, True),
+        ("text_delta", {"textDelta": {"text": "\0"}}, True),
+        ("tool_arguments_delta", {"toolArgumentsDelta": {"partialJson": "\0"}}, True),
+        ("tool_arguments", {"toolArguments": {"argumentsJson": "\0"}}, True),
+        ("item_completed", {"itemCompleted": {"text": "\0"}}, True),
+        ("item_started", {"itemStarted": {"kind": "ITEM_KIND_REASONING"}}, True),
+        ("text_delta", {"textDelta": {"text": r"\u0000"}}, True),
+        ("text_delta", {"textDelta": {"text": ""}}, False),
+        ("text_delta", {"textDelta": {}}, False),
+        ("item_started", {"itemStarted": {"kind": "ITEM_KIND_UNSPECIFIED"}}, False),
+    ],
+)
+def test_model_activity_backfills_existing_threads_without_counting_tool_output(
+    db_url: str, kind: str, event: dict, is_activity: bool
+) -> None:
     engine = create_engine(RUNNER.sync_url(db_url))
     thread = uuid.uuid4()
+    # NUL in unrelated native data must not poison otherwise valid observations.
+    payload = json.dumps({"event": event, "native": {"line": "a\0b"}})
     try:
         with engine.begin() as connection:
             # Simulate the previous head with a retained Thread and historical event prefix.
@@ -66,11 +85,11 @@ def test_model_activity_backfills_existing_threads_without_counting_tool_output(
                 ),
                 {"thread": thread},
             )
-            for cursor, kind, event in [
-                (1, "item_started", {"itemStarted": {"kind": "ITEM_KIND_TOOL_CALL"}}),
-                (2, "tool_arguments", {"toolArguments": {"argumentsJson": "{}"}}),
-                (3, "tool_output_delta", {"toolOutputDelta": {"text": "still running"}}),
-                (4, "turn_completed", {"turnCompleted": {}}),
+            for cursor, stored_kind, stored_payload in [
+                (1, "item_started", json.dumps({"event": {"itemStarted": {"kind": "ITEM_KIND_TOOL_CALL"}}})),
+                (2, kind, payload),
+                (3, "tool_output_delta", json.dumps({"event": {"toolOutputDelta": {"text": "still running\0"}}})),
+                (4, "turn_completed", json.dumps({"event": {"turnCompleted": {}}})),
             ]:
                 connection.execute(
                     text(
@@ -81,8 +100,8 @@ def test_model_activity_backfills_existing_threads_without_counting_tool_output(
                         "thread": thread,
                         "cursor": cursor,
                         "at": f"2026-09-01T12:00:0{cursor}Z",
-                        "kind": kind,
-                        "payload": json.dumps({"event": event}),
+                        "kind": stored_kind,
+                        "payload": stored_payload,
                     },
                 )
         RUNNER.apply(db_url)
@@ -91,7 +110,13 @@ def test_model_activity_backfills_existing_threads_without_counting_tool_output(
                 connection.scalar(
                     text("SELECT last_model_activity_at FROM event_log WHERE id = :thread"), {"thread": thread}
                 ).isoformat()
-                == "2026-09-01T12:00:02+00:00"
+                == f"2026-09-01T12:00:0{2 if is_activity else 1}+00:00"
+            )
+            assert (
+                connection.scalar(
+                    text("SELECT payload::text FROM event WHERE thread_id = :thread AND cursor = 2"), {"thread": thread}
+                )
+                == payload
             )
     finally:
         engine.dispose()

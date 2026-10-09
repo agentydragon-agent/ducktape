@@ -16,21 +16,30 @@ depends_on = None
 def upgrade() -> None:
     # Earlier-migration replay tests can stamp an older head on an otherwise current schema.
     op.execute("ALTER TABLE event_log ADD COLUMN IF NOT EXISTS last_model_activity_at timestamptz")
+    # jsonb cannot represent escaped NULs retained by the raw json archive. Replace
+    # them only in this predicate's scratch value: a NUL is nonempty model output,
+    # and neither it nor a literal escape can equal an item-kind enum name. Never
+    # rewrite the stored payload. Use the (thread_id, cursor) index to find each
+    # Thread's latest activity instead of sorting/aggregating the entire archive.
     op.execute(
-        """
-        UPDATE event_log AS log SET last_model_activity_at = latest.at
-        FROM (
-            SELECT DISTINCT ON (thread_id) thread_id, at
+        r"""
+        UPDATE event_log AS log SET last_model_activity_at = (
+            SELECT at
             FROM event
-            WHERE (kind = 'text_delta' AND coalesce(payload::jsonb #>> '{event,textDelta,text}', '') <> '')
-               OR (kind = 'tool_arguments_delta' AND coalesce(payload::jsonb #>> '{event,toolArgumentsDelta,partialJson}', '') <> '')
-               OR (kind = 'tool_arguments' AND coalesce(payload::jsonb #>> '{event,toolArguments,argumentsJson}', '') <> '')
-               OR (kind = 'item_started' AND payload::jsonb #>> '{event,itemStarted,kind}' IN
-                   ('ITEM_KIND_ASSISTANT_TEXT', 'ITEM_KIND_REASONING', 'ITEM_KIND_TOOL_CALL'))
-               OR (kind = 'item_completed' AND coalesce(payload::jsonb #>> '{event,itemCompleted,text}', '') <> '')
-            ORDER BY thread_id, cursor DESC
-        ) AS latest
-        WHERE log.id = latest.thread_id
+            CROSS JOIN LATERAL (
+                SELECT replace(payload::text, E'\\u0000', E'\\ufffd')::jsonb AS activity
+            ) AS decoded
+            WHERE thread_id = log.id AND (
+                (kind = 'text_delta' AND coalesce(activity #>> '{event,textDelta,text}', '') <> '')
+                OR (kind = 'tool_arguments_delta' AND coalesce(activity #>> '{event,toolArgumentsDelta,partialJson}', '') <> '')
+                OR (kind = 'tool_arguments' AND coalesce(activity #>> '{event,toolArguments,argumentsJson}', '') <> '')
+                OR (kind = 'item_started' AND activity #>> '{event,itemStarted,kind}' IN
+                    ('ITEM_KIND_ASSISTANT_TEXT', 'ITEM_KIND_REASONING', 'ITEM_KIND_TOOL_CALL'))
+                OR (kind = 'item_completed' AND coalesce(activity #>> '{event,itemCompleted,text}', '') <> '')
+            )
+            ORDER BY cursor DESC
+            LIMIT 1
+        )
         """
     )
 
