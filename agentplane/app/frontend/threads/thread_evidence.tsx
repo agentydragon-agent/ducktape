@@ -222,7 +222,12 @@ export function revealEvidenceOnTap(event: MouseEvent<HTMLElement>): void {
   if (!(target instanceof Element) || target.closest("a, button, summary, input, textarea, select")) return;
   if (window.getSelection()?.isCollapsed === false) return;
   event.currentTarget.querySelector(`[${EVIDENCE_REVEALED}]`)?.removeAttribute(EVIDENCE_REVEALED);
-  target.closest(".agentplane-evidence-owner")?.setAttribute(EVIDENCE_REVEALED, "");
+  // An input's status lives beside its bubble, not inside the evidence owner. Tapping
+  // anywhere in that row still selects the bubble (and reveals its completed check).
+  const owner =
+    target.closest(".agentplane-evidence-owner") ??
+    target.closest(".agentplane-user-message-row")?.querySelector(".agentplane-evidence-owner");
+  owner?.setAttribute(EVIDENCE_REVEALED, "");
 }
 
 export function EvidencePanel({ threadId, entity }: { threadId: string; entity: ThreadEntity }): JSX.Element {

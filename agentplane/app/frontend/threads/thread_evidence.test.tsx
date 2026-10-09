@@ -28,6 +28,10 @@ function History(): JSX.Element {
       <div className="agentplane-evidence-owner" data-testid="second">
         <p>Second item</p>
       </div>
+      <div className="agentplane-user-message-row" data-testid="input-row">
+        <span data-testid="input-aside">Status</span>
+        <div className="agentplane-evidence-owner" data-testid="input-bubble">Message</div>
+      </div>
       <p data-testid="between">Between items</p>
     </div>
   );
@@ -70,4 +74,12 @@ it("leaves the mark alone for a tap on a control, or one that ends a text select
   window.getSelection()?.selectAllChildren(find("second"));
   await tap(find("second"));
   expect(revealed(find)).toEqual(["first"]);
+});
+
+it("selects a message bubble when the adjacent command gutter is tapped", async () => {
+  const find = await mountHistory();
+  await tap(find("input-aside"));
+  expect(find("input-bubble").hasAttribute("data-evidence-revealed")).toBe(true);
+  await tap(find("second"));
+  expect(find("input-bubble").hasAttribute("data-evidence-revealed")).toBe(false);
 });

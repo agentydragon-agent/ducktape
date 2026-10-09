@@ -5,7 +5,7 @@ import { type JSX, useCallback, useEffect, useMemo, useRef, useState, useSyncExt
 import { command, CommandSubmissionRefused, displayableError } from "../client";
 import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
-import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
+import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
 
@@ -375,7 +375,7 @@ export function ProjectedCommandRows({
   const otherCommands = projectedCommands.filter((row) => row.state.operation !== "submit_input");
   if (otherCommands.length === 0) return null;
   return (
-    <Stack role="region" aria-label="Pending commands" gap="xs">
+    <Stack role="region" aria-label="Pending commands" gap="xs" onClick={revealEvidenceOnTap}>
       {otherCommands.map((row) => (
         <Paper
           key={row.entityId}

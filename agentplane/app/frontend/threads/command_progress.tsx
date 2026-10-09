@@ -1,3 +1,4 @@
+import IconCheck from "@tabler/icons-react/dist/esm/icons/IconCheck.mjs";
 import { type JSX, useState } from "react";
 
 /** Only durable evidence advances the lights; a lost reply is not a runner refusal. */
@@ -37,8 +38,7 @@ export function CommandProgress({
   };
   const label = `${stage === "local" && !local ? "Waiting for runner to accept" : labels[stage]}${reason ? `: ${reason}` : ""}`;
   // The first light means submitted, not proof that another browser saved it locally.
-  const current =
-    stage === "local" || stage === "unconfirmed" || stage === "refused" ? 2 : stage === "effected" ? 4 : 3;
+  const current = stage === "local" || stage === "unconfirmed" || stage === "refused" ? 2 : 3;
   const lights: LightState[] = [1, 2, 3].map((step) =>
     step < current
       ? "done"
@@ -70,11 +70,15 @@ export function CommandProgress({
           if (event.key === "Escape") setTouchOpen(false);
         }}
       >
-        <span className="agentplane-command-lights" aria-hidden="true">
-          {lights.map((state, index) => (
-            <span key={index} className="agentplane-command-light" data-state={state} />
-          ))}
-        </span>
+        {stage === "effected" ? (
+          <IconCheck className="agentplane-command-check" size={16} aria-hidden="true" />
+        ) : (
+          <span className="agentplane-command-lights" aria-hidden="true">
+            {lights.map((state, index) => (
+              <span key={index} className="agentplane-command-light" data-state={state} />
+            ))}
+          </span>
+        )}
       </button>
       <span className="agentplane-command-progress-label" role="tooltip">
         {label}

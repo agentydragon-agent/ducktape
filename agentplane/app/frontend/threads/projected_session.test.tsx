@@ -736,6 +736,7 @@ it("shows a delivery that outlives its deadline as unconfirmed and retriable", a
       light.getAttribute("data-state")
     )
   ).toEqual(["done", "waiting", "future"]);
+  expect(pendingRow(container, "hung").querySelectorAll("[data-state=waiting]")).toHaveLength(1);
 
   await act(async () => expire(new DOMException("signal timed out", "TimeoutError")));
   expect(progressLabel(container, "hung")).toContain("Runner receipt unconfirmed");
@@ -872,6 +873,10 @@ it.each([
   expect(plainOutcome?.textContent).toBe(outcome === "noop" ? status : undefined);
   expect(plainOutcome?.getAttribute("title")).toBe(outcome === "noop" ? status : undefined);
   expect(bubble?.parentElement?.querySelector(".agentplane-command-progress") === null).toBe(outcome === "noop");
+  if (outcome === "effected") {
+    expect(bubble?.parentElement?.querySelectorAll(".agentplane-command-light")).toHaveLength(0);
+    expect(bubble?.parentElement?.querySelector(".agentplane-command-check")).not.toBeNull();
+  }
   expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
     outcome === "noop" ? undefined : status
   );

@@ -231,8 +231,8 @@
   }
 }
 
-/* Three evidence stages: solid is settled (grey success, red failure); hollow is
-   waiting or unreached. Detail appears only on hover/focus/touch. The tooltip is
+/* Three evidence stages: solid is reached (grey waiting/done, red failure); hollow is
+   uncertain or unreached. Detail appears only on hover/focus/touch. The tooltip is
    CSS-only for hover: a streaming row must not mount a ResizeObserver-backed portal under
    a resting pointer (see EvidenceToggle). Its position does not change the message layout. */
 .agentplane-command-progress {
@@ -280,7 +280,8 @@
 }
 
 .agentplane-command-light[data-state="waiting"] {
-  border-color: var(--mantine-color-text);
+  background: var(--mantine-color-dimmed);
+  border-color: var(--mantine-color-dimmed);
   animation: agentplane-command-pulse 1.5s ease-in-out infinite;
 }
 
@@ -295,6 +296,34 @@
 
 .agentplane-command-light[data-state="future"] {
   opacity: 0.45;
+}
+
+/* A completed command is quiet until its row is hovered, focused or selected on touch,
+   exactly like the row's evidence toggle. Keep the check focusable for keyboard discovery. */
+.agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.agentplane-command-card-line:hover .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
+.agentplane-command-card-line:focus-within .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
+.agentplane-user-message-row:hover .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
+.agentplane-user-message-row:focus-within .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
+.agentplane-command-progress[data-stage="effected"]:is(:hover, :focus-within) .agentplane-command-progress-hit {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .agentplane-user-message-row:has(.agentplane-evidence-owner[data-evidence-revealed]) .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
+  .agentplane-evidence-owner[data-evidence-revealed] .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.agentplane-command-check {
+  color: var(--mantine-color-green-7);
 }
 
 .agentplane-command-progress-label {
