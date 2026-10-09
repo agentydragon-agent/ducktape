@@ -357,11 +357,13 @@ routes now always send their explicitly requested `options.num_ctx`, including
 parameters). OpenAI-compatible routes omit this ignored option and rely on their
 selected tag's baked settings instead.
 
-GPT-OSS 20B's larger gateway variants still use the base tag, with no baked alias;
-only the native wire applies their requested context. Those route names do **not**
-establish equivalent effective allocations across wires. Creating aliases or
-retiring routes needs a separate behavior decision. Requested `num_ctx` is no longer
-projected into model token limits; Ollama capacity metadata stays unset.
+GPT-OSS 20B's 256K/512K/1M OpenAI-compatible exposures are now parked by explicit
+operator decision: the base tag had no baked aliases to select those contexts.
+Native variants remain and still request `num_ctx`; that is not proof of attended
+capacity. The 128K route, provisioning and storage are unchanged. Restoration needs
+correct aliases and a serving-path check; see the
+[parking record](migration_inventory.md#parked-gpt-oss-20b-openai-exposures).
+Requested `num_ctx` is not projected into provider limits.
 
 ## Current token-limit shape
 

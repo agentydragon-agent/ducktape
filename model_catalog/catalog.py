@@ -495,28 +495,36 @@ OLLAMA_QWEN_IQ4XS_128K = _ollama_routes(ollama.QWEN_IQ4XS_128K, openai_reasoning
 OLLAMA_QWEN_IQ4XS_256K = _ollama_routes(ollama.QWEN_IQ4XS_256K, openai_reasoning_efforts=_QWEN_EFFORTS)
 _GPT_OSS_20B_128K = _ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_20B, 128 * 1024))
 OLLAMA_GPT_OSS_20B_128K = _GPT_OSS_20B_128K.openai
+_GPT_OSS_120B_128K = _ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_120B, 128 * 1024))
+_GEMMA4_128K = _ollama_routes(ollama.ChatVariant(ollama.GEMMA4, 128 * 1024))
 _OLLAMA_ROUTE_GROUPS = (
-    (OLLAMA_QWEN_IQ4XS_128K,),
-    (OLLAMA_QWEN_IQ4XS_256K,),
-    # Existing request-only variants: no corresponding baked GPT-OSS aliases.
+    (OLLAMA_QWEN_IQ4XS_128K.openai, OLLAMA_QWEN_IQ4XS_128K.native),
+    (OLLAMA_QWEN_IQ4XS_256K.openai, OLLAMA_QWEN_IQ4XS_256K.native),
     (
-        _GPT_OSS_20B_128K,
-        *(_ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_20B, context * 1024)) for context in (256, 512, 1024)),
+        _GPT_OSS_20B_128K.openai,
+        _GPT_OSS_20B_128K.native,
+        # Park the larger OpenAI exposures: no baked aliases select their num_ctx.
+        # Keep native requests and provisioning unchanged; restoration: #9574.
+        *(
+            _ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_20B, context * 1024)).native
+            for context in (256, 512, 1024)
+        ),
     ),
-    (_ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_120B, 128 * 1024)),),
-    (_ollama_routes(ollama.ChatVariant(ollama.GEMMA4, 128 * 1024)),),
+    (_GPT_OSS_120B_128K.openai, _GPT_OSS_120B_128K.native),
+    (_GEMMA4_128K.openai, _GEMMA4_128K.native),
 )
-OLLAMA_OPENAI_ROUTES = tuple(pair.openai for group in _OLLAMA_ROUTE_GROUPS for pair in group)
-OLLAMA_CHAT_ROUTES = tuple(
-    route for group in _OLLAMA_ROUTE_GROUPS for pair in group for route in (pair.openai, pair.native)
-)
+OLLAMA_CHAT_ROUTES = tuple(route for group in _OLLAMA_ROUTE_GROUPS for route in group)
+OLLAMA_OPENAI_ROUTES = tuple(route for route in OLLAMA_CHAT_ROUTES if route.upstream == OLLAMA_OPENAI)
 # The proxy historically groups wires within each source; keys interleave wires per
 # context. Preserve both output orders while referencing exactly the same objects.
 _OLLAMA_PROXY_ROUTES = tuple(
     route
     for group in _OLLAMA_ROUTE_GROUPS
-    for route in (*(pair.openai for pair in group), *(pair.native for pair in group))
+    for upstream in (OLLAMA_OPENAI, OLLAMA_NATIVE)
+    for route in group
+    if route.upstream == upstream
 )
+
 OLLAMA_EMBED = Upstream(Provider.OLLAMA, "ollama", "embed")
 OLLAMA_EMBEDDING_ROUTE = Route(
     Model(ollama.QWEN_EMBEDDING.tag.replace(":", "-")), OLLAMA_EMBED, upstream_model=ollama.QWEN_EMBEDDING.tag

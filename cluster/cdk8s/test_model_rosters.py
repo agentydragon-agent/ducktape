@@ -53,6 +53,19 @@ def test_picker_is_narrower_than_ollama_key() -> None:
     assert any(route not in TESTING_APP_MODELS.all for route in OLLAMA_CHAT_ROUTES)
 
 
+@pytest.mark.parametrize("context_kib", [256, 512, 1024])
+def test_large_gpt_oss_variants_only_serve_native_requests(context_kib: int) -> None:
+    [native] = [
+        route
+        for route in OLLAMA_CHAT_ROUTES
+        if route.upstream_model == "gpt-oss:20b" and route.num_ctx == context_kib * 1024
+    ]
+    # Parking the misleading wire must neither leave it served nor drop the native
+    # variant's explicit allocation. Other models/wires are outside this pause.
+    assert [route for route in SERVED_ROUTES if route.model == native.model] == [native]
+    assert model_entry(native)["litellm_params"]["extra_body"] == {"options": {"num_ctx": context_kib * 1024}}
+
+
 def test_equal_model_slugs_do_not_collapse_account_routes() -> None:
     subscription, direct = ANTHROPIC_SUBSCRIPTION_ROUTES[0], ANTHROPIC_API_ROUTES[0]
     assert subscription.model.id == direct.model.id
