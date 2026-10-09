@@ -807,6 +807,19 @@ rollback. Pin whether the controller actually replaces the Pod and preserves the
 state mount; failure is a finding for the eventual workflow, not permission to
 reconstruct native sessions from app history.
 
+**Observed staging proof (2026-10-09 UTC):** an operator paused an existing Codex
+Thread Sandbox; its Pod terminated while its state PVC remained Bound. An atomic
+JSON Patch with UID, suspended-mode and old-image preconditions changed only
+the runner container image in the stored Sandbox `podTemplate`. Resuming the
+same Sandbox created a replacement Pod (new Pod UID) with the new image
+and the **same PVC UID**. The original Thread continued and a hosted
+`bbr build //:rbe_linux_x64`
+succeeded. This validates pause/patch/resume on the same storage as a viable
+runner-update path for that Codex Thread; it does **not** yet establish
+Claude parity, exact native history and journal cursor continuity,
+pending-command semantics, or incompatible-image rollback. Keep those
+checks in this proof before making the operator workflow supported.
+
 TODO: add an operator-approved `kubernetes_admin` JSON Patch Action (or contribute a
 patch tool upstream) before letting agents perform this step. The deployed
 `containers/kubernetes-mcp-server` v0.0.66 and upstream v0.0.67 expose
