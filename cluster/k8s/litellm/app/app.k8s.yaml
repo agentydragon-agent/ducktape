@@ -56,30 +56,6 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
-      - model_name: ollama/oai-chat/gpt-oss-20b-256k
-        litellm_params:
-          model: openai/gpt-oss:20b
-          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
-          api_key: ollama
-        model_info:
-          mode: chat
-          supports_function_calling: true
-      - model_name: ollama/oai-chat/gpt-oss-20b-512k
-        litellm_params:
-          model: openai/gpt-oss:20b
-          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
-          api_key: ollama
-        model_info:
-          mode: chat
-          supports_function_calling: true
-      - model_name: ollama/oai-chat/gpt-oss-20b-1m
-        litellm_params:
-          model: openai/gpt-oss:20b
-          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
-          api_key: ollama
-        model_info:
-          mode: chat
-          supports_function_calling: true
       - model_name: ollama/olm-chat/gpt-oss-20b-128k
         litellm_params:
           model: ollama_chat/gpt-oss:20b

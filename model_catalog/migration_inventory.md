@@ -132,7 +132,8 @@ leaving 86 public entries. The 33 direct Anthropic/Gemini/Mistral/Groq chat entr
 now also publish sourced pairs; see the [source ledger](litellm_metadata.md#direct-provider-sources-2026-10-05).
 The eight Antigravity Gemini text routes now publish pairs from the recorded
 [Google response](antigravity_limits.md#fresh-google-metadata-2026-10-05-1201-utc),
-including Flash Lite 3.5. Thus **53 entries** have explicit overrides; the remaining
+including Flash Lite 3.5. Parking the three larger GPT-OSS 20B OpenAI-compatible
+exposures leaves **83 public entries**, still **53 with explicit overrides**; the remaining
 migration and the provenance audit of provisional subscription pairs are not complete:
 
 | Routes                                             | Source / next decision                                                                                                                                                                                                                                              |
@@ -140,12 +141,33 @@ migration and the provenance audit of provisional subscription pairs are not com
 | ChatGPT GPT-6 and GPT-5.6, both wires (12 entries) | Existing configured numbers remain; complete schema aliases now. Their mixed historical/client provenance still needs the shared-limit semantic cleanup.                                                                                                            |
 | Anthropic subscription; Tana Claude                | Account/gateway paths need an explicit source choice. Same vendor slug alone does not establish equivalence to direct-API metadata.                                                                                                                                 |
 | Antigravity                                        | Gemini text publication is complete from the recorded response. Claude/GPT-OSS still need input-versus-combined interpretation; their old pairs remain unpublished. The image model has no reported pair. Do not copy those raw fields into new input-limit claims. |
-| Ollama chat variants                               | `num_ctx` is allocation, not an input/output pair. GPT-OSS 20B 256K/512K/1M OpenAI-wire routes lack corresponding baked aliases. Choose meaningful served metadata or ask which variants to pause; do not turn route-name sizes into capacity claims.               |
+| Ollama chat variants                               | `num_ctx` is allocation, not an input/output pair. GPT-OSS 20B 256K/512K/1M OpenAI exposures are parked; their native variants remain. Establish metadata for retained routes without turning labels or allocations into capacity claims.                           |
 | Gemini and Ollama embeddings; Groq transcription   | Declare applicable metadata by mode. Gemini input ceilings already have source comments; embedding dimensions and audio constraints are not generative output-token limits. Preserve the durable embedding alias.                                                   |
 
 These are **remaining data/disposition decisions**, not a second runtime registry.
 The `publish_limits` flag is transitional and should disappear once retained declarations
 are complete. Update this inventory as implementation lands; keep PR status in #9574.
+
+### Parked GPT-OSS 20B OpenAI exposures
+
+Approved 2026-10-09: remove only `ollama/oai-chat/gpt-oss-20b-{256k,512k,1m}`
+from serving, derived key allowlists, and Agentplane staging/testing offerings.
+Those exposures used the base `gpt-oss:20b` tag without baked-context aliases;
+Ollama's OpenAI-compatible endpoint ignores native `options.num_ctx`.
+
+Retain all three `ollama/olm-chat/` counterparts with their explicit request options,
+both 128K wires, other models, existing fallback/default choices, and the unchanged
+Ollama provisioning code, models and storage. This removes exposures, not stored
+state or the ability to make native requests. Existing sessions configured to use a
+parked route will need a retained compatible route after rollout; there is no silent
+rerouting to the base model or to the native wire.
+
+To restore: deliberately provision/select appropriate baked tags (or another proven
+OpenAI-compatible context-selection mechanism), verify the effective serving path,
+then restore the selected exposures in `catalog.py` and regenerate consumers. A tag
+name or successful oversized request is not capacity proof. No alias provisioning,
+model pruning, client-budget increase or automatic unpause is approved by this change.
+[#9574](https://github.com/agentydragon/ducktape/issues/9574) tracks source/rollout status.
 
 ## Documentation consolidation
 
