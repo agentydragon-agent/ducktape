@@ -14,6 +14,7 @@ from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events import ingestion_lease
 from agentplane.app.threads.events.event_log import EventReplicationError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.model_activity import record_model_activity
 from agentplane.app.threads.models import EventLog, ThreadCheckpoint
 from agentplane.app.threads.view.recording import record_thread_fold
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -83,5 +84,6 @@ class HistoryProjector:
             if any(entry.origin.source_id != source_id for entry in page.entries):
                 raise EventReplicationError("mixed source identities in projection page")
             await record_thread_fold(session, thread_id, source_id, page.entries)
+            await record_model_activity(session, thread_id, page.entries)
             await notify(session, Channel.THREADS)
         return ProjectionProgress(page.entries[-1].cursor, page.last_cursor)

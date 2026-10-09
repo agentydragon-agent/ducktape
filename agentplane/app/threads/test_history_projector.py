@@ -1,5 +1,6 @@
 """Service-history projection without app raw copies or runner contact."""
 
+from datetime import UTC
 from typing import cast
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -14,7 +15,7 @@ from agentplane.app.threads.events.ingestion_lease import IngestionLease, Ingest
 from agentplane.app.threads.history_handoff import fence_raw_ingestion
 from agentplane.app.threads.history_projector import HistoryProjector
 from agentplane.app.threads.ingestion import Ingester, Ingestion
-from agentplane.app.threads.models import Event, ThreadCheckpoint
+from agentplane.app.threads.models import Event, EventLog, ThreadCheckpoint
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.protocol import event_pb2
 from agentplane.sandbox_service import protocol_pb2
@@ -149,6 +150,45 @@ async def test_supervisor_resumes_fenced_deleted_sandbox_without_runner_contact(
     assert await event_logs.last_cursor(thread) == 0
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(ThreadCheckpoint.through_cursor)) == 1
+
+
+async def test_projection_updates_activity_atomically_and_ignores_tool_output(
+    engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
+) -> None:
+    thread = await event_logs.open("sb-1", "activity", SPEC)
+    first = [
+        event_entry(1, turn_started=event_pb2.TurnStarted(turn_id="turn", model=SPEC.model)),
+        event_entry(2, item_started=event_pb2.ItemStarted(item_id="call", kind=event_pb2.ITEM_KIND_TOOL_CALL)),
+    ]
+    await ingestion.record(thread, first, lease=lease)
+    await fence_raw_ingestion(engine, thread)
+    activity = event_entry(3, tool_arguments=event_pb2.ToolArguments(item_id="call", arguments_json='{"x":"y"}'))
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=3, entries=[activity])
+    projector = HistoryProjector(engine, cast(SandboxServiceClient, reader))
+    # Fail after the fold and activity write: both must roll back together.
+    with (
+        patch("agentplane.app.threads.history_projector.notify", side_effect=RuntimeError("commit interrupted")),
+        pytest.raises(RuntimeError, match="commit interrupted"),
+    ):
+        await projector.project_batch(thread, lease=lease)
+    async with async_sessionmaker(engine)() as session:
+        assert await session.scalar(select(ThreadCheckpoint.through_cursor)) == 2
+        assert await session.scalar(select(EventLog.last_model_activity_at)) == first[-1].event.at.ToDatetime(
+            tzinfo=UTC
+        )
+    assert (await projector.project_batch(thread, lease=lease)).through_cursor == 3
+    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(
+        last_cursor=4,
+        entries=[event_entry(4, tool_output_delta=event_pb2.ToolOutputDelta(item_id="call", text="still running"))],
+    )
+    assert (await projector.project_batch(thread, lease=lease)).through_cursor == 4
+    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=4)
+    assert (await projector.project_batch(thread, lease=lease)).through_cursor == 4
+    async with async_sessionmaker(engine)() as session:
+        assert await session.scalar(select(EventLog.last_model_activity_at)) == activity.event.at.ToDatetime(tzinfo=UTC)
+        assert await session.scalar(select(ThreadCheckpoint.through_cursor)) == 4
+        assert await session.scalar(select(func.count()).select_from(Event)) == 2
 
 
 if __name__ == "__main__":

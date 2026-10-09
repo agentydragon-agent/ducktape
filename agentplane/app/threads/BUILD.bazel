@@ -164,8 +164,11 @@ py_library(
     name = "model_activity",
     srcs = ["model_activity.py"],
     deps = [
+        ":models",
+        "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "@pypi//protobuf",
+        "@pypi//sqlalchemy",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
@@ -174,6 +177,7 @@ py_library(
     name = "history_projector",
     srcs = ["history_projector.py"],
     deps = [
+        ":model_activity",
         ":models",
         "//agentplane/app:database_updates",
         "//agentplane/app/threads/events:event_log",

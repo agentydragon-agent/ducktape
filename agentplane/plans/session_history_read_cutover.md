@@ -60,7 +60,9 @@ Before wiring or enabling it:
 2. Validate the default-off supervisor under owner takeover and mixed replicas. It shares the
    existing sandbox lease coordinator rather than competing for a second lease, discovers fenced
    retained Threads independently of live runner discovery, and retries from their UI checkpoints.
-   Fold failures are logged and isolated per Thread; durable UI lag/error presentation is still
+   Both raw ingestion and service projection update the model-activity timestamp in their
+   checkpoint transaction; retry/tool-output-only batches do not advance it. Fold failures are
+   logged and isolated per Thread; durable UI lag/error presentation is still
    needed. Existing raw feed tasks are stopped for fenced Threads, not for their unfenced siblings.
 3. Move chronological observation metadata and Thread/feed cursors/lifecycle away from app raw
    `Event` rows. Preserve UI checkpoint/source/epoch and existing Thread URLs. The raw SSE path now
