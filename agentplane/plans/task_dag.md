@@ -963,7 +963,7 @@ copy as permanent savings before the cutover and legacy-table retirement.
 **Post-ownership implementation:** measure storage by Event kind and by native
 harness frame subtype, including TOAST/index and derived fold/link/evidence cost.
 Choose a documented, configurable retention policy for intermediate text/arguments/
-output deltas: keep them while a turn is incomplete, optionally discard *only after*
+output deltas: keep them while a turn is incomplete, optionally discard _only after_
 a durable terminal/full-value observation makes replay and debug reads safe. Native
 protocol wires remain available by default; evaluate a separate opt-in native-delta
 policy only after proving which frames are reconstructible without losing harness-
@@ -1387,7 +1387,7 @@ split is not its root-cause fix.
 `github_delivery` alone was 907 MiB (roughly 147k rows). `entry` was 27 MiB.
 A 1% table sample put `workflow_run` and `check_run` first by stored payload bytes,
 followed by `check_suite`; remeasure on both instances before changing retention.
-`store.cleanup()` expires *inbox entry* payloads after 30 days and purges retired
+`store.cleanup()` expires _inbox entry_ payloads after 30 days and purges retired
 inboxes, but does not expire the separate GitHub ingress receipts or their payloads.
 
 **Independent retention implementation:** decide how long a full receipt is needed for
