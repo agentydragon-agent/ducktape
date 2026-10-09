@@ -119,3 +119,22 @@ def test_notifications_have_no_app_or_direct_runner_dependency(
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_sandbox_reconciliation_can_watch_crs_and_read_owned_accounts(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    role = one(
+        doc
+        for doc in agentplane_manifests[namespace]
+        if doc["kind"] == "Role" and doc["metadata"]["name"] == sandbox_service.NAME
+    )
+    rules = role["rules"]
+    sandbox = one(
+        rule for rule in rules if rule["apiGroups"] == ["agents.x-k8s.io"] and rule["resources"] == ["sandboxes"]
+    )
+    assert {"get", "list", "watch"} <= set(sandbox["verbs"])
+    accounts = one(rule for rule in rules if rule["apiGroups"] == [""] and rule["resources"] == ["serviceaccounts"])
+    assert {"create", "get", "patch", "delete"} <= set(accounts["verbs"])
+    assert "secrets" not in accounts["resources"]

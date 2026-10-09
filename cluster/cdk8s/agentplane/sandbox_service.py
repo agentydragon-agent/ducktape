@@ -302,10 +302,10 @@ class SandboxService(Construct):
                     verbs=["create", "get", "list", "watch", "patch", "delete"],
                 ),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
-                # One ServiceAccount per Sandbox, created with it and owned by it; no
-                # patching beyond stamping that owner reference, and no reading of the
-                # tokens minted for it.
-                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["create", "patch", "delete"]),
+                # Read the UID-owned ServiceAccount metadata when replaying Create; never read its tokens.
+                RolePolicyRule(
+                    resources=[custom_resource("", "serviceaccounts")], verbs=["create", "get", "patch", "delete"]
+                ),
                 RolePolicyRule(
                     resources=[
                         custom_resource("agentplane.allegedly.works", resource)
