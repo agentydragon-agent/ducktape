@@ -214,6 +214,28 @@
   flex-shrink: 0;
 }
 
+/* An inline hint only when there is room for the model selectors and actions.
+   The More menu retains it on smaller viewports without adding a composer row. */
+.agentplane-composer-model-activity {
+  margin-left: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.agentplane-composer-model-activity-menu {
+  display: none;
+}
+
+@media (max-width: 1199px) {
+  .agentplane-composer-model-activity {
+    display: none;
+  }
+
+  .agentplane-composer-model-activity-menu {
+    display: block;
+  }
+}
+
 @media (max-width: 760px) {
   .agentplane-composer-settings {
     flex: 1 1 0;
