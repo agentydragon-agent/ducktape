@@ -23,7 +23,7 @@ from pydantic import JsonValue, SecretStr, ValidationError
 from sqlalchemy import ColumnElement, func, select, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from agentplane.notification_service.api import authenticated_caller, create_app
 from agentplane.notification_service.database_migrate import RUNNER
@@ -36,8 +36,14 @@ from agentplane.notification_service.db import (
     Inbox,
     Subscription,
 )
-from agentplane.notification_service.github_state import AccessKey, GitHubState, RefreshDeferred, RefreshLease, SubjectKey
-from agentplane.notification_service.models import DestinationRef, SourceFailureKind, Subscribe, SubscriptionUpdate
+from agentplane.notification_service.github_state import (
+    AccessKey,
+    GitHubState,
+    RefreshDeferredError,
+    RefreshLease,
+    SubjectKey,
+)
+from agentplane.notification_service.models import DestinationRef, EventIdentity, SourceFailureKind, Subscribe, SubscriptionUpdate
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, NoticeDebounceSettings, Settings
 from agentplane.notification_service.sources.actions import Actions
@@ -91,7 +97,8 @@ def comment(number: int = 7) -> dict[str, JsonValue]:
 
 def pr(sha: str) -> dict[str, JsonValue]:
     return {
-        "action": "synchronize", "installation": {"id": 11},
+        "action": "synchronize",
+        "installation": {"id": 11},
         "repository": {"id": 100, "full_name": "owner/repo"},
         "pull_request": {"number": 7, "head": {"sha": sha, "repo": {"id": 100, "full_name": "owner/repo"}}},
     }
@@ -139,7 +146,7 @@ class Upstream:
             return httpx.Response(403, headers={"x-ratelimit-remaining": "0", "retry-after": "120"})
         if self.revoked:
             return httpx.Response(404)
-        fork = "/fork/repo" in path
+        fork = "/fork/repo" in path or path == "/repositories/200"
         if path.endswith("/installation"):
             return httpx.Response(200, json={"id": 22 if fork else 11})
         if path.endswith("/access_tokens"):
@@ -153,7 +160,7 @@ class Upstream:
                 },
             )
         assert request.headers["Authorization"] == "Bearer fixture-installation-token"
-        if path in {"/repos/owner/repo", "/repos/fork/repo"}:
+        if path in {"/repos/owner/repo", "/repos/fork/repo", "/repositories/100", "/repositories/200"}:
             return httpx.Response(
                 200, json={"id": 200 if fork else 100, "full_name": "fork/repo" if fork else "owner/repo"}
             )
@@ -355,7 +362,7 @@ async def test_replay_boundary_overlapping_matches_and_revocation(
     assert row is not None
     upstream.revoked = True
     await ingest(github, store, {"installation": {"id": 11}, "action": "suspend"}, "installation")
-    with pytest.raises(RefreshDeferred):
+    with pytest.raises(RefreshDeferredError):
         await github.reconcile(store, claim, row, SOURCE)
     after = await store.read(PRINCIPAL.account, first.inbox_id, 0, 128)
     assert after.entries == page.entries
@@ -814,8 +821,16 @@ async def test_webhook_wakes_idle_source_and_fences_concurrent_ingress(
         key = SubjectKey(100, "pull_request", "7")
         async with store.sessions() as session:
             subject = await key.load(session)
-        await store.record_github(claim, source, [], more=False, fences=[fence], subject_key=key,
-            subject_generation=subject.generation, repair_at=datetime.now(UTC) + timedelta(seconds=600))
+        await store.record_github(
+            claim,
+            source,
+            [],
+            more=False,
+            fences=[fence],
+            subject_key=key,
+            subject_generation=subject.generation,
+            repair_at=datetime.now(UTC) + timedelta(seconds=600),
+        )
         await store.release(claim, None)
         claim = await store.claim()
         assert claim is not None
@@ -932,7 +947,9 @@ async def test_subscriptions_share_normalized_github_entities(store: Store, prov
             )
 
 
-async def test_shared_refresh_requests_survive_restart(store: Store, engine: AsyncEngine, provider: tuple[GitHub, Upstream]) -> None:
+async def test_shared_refresh_requests_survive_restart(
+    store: Store, engine: AsyncEngine, provider: tuple[GitHub, Upstream]
+) -> None:
     github, upstream = provider
     binding = (await github.context(SOURCE)).binding
     first = await store.subscribe(PRINCIPAL, subscription(), binding)
@@ -948,7 +965,7 @@ async def test_shared_refresh_requests_survive_restart(store: Store, engine: Asy
         assert row is not None
         await github.reconcile(store, claim, row, spec)
     assert upstream.requests.count("/repos/owner/repo/installation") == 1
-    assert upstream.requests.count("/repos/owner/repo") == 1
+    assert upstream.requests.count("/repositories/100") == 1
     assert upstream.requests.count("/repos/owner/repo/pulls/7") == 1
     assert upstream.requests.count("/repos/owner/repo/pulls/8") == 1
     requests = list(upstream.requests)
@@ -966,7 +983,9 @@ async def test_shared_refresh_requests_survive_restart(store: Store, engine: Asy
     assert set(page.entries[0].subscriptions) == {first.id, second.id}
 
 
-async def test_shared_refresh_lease_takeover_and_failure_episode(store: Store, provider: tuple[GitHub, Upstream]) -> None:
+async def test_shared_refresh_lease_takeover_and_failure_episode(
+    store: Store, provider: tuple[GitHub, Upstream]
+) -> None:
     github, _ = provider
     sub = await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
     state = GitHubState(store.sessions, 600)
@@ -974,15 +993,17 @@ async def test_shared_refresh_lease_takeover_and_failure_episode(store: Store, p
     leases = await asyncio.gather(state.acquire(key), state.acquire(key), return_exceptions=True)
     winners = [lease for lease in leases if isinstance(lease, RefreshLease)]
     assert len(winners) == 1
-    assert sum(isinstance(lease, RefreshDeferred) for lease in leases) == 1
+    assert sum(isinstance(lease, RefreshDeferredError) for lease in leases) == 1
     old = winners[0]
     async with store.sessions.begin() as session:
-        await session.execute(update(GitHubRepositoryAccess).values(claim_until=datetime.now(UTC) - timedelta(seconds=1)))
+        await session.execute(
+            update(GitHubRepositoryAccess).values(claim_until=datetime.now(UTC) - timedelta(seconds=1))
+        )
     lease = await state.acquire(key)
     assert lease is not None
-    with pytest.raises(RefreshDeferred):
+    with pytest.raises(RefreshDeferredError):
         await state.succeed(old)
-    with pytest.raises(RefreshDeferred):
+    with pytest.raises(RefreshDeferredError):
         await state.fail(old, SourceFailureKind.UNAVAILABLE, "stale failure", 60)
     until = await state.fail(lease, SourceFailureKind.RATE_LIMITED, "limited", 120)
     view = await store.subscription(PRINCIPAL.account, sub.id)
@@ -990,7 +1011,7 @@ async def test_shared_refresh_lease_takeover_and_failure_episode(store: Store, p
     initial = view.github.access[0]
     assert initial.retry_at == until
     assert not initial.currently_valid
-    with pytest.raises(RefreshDeferred) as deferred:
+    with pytest.raises(RefreshDeferredError) as deferred:
         await state.acquire(key)
     assert deferred.value.until == until
     async with store.sessions.begin() as session:
@@ -1016,7 +1037,9 @@ async def test_shared_refresh_lease_takeover_and_failure_episode(store: Store, p
 
 
 @pytest.mark.parametrize("event", ["installation", "installation_repositories"])
-async def test_invalidation_fences_inflight_refresh(store: Store, provider: tuple[GitHub, Upstream], event: str) -> None:
+async def test_invalidation_fences_inflight_refresh(
+    store: Store, provider: tuple[GitHub, Upstream], event: str
+) -> None:
     github, _ = provider
     sub = await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
     state = GitHubState(store.sessions, 600)
@@ -1024,7 +1047,7 @@ async def test_invalidation_fences_inflight_refresh(store: Store, provider: tupl
     lease = await state.acquire(key)
     assert lease is not None
     await ingest(github, store, {"installation": {"id": 11}, "action": "removed"}, event)
-    with pytest.raises(RefreshDeferred):
+    with pytest.raises(RefreshDeferredError):
         await state.succeed(lease)
     view = await store.subscription(PRINCIPAL.account, sub.id)
     assert view.github is not None
@@ -1036,7 +1059,9 @@ async def test_invalidation_fences_inflight_refresh(store: Store, provider: tupl
 
 
 @pytest.mark.parametrize("invalidate", [False, True])
-async def test_access_fenced_again_at_match_commit(store: Store, provider: tuple[GitHub, Upstream], invalidate: bool) -> None:
+async def test_access_fenced_again_at_match_commit(
+    store: Store, provider: tuple[GitHub, Upstream], invalidate: bool
+) -> None:
     github, _ = provider
     sub = await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
     await ingest(github, store, comment())
@@ -1065,7 +1090,9 @@ async def test_access_fenced_again_at_match_commit(store: Store, provider: tuple
     assert await store.source(claim) is not None
 
 
-async def test_shared_errors_project_without_copying_into_subscriptions(store: Store, provider: tuple[GitHub, Upstream]) -> None:
+async def test_shared_errors_project_without_copying_into_subscriptions(
+    store: Store, provider: tuple[GitHub, Upstream]
+) -> None:
     github, upstream = provider
     binding = (await github.context(SOURCE)).binding
     first = await store.subscribe(PRINCIPAL, subscription(), binding)
@@ -1077,7 +1104,7 @@ async def test_shared_errors_project_without_copying_into_subscriptions(store: S
         async with store.sessions() as session:
             row = await session.get(Subscription, sub.id)
         assert row is not None
-        with pytest.raises(RefreshDeferred) as deferred:
+        with pytest.raises(RefreshDeferredError) as deferred:
             await github.reconcile(store, claim, row, SOURCE)
         await store.source_deferred(claim, row, deferred.value.until)
     views = await store.subscriptions(PRINCIPAL.account)
@@ -1096,7 +1123,9 @@ async def test_shared_errors_project_without_copying_into_subscriptions(store: S
     assert page.notice is None
 
 
-async def test_webhook_racing_bootstrap_keeps_both_revision_associations(store: Store, provider: tuple[GitHub, Upstream]) -> None:
+async def test_webhook_racing_bootstrap_keeps_both_revision_associations(
+    store: Store, provider: tuple[GitHub, Upstream]
+) -> None:
     github, upstream = provider
     source = SOURCE.model_copy(update={"events": {EventFilter(event=EventName.CHECK_RUN)}})
     sub = await store.subscribe(PRINCIPAL, subscription(source), (await github.context(source)).binding)
@@ -1126,6 +1155,94 @@ async def test_webhook_racing_bootstrap_keeps_both_revision_associations(store: 
     await github.reconcile(store, claim, row, source)
     assert upstream.requests == calls
     assert (await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).inbox.last_cursor == 3
+
+
+async def test_access_refresh_is_single_flight_across_workers(
+    store: Store, engine: AsyncEngine, provider: tuple[GitHub, Upstream]
+) -> None:
+    github, upstream = provider
+    await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
+    entered, resume = asyncio.Event(), asyncio.Event()
+    request = github.request
+    upstream.requests.clear()
+
+    async def paused(method: str, path: str, headers: dict[str, str], **kwargs: JsonValue) -> httpx.Response:
+        if path == "/repositories/100":
+            entered.set()
+            await resume.wait()
+        return await request(method, path, headers, **kwargs)
+
+    key = AccessKey(42, 11, 100)
+    with patch.object(github, "request", side_effect=paused):
+        async with asyncio.TaskGroup() as tasks:
+            first = tasks.create_task(github.refresh_access(store, key))
+            await entered.wait()
+            other = GitHub(github.http, github.settings)
+            with pytest.raises(RefreshDeferredError):
+                await other.refresh_access(Store(engine), key)
+            resume.set()
+    assert first.result().key == key
+    assert upstream.requests.count("/repositories/100") == 1
+    assert upstream.requests.count("/repos/owner/repo/installation") == 1
+
+
+async def test_numeric_repository_identity_survives_rename(store: Store, provider: tuple[GitHub, Upstream]) -> None:
+    github, upstream = provider
+    sub = await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
+    upstream.responses["/repositories/100"] = httpx.Response(200, json={"id": 100, "full_name": "owner/renamed"})
+    claim = await store.claim()
+    assert claim is not None
+    row = await store.source(claim)
+    assert row is not None
+    await github.reconcile(store, claim, row, SOURCE)
+    assert "/repos/owner/renamed/installation" in upstream.requests
+    assert "/repos/owner/renamed/pulls/7" in upstream.requests
+    async with store.sessions() as session:
+        repository = await session.get(GitHubRepository, 100)
+        assert repository is not None
+        assert repository.full_name == "owner/renamed"
+    view = await store.subscription(PRINCIPAL.account, sub.id)
+    assert view.source.repository == "owner/repo"  # Immutable idempotency input, not current identity.
+    assert view.github is not None
+    assert view.github.access[0].currently_valid
+
+
+async def test_access_expiring_during_append_rolls_back_prefix(store: Store, provider: tuple[GitHub, Upstream]) -> None:
+    github, _ = provider
+    sub = await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
+    await ingest(github, store, comment())
+    claim = await store.claim()
+    assert claim is not None
+    row = await store.source(claim)
+    assert row is not None
+    append = store.append_event
+
+    async def expire(session: AsyncSession, inbox: Inbox, source: Subscription, identity: EventIdentity, payload: dict[str, JsonValue]) -> None:
+        await append(session, inbox, source, identity, payload)
+        await session.execute(update(GitHubRepositoryAccess).values(valid_until=datetime.now(UTC)))
+
+    with patch.object(store, "append_event", side_effect=expire):
+        with pytest.raises(RefreshDeferredError):
+            await github.reconcile(store, claim, row, SOURCE)
+    page = await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
+    assert page.inbox.last_cursor == 0
+    assert page.entries == []
+    assert page.notice is None
+
+
+@pytest.mark.parametrize("table", [GitHubRepositoryAccess, GitHubSubject])
+async def test_shared_failure_fields_are_constrained(
+    store: Store, provider: tuple[GitHub, Upstream], table: type[GitHubRepositoryAccess] | type[GitHubSubject]
+) -> None:
+    github, _ = provider
+    await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
+    with pytest.raises(IntegrityError):
+        async with store.sessions.begin() as session:
+            await session.execute(update(table).values(error="partial observation"))
+    with pytest.raises(IntegrityError):
+        async with store.sessions.begin() as session:
+            await session.execute(update(table).values(error="bad kind", error_kind="healthy",
+                error_since=datetime.now(UTC), error_observed_at=datetime.now(UTC)))
 
 
 if __name__ == "__main__":

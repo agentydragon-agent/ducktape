@@ -181,11 +181,12 @@ shared access/subject observations in subscription introspection.
 
 Any authenticated workload may subscribe to repositories accessible through this App, including private
 repositories; normal inbox ownership still applies. Revocation/suspension/identity changes stop new matching
-and expose subscription errors; delivered entries stay available. Transient/rate-limit failures retry with
-backoff. Subscription views expose the safe `error` and an absolute `retry_at` for a scheduled
-source retry (null after success, cancellation or expiry); this is not a runner-delivery deadline.
+and expose shared access failures through subscription introspection; delivered entries stay available.
+Transient/rate-limit failures retry with backoff. Shared observations expose safe `error` and absolute
+`retry_at` values; these are not runner-delivery deadlines. A cancelled subscription can still show
+shared observations maintained for another active subscriber.
 Rate-limit retries respect both `Retry-After` and an exhausted primary quota's `X-RateLimit-Reset`,
-with a minimum 60-second delay when GitHub supplies no later deadline. Workers log the subscription,
+with a minimum 60-second delay when GitHub supplies no later deadline. Workers log the shared entity,
 safe failure category and retry delay, never upstream bodies or credentials.
 
 Accepted webhooks remain durable while a source is backing off. New ingress does not shorten that
@@ -277,7 +278,6 @@ a promise about later delivery. No refresh failure or recovery creates an inbox 
 The normalized binding migration preserves subscription IDs, inboxes, event checkpoints and raw
 receipts. It does not claim historical validation times. Reverse migration refuses to discard
 shared observations or revision associations.
-
 
 ### Durable GitHub refresh and matching
 

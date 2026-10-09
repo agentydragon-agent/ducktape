@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.notification_service.db import Inbox, Notice
-from agentplane.notification_service.github_state import RefreshDeferred
+from agentplane.notification_service.github_state import RefreshDeferredError
 from agentplane.notification_service.models import (
     ActionsSource,
     DestinationRef,
@@ -232,7 +232,7 @@ class Service:
                             raise GitHubUnavailableError("GitHub provider is disabled")
                         else:
                             await self.github.reconcile(self.store, claim, source, spec)
-                    except RefreshDeferred as deferred:
+                    except RefreshDeferredError as deferred:
                         await self.store.source_deferred(claim, source, deferred.until)
                     except (
                         httpx.HTTPError,

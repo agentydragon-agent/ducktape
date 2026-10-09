@@ -103,7 +103,10 @@ py_library(
 py_library(
     name = "models",
     srcs = ["models.py"],
-    visibility = ["//agentplane/app:__pkg__"],
+    visibility = [
+        "//agentplane/app:__pkg__",
+        "//agentplane/notification_service:__subpackages__",
+    ],
     deps = [
         "//agentplane/notification_service/sources:github_models",
         "@pypi//pydantic",
@@ -114,8 +117,8 @@ py_library(
     name = "service",
     srcs = ["service.py"],
     deps = [
-        ":github_state",
         ":db",
+        ":github_state",
         ":models",
         ":settings",
         ":store",
@@ -141,8 +144,8 @@ py_library(
     name = "store",
     srcs = ["store.py"],
     deps = [
-        ":github_state",
         ":db",
+        ":github_state",
         ":models",
         ":updates",
         "//agentplane:subjects",
@@ -381,11 +384,11 @@ py_test(
     size = "medium",
     srcs = ["test_github.py"],
     deps = [
-        ":github_state",
         ":api",
         ":conftest",
         ":database_migrate",
         ":db",
+        ":github_state",
         ":models",
         ":service",
         ":settings",

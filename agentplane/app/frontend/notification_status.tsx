@@ -46,7 +46,8 @@ type Subscription = {
 function SharedRefresh({ label, state }: { label: string; state: GitHubRefresh }): JSX.Element {
   return (
     <Text size="xs" c={state.error ? "red" : "dimmed"}>
-      {label}: {state.error ?? (state.last_success_at ? `last success ${timestamp(state.last_success_at)}` : "not yet observed")}
+      {label}:{" "}
+      {state.error ?? (state.last_success_at ? `last success ${timestamp(state.last_success_at)}` : "not yet observed")}
       {state.error_since ? ` · since ${timestamp(state.error_since)}` : ""}
       {state.error_observed_at ? ` · last observed ${timestamp(state.error_observed_at)}` : ""}
       {state.retry_at ? ` · retry ${timestamp(state.retry_at)}` : ""}
@@ -329,13 +330,21 @@ export function NotificationStatus({
                           <Stack gap={2}>
                             {sub.github.access.map((access) => (
                               <Stack gap={0} key={`${access.app_id}/${access.installation_id}/${access.repository_id}`}>
-                                <SharedRefresh label={`Shared GitHub access · repository ${access.repository_id} · installation ${access.installation_id}`} state={access} />
+                                <SharedRefresh
+                                  label={`Shared GitHub access · repository ${access.repository_id} · installation ${access.installation_id}`}
+                                  state={access}
+                                />
                                 <Text size="xs" c="dimmed">
-                                  {access.currently_valid ? `Validated until ${timestamp(access.valid_until!)}` : "Access not currently validated"}
+                                  {access.currently_valid
+                                    ? `Validated until ${timestamp(access.valid_until!)}`
+                                    : "Access not currently validated"}
                                 </Text>
                               </Stack>
                             ))}
-                            <SharedRefresh label={`Shared GitHub subject · ${sub.github.subject.kind} ${sub.github.subject.subject_key}`} state={sub.github.subject} />
+                            <SharedRefresh
+                              label={`Shared GitHub subject · ${sub.github.subject.kind} ${sub.github.subject.subject_key}`}
+                              state={sub.github.subject}
+                            />
                           </Stack>
                         )}
                         {sub.error && (

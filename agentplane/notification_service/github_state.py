@@ -10,7 +10,11 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from agentplane.notification_service.db import (
-    GitHubInstallation, GitHubRepository, GitHubRepositoryAccess, GitHubSubject, GitHubSubjectRevision,
+    GitHubInstallation,
+    GitHubRepository,
+    GitHubRepositoryAccess,
+    GitHubSubject,
+    GitHubSubjectRevision,
 )
 from agentplane.notification_service.models import SourceFailureKind
 
@@ -67,7 +71,7 @@ class AccessFence:
     installation_generation: int
 
 
-class RefreshDeferred(Exception):
+class RefreshDeferredError(Exception):
     """The shared row owns the diagnostic; only its scheduling deadline is propagated."""
 
     def __init__(self, until: datetime) -> None:
@@ -111,13 +115,22 @@ async def fences_valid(session: AsyncSession, fences: Sequence[AccessFence]) -> 
 
 async def add_revisions(session: AsyncSession, key: SubjectKey, revisions: Sequence[HeadRevision]) -> None:
     for revision in revisions:
-        await session.execute(insert(GitHubRepository).values(
-            repository_id=revision.repository_id, full_name=revision.repository_name
-        ).on_conflict_do_nothing())
-        await session.execute(insert(GitHubSubjectRevision).values(
-            repository_id=key.repository_id, kind=key.kind, subject_key=key.subject_key,
-            head_repository_id=revision.repository_id, sha=revision.sha,
-        ).on_conflict_do_nothing())
+        await session.execute(
+            insert(GitHubRepository)
+            .values(repository_id=revision.repository_id, full_name=revision.repository_name)
+            .on_conflict_do_nothing()
+        )
+        await session.execute(
+            insert(GitHubSubjectRevision)
+            .values(
+                repository_id=key.repository_id,
+                kind=key.kind,
+                subject_key=key.subject_key,
+                head_repository_id=revision.repository_id,
+                sha=revision.sha,
+            )
+            .on_conflict_do_nothing()
+        )
 
 
 class GitHubState:
@@ -136,13 +149,15 @@ class GitHubState:
                 fresh = await access_valid(session, row, now)
             else:
                 generation = None
-                fresh = row.error is None and row.last_success_at is not None and row.last_success_at + self.freshness > now
+                fresh = (
+                    row.error is None and row.last_success_at is not None and row.last_success_at + self.freshness > now
+                )
             if fresh:
                 return None
             if row.claim is not None and row.claim_until is not None and row.claim_until > now:
-                raise RefreshDeferred(row.claim_until)
+                raise RefreshDeferredError(row.claim_until)
             if row.next_attempt is not None and row.next_attempt > now:
-                raise RefreshDeferred(row.next_attempt)
+                raise RefreshDeferredError(row.next_attempt)
             row.claim = uuid4()
             row.claim_until = now + timedelta(seconds=30)
             return RefreshLease(key, row.claim, row.generation, generation)
@@ -160,17 +175,22 @@ class GitHubState:
                 and await installation_generation(session, lease.key) != lease.installation_generation
             )
         ):
-            raise RefreshDeferred(now)
+            raise RefreshDeferredError(now)
         return row
 
     async def succeed(
-        self, lease: RefreshLease, *, fences: Sequence[AccessFence] = (), revisions: Sequence[HeadRevision] = ()
+        self,
+        lease: RefreshLease,
+        *,
+        fences: Sequence[AccessFence] = (),
+        revisions: Sequence[HeadRevision] = (),
+        repository_name: str | None = None,
     ) -> None:
         async with self.sessions.begin() as session:
             await github_lock(session)
             row = await self.leased(session, lease)
             if not await fences_valid(session, fences):
-                raise RefreshDeferred(datetime.now(UTC))
+                raise RefreshDeferredError(datetime.now(UTC))
             if revisions:
                 assert isinstance(lease.key, SubjectKey)
                 await add_revisions(session, lease.key, revisions)
@@ -179,6 +199,10 @@ class GitHubState:
             row.error_kind = row.error = row.error_since = row.error_observed_at = None
             row.claim = row.claim_until = row.next_attempt = None
             if isinstance(row, GitHubRepositoryAccess):
+                if repository_name is not None:
+                    repository = await session.get(GitHubRepository, row.repository_id)
+                    assert repository is not None
+                    repository.full_name = repository_name
                 row.checked_at = now
                 row.valid_until = now + self.freshness
                 row.validated_installation_generation = lease.installation_generation
