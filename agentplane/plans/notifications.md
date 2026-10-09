@@ -7,15 +7,13 @@ and the [staging acceptance record](../notification_service/docs/staging_github_
 
 ## Remaining live verification
 
-- [ ] Diagnose recurring staging webhook HTTP 400 rejections. Current access logs omit the delivery
-      ID, event kind and rejection reason; successful rollout does not establish correct ingestion
-      of those deliveries. Add bounded, payload-free rejection diagnostics if necessary.
 - [ ] Verify shared GitHub refresh reuse across overlapping live subscriptions and service restarts,
       and failure/backoff visibility through agent introspection and the frontend. CI coverage and
       a successful deployed status read do not establish these live behaviors.
 
 - [ ] Audit remaining event/permission coverage, including PR lifecycle/reviews, pushes/ref changes,
-      installation lifecycle, revoked access and fork-head correlation. An uninstalled fork is not
+      installation lifecycle, revoked access and fork-head correlation, plus live action-filter and
+      issue/PR exclusion cases beyond the recorded successful deliveries. An uninstalled fork is not
       covered merely because its base repository is installed. Successful ducktape subscriptions do
       not prove access to every installed repository or all supported event kinds.
 - [ ] Complete live negative ingress checks (unsigned request rejected; private workload API paths
@@ -69,7 +67,7 @@ If idle polling becomes a priority, replace the notification source's five-secon
   intent and reconciliation rather than a best-effort second request.
 - Consider narrower GitHub repository/event grants instead of shared access to every App installation.
 - Bound raw GitHub receipt retention without breaking subscription boundaries, association evidence or delivery-ID deduplication.
-- Additional sources/scopes: personal GitHub Notifications API, issue/repository subjects, workflow-specific
+- Additional sources/scopes: personal GitHub Notifications API, repository subjects, workflow-specific
   filters, tags/releases and deployment/environment subscriptions. No promise of complete historical replay.
 - Notification-triggered provisioning/resume, offline-delivery guarantees and wake budgets.
 - Runner-hosted MCP context, per-session identities, cross-account delivery and successor-session retargeting.
