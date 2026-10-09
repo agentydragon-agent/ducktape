@@ -249,6 +249,7 @@ function ThreadGroupSection({
   group,
   fresh,
   current,
+  currentSandbox,
   onNavigate,
   onOpen,
   onToggleArchived,
@@ -256,6 +257,7 @@ function ThreadGroupSection({
   group: ThreadGroup;
   fresh: boolean;
   current: string | null;
+  currentSandbox: boolean;
   onNavigate: () => void;
   onOpen: (thread: ThreadView) => void;
   onToggleArchived: (thread: ThreadView) => void;
@@ -264,7 +266,7 @@ function ThreadGroupSection({
   const suspended = group.sandbox !== null && sandboxSummary(group.sandbox).kind === "suspended";
   return (
     <div>
-      <div className="agentplane-sidebar-group-label">
+      <div className={`agentplane-sidebar-group-label${currentSandbox ? " current" : ""}`}>
         <GroupStateIcon sandbox={group.sandbox} />
         {deleted ? (
           <span
@@ -276,6 +278,7 @@ function ThreadGroupSection({
         ) : (
           <Link
             className="agentplane-sidebar-group-name agentplane-sidebar-group-link"
+            aria-current={currentSandbox ? "page" : undefined}
             // A suspended Sandbox's name is the gray of its icon rather than the link blue.
             style={suspended ? { color: SANDBOX_STATUS_MARKS.suspended.color } : undefined}
             to={`/sandboxes/${encodeURIComponent(group.sandboxName)}`}
@@ -325,6 +328,7 @@ function SidebarView({
   const navigate = useNavigate();
   const location = useLocation();
   const threadRoute = useMatch("/threads/:threadId");
+  const sandboxRoute = useMatch("/sandboxes/:name");
   const [includeArchived, setIncludeArchived] = useState(false);
   const { width, setWidth, resizeBy } = useSidebarWidth();
   const data = live.snapshot;
@@ -440,6 +444,7 @@ function SidebarView({
             group={group}
             fresh={fresh}
             current={current}
+            currentSandbox={sandboxRoute?.params.name === group.sandboxName}
             onNavigate={closeIfPhone}
             onOpen={openThread}
             onToggleArchived={(thread) => void toggleArchived(thread)}

@@ -104,6 +104,14 @@
   overflow: hidden;
 }
 
+/* Sandbox details select the group header, not the threads beneath it. Keep status colors
+ * (notably suspended) on the icon and link while giving the active group a clear surface. */
+.agentplane-sidebar-group-label.current {
+  background: var(--mantine-primary-color-light);
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-primary-color-filled);
+}
+
 .agentplane-sidebar-group-label .agentplane-sidebar-group-name {
   overflow: hidden;
   text-overflow: ellipsis;

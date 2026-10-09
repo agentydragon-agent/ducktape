@@ -9,7 +9,7 @@ from playwright.async_api import expect
 from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture
 from agentplane.app.frontend.visual_assertions import _assert_phone_composer_layout
 from util.testing.page_capture import wait_for_stable
-from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE
+from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 from util.testing.visual_capture import VisualPage
 
 # gazelle:include_dep //util/testing:visual_fixtures
@@ -28,6 +28,19 @@ async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) 
     await page.mouse.move(0, 0)
     await expect(page.get_by_role("tooltip")).to_have_count(0)
     await view.capture(target=view.page.locator("#app"))
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_current_sandbox_highlight(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    await app.mount_app("/sandboxes/ready-sandbox?tab=status")
+    await view.check(context="fixture ready")
+    page = view.page
+    if viewport == MOBILE:
+        await page.get_by_role("button", name="Toggle navigation").click()
+    current = page.locator('.agentplane-sidebar-group-link[aria-current="page"]')
+    await expect(current).to_have_text("ready-sandbox")
+    await expect(current.locator("xpath=..")).to_have_class(re.compile(r"\bcurrent\b"))
+    await view.capture(target=page.locator("#app"))
 
 
 @pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])

@@ -371,6 +371,27 @@ it("links a Sandbox name to its details without changing Thread navigation", asy
   expect(location()).toBe("/threads/t-1");
 });
 
+it("highlights only the current Sandbox group on its details route", async () => {
+  const name = "demo a1b2";
+  await render(
+    [thread({ id: "t-1", sandbox: name, session_id: "s-1", name: "First thread" })],
+    { [name]: sandbox(name), other: sandbox("other") },
+    { initialPath: "/sandboxes/demo%20a1b2?tab=status" }
+  );
+  const selected = container.querySelector<HTMLAnchorElement>('a[href="/sandboxes/demo%20a1b2"]');
+  const other = container.querySelector<HTMLAnchorElement>('a[href="/sandboxes/other"]');
+  expect(selected?.getAttribute("aria-current")).toBe("page");
+  expect(selected?.closest(".agentplane-sidebar-group-label")?.classList.contains("current")).toBe(true);
+  expect(other?.hasAttribute("aria-current")).toBe(false);
+  expect(other?.closest(".agentplane-sidebar-group-label")?.classList.contains("current")).toBe(false);
+  expect(row("First thread").classList.contains("current")).toBe(false);
+
+  await act(async () => row("First thread").click());
+  expect(selected?.hasAttribute("aria-current")).toBe(false);
+  expect(selected?.closest(".agentplane-sidebar-group-label")?.classList.contains("current")).toBe(false);
+  expect(row("First thread").classList.contains("current")).toBe(true);
+});
+
 it("opens the stable Thread route and highlights that Thread", async () => {
   await render(
     [
