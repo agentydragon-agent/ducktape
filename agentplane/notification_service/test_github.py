@@ -335,9 +335,7 @@ async def test_webhook_rejection_diagnostics_are_bounded_and_redacted(
         else:
             response = await client.post("/v1/webhooks/github", content=raw, headers=headers)
     assert response.status_code == status
-    assert response.json() == {
-        "detail": "invalid GitHub signature" if status == 401 else "invalid GitHub delivery"
-    }
+    assert response.json() == {"detail": "invalid GitHub signature" if status == 401 else "invalid GitHub delivery"}
     records = [record for record in caplog.records if record.message.startswith("GitHub webhook rejected: ")]
     assert len(records) == 1
     record = records[0]

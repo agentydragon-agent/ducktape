@@ -185,10 +185,7 @@ def log_webhook_rejection(event: str, delivery_id: UUID | None, reason: str, err
         # Locations below the schema's top-level fields can contain payload-controlled map keys.
         # Only report known top-level fields and Pydantic error codes, not messages or context.
         diagnostic["validation"] = [
-            {
-                "field": item["loc"][0] if item["loc"] and item["loc"][0] in fields else "<payload>",
-                "type": item["type"],
-            }
+            {"field": item["loc"][0] if item["loc"] and item["loc"][0] in fields else "<payload>", "type": item["type"]}
             for item in error.errors(include_input=False, include_context=False, include_url=False)[:8]
         ]
     logger.warning("GitHub webhook rejected: %s", json.dumps(diagnostic, ensure_ascii=True))
@@ -212,11 +209,7 @@ async def github_webhook(request: Request, service: Notifications) -> dict[str, 
         try:
             delivery_id = UUID(request.headers.get("x-github-delivery", ""))
             created = await github.ingest(
-                service.store,
-                event,
-                delivery_id,
-                request.headers.get("x-hub-signature-256", ""),
-                bytes(raw),
+                service.store, event, delivery_id, request.headers.get("x-hub-signature-256", ""), bytes(raw)
             )
         except InvalidSignatureError as error:
             log_webhook_rejection(event, delivery_id, "invalid_signature", None)
