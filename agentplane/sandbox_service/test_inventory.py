@@ -8,12 +8,12 @@ import pytest_bazel
 
 from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
-from agentplane.sandbox_service.models import OperatingMode, SandboxNotFoundError
+from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, SessionDestination
 from agentplane.sandbox_service.session_lifecycle import launch_spec
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
-from util.agent_sandbox import SANDBOXES_PLURAL
+from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 
 # gazelle:include_dep @pypi//protobuf
 

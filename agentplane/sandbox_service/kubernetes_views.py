@@ -9,10 +9,10 @@ from google.protobuf.struct_pb2 import Struct
 from google.protobuf.timestamp_pb2 import Timestamp
 from kubernetes_asyncio import client as k8s_client
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic.alias_generators import to_camel
 
 from agentplane.sandbox_service.binding_storage import read_binding
 from agentplane.sandbox_service.kubernetes_grants import DnsName, KubernetesGrant
-from agentplane.sandbox_service.models import OperatingMode
 from agentplane.sandbox_service.protocol_pb2 import (
     OwnerReference,
     ResolvedGrant,
@@ -21,6 +21,7 @@ from agentplane.sandbox_service.protocol_pb2 import (
     SandboxPod,
     ServiceAccount,
 )
+from util.agent_sandbox import OperatingMode
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
 SANDBOX_BINDING_ANNOTATION = "agentplane.allegedly.works/sandbox-binding"
@@ -30,43 +31,39 @@ KUBERNETES_GRANTS_READY_ANNOTATION = "agentplane.allegedly.works/kubernetes-gran
 KUBERNETES_GRANTS_ERROR_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-error"
 
 
-class _ObjectMeta(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+class _KubernetesModel(BaseModel):
+    """Read Kubernetes camelCase objects without hand-maintained aliases."""
 
+    model_config = ConfigDict(extra="ignore", alias_generator=to_camel)
+
+
+class _ObjectMeta(_KubernetesModel):
     name: str
     namespace: str
     uid: str
     labels: dict[str, str] = Field(default_factory=dict)
     annotations: dict[str, str] = Field(default_factory=dict)
-    creation_timestamp: datetime = Field(alias="creationTimestamp")
-    deletion_timestamp: datetime | None = Field(alias="deletionTimestamp", default=None)
+    creation_timestamp: datetime
+    deletion_timestamp: datetime | None = Field(default=None)
     finalizers: list[str] = Field(default_factory=list)
 
 
-class _PodSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
+class _PodSpec(_KubernetesModel):
     # Kubernetes' own default: a Pod naming no account runs as `default` in its namespace.
-    service_account_name: str = Field(alias="serviceAccountName", default="default")
+    service_account_name: str = Field(default="default")
 
 
-class _PodTemplate(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
+class _PodTemplate(_KubernetesModel):
     spec: _PodSpec = Field(default_factory=_PodSpec)
 
 
-class _SandboxSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
+class _SandboxSpec(_KubernetesModel):
     # The CRD defaults `operatingMode` to Running, so a stored Sandbox without it is a running one.
-    operating_mode: OperatingMode = Field(alias="operatingMode", default=OperatingMode.RUNNING)
-    pod_template: _PodTemplate = Field(alias="podTemplate", default_factory=_PodTemplate)
+    operating_mode: OperatingMode = Field(default=OperatingMode.RUNNING)
+    pod_template: _PodTemplate = Field(default_factory=_PodTemplate)
 
 
-class SandboxResource(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
+class SandboxResource(_KubernetesModel):
     metadata: _ObjectMeta
     spec: _SandboxSpec
     status: dict[str, object] | None = None

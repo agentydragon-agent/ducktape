@@ -12,6 +12,7 @@ the coordinates.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any, NamedTuple, cast
 
 
@@ -30,6 +31,14 @@ class Api(NamedTuple):
 SANDBOX_API = Api("agents.x-k8s.io", "v1beta1")
 # SandboxClaim and SandboxTemplate are a separate group from Sandbox itself.
 EXTENSIONS_API = Api("extensions.agents.x-k8s.io", "v1beta1")
+
+
+class OperatingMode(StrEnum):
+    """Upstream Sandbox CR operating modes."""
+
+    RUNNING = "Running"
+    SUSPENDED = "Suspended"
+
 
 SANDBOX_KIND = "Sandbox"
 SANDBOXES_PLURAL = "sandboxes"

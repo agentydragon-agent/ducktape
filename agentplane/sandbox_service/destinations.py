@@ -6,9 +6,9 @@ from ipaddress import ip_address
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.models import OperatingMode, SandboxNotFoundError
+from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination
-from util.agent_sandbox import SANDBOX_API
+from util.agent_sandbox import SANDBOX_API, OperatingMode
 
 
 class DestinationUnavailableError(Exception):

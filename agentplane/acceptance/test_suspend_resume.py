@@ -13,7 +13,7 @@ from agentplane.app.client import Client, has_ready_pod
 from agentplane.app.sandbox_models import SandboxView
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_service.models import OperatingMode
+from util.agent_sandbox import OperatingMode
 
 Sandboxes = Callable[..., Awaitable[SandboxView]]
 POD_TRANSITION_SECONDS = 300.0
