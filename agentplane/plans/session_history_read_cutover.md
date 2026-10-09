@@ -6,7 +6,6 @@ separates `THREAD_ARCHIVE_BACKFILL`, `THREAD_ARCHIVE_INGEST`, `THREAD_ARCHIVE_RE
 Backfill is reported in progress; this document does not claim any live switch has been enabled.
 New service input/metadata tables and unrelated app schema changes wait for the ownership capstone.
 
-
 `ReadSessionEvents` is bounded to 1000 entries and the explicitly configured
 Sandbox Service `history_reader_accounts`. A public UUID is not authorization.
 The app's service identity is the only configured reader; notification service

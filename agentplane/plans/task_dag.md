@@ -196,6 +196,98 @@ inputs, expand full text and render mixed human/notice messages normally with an
 metadata falls back to text. Include visual coverage and one bounded real-notice check; no inbox
 acknowledgement on render and no text-prefix provenance heuristic. Runners remain unaware.
 
+### Subscription authorization before broader sources
+
+```mermaid
+flowchart LR
+    SUBSCRIPTION_AUTHORIZATION_DESIGN[Decision: Action approval vs direct subscription policy]
+    SUBSCRIPTION_AUTHORIZATION[Blocked: enforce reviewed creation and continuing source grants]
+    SUBSCRIPTION_AUTHORIZATION_DESIGN --> SUBSCRIPTION_AUTHORIZATION
+```
+
+### `SUBSCRIPTION_AUTHORIZATION_DESIGN` — auto-allow and operator-approved subscriptions
+
+**Decision.** Compare an Action-backed subscribe operation using existing auto-allow/operator
+approval with authorization inside Notification Service; do not preselect another policy engine.
+Review which callers may subscribe to which sources, targets, fields/filters, destinations and
+lifetimes, and who can approve/delegate that access. Subscription creation approval is distinct
+from continuing source access and from ownership of the destination inbox. Define renewal, scope
+expansion, policy changes/revocation and what happens to already-retained entries.
+
+Use Kubernetes as a concrete design case: namespace/resource/UID scope, object/status/event/log
+content, name reuse and whether grants delegate the caller's existing read authority or explicitly
+allow additional observation. A privileged watcher must not expose arbitrary cluster data merely
+because the agent owns an inbox. Review argument examples that auto-allow narrow approved scopes,
+require operator approval for additional scopes, and reject requests nobody can delegate. See the
+[subscription authorization design](notifications.md#subscription-authorization-and-action-approval).
+This is independent of selecting a messaging transport or fixing existing GitHub delivery gaps.
+
+### `SUBSCRIPTION_AUTHORIZATION` — creation gate and continuing enforcement
+
+**Blocked on the authorization decision.** If Actions is selected, implement its subscribe operation
+and reviewed policy bindings; otherwise implement the chosen direct policy path. Keep Notification
+Service the subscription/delivery authority in either case. Carry verified caller/decision scope
+across the service boundary rather than substituting the executor's broad identity. Enforce the
+same access contract on direct APIs, renewals and updates; no approval bypass by another endpoint.
+
+Test auto-allow, pending approval, denial, restricted destinations, scope escalation and expiry/
+revocation with controlled identities. No entry may be delivered beyond the reviewed source scope;
+approval is not permission to wake a Sandbox or execute source content. Future Kubernetes sources
+must depend on this contract/enforcement when promoted from the freezer. Ordinary authorized
+subscription reads/cancellation and existing GitHub gap recovery need not wait for a broad redesign.
+
+### GitHub notice reliability after missed updates
+
+The operator reports that GitHub updates may sometimes be missed. This is a concrete reliability
+concern, not proof that GitHub webhook delivery itself is at fault. Diagnose webhook receipt,
+matching, inbox persistence and notice dispatch separately. Do not reopen waived broad provider
+outage/refresh exercises; test the specific recovery contract with controlled missing webhooks.
+
+```mermaid
+flowchart LR
+    GITHUB_NOTICE_RELIABILITY_DESIGN[Decision: eventual-state recovery vs agent fallback]
+    GITHUB_NOTIFICATION_RECOVERY[Blocked: selected reconciliation or reminder mechanism]
+    GITHUB_SHEPHERD_GUIDANCE[Candidate: honest monitoring and final-state verification guidance]
+    GITHUB_NOTICE_RELIABILITY_DESIGN --> GITHUB_NOTIFICATION_RECOVERY
+    GITHUB_NOTICE_RELIABILITY_DESIGN -. chosen guarantee wording .-> GITHUB_SHEPHERD_GUIDANCE
+```
+
+### `GITHUB_NOTICE_RELIABILITY_DESIGN` — delivery guarantee and fallback
+
+**Decision.** Review the gap and choose the guarantee needed for PR shepherding: eventual awareness
+of current head/check/review/merge state, or historical delivery of each event. Compare bounded
+service-side reconciliation using existing durable shared GitHub refresh state with explicit agent
+fallback checks, optionally scheduled reminders. Recommend the smallest reliable path with a stated
+staleness bound/cost. A webhook subscription is not proof no changes occurred when it stays silent.
+Snapshot polling cannot reconstruct all intermediate events, and a cron reminder alone is not
+recovery if no active agent checks state. Detailed alternatives and questions are in the
+[notification plan](notifications.md#missed-github-updates-and-shepherding-reliability).
+
+### `GITHUB_NOTIFICATION_RECOVERY` — implement the reviewed recovery contract
+
+**Blocked on the reliability decision.** If service reconciliation is selected, periodically compare
+eligible shared subjects with authoritative GitHub state and durably emit deduplicated observations
+for uncovered relevant changes. Reuse refresh leases, backoff and access checks; bound API load.
+Distinguish observed state from a received webhook; do not fabricate delivery IDs or promise replay
+of events the API cannot recover. If agent fallback is selected instead, provide its actual bounded
+check/reminder mechanism and explicit limitations rather than just advising agents to remember.
+Add `CRON_NOTIFICATIONS` as a prerequisite only if that reviewed implementation actually needs it;
+a service refresh deadline need not introduce a general scheduler. Backend workers stay in-process.
+
+Test a suppressed webhook, duplicate webhook/reconciliation races, changed head/check state and
+restart/checkpoint recovery with a controlled GitHub peer. Observe one eventual update for the
+promised scope, honest access/backoff state and no false claim of complete history. No live GitHub
+outage or exhaustive historical event matrix is required.
+
+### `GITHUB_SHEPHERD_GUIDANCE` — explain monitoring limits and completion checks
+
+**Candidate for immediate baseline clarification; final wording follows the decision.** Treat
+notifications as prompts to inspect authoritative current PR state, not evidence that the latest
+head passed or that silence means no progress. Document the chosen fallback deadline/ownership and
+how an agent notices unreliable monitoring. If reminders are chosen, state who runs them and that
+notices do not start a stopped harness. Guidance accompanies the selected reliability behavior;
+it must not advertise a polling/reminder guarantee before that mechanism exists.
+
 ## 3. Multiagent decisions before implementations
 
 These are operator-reviewable decisions, not permission to implement every possibility. Drafts can
@@ -344,16 +436,29 @@ does not grant history read, messaging, credentials or execution of another prin
 
 The [KubeVirt plan](kubevirt_environments.md) contains completed prototype evidence and the detailed
 provider design. Split implementation rather than making “VM support” one indivisible task. This is
-an unranked candidate lane, not authorization for local Bazel in current containers.
+an unranked candidate lane, not authorization for local Bazel in current containers. Co-design
+runner dial-out with VM control networking before committing to guest inbound routing. Changing
+connection direction need not move command durability or remove the runner journal.
 
 ```mermaid
 flowchart LR
+    RUNNER_TRANSPORT_DESIGN[Decision: service-dials-runner vs runner-dials-service]
+    RUNNER_OUTBOUND_CHANNEL[Conditional: authenticated outbound runner channel]
+    RUNNER_OUTBOUND_ROLLOUT[Conditional: migrate selected existing runners]
+    VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Blocked: production provider and API]
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     THREAD_ARCHIVE_OWNERSHIP[Archive ownership cutover] -. service-change scheduling hold .-> VM_PROVIDER
+    RUNNER_TRANSPORT_DESIGN -. if outbound selected .-> RUNNER_OUTBOUND_CHANNEL
+    THREAD_ARCHIVE_OWNERSHIP -. service-change scheduling hold .-> RUNNER_OUTBOUND_CHANNEL
+    RUNNER_TRANSPORT_DESIGN --> VM_CONTROL_NETWORKING
+    RUNNER_OUTBOUND_CHANNEL -. if outbound selected .-> VM_CONTROL_NETWORKING
+    RUNNER_OUTBOUND_CHANNEL --> RUNNER_OUTBOUND_ROLLOUT
+    VM_PROVIDER --> VM_CONTROL_NETWORKING
+    VM_CONTROL_NETWORKING --> VM_LIFECYCLE
     VM_IMAGE --> VM_PROCESS_ISOLATION
     VM_PROVIDER --> VM_PROCESS_ISOLATION
     VM_IMAGE --> VM_LIFECYCLE
@@ -363,6 +468,45 @@ flowchart LR
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
+
+### `RUNNER_TRANSPORT_DESIGN` — runner dial-out and connection lifecycle
+
+**Decision; design can proceed during backfill.** Compare today's service-initiated runner RPCs
+with a runner-initiated long-lived channel to Sandbox Service, taking inspiration from Claude
+RemoteIO's connection direction without adopting its wire protocol or lifecycle assumptions.
+Present a recommended protocol and VM networking diagram for operator review. Define authenticated
+environment/incarnation binding, connection ownership/fencing across replicas, heartbeat/liveness
+states and timeouts, reconnect/replay cursors, command receipts and bounded backpressure. A lost
+connection is not proof that the harness stopped or that a command failed.
+
+Output must state whether v1 VMs use inbound or outbound control, which inbound ports/discovery
+rules disappear, how existing container runners transition, and the selected implementation edges.
+Keep runner journal/admission authority, offline queue policy and thin-runner redesign separate.
+Detailed questions: [runner transport design](runner_discovery.md#outbound-control-channel-design).
+
+### `RUNNER_OUTBOUND_CHANNEL` — implement the selected outbound transport
+
+**Conditional on the transport decision; service changes wait for archive ownership.** Implement
+runner/service connection handling, auth, replica routing/fencing, progress/heartbeat reporting and
+cursor-based reconnect while retaining runner command/Event semantics. Test identity denial,
+ordinary disconnect, stale connections, replay and flow control with controllable peers. Do not
+require moving command admission centrally, native offline catch-up research or removing SQLite.
+
+### `RUNNER_OUTBOUND_ROLLOUT` — migrate selected existing runners
+
+**Conditional on outbound selection and channel implementation.** Migrate a bounded set using a
+compatible guarded image transition, verify receipt/replay continuity and remove obsolete inbound
+access for migrated environments. Define rollback and reject competing control paths; coexistence
+across explicitly configured old/new environments is not silent per-request fallback. Fleet-wide
+migration is not a prerequisite for first VM integration unless the reviewed design makes it one.
+
+### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
+
+**Blocked on transport decision and VM provider; outbound implementation only if selected.** Wire
+VM control reachability/authentication to the chosen path. An outbound channel may remove guest
+control-port exposure and endpoint discovery; retain the independently needed outbound API/credential
+proxy path. Image packaging and process-isolation work need not wait for this decision. Verify the
+selected path on the actual VM network, not just a host-loopback transport test.
 
 ### `VM_IMAGE` — packaged guest and state storage
 
@@ -392,7 +536,7 @@ accidentally killing their own harness; guest or container packaging alone is no
 
 ### `VM_LIFECYCLE` — integrated lifecycle verification
 
-**Blocked on provider, image, egress and isolation.** Exercise both harnesses through real service
+**Blocked on provider, image, selected control networking, egress and isolation.** Exercise both harnesses through real service
 routes with retained-state stop/start and a representative replacement; confirm identity, replay and
 cleanup. Automated tests cover restart/concurrency branches. Additional live faults need a concrete
 unresolved platform risk, not a Cartesian product of every component crash and lifecycle operation.
@@ -556,8 +700,9 @@ boundary. No copied-volume portability or simultaneous multi-component crash req
   the Ducktape preset are accepted. No live provider-outage injection or repeat staging exercise is
   pending. Remaining broad provider-matrix exploration is frozen; ordinary auth/signature denial
   regression coverage belongs with the implementation, not an unbounded production checklist.
-- Native subsessions and runner state/transport redesign remain frozen. Multiagent decisions compare
-  their boundaries without starting that implementation lane.
+- Native subsessions and runner durability/thin-adapter redesign remain frozen. Transport direction
+  has its own decision co-sequenced with VMs; neither that nor multiagent design unfreezes the broader
+  runner-state redesign.
 - Archive placement/store were removed as future tasks because the selected service-owned store and
   import/read code exist; this explicitly does **not** burn down backfill or writer/read cutover.
 - `CROSS_THREAD_DELIVERY` is consolidated into `AGENT_MESSAGING_DESIGN`; `THREAD_OPEN_RELOAD_RECOVERY` is part

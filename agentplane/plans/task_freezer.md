@@ -41,7 +41,7 @@ On scheduling demand. Review missed-tick/timezone/overlap policy before implemen
 
 ### `KUBERNETES_MONITORING` — agents observe rollout progress and outcomes
 
-On a selected rollout-following use case. Review service-account read scope, Deployment identity and watch recovery; decide whether Notifications is the owner before implementation.
+On a selected rollout-following use case. Review Deployment identity/watch recovery and decide whether Notifications is the owner. If implemented as subscriptions, depend on the main DAG's `SUBSCRIPTION_AUTHORIZATION_DESIGN` and `SUBSCRIPTION_AUTHORIZATION`: source observation scope is not implied by owning an inbox.
 
 ### `AGENT_MESSAGE_CLASSIFICATION` — optional outbound content safeguards
 
@@ -153,11 +153,7 @@ Requires a fresh operator product/architecture decision. These alternatives are 
 
 ### `RUNNER_STATE_BOUNDARY_RETHINK` — should the runner own durable state?
 
-Choose whether command durability moves centrally and the runner becomes a thin adapter. Do not implement outbound/central pieces before this decision.
-
-### `RUNNER_OUTBOUND_CHANNEL` — worker-initiated transport
-
-Conditional on the runner-state decision: authenticated/fenced worker-initiated transport, separate from archive reads.
+Choose whether command durability moves centrally and the runner becomes a thin adapter. Central-admission changes require this decision. Transport direction is now a separate [VM-coordinated design gate](task_dag.md#runner_transport_design--runner-dial-out-and-connection-lifecycle); it can retain runner durability.
 
 ### `CLAUDE_OFFLINE_CATCHUP` — recover work done offline
 
@@ -173,7 +169,7 @@ Conditional on the authority decision, after archive cutover. Durable central ad
 
 ### `RUNNER_OUTBOUND_CUTOVER` — migrate to thin, outbound-connected adapters
 
-Only after selected transport, per-harness catch-up, central admission and a safe image transition; not an active capstone.
+Only if the thin-adapter/central-authority design is selected, after its per-harness catch-up and safe image transition. A transport-only dial-out rollout is separately sequenced in the main DAG and does not require this capstone.
 
 ### `COMMAND_QUEUE_DECISION` — where submission becomes durable
 

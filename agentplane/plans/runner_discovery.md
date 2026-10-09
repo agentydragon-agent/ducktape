@@ -112,3 +112,70 @@ RPC protocol. Do not claim this TODO is implemented because a connection test su
   and conflicting bindings are rejected. Lookup does not create a session or wake a stopped harness.
 - Failures and temporary absence preserve subscriptions; permanent cleanup uses authoritative state.
 - Notifications uses Sandbox Service for delivery/following, not a second provisioning/control loop.
+
+## Outbound control-channel design
+
+**Proposed decision, not an implemented migration.**
+[`RUNNER_TRANSPORT_DESIGN`](task_dag.md#runner_transport_design--runner-dial-out-and-connection-lifecycle)
+compares service-initiated runner RPCs with a runner-initiated channel to Sandbox Service, co-designed
+with VM control networking. Claude RemoteIO demonstrates the latter connection direction; it is not
+an Agentplane protocol or evidence for our authorization, delivery or failure semantics. Review
+bidirectional gRPC, WebSocket or another narrowly justified transport against existing proxy support,
+not a new generic messaging platform. Provide a recommended sequence/network diagram and explicit
+operator decision before implementation.
+
+### Authority is separate from connection direction
+
+The runner can dial out while keeping SQLite command admission and ordered Events. Sandbox Service
+continues authorizing commands and copying execution evidence; it does not infer command success
+from channel writes, heartbeat replies or stream acknowledgements. Durable service input metadata
+also does not imply offline command acceptance. Moving admission centrally/removing the journal and
+native offline catch-up stay separate, deferred decisions.
+
+Specify how the channel authenticates the expected runner/environment and current incarnation using
+trusted provisioning associations. Names, IPs, claimed session IDs and guest-supplied labels are not
+proof. Review bootstrap/credential rotation and whether shared workload credentials sufficiently
+distinguish the runner from harness-launched processes for the intended trust boundary; do not claim
+process isolation from ServiceAccount authentication alone. Keep long-lived/provider credentials
+outside the VM guest. Caller authorization remains at the service API regardless of channel owner.
+
+### Connection ownership, heartbeat and liveness
+
+Decide how a channel maps to a Sandbox/VM UID, runner incarnation and hosted sessions, and how an API
+request reaching another Sandbox Service replica finds the active owner. Compare a small owner/lease
+record plus replica forwarding with other justified routing choices; do not invent a new broker or
+process-local singleton as a requirement. Fence superseded connections so a late old stream cannot
+accept controls as the current runner. A transport connection epoch is not a new Session/Event ID.
+
+Define bounded heartbeat/lease timing, who sends/observes it, freshness and explicit status exposed
+to callers. Distinguish connected/recently seen from ready to accept controls, and both from harness
+turn progress. Missing heartbeats mean unavailable/stale observation, not proof the process died,
+the harness stopped, a turn completed or a command failed. Define reauthorization and revocation
+on reconnect/credential expiry. Neither a missed heartbeat nor a new stream silently restarts work.
+
+### Reconnect, replay and flow control
+
+Keep stable command IDs and original payloads across ambiguous sends; reconcile from the runner's
+receipts rather than replay side effects. Define stream acknowledgement versus durable command
+admission and durable archive cursor separately. Replay Events from the committed prefix with exact
+duplicate/conflict handling; multiple service replicas must not acknowledge data only held in a
+lost owner's memory. Decide what happens while disconnected without claiming a new offline queue.
+
+Bound inflight commands/Event batches, replay buffers and slow-reader pressure. State whether and
+how control traffic avoids starvation during large history catch-up, and define deadlines/cancel
+behavior without interpreting transport cancellation as harness cancellation. Heartbeats alone do
+not prove that either direction is making application progress.
+
+### VM sequencing and bounded validation
+
+Before `VM_CONTROL_NETWORKING`, choose inbound versus outbound control and state which guest ports,
+endpoint discovery and network policies it replaces. Outbound control may simplify VM reachability,
+but guest access to LLM/Action APIs still needs its authorized relay. Image/resource-isolation work
+can proceed independently; service/persistence changes honor the archive-migration hold.
+
+If selected, implement `RUNNER_OUTBOUND_CHANNEL` with automated peer tests for authentication denial,
+ordinary disconnect/reconnect, stale-owner fencing, replay, token expiry and backpressure. Perform
+a bounded real-VM connection/reconnect/receipt check for the actual proxy/network path; do not require
+simultaneous node/database/guest failure drills. `RUNNER_OUTBOUND_ROLLOUT` then handles selected
+existing environments with explicit route mode, a compatible image transition and rollback; never
+leave two uncontrolled command paths. A fleet rollout is not automatically a gate on first VM use.

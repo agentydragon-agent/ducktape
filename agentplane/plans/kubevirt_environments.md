@@ -8,6 +8,22 @@ The disposable pinned-stack prototype and guest runtime acceptance are recorded 
 production Sandbox Service or production egress gateway. KubeVirt remains the recommended first
 VM provider.
 
+## Control-transport decision before network integration
+
+Co-sequence VM control networking with
+[`RUNNER_TRANSPORT_DESIGN`](task_dag.md#runner_transport_design--runner-dial-out-and-connection-lifecycle).
+The diagram below shows the inbound-control baseline, not an irreversible choice for v1. Compare
+it with the runner dialing Sandbox Service over an authenticated persistent channel, similar in
+connection direction to Claude RemoteIO. This could avoid exposing/routing a guest runner service;
+it does not eliminate the egress relay or its credential boundary. See the
+[connection lifecycle design questions](runner_discovery.md#outbound-control-channel-design).
+
+Choose transport, heartbeat/liveness semantics, replica connection ownership, reconnect and fencing
+before `VM_CONTROL_NETWORKING`. Implement `RUNNER_OUTBOUND_CHANNEL` only if selected; migrate existing
+container runners separately under `RUNNER_OUTBOUND_ROLLOUT`. Image/storage and process-boundary work
+can proceed independently. This decision does not remove the runner journal or choose central command
+admission. New service persistence remains behind the archive-migration hold.
+
 ## Proposed shape
 
 Make execution environment kind an explicit, immutable creation-time choice: `agent_sandbox` or
@@ -41,8 +57,8 @@ flowchart LR
 ```
 
 Sandbox Service owns lifecycle, grants, destination resolution, and access to sessions. Runner SQLite
-remains the only admitted-command/Event authority. The app remains a client and independent archive;
-VM startup, recovery, and notifications must work with the app unavailable. There is no VM-specific
+remains the only admitted-command/Event authority. The service-owned archive migration retains copied Events independently of VM storage; the app
+remains its presentation client. VM startup, recovery and notifications must work with the app unavailable. There is no VM-specific
 command queue or new credential issuer.
 
 ## Existing seams
@@ -270,13 +286,20 @@ environments and the Sandbox Service extraction's staging-preservation requireme
 
 The [DAG VM lane](task_dag.md#4-vm-environment-phases) now sequences these separately:
 
+- `RUNNER_TRANSPORT_DESIGN`: review dial-out versus inbound control and connection lifecycle before
+  committing VM control routing; separate from runner durability redesign.
+- `RUNNER_OUTBOUND_CHANNEL`: conditional implementation retaining command/Event semantics;
+  `RUNNER_OUTBOUND_ROLLOUT` covers a subsequent bounded transition of existing environments.
+- `VM_CONTROL_NETWORKING`: implement the chosen route after the transport decision and provider,
+  depending on outbound transport only if selected. Gate integrated VM lifecycle on this path.
 - `VM_IMAGE`: digest-pinned guest and bounded retained storage, tested with both harnesses.
 - `VM_PROVIDER`: typed provider/API, reconciliation, grants and UI. Coordinate production service
   changes after the archive ownership handoff; design and image work can proceed independently.
 - `VM_EGRESS`: integrate the already-selected launcher admission/proxy path with production policy.
 - `VM_PROCESS_ISOLATION`: enforce/test harness-process boundaries and aggregate resource budgets
   after image/provider support. This is the concrete agent-kills-itself risk, not a cosmetic VM switch.
-- `VM_LIFECYCLE`: integrate image/provider/egress/isolation and perform bounded deployed checks.
+- `VM_LIFECYCLE`: integrate image/provider/control networking/egress/isolation and perform bounded
+  deployed checks.
 - `SANDBOX_VM_ISOLATION`: capstone for the selectable environment and its documented guarantees.
 - `LOCAL_BAZEL`: separate downstream enablement, never authorized by installed tools alone.
 
