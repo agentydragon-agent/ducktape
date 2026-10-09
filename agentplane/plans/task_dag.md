@@ -807,6 +807,15 @@ rollback. Pin whether the controller actually replaces the Pod and preserves the
 state mount; failure is a finding for the eventual workflow, not permission to
 reconstruct native sessions from app history.
 
+TODO: add an operator-approved `kubernetes_admin` JSON Patch Action (or contribute a
+patch tool upstream) before letting agents perform this step. The deployed
+`containers/kubernetes-mcp-server` v0.0.66 and upstream v0.0.67 expose
+`resources_create_or_update` (full server-side apply), but no general patch tool.
+A Sandbox `resources_get` masks its Secret volume reference, so reapplying that
+response is unsafe. Support narrow, atomic `test`/`replace` operations with
+named-resource scope, ordinary Kubernetes RBAC and explicit operator approval;
+until then, use an operator-run `kubectl patch` for image-upgrade probes.
+
 ### `RUNNER_IMAGE_ROLLOUT` — upgrade runner images on existing Sandboxes
 
 **Planned operator workflow:** a runner image version is recorded in each Sandbox CR's
