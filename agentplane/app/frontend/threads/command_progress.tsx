@@ -1,4 +1,4 @@
-import { type JSX } from "react";
+import { type JSX, useState } from "react";
 
 /** Only durable evidence advances the lights; a lost reply is not a runner refusal. */
 export type CommandStage = "local" | "unconfirmed" | "admitted" | "effected" | "failed" | "noop" | "refused";
@@ -18,6 +18,7 @@ export function CommandProgress({
   /** This browser actually retained the command; server-only rows cannot claim that. */
   local?: boolean;
 }): JSX.Element {
+  const [touchOpen, setTouchOpen] = useState(false);
   const waitingFor =
     subject === "input"
       ? "agent confirmation"
@@ -53,23 +54,34 @@ export function CommandProgress({
               : "waiting"
   );
   return (
-    <div
+    <span
       className="agentplane-command-progress"
       data-stage={stage}
+      data-touch-open={touchOpen || undefined}
       role={stage === "failed" || stage === "refused" ? "alert" : "status"}
+      aria-label={label}
     >
-      <div
-        className="agentplane-command-lights"
-        role="img"
-        aria-label={["Submitted", "Runner acceptance", "Effect confirmed"]
-          .map((name, index) => `${name}: ${lights[index]}`)
-          .join("; ")}
+      <button
+        type="button"
+        className="agentplane-command-progress-hit"
+        aria-label={label}
+        onPointerDown={(event) => {
+          if (event.pointerType !== "mouse") setTouchOpen((open) => !open);
+        }}
+        onBlur={() => setTouchOpen(false)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setTouchOpen(false);
+        }}
       >
-        {lights.map((state, index) => (
-          <span key={index} className="agentplane-command-light" data-state={state} />
-        ))}
-      </div>
-      <span className="agentplane-command-progress-label">{label}</span>
-    </div>
+        <span className="agentplane-command-lights" aria-hidden="true">
+          {lights.map((state, index) => (
+            <span key={index} className="agentplane-command-light" data-state={state} />
+          ))}
+        </span>
+      </button>
+      <span className="agentplane-command-progress-label" role="tooltip">
+        {label}
+      </span>
+    </span>
   );
 }

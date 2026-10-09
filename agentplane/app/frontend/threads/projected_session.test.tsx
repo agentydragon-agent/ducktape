@@ -316,7 +316,7 @@ it("sends the draft on Enter and clears it", async () => {
   expect(field.value).toBe("");
   const bubble = container.querySelector<HTMLElement>('.agentplane-user-bubble[data-message-phase="local"]');
   expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe("hello");
-  expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe(
+  expect(bubble?.parentElement?.querySelector('[role="status"] button')?.getAttribute("aria-label")).toBe(
     "Saved in browser · waiting for runner to accept"
   );
   expect(bubble?.querySelector('[role="status"]')).toBeNull();
@@ -659,6 +659,12 @@ function pendingRow(container: HTMLDivElement, commandId: string): HTMLElement {
   return row;
 }
 
+function progressLabel(container: HTMLDivElement, commandId: string): string | null | undefined {
+  return pendingRow(container, commandId)
+    .querySelector(".agentplane-command-progress-hit")
+    ?.getAttribute("aria-label");
+}
+
 function retry(container: HTMLDivElement, commandId: string): HTMLButtonElement {
   const found = [...pendingRow(container, commandId).querySelectorAll("button")].find(
     (candidate) => candidate.textContent === "Retry"
@@ -676,7 +682,7 @@ it("does not send a retained command whose admission it already holds", async ()
   vi.mocked(command).mockImplementation(admit);
   const container = await render();
   expect(sentIds()).toEqual(["retained-unadmitted"]);
-  expect(pendingRow(container, "retained-admitted").textContent).toContain(
+  expect(progressLabel(container, "retained-admitted")).toBe(
     "Runner accepted · waiting for agent confirmation"
   );
   expect(
@@ -684,6 +690,37 @@ it("does not send a retained command whose admission it already holds", async ()
       light.getAttribute("data-state")
     )
   ).toEqual(["done", "done", "waiting"]);
+});
+
+it("opens compact command detail on touch and closes on blur or Escape", async () => {
+  new LocalCommands(THREAD.id).remember(message("touch"));
+  const container = await render();
+  const progress = pendingRow(container, "touch").querySelector<HTMLElement>(".agentplane-command-progress");
+  const indicator = progress?.querySelector<HTMLButtonElement>(".agentplane-command-progress-hit");
+  expect(indicator?.getAttribute("aria-label")).toBeTruthy();
+  expect(progress?.querySelectorAll(".agentplane-command-light")).toHaveLength(3);
+  expect(progress?.hasAttribute("data-touch-open")).toBe(false);
+  const tap = () => {
+    const event = new Event("pointerdown", { bubbles: true });
+    Object.defineProperty(event, "pointerType", { value: "touch" });
+    indicator?.dispatchEvent(event);
+  };
+  await act(async () => tap());
+  expect(progress?.getAttribute("data-touch-open")).toBe("true");
+  await act(async () => tap());
+  expect(progress?.hasAttribute("data-touch-open")).toBe(false);
+  await act(async () => tap());
+  await act(async () => {
+    indicator?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(progress?.hasAttribute("data-touch-open")).toBe(false);
+  await act(async () => {
+    indicator?.focus();
+    tap();
+  });
+  expect(progress?.getAttribute("data-touch-open")).toBe("true");
+  await act(async () => indicator?.blur());
+  expect(progress?.hasAttribute("data-touch-open")).toBe(false);
 });
 
 it("shows a delivery that outlives its deadline as unconfirmed and retriable", async () => {
@@ -697,7 +734,7 @@ it("shows a delivery that outlives its deadline as unconfirmed and retriable", a
     )
     .mockImplementationOnce(admit);
   const container = await render();
-  expect(pendingRow(container, "hung").textContent).toContain("Saved in browser · waiting for runner to accept");
+  expect(progressLabel(container, "hung")).toContain("Saved in browser · waiting for runner to accept");
   expect(
     [...pendingRow(container, "hung").querySelectorAll(".agentplane-command-light")].map((light) =>
       light.getAttribute("data-state")
@@ -705,15 +742,15 @@ it("shows a delivery that outlives its deadline as unconfirmed and retriable", a
   ).toEqual(["done", "waiting", "future"]);
 
   await act(async () => expire(new DOMException("signal timed out", "TimeoutError")));
-  expect(pendingRow(container, "hung").textContent).toContain("Runner receipt unconfirmed");
+  expect(progressLabel(container, "hung")).toContain("Runner receipt unconfirmed");
   expect(pendingRow(container, "hung").querySelector('[data-state="uncertain"]')).not.toBeNull();
-  expect(pendingRow(container, "hung").textContent).toContain("signal timed out");
+  expect(progressLabel(container, "hung")).toContain("signal timed out");
   expect(sentIds()).toEqual(["hung"]);
 
   await act(async () => retry(container, "hung").click());
   expect(sentIds()).toEqual(["hung", "hung"]);
-  expect(pendingRow(container, "hung").textContent).toContain("Runner accepted · waiting for agent confirmation");
-  expect(pendingRow(container, "hung").textContent).not.toContain("signal timed out");
+  expect(progressLabel(container, "hung")).toContain("Runner accepted · waiting for agent confirmation");
+  expect(progressLabel(container, "hung")).not.toContain("signal timed out");
 });
 
 it("redelivers an unconfirmed command when the browser comes back online", async () => {
@@ -722,12 +759,12 @@ it("redelivers an unconfirmed command when the browser comes back online", async
     .mockRejectedValueOnce(new Error("the sandbox's runner is not answering"))
     .mockImplementationOnce(admit);
   const container = await render();
-  expect(pendingRow(container, "offline").textContent).toContain("the sandbox's runner is not answering");
+  expect(progressLabel(container, "offline")).toContain("the sandbox's runner is not answering");
   expect(sentIds()).toEqual(["offline"]);
 
   await act(async () => window.dispatchEvent(new Event("online")));
   expect(sentIds()).toEqual(["offline", "offline"]);
-  expect(pendingRow(container, "offline").textContent).toContain("Runner accepted · waiting for agent confirmation");
+  expect(progressLabel(container, "offline")).toContain("Runner accepted · waiting for agent confirmation");
 });
 
 it("shows a server-only pending command as saved, not as a local delivery", async () => {
@@ -751,7 +788,9 @@ it("shows a server-only pending command as saved, not as a local delivery", asyn
   );
   const pending = container.querySelector('[aria-label="Pending commands"]');
   expect(pending?.textContent).toContain("Change model to next-model");
-  expect(pending?.textContent).toContain("Runner accepted · waiting for model change");
+  expect(pending?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
+    "Runner accepted · waiting for model change"
+  );
   expect(pending?.textContent).not.toContain("Saved in browser");
   expect(pending?.querySelector('[data-stage="admitted"]')).not.toBeNull();
   expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
@@ -777,7 +816,7 @@ it("shows the failure and reason for a server-only command", async () => {
     })
   );
   const pending = container.querySelector('[aria-label="Pending commands"]');
-  expect(pending?.textContent).toContain("Failed: model unavailable");
+  expect(pending?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe("Failed: model unavailable");
   expect(pending?.querySelector('[data-stage="failed"] [data-state="failed"]')).not.toBeNull();
 });
 
@@ -805,7 +844,7 @@ it.each([
     })
   );
   const bubble = container.querySelector<HTMLElement>(`.agentplane-user-bubble[data-message-phase="${phase}"]`);
-  expect(bubble?.parentElement?.querySelector(".agentplane-command-progress")?.textContent).toBe(status);
+  expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(status);
   const dismiss = buttonIn(bubble?.parentElement, "Dismiss");
   expect(dismiss).toBeDefined();
   await act(async () => dismiss?.click());

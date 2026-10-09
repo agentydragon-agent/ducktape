@@ -1,4 +1,4 @@
-import { Button, Paper, Stack, Text } from "@mantine/core";
+import { Button, Group, Paper, Stack, Text } from "@mantine/core";
 import { type Command } from "../../../protocol/command_pb";
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
@@ -270,52 +270,48 @@ function SelectedCommandRows({
         if (row && pendingSentMessage(row)) return null;
         const admitted = row !== undefined || value.admission !== null;
         const terminal = row && "outcome" in row.state && ["failed", "noop"].includes(row.state.outcome);
+        const operation = value.command.operation;
+        const description =
+          operation.case === "changeModel"
+            ? `Change model to ${operation.value.model}`
+            : operation.case === "changeReasoningEffort"
+              ? `Set reasoning effort to ${operation.value.effort}`
+              : operation.case === "interruptTurn"
+                ? `Interrupt turn ${operation.value.turnId}`
+                : "Shut down harness";
         return (
           <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
-            {terminal && row && "outcome" in row.state ? (
-              <>
-                <CommandProgress
-                  stage={row.state.outcome === "failed" ? "failed" : "noop"}
-                  subject={subject(row.state.operation)}
-                  reason={row.state.outcome_reason}
-                  local
-                />
-                {value.command.operation.case === "changeModel" && (
-                  <Text>Change model to {value.command.operation.value.model}</Text>
+            <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap">
+              <Text size="sm" className="agentplane-command-card-description">
+                {description}
+              </Text>
+              <CommandProgress
+                stage={progressStage(
+                  row && "outcome" in row.state ? row.state.outcome : null,
+                  admitted,
+                  errors.get(value.command.commandId)
                 )}
-                {value.command.operation.case === "changeReasoningEffort" && (
-                  <Text>Set reasoning effort to {value.command.operation.value.effort}</Text>
-                )}
-                {row.inputRef && <Body reference={row.inputRef} format="text" />}
-                <Button variant="subtle" onClick={() => store.dismiss(row.entityId)}>
+                subject={subject(operation.case ?? "")}
+                reason={
+                  terminal && row && "outcome" in row.state
+                    ? row.state.outcome_reason
+                    : !admitted
+                      ? errors.get(value.command.commandId)?.message
+                      : undefined
+                }
+                local
+              />
+              {terminal && row ? (
+                <Button size="xs" variant="subtle" onClick={() => store.dismiss(row.entityId)}>
                   Dismiss
                 </Button>
-              </>
-            ) : (
-              <>
-                <CommandProgress
-                  stage={progressStage(
-                    row && "outcome" in row.state ? row.state.outcome : null,
-                    admitted,
-                    errors.get(value.command.commandId)
-                  )}
-                  subject={subject(value.command.operation.case ?? "")}
-                  reason={!admitted ? errors.get(value.command.commandId)?.message : undefined}
-                  local
-                />
-                {value.command.operation.case === "changeModel" && (
-                  <Text>Change model to {value.command.operation.value.model}</Text>
-                )}
-                {value.command.operation.case === "changeReasoningEffort" && (
-                  <Text>Set reasoning effort to {value.command.operation.value.effort}</Text>
-                )}
-                {value.command.operation.case === "interruptTurn" && (
-                  <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
-                )}
-                {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
-                {!admitted && <Button onClick={() => void deliver(value)}>Retry</Button>}
-              </>
-            )}
+              ) : !admitted ? (
+                <Button size="xs" variant="subtle" onClick={() => void deliver(value)}>
+                  Retry
+                </Button>
+              ) : null}
+            </Group>
+            {terminal && row?.inputRef && <Body reference={row.inputRef} format="text" />}
           </Paper>
         );
       })}
@@ -365,18 +361,26 @@ export function ProjectedCommandRows({
           className="agentplane-evidence-owner"
         >
           <EvidenceToggle entity={row} />
-          {(row.state.operation === "change_model" || row.state.operation === "change_reasoning_effort") &&
-            row.state.requested_value && (
-              <Text size="sm">
-                {row.state.operation === "change_model" ? "Change model to" : "Set reasoning effort to"}{" "}
-                {row.state.requested_value}
-              </Text>
-            )}
-          <CommandProgress
-            stage={progressStage(row.state.outcome, true)}
-            subject={subject(row.state.operation)}
-            reason={row.state.outcome_reason}
-          />
+          <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap" pr="xl">
+            <Text size="sm" className="agentplane-command-card-description">
+              {row.state.operation === "change_model"
+                ? row.state.requested_value
+                  ? `Change model to ${row.state.requested_value}`
+                  : "Model change"
+                : row.state.operation === "change_reasoning_effort"
+                  ? row.state.requested_value
+                    ? `Set reasoning effort to ${row.state.requested_value}`
+                    : "Reasoning effort change"
+                  : row.state.operation === "interrupt_turn"
+                    ? "Interrupt turn"
+                    : "Shut down harness"}
+            </Text>
+            <CommandProgress
+              stage={progressStage(row.state.outcome, true)}
+              subject={subject(row.state.operation)}
+              reason={row.state.outcome_reason}
+            />
+          </Group>
           {row.inputRef && <Body reference={row.inputRef} format="text" />}
           <EvidencePanel threadId={threadId} entity={row} />
         </Paper>

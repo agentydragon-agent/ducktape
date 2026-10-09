@@ -231,69 +231,127 @@
   }
 }
 
-/* Three evidence stages: submitted, runner accepted, effect observed. No inferred dispatch stage. */
+/* Three neutral evidence stages, with detail only on hover/focus/touch. The tooltip is
+   CSS-only for hover: a streaming row must not mount a ResizeObserver-backed portal under
+   a resting pointer (see EvidenceToggle). Its position does not change the message layout. */
 .agentplane-command-progress {
-  min-width: 0;
-  max-width: 14rem;
-  font-size: var(--mantine-font-size-xs);
-  line-height: 1.35;
-  text-align: left;
-  overflow-wrap: anywhere;
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  vertical-align: middle;
 }
-.agentplane-command-lights {
-  display: flex;
-  gap: 0.45rem;
+
+.agentplane-command-progress-hit {
+  display: inline-flex;
   align-items: center;
-  margin-bottom: 0.25rem;
+  justify-content: center;
+  min-width: 2rem;
+  min-height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--mantine-radius-sm);
+  background: none;
+  cursor: help;
 }
+
+.agentplane-command-progress-hit:focus-visible {
+  outline: 2px solid var(--mantine-color-dimmed);
+  outline-offset: 1px;
+}
+
+.agentplane-command-lights {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
 .agentplane-command-light {
   display: inline-block;
-  width: 0.55rem;
-  height: 0.55rem;
+  width: 0.4rem;
+  height: 0.4rem;
   border: 1px solid var(--mantine-color-dimmed);
   border-radius: 50%;
   flex: none;
 }
+
 .agentplane-command-light[data-state="done"] {
-  background: var(--mantine-primary-color-filled);
-  border-color: var(--mantine-primary-color-filled);
+  background: var(--mantine-color-dimmed);
 }
+
 .agentplane-command-light[data-state="waiting"] {
-  background: var(--mantine-primary-color-filled);
-  border-color: var(--mantine-primary-color-filled);
+  background: var(--mantine-color-text);
   animation: agentplane-command-pulse 1.5s ease-in-out infinite;
 }
+
 .agentplane-command-light[data-state="failed"] {
   background: var(--mantine-color-red-6);
   border-color: var(--mantine-color-red-6);
 }
+
 .agentplane-command-light[data-state="uncertain"],
 .agentplane-command-light[data-state="noop"] {
   border-style: dashed;
 }
+
 .agentplane-command-light[data-state="future"] {
   opacity: 0.45;
 }
+
+.agentplane-command-progress-label {
+  display: none;
+  position: absolute;
+  z-index: 10;
+  bottom: calc(100% + 0.3rem);
+  left: 0;
+  max-width: min(22rem, calc(100vw - 2rem));
+  width: max-content;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-body);
+  box-shadow: var(--mantine-shadow-sm);
+  color: var(--mantine-color-text);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: normal;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.agentplane-command-progress:hover .agentplane-command-progress-label,
+.agentplane-command-progress-hit:focus-visible + .agentplane-command-progress-label,
+.agentplane-command-progress[data-touch-open="true"] .agentplane-command-progress-label {
+  display: block;
+}
+
+/* Control indicators sit after the requested setting; open their detail inward, not off-screen. */
+.agentplane-command-card-line .agentplane-command-progress-label {
+  left: auto;
+  right: 0;
+}
+
 @keyframes agentplane-command-pulse {
   50% {
     opacity: 0.35;
   }
 }
+
 @media (prefers-reduced-motion: reduce) {
   .agentplane-command-light[data-state="waiting"] {
     animation: none;
     border-width: 2px;
   }
 }
-@media (max-width: 36rem) {
-  .agentplane-user-message-row:has(.agentplane-command-progress) {
-    flex-wrap: wrap-reverse !important;
-  }
-  .agentplane-user-message-row:has(.agentplane-command-progress) .agentplane-user-message-aside {
-    flex-basis: 100%;
-    max-width: 100%;
-  }
-  .agentplane-user-message-row:has(.agentplane-command-progress) .agentplane-user-bubble {
-    max-width: 100%;
-  }
+
+/* The requested setting and its compact progress lights share one line, including on phones. */
+.agentplane-command-card-line {
+  min-width: 0;
+}
+
+.agentplane-command-card-description {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
