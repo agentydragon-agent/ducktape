@@ -23,6 +23,7 @@ import "./sidebar.css";
 import { ConnectionIndicator } from "./stream_status";
 import { archivedCount, groupThreads, type ThreadGroup } from "./thread_groups";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
+import { ScrollDebugTools } from "./threads/scroll_debug_tools";
 import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "agentplane-sidebar-width";
@@ -463,6 +464,9 @@ function SidebarView({
         )}
       </div>
       <div className="agentplane-sidebar-footer">
+        <div className="agentplane-sidebar-debug">
+          <ScrollDebugTools />
+        </div>
         <ConnectionIndicator />
         <Tooltip label="Sandboxes" withArrow>
           <ActionIcon

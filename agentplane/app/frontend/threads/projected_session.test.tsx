@@ -13,7 +13,6 @@ import { ItemKind, RecoveryDisposition } from "../../../protocol/event_pb";
 import type * as ClientModule from "../client";
 import { command, getThread, models, resumeThread, type SandboxView, type ThreadView } from "../client";
 import { historyRows, rowKey } from "./history_rows";
-import { scrollCapture } from "./scroll_diagnostics";
 import { SandboxesLiveProvider, ThreadsLiveProvider, useRequiredThreadsLive } from "../live";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../markdown";
@@ -291,32 +290,6 @@ async function openMenuItem(container: HTMLDivElement, text: string): Promise<HT
   if (!item) throw new Error(`Missing menu item ${text}`);
   return item;
 }
-
-it("offers start, marker and stop controls for scroll diagnostics", async () => {
-  const startRecording = vi.spyOn(scrollCapture, "startRecording").mockImplementation(() => {});
-  const stopRecording = vi.spyOn(scrollCapture, "stopRecording").mockReturnValue(null);
-  const container = await render();
-  const open = async (label: string) => {
-    await act(async () => button(container, label).click());
-  };
-  const click = async (text: string) => {
-    const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-      (element) => element.textContent === text
-    );
-    if (!item) throw new Error(`Missing ${text}`);
-    await act(async () => item.click());
-  };
-  await open("Debug tools");
-  await click("Start recording");
-  expect(startRecording).toHaveBeenCalledOnce();
-  expect(button(container, "Debug tools (recording)")).toBeTruthy();
-  await open("Debug tools (recording)");
-  await click("Mark a jump");
-  await open("Debug tools (recording)");
-  await click("Stop and download recording");
-  expect(stopRecording).toHaveBeenCalledOnce();
-  expect(button(container, "Debug tools")).toBeTruthy();
-});
 
 function sentOperations(): unknown[] {
   return vi.mocked(command).mock.calls.map(([, value]) => value.operation);

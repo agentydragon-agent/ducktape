@@ -43,6 +43,21 @@ async def test_current_sandbox_highlight(view: VisualPage, app: AgentplaneFixtur
     await view.capture(target=page.locator("#app"))
 
 
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_debug_tools_in_sidebar_footer(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    await app.mount_thread(IDLE_THREAD)
+    await view.check(context="fixture ready")
+    page = view.page
+    if viewport == MOBILE:
+        await page.get_by_role("button", name="Toggle navigation").click()
+    sidebar = page.get_by_role("navigation", name="Threads")
+    debug = sidebar.locator(".agentplane-sidebar-footer").get_by_role("button", name="Debug tools")
+    await expect(debug).to_be_visible()
+    await debug.click()
+    await expect(page.get_by_role("menuitem", name="Start recording")).to_be_visible()
+    await view.capture(target=page.locator("#app"))
+
+
 @pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
 async def test_mobile_navigation_drawer_threads_phone_drawer(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")

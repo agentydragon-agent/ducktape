@@ -202,10 +202,6 @@
   min-width: 0;
 }
 
-.agentplane-composer-debug {
-  flex-shrink: 0;
-}
-
 .agentplane-composer-model {
   width: 200px;
 }
