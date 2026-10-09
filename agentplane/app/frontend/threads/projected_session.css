@@ -50,7 +50,7 @@
   flex: 0 1 auto;
   min-width: 0;
   max-width: 10rem;
-  text-align: right;
+  text-align: left;
   overflow-wrap: anywhere;
 }
 
@@ -229,4 +229,21 @@
     flex: 0 0 96px;
     min-width: 0;
   }
+}
+
+/* Three evidence stages: submitted, runner accepted, effect observed. No inferred dispatch stage. */
+.agentplane-command-progress { min-width: 0; max-width: 14rem; font-size: var(--mantine-font-size-xs); line-height: 1.35; text-align: left; overflow-wrap: anywhere; }
+.agentplane-command-lights { display: flex; gap: 0.45rem; align-items: center; margin-bottom: 0.25rem; }
+.agentplane-command-light { display: inline-block; width: 0.55rem; height: 0.55rem; border: 1px solid var(--mantine-color-dimmed); border-radius: 50%; flex: none; }
+.agentplane-command-light[data-state="done"] { background: var(--mantine-primary-color-filled); border-color: var(--mantine-primary-color-filled); }
+.agentplane-command-light[data-state="waiting"] { background: var(--mantine-primary-color-filled); border-color: var(--mantine-primary-color-filled); animation: agentplane-command-pulse 1.5s ease-in-out infinite; }
+.agentplane-command-light[data-state="failed"] { background: var(--mantine-color-red-6); border-color: var(--mantine-color-red-6); }
+.agentplane-command-light[data-state="uncertain"], .agentplane-command-light[data-state="noop"] { border-style: dashed; }
+.agentplane-command-light[data-state="future"] { opacity: 0.45; }
+@keyframes agentplane-command-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .agentplane-command-light[data-state="waiting"] { animation: none; border-width: 2px; } }
+@media (max-width: 36rem) {
+  .agentplane-user-message-row:has(.agentplane-command-progress) { flex-wrap: wrap-reverse !important; }
+  .agentplane-user-message-row:has(.agentplane-command-progress) .agentplane-user-message-aside { flex-basis: 100%; max-width: 100%; }
+  .agentplane-user-message-row:has(.agentplane-command-progress) .agentplane-user-bubble { max-width: 100%; }
 }

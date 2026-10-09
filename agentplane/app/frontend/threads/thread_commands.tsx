@@ -4,6 +4,7 @@ import { type JSX, useCallback, useEffect, useMemo, useRef, useState, useSyncExt
 
 import { command, CommandSubmissionRefused, displayableError } from "../client";
 import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
+import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
 import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
@@ -101,6 +102,20 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
   return { local, errors, submissionError, submit, deliver, store };
 }
 
+function subject(operation: string): CommandSubject {
+  if (operation === "submit_input" || operation === "submitInput") return "input";
+  if (operation === "change_model" || operation === "changeModel") return "model";
+  if (operation === "change_reasoning_effort" || operation === "changeReasoningEffort") return "effort";
+  return "other";
+}
+
+function progressStage(outcome: string | null, admitted: boolean, issue?: CommandIssue): CommandStage {
+  if (outcome === "effected" || outcome === "failed" || outcome === "noop") return outcome;
+  if (admitted) return "admitted";
+  if (issue?.kind === "refused") return "refused";
+  return issue?.kind === "unconfirmed" ? "unconfirmed" : "local";
+}
+
 export function SelectedCommandOutcomes({
   commands,
   store,
@@ -182,22 +197,16 @@ export function PendingInputMessages({
             text={value.command.operation.value.text}
             phase={failed ? "failed" : noop ? "noop" : effected ? "confirmed" : admitted ? "pending" : "local"}
             pending={outcome === null}
-            status={
-              failed
-                ? `Input failed${outcomeReason ? `: ${outcomeReason}` : ""}`
-                : noop
-                  ? `Input not applied${outcomeReason ? `: ${outcomeReason}` : ""}`
-                  : effected
-                    ? undefined
-                    : admitted
-                      ? "Saved · awaiting effect"
-                      : issue?.kind === "unconfirmed"
-                        ? "Admission unconfirmed · checking Thread history"
-                        : "Saved locally · awaiting admission"
+            progress={
+              effected ? undefined : (
+                <CommandProgress
+                  stage={progressStage(outcome, admitted, issue)}
+                  subject="input"
+                  reason={failed || noop ? outcomeReason : issue?.message}
+                  local
+                />
+              )
             }
-            statusColor={failed ? "red" : "dimmed"}
-            error={issue?.kind === "refused" ? issue.message : undefined}
-            note={issue?.kind === "unconfirmed" ? issue.message : undefined}
             action={
               failed || noop
                 ? { label: "Dismiss", onClick: () => store.dismiss(id) }
@@ -217,8 +226,13 @@ export function PendingInputMessages({
             threadId={row.threadId}
             entity={row}
             phase={failed ? "failed" : noop ? "noop" : "confirmed"}
-            status={`${failed ? "Input failed" : noop ? "Input not applied" : "Input applied"}${row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}`}
-            statusColor={failed ? "red" : "dimmed"}
+            progress={
+              <CommandProgress
+                stage={failed ? "failed" : noop ? "noop" : "effected"}
+                subject="input"
+                reason={row.state.outcome_reason}
+              />
+            }
             action={{ label: "Dismiss", onClick: () => store.dismiss(row.entityId) }}
           />
         );
@@ -260,10 +274,12 @@ function SelectedCommandRows({
           <Paper key={value.command.commandId} data-command-id={value.command.commandId} p="xs" withBorder>
             {terminal && row && "outcome" in row.state ? (
               <>
-                <Text c={row.state.outcome === "failed" ? "red" : undefined}>
-                  {commandOutcomeLabel(row.state.operation, row.state.outcome)}
-                  {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
-                </Text>
+                <CommandProgress
+                  stage={row.state.outcome === "failed" ? "failed" : "noop"}
+                  subject={subject(row.state.operation)}
+                  reason={row.state.outcome_reason}
+                  local
+                />
                 {row.inputRef && <Body reference={row.inputRef} format="text" />}
                 <Button variant="subtle" onClick={() => store.dismiss(row.entityId)}>
                   Dismiss
@@ -271,28 +287,26 @@ function SelectedCommandRows({
               </>
             ) : (
               <>
-                <Text size="sm">
-                  {admitted
-                    ? "Saved · awaiting effect"
-                    : errors.get(value.command.commandId)?.kind === "unconfirmed"
-                      ? "Admission unconfirmed · checking Thread history"
-                      : "Saved locally · awaiting admission"}
-                </Text>
+                <CommandProgress
+                  stage={progressStage(
+                    row && "outcome" in row.state ? row.state.outcome : null,
+                    admitted,
+                    errors.get(value.command.commandId)
+                  )}
+                  subject={subject(value.command.operation.case)}
+                  reason={!admitted ? errors.get(value.command.commandId)?.message : undefined}
+                  local
+                />
                 {value.command.operation.case === "changeModel" && (
                   <Text>Change model to {value.command.operation.value.model}</Text>
+                )}
+                {value.command.operation.case === "changeReasoningEffort" && (
+                  <Text>Set reasoning effort to {value.command.operation.value.effort}</Text>
                 )}
                 {value.command.operation.case === "interruptTurn" && (
                   <Text>Interrupt turn {value.command.operation.value.turnId}</Text>
                 )}
                 {value.command.operation.case === "stopRunnerSession" && <Text>Shut down harness</Text>}
-                {!admitted && errors.get(value.command.commandId) && (
-                  <Text
-                    c={errors.get(value.command.commandId)?.kind === "refused" ? "red" : "dimmed"}
-                    role={errors.get(value.command.commandId)?.kind === "refused" ? "alert" : undefined}
-                  >
-                    {errors.get(value.command.commandId)?.message}
-                  </Text>
-                )}
                 {!admitted && <Button onClick={() => void deliver(value)}>Retry</Button>}
               </>
             )}
@@ -301,18 +315,6 @@ function SelectedCommandRows({
       })}
     </Stack>
   );
-}
-
-function commandOutcomeLabel(operation: string, outcome: string): string {
-  const subject =
-    {
-      submit_input: "Input",
-      change_model: "Model change",
-      change_reasoning_effort: "Reasoning effort change",
-      interrupt_turn: "Interrupt",
-      stop_runner_session: "Harness shutdown",
-    }[operation] ?? "Command";
-  return `${subject} ${outcome === "failed" ? "failed" : outcome === "noop" ? "not applied" : "applied"}`;
 }
 
 /** Server-side commands this browser did not retain locally, excluding submit-input commands
@@ -357,12 +359,18 @@ export function ProjectedCommandRows({
           className="agentplane-evidence-owner"
         >
           <EvidenceToggle entity={row} />
-          <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
-            {row.state.outcome === "pending"
-              ? "Saved · awaiting effect"
-              : commandOutcomeLabel(row.state.operation, row.state.outcome)}
-            {row.state.outcome_reason ? `: ${row.state.outcome_reason}` : ""}
-          </Text>
+          {(row.state.operation === "change_model" || row.state.operation === "change_reasoning_effort") &&
+            row.state.requested_value && (
+              <Text size="sm">
+                {row.state.operation === "change_model" ? "Change model to" : "Set reasoning effort to"}{" "}
+                {row.state.requested_value}
+              </Text>
+            )}
+          <CommandProgress
+            stage={progressStage(row.state.outcome, true)}
+            subject={subject(row.state.operation)}
+            reason={row.state.outcome_reason}
+          />
           {row.inputRef && <Body reference={row.inputRef} format="text" />}
           <EvidencePanel threadId={threadId} entity={row} />
         </Paper>

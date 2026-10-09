@@ -83,6 +83,7 @@ const stateSchema = z.union([
     outcome: z.enum(["pending", "effected", "failed", "noop"]),
     outcome_cursor: z.string().nullable(),
     outcome_reason: z.string().nullable(),
+    requested_value: z.string().nullable().optional(),
   }),
 ]);
 const entitySchema = z.object({

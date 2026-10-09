@@ -242,6 +242,7 @@ ts_library(
     srcs = ["thread_cards.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":command_progress",
         ":command_calls",
         ":history_rows",
         ":retained_disclosures",
@@ -282,11 +283,19 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "command_progress",
+    srcs = ["command_progress.tsx"],
+    tsconfig = TSCONFIG,
+    deps = ["//:node_modules/@types/react", "//:node_modules/react"],
+)
+
+ts_library(
     name = "thread_commands",
     srcs = ["thread_commands.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":local_commands",
+        ":command_progress",
         ":thread_cards",
         ":thread_evidence",
         ":thread_sync",

@@ -173,6 +173,9 @@ class AgentplaneFixture:
     async def withhold_entity_segments(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.withholdEntitySegments()")
 
+    async def command_progress(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.commandProgress()")
+
     async def pending_commands(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.pendingCommands()")
 

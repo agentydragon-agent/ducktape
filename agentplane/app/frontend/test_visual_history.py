@@ -209,6 +209,24 @@ async def test_debug_history_latest_session_raw(view: VisualPage, app: Agentplan
     await view.capture(target=view.page.locator("#app"))
 
 
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.command_progress()
+    await app.mount_thread(RUNNING_THREAD)
+    await view.check(context="fixture ready")
+    page = view.page
+    input_row = page.locator('[data-command-id="progress-input"]')
+    await expect(input_row.locator('[data-stage="admitted"]')).to_be_visible()
+    await expect(input_row.locator('.agentplane-command-light')).to_have_count(3)
+    await expect(input_row.get_by_text("Runner accepted · waiting for agent confirmation")).to_be_visible()
+    await expect(page.locator('[data-command-id="progress-model"]')).to_contain_text("test-model-next")
+    await expect(page.locator('[data-command-id="progress-effort"]')).to_contain_text("Not supported by harness")
+    await input_row.scroll_into_view_if_needed()
+    await view.capture()
+    await page.locator('[data-command-id="progress-model"]').scroll_into_view_if_needed()
+    await view.capture(name="command_progress_controls")
+
+
 async def test_debug_history_latest_session_pending_raw(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.pending_commands()
     await app.remember_pending_input()

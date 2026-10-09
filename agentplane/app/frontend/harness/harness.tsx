@@ -1145,6 +1145,18 @@ function endedAttachmentRows(threadId: string): Record<string, unknown>[] {
  * vertical room at phone width, so the queued-input dot at the bottom falls off the page; the desktop
  * capture is where every state here is visible.
  */
+/** Close-packed command states so the semaphore and its real labels can be inspected on a phone. */
+function commandProgressRows(threadId: string): Record<string, unknown>[] {
+  const model = command(2, "progress-model", "change_model", "pending");
+  const effort = command(3, "progress-effort", "change_reasoning_effort", "failed", "Not supported by harness");
+  return [
+    { ...viewState(5, null), thread_id: threadId },
+    { ...model, state: { ...(model.state as object), requested_value: "test-model-next" } },
+    { ...effort, state: { ...(effort.state as object), requested_value: "high" } },
+    command(4, "progress-input", "submit_input", "pending", null, "Please review this change."),
+  ];
+}
+
 function statesRows(threadId: string, outcomes = false): Record<string, unknown>[] {
   const rows = [
     viewState(28, "t2"),
@@ -1168,8 +1180,8 @@ function statesRows(threadId: string, outcomes = false): Record<string, unknown>
       output: "42 passed",
       turn: "t2",
     }),
-    command(24, "queued-model", "change_model", outcomes ? "failed" : "pending", "Model unavailable"),
-    command(25, "queued-interrupt", "interrupt_turn", outcomes ? "noop" : "pending", "Target turn already ended"),
+    command(24, "queued-model", "change_model", outcomes ? "failed" : "pending", outcomes ? "Model unavailable" : null),
+    command(25, "queued-interrupt", "interrupt_turn", outcomes ? "noop" : "pending", outcomes ? "Target turn already ended" : null),
     // Admitted and still pending, so it renders inline as a pending message bubble rather than in
     // the pending-commands box below -- see projected_session.tsx's pendingSentMessage.
     command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),
@@ -2806,6 +2818,9 @@ const visualHarness = {
   },
   standardHistory(longPreview: boolean, longBody: boolean): void {
     threadEntityRows = (id) => (id === THREADS[2].id ? statesRows(id) : standardRows(id, longPreview, longBody));
+  },
+  commandProgress(): void {
+    threadEntityRows = commandProgressRows;
   },
   pendingCommands(): void {
     threadEntityRows = (id) => statesRows(id);

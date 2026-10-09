@@ -68,6 +68,7 @@ def command_summary(view: ThreadCommandEntityView) -> fold.CommandSummary:
         None if view.state.outcome_cursor is None else int(view.state.outcome_cursor),
         view.state.outcome_reason,
         _fold_ref(view.input_ref),
+        view.state.requested_value,
     )
 
 
@@ -240,6 +241,7 @@ def _command_entity(
             outcome=value.outcome,
             outcome_cursor=None if value.outcome_cursor is None else str(value.outcome_cursor),
             outcome_reason=value.outcome_reason,
+            requested_value=value.requested_value,
         ),
         text_ref=None,
         arguments_ref=None,

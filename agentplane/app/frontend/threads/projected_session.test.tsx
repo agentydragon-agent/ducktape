@@ -317,7 +317,7 @@ it("sends the draft on Enter and clears it", async () => {
   const bubble = container.querySelector<HTMLElement>('.agentplane-user-bubble[data-message-phase="local"]');
   expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe("hello");
   expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe(
-    "Saved locally · awaiting admission"
+    "Saved in browser · waiting for runner to accept"
   );
   expect(bubble?.querySelector('[role="status"]')).toBeNull();
   expect(buttonIn(bubble?.parentElement, "Retry")).toBeDefined();
@@ -676,7 +676,8 @@ it("does not send a retained command whose admission it already holds", async ()
   vi.mocked(command).mockImplementation(admit);
   const container = await render();
   expect(sentIds()).toEqual(["retained-unadmitted"]);
-  expect(pendingRow(container, "retained-admitted").textContent).toContain("Saved · awaiting effect");
+  expect(pendingRow(container, "retained-admitted").textContent).toContain("Runner accepted · waiting for agent confirmation");
+  expect([...pendingRow(container, "retained-admitted").querySelectorAll(".agentplane-command-light")].map((light) => light.getAttribute("data-state"))).toEqual(["done", "done", "waiting"]);
 });
 
 it("shows a delivery that outlives its deadline as unconfirmed and retriable", async () => {
@@ -690,15 +691,18 @@ it("shows a delivery that outlives its deadline as unconfirmed and retriable", a
     )
     .mockImplementationOnce(admit);
   const container = await render();
-  expect(pendingRow(container, "hung").textContent).toContain("Saved locally · awaiting admission");
+  expect(pendingRow(container, "hung").textContent).toContain("Saved in browser · waiting for runner to accept");
+  expect([...pendingRow(container, "hung").querySelectorAll(".agentplane-command-light")].map((light) => light.getAttribute("data-state"))).toEqual(["done", "waiting", "future"]);
 
   await act(async () => expire(new DOMException("signal timed out", "TimeoutError")));
+  expect(pendingRow(container, "hung").textContent).toContain("Runner receipt unconfirmed");
+  expect(pendingRow(container, "hung").querySelector('[data-state="uncertain"]')).not.toBeNull();
   expect(pendingRow(container, "hung").textContent).toContain("signal timed out");
   expect(sentIds()).toEqual(["hung"]);
 
   await act(async () => retry(container, "hung").click());
   expect(sentIds()).toEqual(["hung", "hung"]);
-  expect(pendingRow(container, "hung").textContent).toContain("Saved · awaiting effect");
+  expect(pendingRow(container, "hung").textContent).toContain("Runner accepted · waiting for agent confirmation");
   expect(pendingRow(container, "hung").textContent).not.toContain("signal timed out");
 });
 
@@ -713,7 +717,7 @@ it("redelivers an unconfirmed command when the browser comes back online", async
 
   await act(async () => window.dispatchEvent(new Event("online")));
   expect(sentIds()).toEqual(["offline", "offline"]);
-  expect(pendingRow(container, "offline").textContent).toContain("Saved · awaiting effect");
+  expect(pendingRow(container, "offline").textContent).toContain("Runner accepted · waiting for agent confirmation");
 });
 
 it("shows a server-only pending command as saved, not as a local delivery", async () => {
@@ -730,8 +734,9 @@ it("shows a server-only pending command as saved, not as a local delivery", asyn
     })
   );
   const pending = container.querySelector('[aria-label="Pending commands"]');
-  expect(pending?.textContent).toContain("Saved · awaiting effect");
-  expect(pending?.textContent).not.toContain("Saved locally");
+  expect(pending?.textContent).toContain("Runner accepted · waiting for model change");
+  expect(pending?.textContent).not.toContain("Saved in browser");
+  expect(pending?.querySelector('[data-stage="admitted"]')).not.toBeNull();
   expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
 });
 
@@ -749,13 +754,14 @@ it("shows the failure and reason for a server-only command", async () => {
     })
   );
   const pending = container.querySelector('[aria-label="Pending commands"]');
-  expect(pending?.textContent).toContain("Model change failed: model unavailable");
+  expect(pending?.textContent).toContain("Failed: model unavailable");
+  expect(pending?.querySelector('[data-stage="failed"] [data-state="failed"]')).not.toBeNull();
 });
 
 it.each([
-  ["failed", "failed", "Input failed: runner unavailable"],
-  ["noop", "noop", "Input not applied: harness was stopping"],
-  ["effected", "confirmed", "Input applied"],
+  ["failed", "failed", "Failed: runner unavailable"],
+  ["noop", "noop", "Not applied: harness was stopping"],
+  ["effected", "confirmed", "Agent confirmed message"],
 ] as const)("shows a server-only %s input as a dismissible right-side message", async (outcome, phase, status) => {
   const container = await render(
     threadState({
@@ -775,7 +781,7 @@ it.each([
     })
   );
   const bubble = container.querySelector<HTMLElement>(`.agentplane-user-bubble[data-message-phase="${phase}"]`);
-  expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe(status);
+  expect(bubble?.parentElement?.querySelector(".agentplane-command-progress")?.textContent).toBe(status);
   const dismiss = buttonIn(bubble?.parentElement, "Dismiss");
   expect(dismiss).toBeDefined();
   await act(async () => dismiss?.click());

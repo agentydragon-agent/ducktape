@@ -140,6 +140,7 @@ class CommandSummary:
     outcome_cursor: int | None = None
     outcome_reason: str | None = None
     input: PayloadRef | None = None
+    requested_value: str | None = None
 
 
 @dataclass(frozen=True)
@@ -460,7 +461,14 @@ class _Fold:
         operation = command.WhichOneof("operation")
         if operation is None:
             raise ObservationNotUnderstoodError(cursor, "command_admitted.operation")
-        summary = CommandSummary(self.state.position.projection_epoch, command_id, cursor, operation)
+        requested_value = None
+        if operation == "change_model":
+            requested_value = command.change_model.model
+        elif operation == "change_reasoning_effort":
+            requested_value = command.change_reasoning_effort.effort
+        summary = CommandSummary(
+            self.state.position.projection_epoch, command_id, cursor, operation, requested_value=requested_value
+        )
         if operation == "submit_input":
             owner = PayloadOwner(summary.projection_epoch, cursor, command_id, cursor)
             summary = replace(
