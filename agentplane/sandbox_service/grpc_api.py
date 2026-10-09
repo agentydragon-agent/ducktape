@@ -159,6 +159,29 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             return protocol_pb2.ReadSessionEventsResponse(last_cursor=last_cursor, entries=entries)
 
     @override
+    async def ReadSessionObservations(
+        self, request: protocol_pb2.ReadSessionObservationsRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.ReadSessionObservationsResponse:
+        async with errors(context), asyncio.timeout(self.resources.admission_timeout_s):
+            caller = await self.resources.authenticate(context)
+            if caller not in self.resources.history_reader_accounts:
+                await context.abort(grpc.StatusCode.PERMISSION_DENIED, "session history reader not allowed")
+            if self.resources.history is None:
+                raise ConnectionError("history unavailable")
+            last_cursor, observations = await self.resources.history.read_observations(
+                UUID(request.session_id),
+                before_cursor=request.before_cursor if request.HasField("before_cursor") else None,
+                after_cursor=request.after_cursor if request.HasField("after_cursor") else None,
+                limit=request.limit,
+            )
+            return protocol_pb2.ReadSessionObservationsResponse(
+                last_cursor=last_cursor,
+                observations=[
+                    protocol_pb2.SessionObservation(cursor=cursor, kind=kind) for cursor, kind in observations
+                ],
+            )
+
+    @override
     async def ListSandboxes(
         self, request: Empty, context: grpc.aio.ServicerContext
     ) -> protocol_pb2.ListSandboxesResponse:

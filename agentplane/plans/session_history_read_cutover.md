@@ -14,7 +14,10 @@ and sandboxes cannot call it. The app's `history_reads_enabled` switch is off
 by default. When enabled, `/events`, `/events/stream` and expanded raw observation entries read the service and
 read a fixed committed service prefix rather than chasing the independently advancing app cursor.
 A requested resume cursor beyond the service prefix remains an explicit error; reads never silently
-fall back to app rows. Thread folds, chronological observation metadata and feed state still come from the app.
+fall back to app rows. Chronological observation metadata also comes from the service through
+`ReadSessionObservations`: bounded forward/backward seeks under the same app-only reader
+allowlist, without sending native payloads to the app. Deploy that RPC before enabling app
+history reads. Thread folds and feed state still come from the app.
 This is therefore a staged **read migration**, not permission for agents to
 read Sessions or permission to delete the app raw tables.
 
@@ -64,7 +67,7 @@ Before wiring or enabling it:
    checkpoint transaction; retry/tool-output-only batches do not advance it. Fold failures are
    logged and isolated per Thread; durable UI lag/error presentation is still
    needed. Existing raw feed tasks are stopped for fenced Threads, not for their unfenced siblings.
-3. Move chronological observation metadata and Thread/feed cursors/lifecycle away from app raw
+3. Chronological observation metadata now has a bounded service reader. Move Thread/feed cursors/lifecycle away from app raw
    `Event` rows. Preserve UI checkpoint/source/epoch and existing Thread URLs. The raw SSE path now
    waits for a terminal app suffix instead of spinning or prematurely ending while service lags;
    this is not yet service-owned lifecycle evidence.

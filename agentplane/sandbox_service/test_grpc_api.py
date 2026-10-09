@@ -959,6 +959,9 @@ async def test_history_read_requires_explicit_reader_even_after_sandbox_deletion
         with pytest.raises(ServiceError) as denied:
             await remote.read_session_events(str(public_id), limit=1)
         assert denied.value.code == grpc.StatusCode.PERMISSION_DENIED
+        with pytest.raises(ServiceError) as denied_metadata:
+            await remote.read_session_observations(str(public_id), limit=1)
+        assert denied_metadata.value.code == grpc.StatusCode.PERMISSION_DENIED
     async with service_client(
         replace(resources, history=store, history_reader_accounts=frozenset({OWNER})), token_file
     ) as remote:
@@ -966,6 +969,12 @@ async def test_history_read_requires_explicit_reader_even_after_sandbox_deletion
         assert page.last_cursor == 1
         assert list(page.entries) == [event]
         assert not (await remote.read_session_events(str(public_id), after_cursor=1, limit=1)).entries
+        metadata = await remote.read_session_observations(str(public_id), limit=1)
+        assert metadata.last_cursor == 1
+        assert [(row.cursor, row.kind) for row in metadata.observations] == [(1, "harness_stderr")]
+        assert not (await remote.read_session_observations(str(public_id), before_cursor=1)).observations
+        assert not (await remote.read_session_observations(str(public_id), after_cursor=1)).observations
+
         with pytest.raises(ValueError, match="invalid session history page"):
             await remote.read_session_events(str(public_id), limit=1001)
 
