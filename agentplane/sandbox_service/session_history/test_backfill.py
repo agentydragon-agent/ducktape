@@ -1,12 +1,13 @@
 """Replay and conflict checks for the one-off cross-database import."""
 
 import json
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
-from sqlalchemy import text
+from sqlalchemy import event as sqlalchemy_event, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.protocol import event_log_pb2, event_pb2
@@ -59,16 +60,34 @@ async def test_legacy_and_reserved_session_backfill_can_replay(engine: AsyncEngi
         == f"r-{managed}"
     )
     await add_event(legacy, 2)
-    assert (
-        await import_log(engine, engine, namespace="testing", log_id=legacy, sandbox="sb", runner_id=f"s-{legacy}") == 2
-    )
+    page_starts: list[int] = []
+
+    def record_page(
+        _connection: object, clause: object, _multiparams: object, params: dict[str, object], _options: object
+    ) -> None:
+        if "cursor > :cursor" in str(clause) and "FROM event" in str(clause):
+            page_starts.append(cast(int, params["cursor"]))
+
+    sqlalchemy_event.listen(engine.sync_engine, "before_execute", record_page)
+    try:
+        assert (
+            await import_log(engine, engine, namespace="testing", log_id=legacy, sandbox="sb", runner_id=f"s-{legacy}")
+            == 2
+        )
+    finally:
+        sqlalchemy_event.remove(engine.sync_engine, "before_execute", record_page)
+    assert page_starts == [1]  # The committed prefix is not fetched page by page again.
     assert (await store.read(legacy))[0] == 2
     async with engine.begin() as connection:
         await connection.execute(
             text("UPDATE event SET payload = CAST(:payload AS json) WHERE thread_id = :id AND cursor = 1"),
             {"id": legacy, "payload": json.dumps({"cursor": "1"})},
         )
-    with pytest.raises(HistoryConflictError):
+    with pytest.raises(HistoryConflictError, match="boundary changed"):
+        await backfill(engine, engine, namespace="testing")
+    async with engine.begin() as connection:
+        await connection.execute(text("DELETE FROM event WHERE thread_id = :id AND cursor = 2"), {"id": legacy})
+    with pytest.raises(HistoryConflictError, match="exceeds app cursor"):
         await backfill(engine, engine, namespace="testing")
 
 
