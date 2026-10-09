@@ -873,10 +873,12 @@ it.each([
   expect(plainOutcome?.textContent).toBe(outcome === "noop" ? status : undefined);
   expect(plainOutcome?.getAttribute("title")).toBe(outcome === "noop" ? status : undefined);
   expect(bubble?.parentElement?.querySelector(".agentplane-command-progress") === null).toBe(outcome === "noop");
-  if (outcome === "effected") {
-    expect(bubble?.parentElement?.querySelectorAll(".agentplane-command-light")).toHaveLength(0);
-    expect(bubble?.parentElement?.querySelector(".agentplane-command-check")).not.toBeNull();
-  }
+  expect(bubble?.parentElement?.querySelectorAll(".agentplane-command-light")).toHaveLength(
+    outcome === "effected" || outcome === "noop" ? 0 : 3
+  );
+  expect(bubble?.parentElement?.querySelectorAll(".agentplane-command-check")).toHaveLength(
+    outcome === "effected" ? 1 : 0
+  );
   expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
     outcome === "noop" ? undefined : status
   );

@@ -249,19 +249,6 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     await expect(effort_row.get_by_role("tooltip")).to_be_visible()
     await expect(effort_row.get_by_role("tooltip")).to_be_in_viewport(ratio=1)
     await view.capture(name=f"{view.capture_name}_effort_detail")
-    applied = page.locator('[data-command-id="progress-applied"]')
-    applied_hit = applied.locator(".agentplane-command-progress-hit")
-    await expect(applied.locator(".agentplane-command-light")).to_have_count(0)
-    await expect(applied.locator(".agentplane-command-check")).to_have_count(1)
-    await expect(applied_hit).to_have_css("opacity", "0")
-    if viewport.has_touch:
-        await applied.locator(".agentplane-command-card-description").tap()
-    else:
-        await applied.locator(".agentplane-command-card-description").hover()
-    await expect(applied_hit).to_have_css("opacity", "1")
-    await view.capture(
-        name=f"{view.capture_name}_applied_control", target=page.get_by_role("region", name="Pending commands")
-    )
     applied_input = page.locator('[data-command-id="progress-applied-input"]')
     input_hit = applied_input.locator(".agentplane-command-progress-hit")
     await expect(applied_input.locator(".agentplane-command-light")).to_have_count(0)
