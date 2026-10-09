@@ -684,7 +684,7 @@ observations. New database work inherits the migration hold.
 flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned Kubernetes grants]
-    KUBERNETES_RBAC_POLICIES[Decision: live groups plus one-SA changes] --> KUBERNETES_RBAC_POLICY_BINDINGS[Blocked: reconcile live access for Sandbox SAs]
+    KUBERNETES_RBAC_POLICIES[Decision: reusable groups and update semantics] --> KUBERNETES_RBAC_POLICY_BINDINGS[Blocked: apply groups and one-SA changes]
     KUBERNETES_RBAC_POLICY_BINDINGS --> MANAGED_SA_RBAC
     THREAD_ARCHIVE_OWNERSHIP[Archive ownership cutover] -. if new service/app DB persistence .-> KUBERNETES_RBAC_POLICY_BINDINGS
     BOOTSTRAP_ATTEMPT_RECEIPT[Candidate: one durable bootstrap attempt] --> BOOTSTRAP_PROGRESS_CONTRACT[Blocked: asynchronous progress API]
@@ -710,7 +710,7 @@ into an outage matrix. Source: [public-coder wiring](../../cluster/cdk8s/public_
 Kubernetes scope and egress/Action grants. Record intended authority in generated configuration,
 not ad hoc grants. Test an allowed and denied operation; do not add privileges as part of this review.
 
-### `KUBERNETES_RBAC_POLICIES` — reusable groups with one-SA changes
+### `KUBERNETES_RBAC_POLICIES` — reusable groups and update semantics
 
 **Decision.** Today presets and the Sandbox create dialog expand Kubernetes access into individual
 RoleBinding/ClusterRoleBinding catalog selections, potentially hundreds for a diagnostics preset
@@ -721,15 +721,16 @@ Existing edits to a referenced Role's rules are a separate Kubernetes behavior: 
 reach all bindings to that Role. These launch-time lists are not live reusable policy assignments.
 
 Choose the smallest named, subject-free Kubernetes grant-group definition (for example,
-`low-privilege-cluster-diagnostics`) and a durable assignment of its **name** to a managed
-Sandbox ServiceAccount. A preset may select that name for a _new_ Sandbox; the resulting Sandbox
-must retain a live association, not a one-time expansion to hundreds of stored grant selections.
-Changing the group's rules, approved namespace set or constituent Role/ClusterRole references
-must reconcile added **and removed** underlying RoleBindings/ClusterRoleBindings for every
-currently bound ServiceAccount, including those created before the edit. Kubernetes may still
-need one binding per namespace; the reusable object and create UI must not list all of them as
-separate user selections. An existing Sandbox with only snapshotted concrete grants is not
-silently enrolled in a new group merely because its launch preset changed.
+`low-privilege-cluster-diagnostics`) so presets and the create UI select one group instead of
+hundreds of grant names. Kubernetes may still need one RoleBinding per namespace underneath.
+Decide whether assignment expands the group **once** (at Sandbox creation or when adding it to an
+SA at runtime) or persists a **live association** that reconciles when the group definition,
+approved namespace set or constituent Roles change. One-time expansion is acceptable if the
+selected group remains compact and inspectable, but live reconciliation for _all_ currently bound
+SAs is preferred. Specify exactly which edits affect existing SAs, including removed privileges:
+changes to a referenced Kubernetes Role's rules already affect its bindings, even if the group's
+membership was expanded once. Changing a preset does not silently reassign existing Sandboxes;
+snapshotted assignments need an explicit update/migration path if they are to gain new group scope.
 
 Also support an authorized **one-SA runtime change**: an operator can add or revoke one
 namespaced RoleBinding or cluster-scoped ClusterRoleBinding for a specific ServiceAccount
@@ -741,31 +742,34 @@ Review authorization, SA/namespace scope, audit and cleanup for one-off changes,
 any private group lifecycle. A workload cannot grant itself arbitrary Kubernetes authority.
 
 Compare a group of references to GitOps-owned Roles/ClusterRoles with Agentplane-owned rule sets.
-Review definition/assignment ownership, explicit namespace opt-in and expansion, rule-edit
-propagation and revocation, eventual reconciliation and failure reporting, existing-Sandbox
-migration, and inspection of shared and one-off assignments and their expanded effective scope.
-Do not grant cluster-wide access to avoid namespaced bindings or build a general capability-profile
+Review definition/assignment ownership, explicit namespace opt-in and expansion, the trade-off
+between snapshot and live edit propagation (including privilege removal), revocation, reconciliation
+and failure reporting, existing-Sandbox migration, and inspection of shared and one-off assignments
+and their expanded effective scope. Do not grant cluster-wide access to avoid namespaced bindings or build a general capability-profile
 framework. A catalog of concrete launch grants is not a solution to this task.
 
-### `KUBERNETES_RBAC_POLICY_BINDINGS` — reconcile live SA access
+### `KUBERNETES_RBAC_POLICY_BINDINGS` — apply groups and one-SA changes
 
-**Blocked on the reviewed policy shape.** Persist each managed Sandbox ServiceAccount's selected
-policy names and reconcile their expanded Kubernetes bindings as policy definitions and namespace
-eligibility change, including removals and controller restarts. Support adding/removing an
-authorized one-off binding for one existing managed Sandbox SA at runtime, using the same group
-mechanism if suitable, independently of its shared-group assignments and launch preset. Preserve the
-existing owner/conflict and cleanup safeguards; do not take ownership of Flux-managed Roles or bindings. Make the Sandbox create
-UI select named groups instead of showing hundreds of per-namespace grants for a preset;
-show shared and one-off assignments, expanded scope and reconcile errors on inspection. Test two
-existing Sandboxes bound to one group, an added and removed namespace, rule/Role changes, a revoked
-group, a one-off grant added to only one SA and later revoked, overlapping shared/one-off access,
-a newly created Sandbox, and an explicitly unmigrated legacy snapshot. Any new app or Sandbox
-Service database persistence remains subject to the archive-ownership scheduling hold.
+**Blocked on the reviewed policy shape.** Persist a managed Sandbox SA's selected groups or
+explicitly resolved snapshots and apply their expanded bindings, including restart recovery and
+removals on revocation. If live associations are selected, reconcile definition/namespace edits
+for existing SAs; if one-time expansion is selected, keep the expanded binding membership stable
+until an explicit update, while documenting that edits to referenced Role rules still take effect. Support adding/removing an authorized
+one-off binding for one existing SA at runtime, using the same group mechanism if suitable,
+independently of its shared-group assignments and launch preset. Preserve the existing
+owner/conflict and cleanup safeguards; do not take ownership of Flux-managed Roles or bindings.
+Make the Sandbox create UI select named groups, not hundreds of per-namespace grants for a preset;
+show shared and one-off assignments, expanded scope and errors on inspection. Test two Sandboxes
+with one group, an added and removed namespace, rule/Role edits, revocation, a one-SA addition
+and removal, overlapping shared/one-off access, restart, and a legacy unmigrated snapshot. Assert
+existing-SA changes on group edits if the live model is chosen; assert explicit update only if
+snapshot semantics are chosen. Any new app or Sandbox Service database persistence remains subject
+to the archive-ownership scheduling hold.
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 
-**Blocked on reviewed policy/ownership model and reusable group binding.** Extend live group
-assignments and one-SA runtime changes to accounts without a Sandbox and generalize account-keyed
+**Blocked on reviewed policy/ownership model and reusable group binding.** Extend the chosen
+group assignment semantics and one-SA runtime changes to accounts without a Sandbox and generalize account-keyed
 Kubernetes grants, including owner/reconciliation/expiry when no Sandbox can own the binding. Do
 not fight GitOps over objects. Existing grant views can ship first; add this grant kind when it
 exists. Keep ordinary authorization and cleanup tests; no dependency on a new external-credential broker.
