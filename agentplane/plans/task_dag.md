@@ -46,7 +46,7 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 ```mermaid
 flowchart TD
-    THREAD_ARCHIVE_BACKFILL[In flight: import and verify existing prefixes]
+    THREAD_ARCHIVE_BACKFILL[In flight: import and check handoff boundaries]
     THREAD_ARCHIVE_INGEST[Blocked: shadow parity and live writer handoff]
     THREAD_ARCHIVE_READ_CUTOVER[Blocked: enable archive-backed raw reads]
     THREAD_ARCHIVE_UI_CUTOVER[Blocked: app consumes archive for folds and metadata]
@@ -69,15 +69,19 @@ flowchart TD
     APP_RAW_HISTORY_RETIRE --> SESSION_EVENT_RETENTION
 ```
 
-### `THREAD_ARCHIVE_BACKFILL` — one-way import and prefix verification
+### `THREAD_ARCHIVE_BACKFILL` — one-way import and bounded handoff checks
 
 **In flight; existing migration owner.** Finish/resume import from committed cursors, including
 legacy and deleted-Sandbox histories. Retain public UUIDs, native locators and existing Thread URLs.
-The import's fast resume validates checkpoint boundaries, not every skipped Event: complete the
-runbook's canonical-byte/prefix comparison and close live-writing gaps before handoff. Resolve
+The import's fast resume validates checkpoint boundaries, not every skipped Event. The operator
+chose import receipts, per-Session watermarks and bounded canonical-byte handoff samples rather
+than a full historical rescan, accepting residual interior-mismatch risk. Follow the runbook's
+bounded checks and close live-writing gaps before handoff. Resolve
 active legacy histories with unknown Sandbox UID using verified incarnation evidence, not name
 matching. Completion is all scoped histories accounted for, not a Job being Running or one session
 reaching its ceiling. Keep backups/high-water marks; do not rename native files or reset databases.
+Use the [bounded verification and handoff preflight](../sandbox_service/session_history/CUTOVER.md);
+its runner overlap result is evidence, not authorization to populate a legacy UID.
 
 ### `THREAD_ARCHIVE_INGEST` — shadow parity and writer handoff
 
@@ -92,7 +96,9 @@ actual migration. An incomplete source prefix or unresolved legacy locator is a 
 **Blocked on verified backfill and ingestion parity.** Deploy the service reader before enabling
 the app's opt-in history switch. Check raw paging, stream resume, old native evidence and denial to
 non-authorized service accounts. Lag must remain explicit, not fall back to stale app rows. This
-read-only step does not establish sole write ownership or permit deleting app tables.
+read-only step does not establish sole write ownership or permit deleting app tables. Coordinate
+the app-known cursor with the service committed prefix; a one-time equality check under concurrent
+ingestion is insufficient for the fail-closed reader.
 
 ### `THREAD_ARCHIVE_UI_CUTOVER` — app becomes an archive consumer
 
@@ -104,7 +110,7 @@ Remove direct SA transcript bypasses, not security checks. See the [read handoff
 ### `THREAD_ARCHIVE_OWNERSHIP` — archive cutover capstone
 
 **Blocked on all preceding migration phases.** One durable raw archive belongs to Sandbox Service;
-app readers/projectors consume it without backend-to-app queries. Record final prefix parity,
+app readers/projectors consume it without backend-to-app queries. Record final checkpoint coverage and bounded handoff evidence,
 writer ownership and a bounded read/reconnect check, including a retained deleted-Sandbox history.
 Keep the runner journal as the source of execution facts. The migration owner records cutover and
 rollback evidence in the archive plan/runbook. Only then release the persistence expansion hold.
