@@ -24,7 +24,10 @@ interface ActionRendering {
 
 // Maps rather than object literals, so no group or Action name reaches `Object.prototype`.
 const REGISTRY: ReadonlyMap<string, ReadonlyMap<string, ActionRendering>> = new Map([
-  ["kubernetes_admin", new Map([["pods_list_in_namespace", { arguments: podsInNamespacePreview, compactApproval: true }]])],
+  [
+    "kubernetes_admin",
+    new Map([["pods_list_in_namespace", { arguments: podsInNamespacePreview, compactApproval: true }]]),
+  ],
   // x/ssh_mcp_server/server.py, under the group name staging configures it as.
   ["ssh", new Map([["exec", { arguments: execArgumentsPreview, result: execResultPreview }]])],
 ]);

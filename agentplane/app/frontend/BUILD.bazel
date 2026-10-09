@@ -227,8 +227,8 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":actions_client",
-        ":actions_requests",
         ":actions_rendering",
+        ":actions_requests",
         ":client",
         ":stream_status",
         ":topbar",
