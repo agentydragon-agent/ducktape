@@ -206,6 +206,25 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
     assert empty.spend_minor_units is None
 
 
+def test_report_day_uses_policy_zone_for_card_and_allowance_dates() -> None:
+    config = SpendConfiguration(
+        cards=[],
+        allowance=AllowancePolicy(
+            monthly_minor_units=10_000,
+            activation_at=date(2026, 10, 5),
+            time_zone="America/Los_Angeles",
+            spending_account_ids={"example-card"},
+            analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#D97706")},
+            rules=[Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
+        ),
+    )
+    service = SpendService("unused", config, dashboard_url="https://spend.example.test")
+    assert service.report_day(datetime(2026, 10, 9, 6, 59, tzinfo=UTC)) == date(2026, 10, 8)
+    assert service.report_day(datetime(2026, 10, 9, 7, tzinfo=UTC)) == date(2026, 10, 9)
+    assert service.read_configuration().allowance is not None
+    assert service.read_configuration().allowance.time_zone == "America/Los_Angeles"
+
+
 async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg.Connection, postgres_url: str) -> None:
     now = datetime.now(UTC)
     midnight = datetime.combine(now.date(), datetime.min.time(), tzinfo=UTC)
