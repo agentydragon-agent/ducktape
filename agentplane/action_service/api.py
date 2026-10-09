@@ -37,8 +37,9 @@ from agentplane.action_service.connections import (
     ConnectionAuthority,
     ConnectionConflictError,
     ConnectionNotFoundError,
-    ConnectionRename,
+    GrantRejectedError,
     ConnectionRebind,
+    ConnectionRename,
     ConnectionVersion,
 )
 from agentplane.action_service.db import ActionConflictError, ActionNotFoundError, ExternalGrantNotAuthorizedError
@@ -661,8 +662,7 @@ def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
         connection_id: UUID, body: ConnectionRebind, principal: Annotated[OperatorPrincipal, Depends(_operator)]
     ) -> Connection:
         return await authority.rebind(
-            connection_id, expected_version=body.expected_version,
-            caller=body.service_account, operator=principal,
+            connection_id, expected_version=body.expected_version, caller=body.service_account, operator=principal
         )
 
     @app.post("/v1/operator/connections/{connection_id}/unbind", dependencies=[Depends(_operator)])

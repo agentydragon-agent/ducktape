@@ -165,7 +165,7 @@ class ConnectionAuthority:
             if existing is not None:
                 if existing.request_digest != digest:
                     raise ConnectionConflictError("grant retry differs from the original binding")
-                return Grant.model_validate(existing)
+                return _original_grant(existing)
             self.require_caller(request.service_account)
             now = datetime.now(UTC)
             if request.activation_deadline <= now:
@@ -173,8 +173,13 @@ class ConnectionAuthority:
             match request.connection:
                 case NewConnection(display_name=name):
                     connection = ConnectionRow(
-                        id=uuid4(), display_name=name, bound_caller=request.service_account.model_dump(mode="json"),
-                        binding_version=0, version=1, created_at=now, updated_at=now
+                        id=uuid4(),
+                        display_name=name,
+                        bound_caller=request.service_account.model_dump(mode="json"),
+                        binding_version=0,
+                        version=1,
+                        created_at=now,
+                        updated_at=now,
                     )
                     db.add(connection)
                     await db.flush()
@@ -194,6 +199,7 @@ class ConnectionAuthority:
                 connection_id=connection.id,
                 revision=revision,
                 caller=request.service_account.model_dump(mode="json"),
+                original_caller=request.service_account.model_dump(mode="json"),
                 issuer=request.issuer,
                 client_id=request.client_id,
                 request_digest=digest,
@@ -205,7 +211,7 @@ class ConnectionAuthority:
             )
             db.add(grant)
             await db.flush()
-            return Grant.model_validate(grant)
+            return _original_grant(grant)
 
     async def validate_pending(self, grant_id: UUID, *, issuer: str, client_id: str) -> Grant:
         """Check authority before the OAuth SDK consumes an authorization code.
@@ -222,7 +228,7 @@ class ConnectionAuthority:
                 or grant.activation_deadline <= datetime.now(UTC)
             ):
                 raise GrantRejectedError("grant is not pending authorization")
-            return Grant.model_validate(grant)
+            return _original_grant(grant)
 
     async def activate(self, grant_id: UUID) -> Grant:
         """OAuth adapter calls after verified issuance; pending/revoked tokens never resolve."""
@@ -239,7 +245,7 @@ class ConnectionAuthority:
                 connection = await _locked_connection(db, grant.connection_id)
                 connection.version += 1
                 connection.updated_at = grant.activated_at
-            return Grant.model_validate(grant)
+            return _original_grant(grant)
 
     async def resolve(self, grant_id: UUID, *, issuer: str, client_id: str) -> Grant:
         """Resolve current authority from verified token claims on each admission."""
@@ -283,8 +289,12 @@ class ConnectionAuthority:
         if connection.bound_caller is None:
             raise GrantRejectedError("connection has no bound caller")
         caller = ServiceAccountRef.model_validate(connection.bound_caller)
+        # An older replica may have reconnected this Connection without updating
+        # bound_caller. Never silently give that new grant the stale binding.
+        if ServiceAccountRef.model_validate(grant.caller) != caller:
+            raise GrantRejectedError("connection and grant caller differ")
         self.require_caller(caller)
-        return Grant.model_validate(grant).model_copy(
+        return _original_grant(grant).model_copy(
             update={"caller": caller, "binding_version": connection.binding_version}
         )
 
@@ -334,6 +344,10 @@ class ConnectionAuthority:
             row = await _locked_connection(db, connection_id)
             _require_version(row, expected_version)
             grants = await _grants(db, connection_id)
+            # A pending OAuth exchange could still be activated by a legacy replica using
+            # its original caller. Do not rebind until that consent flow finishes.
+            if any(grant.status == GrantStatus.PENDING for grant in grants):
+                raise GrantRejectedError("connection has a pending grant")
             if not any(grant.status == GrantStatus.ACTIVE for grant in grants):
                 raise GrantRejectedError("connection has no active grant")
             if row.bound_caller is None:
@@ -344,14 +358,30 @@ class ConnectionAuthority:
                 return _view(row, grants)
             now = datetime.now(UTC)
             row.bound_caller = caller.model_dump(mode="json")
+            # Legacy replicas resolve grant.caller, not Connection.bound_caller. Keep
+            # them aligned atomically so old readers cannot act as the previous SA.
+            # The original caller remains available for immutable grant history.
+            for grant in grants:
+                if grant.status == GrantStatus.ACTIVE:
+                    # Older replicas can still insert grants without original_caller.
+                    if grant.original_caller is None:
+                        grant.original_caller = grant.caller
+                    grant.caller = row.bound_caller
             row.binding_version += 1
             row.version += 1
             row.updated_at = now
-            db.add(ConnectionRebindRow(
-                id=uuid4(), connection_id=connection_id, version=row.version,
-                previous_caller=previous.model_dump(mode="json"), caller=row.bound_caller,
-                operator_issuer=operator.issuer, operator_subject=operator.subject, at=now,
-            ))
+            db.add(
+                ConnectionRebindRow(
+                    id=uuid4(),
+                    connection_id=connection_id,
+                    version=row.version,
+                    previous_caller=previous.model_dump(mode="json"),
+                    caller=row.bound_caller,
+                    operator_issuer=operator.issuer,
+                    operator_subject=operator.subject,
+                    at=now,
+                )
+            )
             return _view(row, grants)
 
     async def unbind(self, connection_id: UUID, *, expected_version: int) -> Connection:
@@ -398,6 +428,12 @@ def _revoke(grants: list[ConnectionGrantRow], now: datetime) -> None:
             grant.revoked_at = now
 
 
+def _original_grant(row: ConnectionGrantRow) -> Grant:
+    return Grant.model_validate(row).model_copy(
+        update={"caller": ServiceAccountRef.model_validate(row.original_caller or row.caller)}
+    )
+
+
 def _view(row: ConnectionRow, grants: list[ConnectionGrantRow]) -> Connection:
     return Connection(
         id=row.id,
@@ -405,6 +441,6 @@ def _view(row: ConnectionRow, grants: list[ConnectionGrantRow]) -> Connection:
         version=row.version,
         created_at=row.created_at,
         updated_at=row.updated_at,
-        grants=[Grant.model_validate(grant) for grant in grants],
+        grants=[_original_grant(grant) for grant in grants],
         bound_caller=ServiceAccountRef.model_validate(row.bound_caller) if row.bound_caller is not None else None,
     )

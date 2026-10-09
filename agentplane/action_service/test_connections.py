@@ -126,6 +126,10 @@ async def test_rebind_keeps_token_and_history_but_not_old_pending_action_authori
     async with make_sessionmaker(engine).begin() as db:
         assert not await service.authorize_action(db, snapshot)
         assert await service.authorize_action(db, after.provenance())
+        stored = await db.get(ConnectionGrantRow, request.grant_id)
+        assert stored is not None
+        assert stored.caller == OTHER.model_dump(mode="json")  # Legacy replicas resolve the current SA.
+        assert stored.original_caller == PERSONAL.model_dump(mode="json")
         log = list(await db.scalars(select(ConnectionRebindRow)))
         assert len(log) == 1
         assert (log[0].operator_issuer, log[0].operator_subject) == (operator.issuer, operator.subject)
@@ -139,6 +143,25 @@ async def test_rebind_keeps_token_and_history_but_not_old_pending_action_authori
     await service.unbind(changed.id, expected_version=changed.version)
     with pytest.raises(GrantRejectedError):
         await service.resolve(request.grant_id, issuer=ISSUER, client_id=request.client_id)
+
+
+async def test_rebind_rejects_pending_grant_without_changing_original_caller(engine: AsyncEngine) -> None:
+    service = authority(engine)
+    request = binding()
+    await service.bind(request)
+    connection = (await service.list())[0]
+    with pytest.raises(GrantRejectedError, match="pending grant"):
+        await service.rebind(
+            connection.id,
+            expected_version=connection.version,
+            caller=OTHER,
+            operator=OperatorPrincipal(issuer="https://operator.example", subject="test-operator"),
+        )
+    assert (await service.get(connection.id)).bound_caller == PERSONAL
+    async with make_sessionmaker(engine)() as db:
+        grant = await db.get(ConnectionGrantRow, request.grant_id)
+        assert grant is not None
+        assert grant.caller == PERSONAL.model_dump(mode="json")
 
 
 async def test_same_service_account_shares_receipts_while_distinct_accounts_are_isolated(engine: AsyncEngine) -> None:

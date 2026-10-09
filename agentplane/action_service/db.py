@@ -131,8 +131,10 @@ class ConnectionGrantRow(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
     revision: Mapped[int] = mapped_column(Integer)
-    # A `models.ServiceAccountRef`: the ServiceAccount the grant acts as.
+    # Mirror the current binding for older Action Service replicas during rolling deploys.
     caller: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
+    # Immutable authorization evidence, independent of the current Connection binding.
+    original_caller: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB, nullable=True)
     issuer: Mapped[str] = mapped_column(Text)
     client_id: Mapped[str] = mapped_column(Text)
     request_digest: Mapped[str] = mapped_column(Text)

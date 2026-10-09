@@ -46,8 +46,16 @@ workload requests retain a null snapshot.
 binding version and eligible ServiceAccount under the Connection row lock, both during admission
 and before the dispatch claim. The operator may rebind an active Connection to a different eligible
 ServiceAccount without issuing a new OAuth token; this increments the binding version, retains
-immutable original grant history, and records the operator and previous/new caller in an audit row
-(migration `0021_connection_rebind`). Future requests from the existing token use the new account.
+immutable original grant history in `original_caller`, and records the operator and previous/new caller in an audit row
+(migration `0021_connection_rebind`). Future requests from the existing token use the new account. For rolling deployments,
+`grant.caller` mirrors the current bound account in the same transaction, so older replicas
+cannot resolve a rebound token as the previous account; `original_caller` retains the
+original grant identity (nullable during rollout for legacy inserts, filled at rebind).
+Pending grants cannot be rebound. Older replicas do not know
+the binding version and may admit a new request that a newer replica refuses to dispatch
+during the rollout; retrying after rollout is safe. New readers fail closed if a
+legacy replica reconnects with a different caller but leaves the Connection binding
+stale; the rollout must finish before relying on new rebind functionality.
 A revoked, missing, unlabeled or rebound original authority prevents an older unclaimed Action
 from dispatching even if another grant now acts as the same ServiceAccount: the unstarted
 Execution fails with

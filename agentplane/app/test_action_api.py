@@ -450,8 +450,11 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
     assert renamed.json()["id"] == str(original.id)
     assert renamed.json()["grants"] == original.model_dump(mode="json")["grants"]
     assert (await browser.patch(path, json=rename)).status_code == 409
-    assert (await browser.post(f"{path}/rebind", json={"expected_version": original.version,
-        "service_account": PERSONAL.model_dump()})).status_code == 409
+    assert (
+        await browser.post(
+            f"{path}/rebind", json={"expected_version": original.version, "service_account": PERSONAL.model_dump()}
+        )
+    ).status_code == 409
     assert (await browser.post(f"{path}/unbind", json={"expected_version": original.version})).status_code == 409
     assert (await review.connections.get(original.id)).grants[0].status is GrantStatus.ACTIVE
     unbound = await browser.post(f"{path}/unbind", json={"expected_version": renamed.json()["version"]})

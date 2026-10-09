@@ -90,7 +90,9 @@ export function Connections({ service = connectionService }: { service?: Connect
           await load();
           setError("Connection changed elsewhere. Review its new binding before trying again. Nothing was retried.");
         } catch (refreshFailure) {
-          setError(`Connection changed elsewhere. Refresh failed: ${displayableError(refreshFailure)}. Nothing was retried.`);
+          setError(
+            `Connection changed elsewhere. Refresh failed: ${displayableError(refreshFailure)}. Nothing was retried.`
+          );
         }
       } else {
         setError(displayableError(failure));
@@ -159,7 +161,7 @@ export function Connections({ service = connectionService }: { service?: Connect
             {rows.map((row) => {
               const grant = currentGrant(row);
               const unbound = row.grants.every((candidate) => candidate.status === "revoked");
-              const currentCaller = row.bound_caller ?? (unbound ? null : grant?.caller ?? null);
+              const currentCaller = row.bound_caller ?? (unbound ? null : (grant?.caller ?? null));
               const currentKey = currentCaller ? serviceAccountKey(currentCaller) : null;
               const selected = rebinding?.row.id === row.id ? rebinding.target : currentKey;
               return (
@@ -180,7 +182,10 @@ export function Connections({ service = connectionService }: { service?: Connect
                             if (value) setRebinding({ row, target: value, confirm: false });
                           }}
                           data={[
-                            ...accounts.map((account) => ({ value: serviceAccountKey(account), label: serviceAccountKey(account) })),
+                            ...accounts.map((account) => ({
+                              value: serviceAccountKey(account),
+                              label: serviceAccountKey(account),
+                            })),
                             ...(!isEligibleCaller(currentCaller, accounts)
                               ? [{ value: currentKey!, label: currentKey!, disabled: true }]
                               : []),
@@ -190,16 +195,28 @@ export function Connections({ service = connectionService }: { service?: Connect
                           w={240}
                         />
                         {!isEligibleCaller(currentCaller, accounts) && (
-                          <Text size="xs" c="orange">ServiceAccount not labeled as an Action caller</Text>
+                          <Text size="xs" c="orange">
+                            ServiceAccount not labeled as an Action caller
+                          </Text>
                         )}
                         {rebinding?.row.id === row.id && rebinding.target !== currentKey && (
                           <Group gap="xs">
-                            <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>Cancel</Button>
-                            <Button size="xs" disabled={busy} onClick={() => setRebinding({ ...rebinding, confirm: true })}>Apply</Button>
+                            <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>
+                              Cancel
+                            </Button>
+                            <Button
+                              size="xs"
+                              disabled={busy}
+                              onClick={() => setRebinding({ ...rebinding, confirm: true })}
+                            >
+                              Apply
+                            </Button>
                           </Group>
                         )}
                       </Stack>
-                    ) : "—"}
+                    ) : (
+                      "—"
+                    )}
                   </Table.Td>
                   <Table.Td>
                     {unlinking?.id === row.id ? (
@@ -238,8 +255,12 @@ export function Connections({ service = connectionService }: { service?: Connect
             previous account will not be silently upgraded; already claimed executions continue.
           </Text>
           <Group mt="xs">
-            <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>Cancel</Button>
-            <Button size="xs" loading={busy} onClick={() => void confirmRebind()}>Confirm change</Button>
+            <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>
+              Cancel
+            </Button>
+            <Button size="xs" loading={busy} onClick={() => void confirmRebind()}>
+              Confirm change
+            </Button>
           </Group>
         </Alert>
       )}
