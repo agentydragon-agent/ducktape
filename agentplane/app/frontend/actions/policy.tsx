@@ -113,7 +113,7 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
           <Table.Tr>
             <Table.Td colSpan={5}>
               <Text size="sm" c="dimmed">
-                No binding names this sandbox: every Action it submits waits for the operator.
+                No binding names this ServiceAccount: every Action it submits waits for the operator.
               </Text>
             </Table.Td>
           </Table.Tr>
@@ -150,8 +150,8 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
         ))}
       </Table.Tbody>
       <Table.Caption>
-        The unexpired bindings whose subject is this sandbox, by name and UID. A binding is the grant: it allows while
-        it exists and its sets parse. kubectl edits them; this page only shows them.
+        The unexpired bindings whose subject is this ServiceAccount, by namespace and name. A binding is the grant: it
+        allows while it exists and its sets parse. kubectl edits them; this page only shows them.
       </Table.Caption>
     </Table>
   );
@@ -297,8 +297,8 @@ function Unavailable({ failure }: { failure: ActionPolicyUnavailable }): JSX.Ele
 }
 
 /**
- * What the Action Service auto-decides for the sandbox, as the service itself resolves it for the
- * sandbox's UID: the bindings, the sets they name, and the auto-approval list as it evaluates it. What
+ * What the Action Service auto-decides for the ServiceAccount, as the service itself resolves it for that
+ * account: the bindings, the sets they name, and the auto-approval list as it evaluates it. What
  * arrives here is the service's answer, or why there is none. Read-only.
  */
 export function ActionPolicySection({
@@ -312,8 +312,8 @@ export function ActionPolicySection({
     <Stack gap="md">
       {!policy.synced && (
         <Alert color="orange" role="alert" title="The Action Service's watch has not synced">
-          Nothing auto-decides until it has: every Action from this sandbox waits for the operator, whatever the objects
-          say.
+          Nothing auto-decides until it has: every Action from this ServiceAccount waits for the operator, whatever the
+          objects say.
         </Alert>
       )}
       <BindingsTable bindings={policy.bindings} />
@@ -321,7 +321,7 @@ export function ActionPolicySection({
       <PolicyList
         title="Auto-approve if"
         policies={policy.auto_approve_if}
-        empty="Nothing: every Action from this sandbox waits for the operator."
+        empty="Nothing: every Action from this ServiceAccount waits for the operator."
       />
     </Stack>
   );

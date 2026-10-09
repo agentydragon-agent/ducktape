@@ -1,7 +1,7 @@
 import { Alert, Button, Group, Select, Stack, Table, Text } from "@mantine/core";
 import "./connections.css";
 import { followStream, type StreamConnection } from "../live_stream";
-import { type JSX, useCallback, useEffect, useState } from "react";
+import { Fragment, type JSX, useCallback, useEffect, useState } from "react";
 
 import {
   ConnectionRequestError,
@@ -10,9 +10,13 @@ import {
   isEligibleCaller,
   serviceAccountKey,
   type CallerServiceAccount,
+  type CallerGrantReader,
+  readCallerGrants,
   type Connection,
   type ConnectionService,
 } from "../client";
+
+import { CallerGrants } from "../caller_grants";
 
 type Grant = Connection["grants"][number];
 
@@ -24,7 +28,14 @@ function currentGrant(connection: Connection): Grant | undefined {
   );
 }
 
-export function Connections({ service = connectionService }: { service?: ConnectionService }): JSX.Element {
+export function Connections({
+  service = connectionService,
+  readGrants = readCallerGrants,
+}: {
+  service?: ConnectionService;
+  readGrants?: CallerGrantReader;
+}): JSX.Element {
+  const [expandedGrants, setExpandedGrants] = useState<string | null>(null);
   const [rows, setRows] = useState<Connection[]>([]);
   const [accounts, setAccounts] = useState<CallerServiceAccount[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -166,92 +177,112 @@ export function Connections({ service = connectionService }: { service?: Connect
               const currentKey = currentCaller ? serviceAccountKey(currentCaller) : null;
               const selected = rebinding?.row.id === row.id ? rebinding.target : currentKey;
               return (
-                <Table.Tr key={row.id} data-connection-id={row.id}>
-                  <Table.Td>
-                    <Text fw={600} style={{ overflowWrap: "anywhere" }}>
-                      {row.display_name}
-                    </Text>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Client ID · {grant?.client_id ?? "—"}
-                    </Text>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Connection ID · {row.id}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td>
-                    {currentCaller ? (
-                      <Stack gap={2}>
-                        <Text className="agentplane-connection-mobile-label" size="xs" fw={600}>
-                          Service account
-                        </Text>
-                        <Select
-                          aria-label={`Service account for ${row.display_name}`}
-                          value={selected}
-                          onChange={(value) => {
-                            if (value) setRebinding({ row, target: value, confirm: false });
-                          }}
-                          data={[
-                            ...accounts.map((account) => ({
-                              value: serviceAccountKey(account),
-                              label: serviceAccountKey(account),
-                            })),
-                            ...(!isEligibleCaller(currentCaller, accounts)
-                              ? [{ value: currentKey!, label: currentKey!, disabled: true }]
-                              : []),
-                          ]}
-                          disabled={busy || unbound}
-                          size="xs"
-                          className="agentplane-connection-account-select"
-                        />
-                        {!isEligibleCaller(currentCaller, accounts) && (
-                          <Text size="xs" c="orange">
-                            ServiceAccount not labeled as an Action caller
+                <Fragment key={row.id}>
+                  <Table.Tr data-connection-id={row.id}>
+                    <Table.Td>
+                      <Text fw={600} style={{ overflowWrap: "anywhere" }}>
+                        {row.display_name}
+                      </Text>
+                      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                        Client ID · {grant?.client_id ?? "—"}
+                      </Text>
+                      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                        Connection ID · {row.id}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      {currentCaller ? (
+                        <Stack gap={2}>
+                          <Text className="agentplane-connection-mobile-label" size="xs" fw={600}>
+                            Service account
                           </Text>
-                        )}
-                        {rebinding?.row.id === row.id && rebinding.target !== currentKey && (
-                          <Group gap="xs">
-                            <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>
-                              Cancel
-                            </Button>
-                            <Button
-                              size="xs"
-                              disabled={busy}
-                              onClick={() => setRebinding({ ...rebinding, confirm: true })}
-                            >
-                              Apply
-                            </Button>
-                          </Group>
-                        )}
-                      </Stack>
-                    ) : (
-                      "—"
-                    )}
-                  </Table.Td>
-                  <Table.Td>
-                    {unlinking?.id === row.id ? (
-                      <Group gap="xs" justify="flex-end" wrap="nowrap">
-                        <Button variant="subtle" size="xs" disabled={busy} onClick={() => setUnlinking(null)}>
-                          Cancel
-                        </Button>
-                        <Button color="red" size="xs" loading={busy} onClick={() => void confirmUnlink()}>
-                          Confirm unlink
-                        </Button>
-                      </Group>
-                    ) : (
-                      <Group justify="flex-end">
-                        <Button
-                          color="red"
-                          variant="light"
-                          size="xs"
-                          disabled={busy || unbound}
-                          onClick={() => setUnlinking(row)}
-                        >
-                          Unlink
-                        </Button>
-                      </Group>
-                    )}
-                  </Table.Td>
-                </Table.Tr>
+                          <Select
+                            aria-label={`Service account for ${row.display_name}`}
+                            value={selected}
+                            onChange={(value) => {
+                              if (value) setRebinding({ row, target: value, confirm: false });
+                            }}
+                            data={[
+                              ...accounts.map((account) => ({
+                                value: serviceAccountKey(account),
+                                label: serviceAccountKey(account),
+                              })),
+                              ...(!isEligibleCaller(currentCaller, accounts)
+                                ? [{ value: currentKey!, label: currentKey!, disabled: true }]
+                                : []),
+                            ]}
+                            disabled={busy || unbound}
+                            size="xs"
+                            className="agentplane-connection-account-select"
+                          />
+                          <Button
+                            size="compact-xs"
+                            variant="subtle"
+                            aria-expanded={expandedGrants === row.id}
+                            aria-controls={`caller-grants-${row.id}`}
+                            onClick={() => setExpandedGrants(expandedGrants === row.id ? null : row.id)}
+                          >
+                            {expandedGrants === row.id ? "Hide grants" : "View grants"}
+                          </Button>
+                          {!isEligibleCaller(currentCaller, accounts) && (
+                            <Text size="xs" c="orange">
+                              ServiceAccount not labeled as an Action caller
+                            </Text>
+                          )}
+                          {rebinding?.row.id === row.id && rebinding.target !== currentKey && (
+                            <Group gap="xs">
+                              <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>
+                                Cancel
+                              </Button>
+                              <Button
+                                size="xs"
+                                disabled={busy}
+                                onClick={() => setRebinding({ ...rebinding, confirm: true })}
+                              >
+                                Apply
+                              </Button>
+                            </Group>
+                          )}
+                        </Stack>
+                      ) : (
+                        "—"
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      {unlinking?.id === row.id ? (
+                        <Group gap="xs" justify="flex-end" wrap="nowrap">
+                          <Button variant="subtle" size="xs" disabled={busy} onClick={() => setUnlinking(null)}>
+                            Cancel
+                          </Button>
+                          <Button color="red" size="xs" loading={busy} onClick={() => void confirmUnlink()}>
+                            Confirm unlink
+                          </Button>
+                        </Group>
+                      ) : (
+                        <Group justify="flex-end">
+                          <Button
+                            color="red"
+                            variant="light"
+                            size="xs"
+                            disabled={busy || unbound}
+                            onClick={() => setUnlinking(row)}
+                          >
+                            Unlink
+                          </Button>
+                        </Group>
+                      )}
+                    </Table.Td>
+                  </Table.Tr>
+                  {expandedGrants === row.id && currentCaller && (
+                    <Table.Tr>
+                      <Table.Td colSpan={3}>
+                        <div id={`caller-grants-${row.id}`}>
+                          <CallerGrants key={currentKey} account={currentCaller} read={readGrants} />
+                        </div>
+                      </Table.Td>
+                    </Table.Tr>
+                  )}
+                </Fragment>
               );
             })}
           </Table.Tbody>

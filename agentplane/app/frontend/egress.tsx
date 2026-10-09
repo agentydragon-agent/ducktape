@@ -103,12 +103,12 @@ function BindingActions({ binding, onRevoke }: { binding: BindingView; onRevoke:
   );
 }
 
-function BindingsTable({
+export function EgressBindings({
   bindings,
   onRevoke,
 }: {
   bindings: BindingView[];
-  onRevoke: (name: string) => void;
+  onRevoke: ((name: string) => void) | null;
 }): JSX.Element {
   // Which bindings show their rules is in the URL, like the tab and the session page's switches, so
   // a reading of what a sandbox may reach can be linked to and survives a reload.
@@ -131,15 +131,15 @@ function BindingsTable({
           <Table.Th visibleFrom="sm">Expires</Table.Th>
           <Table.Th visibleFrom="sm">Egress policies</Table.Th>
           <Table.Th visibleFrom="sm">Active</Table.Th>
-          <Table.Th />
+          {onRevoke !== null && <Table.Th />}
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
         {bindings.length === 0 && (
           <Table.Tr>
-            <Table.Td colSpan={6}>
+            <Table.Td colSpan={onRevoke === null ? 5 : 6}>
               <Text size="sm" c="dimmed">
-                No binding names this sandbox: nothing may leave it.
+                No egress binding names this ServiceAccount.
               </Text>
             </Table.Td>
           </Table.Tr>
@@ -195,15 +195,17 @@ function BindingsTable({
                   <Badge color="gray">configured</Badge>
                 </Tooltip>
               </Table.Td>
-              <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
-                <BindingActions binding={binding} onRevoke={() => onRevoke(binding.name)} />
-              </Table.Td>
+              {onRevoke !== null && (
+                <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
+                  <BindingActions binding={binding} onRevoke={() => onRevoke(binding.name)} />
+                </Table.Td>
+              )}
             </Table.Tr>,
           ];
           if (expanded.has(binding.name)) {
             rows.push(
               <Table.Tr key={`${binding.name}-rules`}>
-                <Table.Td colSpan={6}>
+                <Table.Td colSpan={onRevoke === null ? 5 : 6}>
                   <EgressPolicySummary
                     egressPolicies={binding.policies}
                     missingEgressPolicies={binding.missing_policies}
@@ -216,8 +218,8 @@ function BindingsTable({
         })}
       </Table.Tbody>
       <Table.Caption>
-        An egress binding is the permission: it allows while it exists, and revoking deletes it. One from the repository
-        is removed there.
+        An unexpired egress binding grants its configured rules; revoking deletes it. One from the repository is removed
+        there.
       </Table.Caption>
     </Table>
   );
@@ -389,7 +391,7 @@ export function EgressSection({ name, bindings }: { name: string; bindings: Bind
         onPick={setPicked}
         onGrant={() => void grant()}
       />
-      {bindings && <BindingsTable bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}
+      {bindings && <EgressBindings bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}
       <Title order={5}>Recent decisions</Title>
       {decisions && <DecisionsTable decisions={decisions} />}
       {decisionsError && (

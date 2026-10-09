@@ -582,12 +582,6 @@ without a manual refresh loop; show honest lag/failure and avoid duplicate rows.
 [Thread sync plan](thread_sync/README.md), including bounded paging and error visibility. Changes to
 archive ownership or app persistence wait for their migration nodes; client-only recovery can proceed.
 
-### `CALLER_GRANT_VIEW` — unified view of existing grants
-
-**Candidate.** Show effective grants for managed Sandboxes and unmanaged callers from their owning
-APIs. Do not block showing current Action/egress grants on future managed Kubernetes grant kinds.
-Clearly separate configured policy, effective scope and pending propagation; UI does not grant access.
-
 ## 6. Existing access and lifecycle follow-ups
 
 These are bounded existing work, not dependencies on the broader multiagent model. Confirm current

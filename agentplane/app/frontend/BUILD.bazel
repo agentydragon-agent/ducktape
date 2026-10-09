@@ -548,6 +548,36 @@ js_library(
 )
 
 ts_library(
+    name = "caller_grants",
+    srcs = ["caller_grants.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_policy",
+        ":client",
+        ":egress",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "caller_grants_test",
+    srcs = ["caller_grants.test.tsx"],
+    deps = [
+        ":caller_grants",
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "connections",
     srcs = [
         "css.d.ts",
@@ -555,6 +585,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":caller_grants",
         ":client",
         ":connections_css",
         ":live_stream",
@@ -628,6 +659,7 @@ agentplane_vitest_test(
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
+        "//:node_modules/react-router",
         "//:node_modules/vitest",
     ],
 )

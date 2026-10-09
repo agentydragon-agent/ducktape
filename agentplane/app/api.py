@@ -39,7 +39,7 @@ from agentplane.app.action_federation import (
     operator_actions,
     upstream_failure_detail,
 )
-from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.consent import (
     ConsentDecision,
     ConsentPreview,
@@ -52,7 +52,7 @@ from agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavail
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy, router as electric_router
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
-from agentplane.app.live import LiveIndex, Updates, router as live_router
+from agentplane.app.live import LiveIndex, Updates, action_policy_frame, router as live_router
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.oidc import OIDCSettings, build_oauth
 from agentplane.app.operator_sessions import (
@@ -490,6 +490,34 @@ async def disconnect_mcp_linkage(server_id: str, client: OperatorActions) -> Mcp
 @connections_router.get("/connection-service-accounts")
 async def connection_service_accounts(client: OperatorActions) -> list[ServiceAccountRef]:
     return await client.caller_service_accounts()
+
+
+class CallerGrantView(BaseModel):
+    """Account-scoped CR projections, not a new grant authority or Kubernetes RBAC evaluator."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    egress_bindings: list[BindingView]
+    action_policy: ActionPolicyView | ActionPolicyUnavailable
+
+
+@connections_router.get("/caller-grants/{namespace}/{name}")
+async def caller_grants(
+    namespace: str,
+    name: str,
+    request: Request,
+    caller: Annotated[CallerIdentity, Depends(require_caller)],
+    egress: Egress,
+    action_policy: ActionPolicy,
+) -> CallerGrantView:
+    """Inspect an account even without a Sandbox or current Action-caller label."""
+    if caller.kind is not CallerKind.OPERATOR:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Operator session required")
+    subject = ServiceAccountRef(namespace=namespace, name=name)
+    bindings, policy = await asyncio.gather(
+        egress.bindings_for(subject), action_policy_frame(request, caller, action_policy, subject)
+    )
+    return CallerGrantView(egress_bindings=bindings, action_policy=policy)
 
 
 @connections_router.get("/connections")
