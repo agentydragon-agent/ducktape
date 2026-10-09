@@ -37,10 +37,10 @@ from agentplane.action_service.connections import (
     ConnectionAuthority,
     ConnectionConflictError,
     ConnectionNotFoundError,
-    GrantRejectedError,
     ConnectionRebind,
     ConnectionRename,
     ConnectionVersion,
+    GrantRejectedError,
 )
 from agentplane.action_service.db import ActionConflictError, ActionNotFoundError, ExternalGrantNotAuthorizedError
 from agentplane.action_service.enrollments import (

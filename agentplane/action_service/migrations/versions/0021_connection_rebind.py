@@ -37,7 +37,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     if op.get_bind().execute(sa.text("SELECT EXISTS (SELECT 1 FROM external_connection_rebind)")).scalar_one():
-        raise RuntimeError("Cannot downgrade after a Connection rebind; restoring the old caller would change token authority")
+        raise RuntimeError(
+            "Cannot downgrade after a Connection rebind; restoring the old caller would change token authority"
+        )
     op.drop_table("external_connection_rebind")
     op.execute("UPDATE external_connection_grant SET caller = COALESCE(original_caller, caller)")
     op.drop_column("external_connection_grant", "original_caller")
