@@ -71,12 +71,12 @@ describe("ScrollCapture User Timing", () => {
         static revokeObjectURL = revokeObjectURL;
       }
     );
-    const clickLink = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(function (this: HTMLAnchorElement) {
-        expect(this.download).toMatch(/^agentplane-scroll-diagnostics-.*\.json$/);
-        expect(this.href).toBe("blob:scroll-recording");
-      });
+    const clickLink = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement
+    ) {
+      expect(this.download).toMatch(/^agentplane-scroll-diagnostics-.*\.json$/);
+      expect(this.href).toBe("blob:scroll-recording");
+    });
     try {
       downloadScrollDiagnostics(recording);
       expect(clickLink).toHaveBeenCalledOnce();
