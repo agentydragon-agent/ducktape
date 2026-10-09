@@ -8,8 +8,8 @@ alternative, not a prerequisite for the staging stopgap.
 ## Staging-only direct-key stopgap
 
 The staging `runner-ducktape` template projects the existing canonical BuildBuddy key through
-ESO into its **workload container only**. It exposes the file path to the harness but
-does not change `bbr` itself; consuming the key from that file is a separate change.
+ESO into its **workload container only**. The launcher consumes the projected file via
+`BBR_BUILDBUDDY_API_KEY_FILE` for real `bbr` runs.
 The existing BuildBuddy egress policy still limits the sandbox's destination hosts. This does **not** keep the key secret from agent-controlled sandbox code or the
 BuildBuddy-hosted runner: `bb remote` embeds it in the hosted Bazel command. It must not be
 represented as credential isolation, and the generic runner and egress sidecar do not mount
@@ -19,14 +19,21 @@ a new key or a new credential lifecycle.
 ## Validation and execution policy
 
 On 2026-10-09 the operator confirmed that the ducktape preset works and that the BuildBuddy
-key was included for subsequently spawned agents. This closes image/preset acceptance, not
-end-to-end hosted-build acceptance: no successful authenticated hosted build was demonstrated
-in this session, and launcher consumption of the projected key remains to be verified.
+key was included for subsequently spawned agents. The operator subsequently confirmed that
+authenticated hosted-build execution is verified too. Image/preset and hosted-build acceptance
+are complete; this is operator-reported validation, not a new build run by the documenting agent.
+No specific invocation URL was supplied for this confirmation.
 
 The intended container workflow is BuildBuddy-hosted builds. Do not run a local Bazel client
 in an agent container, even when actions execute remotely; local Bazel is deferred until agents
 have VM-backed environments. Installed `bb`, `bbr`, or Bazelisk binaries are not permission to
-exercise that path. This is an operator execution policy, not a claim of technical enforcement.
+exercise that path. The remaining enablement task is
+[`LOCAL_BAZEL`](../plans/task_dag.md#local_bazel--local-bazel-client-inside-vm-backed-agent-environments),
+which explicitly depends on `SANDBOX_VM_ISOLATION`. This is an operator execution policy,
+not a claim of technical enforcement.
+
+Per-run credentials or a run-scoped gateway remain optional future hardening of the direct-key
+boundary. They are not unresolved hosted-build acceptance or a selected proxy-rewrite project.
 
 ## Two products called "remote"
 

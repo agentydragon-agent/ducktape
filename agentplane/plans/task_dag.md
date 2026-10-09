@@ -143,6 +143,7 @@ flowchart TB
     RUNNER_IMAGE_UPGRADE_PROOF["Image upgrade evidence<br/>pause, patch CR image, resume on same storage<br/>both harnesses and rollback"]:::decision
     RUNNER_IMAGE_ROLLOUT["Supported operator workflow<br/>upgrade image of an existing Sandbox<br/>preserve Thread state and resume safely"]:::future
     SANDBOX_VM_ISOLATION["Deferred provider integration<br/>selectable KubeVirt environments<br/>production service, gateway and lifecycle proof"]:::future
+    LOCAL_BAZEL["Deferred developer tooling<br/>local Bazel client inside agent VM<br/>bounded resources and build acceptance"]:::future
     THREAD_IDENTITY_NEW["New Session identity<br/>one canonical UUID for Session/Thread<br/>create/Open across app and runner"]:::future
     THREAD_EVENT_CONTINUITY["Identity cutover capstone<br/>legacy mapping plus new IDs, one runner journal<br/>exclusive writer across incarnations"]:::milestone
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
@@ -175,6 +176,7 @@ flowchart TB
     THREAD_ARCHIVE_OWNERSHIP --> RUNNER_OUTBOUND_CUTOVER
     THREAD_ARCHIVE_OWNERSHIP --> THREAD_READ_POLICY
     THREAD_ARCHIVE_OWNERSHIP --> THREAD_EVENT_CONTINUITY
+    SANDBOX_VM_ISOLATION --> LOCAL_BAZEL
     RUNNER_IMAGE_UPGRADE_PROOF --> RUNNER_IMAGE_ROLLOUT
     RUNNER_IMAGE_ROLLOUT --> THREAD_EVENT_CONTINUITY
     THREAD_IDENTITY_NEW --> THREAD_EVENT_CONTINUITY
@@ -850,10 +852,29 @@ and lifecycle/recovery acceptance in the [KubeVirt environment plan](kubevirt_en
 No existing-environment conversion or live migration is implied. This remains independent of
 current container correctness work and ordinary Sandbox Service extraction.
 
-Local Bazel clients/builds in agent environments remain deferred until VM-backed environments
-are available; remote action execution alone does not remove the local client's resource cost.
-BuildBuddy-hosted builds are a separate lane and do not depend on VM integration. Package
-availability in `runner-ducktape` does not authorize local Bazel execution.
+Local Bazel enablement is a separate dependent task: `LOCAL_BAZEL`. Hosted builds do not
+require this VM integration.
+
+### `LOCAL_BAZEL` — local Bazel client inside VM-backed agent environments
+
+**Depends on `SANDBOX_VM_ISOLATION`.** Enable local Bazel clients only inside the integrated
+VM-backed environment, not existing agent containers. Remote action execution/cache does not
+remove the local client's analysis, server, filesystem or memory costs. Installed tools alone
+are not permission to start this workflow.
+
+- Wire the pinned Bazelisk/Bazel toolchain, workspace/output-base storage and authenticated
+  BuildBuddy RBE/cache/BES route into the VM environment. Keep remote execution as the normal
+  default; this task does not enable unrestricted local build actions or local fallback.
+- Set and verify CPU, memory and disk budgets and Bazel-server/cache cleanup. Preserve the VM
+  harness/process isolation boundary rather than letting build cleanup kill the harness.
+- Acceptance: run a representative build and test with the Bazel client demonstrably inside
+  the VM and actions executing remotely; verify cancellation, repeated invocation and cleanup
+  within the resource budget while the harness remains responsive. Exercise the supported VM
+  lifecycle without leaving an orphaned Bazel server or exhausting retained storage.
+
+This is independent of the already working hosted-build path documented in
+[BuildBuddy authentication](../docs/buildbuddy_remote_auth.md#validation-and-execution-policy).
+Do not reopen hosted-build acceptance as a prerequisite.
 
 ### `THREAD_IDENTITY_NEW` — assign one canonical ID to new histories
 
@@ -1732,7 +1753,6 @@ own text instead, so bringing one back means restoring an edge rather than inven
 
 - **`SSHDURABLE`** — durable SSH-backed processes
 - **`PROFILES`** — cross-cutting capability profiles
-- **`BB`** — BuildBuddy hosted-run credential boundary
 - **`THREAD_BROWSE_PAGINATE`** — paginated/searchable all-threads page
 - **`CONTROL_STATE`** — dynamic runtime control acceptance
 - **`LIVE_CLEAN`** — executor heartbeat retention cleanup
@@ -1764,19 +1784,6 @@ read/verification boundary remain open. Do not start implementation before the d
 
 **Acceptance evidence:** one profile can be resolved consistently by each participating authority,
 with explicit precedence and negative tests for stale, cross-Agent, or caller-supplied profile names.
-
-### `BB` — BuildBuddy hosted-run credential boundary
-
-**Remaining acceptance:** prove an authenticated BuildBuddy-hosted build from a newly spawned
-staging ducktape sandbox, including the launcher consuming the configured credential without
-printing or persisting it. This is not a request to start a local Bazel client, even with remote
-execution/cache: local Bazel in agent containers is deferred until VM-backed environments.
-Do not repeat image/preset validation as a prerequisite.
-
-**Deferred hardening:** consider a per-run BuildBuddy credential or run-scoped gateway instead of
-the staging direct-key stopgap. A proxy request-body rewrite is not required for that stopgap
-and has not been selected. The implemented boundary, limitations and operator validation are in
-[`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
 
 ### `THREAD_BROWSE_PAGINATE` — paginated/searchable all-threads page
 
