@@ -352,8 +352,9 @@ async def test_http_list_failure_refuses_dispatch(
     assert isinstance(diagnostics, dict)
     assert isinstance(diagnostics["exception_type"], str)
     for key in ("connection_age_s", "request_duration_s"):
-        assert isinstance(diagnostics[key], (int, float))
-        assert diagnostics[key] >= 0
+        duration = diagnostics[key]
+        assert isinstance(duration, (int, float))
+        assert duration >= 0
     assert "MCP execution schema check failed" in caplog.text
     for secret in ("test-body-secret", "test-cookie-secret"):
         assert secret not in json.dumps(result.error)
