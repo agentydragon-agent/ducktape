@@ -115,14 +115,71 @@ RPC protocol. Do not claim this TODO is implemented because a connection test su
 
 ## Outbound control-channel design
 
-**Proposed decision, not an implemented migration.**
+**Selected direction and framing; staged implementation, not a deployed migration.**
+The operator selected one runner-initiated connection per runner incarnation, multiplexing Sessions,
+with protobuf over binary WebSocket frames. If its service replica disappears, the runner reconnects
+to an available replica. Postgres `LISTEN`/`NOTIFY` provides cross-replica wakeup/routing only; durable
+records remain authoritative. Claude RemoteIO inspires the connection direction, not our protocol,
+authorization or delivery guarantees.
+
 [`RUNNER_TRANSPORT_DESIGN`](task_dag.md#runner_transport_design--runner-dial-out-and-connection-lifecycle)
-compares service-initiated runner RPCs with a runner-initiated channel to Sandbox Service, co-designed
-with VM control networking. Claude RemoteIO demonstrates the latter connection direction; it is not
-an Agentplane protocol or evidence for our authorization, delivery or failure semantics. Review
-bidirectional gRPC, WebSocket or another narrowly justified transport against existing proxy support,
-not a new generic messaging platform. Provide a recommended sequence/network diagram and explicit
-operator decision before implementation.
+reviews the minimum command-channel framing/versioning, authentication, ownership/fencing and active
+dispatch lifetime. Do not require complete spool/lifecycle design before shipping admission through
+the existing relay. The following diagram shows the eventual combined channel, not the first release:
+
+```mermaid
+sequenceDiagram
+    participant C as Caller
+    participant S as Sandbox Service
+    participant R as Runner
+    R->>S: Authenticate and establish outbound WS
+    S->>R: Resume spool after committed archive cursor
+    C->>S: SubmitCommand RPC
+    S->>S: Persist pending_admission
+    S->>R: Command with stable ID
+    R->>R: Journal durable admission
+    R->>S: Correlated admission receipt
+    S->>S: Record admitted
+    S->>C: OK with receipt (not execution result)
+    R->>S: Independent spool Events
+    S->>S: Commit archive prefix and reconcile admissions
+    S->>R: Acknowledge committed archive prefix
+```
+
+Receipts and spool Events may race; the diagram is illustrative, not a required cross-stream order.
+Command insertion and spool listening are independent logical operations on this connection, not
+reverse unary gRPC calls. Neither creates a Session or resumes a stopped harness. Define lifecycle
+message mappings separately. A replay cursor is not part of command submission identity.
+
+### Coordinated implementation and rollout
+
+The [admission plan](command_admission.md) owns persistence/retry semantics. The sequence intentionally
+separates persistence, command transport and event transport rather than making one large migration:
+
+1. `SESSION_COMMAND_CORE` / `SESSION_COMMAND_SUBMISSION`: ship durable admission behind a transport
+   interface using the existing `Attach`-based relay and existing service-owned spool reader. The
+   adapter can internally use replay to find the receipt; the public durable submission contract
+   does not expose that cursor. Reuse is not a new inbound `InsertCommand`/`ListenSpool` rollout.
+2. `RUNNER_OUTBOUND_CHANNEL` / `RUNNER_OUTBOUND_CANARY`: implement both command-channel peers. Deploy
+   compatible service support first with old routes unchanged, then a compatible runner image in a
+   fresh canary. Switch its command adapter to WS and validate the actual proxy path, cross-replica
+   routing, reconnect/fencing and receipts. Keep spool transport unchanged in this stage.
+3. `RUNNER_OUTBOUND_SPOOL`: review and add replay/live Events, committed-prefix acknowledgements and
+   backpressure; switch the canary reader. Preserve archive identities and duplicate/conflict rules.
+4. `RUNNER_OUTBOUND_LIFECYCLE`: migrate remaining lifecycle/inbound consumers. Inventory these early;
+   their full wire design need not block the first command canary. Then `RUNNER_OUTBOUND_ROLLOUT`
+   expands complete outbound support to selected environments and retires old access.
+
+Each operation has an explicit route per environment/incarnation. Command WS plus the legacy spool
+reader is deliberate staged coexistence, not two competing command routes. Do not silently fall back
+per request or blindly resend ambiguous commands through an old route. Rollback preserves pending
+submissions, command IDs, journal/history and exclusive command-route ownership. Remove inbound
+access only after all relevant consumers, including lifecycle callers, move.
+
+Draft code and isolated tests may proceed during backfill subject to their narrow contract reviews.
+This does not lift merge/schema-application/deployment gates on archive ownership and compatibility
+verification, or unrelated VM/service-change holds. No notification metadata, background dispatch
+or automatic wake is part of this rollout.
 
 ### Authority is separate from connection direction
 
@@ -141,11 +198,41 @@ outside the VM guest. Caller authorization remains at the service API regardless
 
 ### Connection ownership, heartbeat and liveness
 
-Decide how a channel maps to a Sandbox/VM UID, runner incarnation and hosted sessions, and how an API
-request reaching another Sandbox Service replica finds the active owner. Compare a small owner/lease
-record plus replica forwarding with other justified routing choices; do not invent a new broker or
-process-local singleton as a requirement. Fence superseded connections so a late old stream cannot
-accept controls as the current runner. A transport connection epoch is not a new Session/Event ID.
+Bind each connection to a provisioned Sandbox/VM UID and runner incarnation, hosting multiple Sessions.
+Track the owning service replica and a fenced connection epoch in shared durable state. Runner
+reconnection establishes a new owner/epoch; a superseded connection must not accept controls as the
+current runner. Define acquisition, expiry and runner-side fencing before implementing delivery.
+A connection epoch is not a new Session/Event ID. Service replica loss triggers runner reconnect,
+not harness startup or proof that any command failed.
+
+### Postgres wakeup/routing and active dispatch
+
+`NOTIFY` carries a small reference, never the full command or an authoritative receipt. The proposed
+cross-replica flow is:
+
+1. The receiving replica authenticates/authorizes, persists the submission and an active dispatch
+   attempt, resolves the current owner/epoch, and notifies that owner after durable state commits.
+2. The owning replica reads the referenced durable records, checks attempt eligibility and its
+   fenced ownership, and sends the command over the runner's WS.
+3. A matching runner receipt is persisted before notifying the waiting replica. The waiter reads
+   durable outcome state and returns the receipt; notification arrival alone proves nothing.
+
+Design the bounded attempt identity/deadline and ownership checks before implementing this stage.
+A retained `pending_admission` row is not standing permission for future delivery. Reconnect must not
+scan and send all pending work, especially stale interrupt/stop commands. An expired/cancelled attempt
+must not initiate a new send, but cannot retract a send already underway; retain late receipts and
+leave ambiguous outcomes pending. Caller retries retain command identity and may create a new active
+attempt. No DB transaction/row lock spans the WS call.
+
+Postgres notifications are not a durable queue: handle missing, duplicate and delayed signals by
+checking committed state. Specify listener registration plus state-check ordering to avoid missed
+wakeups. A waiting RPC may perform bounded state checks/re-notification for its still-active attempt;
+no indefinite scan/dispatcher is implied. Owner changes require re-resolution and fencing, not blind
+fallback to the old transport. Test listener disconnect, owner failure, deadline/send races and late
+receipts, including when the notification never arrives. These details do not block initial durable
+admission through the existing relay.
+
+### Heartbeat and liveness
 
 Define bounded heartbeat/lease timing, who sends/observes it, freshness and explicit status exposed
 to callers. Distinguish connected/recently seen from ready to accept controls, and both from harness
@@ -159,7 +246,7 @@ Keep stable command IDs and original payloads across ambiguous sends; reconcile 
 receipts rather than replay side effects. Define stream acknowledgement versus durable command
 admission and durable archive cursor separately. Replay Events from the committed prefix with exact
 duplicate/conflict handling; multiple service replicas must not acknowledge data only held in a
-lost owner's memory. Decide what happens while disconnected without claiming a new offline queue.
+lost owner's memory. While disconnected, retain uncertainty; reconnect does not drain pending commands as an offline queue.
 
 Bound inflight commands/Event batches, replay buffers and slow-reader pressure. State whether and
 how control traffic avoids starvation during large history catch-up, and define deadlines/cancel
@@ -168,14 +255,16 @@ not prove that either direction is making application progress.
 
 ### VM sequencing and bounded validation
 
-Before `VM_CONTROL_NETWORKING`, choose inbound versus outbound control and state which guest ports,
+Before `VM_CONTROL_NETWORKING`, finalize the outbound control design and state which guest ports,
 endpoint discovery and network policies it replaces. Outbound control may simplify VM reachability,
 but guest access to LLM/Action APIs still needs its authorized relay. Image/resource-isolation work
-can proceed independently; service/persistence changes honor the archive-migration hold.
+can proceed independently; service/persistence merge and deployment honor the archive-migration hold.
 
-If selected, implement `RUNNER_OUTBOUND_CHANNEL` with automated peer tests for authentication denial,
-ordinary disconnect/reconnect, stale-owner fencing, replay, token expiry and backpressure. Perform
-a bounded real-VM connection/reconnect/receipt check for the actual proxy/network path; do not require
-simultaneous node/database/guest failure drills. `RUNNER_OUTBOUND_ROLLOUT` then handles selected
-existing environments with explicit route mode, a compatible image transition and rollback; never
-leave two uncontrolled command paths. A fleet rollout is not automatically a gate on first VM use.
+Implement `RUNNER_OUTBOUND_CHANNEL` after the narrow command-channel review; validate auth denial,
+revocation, ordinary reconnect, stale-owner fencing, notification loss and command/receipt races with
+automated peers. Add spool replay/backpressure coverage in `RUNNER_OUTBOUND_SPOOL`, not as a gate on
+initial admission. Perform a bounded real-VM connection/reconnect/receipt check for the actual
+proxy/network path; no compound failure drills. Before VM use without inbound control, complete all
+spool and lifecycle capabilities that replace that access. `RUNNER_OUTBOUND_ROLLOUT` then handles
+selected existing environments with explicit route modes, compatible images and rollback. Fleet
+rollout is not automatically a gate on first VM use.

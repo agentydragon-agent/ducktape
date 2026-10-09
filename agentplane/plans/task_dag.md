@@ -25,7 +25,13 @@ additional dependencies below. This is a start-work constraint, not just a gate 
 Migration-owned changes continue; API/policy design and independent UI work can proceed without
 changing the migrating schema. Do not use a parallel command/metadata database to evade the hold.
 
-**Next useful parallel work:** prepare the input-submission contract and operator-reviewable
+**Scoped drafting exception (operator discussion, 2026-10-09 PDT):** command-admission foundation
+and coordinated outbound-channel draft code/isolated tests may proceed before cutover, subject to
+their contract-review dependencies. Merge, schema application and deployment still wait for archive
+ownership and compatibility verification. This does not lift unrelated service/database holds or
+authorize notification metadata work. Keep the exception here and in component plans, not `AGENTS.md`.
+
+**Next useful parallel work:** prepare the command-admission/outbound-channel contracts and operator-reviewable
 multiagent/read-policy decisions. The previously requested scoped-read design remains useful now;
 its implementation waits for the archive and trust-boundary decisions. No new multiagent transport,
 native-subagent integration, offline command queue, or extra worker service is selected here.
@@ -141,66 +147,102 @@ a policy for redundant terminal text/tool deltas before implementing deletion. K
 turns and raw/native evidence by default; final UI text is not proof a native frame is reconstructible.
 Use replay/fold tests and bounded storage measurement, not an open-ended live failure exercise.
 
-## 2. Service-owned inputs and notification presentation
+## 2. Service-owned command admission and later notification presentation
 
 ```mermaid
 flowchart LR
-    SESSION_INPUT_CONTRACT[Decision: typed input API and durable acceptance contract]
+    SESSION_COMMAND_CONTRACT[Decision: generic command admission contract]
+    SESSION_COMMAND_CORE[Draft: transport-independent admission foundation]
     THREAD_ARCHIVE_OWNERSHIP[Archive ownership cutover]
-    SESSION_INPUT_SUBMISSION[Blocked: input API, storage and provenance authorization]
-    SESSION_INPUT_METADATA_READ[Blocked: status and metadata reads]
-    SESSION_INPUT_STATUS_UI[Blocked: show service-retained command status]
+    SESSION_COMMAND_SUBMISSION[Blocked: durable submission through existing relay]
+    SESSION_COMMAND_STATUS_READ[Blocked: authorized admission status]
+    SESSION_COMMAND_STATUS_UI[Blocked: show service-retained command status]
+    SESSION_INPUT_METADATA[Follow-up: typed input annotations and provenance]
+    SESSION_INPUT_METADATA_READ[Blocked: metadata reads and message correlation]
     NOTIFICATION_NOTICE_METADATA[Blocked: attach notice metadata to submissions]
     NOTIFICATION_PRESENTATION[Blocked: compact frontend presentation]
-    SESSION_INPUT_CONTRACT --> SESSION_INPUT_SUBMISSION
-    THREAD_ARCHIVE_OWNERSHIP -. persistence expansion hold .-> SESSION_INPUT_SUBMISSION
-    SESSION_INPUT_SUBMISSION --> SESSION_INPUT_METADATA_READ
-    SESSION_INPUT_METADATA_READ --> SESSION_INPUT_STATUS_UI
-    SESSION_INPUT_SUBMISSION --> NOTIFICATION_NOTICE_METADATA
+    SESSION_COMMAND_CONTRACT --> SESSION_COMMAND_CORE
+    SESSION_COMMAND_CORE --> SESSION_COMMAND_SUBMISSION
+    THREAD_ARCHIVE_OWNERSHIP -. merge and deployment gate .-> SESSION_COMMAND_CORE
+    THREAD_ARCHIVE_OWNERSHIP -. merge and deployment gate .-> SESSION_COMMAND_SUBMISSION
+    SESSION_COMMAND_SUBMISSION --> SESSION_COMMAND_STATUS_READ
+    SESSION_COMMAND_STATUS_READ --> SESSION_COMMAND_STATUS_UI
+    SESSION_COMMAND_SUBMISSION --> SESSION_INPUT_METADATA
+    SESSION_INPUT_METADATA --> SESSION_INPUT_METADATA_READ
+    SESSION_INPUT_METADATA --> NOTIFICATION_NOTICE_METADATA
     SESSION_INPUT_METADATA_READ --> NOTIFICATION_PRESENTATION
     NOTIFICATION_NOTICE_METADATA --> NOTIFICATION_PRESENTATION
 ```
 
-Details: [Notification presentation and input metadata](notification_presentation.md).
+Details: [Command admission](command_admission.md); later
+[notification presentation and input metadata](notification_presentation.md).
 
-### `SESSION_INPUT_CONTRACT` — review the input acceptance boundary
+### `SESSION_COMMAND_CONTRACT` — review durable command admission
 
-**Decision; remaining details may be reviewed during backfill.** The selected direction is one RPC:
-persist a distinct service submission with typed metadata as `pending_admission`, immediately send
-its metadata-free runner Command, and return OK only on runner admission. No separate unsent/dispatching
-states or background dispatch queue. Reconcile direct receipts and planned service-owned spool
-admissions idempotently, including replay after a lost response. This is not a claim that migration
-or deployed ingestion is complete. The current app path has browser recovery, not an app database
-command queue to retire. Resolve concrete schema/auth, retention and retryable-versus-terminal
-rejection semantics in the [input plan](notification_presentation.md), without new persistence now.
+**Decision; draft code permitted during backfill.** Route all supported runner Commands through
+Sandbox Service with persistence, immediate dispatch and spool-based admission reconciliation.
+No notification metadata or producer integration in the initial PR. Review authenticated destination
+scope, immutable retries, rejection semantics and retention. The command is a protobuf message, not
+an operation enum; typed SQLAlchemy columns retain its wire payload and unknown fields.
 
-### `SESSION_INPUT_SUBMISSION` — implement durable inputs and provenance
+### `SESSION_COMMAND_CORE` — transport-independent admission foundation
 
-**Blocked on contract review and archive ownership.** Implement the distinct service-owned submission
-record/API, immediate dispatch and admission reconciliation through the migrated spool ingestion.
-Enforce destination scope plus restricted notification-provenance permission; server-stamp trusted
-origin and reject unauthorized/conflicting submissions. Translate only command ID and text to the
-runner. Definitive rejection records an error; ambiguous failure stays pending. Test immutable and
-concurrent retries, lost replies, receipt/ingestion races and crash-safe replay. No app-owned queue,
-background dispatcher, new runner lookup RPC, or metadata passed to runners/harnesses.
+**Draft code and isolated tests permitted; merge/deployment gated on contract review and archive
+ownership.** Separate the protobuf service envelope from the full runner Command. Implement durable
+submission records, immutable retries, immediate-dispatch coordination through a transport interface,
+receipt lookup and direct/spooled reconciliation. No notification metadata, background dispatch or
+automatic startup. Keep runner journal admission independent of `Attach`; do not require new inbound
+`InsertCommand`/`ListenSpool` endpoints before inversion. Unique command keys and per-command updates
+must not serialize unrelated queue work with ingestion; no database lock spans a runner call.
 
-### `SESSION_INPUT_METADATA_READ` — authorized submission status and annotation reads
+In-flight source: operator discussion and draft [#9573](https://github.com/agentydragon/ducktape/pull/9573),
+2026-10-09 PDT. Draft implementation is not deployed capability or verified runtime acceptance.
+Test concurrent/conflicting retries, mutable protobuf snapshots, lost receipts, reconciliation
+rollback and interrupt responsiveness. The public handler remains a separate integration outcome.
 
-**Blocked on input submission.** Expose status and metadata by session/command identity and join
-existing `origin_command_ids` in projections. Include pending/rejected inputs, admission receipts,
-replay and retained historical annotations without requiring a live notification inbox. Keep
-canonical runner Events unchanged.
+### `SESSION_COMMAND_SUBMISSION` — wire durable submission through the existing relay
 
-### `SESSION_INPUT_STATUS_UI` — distinguish service retention from runner admission
+**Blocked on admission core, admission contract review and archive ownership; not on inversion.**
+Wire the authenticated public RPC to persistence and immediate dispatch through a narrow adapter
+around the existing `Attach`-based relay. Reusing this path does not require new inbound runner RPCs.
+Return OK only on durable runner admission; record explicit refusal and preserve uncertainty on
+transport failure. Reconcile receipts through the existing service-owned ingestion path without
+changing its transport. Cover destination authorization, disconnect around admission, immutable
+retries and direct/spooled receipt races with the app unavailable. Replay cursors are an adapter
+implementation detail, not part of the durable public submission contract. No automatic startup.
+Outbound command delivery later replaces this adapter without changing persistence semantics.
 
-**Blocked on submission status reads.** Add a command-state dot for service-retained inputs whose
+### `SESSION_COMMAND_STATUS_READ` — authorized submission status
+
+**Blocked on command admission.** Read pending/admitted/rejected state and retained receipts through
+Session authorization, including reconnect and lost responses. Keep runner admission distinct from
+harness effects. The service-retained UI indicator is a later client integration, not part of the
+initial persistence/routing PR.
+
+### `SESSION_COMMAND_STATUS_UI` — distinguish service retention from runner admission
+
+**Blocked on submission status reads.** Add a command-state dot for service-retained commands whose
 runner admission is unconfirmed. Reconcile after reload/lost responses; do not claim definitely
 unsent, safe cancellation, or guaranteed eventual execution. Keep browser recovery and harness
-confirmation distinct. Independent of compact notice rendering; include focused state/visual tests.
+confirmation distinct. Independent of compact notice rendering and outside the initial command
+persistence/routing PR; include focused state/visual tests.
+
+### `SESSION_INPUT_METADATA` — later typed annotations on input commands
+
+**Follow-up; blocked on command admission contract settling.** Extend the service envelope with typed
+metadata and restricted trusted producer provenance. Notification-specific authorization and producer
+integration belong here, not in the generic command-admission PR. Metadata never enters runner commands;
+notification attachments are invalid on controls. No untyped extension dictionary.
+
+### `SESSION_INPUT_METADATA_READ` — authorized annotation reads
+
+**Blocked on typed input metadata.** Expose metadata by session/command identity and join existing
+`origin_command_ids` in projections. Include pending/failed inputs, replay and retained historical
+annotations without requiring a live notification inbox. Keep canonical runner Events unchanged.
 
 ### `NOTIFICATION_NOTICE_METADATA` — producer integration
 
-**Blocked on input submission.** Attach notice identity/range metadata using existing delivery
+**Blocked on typed input metadata.** Attach notice identity/range metadata using existing delivery
 command IDs. Preserve receipt reconciliation and explicit inbox acknowledgement. Verify the backend
 path without the app; use automated integration coverage rather than requiring a provider outage.
 
@@ -336,7 +378,7 @@ flowchart TD
     THREAD_ARCHIVE_OWNERSHIP --> THREAD_READ_POLICY
     THREAD_ARCHIVE_OWNERSHIP -. persistence hold if new policy tables .-> SANDBOX_COMPARTMENT_BOUNDARY
     AGENT_MESSAGING_DESIGN --> AGENT_MESSAGE_INGRESS
-    SESSION_INPUT_SUBMISSION[Service-owned input submission] -. if direct-input delivery selected .-> AGENT_MESSAGE_INGRESS
+    SESSION_COMMAND_SUBMISSION[Service-owned command submission] -. if direct-input delivery selected .-> AGENT_MESSAGE_INGRESS
     SESSION_INPUT_METADATA_READ[Input provenance reads] -. if direct-input delivery selected .-> AGENT_MESSAGE_RECEPTION
     AGENT_MESSAGE_INGRESS --> AGENT_MESSAGE_RECEPTION
     AGENT_MESSAGE_RECEPTION --> AGENT_MESSAGING
@@ -394,7 +436,7 @@ acknowledged separately; decide offline behavior, retention, batching, abuse lim
 ownership after Sandbox deletion. Reading a transcript does not authorize sending or acking.
 
 Output includes the selected owner/API and explicit conditional prerequisites: a direct-input
-implementation reuses `SESSION_INPUT_SUBMISSION` and provenance reads; a notification source reuses
+implementation reuses `SESSION_COMMAND_SUBMISSION` and separately reviewed provenance reads; a notification source reuses
 inboxes without treating admission as acknowledgement. Neither branch is selected in this DAG.
 Before dispatch, add the chosen branch's edges; do not require implementing both. New Sandbox
 Service or app tables still wait for the migration hold. Pure Notification Service work need not
@@ -455,9 +497,13 @@ connection direction need not move command durability or remove the runner journ
 
 ```mermaid
 flowchart LR
-    RUNNER_TRANSPORT_DESIGN[Decision: service-dials-runner vs runner-dials-service]
-    RUNNER_OUTBOUND_CHANNEL[Conditional: authenticated outbound runner channel]
-    RUNNER_OUTBOUND_ROLLOUT[Conditional: migrate selected existing runners]
+    RUNNER_TRANSPORT_DESIGN[Decision: outbound channel contract]
+    RUNNER_OUTBOUND_CHANNEL[Blocked: outbound command delivery peers]
+    RUNNER_OUTBOUND_CANARY[Blocked: service-first deployment and fresh runner canary]
+    SESSION_COMMAND_SUBMISSION[Blocked: durable submission through existing relay]
+    RUNNER_OUTBOUND_SPOOL[Blocked: move spool delivery onto channel]
+    RUNNER_OUTBOUND_LIFECYCLE[Blocked: migrate remaining lifecycle consumers]
+    RUNNER_OUTBOUND_ROLLOUT[Blocked: migrate selected existing runners]
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Blocked: production provider and API]
@@ -465,11 +511,19 @@ flowchart LR
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     THREAD_ARCHIVE_OWNERSHIP[Archive ownership cutover] -. service-change scheduling hold .-> VM_PROVIDER
-    RUNNER_TRANSPORT_DESIGN -. if outbound selected .-> RUNNER_OUTBOUND_CHANNEL
-    THREAD_ARCHIVE_OWNERSHIP -. service-change scheduling hold .-> RUNNER_OUTBOUND_CHANNEL
+    RUNNER_TRANSPORT_DESIGN --> RUNNER_OUTBOUND_CHANNEL
+    SESSION_COMMAND_CONTRACT[Decision: generic command admission contract] --> RUNNER_OUTBOUND_CHANNEL
+    THREAD_ARCHIVE_OWNERSHIP -. merge and deployment gate .-> RUNNER_OUTBOUND_CHANNEL
     RUNNER_TRANSPORT_DESIGN --> VM_CONTROL_NETWORKING
-    RUNNER_OUTBOUND_CHANNEL -. if outbound selected .-> VM_CONTROL_NETWORKING
-    RUNNER_OUTBOUND_CHANNEL --> RUNNER_OUTBOUND_ROLLOUT
+    RUNNER_OUTBOUND_CHANNEL --> VM_CONTROL_NETWORKING
+    RUNNER_OUTBOUND_LIFECYCLE --> VM_CONTROL_NETWORKING
+    RUNNER_OUTBOUND_SPOOL --> VM_CONTROL_NETWORKING
+    RUNNER_OUTBOUND_CHANNEL --> RUNNER_OUTBOUND_CANARY
+    SESSION_COMMAND_SUBMISSION --> RUNNER_OUTBOUND_CANARY
+    RUNNER_OUTBOUND_CANARY --> RUNNER_OUTBOUND_SPOOL
+    RUNNER_OUTBOUND_CANARY --> RUNNER_OUTBOUND_LIFECYCLE
+    RUNNER_OUTBOUND_SPOOL --> RUNNER_OUTBOUND_ROLLOUT
+    RUNNER_OUTBOUND_LIFECYCLE --> RUNNER_OUTBOUND_ROLLOUT
     VM_PROVIDER --> VM_CONTROL_NETWORKING
     VM_CONTROL_NETWORKING --> VM_LIFECYCLE
     VM_IMAGE --> VM_PROCESS_ISOLATION
@@ -484,38 +538,66 @@ flowchart LR
 
 ### `RUNNER_TRANSPORT_DESIGN` — runner dial-out and connection lifecycle
 
-**Decision; design can proceed during backfill.** Compare today's service-initiated runner RPCs
-with a runner-initiated long-lived channel to Sandbox Service, taking inspiration from Claude
-RemoteIO's connection direction without adopting its wire protocol or lifecycle assumptions.
-Present a recommended protocol and VM networking diagram for operator review. Define authenticated
-environment/incarnation binding, connection ownership/fencing across replicas, heartbeat/liveness
-states and timeouts, reconnect/replay cursors, command receipts and bounded backpressure. A lost
-connection is not proof that the harness stopped or that a command failed.
+**Decision; narrow command-channel design can proceed during backfill.** The operator selected
+one runner-initiated connection per runner incarnation, multiplexing Sessions, using protobuf over
+binary WebSocket frames. On disconnect the runner reconnects to an available service replica.
+Postgres `LISTEN`/`NOTIFY` is a wakeup/routing signal only, not durable delivery or an admission
+receipt. RemoteIO inspires connection direction, not the wire protocol or authority model.
 
-Output must state whether v1 VMs use inbound or outbound control, which inbound ports/discovery
-rules disappear, how existing container runners transition, and the selected implementation edges.
-Keep runner journal/admission authority, offline queue policy and thin-runner redesign separate.
-Detailed questions: [runner transport design](runner_discovery.md#outbound-control-channel-design).
+Review the minimum command/receipt framing, incarnation authentication/bootstrap, ownership/epoch
+fencing and active dispatch-attempt lifetime. Resolve these before channel implementation, but do
+not require the complete spool or lifecycle protocol to ship durable admission over the old relay.
+Spool replay/backpressure review belongs to `RUNNER_OUTBOUND_SPOOL`; inventory remaining lifecycle
+consumers early and finish their mappings separately. Keep runner journal authority and offline
+queue policy unchanged. Details: [runner transport design](runner_discovery.md#outbound-control-channel-design).
 
-### `RUNNER_OUTBOUND_CHANNEL` — implement the selected outbound transport
+### `RUNNER_OUTBOUND_CHANNEL` — implement outbound command delivery
 
-**Conditional on the transport decision; service changes wait for archive ownership.** Implement
-runner/service connection handling, auth, replica routing/fencing, progress/heartbeat reporting and
-cursor-based reconnect while retaining runner command/Event semantics. Test identity denial,
-ordinary disconnect, stale connections, replay and flow control with controllable peers. Do not
-require moving command admission centrally, native offline catch-up research or removing SQLite.
+**Blocked on command-channel and admission contract review; draft code/isolated tests permitted,
+with merge/deployment gated on archive ownership.** Implement both WS peers, command/receipt
+correlation, authenticated incarnation binding, ownership/fencing and reconnect. Use durable command
+and outcome records with Postgres notifications to wake the connection owner and waiting caller.
+Define active dispatch attempts before routing; reconnect must not scan pending commands for delivery.
+Keep existing spool ingestion unchanged. Test missed/duplicate/delayed notifications, owner loss,
+authentication denial/revocation, stale connections and ambiguous sends. No new inbound unary API.
 
-### `RUNNER_OUTBOUND_ROLLOUT` — migrate selected existing runners
+### `RUNNER_OUTBOUND_CANARY` — switch command delivery on a fresh runner
 
-**Conditional on outbound selection and channel implementation.** Migrate a bounded set using a
-compatible guarded image transition, verify receipt/replay continuity and remove obsolete inbound
-access for migrated environments. Define rollback and reject competing control paths; coexistence
-across explicitly configured old/new environments is not silent per-request fallback. Fleet-wide
-migration is not a prerequisite for first VM integration unless the reviewed design makes it one.
+**Blocked on outbound command peers and durable submission through the existing relay.** Deploy
+compatible service support first with old routes unchanged, then a compatible runner image in a fresh
+canary. Select one explicit command route per incarnation and switch its submission adapter to WS;
+keep the existing spool reader. Verify the real proxy path, cross-replica routing, owner loss and
+reconnect, receipt persistence and exact retries. No silent fallback after an ambiguous send. This
+proves command delivery independently of moving spool traffic or migrating existing environments.
+
+### `RUNNER_OUTBOUND_SPOOL` — move spool delivery onto the channel
+
+**Blocked on the command canary; review replay/acknowledgement and backpressure here.** Add independent
+cursor-based replay/live Events and acknowledgements only after archive commit. Preserve existing
+archive identities, duplicate/conflict checks and direct/spooled admission reconciliation. Bound
+buffers and keep controls/receipts responsive during catch-up; test reconnect, checkpoint rollback
+and slow readers. Switch the canary's ingester explicitly, then expand this capability in bounded
+steps. This changes event transport, not archive storage or admission authority.
+
+### `RUNNER_OUTBOUND_LIFECYCLE` — migrate remaining inbound control consumers
+
+**Blocked on the command canary; inventory and design may proceed earlier.** Map remaining lifecycle
+and other inbound/`Attach` consumers onto the channel without accidental startup/resume semantics.
+Verify each consumer's auth and retry behavior before retiring its old route. Completion establishes
+that selected environments no longer require inbound controls; no automatic fleet migration.
+
+### `RUNNER_OUTBOUND_ROLLOUT` — migrate selected existing runners and retire legacy routes
+
+**Blocked on outbound spool and remaining lifecycle integration.** Expand complete outbound support
+to selected existing environments with explicit image/route transitions and rollback preserving
+submissions, command IDs, history and runner storage. Partial command/spool canaries above need not
+wait for this full migration. Never blindly resend ambiguous commands through a competing route.
+Retire legacy `Attach` command submission and inbound access only after all relevant consumers move.
+Fleet migration is not a gate on first VM use.
 
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 
-**Blocked on transport decision and VM provider; outbound implementation only if selected.** Wire
+**Blocked on the reviewed outbound command, spool and lifecycle capabilities and VM provider.** Wire
 VM control reachability/authentication to the chosen path. An outbound channel may remove guest
 control-port exposure and endpoint discovery; retain the independently needed outbound API/credential
 proxy path. Image packaging and process-isolation work need not wait for this decision. Verify the
