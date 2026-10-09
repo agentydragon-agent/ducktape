@@ -81,17 +81,24 @@ server {
         proxy_set_header Origin "";
     }
 
-    # The query endpoint without its trailing slash, so the slash stops being load-bearing.
-    # The prefix location below otherwise implicit-301's this spelling to nginx's own listen
-    # port over cleartext -- Location: http://<host>:5603/api/0/query/ -- which no client can
-    # follow (the Gateway does not serve 5603, and TLS terminates there so nginx cannot see the
-    # real scheme). An exact location matches first and never takes the implicit redirect; the
-    # rewrite normalizes the path for aw-server with `break`, i.e. internally, so the method, body
-    # and query args survive and the upstream sees exactly the path it sees today. Rocket is known
-    # to normalize a trailing slash on this server -- /api/0/buckets, /api/0/settings, /api/0/info
-    # and <bucket>/events each answer 200 either way -- but that is not measured for the query
-    # route specifically, and the rewrite means this route does not depend on it.
-    location = /api/0/query {
+    # The query endpoint, with or without its trailing slash, so the slash stops being
+    # load-bearing. A prefix location ending in `/` implicit-301s the short spelling to nginx's
+    # own cleartext listen port -- Location: http://<host>:5603/api/0/query/ -- which no client
+    # can follow: TLS terminates at the Gateway, and the Gateway does not serve 5603. One regex
+    # location answers both spellings; `rewrite ... break` normalizes the path for aw-server
+    # internally, so the method, body and query args survive and the upstream sees exactly the
+    # path it sees today (a no-op for the slash form).
+    #
+    # Regex, not prefix: a prefix `/api/0/query` would also match `/api/0/queryanything` and
+    # rewrite that into a valid request, so the pattern stays anchored with `/?$`. nginx strips
+    # the query string before matching, so `?duration=...` cannot defeat the anchor. Anything
+    # deeper (`/api/0/query/<x>`) falls through to `location /` as it does today -- aw-server has
+    # no subroute there.
+    #
+    # Rocket normalizes a trailing slash on this server -- /api/0/buckets, /api/0/settings,
+    # /api/0/info and <bucket>/events each answer 200 either way -- but that is unmeasured for
+    # the query route, and this route does not depend on it.
+    location ~ ^/api/0/query/?$ {
         if ($aw_read_ok = 0) {
             return 401;
         }
@@ -99,18 +106,6 @@ server {
             deny all;
         }
         rewrite ^ /api/0/query/ break;
-        proxy_pass http://127.0.0.1:5600;
-        proxy_set_header Host $host;
-        proxy_set_header Origin "";
-    }
-
-    location /api/0/query/ {
-        if ($aw_read_ok = 0) {
-            return 401;
-        }
-        limit_except GET POST {
-            deny all;
-        }
         proxy_pass http://127.0.0.1:5600;
         proxy_set_header Host $host;
         proxy_set_header Origin "";

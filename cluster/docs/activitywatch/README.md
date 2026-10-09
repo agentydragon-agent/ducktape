@@ -75,11 +75,11 @@ Agents use the bearer-gated read route below; it is deliberately separate from t
 session path.
 
 Gotchas (bite every consumer): `/api/0/query` accepts **both** spellings — with and without the
-trailing slash — for GET and POST alike, via an exact `location = /api/0/query` block in each
-proxy. Before that block, a prefix location ending in `/` made nginx implicit-301 the short form
-to nginx's own cleartext listen port, which the Gateway cannot serve, and the egress fence refused
-the no-slash POST outright, so the redirect could never be followed; prefer the trailing slash in
-new code anyway. Transient TLS connection resets occur (~1/20 calls) — retry once; bucket
+trailing slash — for GET and POST alike, via an anchored `location ~ ^/api/0/query/?$` block in
+each proxy. Before that block, a prefix location ending in `/` made nginx implicit-301 the short
+form to nginx's own cleartext listen port, which the Gateway cannot serve, and the egress fence
+refused the no-slash POST outright, so the redirect could never be followed; prefer the trailing
+slash in new code anyway. Transient TLS connection resets occur (~1/20 calls) — retry once; bucket
 `last_updated` is always `null` on this server — derive recency from each bucket's newest event.
 
 ### Read route (static bearer)
