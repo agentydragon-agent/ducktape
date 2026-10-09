@@ -25,7 +25,9 @@ async function render(service: ConnectionService, readGrants?: CallerGrantReader
   await act(async () =>
     root.render(
       <MantineProvider env="test">
-        <MemoryRouter><Connections service={service} readGrants={readGrants} /></MemoryRouter>
+        <MemoryRouter>
+          <Connections service={service} readGrants={readGrants} />
+        </MemoryRouter>
       </MantineProvider>
     )
   );
@@ -122,7 +124,8 @@ it("distinguishes loading failures from an empty inventory", async () => {
 
 it("expands grants for the current caller even when its admission label is missing", async () => {
   const read = vi.fn<CallerGrantReader>(async () => ({
-    egress_bindings: [], action_policy: { synced: true, bindings: [], auto_approve_if: [] },
+    egress_bindings: [],
+    action_policy: { synced: true, bindings: [], auto_approve_if: [] },
   }));
   const container = await render(service(), read);
   expect(read).not.toHaveBeenCalled();

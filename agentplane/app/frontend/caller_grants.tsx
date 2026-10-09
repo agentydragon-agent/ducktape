@@ -51,7 +51,11 @@ export function CallerGrants({
         Egress and Action grants shared by all clients and workloads using this ServiceAccount. This is a snapshot;
         refresh to see changes. Kubernetes RBAC is not included.
       </Text>
-      {error && <Alert color="red" role="alert">Could not load grants: {error}</Alert>}
+      {error && (
+        <Alert color="red" role="alert">
+          Could not load grants: {error}
+        </Alert>
+      )}
       {!view && !error && <Text role="status">Loading grants…</Text>}
       {view && (
         <>

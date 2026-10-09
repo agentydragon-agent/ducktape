@@ -24,13 +24,15 @@ async function render(read: CallerGrantReader): Promise<void> {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root.render(
-    <MantineProvider env="test">
-      <MemoryRouter>
-        <CallerGrants account={ACCOUNT} read={read} />
-      </MemoryRouter>
-    </MantineProvider>
-  ));
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <MemoryRouter>
+          <CallerGrants account={ACCOUNT} read={read} />
+        </MemoryRouter>
+      </MantineProvider>
+    )
+  );
 }
 function button(name: string): HTMLButtonElement {
   const found = [...container.querySelectorAll("button")].find((node) => node.textContent === name);
@@ -49,10 +51,16 @@ it("reads by account and renders honest empty policy without mutation controls",
 });
 it("preserves expired and missing egress references even when Action policy is unavailable", async () => {
   await render(async () => ({
-    egress_bindings: [{
-      name: "external-grants", from_git: true, subjects: [ACCOUNT], policies: [],
-      missing_policies: ["removed-policy"], expires_at: "2000-01-01T00:00:00Z",
-    }],
+    egress_bindings: [
+      {
+        name: "external-grants",
+        from_git: true,
+        subjects: [ACCOUNT],
+        policies: [],
+        missing_policies: ["removed-policy"],
+        expires_at: "2000-01-01T00:00:00Z",
+      },
+    ],
     action_policy: { kind: "unavailable", code: "operator_federation_not_configured", upstream: null },
   }));
   expect(container.textContent).toContain("external-grants");
@@ -63,7 +71,8 @@ it("preserves expired and missing egress references even when Action policy is u
   expect(container.textContent).toContain("removed-policy: no such egress policy");
 });
 it("shows unsynced policy separately from a request failure and supports refresh", async () => {
-  const read = vi.fn<CallerGrantReader>()
+  const read = vi
+    .fn<CallerGrantReader>()
     .mockResolvedValueOnce({ ...EMPTY, action_policy: { synced: false, bindings: [], auto_approve_if: [] } })
     .mockRejectedValueOnce(new Error("read failed"))
     .mockResolvedValueOnce(EMPTY);
@@ -77,9 +86,17 @@ it("shows unsynced policy separately from a request failure and supports refresh
   expect(container.textContent).not.toContain("read failed");
 });
 it("aborts stale refreshes and ignores their late results", async () => {
-  let finish: (value: CallerGrantView) => void = () => { throw new Error("read not started"); };
-  const read = vi.fn<CallerGrantReader>()
-    .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }))
+  let finish: (value: CallerGrantView) => void = () => {
+    throw new Error("read not started");
+  };
+  const read = vi
+    .fn<CallerGrantReader>()
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    )
     .mockResolvedValueOnce(EMPTY);
   await render(read);
   expect(container.textContent).toContain("Loading grants");

@@ -218,8 +218,8 @@ export function EgressBindings({
         })}
       </Table.Tbody>
       <Table.Caption>
-        An unexpired egress binding grants its configured rules; revoking deletes it. One from the repository
-        is removed there.
+        An unexpired egress binding grants its configured rules; revoking deletes it. One from the repository is removed
+        there.
       </Table.Caption>
     </Table>
   );
