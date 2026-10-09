@@ -565,18 +565,24 @@ data:
           api_key: os.environ/GEMINI_API_KEY
         model_info:
           mode: embedding
+          max_input_tokens: 8192
+          max_tokens: 8192
       - model_name: gemini-embedding-2
         litellm_params:
           model: gemini/gemini-embedding-2
           api_key: os.environ/GEMINI_API_KEY
         model_info:
           mode: embedding
+          max_input_tokens: 8192
+          max_tokens: 8192
       - model_name: google/goog-embed/gemini-embedding-001
         litellm_params:
           model: gemini/gemini-embedding-001
           api_key: os.environ/GEMINI_API_KEY
         model_info:
           mode: embedding
+          max_input_tokens: 2048
+          max_tokens: 2048
       - model_name: mistral/oai-chat/codestral-2508
         litellm_params:
           model: mistral/codestral-2508
