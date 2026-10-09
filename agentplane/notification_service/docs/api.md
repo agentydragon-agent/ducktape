@@ -273,4 +273,3 @@ rather than duplicate them into every affected subscription.
 The normalized binding migration preserves subscription IDs, inboxes, event checkpoints and raw
 receipts. It does not claim historical validation times. Reverse migration refuses to discard
 shared observations or revision associations.
-
