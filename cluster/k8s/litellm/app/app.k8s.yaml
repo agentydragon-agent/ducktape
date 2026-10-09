@@ -435,6 +435,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 1048576
+          max_output_tokens: 65536
+          max_tokens: 65536
       - model_name: antigravity/ant-messages/gemini-3.7-flash-high
         litellm_params:
           model: anthropic/gemini-3.7-flash-high
@@ -443,6 +446,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 1048576
+          max_output_tokens: 65536
+          max_tokens: 65536
       - model_name: antigravity/ant-messages/gemini-3.8-flash-high
         litellm_params:
           model: anthropic/gemini-3.8-flash-high
@@ -451,6 +457,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 1048576
+          max_output_tokens: 65536
+          max_tokens: 65536
       - model_name: antigravity/ant-messages/gemini-3-flash
         litellm_params:
           model: anthropic/gemini-3-flash
@@ -459,6 +468,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 1048576
+          max_output_tokens: 65536
+          max_tokens: 65536
       - model_name: antigravity/ant-messages/gemini-3.1-flash-image
         litellm_params:
           model: anthropic/gemini-3.1-flash-image
@@ -475,6 +487,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 1048576
+          max_output_tokens: 65535
+          max_tokens: 65535
       - model_name: antigravity/ant-messages/gemini-3.1-pro-low
         litellm_params:
           model: anthropic/gemini-3.1-pro-low
@@ -483,6 +498,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 1048576
+          max_output_tokens: 65535
+          max_tokens: 65535
       - model_name: antigravity/ant-messages/gpt-oss-120b-medium
         litellm_params:
           model: anthropic/gpt-oss-120b-medium
@@ -499,6 +517,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 1048576
+          max_output_tokens: 65535
+          max_tokens: 65535
       - model_name: antigravity/ant-messages/gemini-3.5-flash-lite
         litellm_params:
           model: anthropic/gemini-3.5-flash-lite
@@ -507,6 +528,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
+          max_input_tokens: 1048576
+          max_output_tokens: 65535
+          max_tokens: 65535
       - model_name: groq/oai-chat/llama-3.3-70b-versatile
         litellm_params:
           model: groq/llama-3.3-70b-versatile
