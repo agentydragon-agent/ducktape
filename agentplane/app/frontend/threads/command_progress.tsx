@@ -12,12 +12,15 @@ export function CommandProgress({
   subject,
   reason,
   local = false,
+  unsent = false,
 }: {
   stage: Exclude<CommandStage, "noop">;
   subject: CommandSubject;
   reason?: string | null;
   /** This browser actually retained the command; server-only rows cannot claim that. */
   local?: boolean;
+  /** Only the browser owns a command that has not been attempted over HTTP yet. */
+  unsent?: boolean;
 }): JSX.Element {
   const [touchOpen, setTouchOpen] = useState(false);
   const waitingFor =
@@ -36,7 +39,13 @@ export function CommandProgress({
     failed: "Failed",
     refused: "Command refused",
   };
-  const label = `${stage === "local" && !local ? "Waiting for runner to accept" : labels[stage]}${reason ? `: ${reason}` : ""}`;
+  const description =
+    stage === "local" && !local
+      ? "Waiting for runner to accept"
+      : stage === "local" && unsent
+        ? "Saved in browser · waiting for connection to send"
+        : labels[stage];
+  const label = `${description}${reason ? `: ${reason}` : ""}`;
   // The first light means submitted, not proof that another browser saved it locally.
   const current = stage === "local" || stage === "unconfirmed" || stage === "refused" ? 2 : 3;
   const lights: LightState[] = [1, 2, 3].map((step) =>

@@ -261,6 +261,24 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     await view.capture(name=f"{view.capture_name}_applied_input", target=applied_input)
 
 
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
+async def test_cancel_unsent_input(view: VisualPage, app: AgentplaneFixture) -> None:
+    await view.page.evaluate(
+        "() => Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })"
+    )
+    await app.remember_pending_input()
+    await app.mount_thread(RUNNING_THREAD)
+    await view.check(context="fixture ready")
+    row = view.page.locator('[data-command-id="locally-retained"]')
+    await expect(row.get_by_role("button", name="Cancel")).to_be_visible()
+    await expect(row.locator('[data-stage="local"]')).to_have_attribute(
+        "aria-label", "Saved in browser · waiting for connection to send"
+    )
+    await view.capture(target=row)
+    await row.get_by_role("button", name="Cancel").click()
+    await expect(row).to_have_count(0)
+
+
 async def test_debug_history_latest_session_pending_raw(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.pending_commands()
     await app.remember_pending_input()

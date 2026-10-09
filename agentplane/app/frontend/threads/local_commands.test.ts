@@ -103,15 +103,29 @@ it("does not overwrite another tab's distinct pending commands", () => {
   unsubscribe();
 });
 
-it("keeps dismissed terminal outcomes hidden after a reload", () => {
+it("only cancels a command that has never been attempted", () => {
   const store = new LocalCommands("thread");
   store.remember(COMMAND);
-  store.dismiss(COMMAND.commandId);
+  expect(new LocalCommands("thread").getSnapshot().commands[0].attempted).toBe(false);
+  expect(store.cancelUnsent(COMMAND.commandId)).toBe(true);
+  expect(new LocalCommands("thread").getSnapshot().commands).toEqual([]);
+  store.remember(COMMAND);
+  expect(store.markAttempted(COMMAND.commandId)).toBe(true);
+  expect(new LocalCommands("thread").getSnapshot().commands[0].attempted).toBe(true);
+  expect(store.cancelUnsent(COMMAND.commandId)).toBe(false);
+  expect(new LocalCommands("thread").getSnapshot().commands).toHaveLength(1);
+});
 
+it("treats commands stored before the attempted flag existed as already sent", () => {
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  const key = localStorage.key(0)!;
+  const record = JSON.parse(localStorage.getItem(key)!);
+  delete record.attempted;
+  localStorage.setItem(key, JSON.stringify(record));
   const restored = new LocalCommands("thread");
-  expect(restored.getSnapshot().commands).toEqual([]);
-  expect(restored.isDismissed(COMMAND.commandId)).toBe(true);
-  expect(new LocalCommands("other-thread").isDismissed(COMMAND.commandId)).toBe(false);
+  expect(restored.getSnapshot().commands[0].attempted).toBe(true);
+  expect(restored.cancelUnsent(COMMAND.commandId)).toBe(false);
 });
 
 it("refuses payload changes under an existing local command id", () => {

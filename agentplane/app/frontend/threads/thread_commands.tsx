@@ -9,7 +9,7 @@ import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evi
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
 
-const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], dismissedCommandIds: [], error: null };
+const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
 
 export interface CommandIssue {
   kind: "refused" | "unconfirmed";
@@ -54,6 +54,7 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
       if (active.current.has(id)) return;
       active.current.add(id);
       try {
+        if (!navigator.onLine || !store.markAttempted(id)) return;
         store.acknowledge(value.command, await command(threadId, value.command));
         setErrors((previous) => {
           if (!previous.has(id)) return previous;
@@ -84,7 +85,7 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
   useEffect(() => {
     const redeliverFailed = () => {
       for (const value of store.getSnapshot().commands)
-        if (value.admission === null && errors.has(value.command.commandId)) void deliver(value);
+        if (value.admission === null && (!value.attempted || errors.has(value.command.commandId))) void deliver(value);
     };
     window.addEventListener("online", redeliverFailed);
     return () => window.removeEventListener("online", redeliverFailed);
@@ -123,11 +124,13 @@ function CommandOutcome({
   subject: commandSubject,
   reason,
   local,
+  unsent,
 }: {
   stage: CommandStage;
   subject: CommandSubject;
   reason?: string | null;
   local?: boolean;
+  unsent?: boolean;
 }): JSX.Element {
   if (stage === "noop") {
     const label = reason ? `No-op: ${reason}` : "No-op";
@@ -137,7 +140,7 @@ function CommandOutcome({
       </Text>
     );
   }
-  return <CommandProgress stage={stage} subject={commandSubject} reason={reason} local={local} />;
+  return <CommandProgress stage={stage} subject={commandSubject} reason={reason} local={local} unsent={unsent} />;
 }
 
 export function SelectedCommandOutcomes({
@@ -174,6 +177,7 @@ export function PendingInputMessages({
   const inputCommands = commands.slice(0, 128).filter((value) => value.command.operation.case === "submitInput");
   const rows = useThreadSync().useCommandRows(inputCommands.map((value) => value.command.commandId));
   const byId = new Map(rows.map((row) => [row.entityId, row]));
+  useEffect(() => store.observeCommandIds(new Set(rows.map((row) => row.entityId))), [rows, store]);
   const localCommandIds = new Set(inputCommands.map((value) => value.command.commandId));
   const confirmedCommandIds = new Set(
     entities
@@ -189,8 +193,7 @@ export function PendingInputMessages({
         row.state.operation === "submit_input" &&
         row.state.outcome !== "pending" &&
         !localCommandIds.has(row.entityId) &&
-        !confirmedCommandIds.has(row.entityId) &&
-        !store.isDismissed(row.entityId)
+        !confirmedCommandIds.has(row.entityId)
     )
     .sort((left, right) => {
       const leftCursor = decimalBigInt(left.cursor);
@@ -228,12 +231,13 @@ export function PendingInputMessages({
                   subject="input"
                   reason={failed || noop ? outcomeReason : issue?.message}
                   local
+                  unsent={!value.attempted}
                 />
               )
             }
             action={
-              failed || noop
-                ? { label: "Dismiss", onClick: () => store.dismiss(id) }
+              !admitted && !value.attempted
+                ? { label: "Cancel", onClick: () => store.cancelUnsent(id) }
                 : !admitted
                   ? { label: "Retry", onClick: () => void deliver(value) }
                   : undefined
@@ -257,7 +261,6 @@ export function PendingInputMessages({
                 reason={row.state.outcome_reason}
               />
             }
-            action={{ label: "Dismiss", onClick: () => store.dismiss(row.entityId) }}
           />
         );
       })}
@@ -279,9 +282,7 @@ function SelectedCommandRows({
   deliver: (value: LocalCommand) => Promise<void>;
 }): JSX.Element {
   useEffect(() => {
-    for (const row of rows) {
-      if ("outcome" in row.state && row.state.outcome === "effected") store.dismiss(row.entityId);
-    }
+    store.observeCommandIds(new Set(rows.map((row) => row.entityId)));
   }, [rows, store]);
   const byId = new Map(rows.map((row) => [row.entityId, row]));
   return (
@@ -324,16 +325,19 @@ function SelectedCommandRows({
                       : undefined
                 }
                 local
+                unsent={!value.attempted}
               />
-              {terminal && row ? (
-                <Button size="xs" variant="subtle" onClick={() => store.dismiss(row.entityId)}>
-                  Dismiss
+              {!admitted && (
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  onClick={() =>
+                    value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
+                  }
+                >
+                  {value.attempted ? "Retry" : "Cancel"}
                 </Button>
-              ) : !admitted ? (
-                <Button size="xs" variant="subtle" onClick={() => void deliver(value)}>
-                  Retry
-                </Button>
-              ) : null}
+              )}
             </Group>
             {terminal && row?.inputRef && <Body reference={row.inputRef} format="text" />}
           </Paper>
@@ -349,15 +353,12 @@ export function ProjectedCommandRows({
   threadId,
   entities,
   localCommands,
-  dismissedCommandIds,
 }: {
   threadId: string;
   entities: ThreadEntity[];
   localCommands: LocalCommand[];
-  dismissedCommandIds: string[];
 }): JSX.Element | null {
   const localCommandIds = new Set(localCommands.map((value) => value.command.commandId));
-  const dismissedIds = new Set(dismissedCommandIds);
   const confirmedCommandIds = new Set(
     entities
       .filter((row) => row.entityKind === "confirmed_input")
@@ -368,7 +369,6 @@ export function ProjectedCommandRows({
       row.entityKind === "command" &&
       "outcome" in row.state &&
       !localCommandIds.has(row.entityId) &&
-      !dismissedIds.has(row.entityId) &&
       !confirmedCommandIds.has(row.entityId) &&
       !pendingSentMessage(row)
   );

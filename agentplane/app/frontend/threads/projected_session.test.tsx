@@ -719,6 +719,33 @@ it("opens compact command detail on touch and closes on blur or Escape", async (
   expect(progress?.hasAttribute("data-touch-open")).toBe(false);
 });
 
+it("lets the browser cancel only a locally queued, never-sent message", async () => {
+  const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  new LocalCommands(THREAD.id).remember(message("unsent"));
+  const container = await render();
+  expect(vi.mocked(command)).not.toHaveBeenCalled();
+  const row = pendingRow(container, "unsent");
+  expect(buttonIn(row, "Cancel")).toBeDefined();
+  expect(buttonIn(row, "Retry")).toBeUndefined();
+  await act(async () => buttonIn(row, "Cancel")?.click());
+  expect(new LocalCommands(THREAD.id).getSnapshot().commands).toEqual([]);
+  online.mockReturnValue(true);
+  await act(async () => window.dispatchEvent(new Event("online")));
+  expect(vi.mocked(command)).not.toHaveBeenCalled();
+});
+
+it("does not offer Cancel once an offline command has begun its first HTTP attempt", async () => {
+  const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  new LocalCommands(THREAD.id).remember(message("queued"));
+  const container = await render();
+  expect(buttonIn(pendingRow(container, "queued"), "Cancel")).toBeDefined();
+  online.mockReturnValue(true);
+  await act(async () => window.dispatchEvent(new Event("online")));
+  expect(sentIds()).toEqual(["queued"]);
+  expect(new LocalCommands(THREAD.id).cancelUnsent("queued")).toBe(false);
+  expect(buttonIn(pendingRow(container, "queued"), "Cancel")).toBeUndefined();
+});
+
 it("shows a delivery that outlives its deadline as unconfirmed and retriable", async () => {
   new LocalCommands(THREAD.id).remember(message("hung"));
   let expire!: (reason: unknown) => void;
@@ -849,7 +876,7 @@ it.each([
   ["failed", "failed", "Failed: runner unavailable"],
   ["noop", "noop", "No-op: harness was stopping"],
   ["effected", "confirmed", "Agent confirmed message"],
-] as const)("shows a server-only %s input as a dismissible right-side message", async (outcome, phase, status) => {
+] as const)("shows a server-only %s input as a persistent right-side message", async (outcome, phase, status) => {
   const container = await render(
     threadState({
       rows: [
@@ -882,11 +909,8 @@ it.each([
   expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
     outcome === "noop" ? undefined : status
   );
-  const dismiss = buttonIn(bubble?.parentElement, "Dismiss");
-  expect(dismiss).toBeDefined();
-  await act(async () => dismiss?.click());
-  expect(container.querySelector(`.agentplane-user-bubble[data-message-phase="${phase}"]`)).toBeNull();
-  expect(new LocalCommands(THREAD.id).isDismissed("test-entity")).toBe(true);
+  expect(bubble?.parentElement?.querySelector("button[aria-label='Dismiss']")).toBeNull();
+  expect(container.querySelector(`.agentplane-user-bubble[data-message-phase="${phase}"]`)).not.toBeNull();
 });
 
 it("keeps a still-pending sent message out of the pending-commands box, since it renders inline instead", async () => {

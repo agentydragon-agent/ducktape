@@ -1066,7 +1066,6 @@ function ProjectedSessionBody({
           threadId={threadId}
           entities={entities}
           localCommands={commands.local.commands}
-          dismissedCommandIds={commands.local.dismissedCommandIds}
         />
         {selectedCommandIds.length > 0 && (
           <SelectedCommandOutcomes
