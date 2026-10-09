@@ -1,4 +1,5 @@
 import { Alert, Button, Group, Select, Stack, Table, Text } from "@mantine/core";
+import "./connections.css";
 import { followStream, type StreamConnection } from "../live_stream";
 import { type JSX, useCallback, useEffect, useState } from "react";
 
@@ -149,7 +150,7 @@ export function Connections({ service = connectionService }: { service?: Connect
       {!loaded && !error && <Text>Loading OAuth clients…</Text>}
       {loaded && rows.length === 0 && <Text c="dimmed">No OAuth clients yet. Authorize a client to create one.</Text>}
       {loaded && rows.length > 0 && (
-        <Table>
+        <Table className="agentplane-connections">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Client</Table.Th>
@@ -167,14 +168,22 @@ export function Connections({ service = connectionService }: { service?: Connect
               return (
                 <Table.Tr key={row.id} data-connection-id={row.id}>
                   <Table.Td>
-                    <Text style={{ overflowWrap: "anywhere" }}>{grant?.client_id ?? "—"}</Text>
+                    <Text fw={600} style={{ overflowWrap: "anywhere" }}>
+                      {row.display_name}
+                    </Text>
                     <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      {row.display_name} · {row.id}
+                      Client ID · {grant?.client_id ?? "—"}
+                    </Text>
+                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                      Connection ID · {row.id}
                     </Text>
                   </Table.Td>
                   <Table.Td>
                     {currentCaller ? (
                       <Stack gap={2}>
+                        <Text className="agentplane-connection-mobile-label" size="xs" fw={600}>
+                          Service account
+                        </Text>
                         <Select
                           aria-label={`Service account for ${row.display_name}`}
                           value={selected}
@@ -192,7 +201,7 @@ export function Connections({ service = connectionService }: { service?: Connect
                           ]}
                           disabled={busy || unbound}
                           size="xs"
-                          w={240}
+                          className="agentplane-connection-account-select"
                         />
                         {!isEligibleCaller(currentCaller, accounts) && (
                           <Text size="xs" c="orange">
