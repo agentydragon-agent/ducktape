@@ -7,7 +7,7 @@ import { serviceAccountKey } from "../client";
 import { StaleNotice } from "../stream_status";
 import { TopbarActions } from "../topbar";
 import { actionService } from "./client";
-import { compactActionArguments, compactApprovalArguments } from "./rendering/index";
+import { canApproveInline, compactActionArguments } from "./rendering/index";
 import { ActionRequestsContext, PendingActionCard, useActionRequests } from "./requests";
 
 /** One stream and decision state for the shell, the Actions page, and the thread composer. */
@@ -60,7 +60,7 @@ export function ComposerPendingActions(): JSX.Element | null {
     pending.length === 1 && !pending[0].external_grant
       ? compactActionArguments(pending[0].action, pending[0].arguments)
       : null;
-  const inlineApproval = compact !== null && compactApprovalArguments(pending[0].action, pending[0].arguments) !== null;
+  const inlineApproval = compact !== null && canApproveInline(pending[0].action, pending[0].arguments);
   const summary = pending
     .slice(0, 2)
     .map((request) => `${request.action.group} / ${request.action.name} · ${request.title}`)

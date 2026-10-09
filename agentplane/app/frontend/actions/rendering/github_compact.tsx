@@ -46,4 +46,6 @@ function CreatePullRequest({ args }: { args: z.infer<typeof createPullRequest> }
 }
 
 export const createPullRequestCompact: ArgumentsPreview = definePreview(createPullRequest, CreatePullRequest);
-export const createPullRequestApproval: ArgumentsPreview = definePreview(approvablePullRequest, CreatePullRequest);
+export function canApprovePullRequestInline(args: unknown): boolean {
+  return approvablePullRequest.safeParse(args).success;
+}

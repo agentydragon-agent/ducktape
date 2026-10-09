@@ -34,7 +34,7 @@ function PodsInNamespace({ args }: { args: z.infer<typeof podsInNamespace> }): J
 export const podsInNamespacePreview: ArgumentsPreview = definePreview(podsInNamespace, PodsInNamespace);
 
 // This is intentionally a separate widget from the expanded card: each Action owns both
-// representations, and only the compact one grants the collapsed strip a decision control.
+// representations. The registry separately decides if the strip offers inline approval.
 function PodsInNamespaceCompact({ args }: { args: z.infer<typeof podsInNamespace> }): JSX.Element {
   return (
     <Text size="sm" style={{ overflowWrap: "anywhere" }}>

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { type CallToolResult, parseCallToolResult } from "../call_tool_result";
 import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing";
-import { compactActionArguments, compactApprovalArguments, renderArguments, renderMcpResult } from "./index";
+import { canApproveInline, compactActionArguments, renderArguments, renderMcpResult } from "./index";
 
 const SSH_EXEC = { group: "ssh", name: "exec" };
 
@@ -116,28 +116,30 @@ const compactCases: Array<{ group: string; name: string; args: Record<string, un
   },
 ];
 
-describe("compact approval widgets", () => {
+describe("compact rendering and inline approval", () => {
   it.each(compactCases)("shows all arguments of $group/$name", async ({ group, name, args, visible }) => {
-    const widget = compactApprovalArguments({ group, name }, args);
+    expect(canApproveInline({ group, name }, args)).toBe(true);
+    const widget = compactActionArguments({ group, name }, args);
     expect(widget).not.toBeNull();
     const container = await mount(widget);
     for (const value of visible) expect(container.textContent).toContain(value);
   });
 
   it.each(compactCases)("fails closed for extra arguments on $group/$name", ({ group, name, args }) => {
-    expect(compactApprovalArguments({ group, name }, { ...args, invisible: "must review" })).toBeNull();
+    expect(canApproveInline({ group, name }, { ...args, invisible: "must review" })).toBe(false);
+    expect(compactActionArguments({ group, name }, { ...args, invisible: "must review" })).toBeNull();
   });
 
   it("requires expanded review for PR descriptions or unknown Action identities", () => {
     const pr = compactCases[5]!;
     expect(
-      compactApprovalArguments({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })
-    ).toBeNull();
+      canApproveInline({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })
+    ).toBe(false);
     expect(
       compactActionArguments({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })
     ).not.toBeNull();
     expect(
-      compactApprovalArguments(
+      canApproveInline(
         { group: "kubernetes_admin", name: "resources_delete" },
         {
           apiVersion: "v1",
@@ -145,8 +147,10 @@ describe("compact approval widgets", () => {
           name: "api-0",
         }
       )
-    ).toBeNull(); // The backend's configured namespace would otherwise be hidden.
-    expect(compactApprovalArguments({ group: "ssh", name: "exec" }, SSH_EXEC_ARGUMENTS)).toBeNull();
-    expect(compactApprovalArguments({ group: "__proto__", name: "constructor" }, {})).toBeNull();
+    ).toBe(false); // The backend's configured namespace would otherwise be hidden.
+    expect(canApproveInline({ group: pr.group, name: pr.name }, { ...pr.args, title: "x".repeat(121) })).toBe(false);
+    expect(canApproveInline({ group: pr.group, name: pr.name }, { ...pr.args, reviewers: Array(5).fill("reviewer") })).toBe(false);
+    expect(canApproveInline({ group: "ssh", name: "exec" }, SSH_EXEC_ARGUMENTS)).toBe(false);
+    expect(canApproveInline({ group: "__proto__", name: "constructor" }, {})).toBe(false);
   });
 });
