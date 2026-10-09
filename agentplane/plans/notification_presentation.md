@@ -1,7 +1,8 @@
 # Notification presentation and input metadata
 
-Status: proposed; no implementation yet. The [task DAG](task_dag.md#notification_presentation--structured-metadata-and-compact-notification-rendering)
-tracks this work. This plan replaces the earlier proposal to carry presentation metadata through
+Status: proposed; implementation blocked on the in-flight Session Event archive ownership cutover. The [task DAG](task_dag.md#notification_presentation--compact-notification-rendering)
+tracks the sequenced phases below. Contract design can proceed during backfill, but no new Sandbox
+Service/app database work starts before that cutover. This plan replaces the earlier proposal to carry presentation metadata through
 runner commands and journals.
 
 ## Goal and boundaries
@@ -95,12 +96,12 @@ Authorization applies to retries too. A database commit is not runner admission 
 Crash recovery and ambiguous dispatch must use the same command ID and existing receipt reconciliation,
 not create a second command or a second execution authority.
 
-The [current Sandbox Service plan](sandbox_service.md#event-following-and-archive-ownership)
-explicitly leaves execution-event archival to clients and does not promise offline command acceptance.
-This proposal adds durable submission metadata, not an execution-event archive or background offline
-command queue. Before implementation, reconcile the persist-before-dispatch flow with that contract:
-state what happens when dispatch fails, how callers retry after crashes, and when retained submission
-records can be deleted. Do not silently add automatic execution after reconnect or wake a destination.
+The [Session Event archive migration](session_archive_placement.md) is already moving durable raw
+history to Sandbox Service; its backfill/write/read handoff must finish before this persistence work.
+Reuse the resulting session identity and database ownership. Input records are distinct from copied
+execution Events: neither archive ownership nor input metadata implies offline command acceptance.
+Resolve persistence-before-dispatch, caller retries and retention in `SESSION_INPUT_CONTRACT` before
+implementation. Do not add automatic execution after reconnect or wake a destination.
 
 ## Correlation and read path
 
@@ -132,17 +133,19 @@ human text using prefix heuristics. Initially render mixed messages normally wit
 
 ## Implementation sequence and acceptance
 
-1. Resolve the persistence/dispatch boundary and typed API against current Sandbox Service code;
-   update its owning plan for the chosen input-submission contract without changing archive ownership.
-2. Implement authenticated metadata submission, immutable persistence and authorized reads. Test
-   ordinary submissions, restricted provenance, destination checks, conflicting retries and crashes
-   before/after dispatch. Prove metadata never appears in the runner command.
-3. Have Notification Service attach metadata using its existing delivery command identity. Preserve
-   retry and receipt reconciliation behavior; prove inbox deletion does not invalidate retained input
-   annotations. Exercise this backend path with the integration app unavailable.
-4. Integrate the projection and frontend. Test pending/failed inputs, confirmation joins, replay,
-   reconnect, archived reads, batched sources, mixed-origin coalescing, missing/unknown metadata and
-   notification-looking human text. Verify unauthorized readers cannot obtain annotations.
-5. Verify a real notice renders compactly and expands to its full text while the agent receives
-   unchanged actionable text. Include frontend visual coverage and confirm no rendering action
-   acknowledges notifications.
+The [DAG](task_dag.md#2-service-owned-inputs-and-notification-presentation) owns status and edges:
+
+1. `SESSION_INPUT_CONTRACT`: review typed API, acceptance/dispatch semantics and storage against the
+   migrated session model. This design can run during backfill; it must not add a parallel database.
+2. `SESSION_INPUT_SUBMISSION`: after `THREAD_ARCHIVE_OWNERSHIP` and contract review, implement
+   authorized, immutable submission persistence and translation to runner text-only commands.
+3. `SESSION_INPUT_METADATA_READ` and `NOTIFICATION_NOTICE_METADATA`: independently implement
+   authorized annotation reads/correlation and producer attachments after the submission API exists.
+4. `NOTIFICATION_PRESENTATION`: integrate compact frontend rendering after both paths are available.
+
+Tests cover ordinary input, restricted provenance, destination authorization, identical/conflicting
+retries, crashes around dispatch, pending/failed inputs, replay and mixed-origin coalescing. Keep
+metadata out of runner commands; keep historical annotations after inbox expiry. Exercise backend
+integration without the app. Add frontend visual coverage and one bounded real-notice demonstration
+with unchanged agent-facing text. No provider-outage injection or repeated harness matrix is needed;
+rendering must not acknowledge the inbox.

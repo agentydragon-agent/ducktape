@@ -70,7 +70,7 @@ sandboxes. It runs `kubectl` from that sandbox; no OAuth-to-Kubernetes gateway i
 of this design. Its existing static permissions and view-only Coinbase Secret grant
 remain separate from the managed Haku preset. See
 [agent RBAC](../../cluster/docs/agent_rbac.md) for the configured managed grants and
-[the Sandbox task](task_dag.md#sandbox_rbac) for live acceptance still required.
+[the Sandbox task](task_dag.md#sandbox_rbac--bounded-deployed-grant-checks) for live acceptance still required.
 
 ## Candidate revocation gate for minted grants
 

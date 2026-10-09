@@ -5,11 +5,13 @@ The standalone gRPC service owns inventory, provisioning/reconciliation, launch 
 session access. The production app calls it for lifecycle, manual egress grants, session management,
 commands and event following; there is no direct-runner fallback. Deployment source transfers backend
 RBAC/network authority to the service and projects an audience-specific app token. Existing app
-PostgreSQL archives/checkpoints and runner volumes stay in place. The notification smoke test in
+PostgreSQL archives/checkpoints and runner volumes were preserved for that initial extraction.
+Raw-history transfer to service-owned PostgreSQL is now a separate migration in flight; see
+[archive placement and cutover](session_archive_placement.md). The notification smoke test in
 [#8853](https://github.com/agentydragon/ducktape/pull/8853) verified the deployed session-command/receipt
 path in staging. Extraction is no longer a pending notification prerequisite. This evidence does not
-claim a backup/restore rehearsal, validation of every production environment, or closure of every
-historical preservation/handoff checklist below.
+claim archive-migration completion. Historical extraction checklists below are reference material,
+not new acceptance obligations; the DAG owns the remaining migration phases.
 
 This is the concrete backend boundary required by the
 [service dependency rule](../docs/service_boundaries.md). The integration app must be a client;
@@ -136,20 +138,24 @@ provenance, and causal command IDs; it must not synthesize a duplicate successfu
 make transport acknowledgement look like harness consumption. Serving-log cursors and original source
 identity remain distinct when history is copied.
 
-The archive boundary is settled:
+The initial runner-follow-only boundary is superseded by the selected
+[service-owned PostgreSQL archive](session_archive_placement.md). Migration is in flight: store,
+import and shadow-copy code exist, but enabling raw reads alone does not finish writer ownership.
+The [DAG](task_dag.md#1-finish-the-history-migration-before-expanding-persistence) tracks each handoff.
 
-- The Sandbox Service follows the runner's journal, durable on its state volume. It does not own
-  an additional session-log archive or fall back to app PostgreSQL when the runner is unavailable.
-- Log availability through this API depends on the runner being reachable and its state volume
-  surviving. Durable data on a suspended sandbox's volume is not an online archive endpoint.
-- Clients needing retention independent of that volume must archive the events themselves,
-  preserving source identity and checkpoints. A client archive is not a new execution authority.
-- The app retains its existing PostgreSQL archive, ingestion checkpoints, and browser projections as
-  a client of service event following. Archive migration is not a required follow-up. Neither the
-  Sandbox Service nor notifications may query app-owned tables.
+- The runner remains the author of execution Events; the service archive retains a contiguous
+  copied prefix independent of Sandbox/Pod/PVC survival. `FollowSession` remains a live-runner
+  interface, distinct from retained archive reads.
+- The app retains UI folds/operator metadata and consumes service history after cutover. Until
+  then preserve its old rows/checkpoints; remove them only under the explicit retirement phase.
+- A one-way migration tool imports app data. Runtime backends never query app tables or fall back
+  to the app when the archive is unavailable. Lag/error must remain explicit.
+- Unrelated service database additions (including input metadata) and app schema surgery wait for
+  the archive ownership capstone. Contract/policy design may proceed. No offline command queue or
+  central execution authority is implied by archival storage.
 
-Preserve the app's existing retained data during cutover. Moving its hosted product Thread model
-is not a prerequisite for the session-scoped service API.
+Preserve identities, historical prefixes and runner native storage during cutover. Moving the
+hosted product Thread lifecycle is not a prerequisite for the session-scoped service API.
 
 ## Discovery and access implementation
 

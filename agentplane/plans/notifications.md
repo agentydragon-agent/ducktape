@@ -9,20 +9,22 @@ and the [staging acceptance record](../notification_service/docs/staging_github_
 
 Keep delivery workers in the notification service. Separate worker deployment is not planned
 unless worker deaths cause actual operational trouble; fix specific failures in place first.
-See the conditional [`NOTIFICATION_WORKER_ISOLATION`](task_dag.md#notification_worker_isolation--separate-notification-api-and-delivery-workers)
+See the conditional [`NOTIFICATION_WORKER_ISOLATION`](task_freezer.md#notification_worker_isolation--separate-notification-api-and-delivery-workers)
 item. GitHub receipt retention is also deferred, not a current priority. Neither item should be
 presented as the immediate next project merely because the webhook work is complete.
 
-## Remaining live verification
+## Proportional verification
 
-- [ ] Audit remaining event/permission coverage, including PR lifecycle/reviews, pushes/ref changes,
-      installation lifecycle, revoked access and fork-head correlation, plus live action-filter and
-      issue/PR exclusion cases beyond the recorded successful deliveries. An uninstalled fork is not
-      covered merely because its base repository is installed. Successful ducktape subscriptions do
-      not prove access to every installed repository or all supported event kinds.
-- [ ] Complete live negative ingress checks (unsigned request rejected; private workload API paths
-      not publicly routed). HTTPRoute acceptance, exact-path configuration and successful signed
-      delivery are verified, not a substitute for these negative probes.
+The broad live event/permission/filter matrix moves to the
+[freezer](task_freezer.md#broader-verification-inventory), revisited when enabling a new path or
+investigating a concrete gap. Successful deliveries do not establish every installation's coverage,
+but absence of those anecdotes is not a release gate. Prefer focused automated regressions.
+
+The bounded security check remains in
+[`NOTIFICATION_INGRESS_BOUNDARY`](task_dag.md#notification_ingress_boundary--bounded-public-route-security-check):
+unsigned public webhook requests and public attempts at private API routes must be refused.
+Invalid-signature service tests already exist; this remaining check is route wiring, not an induced
+GitHub outage. Hosted builds, preset use and waived backoff/refresh-reuse exercises stay closed.
 
 ## Deferred: event-driven Actions consumption
 
@@ -45,20 +47,20 @@ If idle polling becomes a priority, replace the notification source's five-secon
 ## Deferred decisions and follow-ups
 
 - Home Assistant entity/event subscriptions:
-  [`HOME_ASSISTANT_NOTIFICATIONS`](task_dag.md#home_assistant_notifications--entity-and-event-subscriptions).
+  [`HOME_ASSISTANT_NOTIFICATIONS`](task_freezer.md#home_assistant_notifications--entity-and-event-subscriptions).
 - Extract genuinely shared source wiring as concrete implementations accumulate, not a speculative
-  framework: [`NOTIFICATION_SOURCE_WIRING`](task_dag.md#notification_source_wiring--extract-shared-wiring-as-sources-accumulate).
+  framework: [`NOTIFICATION_SOURCE_WIRING`](task_freezer.md#notification_source_wiring--extract-shared-wiring-as-sources-accumulate).
 
 - Recurring scheduled/cron notifications with durable scheduling and explicit missed-tick behavior:
-  [`CRON_NOTIFICATIONS`](task_dag.md#cron_notifications--scheduled-notifications-for-agents).
+  [`CRON_NOTIFICATIONS`](task_freezer.md#cron_notifications--scheduled-notifications-for-agents).
 
 - Structured notification-message provenance for eventual compact frontend rendering:
   [design and acceptance](notification_presentation.md);
-  [`NOTIFICATION_PRESENTATION`](task_dag.md#notification_presentation--structured-metadata-and-compact-notification-rendering).
+  [`NOTIFICATION_PRESENTATION`](task_dag.md#notification_presentation--compact-notification-rendering).
   Preserve full agent-facing text and raw evidence; never identify notices by text prefix alone.
 
 - Agent-visible Kubernetes rollout monitoring, potentially as a notification source:
-  [`KUBERNETES_MONITORING`](task_dag.md#kubernetes_monitoring--agents-observe-rollout-progress-and-outcomes).
+  [`KUBERNETES_MONITORING`](task_freezer.md#kubernetes_monitoring--agents-observe-rollout-progress-and-outcomes).
   Backend ownership, authorization and the watch API remain design choices.
 - Authenticated discovery of App-accessible repositories and source capabilities:
   [#8981](https://github.com/agentydragon/ducktape/issues/8981). Distinguish accessible repositories,
@@ -73,7 +75,7 @@ If idle polling becomes a priority, replace the notification source's five-secon
 - Consider narrower GitHub repository/event grants instead of shared access to every App installation.
 - Deferred, not a current priority: bound raw GitHub receipt retention without breaking subscription
   boundaries, association evidence or delivery-ID deduplication. See
-  [`NOTIFICATION_GITHUB_RETENTION`](task_dag.md#notification_github_retention--bound-github-delivery-receipt-storage).
+  [`NOTIFICATION_GITHUB_RETENTION`](task_freezer.md#notification_github_retention--bound-github-delivery-receipt-storage).
 - Additional sources/scopes: personal GitHub Notifications API, repository subjects, workflow-specific
   filters, tags/releases and deployment/environment subscriptions. No promise of complete historical replay.
 - Notification-triggered provisioning/resume, offline-delivery guarantees and wake budgets.
