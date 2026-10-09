@@ -141,10 +141,10 @@ py_library(
     deps = [
         ":electric_service",
         ":history_probe",
-        ":thread_view_marks",
         ":http2_proxy",
         ":replication_process",
         ":replication_source",
+        ":thread_view_marks",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:content",
