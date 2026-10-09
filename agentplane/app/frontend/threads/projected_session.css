@@ -324,13 +324,13 @@
   display: block;
 }
 
-/* Input bubbles can sit at the very top of a scrolled thread. Show the tooltip below
-   the gutter indicator, anchored toward the page rather than past the right edge. */
+/* Input bubbles can sit at the top of a scrolled thread. Open detail below
+   the indicator, centered in the gutter so it fits both desktop and phones. */
 .agentplane-user-message-aside .agentplane-command-progress-label {
   top: calc(100% + 0.3rem);
   bottom: auto;
-  left: auto;
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 /* Control indicators sit after the requested setting; open their detail inward, not off-screen. */
