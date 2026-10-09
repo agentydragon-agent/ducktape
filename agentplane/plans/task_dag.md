@@ -1555,7 +1555,7 @@ eligible delivery time if available, without exposing another Thread's inbox or 
 from the rendered transcript or a browser-only timer. A deadline is an estimate: delivery may
 be suppressed by acknowledgement, delayed by lifecycle/runner state, or fail. Reconcile after
 reconnect and avoid claiming a guaranteed notice at an exact second. This is independent of
-`NOTIFICATION_PRESENTATION`'s compact rendering of *delivered* notifications and must not
+`NOTIFICATION_PRESENTATION`'s compact rendering of _delivered_ notifications and must not
 acknowledge an inbox merely because its icon is displayed.
 
 ### `KUBERNETES_MONITORING` — agents observe rollout progress and outcomes
