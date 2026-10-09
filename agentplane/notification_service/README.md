@@ -81,3 +81,9 @@ For another environment, register a separate App, supply its credentials through
 configuration and `secretKeyRef`, and expose only `/v1/webhooks/github` through HTTPS ingress with
 matching network policy and TLS. Never expose the workload API publicly. Verify real App delivery
 through inbox and harness rather than relying solely on configuration or a successful ingress response.
+
+GitHub issue subscriptions require the App installation to grant Issues read permission; generated
+installation tokens request it alongside Metadata, Contents and Pull requests read. Enable
+`issues` and `workflow_job` webhook events when configuring the App. Workflow-job notifications
+are opt-in; ordinary issue subscriptions default to lifecycle events and comments. See the
+[ingestion and matching contract](docs/api.md#github-webhook-ingestion-and-matching).

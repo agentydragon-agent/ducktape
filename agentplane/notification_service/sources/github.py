@@ -44,6 +44,7 @@ from agentplane.notification_service.models import SourceFailureKind
 from agentplane.notification_service.settings import GitHubSettings
 from agentplane.notification_service.sources.github_models import (
     CI_EVENTS,
+    ISSUE_EVENTS,
     PR_EVENTS,
     REF_EVENTS,
     BranchSubject,
@@ -52,6 +53,7 @@ from agentplane.notification_service.sources.github_models import (
     GitHubBinding,
     GitHubEvent,
     GitHubSource,
+    IssueSubject,
     PullRequestSubject,
     RepositoryName,
     Subject,
@@ -65,7 +67,7 @@ from agentplane.notification_service.store import Store
 logger = logging.getLogger(__name__)
 
 _PAYLOAD = TypeAdapter(dict[str, JsonValue])
-SUPPORTED_EVENTS = CI_EVENTS | PR_EVENTS | REF_EVENTS
+SUPPORTED_EVENTS = CI_EVENTS | PR_EVENTS | REF_EVENTS | ISSUE_EVENTS
 
 
 class GitHubUnavailableError(Exception):
@@ -187,6 +189,15 @@ class Workflow(Check):
     head_branch: str | None = None
 
 
+class WorkflowJob(Upstream):
+    head_sha: str
+    head_branch: str | None = None
+
+
+class WorkflowJobPayload(Envelope):
+    workflow_job: WorkflowJob
+
+
 class WorkflowPayload(Envelope):
     workflow_run: Workflow
 
@@ -236,9 +247,11 @@ PAYLOAD_MODELS: dict[str, type[Envelope]] = {
     EventName.PULL_REQUEST_REVIEW: PullRequestPayload,
     EventName.PULL_REQUEST_REVIEW_COMMENT: PullRequestPayload,
     EventName.ISSUE_COMMENT: IssuePayload,
+    EventName.ISSUES: IssuePayload,
     EventName.CHECK_RUN: CheckRunPayload,
     EventName.CHECK_SUITE: CheckSuitePayload,
     EventName.WORKFLOW_RUN: WorkflowPayload,
+    EventName.WORKFLOW_JOB: WorkflowJobPayload,
     EventName.STATUS: StatusPayload,
     EventName.PUSH: PushPayload,
     EventName.CREATE: RefPayload,
@@ -263,6 +276,13 @@ def correlation(payload: Envelope) -> tuple[str | None, list[Subject]]:
             return pr.head.sha, [PullRequestSubject(kind="pull_request", number=pr.number)]
         case IssuePayload(issue=issue) if issue.pull_request is not None:
             return None, [PullRequestSubject(kind="pull_request", number=issue.number)]
+        case IssuePayload(issue=issue):
+            return None, [IssueSubject(kind="issue", number=issue.number)]
+        case WorkflowJobPayload(workflow_job=job):
+            job_subjects: list[Subject] = []
+            if job.head_branch is not None:
+                job_subjects.append(BranchSubject(kind="branch", name=job.head_branch))
+            return job.head_sha, job_subjects
         case PushPayload(ref=ref, after=sha) if ref.startswith("refs/heads/"):
             return (None if sha == "0" * 40 else sha), [
                 BranchSubject(kind="branch", name=ref.removeprefix("refs/heads/"))
@@ -340,7 +360,14 @@ class GitHub:
                     "POST",
                     f"/app/installations/{installation_id}/access_tokens",
                     self.app_headers(),
-                    json={"permissions": {"metadata": "read", "contents": "read", "pull_requests": "read"}},
+                    json={
+                        "permissions": {
+                            "metadata": "read",
+                            "contents": "read",
+                            "pull_requests": "read",
+                            "issues": "read",
+                        }
+                    },
                 )
                 token = Token.model_validate_json(response.content)
                 self.tokens[installation_id] = token
@@ -358,6 +385,13 @@ class GitHub:
         return GitHubBinding(
             app_id=self.settings.app_id, installation_id=installation.id, repository_id=repository.id
         ), headers
+
+    async def issue(self, repository: str, number: int, headers: dict[str, str]) -> None:
+        issue = Issue.model_validate_json(
+            (await self.request("GET", f"/repos/{repository}/issues/{number}", headers)).content
+        )
+        if issue.number != number or issue.pull_request is not None:
+            raise GitHubSourceChangedError("GitHub issue identity changed or refers to a pull request")
 
     async def context(self, source: GitHubSource) -> Context:
         binding, headers = await self.repository(source.repository)
@@ -378,6 +412,8 @@ class GitHub:
                         if fork.repository_id != pr.head.repo.id:
                             raise GitHubSourceChangedError("GitHub fork repository identity changed")
                         context.installations[fork.repository_id] = fork.installation_id
+            case IssueSubject(number=number):
+                await self.issue(source.repository, number, headers)
             case BranchSubject(name=name):
                 response = await self.request(
                     "GET",
@@ -535,6 +571,8 @@ class GitHub:
                                     )
                                     .on_conflict_do_nothing()
                                 )
+                case IssueSubject(number=number):
+                    await self.issue(name, number, headers)
                 case BranchSubject(name=branch):
                     response = await self.request(
                         "GET", f"/repos/{name}/git/ref/heads/{quote(branch, safe='')}", headers, allow_missing=True

@@ -162,13 +162,26 @@ a retry of an uncommitted receipt returns 202 with `duplicate: false` after comm
 subscription/inbox state separately: HTTP acceptance does not prove runner delivery or agent
 acknowledgement. Do not replay with a new delivery ID or assume GitHub retries automatically.
 
+An ordinary issue can be followed with `subject={"kind":"issue","number":123}`. Its defaults
+are all `issues` lifecycle actions and ordinary `issue_comment` events; explicit action filters
+can narrow these. Issue subjects do not accept CI events. The issue API also returns PRs, so
+subscription authorization and repair reject responses with a `pull_request` marker; comments
+with that marker remain PR events, not issue events. The installation token requires `issues:read`.
+
+`workflow_job` payloads contribute their repository-qualified `head_sha` and optional branch
+reference. They can match PR/branch/commit subscriptions that explicitly select `workflow_job`,
+including an action filter such as `completed`. A job has no authoritative PR-number list:
+PR matches reuse validated durable head associations, not a guessed PR from its branch name.
+The full accepted job payload (job/run IDs, steps, status and conclusion) remains in the receipt
+and delivered inbox entry. Ingress performs no extra GitHub job/run lookup.
+
 PostgreSQL is the durable ingress journal, with committed ordering serialized against subscription
 creation. Inbox workers asynchronously replay from each subscription boundary; they recheck current App
 access, stable repository/installation identity, cancellation/version and inbox fencing. Raw GitHub journal payloads are retained without automatic pruning; monitor database growth.
 Inbox payload retention remains as documented above.
 
-PR, exact branch and fixed-commit subjects use native GitHub event/action names. Default CI means completed
-`check_run` and `status`; `check_suite` and `workflow_run` require explicit selection. PR comments/reviews,
+PR, issue, exact branch and fixed-commit subjects use native GitHub event/action names. Default CI means completed
+`check_run` and `status`; `check_suite`, `workflow_run` and `workflow_job` require explicit selection. PR comments/reviews,
 branch push/create/delete, and immutable commit matching are distinct. Branch deletion does not cancel
 following that name. CI matching uses current heads, retained PR/branch-to-SHA associations, explicit
 upstream subject references, and currently accessible installed PR forks. Empty PR arrays are supported

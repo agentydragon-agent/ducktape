@@ -232,7 +232,7 @@ class GitHubSubject(GitHubRefresh, Base):
     __tablename__ = "github_subject"
     __table_args__ = (
         *refresh_constraints("github_subject"),
-        CheckConstraint("kind IN ('pull_request', 'branch', 'commit')", name="github_subject_kind"),
+        CheckConstraint("kind IN ('pull_request', 'issue', 'branch', 'commit')", name="github_subject_kind"),
     )
     repository_id: Mapped[int] = mapped_column(ForeignKey("github_repository.repository_id"), primary_key=True)
     kind: Mapped[str] = mapped_column(primary_key=True)
