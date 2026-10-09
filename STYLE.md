@@ -132,6 +132,10 @@ bug.
   combos that permit nonsense (`hook_installed=False, pid=42`). Dispatch on variants
   with `isinstance` (mypy narrows), not discriminator-string compares — except in
   Mako/Jinja templates, where `kind` strings are acceptable.
+- **Functions and methods name operations**: use a verb or verb phrase describing what
+  they do (`record_admission`, `read_submission`), not a noun or state label (`admitted`).
+  Follow established conventions where they override this rule, such as properties/accessors,
+  framework hooks, and protocol-required names.
 - **One concept, one name across representations**: a concept's Pydantic model, ORM
   class, and table share the concept-name; representation-role suffixes (`…Row`,
   `…Body`, `…View`) only where two representations of one concept must coexist in a
