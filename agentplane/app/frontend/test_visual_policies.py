@@ -119,7 +119,7 @@ async def test_connection_sa_rebind_confirmation(view: VisualPage, app: Agentpla
     await page.get_by_role("button", name="Apply").click()
     await expect(page.get_by_role("button", name="Confirm change")).to_be_visible()
     await expect(page.get_by_text("Existing client tokens will act as", exact=False)).to_be_visible()
-    await view.capture(name="connection_sa_rebind_confirmation")
+    await view.capture()
 
 
 async def test_oauth_clients_update_while_settings_stays_open(view: VisualPage, app: AgentplaneFixture) -> None:
