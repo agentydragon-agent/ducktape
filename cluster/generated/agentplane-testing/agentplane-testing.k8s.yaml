@@ -1683,6 +1683,7 @@ rules:
       - serviceaccounts
     verbs:
       - create
+      - get
       - patch
       - delete
   - apiGroups:

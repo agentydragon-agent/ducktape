@@ -14,6 +14,8 @@ from agentplane.sandbox_service.protocol_pb2 import Sandbox
 from agentplane.sandbox_service.provisioning import Provisioning
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 
+# gazelle:include_dep @pypi//protobuf
+
 
 @dataclass
 class Inventory:
@@ -99,11 +101,11 @@ async def test_watch_lists_from_resource_version_and_requeues_each_current_name(
     assert seen[0][0][1:] == (*SANDBOX_API, provisioner.inventory.namespace, SANDBOXES_PLURAL)
     assert seen[0][1]["resource_version"] == "42"
     assert seen[0][1]["label_selector"] == "agentplane.allegedly.works/managed=true"
-    assert list(result._queue._queue) == ["a", "b", ""]  # one sweep for the deletion
+    assert list(cast(Any, result._queue)._queue) == ["a", "b", ""]  # one sweep for the deletion
     # A reconnect relists even unchanged objects and notices deletions during watch gaps.
     provisioner.inventory.listed = [{"metadata": {"name": "a"}}]
     await result._watch._cycle(kind)
-    assert list(result._queue._queue) == ["a", "b", ""]
+    assert list(cast(Any, result._queue)._queue) == ["a", "b", ""]
     assert result._seen == {"a"}
 
 
@@ -137,6 +139,7 @@ async def test_retry_is_per_name_and_new_event_is_not_lost() -> None:
         await _until(lambda: provisioner.ensured == ["a"])
         # An update while the first reconcile is blocked must cause a second pass.
         result._apply("a", {"metadata": {"name": "a"}})
+        assert provisioner.release is not None
         provisioner.release.set()
         await _until(lambda: result._attempts.get("a") == 1)
         # An event cannot bypass the first failure's backoff (e.g. our own error annotation).
