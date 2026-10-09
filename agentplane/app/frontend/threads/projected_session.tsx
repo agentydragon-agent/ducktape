@@ -974,6 +974,33 @@ function modelActivityAge(at: string | null | undefined, now: number): string {
   return `${Math.floor(minutes / 1440)}d ago`;
 }
 
+function ModelActivityHint({
+  at,
+  age,
+  className,
+}: {
+  at: string | null | undefined;
+  age: string;
+  className: string;
+}): JSX.Element {
+  return (
+    <Text
+      className={className}
+      size="xs"
+      c="dimmed"
+      ta="right"
+      aria-label={`Last inferred model activity: ${age}`}
+      title={
+        at && age !== "unknown"
+          ? `${new Date(at).toLocaleString()} · Inferred from model-originated Thread events, not a measured provider request or cache hit`
+          : "No model-originated Thread event observed; provider requests are not measured here"
+      }
+    >
+      Model activity: {age}
+    </Text>
+  );
+}
+
 function ProjectedSessionBody({
   threadId,
   entities,
@@ -1078,20 +1105,11 @@ function ProjectedSessionBody({
           deliver={commands.deliver}
         />
       )}
-      <Text
+      <ModelActivityHint
+        at={thread.last_model_activity_at}
+        age={activityAge}
         className="agentplane-thread-tail-model-activity"
-        size="xs"
-        c="dimmed"
-        ta="right"
-        aria-label={`Last inferred model activity: ${activityAge}`}
-        title={
-          thread.last_model_activity_at && activityAge !== "unknown"
-            ? `${new Date(thread.last_model_activity_at).toLocaleString()} · Inferred from model-originated Thread events, not a measured provider request or cache hit`
-            : "No model-originated Thread event observed; provider requests are not measured here"
-        }
-      >
-        Model activity: {activityAge}
-      </Text>
+      />
     </Stack>
   );
 
@@ -1284,21 +1302,11 @@ function ProjectedSessionBody({
               </Menu.Dropdown>
             </Menu>
           </TopbarActions>
-          <Text
+          <ModelActivityHint
+            at={thread.last_model_activity_at}
+            age={activityAge}
             className="agentplane-composer-model-activity"
-            size="xs"
-            c="dimmed"
-            ta="right"
-            px="xs"
-            aria-label={`Last inferred model activity: ${activityAge}`}
-            title={
-              thread.last_model_activity_at && activityAge !== "unknown"
-                ? `${new Date(thread.last_model_activity_at).toLocaleString()} · Inferred from model-originated Thread events, not a measured provider request or cache hit`
-                : "No model-originated Thread event observed; provider requests are not measured here"
-            }
-          >
-            Model activity: {activityAge}
-          </Text>
+          />
           <Group className="agentplane-composer-send" gap="xs" wrap="nowrap">
             <ActionIcon
               size="lg"
