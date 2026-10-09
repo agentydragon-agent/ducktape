@@ -10,7 +10,11 @@ export const resource = {
   namespace: z.string().min(1),
 };
 
-export function ResourceChips({ args }: { args: { apiVersion: string; kind: string; name: string; namespace: string } }): JSX.Element {
+export function ResourceChips({
+  args,
+}: {
+  args: { apiVersion: string; kind: string; name: string; namespace: string };
+}): JSX.Element {
   return (
     <>
       <Chip label="API" value={args.apiVersion} />

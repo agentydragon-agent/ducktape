@@ -132,9 +132,7 @@ describe("compact rendering and inline approval", () => {
 
   it("requires expanded review for PR descriptions or unknown Action identities", () => {
     const pr = compactCases[5]!;
-    expect(
-      canApproveInline({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })
-    ).toBe(false);
+    expect(canApproveInline({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })).toBe(false);
     expect(
       compactActionArguments({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })
     ).not.toBeNull();

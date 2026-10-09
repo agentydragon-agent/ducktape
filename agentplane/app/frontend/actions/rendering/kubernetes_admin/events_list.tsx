@@ -9,7 +9,6 @@ const events = z.strictObject({
   fieldSelector: z.string().min(1).optional(),
 });
 
-
 function Events({ args }: { args: z.infer<typeof events> }): JSX.Element {
   return (
     <CompactCall operation="List events">
