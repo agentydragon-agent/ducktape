@@ -273,5 +273,30 @@ token limit, and no `null` suppression or downstream LiteLLM patch is introduced
 The durable bare `gemini-embedding-2` alias references its canonical route and
 inherits the same metadata. This does not change upstream models, embedding spaces,
 request-selected dimensions, indexes, prices, key selections or client budgets.
-Ollama embedding and audio metadata remain unresolved; `publish_limits` is still
-transitional. This pins these input fields, not all catalogue capability metadata.
+Audio metadata remains unresolved; `publish_limits` is still transitional.
+This pins these input fields, not all catalogue capability metadata.
+
+## Ollama embedding input metadata (2026-10-09)
+
+For `qwen3-embedding:4b`, live Ollama 0.34.4 `/api/show` reported
+`qwen3.context_length=40960`, `qwen3.embedding_length=2560`, EOS insertion enabled,
+and no baked context/batch options. The installed GGUF blob SHA-256 was
+`2b0cf8f17b4c723c27303015383c27ec4bf2d8314bb677d05e920dd70bb0f16b`.
+The operator chose this **GGUF-declared 40960** for input metadata, rather than the
+[Qwen model table's 32K](https://github.com/QwenLM/Qwen3-Embedding#model-overview)
+or the deployment's global 131072 context allocation. Both `max_input_tokens` and
+legacy input alias `max_tokens` derive from it; there is no output-token ceiling.
+
+The [pinned LiteLLM adapter](https://github.com/BerriAI/litellm/blob/v1.100.1/litellm/llms/ollama/completion/handler.py)
+forwards `truncate` to `/api/embed`. Ollama embedding routes now default to
+`truncate: false`: [Ollama's handler](https://github.com/ollama/ollama/blob/v0.34.4/server/routes.go#L835-L1005)
+rejects oversized input instead of truncating to context or retrying a runner
+rejection with a shorter prefix. Model identity, dimensions, indexes and serving
+allocations are unchanged. Clients that previously relied on silent truncation may
+now receive errors.
+
+**Not yet tested with live embedding requests.** The declaration is not proof that
+40960 user-content tokens fit: special-token accounting and the runner's embedding
+batch may impose lower limits (the pinned default batch is 2048). The TODO beside
+the declaration tracks full-input/boundary verification. This change does not raise
+`num_ctx`/`num_batch`, load the model, or authorize a capacity probe.

@@ -17,6 +17,7 @@ from model_catalog.catalog import (
     GEMINI_ROUTES,
     HIDDEN_ALIASES,
     OLLAMA_CHAT_ROUTES,
+    OLLAMA_EMBEDDING_ROUTE,
     SERVED_ROUTES,
     EmbeddingLimits,
     Model,
@@ -107,9 +108,15 @@ def test_unknown_limits_are_not_invented_or_published(publish_limits: bool) -> N
         assert not {"max_input_tokens", "max_output_tokens", "max_tokens"} & model_entry(route)["model_info"].keys()
 
 
-@pytest.mark.parametrize("entry", [*GEMINI_EMBEDDING_ROUTES, GEMINI_EMBEDDING_ALIAS])
+@pytest.mark.parametrize("entry", [*GEMINI_EMBEDDING_ROUTES, GEMINI_EMBEDDING_ALIAS, OLLAMA_EMBEDDING_ROUTE])
 def test_embedding_input_aliases_follow_the_declaration_without_output_limits(entry: Route | RouteAlias) -> None:
     original = model_entry(entry)
+    if entry == OLLAMA_EMBEDDING_ROUTE:
+        assert original["litellm_params"]["truncate"] is False
+        assert "extra_body" not in original["litellm_params"]
+        assert "options" not in original["litellm_params"]
+    else:
+        assert "truncate" not in original["litellm_params"]
     route = entry.target if isinstance(entry, RouteAlias) else entry
     changed = replace(route, model=replace(route.model, limits=EmbeddingLimits(max_input_tokens=12345)))
     projected = model_entry(replace(entry, target=changed) if isinstance(entry, RouteAlias) else changed)

@@ -8,6 +8,7 @@ from cluster.cdk8s.litellm.upstreams import UPSTREAM_BINDINGS
 from model_catalog.catalog import (
     HIDDEN_ALIASES,
     SERVED_ROUTES,
+    ApiShape,
     EmbeddingLimits,
     Provider,
     Route,
@@ -39,6 +40,10 @@ def model_entry(entry: Route | RouteAlias) -> dict:
         params["api_base"] = binding.api_base
     if binding.api_key is not None:
         params["api_key"] = binding.api_key
+    if upstream.shape == ApiShape.OLM_EMBED:
+        # Fail instead of silently embedding a truncated prefix, including Ollama's
+        # retry at num_batch after a runner rejects a longer input.
+        params["truncate"] = False
     if route.num_ctx is not None:
         params["extra_body"] = {"options": {"num_ctx": route.num_ctx}}
     if upstream.provider == Provider.TANA:
