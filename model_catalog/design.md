@@ -91,7 +91,8 @@ Unused wrappers and integrations may be paused or retired after confirmation.
   serving-path facts. Nix and cdk8s both consume it; neither owns the other.
 - Explicit consumer choices. Being served, being authorized, being offered in a
   picker, and being the default are different decisions.
-- Known input/output limits are a justified complete pair, or absent. Absence must
+- Known generative input/output limits are a justified complete pair, or absent.
+  Embeddings have input-only limits, not a fake generation ceiling. Absence must
   not silently become a claim about an unrelated upstream API.
 - Client compaction budgets and serving settings have explicit owners. A setting
   does not become a capacity fact merely because several clients use the number.
@@ -367,14 +368,15 @@ Requested `num_ctx` is not projected into provider limits.
 
 ## Current token-limit shape
 
-`Model.limits` holds both `max_input_tokens` and `max_output_tokens`, or is absent.
+`Model.limits` holds a generative `TokenLimits` input/output pair, input-only
+`EmbeddingLimits` for embeddings, or is absent.
 There is no generic model `context_window`: input allowance is not combined context
 capacity, and a pair does not imply simultaneous attainability of both maxima.
-LiteLLM projects this pair; Nix wrappers, OpenClaw, and Agentplane already own their
+LiteLLM projects the mode-appropriate limits; Nix wrappers, OpenClaw, and Agentplane own their
 client budgets separately and do not read it. Ollama `num_ctx` stays independent.
 
-This structural cleanup preserves existing metadata numbers and publication choices;
-it does **not** finish their source audit. In particular, ChatGPT's retained proxy
+Generative declarations retain their existing numbers and publication choices;
+the mode-specific representation does **not** finish their source audit. In particular, ChatGPT's retained proxy
 allowances include Astra's inherited Codex window and Sol/Luna's inherited GPT-5.6
 values, not independently established provider maxima. Their declaration comments
 state this limitation. Replacing these provisional declarations, refreshing the stale
@@ -387,7 +389,7 @@ Apply this to the whole roster and its projections, not just token fields. Keep 
 existing small separation rather than adding a meta-configuration layer:
 
 1. **Shared facts and identities, source-owned composition:** `Model.limits` is
-   `TokenLimits(max_input_tokens, max_output_tokens) | None`, alongside explicit
+   `TokenLimits(max_input_tokens, max_output_tokens) | EmbeddingLimits(max_input_tokens) | None`, alongside explicit
    `Upstream`, named `Route`, and aliases referencing routes.
    Provider input/output facts carry evidence in nearby documentation/comments.
    Unknown remains unknown. No generic model `context_window`. Shared types/facts do
