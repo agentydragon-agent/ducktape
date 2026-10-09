@@ -15,7 +15,7 @@ images:
     newTag: devel-20261009122405-81da6f6 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   # Initial publication on devel supplies the tag through Flux image automation.
   - name: git.allegedly.works/ducktape-ci/runner
-    newTag: devel-20261009112051-3390e2b # {"$imagepolicy": "flux-system:runner:tag"}
+    newTag: devel-20261009152019-2883251 # {"$imagepolicy": "flux-system:runner:tag"}
   - name: git.allegedly.works/ducktape-ci/runner-ducktape
     newTag: devel-20261009112840-3390e2b # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
