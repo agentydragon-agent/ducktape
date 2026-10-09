@@ -764,7 +764,13 @@ it("shows the failure and reason for a server-only command", async () => {
         viewState(),
         entity(
           "command",
-          { operation: "change_model", outcome: "failed", outcome_cursor: "1", outcome_reason: "model unavailable" },
+          {
+            operation: "change_model",
+            outcome: "failed",
+            outcome_cursor: "1",
+            outcome_reason: "model unavailable",
+            requested_value: null,
+          },
           {}
         ),
       ],
@@ -791,6 +797,7 @@ it.each([
             outcome,
             outcome_cursor: "2",
             outcome_reason: outcome === "effected" ? null : status.split(": ")[1],
+            requested_value: null,
           },
           { inputRef: reference("failed-input", "command_input") }
         ),
@@ -813,7 +820,13 @@ it("keeps a still-pending sent message out of the pending-commands box, since it
         viewState(),
         entity(
           "command",
-          { operation: "submit_input", outcome: "pending", outcome_cursor: null, outcome_reason: null },
+          {
+            operation: "submit_input",
+            outcome: "pending",
+            outcome_cursor: null,
+            outcome_reason: null,
+            requested_value: null,
+          },
           { inputRef: reference("test-message", "command_input") }
         ),
       ],

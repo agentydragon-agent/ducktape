@@ -299,7 +299,7 @@ function SelectedCommandRows({
                     admitted,
                     errors.get(value.command.commandId)
                   )}
-                  subject={subject(value.command.operation.case)}
+                  subject={subject(value.command.operation.case ?? "")}
                   reason={!admitted ? errors.get(value.command.commandId)?.message : undefined}
                   local
                 />

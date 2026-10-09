@@ -578,7 +578,13 @@ describe("EntityCard", () => {
     const container = await renderCard(
       entity(
         "command",
-        { operation: "submit_input", outcome: "pending", outcome_cursor: null, outcome_reason: null },
+        {
+          operation: "submit_input",
+          outcome: "pending",
+          outcome_cursor: null,
+          outcome_reason: null,
+          requested_value: null,
+        },
         { inputRef: reference("test-message", "command_input") }
       ),
       { "test-message:command_input": PROSE }

@@ -973,7 +973,13 @@ function command(
     "command",
     id,
     cursor,
-    { operation, outcome, outcome_cursor: outcome === "pending" ? null : String(cursor), outcome_reason: reason },
+    {
+      operation,
+      outcome,
+      outcome_cursor: outcome === "pending" ? null : String(cursor),
+      outcome_reason: reason,
+      requested_value: null,
+    },
     { pending: outcome === "pending", input_ref: text === null ? null : payload(cursor, id, "command_input", text) }
   );
 }

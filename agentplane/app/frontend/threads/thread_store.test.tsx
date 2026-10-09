@@ -113,7 +113,13 @@ function command(id: string, index: number): Json {
     ...item(index),
     entity_kind: "command",
     entity_id: id,
-    state: JSON.stringify({ operation: "submit_input", outcome: "failed", outcome_cursor: "9", outcome_reason: null }),
+    state: JSON.stringify({
+      operation: "submit_input",
+      outcome: "failed",
+      outcome_cursor: "9",
+      outcome_reason: null,
+      requested_value: null,
+    }),
   };
 }
 
