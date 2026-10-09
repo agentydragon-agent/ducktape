@@ -718,7 +718,11 @@ expansion (acceptable) with live updates to existing bound SAs (preferred); keep
 grant operation, which may use the same group mechanism. Decide ownership, namespace expansion,
 role-edit/revocation behavior and inspection. The launch catalog is not already a live policy.
 See the [RBAC grant-group plan](kubernetes_rbac_groups.md) for the current behavior, prior art,
-trade-offs and acceptance cases.
+trade-offs and acceptance cases. The preferred live design is an Agentplane-owned,
+subject-free group CR and per-Sandbox assignment CR, reconciled by a separate small controller
+image/ServiceAccount with narrowly reviewed binding-write and named-role `bind` authority;
+final CRD schemas, migration and RBAC grants still require review. Snapshot expansion remains
+an acceptable simpler fallback.
 
 ### `KUBERNETES_RBAC_POLICY_BINDINGS` — apply groups and one-SA changes
 

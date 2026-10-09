@@ -1,10 +1,11 @@
 # Reusable Kubernetes RBAC grant groups
 
-Status: **design open; no new Kubernetes authority approved.** The [task DAG](task_dag.md)
-tracks `KUBERNETES_RBAC_POLICIES` (decision), `KUBERNETES_RBAC_POLICY_BINDINGS`
+Status: **preferred design sketched; no new Kubernetes authority or rollout approved.** The
+[task DAG](task_dag.md) tracks `KUBERNETES_RBAC_POLICIES` (decision), `KUBERNETES_RBAC_POLICY_BINDINGS`
 (implementation after the decision), and `MANAGED_SA_RBAC` (later accounts without a
-Sandbox). This plan records the problem, candidate designs and checks, not a choice of controller.
-Existing [agent RBAC documentation](../../cluster/docs/agent_rbac.md) describes deployed/static
+Sandbox). This plan records a preferred Agentplane-owned controller shape alongside the
+prior art and acceptance checks; CRD fields and migration still need review. Existing
+[agent RBAC documentation](../../cluster/docs/agent_rbac.md) describes deployed/static
 ownership; it remains the source for current grant scope.
 
 ## Why this is needed
@@ -53,24 +54,89 @@ propagation to existing SAs is a preference, not an unconditional requirement.
   retroactively enroll them because a preset changes. New app/Sandbox Service DB persistence is
   under the archive-ownership scheduling hold in the [task DAG](task_dag.md).
 
+## Preferred live design (proposal)
+
+Use a small **separate controller Deployment/image and ServiceAccount**, not an additional
+privileged loop in caller-facing Sandbox Service. Sandbox Service validates authorized
+create/update requests and writes assignments; the controller alone expands them into native
+RBAC bindings. Its process identity is the security boundary; the separate small image also
+limits dependencies. Reuse existing binding-name, conflict and cleanup logic where possible,
+but do not let both reconcilers own the same bindings. This direction buys live updates; if
+we choose snapshot semantics instead, a deployment-managed group catalog and existing Sandbox
+state could avoid the new CRs initially.
+
+Sketch two CRs (names, API versions and validation rules are not yet final):
+
+```yaml
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesGrantGroup # cluster-scoped, no subject or SA
+metadata:
+  name: low-privilege-cluster-diagnostics
+spec:
+  bindings:
+    - roleRef: { kind: ClusterRole, name: agent-metadata-reader }
+      namespaces: [team-a, team-b] # explicit, reviewed opt-in initially
+    # Explicit cluster-wide binding is a distinct, more tightly reviewed case:
+    - roleRef: { kind: ClusterRole, name: cluster-diagnostics-reader }
+      clusterWide: true
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: SandboxGrantAssignment # namespaced with its Sandbox
+metadata:
+  name: coder-diagnostics
+  namespace: agentplane-staging
+spec:
+  sandboxRef: { name: coder-123, uid: "sandbox-uid" }
+  groups: [low-privilege-cluster-diagnostics]
+```
+
+The definition refers only to **existing** Roles/ClusterRoles. Its namespaced entries support
+`Role` (existing in each named target namespace) or `ClusterRole`; cluster-wide entries
+support only `ClusterRole`. Choose explicit namespace names first, rather than introducing a
+selector whose label writer might inadvertently acquire grant authority. An assignment
+references one Sandbox by **name and UID**; derive the SA namespace/name from that Sandbox,
+never accept a caller-selected subject. Presets populate _new_ assignments, not existing
+Sandboxes. An authorized one-off binding can use a dedicated singleton group through the
+same assignment path; removing that membership must not revoke another group's overlapping
+grant. Status belongs on the assignment (observed group generations, readiness/error and
+counts, without a massive per-namespace status payload). The group has no native Kubernetes
+`Group` membership effect: generated RoleBindings/ClusterRoleBindings name the SA directly.
+
+**Authority and ownership:** agents must not have unrestricted CR write privileges. Editing a
+group or assignment is equivalent to granting RBAC; only a reviewed deploy/operator workflow
+or a validated, audited service operation may do so. The controller should read only the
+necessary Sandbox/SA and CR data, and write **bindings**, not Roles/ClusterRoles. Prefer
+namespace-scoped Role grants in approved target namespaces; cluster-scoped binding writes,
+if enabled, are separately reviewed. Kubernetes RBAC's privilege-escalation checks also
+require `bind` on the particular approved Role/ClusterRole names (unless already held); grant
+`bind` by `resourceNames`, not a wildcard. Do not substitute a broad ClusterRoleBinding for
+hundreds of namespaced RoleBindings. Treat new authority as a separate RBAC review, not as a
+side effect of deploying the controller image.
+
+**Deletion and rollout:** deterministic generated names and owner/UID annotations must let
+the controller distinguish its objects from Flux's and other assignments' bindings. A
+namespaced assignment cannot owner-reference bindings in other namespaces or a
+ClusterRoleBinding: use finalizers and explicit cleanup; same-namespace owner references can
+assist GC. Never adopt/delete on name alone. Kubernetes RBAC subject identity is SA
+namespace/name, _not UID_: merely recording a Sandbox UID does not prevent a replacement SA
+with the same name from inheriting an uncleaned binding. Define cleanup/gating and test SA
+replacement before enabling live grants. Existing launch-snapshot bindings remain under
+Sandbox Service until an explicit per-Sandbox handoff has removed/retired them; no automatic
+migration or double reconciliation. Definition narrowing, deletion and namespace removal must
+remove old bindings even after a roleRef changes (which cannot be patched in-place). Test
+partial failures, restarts and revocation before relying on live semantics.
+
 ## Candidate mechanisms and prior art
 
 ### Agentplane-owned definition and assignment
 
-A Kubernetes CR for the group, plus a binding/assignment (another object or durable state on a
-managed Sandbox), could name existing Role/ClusterRole references and explicit namespaces or an
-approved namespace selector. A controller would expand the group for assigned SAs, watch changes
-to the group, assignments and eligible namespaces if live semantics are selected, and reconcile
-only its own generated RoleBindings/ClusterRoleBindings. Existing Sandbox Service binding
-reconciliation supplies naming, conflict detection and cleanup patterns, but today its source
-of truth is a concrete launch snapshot. A cluster-scoped definition can own namespaced generated
-bindings; an assignment attached to a Sandbox must still account for cluster-scoped and
-cross-namespace bindings and Sandbox deletion. Do not have two controllers own the same binding.
-
-This can express subject-free reusable groups and independent per-SA membership directly, at
-the cost of operating a privileged fan-out controller. The design must specify what happens to
-bindings on definition deletion, namespace declassification, failed partial reconcile and
-recovery after restart, without creating transient excess privileges or adopting Flux objects.
+The preferred CR/controller split above directly models subject-free definitions and per-SA
+membership, borrowing virtual-group expansion from rbacsync and bindings-only namespace
+fan-out from access-manager. It has the operational cost of a separately deployed privileged
+controller and reviewed cross-namespace cleanup. Its definition and assignment objects must
+not have multiple writers: Flux may own group definitions while an authorized runtime
+service owns per-Sandbox assignments, but neither should patch the other's objects. See the
+ownership and migration constraints above before selecting it for implementation.
 
 ### Fairwinds RBAC Manager
 
