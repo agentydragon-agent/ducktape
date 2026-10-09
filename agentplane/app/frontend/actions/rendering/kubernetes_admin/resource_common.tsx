@@ -20,4 +20,3 @@ export function ResourceChips({ args }: { args: { apiVersion: string; kind: stri
     </>
   );
 }
-
