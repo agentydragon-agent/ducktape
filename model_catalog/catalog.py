@@ -150,6 +150,13 @@ class TokenLimits:
 
 
 @dataclass(frozen=True)
+class EmbeddingLimits:
+    """Embedding input ceiling; vector dimensions are not generated output tokens."""
+
+    max_input_tokens: int
+
+
+@dataclass(frozen=True)
 class Model:
     """Metadata for a model as served by its account, not a universal vendor claim.
 
@@ -160,7 +167,7 @@ class Model:
 
     id: str
     display_name: str | None = None
-    limits: TokenLimits | None = None
+    limits: TokenLimits | EmbeddingLimits | None = None
     reasoning: bool | None = None
 
 
@@ -448,8 +455,10 @@ _MISTRAL_MODELS = (
 # is the longer-established route through LiteLLM. Both expose flexible output
 # dimensionality (128-3072, recommended 768/1536/3072), selected per request rather
 # than per deployment, so neither entry pins a size.
-_GEMINI_EMBEDDING_2 = Model("gemini-embedding-2")
-_GEMINI_EMBEDDING_001 = Model("gemini-embedding-001")
+# Input ceilings also match the exact gemini/* entries pinned in
+# litellm_metadata.md#gemini-embedding-input-metadata-2026-10-09.
+_GEMINI_EMBEDDING_2 = Model("gemini-embedding-2", limits=EmbeddingLimits(max_input_tokens=8192))
+_GEMINI_EMBEDDING_001 = Model("gemini-embedding-001", limits=EmbeddingLimits(max_input_tokens=2048))
 
 # Bare, pre-scheme alias of GEMINI_EMBEDDING_2, served until the durable
 # OpenClaw index public-coder-agent built under this identity is deliberately rebuilt
@@ -694,8 +703,8 @@ GEMINI_FLASH = Route(_GEMINI_FLASH, GOOGLE_GENERATE, publish_limits=True)
 GEMINI_FLASH_LITE = Route(_GEMINI_FLASH_LITE, GOOGLE_GENERATE, publish_limits=True)
 GEMINI_ROUTES = (GEMINI_FLASH, GEMINI_FLASH_LITE)
 GOOGLE_EMBED = Upstream(Provider.GOOGLE, "gemini", "embed")
-GEMINI_EMBEDDING_2 = Route(_GEMINI_EMBEDDING_2, GOOGLE_EMBED)
-GEMINI_EMBEDDING_001 = Route(_GEMINI_EMBEDDING_001, GOOGLE_EMBED)
+GEMINI_EMBEDDING_2 = Route(_GEMINI_EMBEDDING_2, GOOGLE_EMBED, publish_limits=True)
+GEMINI_EMBEDDING_001 = Route(_GEMINI_EMBEDDING_001, GOOGLE_EMBED, publish_limits=True)
 GEMINI_EMBEDDING_ROUTES = (GEMINI_EMBEDDING_2, GEMINI_EMBEDDING_001)
 GEMINI_EMBEDDING_ALIAS = RouteAlias(GEMINI_EMBEDDING_COMPAT_ALIAS, GEMINI_EMBEDDING_2)
 MISTRAL_CHAT = Upstream(Provider.MISTRAL, "mistral", "chat", supports_function_calling=True)

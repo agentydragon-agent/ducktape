@@ -5,7 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from cluster.cdk8s.litellm.upstreams import UPSTREAM_BINDINGS
-from model_catalog.catalog import HIDDEN_ALIASES, SERVED_ROUTES, Provider, Route, RouteAlias, shape_mode
+from model_catalog.catalog import (
+    HIDDEN_ALIASES,
+    SERVED_ROUTES,
+    EmbeddingLimits,
+    Provider,
+    Route,
+    RouteAlias,
+    shape_mode,
+)
 
 
 @dataclass(frozen=True)
@@ -49,14 +57,19 @@ def model_entry(entry: Route | RouteAlias) -> dict:
     if route.publish_limits:
         if (limits := route.model.limits) is None:
             raise ValueError(f"cannot publish unknown limits for {route.id}")
-        # LiteLLM 1.100.1 get_max_tokens() uses max_tokens as the legacy fallback
-        # for max_output_tokens. Emit both from the same declaration, not a mix
-        # of our explicit output limit and the catalogue's legacy value.
-        info.update(
-            max_input_tokens=limits.max_input_tokens,
-            max_output_tokens=limits.max_output_tokens,
-            max_tokens=limits.max_output_tokens,
-        )
+        info["max_input_tokens"] = limits.max_input_tokens
+        if isinstance(limits, EmbeddingLimits):
+            if info["mode"] != "embedding":
+                raise ValueError(f"embedding limits require an embedding route: {route.id}")
+            # Pinned Gemini embedding entries use max_tokens as the input alias,
+            # not a generation ceiling; see model_catalog/litellm_metadata.md.
+            info["max_tokens"] = limits.max_input_tokens
+        else:
+            if info["mode"] not in ("chat", "responses"):
+                raise ValueError(f"generative limits require a chat or responses route: {route.id}")
+            # LiteLLM 1.100.1 get_max_tokens() uses max_tokens as the legacy
+            # fallback for max_output_tokens. Both come from one declaration.
+            info.update(max_output_tokens=limits.max_output_tokens, max_tokens=limits.max_output_tokens)
     return {"model_name": entry.id, "litellm_params": params, "model_info": info}
 
 

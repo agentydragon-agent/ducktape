@@ -48,7 +48,7 @@ to copy values from a specific LiteLLM catalogue entry, with revision/source com
 beside the declaration; the catalogue is a reference input, not an implicit runtime
 second authority. We do not need independent live capacity probes for every model.
 
-For routes marked `publish_limits`, the ordinary cdk8s projection emits:
+For generative routes marked `publish_limits`, the ordinary cdk8s projection emits:
 
 - `max_input_tokens` from `Model.limits.max_input_tokens`.
 - `max_output_tokens` and legacy `max_tokens` from the **same**
@@ -254,3 +254,24 @@ from LiteLLM's publication behavior.
 
 Therefore response filtering and changing LiteLLM's internal catalogue are different
 changes. Do not solve one by silently changing pricing or request behavior in the other.
+
+## Gemini embedding input metadata (2026-10-09)
+
+`EmbeddingLimits` declares only input tokens. The two Gemini declarations retain
+ceilings recorded from Google's embedding documentation on 2026-07-30 and match the
+exact `gemini/gemini-embedding-2` and `gemini/gemini-embedding-001` entries in
+[LiteLLM v1.100.1's catalogue](https://github.com/BerriAI/litellm/blob/1dba17b10ded12ad0021edb453ba2c54e4637928/model_prices_and_context_window.json),
+inspected 2026-10-09: **8192** and **2048** respectively. These are declared input
+ceilings, not newly measured capacity or per-modality size/duration limits.
+
+Those pinned entries use both `max_input_tokens` and legacy `max_tokens` for the
+same input ceiling and have no `max_output_tokens`. The projection follows that
+mode-specific convention, deriving both keys from one declaration. The generative
+output-alias mapping above is unchanged. No vector dimension is reinterpreted as a
+token limit, and no `null` suppression or downstream LiteLLM patch is introduced.
+
+The durable bare `gemini-embedding-2` alias references its canonical route and
+inherits the same metadata. This does not change upstream models, embedding spaces,
+request-selected dimensions, indexes, prices, key selections or client budgets.
+Ollama embedding and audio metadata remain unresolved; `publish_limits` is still
+transitional. This pins these input fields, not all catalogue capability metadata.

@@ -18,8 +18,10 @@ from model_catalog.catalog import (
     HIDDEN_ALIASES,
     OLLAMA_CHAT_ROUTES,
     SERVED_ROUTES,
+    EmbeddingLimits,
     Model,
     Route,
+    RouteAlias,
 )
 from model_catalog.policies import KEY_MODEL_LANES
 
@@ -103,6 +105,26 @@ def test_unknown_limits_are_not_invented_or_published(publish_limits: bool) -> N
             model_entry(route)
     else:
         assert not {"max_input_tokens", "max_output_tokens", "max_tokens"} & model_entry(route)["model_info"].keys()
+
+
+@pytest.mark.parametrize("entry", [*GEMINI_EMBEDDING_ROUTES, GEMINI_EMBEDDING_ALIAS])
+def test_embedding_input_aliases_follow_the_declaration_without_output_limits(entry: Route | RouteAlias) -> None:
+    original = model_entry(entry)
+    route = entry.target if isinstance(entry, RouteAlias) else entry
+    changed = replace(route, model=replace(route.model, limits=EmbeddingLimits(max_input_tokens=12345)))
+    projected = model_entry(replace(entry, target=changed) if isinstance(entry, RouteAlias) else changed)
+    assert projected["model_name"] == original["model_name"]
+    assert projected["litellm_params"] == original["litellm_params"]
+    assert projected["model_info"] == {"mode": "embedding", "max_input_tokens": 12345, "max_tokens": 12345}
+
+
+def test_published_limit_kinds_must_match_the_route_mode() -> None:
+    chat = CHATGPT_RESPONSES_ROUTES[0]
+    embedding = GEMINI_EMBEDDING_ROUTES[0]
+    with pytest.raises(ValueError, match="embedding limits require an embedding route"):
+        model_entry(replace(chat, model=embedding.model))
+    with pytest.raises(ValueError, match="generative limits require a chat or responses route"):
+        model_entry(replace(embedding, model=chat.model))
 
 
 def test_missing_display_name_is_not_prettified_from_a_slug() -> None:
