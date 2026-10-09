@@ -209,8 +209,8 @@
       "sha256": "lEZv5Cocm/7QVzVEuJyg2VOUxKvkJMZolmB0Q3efDDs="
     },
     "skill-ci_latency": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-259ac7a69f11/ci_latency.skill",
-      "sha256": "JZrHpp8R2vs7JmuS3ydoCmDlIProkLgihVuVg/kAbsE="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-d32d353da7d5/ci_latency.skill",
+      "sha256": "0y01PafVT/rkELxSUd+cXbGbDQEA2nINYRq/VWcTSCU="
     },
     "skill-seaweed_operator": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-6249a6ee9e7e/seaweed_operator.skill",
@@ -243,6 +243,10 @@
     "pr-visuals": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-9fe5728c039b/pr_visuals-0.1.0-py3-none-any.whl",
       "sha256": "n+VyjAObBa1Dgja4JL2ExWgM356Mv287Q+ImLxQ75L4="
+    },
+    "skill-ci_reliability": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_reliability-c5422d1aa967/ci_reliability.skill",
+      "sha256": "xUItGqlnTTF8+qgdA/tqg6ZNnhIxMoP3fHK725YlEGY="
     }
   }
 }
