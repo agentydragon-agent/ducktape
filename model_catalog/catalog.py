@@ -536,7 +536,14 @@ _OLLAMA_PROXY_ROUTES = tuple(
 
 OLLAMA_EMBED = Upstream(Provider.OLLAMA, "ollama", "embed")
 OLLAMA_EMBEDDING_ROUTE = Route(
-    Model(ollama.QWEN_EMBEDDING.tag.replace(":", "-")), OLLAMA_EMBED, upstream_model=ollama.QWEN_EMBEDDING.tag
+    # Installed GGUF qwen3.context_length, read via /api/show on 2026-10-09;
+    # provenance and truncation semantics: litellm_metadata.md#ollama-embedding-input-metadata-2026-10-09.
+    # TODO: Verify full-input embedding and the boundary with truncation disabled;
+    # this is GGUF-declared context, not tested capacity (batch/EOS limits may be lower).
+    Model(ollama.QWEN_EMBEDDING.tag.replace(":", "-"), limits=EmbeddingLimits(max_input_tokens=40_960)),
+    OLLAMA_EMBED,
+    upstream_model=ollama.QWEN_EMBEDDING.tag,
+    publish_limits=True,
 )
 TANA_ROUTES = (TANA_SONNET, TANA_OPUS, TANA_HAIKU)
 CHATGPT_MESSAGES = Upstream(Provider.CHATGPT, "anthropic", "messages", supports_function_calling=True)
