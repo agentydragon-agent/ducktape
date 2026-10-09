@@ -407,6 +407,28 @@ the claim's row locks, so revocation still fails unstarted work. Removed groups/
 incompatible schemas remain terminal. New requests to known unavailable groups return an explicit
 unavailable error (HTTP 503), not unknown-action. Replica-local health is never stored in Postgres.
 
+### Execution schema-check diagnostics
+
+A failed execution-time `tools/list` keeps `kind=mcp_unavailable` and adds structured `diagnostics`
+to the retained execution error and a warning log. It records elapsed request time, connection age
+(since client initialization), and the discovery request ordinal on that connection, plus bounded
+exception types and HTTP status when the SDK preserves an HTTP exception in a cause/context/group.
+The ordinal includes background catalog refreshes; it is not a count of executed Actions.
+
+Do not log exception text, URLs, request headers, cookies, raw MCP session IDs, or arbitrary response
+bodies. Only recognized `server` values (`envoy`, `nginx`, `uvicorn`) and fixed error-phrase matches
+from the first 2 KiB of an already-buffered body are emitted, alongside its byte length. An unread
+streaming body is not consumed for diagnostics. Unknown headers/body text are omitted, not trusted
+merely because their header names look diagnostic. These fingerprints can suggest an Envoy-style
+error but do not prove which hop generated it. Wrappers that discard the underlying HTTP exception
+leave only exception-type evidence.
+
+This is observability, not a retry or network-policy change. For an operator-authorized reproduction,
+compare read-only `tools/list` immediately after connection, after an idle interval on that connection,
+and on a fresh connection after failure. Correlate with backend/proxy evidence; do not automatically
+retry `tools/call` or report recovery merely because catalog refresh succeeds. Deployment and live
+reproduction require separate authorization; unit/HTTP-peer tests do not establish the live cause.
+
 Operators manage linkage at `GET /v1/operator/mcp-servers`
 (every configured server's status), `GET /v1/operator/mcp-servers/{server_id}/linkage`, and
 `POST .../linkage/start` and `POST .../linkage/disconnect`; the provider returns to the

@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
 import httpx
+import httpx2
 import pytest
 import pytest_bazel
 import uvicorn
@@ -43,7 +44,11 @@ from agentplane.action_service.catalog import (
 )
 from agentplane.action_service.db import ActionConflictError, ExecutionRow, make_sessionmaker
 from agentplane.action_service.main import async_main
-from agentplane.action_service.mcp_executor import McpActionGroupExecutor, _LinkageBearerAuth
+from agentplane.action_service.mcp_executor import (
+    McpActionGroupExecutor,
+    _diagnose_discovery_failure,
+    _LinkageBearerAuth,
+)
 from agentplane.action_service.mcp_linkage import McpLinkageStatus
 from agentplane.action_service.models import (
     ActionRequestInput,
@@ -85,6 +90,8 @@ class FakeMcpServer:
             }
         ]
         self.list_unavailable = False
+        self.list_error_body = b""
+        self.list_error_headers: dict[str, str] = {}
         self.call_unavailable = False
         self.tool_error = False
 
@@ -123,7 +130,7 @@ class FakeMcpServer:
         result: dict[str, Any]
         if method == "tools/list":
             if self.list_unavailable:
-                return Response(status_code=503)
+                return Response(self.list_error_body, status_code=503, headers=self.list_error_headers)
             result = {"tools": self.tools}
         elif method == "tools/call":
             if self.call_unavailable:
@@ -337,13 +344,115 @@ async def test_http_list_failure_refuses_dispatch(
     executor: McpActionGroupExecutor,
     fake_server: FakeMcpServer,
     execution_request: ExecutionRequest,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     fake_server.list_unavailable = True
+    fake_server.list_error_body = b"upstream connect error: reset before headers; bearer test-body-secret"
+    fake_server.list_error_headers = {"server": "envoy", "set-cookie": "test-cookie-secret"}
     result = await executor.execute(execution_request, execution_lease)
     assert result.state is ExecutionState.FAILED
     assert result.error is not None
     assert result.error["kind"] == "mcp_unavailable"
+    diagnostics = result.error["diagnostics"]
+    assert isinstance(diagnostics, dict)
+    assert diagnostics["phase"] == "execution_schema_check"
+    assert isinstance(diagnostics["discovery_request_number"], int)
+    assert diagnostics["discovery_request_number"] >= 2  # Includes initial catalog discovery.
+    for key in ("connection_age_s", "request_duration_s"):
+        assert isinstance(diagnostics[key], (int, float))
+        assert diagnostics[key] >= 0
+    failures = diagnostics["failures"]
+    assert isinstance(failures, list)
+    assert any(isinstance(item, dict) and item.get("http_status") == 503 for item in failures)
+    assert "MCP execution schema check failed" in caplog.text
+    for secret in ("test-body-secret", "test-cookie-secret"):
+        assert secret not in json.dumps(result.error)
+        assert secret not in caplog.text
     assert fake_server.calls == []
+
+
+def test_discovery_diagnostics_extract_bounded_facts_without_secrets() -> None:
+    request = httpx2.Request(
+        "POST",
+        "https://user:password@example.invalid/mcp?token=test-url-secret",
+        headers={"authorization": "Bearer test-auth-secret", "mcp-session-id": "test-session-secret"},
+    )
+    response = httpx2.Response(
+        503,
+        request=request,
+        headers={"server": "envoy", "set-cookie": "test-cookie-secret", "x-request-id": "test-id-secret"},
+        content=b"upstream connect error: reset before headers; test-body-secret",
+    )
+    cause = httpx2.HTTPStatusError("test-exception-secret", request=request, response=response)
+    wrapper = RuntimeError("test-wrapper-secret")
+    wrapper.__cause__ = cause
+    wrapper.__context__ = cause
+    diagnostics = _diagnose_discovery_failure(
+        ExceptionGroup("test-group-secret", [wrapper]),
+        connection_age_s=120.25,
+        request_duration_s=5.01,
+        discovery_request_number=3,
+    )
+    assert diagnostics == {
+        "phase": "execution_schema_check",
+        "connection_age_s": 120.25,
+        "request_duration_s": 5.01,
+        "discovery_request_number": 3,
+        "failures": [
+            {"exception_type": "ExceptionGroup"},
+            {"exception_type": "RuntimeError"},
+            {
+                "exception_type": "HTTPStatusError",
+                "http_status": 503,
+                "server": "envoy",
+                "body_bytes": len(response.content),
+                "body_signals": ["upstream connect error", "reset before headers"],
+            },
+        ],
+    }
+    assert "secret" not in json.dumps(diagnostics)
+    assert "password" not in json.dumps(diagnostics)
+
+
+def test_discovery_diagnostics_bound_exception_graph_and_body_scan() -> None:
+    request = httpx2.Request("POST", "https://example.invalid")
+    response = httpx2.Response(
+        503, request=request, headers={"server": "test-header-secret"}, content=b"x" * 2048 + b"no healthy upstream"
+    )
+    error = httpx2.HTTPStatusError("test-secret", request=request, response=response)
+    error.__cause__ = error
+    diagnostics = _diagnose_discovery_failure(
+        ExceptionGroup("ignored", [error] * 100),
+        connection_age_s=0,
+        request_duration_s=0.25,
+        discovery_request_number=1,
+    )
+    assert diagnostics["failures"] == [
+        {"exception_type": "ExceptionGroup"},
+        {"exception_type": "HTTPStatusError", "http_status": 503, "body_bytes": 2067, "body_signals": []},
+    ]
+
+
+@pytest.mark.parametrize("error", [TimeoutError(), OSError("test-secret")])
+def test_discovery_diagnostics_non_http_errors(error: Exception) -> None:
+    diagnostics = _diagnose_discovery_failure(
+        error, connection_age_s=10, request_duration_s=15, discovery_request_number=2
+    )
+    assert diagnostics["failures"] == [{"exception_type": type(error).__name__}]
+
+
+def test_discovery_diagnostics_do_not_read_streaming_body() -> None:
+    request = httpx2.Request("POST", "https://example.invalid")
+    response = httpx2.Response(503, request=request, stream=httpx2.ByteStream(b"test-secret"))
+    diagnostics = _diagnose_discovery_failure(
+        httpx2.HTTPStatusError("ignored", request=request, response=response),
+        connection_age_s=0,
+        request_duration_s=0,
+        discovery_request_number=1,
+    )
+    assert diagnostics["failures"] == [
+        {"exception_type": "HTTPStatusError", "http_status": 503, "body_available": False}
+    ]
 
 
 @REPLY_ENCODINGS
