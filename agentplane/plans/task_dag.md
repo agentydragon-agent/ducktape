@@ -138,7 +138,6 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Deferred combined UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox selected, Thread fields editable"]:::future
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
-    COMMAND_PROGRESS_WIDGET["Unranked UI<br/>shared in-progress command indicator<br/>input, model, reasoning effort"]:::future
     THREAD_OPEN_RELOAD_RECOVERY["Open recovery follow-up<br/>runner committed but mapping absent<br/>safe reload reconciliation"]:::future
     BOOTSTRAP_PROGRESS_CONTRACT["Planned contract<br/>one bootstrap attempt with durable progress/result<br/>no HTTP-held script execution"]:::future
     SANDBOX_CREATE_RECONCILE["Lifecycle acceptance<br/>lost Create reply and partial grants<br/>current UID, no deleted-object tombstone"]:::future
@@ -677,27 +676,6 @@ Keep #6625's outbox and #6985's mixed Thread-record design outside the current m
 sequence. Review them for independently useful changes to salvage into appropriate
 slices; do not stack new work on their deferred queue design. Preserve the runner's
 own journal in either option.
-
-### `COMMAND_PROGRESS_WIDGET` — shared progress for in-flight commands
-
-**Unranked future UI improvement:** show one compact, accessible progress treatment for
-pending user input, model changes, and reasoning-effort changes. Reuse the same widget
-beside an input bubble or command card; include the requested model or effort in the
-command card. Do not create a parallel progress log or duplicate a command when its
-local copy becomes a projected history row.
-
-Advance only through observable states: retained locally (including admission
-unconfirmed after a lost reply), runner admission confirmed by `CommandAdmitted`, and
-the operation-specific effect or terminal failure/no-op. Input confirmation,
-`ModelChanged`, and `ReasoningEffortChanged` settle their respective commands; a
-model or effort change may remain pending until a native selection confirms it.
-Neither the HTTP reply alone nor the runner's internal `dispatch_planned` flag proves
-the harness received the command; no dispatch Event or protocol change is needed.
-Stop the spinner on terminal outcomes while preserving failure/no-op explanations.
-
-Acceptance: exercise the shared state transitions, retry/reconnect and reload from
-local plus projected state, commands sent from another browser, and mobile/desktop
-renderings. Keep the stage names accessible without pinning incidental wording.
 
 ### `CLAUDE_RECOVERY` — native execution before durable runner evidence
 
