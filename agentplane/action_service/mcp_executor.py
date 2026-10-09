@@ -155,7 +155,6 @@ class _Connection:
     idle: asyncio.Event = field(default_factory=asyncio.Event)
     failed: bool = False
     connected_at: float = field(default_factory=monotonic)
-    discovery_requests: int = 0
 
     def __post_init__(self) -> None:
         self.idle.set()
@@ -437,9 +436,8 @@ class McpActionGroupExecutor(Executor):
         if self._linkage_changed is not None:
             self._linkage_changed.clear()
 
-    async def _discover_catalog(self, connection: _Connection) -> dict[str, ActionDefinition]:
-        connection.discovery_requests += 1
-        return self._catalog_from_tools(await connection.client.list_tools())
+    async def _discover_catalog(self, client: Client[Any]) -> dict[str, ActionDefinition]:
+        return self._catalog_from_tools(await client.list_tools())
 
     def _catalog_from_tools(self, tools: list[mcp.types.Tool]) -> dict[str, ActionDefinition]:
         actions: dict[str, ActionDefinition] = {}
@@ -519,7 +517,7 @@ class McpActionGroupExecutor(Executor):
         self.on_health_change()
         try:
             async with asyncio.timeout(self._lifecycle_timeout.total_seconds()):
-                actions = await self._discover_catalog(connection)
+                actions = await self._discover_catalog(connection.client)
         except (_InvalidMcpCatalogError, ValidationError) as error:
             # A legacy-protocol peer's tool list is parsed against that era's stricter wire
             # model (e.g. input_schema requiring type: "object" at the root); a schema that
@@ -577,8 +575,6 @@ class McpActionGroupExecutor(Executor):
 
         client = connection.client
         discovery_started = monotonic()
-        connection.discovery_requests += 1
-        discovery_request_number = connection.discovery_requests
         try:
             async with asyncio.timeout(self._lifecycle_timeout.total_seconds()):
                 tools = await client.list_tools()
@@ -596,12 +592,13 @@ class McpActionGroupExecutor(Executor):
                 error={"kind": "mcp_invalid_schema", "message": "backend tool schema is invalid"},
             )
         except Exception as error:
-            diagnostics = _diagnose_discovery_failure(
-                error,
-                connection_age_s=max(0, discovery_started - connection.connected_at),
-                request_duration_s=max(0, monotonic() - discovery_started),
-                discovery_request_number=discovery_request_number,
-            )
+            diagnostics: dict[str, JsonValue] = {
+                "exception_type": type(error).__name__,
+                "connection_age_s": round(discovery_started - connection.connected_at, 3),
+                "request_duration_s": round(monotonic() - discovery_started, 3),
+            }
+            if isinstance(error, httpx2.HTTPStatusError):
+                diagnostics["http_status"] = error.response.status_code
             # Never log exception text/tracebacks: SDK wrappers can include credentials or URLs.
             logger.warning("MCP execution schema check failed group=%s diagnostics=%s", group_key, diagnostics)
             self._session_failed(connection, error)
@@ -651,61 +648,6 @@ class McpActionGroupExecutor(Executor):
             state=ExecutionState.SUCCEEDED,
             result=result.model_dump(mode="json", by_alias=True, exclude_none=True, exclude={"result_type"}),
         )
-
-
-def _diagnose_discovery_failure(
-    error: BaseException, *, connection_age_s: float, request_duration_s: float, discovery_request_number: int
-) -> dict[str, JsonValue]:
-    """Extract bounded facts, not arbitrary backend/exception text, for caller-visible failures."""
-    failures: list[JsonValue] = []
-    pending = [error]
-    seen: set[int] = set()
-    # SDK wrappers may retain an HTTP exception in a cause, context, or ExceptionGroup.
-    while pending and len(seen) < 8:
-        current = pending.pop()
-        if id(current) in seen:
-            continue
-        seen.add(id(current))
-        detail: dict[str, JsonValue] = {"exception_type": type(current).__name__[:80]}
-        if isinstance(current, httpx2.HTTPStatusError):
-            response = current.response
-            detail["http_status"] = response.status_code
-            # Only fixed recognized values survive. Even diagnostic headers can echo secrets.
-            server = response.headers.get("server", "").lower()
-            if server in {"envoy", "nginx", "uvicorn"}:
-                detail["server"] = server
-            try:
-                body = response.content
-            except httpx2.ResponseNotRead:
-                detail["body_available"] = False
-            else:
-                detail["body_bytes"] = len(body)
-                prefix = body[:2048].lower()
-                detail["body_signals"] = [
-                    phrase.decode("ascii")
-                    for phrase in (
-                        b"upstream connect error",
-                        b"reset before headers",
-                        b"no healthy upstream",
-                        b"connection timeout",
-                        b"service unavailable",
-                    )
-                    if phrase in prefix
-                ]
-        failures.append(detail)
-        if current.__context__ is not None:
-            pending.append(current.__context__)
-        if current.__cause__ is not None:
-            pending.append(current.__cause__)
-        if isinstance(current, BaseExceptionGroup):
-            pending.extend(current.exceptions[:8])
-    return {
-        "phase": "execution_schema_check",
-        "connection_age_s": round(connection_age_s, 3),
-        "request_duration_s": round(request_duration_s, 3),
-        "discovery_request_number": discovery_request_number,
-        "failures": failures,
-    }
 
 
 def _describe(error: BaseException) -> str:

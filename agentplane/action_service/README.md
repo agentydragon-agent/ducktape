@@ -409,19 +409,12 @@ unavailable error (HTTP 503), not unknown-action. Replica-local health is never 
 
 ### Execution schema-check diagnostics
 
-A failed execution-time `tools/list` keeps `kind=mcp_unavailable` and adds structured `diagnostics`
-to the retained execution error and a warning log. It records elapsed request time, connection age
-(since client initialization), and the discovery request ordinal on that connection, plus bounded
-exception types and HTTP status when the SDK preserves an HTTP exception in a cause/context/group.
-The ordinal includes background catalog refreshes; it is not a count of executed Actions.
-
-Do not log exception text, URLs, request headers, cookies, raw MCP session IDs, or arbitrary response
-bodies. Only recognized `server` values (`envoy`, `nginx`, `uvicorn`) and fixed error-phrase matches
-from the first 2 KiB of an already-buffered body are emitted, alongside its byte length. An unread
-streaming body is not consumed for diagnostics. Unknown headers/body text are omitted, not trusted
-merely because their header names look diagnostic. These fingerprints can suggest an Envoy-style
-error but do not prove which hop generated it. Wrappers that discard the underlying HTTP exception
-leave only exception-type evidence.
+A failed execution-time `tools/list` keeps `kind=mcp_unavailable` and adds the exception type,
+elapsed schema-check time and connection age (since client initialization) to the retained execution
+error and a warning log. A directly raised HTTP status exception also supplies its status code.
+SDK-wrapped exceptions remain opaque; use the HTTP client's existing status log for correlation
+rather than traversing arbitrary exception graphs. No exception text, headers, URLs, response bodies
+or raw MCP session IDs are copied into these diagnostics.
 
 This is observability, not a retry or network-policy change. For an operator-authorized reproduction,
 compare read-only `tools/list` immediately after connection, after an idle interval on that connection,
