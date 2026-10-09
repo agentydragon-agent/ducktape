@@ -72,6 +72,17 @@ async def test_bounded_resume_and_growth_beyond_watermark(
     assert (await Store(engine).read(settings.session_id))[0] == 4
 
 
+async def test_tail_sample_does_not_read_unselected_prefix(engine: AsyncEngine) -> None:
+    settings = await seed(engine)
+    # A tail check is deliberately not a full-prefix proof. Missing earlier source
+    # rows must neither trigger a scan nor make the selected range fail.
+    async with engine.begin() as connection:
+        await connection.execute(text("DELETE FROM event WHERE cursor <= 2"))
+    settings.after = 2
+    settings.max_batches = 1
+    assert await verify(settings, engine, engine) == 3
+
+
 @pytest.mark.parametrize("change", ["payload", "gap", "source", "origin_sequence", "checkpoint", "locator"])
 async def test_conflicting_or_missing_evidence_fails(engine: AsyncEngine, change: str) -> None:
     settings = await seed(engine)

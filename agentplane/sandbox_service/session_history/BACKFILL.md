@@ -37,6 +37,6 @@ wire bytes, for imported historical events.
 
 ## Catch-up and verification
 
-Use the [cutover preflight runbook](CUTOVER.md) for primary watermarks, bounded full-prefix
+Use the [cutover preflight runbook](CUTOVER.md) for primary watermarks, bounded handoff
 verification, legacy runner overlap evidence and the concurrent-write handoff gates. Re-running
 this importer closes suffix gaps but does not replace independent verification of skipped Events.

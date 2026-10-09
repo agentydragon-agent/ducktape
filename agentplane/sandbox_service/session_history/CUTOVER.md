@@ -5,6 +5,15 @@ verifying. No global pause of runner execution is required. Do not start a secon
 the current one is running, fill a legacy Sandbox UID from a matching name, or enable service reads
 merely because the first import exits successfully.
 
+## Verification scope
+
+The operator chose bounded handoff checks rather than another full historical scan after the
+long-running import. Use successful import/catch-up receipts, an inventory and indexed watermarks
+for every Session, and canonical-byte spot checks. This accepts residual risk of an undetected
+interior mismatch: matching watermarks and samples are not proof of full historical parity.
+Do not turn bounded checks into an exhaustive scan by repeatedly resuming through every prefix.
+Retain source history and import evidence; investigate any observed conflict before proceeding.
+
 ## 1. Record primary watermarks and inventory
 
 Discover the current primary instead of assuming `postgres-1`:
@@ -57,7 +66,7 @@ It validates boundaries but **does not verify the skipped interior**. Keep a fix
 `through` manifest for verification. Writes beyond those watermarks can continue. Do not run an
 unbounded rerun loop hoping to observe two moving databases at equality.
 
-## 3. Verify exact bounded ranges
+## 3. Spot-check bounded handoff ranges
 
 `verify_bin` is an operator-run tool, not an image startup task. Build/run from an authorized
 workstation with database reachability. Inject connection URLs through the existing approved secret
@@ -66,12 +75,22 @@ mechanism into `AGENTPLANE_HISTORY_VERIFY_DATABASE_URL` (service DB) and
 review comments or committed files. The tool opens read-only transactions, checks primary status,
 and applies 10-second statement / 2-second lock timeouts. It never advances ingestion checkpoints.
 
-For each public Session UUID and its recorded watermark:
+For each nonempty Session, check at most the last 128 imported Events at its recorded watermark.
+For live Sessions, also check at most 128 Events around each recorded import/catch-up boundary
+(clipped to the committed range). Empty Sessions need inventory/checkpoint checks only. Record the
+chosen ranges before running; do not scan the interior or issue full-table counts/checksums.
+For a tail window:
+
+```bash
+AFTER=$(( THROUGH > 128 ? THROUGH - 128 : 0 ))
+```
+
+Run the same bounded command for each selected window:
 
 ```bash
 bb run //agentplane/sandbox_service/session_history:verify_bin -- \
   --mode archive --session-id "$SESSION_ID" --through "$THROUGH" \
-  --after 0 --batch-size 128 --max-batches 100 --timeout-s 60
+  --after "$AFTER" --batch-size 128 --max-batches 1 --timeout-s 60
 ```
 
 The verifier compares **every** Event in the selected range: parse app proto-JSON, parse service
@@ -86,11 +105,9 @@ set to the last successfully reported cursor. A timeout/failure may also leave c
 records, but is not a completed verification. Retain the records and investigate the failure before
 resuming. No automatic retries or on-disk mutable checkpoint are hidden in this tool.
 
-A full verified prefix requires contiguous successful records from zero to the watermark, with the
-same source identity and locator. A successful suffix alone is not full parity. Historical prefixes
-must remain immutable while verification spans transactions/invocations; if either source is edited
-or replaced, invalidate the evidence and restart verification. Empty history can pass archive parity
-but cannot establish a runner binding. Reconcile missing/new Sessions separately from these ranges.
+Evidence applies only to the selected intervals, not their unexamined interior. If source identity
+or locator changes, invalidate the affected evidence and investigate. Reconcile missing/new Sessions
+separately; an empty archive cannot establish a runner binding.
 
 ## 4. Verify a legacy live runner without changing its binding
 
@@ -113,41 +130,45 @@ approved forward to the pinned Pod, not an arbitrary runner address. In a second
 
 ```bash
 bb run //agentplane/sandbox_service/session_history:verify_bin -- \
-  --mode runner --session-id "$SESSION_ID" --through "$VERIFIED_ARCHIVE_THROUGH" \
-  --runner-target 127.0.0.1:17000 --after 0 --max-batches 100 --timeout-s 60
+  --mode runner --session-id "$SESSION_ID" --through "$THROUGH" \
+  --runner-target 127.0.0.1:17000 --after "$AFTER" --batch-size 128 --max-batches 1 --timeout-s 60
 ```
 
 Runner mode discovers the stored runner Session first and refuses to attach if absent. It supplies
 no spec, setup script or Command; it only replays an existing Session and closes the attachment.
 It compares bounded ranges of the runner spool against the archive, including source identity and
-all overlapping Event bytes. Continue explicitly as above to cover the nonempty verified prefix.
+all Event bytes within the selected windows, not the whole spool. Check the first at most 128
+Events and the last at most 128 imported Events, including source identity at both ends. Use
+`AFTER=0` and `THROUGH=min(128, recorded watermark)` for the first window, then the tail window
+from section 3. Do not replay intervening Events.
 Re-read the Sandbox and Pod after checks: UIDs must be unchanged, ownership must still match, and
 neither object may be deleting. Record the Pod UID as well as the Sandbox UID. An interrupted
 port-forward or changed identity invalidates association evidence; do not reconnect by name blindly.
 
 **Runner mode proves only overlap at the supplied endpoint.** It cannot authenticate the endpoint's
 Kubernetes association itself. The independently checked provisioning/port-forward evidence and
-full overlap together support operator review; neither grants permission to update the UID. A
-sampled first/last match, empty log or matching runner Session name is insufficient. If accepted,
+bounded source/byte overlap together support operator review under the sampling decision above;
+neither grants permission to update the UID. Samples alone, an empty log or a matching runner
+Session name are insufficient without independent incarnation evidence. If accepted,
 prepare a separate narrowly scoped binding update conditioned on the unchanged public Session,
 runner locator, source identity and currently NULL UID. Never bulk-fill NULL UIDs by name.
 
 ## 5. Continuous ingestion and ownership handoff
 
-After verified import and reviewed binding readiness, enable shadow ingestion through its reviewed
+After successful import, bounded checks and reviewed binding readiness, enable shadow ingestion through its reviewed
 rollout. Leave app ingestion active. Verify that each intended live Session is discovered and advances;
 NULL UIDs, missing runner Sessions, suspended/deleting Sandboxes and unavailable spools are explicit
 exceptions, not silent completion. Finish app-only historical suffixes separately.
 
 For each handoff cohort:
 
-1. Capture a fixed app watermark and verify service coverage/parity through it while writes continue.
+1. Capture a fixed app watermark and check service checkpoint coverage through it and spot-check its tail while writes continue.
 2. Prepare the app projection/read path to consume the service's committed prefix. Current opt-in
    raw reads fail closed when the service lags the app cursor; a one-time equality check is not a
    safe read-switch protocol while independent ingesters race. **This consumer coordination is a
    remaining implementation gate, not something the verifier implements.**
 3. Under a separately approved procedure, fence the old app ingester and record its final committed
-   cursor. Wait for service coverage and verify any remaining suffix. Stop the old consumer, not
+   cursor. Wait for service coverage and spot-check the final boundary. Stop the old consumer, not
    the runner; retain runner spools and keep the service ingester running throughout.
 4. Switch the prepared app readers/projections to service-owned history. Check replay/resume,
    authorization, projection lag and historical reads before retiring any old data or Jobs.

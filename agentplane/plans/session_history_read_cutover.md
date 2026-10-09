@@ -3,7 +3,8 @@
 The [DAG migration lane](task_dag.md#1-finish-the-history-migration-before-expanding-persistence)
 separates `THREAD_ARCHIVE_BACKFILL`, `THREAD_ARCHIVE_INGEST`, `THREAD_ARCHIVE_READ_CUTOVER`,
 `THREAD_ARCHIVE_UI_CUTOVER`, `THREAD_ARCHIVE_OWNERSHIP` and `APP_RAW_HISTORY_RETIRE`.
-Backfill is reported in progress; this document does not claim any live switch has been enabled.
+Bulk import and a catch-up pass completed; live handoff remains in progress. This document does
+not claim any live switch has been enabled.
 New service input/metadata tables and unrelated app schema changes wait for the ownership capstone.
 
 `ReadSessionEvents` is bounded to 1000 entries and the explicitly configured
@@ -28,7 +29,10 @@ Until then keep app event ingestion and do not remove its tables.
 ## Executable preflight and concurrent-write gate
 
 Use the [catch-up/handoff runbook](../sandbox_service/session_history/CUTOVER.md) and its bounded,
-read-only verifier for fixed-watermark archive parity and runner overlap evidence. The verifier
+read-only verifier for fixed-watermark archive samples and bounded runner overlap evidence.
+The operator explicitly chose not to repeat a full historical scan: import receipts, all-Session
+watermarks and selected boundary windows are the migration evidence, with residual risk of an
+undetected interior mismatch. Sample success must not be reported as full historical parity. The verifier
 does not assign legacy UIDs or implement the consumer handoff. A one-time cursor match while app
 and service ingest independently does not make the fail-closed read switch safe: coordinate the
 app read/projection cursor with the service's committed prefix before switching. Keep runner

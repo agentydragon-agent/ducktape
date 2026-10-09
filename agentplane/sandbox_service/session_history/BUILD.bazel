@@ -200,7 +200,9 @@ py_library(
 
 py_test(
     name = "test_verify",
+    size = "medium",
     srcs = ["test_verify.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":store",
