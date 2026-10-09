@@ -31,8 +31,7 @@ import ./gateway.nix { inherit pkgs lib; } "gemini-claude" {
     "WebFetch"
     "WebSearch"
   ];
-  # Claude-specific budgets from model_catalog/nix.py, not automatic projection
-  # of provider limits. Without maxContextTokens Claude Code
-  # assumes 200k for this unrecognized slug and compacts away ~80% of Gemini's ~1M window.
+  # Claude budgets from model_catalog/nix.py are independent of provider limits;
+  # matching numbers do not make these settings a capacity measurement.
   inherit (models) maxContextTokens maxOutputTokens;
 }
