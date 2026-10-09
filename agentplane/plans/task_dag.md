@@ -153,11 +153,8 @@ Use replay/fold tests and bounded storage measurement, not an open-ended live fa
 flowchart LR
     SESSION_COMMAND_CONTRACT[Decision: generic command admission contract]
     SESSION_COMMAND_CORE[Draft: transport-independent admission foundation]
-    RUNNER_TRANSPORT_DESIGN[Decision: outbound channel contract]
-    RUNNER_OUTBOUND_CHANNEL[Blocked: runner and service channel implementation]
-    RUNNER_OUTBOUND_CANARY[Blocked: service-first deployment and fresh runner canary]
     THREAD_ARCHIVE_OWNERSHIP[Archive ownership cutover]
-    SESSION_COMMAND_SUBMISSION[Blocked: durable submission and spool integration]
+    SESSION_COMMAND_SUBMISSION[Blocked: durable submission through existing relay]
     SESSION_COMMAND_STATUS_READ[Blocked: authorized admission status]
     SESSION_COMMAND_STATUS_UI[Blocked: show service-retained command status]
     SESSION_INPUT_METADATA[Follow-up: typed input annotations and provenance]
@@ -165,13 +162,8 @@ flowchart LR
     NOTIFICATION_NOTICE_METADATA[Blocked: attach notice metadata to submissions]
     NOTIFICATION_PRESENTATION[Blocked: compact frontend presentation]
     SESSION_COMMAND_CONTRACT --> SESSION_COMMAND_CORE
-    SESSION_COMMAND_CONTRACT --> RUNNER_OUTBOUND_CHANNEL
-    RUNNER_TRANSPORT_DESIGN --> RUNNER_OUTBOUND_CHANNEL
-    RUNNER_OUTBOUND_CHANNEL --> RUNNER_OUTBOUND_CANARY
     SESSION_COMMAND_CORE --> SESSION_COMMAND_SUBMISSION
-    RUNNER_OUTBOUND_CANARY --> SESSION_COMMAND_SUBMISSION
     THREAD_ARCHIVE_OWNERSHIP -. merge and deployment gate .-> SESSION_COMMAND_CORE
-    THREAD_ARCHIVE_OWNERSHIP -. merge and deployment gate .-> RUNNER_OUTBOUND_CHANNEL
     THREAD_ARCHIVE_OWNERSHIP -. merge and deployment gate .-> SESSION_COMMAND_SUBMISSION
     SESSION_COMMAND_SUBMISSION --> SESSION_COMMAND_STATUS_READ
     SESSION_COMMAND_STATUS_READ --> SESSION_COMMAND_STATUS_UI
@@ -208,16 +200,17 @@ In-flight source: operator discussion and draft [#9573](https://github.com/agent
 Test concurrent/conflicting retries, mutable protobuf snapshots, lost receipts, reconciliation
 rollback and interrupt responsiveness. The public handler remains a separate integration outcome.
 
-### `SESSION_COMMAND_SUBMISSION` — wire durable submission and independent spool ingestion
+### `SESSION_COMMAND_SUBMISSION` — wire durable submission through the existing relay
 
-**Blocked on admission core, reviewed outbound protocol, channel canary and archive ownership.**
-Wire the authenticated public submission RPC to persistence and immediate outbound-channel dispatch.
+**Blocked on admission core, admission contract review and archive ownership; not on inversion.**
+Wire the authenticated public RPC to persistence and immediate dispatch through a narrow adapter
+around the existing `Attach`-based relay. Reusing this path does not require new inbound runner RPCs.
 Return OK only on durable runner admission; record explicit refusal and preserve uncertainty on
-transport failure. Separately wire spool ingestion with acknowledgements after archive commit.
-Both paths must pass before expanding rollout. Cover destination authorization, disconnect around
-admission, replay/conflicts and direct/spooled receipt races with the app unavailable. Submission
-has no replay cursor and does not create/resume a harness. No intermediate migration to a new inbound
-runner unary API or silent fallback to the legacy `Attach` relay.
+transport failure. Reconcile receipts through the existing service-owned ingestion path without
+changing its transport. Cover destination authorization, disconnect around admission, immutable
+retries and direct/spooled receipt races with the app unavailable. Replay cursors are an adapter
+implementation detail, not part of the durable public submission contract. No automatic startup.
+Outbound command delivery later replaces this adapter without changing persistence semantics.
 
 ### `SESSION_COMMAND_STATUS_READ` — authorized submission status
 
@@ -505,9 +498,11 @@ connection direction need not move command durability or remove the runner journ
 ```mermaid
 flowchart LR
     RUNNER_TRANSPORT_DESIGN[Decision: outbound channel contract]
-    RUNNER_OUTBOUND_CHANNEL[Blocked: runner and service channel implementation]
+    RUNNER_OUTBOUND_CHANNEL[Blocked: outbound command delivery peers]
     RUNNER_OUTBOUND_CANARY[Blocked: service-first deployment and fresh runner canary]
-    SESSION_COMMAND_SUBMISSION[Blocked: durable submission and spool integration]
+    SESSION_COMMAND_SUBMISSION[Blocked: durable submission through existing relay]
+    RUNNER_OUTBOUND_SPOOL[Blocked: move spool delivery onto channel]
+    RUNNER_OUTBOUND_LIFECYCLE[Blocked: migrate remaining lifecycle consumers]
     RUNNER_OUTBOUND_ROLLOUT[Blocked: migrate selected existing runners]
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
@@ -517,12 +512,18 @@ flowchart LR
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     THREAD_ARCHIVE_OWNERSHIP[Archive ownership cutover] -. service-change scheduling hold .-> VM_PROVIDER
     RUNNER_TRANSPORT_DESIGN --> RUNNER_OUTBOUND_CHANNEL
+    SESSION_COMMAND_CONTRACT[Decision: generic command admission contract] --> RUNNER_OUTBOUND_CHANNEL
     THREAD_ARCHIVE_OWNERSHIP -. merge and deployment gate .-> RUNNER_OUTBOUND_CHANNEL
     RUNNER_TRANSPORT_DESIGN --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_CHANNEL --> VM_CONTROL_NETWORKING
+    RUNNER_OUTBOUND_LIFECYCLE --> VM_CONTROL_NETWORKING
+    RUNNER_OUTBOUND_SPOOL --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_CHANNEL --> RUNNER_OUTBOUND_CANARY
-    RUNNER_OUTBOUND_CANARY --> SESSION_COMMAND_SUBMISSION
-    SESSION_COMMAND_SUBMISSION --> RUNNER_OUTBOUND_ROLLOUT
+    SESSION_COMMAND_SUBMISSION --> RUNNER_OUTBOUND_CANARY
+    RUNNER_OUTBOUND_CANARY --> RUNNER_OUTBOUND_SPOOL
+    RUNNER_OUTBOUND_CANARY --> RUNNER_OUTBOUND_LIFECYCLE
+    RUNNER_OUTBOUND_SPOOL --> RUNNER_OUTBOUND_ROLLOUT
+    RUNNER_OUTBOUND_LIFECYCLE --> RUNNER_OUTBOUND_ROLLOUT
     VM_PROVIDER --> VM_CONTROL_NETWORKING
     VM_CONTROL_NETWORKING --> VM_LIFECYCLE
     VM_IMAGE --> VM_PROCESS_ISOLATION
@@ -537,49 +538,66 @@ flowchart LR
 
 ### `RUNNER_TRANSPORT_DESIGN` — runner dial-out and connection lifecycle
 
-**Decision; design can proceed during backfill.** The operator-supported direction is runner dial-out,
-with an authenticated long-lived WebSocket recommended, inspired by RemoteIO's connection direction,
-not its wire protocol. Review the concrete framing, authentication/bootstrap, replica ownership and
-fencing, reconnect/replay, receipt correlation and backpressure before implementation. Compare
-bidirectional gRPC only if the actual proxy/network path gives a concrete reason to revise the WS
-recommendation. A lost connection is not proof of command failure or harness termination.
+**Decision; narrow command-channel design can proceed during backfill.** The operator selected
+one runner-initiated connection per runner incarnation, multiplexing Sessions, using protobuf over
+binary WebSocket frames. On disconnect the runner reconnects to an available service replica.
+Postgres `LISTEN`/`NOTIFY` is a wakeup/routing signal only, not durable delivery or an admission
+receipt. RemoteIO inspires connection direction, not the wire protocol or authority model.
 
-Co-design with `SESSION_COMMAND_CONTRACT`: command/admission request-response and independent spool
-replay are logical operations over the channel, not a requirement for reverse unary gRPC calls.
-State which inbound ports/discovery rules disappear, how lifecycle controls map to the channel,
-and how selected existing containers transition. Keep journal/admission authority, offline queue
-policy and thin-runner redesign separate. Detailed questions and sequence:
-[runner transport design](runner_discovery.md#outbound-control-channel-design).
+Review the minimum command/receipt framing, incarnation authentication/bootstrap, ownership/epoch
+fencing and active dispatch-attempt lifetime. Resolve these before channel implementation, but do
+not require the complete spool or lifecycle protocol to ship durable admission over the old relay.
+Spool replay/backpressure review belongs to `RUNNER_OUTBOUND_SPOOL`; inventory remaining lifecycle
+consumers early and finish their mappings separately. Keep runner journal authority and offline
+queue policy unchanged. Details: [runner transport design](runner_discovery.md#outbound-control-channel-design).
 
-### `RUNNER_OUTBOUND_CHANNEL` — implement the coordinated runner and service channel
+### `RUNNER_OUTBOUND_CHANNEL` — implement outbound command delivery
 
-**Blocked on transport and admission contract review; draft code/isolated tests permitted, with
-merge/deployment gated on archive ownership.** Implement both peers, authentication, replica routing,
-fencing, heartbeat, command/receipt correlation and independent cursor-based spool replay. Keep
-runner admission and ordered Event semantics. Bound buffers and prevent history catch-up from
-starving commands/receipts. Test identity denial, expiry/revocation, ordinary disconnect/reconnect,
-stale connections, replay/conflicts and flow control. No new inbound unary-RPC rollout prerequisite.
+**Blocked on command-channel and admission contract review; draft code/isolated tests permitted,
+with merge/deployment gated on archive ownership.** Implement both WS peers, command/receipt
+correlation, authenticated incarnation binding, ownership/fencing and reconnect. Use durable command
+and outcome records with Postgres notifications to wake the connection owner and waiting caller.
+Define active dispatch attempts before routing; reconnect must not scan pending commands for delivery.
+Keep existing spool ingestion unchanged. Test missed/duplicate/delayed notifications, owner loss,
+authentication denial/revocation, stale connections and ambiguous sends. No new inbound unary API.
 
-### `RUNNER_OUTBOUND_CANARY` — service-first support and a fresh outbound runner
+### `RUNNER_OUTBOUND_CANARY` — switch command delivery on a fresh runner
 
-**Blocked on channel implementation and its merge/deployment gate.** Deploy backward-compatible
-service channel support without switching existing routes; then publish/use a compatible runner
-image in a fresh canary environment. Select one explicit route per environment/incarnation; never
-silently fall back per request. Verify the real proxy path, connection ownership/fencing, receipts
-and replay continuity in a bounded canary. This establishes transport capability, not completion of
-durable service submission wiring. Do not migrate the fleet to test the first channel.
+**Blocked on outbound command peers and durable submission through the existing relay.** Deploy
+compatible service support first with old routes unchanged, then a compatible runner image in a fresh
+canary. Select one explicit command route per incarnation and switch its submission adapter to WS;
+keep the existing spool reader. Verify the real proxy path, cross-replica routing, owner loss and
+reconnect, receipt persistence and exact retries. No silent fallback after an ambiguous send. This
+proves command delivery independently of moving spool traffic or migrating existing environments.
+
+### `RUNNER_OUTBOUND_SPOOL` — move spool delivery onto the channel
+
+**Blocked on the command canary; review replay/acknowledgement and backpressure here.** Add independent
+cursor-based replay/live Events and acknowledgements only after archive commit. Preserve existing
+archive identities, duplicate/conflict checks and direct/spooled admission reconciliation. Bound
+buffers and keep controls/receipts responsive during catch-up; test reconnect, checkpoint rollback
+and slow readers. Switch the canary's ingester explicitly, then expand this capability in bounded
+steps. This changes event transport, not archive storage or admission authority.
+
+### `RUNNER_OUTBOUND_LIFECYCLE` — migrate remaining inbound control consumers
+
+**Blocked on the command canary; inventory and design may proceed earlier.** Map remaining lifecycle
+and other inbound/`Attach` consumers onto the channel without accidental startup/resume semantics.
+Verify each consumer's auth and retry behavior before retiring its old route. Completion establishes
+that selected environments no longer require inbound controls; no automatic fleet migration.
 
 ### `RUNNER_OUTBOUND_ROLLOUT` — migrate selected existing runners and retire legacy routes
 
-**Blocked on the canary's durable submission and spool integration.** Expand to selected existing
-environments with an explicit compatible image/route transition and rollback preserving submissions,
-command IDs, history and runner storage. Never blindly resend ambiguous commands through a competing
-route. Retire legacy `Attach` command submission and obsolete inbound access only after their consumers
-move; separately account for lifecycle consumers. Fleet migration is not a gate on first VM use.
+**Blocked on outbound spool and remaining lifecycle integration.** Expand complete outbound support
+to selected existing environments with explicit image/route transitions and rollback preserving
+submissions, command IDs, history and runner storage. Partial command/spool canaries above need not
+wait for this full migration. Never blindly resend ambiguous commands through a competing route.
+Retire legacy `Attach` command submission and inbound access only after all relevant consumers move.
+Fleet migration is not a gate on first VM use.
 
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 
-**Blocked on transport decision, outbound channel implementation and VM provider.** Wire
+**Blocked on the reviewed outbound command, spool and lifecycle capabilities and VM provider.** Wire
 VM control reachability/authentication to the chosen path. An outbound channel may remove guest
 control-port exposure and endpoint discovery; retain the independently needed outbound API/credential
 proxy path. Image packaging and process-isolation work need not wait for this decision. Verify the

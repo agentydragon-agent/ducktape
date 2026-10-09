@@ -66,7 +66,11 @@ payload and unknown fields/numeric enum values with SQLAlchemy conversion. Valid
 mutable protobufs before awaiting; unsupported operations still cannot be dispatched.
 
 The runner keeps its journal and reusable admission/receipt lookup separate from transport handlers.
-The proposed runner-initiated WS carries commands, correlated receipts and independent spool Events.
+The first adapter reuses today's `Attach`-based relay, including its internal receipt/replay handling;
+the public durable submission contract does not expose a replay cursor. This lets admission ship
+without inversion. The later runner-initiated WS first replaces command delivery; independent spool
+Events move afterward. One connection per runner incarnation multiplexes Sessions using protobuf
+binary frames. Postgres notifications are routing/wakeup signals over durable state, not delivery.
 Do not first migrate Sandbox Service to new inbound `InsertCommand`/`ListenSpool` RPCs: their logical
 operations belong in the outbound protocol. Submission needs no replay cursor; lifecycle controls
 must be mapped explicitly rather than accidentally lost when retiring `Attach`.
@@ -82,17 +86,24 @@ runner calls. Ingestion keeps its own prefix lock without unnecessarily blocking
 See [outbound-channel design and rollout](runner_discovery.md#outbound-control-channel-design) and
 [DAG](task_dag.md#2-service-owned-command-admission-and-later-notification-presentation):
 
-1. Review the admission contract and concrete outbound protocol together. Resolve authentication,
-   replica ownership/fencing, wire framing, replay/backpressure and refusal classification.
-2. Draft the transport-independent admission foundation and isolated tests. After contract review,
-   implement both channel peers; merge/deploy affected service/schema changes only after archive
-   ownership and compatibility verification. Draft permission is not permission for live changes.
-3. Deploy service channel support first without rerouting existing runners, then use a compatible
-   runner image in a fresh, explicitly outbound-enabled canary.
-4. Wire the public durable submission RPC and independent spool ingestion for that canary. Both
-   must work before expansion; verify the backend with the integration app unavailable.
-5. Expand selected environments with controlled route transitions and rollback preserving IDs,
-   pending submissions and history; retire legacy paths only after consumers migrate.
+1. Review admission identity, authorization, retry/refusal and reconciliation semantics. Draft the
+   transport-independent foundation and isolated tests; wire the public handler using the existing
+   relay adapter and existing service-owned ingestion. No outbound design dependency or new inbound
+   unary API. Merge/schema/deployment gates on archive ownership remain unchanged.
+2. Review minimal command-channel framing, authentication/fencing and Postgres notification routing,
+   including active dispatch-attempt lifetime; implement both peers. Deploy service support first,
+   then a fresh runner canary and switch only its command adapter. Keep spool transport unchanged.
+3. Review and implement outbound spool replay, committed-prefix acknowledgements and backpressure;
+   switch the canary reader without changing archive storage or identity.
+4. Move remaining lifecycle/inbound consumers, then expand full outbound support to selected existing
+   environments and retire old access. Preserve command IDs, pending outcomes and history on rollback;
+   never silently fall back between command routes after an ambiguous send.
+
+Cross-replica dispatch uses `NOTIFY` only to wake readers of durable state. Retained pending status
+alone does not authorize future delivery: routing must refer to a bounded active submission/retry
+attempt, with its precise deadline/ownership semantics reviewed before WS implementation. Reconnect
+or a missed notification must not turn into an offline pending-command drain. Expiry/cancellation
+cannot retract a command already sent; persist and reconcile late admission receipts.
 
 As of 2026-10-09 PDT, the operator discussion and draft
 [#9573](https://github.com/agentydragon/ducktape/pull/9573) report internal admission work in progress,
