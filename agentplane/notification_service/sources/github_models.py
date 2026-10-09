@@ -125,8 +125,8 @@ class GitHubBinding(Model):
     repository_id: int = Field(gt=0)
 
 
-def subject_key(source: GitHubSource) -> str:
-    match source.subject:
+def subject_key(subject: Subject) -> str:
+    match subject:
         case PullRequestSubject(number=number):
             return str(number)
         case BranchSubject(name=name):

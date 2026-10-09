@@ -21,6 +21,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from agentplane.notification_service.db import (
     GitHubDelivery,
+    GitHubDeliverySubject,
     GitHubInstallation,
     GitHubRepository,
     GitHubRepositoryAccess,
@@ -53,6 +54,7 @@ from agentplane.notification_service.sources.github_models import (
     GitHubSource,
     PullRequestSubject,
     RepositoryName,
+    Subject,
     subject_key,
 )
 from agentplane.notification_service.store import Store
@@ -246,26 +248,26 @@ def api_headers(bearer: str) -> dict[str, str]:
     }
 
 
-def correlation(payload: Envelope) -> tuple[str | None, list[str]]:
+def correlation(payload: Envelope) -> tuple[str | None, list[Subject]]:
     """Index upstream subject references without imposing a universal filter vocabulary."""
     match payload:
         case PullRequestPayload(pull_request=pr):
-            return pr.head.sha, [f"pull_request:{pr.number}"]
+            return pr.head.sha, [PullRequestSubject(kind="pull_request", number=pr.number)]
         case IssuePayload(issue=issue) if issue.pull_request is not None:
-            return None, [f"pull_request:{issue.number}"]
+            return None, [PullRequestSubject(kind="pull_request", number=issue.number)]
         case PushPayload(ref=ref, after=sha) if ref.startswith("refs/heads/"):
-            return (None if sha == "0" * 40 else sha), [f"branch:{ref.removeprefix('refs/heads/')}"]
+            return (None if sha == "0" * 40 else sha), [BranchSubject(kind="branch", name=ref.removeprefix("refs/heads/"))]
         case RefPayload(ref=ref, ref_type="branch"):
-            return None, [f"branch:{ref}"]
+            return None, [BranchSubject(kind="branch", name=ref)]
         case CheckRunPayload(check_run=check) | CheckSuitePayload(check_suite=check):
-            return check.head_sha, [f"pull_request:{pr.number}" for pr in check.pull_requests]
+            return check.head_sha, [PullRequestSubject(kind="pull_request", number=pr.number) for pr in check.pull_requests]
         case WorkflowPayload(workflow_run=workflow):
-            subjects = [f"pull_request:{pr.number}" for pr in workflow.pull_requests]
+            subjects: list[Subject] = [PullRequestSubject(kind="pull_request", number=pr.number) for pr in workflow.pull_requests]
             if workflow.head_branch is not None:
-                subjects.append(f"branch:{workflow.head_branch}")
+                subjects.append(BranchSubject(kind="branch", name=workflow.head_branch))
             return workflow.head_sha, subjects
         case StatusPayload(sha=sha, branches=branches):
-            return sha, [f"branch:{branch.name}" for branch in branches]
+            return sha, [BranchSubject(kind="branch", name=branch.name) for branch in branches]
         case _:
             return None, []
 
@@ -397,16 +399,16 @@ class GitHub:
         if event in SUPPORTED_EVENTS and envelope.repository is None:
             raise ValueError("repository event requires a repository")
         sha, subjects = correlation(envelope)
-        associations = []
-        if envelope.repository is not None and sha is not None:
+        keys = []
+        revisions = []
+        if envelope.repository is not None:
             repository = envelope.repository
-            revisions = [HeadRevision(repository.id, repository.full_name, sha)]
-            if isinstance(envelope, PullRequestPayload) and envelope.pull_request.head.repo is not None:
-                head = envelope.pull_request.head.repo
-                revisions.append(HeadRevision(head.id, head.full_name, sha))
-            for subject in subjects:
-                kind, key = subject.split(":", 1)
-                associations.append((SubjectKey(repository.id, kind, key), revisions))
+            keys = [SubjectKey(repository.id, subject.kind, subject_key(subject)) for subject in subjects]
+            if sha is not None:
+                revisions.append(HeadRevision(repository.id, repository.full_name, sha))
+                if isinstance(envelope, PullRequestPayload) and envelope.pull_request.head.repo is not None:
+                    head = envelope.pull_request.head.repo
+                    revisions.append(HeadRevision(head.id, head.full_name, sha))
         return await store.ingest_github(
             self.settings.app_id,
             delivery_id,
@@ -417,9 +419,9 @@ class GitHub:
             payload,
             action=envelope.action,
             head_sha=sha,
-            subjects=subjects,
+            subjects=keys,
             repository_name=envelope.repository.full_name if envelope.repository else None,
-            associations=associations,
+            revisions=revisions,
         )
 
     async def refresh_failed(self, state: GitHubState, lease: RefreshLease, error: Exception) -> None:
@@ -469,7 +471,7 @@ class GitHub:
             return AccessFence(key, row.generation, row.validated_installation_generation)
 
     async def refresh_subject(self, store: Store, source: GitHubSource, base: AccessFence) -> SubjectKey:
-        key = SubjectKey(base.key.repository_id, source.subject.kind, subject_key(source))
+        key = SubjectKey(base.key.repository_id, source.subject.kind, subject_key(source.subject))
         state = GitHubState(store.sessions, self.settings.freshness_seconds)
         lease = await state.acquire(key)
         if lease is None:
@@ -588,9 +590,12 @@ class GitHub:
         delivery = GitHubDelivery
         direct: ColumnElement[bool] = false()
         if not isinstance(source.subject, CommitSubject):
-            direct = (delivery.repository_id == binding.repository_id) & delivery.subjects.contains(
-                [f"{key.kind}:{key.subject_key}"]
-            )
+            direct = select(GitHubDeliverySubject.delivery_position).where(
+                GitHubDeliverySubject.delivery_position == delivery.position,
+                GitHubDeliverySubject.repository_id == key.repository_id,
+                GitHubDeliverySubject.kind == key.kind,
+                GitHubDeliverySubject.subject_key == key.subject_key,
+            ).exists()
         revision = GitHubSubjectRevision
         heads = (
             select(revision.sha)

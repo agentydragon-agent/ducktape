@@ -102,7 +102,7 @@ class GitHubStatus(Model):
 
 
 class SubscriptionView(Model):
-    github: GitHubStatus | None = None
+    github: GitHubStatus | None
     id: UUID
     inbox_id: UUID
     source: Source
@@ -157,7 +157,7 @@ class Acknowledge(Model):
 
 
 class SubscriptionStatus(Model):
-    github: GitHubStatus | None = None
+    github: GitHubStatus | None
     id: UUID
     source: Source
     cancelled: bool

@@ -31,7 +31,7 @@ type GitHubStatus = {
   subject: GitHubRefresh & { repository_id: number; kind: string; subject_key: string };
 };
 type Subscription = {
-  github?: GitHubStatus | null;
+  github: GitHubStatus | null;
   id: string;
   source: Source;
   cancelled: boolean;

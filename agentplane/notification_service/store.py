@@ -16,6 +16,7 @@ from agentplane.action_service.models import ActionEventView
 from agentplane.notification_service.db import (
     Entry,
     GitHubDelivery,
+    GitHubDeliverySubject,
     GitHubInstallation,
     GitHubRepository,
     GitHubRepositoryAccess,
@@ -295,7 +296,7 @@ class Store:
                     .values(
                         repository_id=binding.repository_id,
                         kind=body.source.subject.kind,
-                        subject_key=subject_key(body.source),
+                        subject_key=subject_key(body.source.subject),
                         generation=0,
                     )
                     .on_conflict_do_nothing()
@@ -313,7 +314,7 @@ class Store:
                 github_installation_id=binding.installation_id if binding else None,
                 github_repository_id=binding.repository_id if binding else None,
                 github_subject_kind=body.source.subject.kind if isinstance(body.source, GitHubSource) else None,
-                github_subject_key=subject_key(body.source) if isinstance(body.source, GitHubSource) else None,
+                github_subject_key=subject_key(body.source.subject) if isinstance(body.source, GitHubSource) else None,
                 cancelled=False,
                 expires_at=now + timedelta(days=body.lifetime_days),
                 next_attempt=now,
@@ -781,9 +782,9 @@ class Store:
         *,
         action: str | None,
         head_sha: str | None,
-        subjects: list[str],
+        subjects: Sequence[SubjectKey],
         repository_name: str | None = None,
-        associations: Sequence[tuple[SubjectKey, Sequence[HeadRevision]]] = (),
+        revisions: Sequence[HeadRevision] = (),
     ) -> bool:
         async with self.sessions.begin() as session:
             # Allocate identities in committed order, also fencing the subscription start boundary.
@@ -830,15 +831,14 @@ class Store:
                     .values(repository_id=repository_id, full_name=repository_name)
                     .on_conflict_do_nothing()
                 )
-            for key, revisions in associations:
+            for key in subjects:
                 await session.execute(
                     insert(GitHubSubject)
                     .values(repository_id=key.repository_id, kind=key.kind, subject_key=key.subject_key)
                     .on_conflict_do_nothing()
                 )
                 await add_revisions(session, key, revisions)
-            session.add(
-                GitHubDelivery(
+            receipt = GitHubDelivery(
                     app_id=app_id,
                     delivery_id=delivery_id,
                     installation_id=installation_id,
@@ -848,10 +848,15 @@ class Store:
                     payload=payload,
                     action=action,
                     head_sha=head_sha,
-                    subjects=subjects,
                     received_at=datetime.now(UTC),
-                )
             )
+            session.add(receipt)
+            await session.flush()
+            for key in subjects:
+                await session.execute(insert(GitHubDeliverySubject).values(
+                    delivery_position=receipt.position, repository_id=key.repository_id,
+                    kind=key.kind, subject_key=key.subject_key,
+                ).on_conflict_do_nothing())
             now = datetime.now(UTC)
             active = (
                 (Subscription.github_app_id == app_id)

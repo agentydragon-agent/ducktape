@@ -88,6 +88,24 @@ def upgrade() -> None:
             ["github_subject.repository_id", "github_subject.kind", "github_subject.subject_key"],
         ),
     )
+    op.create_unique_constraint("github_delivery_position_repository", "github_delivery", ["position", "repository_id"])
+    op.create_table(
+        "github_delivery_subject",
+        sa.Column("delivery_position", sa.BigInteger(), primary_key=True),
+        sa.Column("repository_id", sa.BigInteger(), primary_key=True),
+        sa.Column("kind", sa.String(), primary_key=True),
+        sa.Column("subject_key", sa.String(), primary_key=True),
+        sa.ForeignKeyConstraint(
+            ["delivery_position", "repository_id"], ["github_delivery.position", "github_delivery.repository_id"],
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["repository_id", "kind", "subject_key"],
+            ["github_subject.repository_id", "github_subject.kind", "github_subject.subject_key"],
+        ),
+    )
+    op.create_index("ix_github_delivery_subject_lookup", "github_delivery_subject",
+        ["repository_id", "kind", "subject_key", "delivery_position"])
     op.drop_constraint("subscription_source_state", "subscription", type_="check")
     for name in ("github_app_id", "github_installation_id", "github_repository_id"):
         op.add_column("subscription", sa.Column(name, sa.BigInteger()))
@@ -140,21 +158,29 @@ def upgrade() -> None:
         ON CONFLICT DO NOTHING
     """)
     op.execute("""
+        INSERT INTO github_delivery_subject (delivery_position, repository_id, kind, subject_key)
+        SELECT DISTINCT d.position, s.repository_id, s.kind, s.subject_key
+        FROM github_delivery d CROSS JOIN LATERAL unnest(d.subjects) AS subject
+        JOIN github_subject s ON s.repository_id = d.repository_id
+            AND s.kind = split_part(subject, ':', 1)
+            AND s.subject_key = substring(subject from position(':' in subject) + 1)
+    """)
+    op.execute("""
         INSERT INTO github_subject_revision (repository_id, kind, subject_key, head_repository_id, sha)
         SELECT DISTINCT s.repository_id, s.kind, s.subject_key, d.repository_id, d.head_sha
-        FROM github_delivery d JOIN github_subject s ON s.repository_id = d.repository_id
-            AND d.subjects @> ARRAY[s.kind || ':' || s.subject_key]::varchar[]
+        FROM github_delivery d JOIN github_delivery_subject s ON s.delivery_position = d.position
         WHERE d.head_sha IS NOT NULL ON CONFLICT DO NOTHING
     """)
     op.execute("""
         INSERT INTO github_subject_revision (repository_id, kind, subject_key, head_repository_id, sha)
         SELECT DISTINCT s.repository_id, s.kind, s.subject_key,
             (d.payload #>> '{pull_request,head,repo,id}')::bigint, d.head_sha
-        FROM github_delivery d JOIN github_subject s ON s.repository_id = d.repository_id
-            AND d.subjects @> ARRAY[s.kind || ':' || s.subject_key]::varchar[]
+        FROM github_delivery d JOIN github_delivery_subject s ON s.delivery_position = d.position
         JOIN github_repository r ON r.repository_id = (d.payload #>> '{pull_request,head,repo,id}')::bigint
         WHERE d.head_sha IS NOT NULL ON CONFLICT DO NOTHING
     """)
+    op.drop_index("ix_github_delivery_subjects", table_name="github_delivery")
+    op.drop_column("github_delivery", "subjects")
     op.drop_column("subscription", "github_binding")
     op.create_foreign_key(
         "subscription_github_access",
@@ -196,6 +222,18 @@ def downgrade() -> None:
         .scalar()
     ):
         raise RuntimeError("refusing data loss: shared GitHub observations require a reverse migration")
+    op.add_column("github_delivery", sa.Column("subjects", postgresql.ARRAY(sa.String()), nullable=False,
+        server_default=sa.text("'{}'::varchar[]")))
+    op.execute("""
+        UPDATE github_delivery d SET subjects = (
+            SELECT array_agg(s.kind || ':' || s.subject_key ORDER BY s.kind, s.subject_key)::varchar[]
+            FROM github_delivery_subject s WHERE s.delivery_position = d.position
+        ) WHERE EXISTS (SELECT 1 FROM github_delivery_subject s WHERE s.delivery_position = d.position)
+    """)
+    op.alter_column("github_delivery", "subjects", server_default=None)
+    op.create_index("ix_github_delivery_subjects", "github_delivery", ["subjects"], postgresql_using="gin")
+    op.drop_table("github_delivery_subject")
+    op.drop_constraint("github_delivery_position_repository", "github_delivery", type_="unique")
     op.drop_constraint("subscription_source_state", "subscription", type_="check")
     op.drop_constraint("subscription_github_subject", "subscription", type_="foreignkey")
     op.drop_constraint("subscription_github_access", "subscription", type_="foreignkey")

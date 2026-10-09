@@ -29,6 +29,7 @@ from agentplane.notification_service.api import authenticated_caller, create_app
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.db import (
     GitHubDelivery,
+    GitHubDeliverySubject,
     GitHubInstallation,
     GitHubRepository,
     GitHubRepositoryAccess,
@@ -59,6 +60,9 @@ from agentplane.notification_service.sources.github import (
     GitHubRetryError,
     GitHubUnavailableError,
     Repository,
+    IssuePayload,
+    RefPayload,
+    correlation,
     rate_limit_delay,
 )
 from agentplane.notification_service.sources.github_models import (
@@ -1303,6 +1307,21 @@ async def test_normalization_backfills_retained_head_evidence_without_grants(
         """),
             {"delivery": uuid4(), "sha": NEXT, "digest": b"x" * 32, "payload": json.dumps(payload)},
         )
+        connection.execute(text("""
+            INSERT INTO github_delivery (app_id, delivery_id, installation_id, repository_id, event,
+                action, head_sha, subjects, digest, payload, received_at)
+            VALUES (42, :delivery, 11, 100, 'issue_comment', 'created', NULL,
+                ARRAY['pull_request:7', 'pull_request:7'], :digest, CAST(:payload AS jsonb), now())
+        """), {"delivery": uuid4(), "digest": b"y" * 32, "payload": json.dumps(comment())})
+        connection.execute(text("""
+            INSERT INTO github_delivery (app_id, delivery_id, installation_id, repository_id, event,
+                action, head_sha, subjects, digest, payload, received_at)
+            VALUES (42, :delivery, 11, 100, 'delete', NULL, NULL,
+                ARRAY['branch:release/team.v2'], :digest, CAST(:payload AS jsonb), now())
+        """), {"delivery": uuid4(), "digest": b"z" * 32, "payload": json.dumps({
+            "installation": {"id": 11}, "repository": {"id": 100, "full_name": "owner/repo"},
+            "ref": "release/team.v2", "ref_type": "branch",
+        })})
         RUNNER.run_for_connection(connection)
         RUNNER.run_for_connection(connection)
 
@@ -1312,6 +1331,14 @@ async def test_normalization_backfills_retained_head_evidence_without_grants(
         revisions = list(await session.scalars(select(GitHubSubjectRevision)))
         assert {(row.head_repository_id, row.sha) for row in revisions} == {(100, NEXT), (200, NEXT)}
         assert await session.scalar(select(func.count()).select_from(GitHubRepositoryAccess)) == 1
+        links = list(await session.scalars(select(GitHubDeliverySubject).order_by(GitHubDeliverySubject.delivery_position)))
+        assert [(link.kind, link.subject_key) for link in links] == [
+            ("pull_request", "7"), ("pull_request", "7"), ("branch", "release/team.v2"),
+        ]
+        assert not await session.scalar(text("""
+            SELECT EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = current_schema() AND table_name = 'github_delivery' AND column_name = 'subjects')
+        """))
     view = await store.subscription(PRINCIPAL.account, sub.id)
     assert view.github is not None
     assert not view.github.access[0].currently_valid
@@ -1325,6 +1352,38 @@ async def test_normalization_backfills_retained_head_evidence_without_grants(
     await github.reconcile(store, claim, row, source)
     page = await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
     assert [entry.payload for entry in page.entries] == [check(NEXT)]
+
+
+async def test_delivery_subject_links_preserve_shaless_events_and_reject_cross_repository_links(
+    store: Store, provider: tuple[GitHub, Upstream]
+) -> None:
+    github, _ = provider
+    payload = comment()
+    raw, headers = signed(payload, "issue_comment")
+    delivery_id = UUID(headers["X-GitHub-Delivery"])
+    assert await github.ingest(store, "issue_comment", delivery_id, headers["X-Hub-Signature-256"], raw)
+    assert not await github.ingest(store, "issue_comment", delivery_id, headers["X-Hub-Signature-256"], raw)
+    await ingest(github, store, payload | {"repository": {"id": 200, "full_name": "fork/repo"}}, "issue_comment")
+    async with store.sessions() as session:
+        receipt = await session.scalar(select(GitHubDelivery).where(GitHubDelivery.delivery_id == delivery_id))
+        assert receipt is not None
+        assert receipt.head_sha is None
+        links = list(await session.scalars(select(GitHubDeliverySubject).where(
+            GitHubDeliverySubject.delivery_position == receipt.position)))
+        assert [(link.repository_id, link.kind, link.subject_key) for link in links] == [(100, "pull_request", "7")]
+    with pytest.raises(IntegrityError):
+        async with store.sessions.begin() as session:
+            session.add(GitHubDeliverySubject(delivery_position=receipt.position, repository_id=200,
+                kind="pull_request", subject_key="7"))
+
+
+def test_correlation_returns_typed_references_without_sha() -> None:
+    assert correlation(IssuePayload.model_validate(comment())) == (
+        None, [PullRequestSubject(kind="pull_request", number=7)],
+    )
+    assert correlation(RefPayload.model_validate({
+        "installation": {"id": 11}, "ref": "release/team.v2", "ref_type": "branch",
+    })) == (None, [BranchSubject(kind="branch", name="release/team.v2")])
 
 
 if __name__ == "__main__":

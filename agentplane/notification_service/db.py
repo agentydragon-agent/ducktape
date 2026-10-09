@@ -13,10 +13,9 @@ from sqlalchemy import (
     Identity,
     Index,
     LargeBinary,
-    String,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -156,7 +155,7 @@ class GitHubDelivery(Base):
     __table_args__ = (
         UniqueConstraint("app_id", "delivery_id"),
         Index("ix_github_delivery_head", "app_id", "repository_id", "head_sha"),
-        Index("ix_github_delivery_subjects", "subjects", postgresql_using="gin"),
+        UniqueConstraint("position", "repository_id", name="github_delivery_position_repository"),
     )
     position: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     app_id: Mapped[int] = mapped_column(BigInteger)
@@ -167,7 +166,6 @@ class GitHubDelivery(Base):
     # Indexed matching metadata extracted from the retained, validated payload.
     action: Mapped[str | None]
     head_sha: Mapped[str | None]
-    subjects: Mapped[list[str]] = mapped_column(ARRAY(String))
     digest: Mapped[bytes] = mapped_column(LargeBinary)
     payload: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -255,3 +253,22 @@ class GitHubSubjectRevision(Base):
     subject_key: Mapped[str] = mapped_column(primary_key=True)
     head_repository_id: Mapped[int] = mapped_column(ForeignKey("github_repository.repository_id"), primary_key=True)
     sha: Mapped[str] = mapped_column(primary_key=True)
+
+
+class GitHubDeliverySubject(Base):
+    __tablename__ = "github_delivery_subject"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["delivery_position", "repository_id"], ["github_delivery.position", "github_delivery.repository_id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["repository_id", "kind", "subject_key"],
+            ["github_subject.repository_id", "github_subject.kind", "github_subject.subject_key"],
+        ),
+        Index("ix_github_delivery_subject_lookup", "repository_id", "kind", "subject_key", "delivery_position"),
+    )
+    delivery_position: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    repository_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    kind: Mapped[str] = mapped_column(primary_key=True)
+    subject_key: Mapped[str] = mapped_column(primary_key=True)

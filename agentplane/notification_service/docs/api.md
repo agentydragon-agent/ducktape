@@ -267,10 +267,16 @@ failure facts, retry schedule and refresh lease for an App/installation/reposito
 `github_subject` owns repair observations and lease for a PR, branch or commit.
 `github_subject_revision` holds additive associations keyed by subject, head repository and SHA;
 an association cannot grant access to the head repository.
+`github_delivery_subject` links each receipt to its structured subject references through foreign
+keys, including comments and branch events without a SHA. The delivery journal has no encoded
+subject-string array; direct matching uses the indexed relation. Migration preserves existing
+references before removing the old array and its GIN index.
 
 Subscription `last_success_at` and current failure describe that subscription's processing. Shared
 access or repair failures belong on the grant or subject. GET/list and operator status expose them
 in `github.access` and `github.subject`, independently of the subscription's processing fields.
+The `github` response field is required: Actions subscriptions explicitly return `null`; GitHub
+subscriptions return the shared observations. Omission is not treated as `null`.
 Each observation includes current failure facts, retry deadline and refresh lease deadline. Access
 observations also expose validation time, expiry and `currently_valid` as of the read; this is not
 a promise about later delivery. No refresh failure or recovery creates an inbox entry.
