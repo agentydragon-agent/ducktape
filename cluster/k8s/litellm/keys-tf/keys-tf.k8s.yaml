@@ -107,10 +107,10 @@ spec:
           fallback_models: []
         claude_client_models:
           allowed_models:
-            - anthropic-max20/ant-messages/claude-opus-5
-            - anthropic-max20/ant-messages/claude-sonnet-5
-            - anthropic-max20/ant-messages/claude-fable-5
-            - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
+            - anthropic-max20/ant-messages/claude-opus-5-5
+            - anthropic-max20/ant-messages/claude-sonnet-5-5
+            - anthropic-max20/ant-messages/claude-fable-5-1
+            - anthropic-max20/ant-messages/claude-haiku-5-5
           fallback_models: []
         codex_client_models:
           allowed_models:
