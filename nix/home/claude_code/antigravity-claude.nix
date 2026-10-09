@@ -10,7 +10,7 @@
 # so a throttled model degrades instead of hard-failing — but only at routing time: a
 # model outside the key's allowlist is refused during auth, before the router sees it, so
 # both names below must be ones the proxy serves and the key admits (ANTIGRAVITY_ROUTES
-# in cluster/cdk8s/model_catalog/catalog.py, antigravity_client_models in
+# in model_catalog/catalog.py, antigravity_client_models in
 # tf/gitops/litellm-keys/main.tf). See ./gateway.nix for the shared wrapper pattern.
 #
 # gemini-pro-agent is Antigravity's Gemini 3.1 Pro (High) slug -- a tier the direct
@@ -31,7 +31,7 @@ import ./gateway.nix { inherit pkgs lib; } "antigravity-claude" {
     "WebFetch"
     "WebSearch"
   ];
-  # The generated selection keeps the existing output override (65,536), distinct
-  # from Antigravity's published 65,535. The context comes from this account's route.
+  # Preserve Claude-specific budgets from model_catalog/nix.py, including the
+  # 65,536 output setting; the Antigravity route declares 65,535 separately.
   inherit (models) maxContextTokens maxOutputTokens;
 }
