@@ -230,9 +230,8 @@ async def test_github_configured_transport_and_version(provider: tuple[GitHub, U
     assert github.settings.request_timeout_s == 5
     assert github.settings.api_version == date(2022, 11, 28)
     configured = GitHubSettings.model_validate(
-        github.settings.model_dump() | {
-            "api_url": "http://github.test/api/v3", "request_timeout_s": 2.5, "api_version": "2026-01-01"
-        }
+        github.settings.model_dump()
+        | {"api_url": "http://github.test/api/v3", "request_timeout_s": 2.5, "api_version": "2026-01-01"}
     )
     async with github_http_client(configured) as client:
         request = client.build_request("GET", "/repos/owner/repo")

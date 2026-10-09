@@ -263,9 +263,7 @@ PAYLOAD_MODELS: dict[str, type[Envelope]] = {
 
 def github_http_client(settings: GitHubSettings) -> httpx.AsyncClient:
     """Use deployment-owned transport settings; never forward credentials through redirects."""
-    return httpx.AsyncClient(
-        base_url=str(settings.api_url), timeout=settings.request_timeout_s, follow_redirects=False
-    )
+    return httpx.AsyncClient(base_url=str(settings.api_url), timeout=settings.request_timeout_s, follow_redirects=False)
 
 
 def api_headers(bearer: str, api_version: str) -> dict[str, str]:

@@ -56,9 +56,15 @@ class GitHubSettings(BaseModel):
     @field_validator("api_url")
     @classmethod
     def api_url_without_credentials_or_query(cls, value: AnyHttpUrl) -> AnyHttpUrl:
-        if value.username is not None or value.password is not None or value.query is not None or value.fragment is not None:
+        if (
+            value.username is not None
+            or value.password is not None
+            or value.query is not None
+            or value.fragment is not None
+        ):
             raise ValueError("GitHub API URL must not contain credentials, query or fragment")
         return value
+
 
 class SandboxServiceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
