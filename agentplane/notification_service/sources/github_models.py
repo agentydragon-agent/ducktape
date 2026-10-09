@@ -53,7 +53,9 @@ class EventName(StrEnum):
     ISSUES = "issues"
 
 
-CI_EVENTS = frozenset({EventName.CHECK_RUN, EventName.CHECK_SUITE, EventName.STATUS, EventName.WORKFLOW_RUN, EventName.WORKFLOW_JOB})
+CI_EVENTS = frozenset(
+    {EventName.CHECK_RUN, EventName.CHECK_SUITE, EventName.STATUS, EventName.WORKFLOW_RUN, EventName.WORKFLOW_JOB}
+)
 PR_EVENTS = frozenset(
     {
         EventName.PULL_REQUEST,

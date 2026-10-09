@@ -826,7 +826,8 @@ async def test_branch_activity_and_fixed_commit(store: Store, provider: tuple[Gi
 
 
 @pytest.mark.parametrize(
-    "event", [EventName.CHECK_RUN, EventName.CHECK_SUITE, EventName.STATUS, EventName.WORKFLOW_RUN, EventName.WORKFLOW_JOB]
+    "event",
+    [EventName.CHECK_RUN, EventName.CHECK_SUITE, EventName.STATUS, EventName.WORKFLOW_RUN, EventName.WORKFLOW_JOB],
 )
 async def test_native_ci_references_supply_durable_associations(
     store: Store, provider: tuple[GitHub, Upstream], event: EventName
@@ -876,27 +877,34 @@ async def test_new_events_signed_http(store: Store, provider: tuple[GitHub, Upst
     service.store = store
     app = create_app(service, create_autospec(WorkloadPrincipalResolver))
     payload: dict[str, JsonValue] = {
-        "installation": {"id": 11}, "repository": {"id": 100, "full_name": "owner/repo"},
+        "installation": {"id": 11},
+        "repository": {"id": 100, "full_name": "owner/repo"},
         "action": "opened" if event == "issues" else "completed",
     }
     payload |= {"issue": {"number": 7}} if event == "issues" else {"workflow_job": {"head_sha": HEAD}}
     raw, headers = signed(payload, event)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://notifications") as client:
-        rejected = await client.post("/v1/webhooks/github", content=raw, headers=headers | {"X-Hub-Signature-256": "bad"})
+        rejected = await client.post(
+            "/v1/webhooks/github", content=raw, headers=headers | {"X-Hub-Signature-256": "bad"}
+        )
         assert rejected.status_code == 401
         accepted = await client.post("/v1/webhooks/github", content=raw, headers=headers)
         assert accepted.status_code == 202
         assert accepted.json() == {"accepted": True, "duplicate": False}
         assert (await client.post("/v1/webhooks/github", content=raw, headers=headers)).json()["duplicate"]
         malformed, malformed_headers = signed({"installation": {"id": 11}}, event)
-        assert (await client.post("/v1/webhooks/github", content=malformed, headers=malformed_headers)).status_code == 400
+        assert (
+            await client.post("/v1/webhooks/github", content=malformed, headers=malformed_headers)
+        ).status_code == 400
     async with store.sessions() as session:
         assert await session.scalar(select(func.count()).select_from(GitHubDelivery)) == 1
 
 
 async def test_issue_lifecycle_comments_and_pr_separation(store: Store, provider: tuple[GitHub, Upstream]) -> None:
     github, _ = provider
-    issue_source = GitHubSource(provider="github", repository="owner/repo", subject=IssueSubject(kind="issue", number=7))
+    issue_source = GitHubSource(
+        provider="github", repository="owner/repo", subject=IssueSubject(kind="issue", number=7)
+    )
     specs = [
         issue_source,
         issue_source.model_copy(update={"events": {EventFilter(event=EventName.ISSUES, actions={"closed"})}}),
@@ -951,19 +959,27 @@ async def test_workflow_job_sha_matching_and_action_filter(
         "commit": CommitSubject(kind="commit", sha=HEAD),
     }[kind]
     source = GitHubSource(
-        provider="github", repository="owner/repo", subject=subject,
+        provider="github",
+        repository="owner/repo",
+        subject=subject,
         events={EventFilter(event=EventName.WORKFLOW_JOB, actions={"completed"})},
     )
     sub = await store.subscribe(PRINCIPAL, subscription(source), (await github.context(source)).binding)
     payload: dict[str, JsonValue] = {
-        "installation": {"id": 11}, "repository": {"id": 100, "full_name": "owner/repo"},
-        "action": "completed", "workflow_job": {"head_sha": HEAD, "head_branch": None, "id": 123, "run_id": 456},
+        "installation": {"id": 11},
+        "repository": {"id": 100, "full_name": "owner/repo"},
+        "action": "completed",
+        "workflow_job": {"head_sha": HEAD, "head_branch": None, "id": 123, "run_id": 456},
     }
     await ingest(github, store, payload | {"action": "in_progress"}, "workflow_job")
     await ingest(github, store, payload | {"workflow_job": {"head_sha": NEXT}}, "workflow_job")
     raw, headers = signed(payload, "workflow_job")
-    assert await github.ingest(store, "workflow_job", UUID(headers["X-GitHub-Delivery"]), headers["X-Hub-Signature-256"], raw)
-    assert not await github.ingest(store, "workflow_job", UUID(headers["X-GitHub-Delivery"]), headers["X-Hub-Signature-256"], raw)
+    assert await github.ingest(
+        store, "workflow_job", UUID(headers["X-GitHub-Delivery"]), headers["X-Hub-Signature-256"], raw
+    )
+    assert not await github.ingest(
+        store, "workflow_job", UUID(headers["X-GitHub-Delivery"]), headers["X-Hub-Signature-256"], raw
+    )
     claim = await store.claim()
     assert claim is not None
     async with store.sessions() as session:
@@ -977,11 +993,19 @@ async def test_workflow_job_sha_matching_and_action_filter(
 def test_issue_and_ci_filter_vocabulary() -> None:
     issue = IssueSubject(kind="issue", number=7)
     with pytest.raises(ValidationError, match="event is not supported"):
-        GitHubSource(provider="github", repository="owner/repo", subject=issue,
-                     events={EventFilter(event=EventName.WORKFLOW_JOB)})
+        GitHubSource(
+            provider="github",
+            repository="owner/repo",
+            subject=issue,
+            events={EventFilter(event=EventName.WORKFLOW_JOB)},
+        )
     with pytest.raises(ValidationError, match="event is not supported"):
-        GitHubSource(provider="github", repository="owner/repo", subject=SOURCE.subject,
-                     events={EventFilter(event=EventName.ISSUES)})
+        GitHubSource(
+            provider="github",
+            repository="owner/repo",
+            subject=SOURCE.subject,
+            events={EventFilter(event=EventName.ISSUES)},
+        )
     assert EventName.WORKFLOW_JOB not in {event.event for event in SOURCE.filters}
 
 

@@ -358,7 +358,14 @@ class GitHub:
                     "POST",
                     f"/app/installations/{installation_id}/access_tokens",
                     self.app_headers(),
-                    json={"permissions": {"metadata": "read", "contents": "read", "pull_requests": "read", "issues": "read"}},
+                    json={
+                        "permissions": {
+                            "metadata": "read",
+                            "contents": "read",
+                            "pull_requests": "read",
+                            "issues": "read",
+                        }
+                    },
                 )
                 token = Token.model_validate_json(response.content)
                 self.tokens[installation_id] = token
