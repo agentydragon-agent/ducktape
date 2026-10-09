@@ -30,7 +30,9 @@ function History(): JSX.Element {
       </div>
       <div className="agentplane-user-message-row" data-testid="input-row">
         <span data-testid="input-aside">Status</span>
-        <div className="agentplane-evidence-owner" data-testid="input-bubble">Message</div>
+        <div className="agentplane-evidence-owner" data-testid="input-bubble">
+          Message
+        </div>
       </div>
       <p data-testid="between">Between items</p>
     </div>

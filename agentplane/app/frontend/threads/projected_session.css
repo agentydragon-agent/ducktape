@@ -305,18 +305,28 @@
   pointer-events: none;
 }
 
-.agentplane-command-card-line:hover .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
-.agentplane-command-card-line:focus-within .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
+.agentplane-command-card-line:hover
+  .agentplane-command-progress[data-stage="effected"]
+  .agentplane-command-progress-hit,
+.agentplane-command-card-line:focus-within
+  .agentplane-command-progress[data-stage="effected"]
+  .agentplane-command-progress-hit,
 .agentplane-user-message-row:hover .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
-.agentplane-user-message-row:focus-within .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
+.agentplane-user-message-row:focus-within
+  .agentplane-command-progress[data-stage="effected"]
+  .agentplane-command-progress-hit,
 .agentplane-command-progress[data-stage="effected"]:is(:hover, :focus-within) .agentplane-command-progress-hit {
   opacity: 1;
   pointer-events: auto;
 }
 
 @media (hover: none) {
-  .agentplane-user-message-row:has(.agentplane-evidence-owner[data-evidence-revealed]) .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
-  .agentplane-evidence-owner[data-evidence-revealed] .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit {
+  .agentplane-user-message-row:has(.agentplane-evidence-owner[data-evidence-revealed])
+    .agentplane-command-progress[data-stage="effected"]
+    .agentplane-command-progress-hit,
+  .agentplane-evidence-owner[data-evidence-revealed]
+    .agentplane-command-progress[data-stage="effected"]
+    .agentplane-command-progress-hit {
     opacity: 1;
     pointer-events: auto;
   }
