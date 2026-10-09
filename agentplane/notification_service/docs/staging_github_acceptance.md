@@ -86,3 +86,23 @@ The operator also waived live verification of shared GitHub refresh reuse across
 subscriptions and service restarts. Existing automated coverage is sufficient for this behavior;
 there is no remaining deployed-environment exercise or acceptance blocker. This does not claim
 that a live refresh-reuse/restart test was performed or remove the automated regression tests.
+
+## Configurable GitHub client rollout — 2026-10-09
+
+PR [#9544](https://github.com/agentydragon/ducktape/pull/9544) merged as
+`2d23dc31af50999a4ca76f41d90612402a3fa8d0`. Staging Deployment generation 49 was observed
+at generation 49 with 2/2 updated, ready and available replicas running
+`devel-20261009071137-2d23dc3`, no old replicas remaining and zero restarts.
+Both migration init containers exited 0.
+
+A bounded log read (`--since=10m`, at most 5000 lines per pod) found 167 webhook responses,
+all HTTP 202, and 51 readiness responses, all HTTP 200. No error, traceback, webhook-rejection
+or shared-refresh-failure diagnostics appeared in the sample. An authenticated subscription
+status read succeeded and returned the structured shared observations without an error.
+Its cached successful access observation predated the rollout; it is not evidence of a fresh
+outbound GitHub request by the new client.
+
+The deployed revision and normal API/ingress health check are complete. Custom API endpoint,
+timeout and version overrides, token-cache behavior and redirect rejection were tested in CI;
+they were not exercised by changing staging configuration. No deliberate GitHub failure/backoff
+injection or refresh-reuse/restart exercise was performed or remains required.
