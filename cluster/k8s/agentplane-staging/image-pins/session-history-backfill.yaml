@@ -1,14 +1,26 @@
-# One-shot staging import; a failed Job stays failed for inspection (no retries).
+# One-shot staging import; bounded retries for transient pod/node failures only.
+# Do NOT merge until this image is pinned to a build containing resumable backfill.
 # Keep app reads and Service shadow ingestion disabled until the imported prefixes have been
 # independently checked. Remove this resource after recording the validation result, not by Job TTL.
-# To catch up active sessions, run a new *explicitly named* Job after inspecting this run.
+# This v2 Job replaces failed v1 and resumes from committed per-Session cursors.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: agentplane-session-history-backfill-staging-v1
+  name: agentplane-session-history-backfill-staging-v2
   namespace: agentplane-staging
 spec:
-  backoffLimit: 0
+  backoffLimit: 3
+  podFailurePolicy:
+    rules:
+      - action: FailJob
+        onExitCodes:
+          containerName: backfill
+          operator: In
+          values: [2]
+      - action: Ignore
+        onPodConditions:
+          - type: DisruptionTarget
+            status: "True"
   template:
     metadata:
       labels:
@@ -24,7 +36,7 @@ spec:
         - name: forgejo-images-creds
       containers:
         - name: backfill
-          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-service-history-backfill:devel-20261008214653-1c38c48
+          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-service-history-backfill:unset
           imagePullPolicy: IfNotPresent
           env:
             - name: AGENTPLANE_HISTORY_BACKFILL_SANDBOX_NAMESPACE
