@@ -10,6 +10,7 @@ import { type CallToolResult, CallToolResultView, toolValue } from "../call_tool
 import type { ActionRequestView } from "../client";
 import { renderPreview, type ArgumentsPreview } from "./entry";
 import { renderResultPreview, type ResultPreview } from "./result_entry";
+import { podsInNamespacePreview } from "./kubernetes";
 import { execArgumentsPreview, execResultPreview } from "./ssh";
 
 type ActionIdentity = ActionRequestView["action"];
@@ -17,10 +18,13 @@ type ActionIdentity = ActionRequestView["action"];
 interface ActionRendering {
   arguments?: ArgumentsPreview;
   result?: ResultPreview;
+  /** Only explicitly reviewed, lossless argument previews may be approved without opening the card. */
+  compactApproval?: boolean;
 }
 
 // Maps rather than object literals, so no group or Action name reaches `Object.prototype`.
 const REGISTRY: ReadonlyMap<string, ReadonlyMap<string, ActionRendering>> = new Map([
+  ["kubernetes_admin", new Map([["pods_list_in_namespace", { arguments: podsInNamespacePreview, compactApproval: true }]])],
   // x/ssh_mcp_server/server.py, under the group name staging configures it as.
   ["ssh", new Map([["exec", { arguments: execArgumentsPreview, result: execResultPreview }]])],
 ]);
@@ -40,4 +44,10 @@ export function renderMcpResult(action: ActionIdentity, result: CallToolResult):
   const value = toolValue(result);
   const drawn = preview && value !== undefined ? renderResultPreview(preview, value) : null;
   return drawn ?? <CallToolResultView result={result} />;
+}
+
+/** Only explicitly opted-in Actions with fully parsed arguments can be decided in the strip. */
+export function compactApprovalArguments(action: ActionIdentity, args: unknown): ReactNode | null {
+  const entry = REGISTRY.get(action.group)?.get(action.name);
+  return entry?.compactApproval && entry.arguments ? renderPreview(entry.arguments, args) : null;
 }

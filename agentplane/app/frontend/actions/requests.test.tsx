@@ -290,6 +290,26 @@ describe("global Action affordance", () => {
       expect(document.querySelector(".mantine-Drawer-root")).toBeNull();
       expect(close).not.toHaveBeenCalled();
 
+      // Only a registered, losslessly rendered call can be approved from the strip.
+      const pod = {
+        ...first,
+        action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+        arguments: { namespace: "test-namespace", labelSelector: "app=example" },
+      };
+      await send([pod]);
+      const notice = container.querySelector(".action-affordance-notice")!;
+      expect(notice.textContent).toContain("test-namespace");
+      expect(notice.textContent).toContain("app=example");
+      expect(notice.textContent).toContain(pod.description);
+      expect(notice.querySelector('button[aria-expanded="false"]')).not.toBeNull();
+      await act(async () => button(notice, "Approve").click());
+      expect(decide).toHaveBeenCalledWith(pod, "allow");
+      await send([{ ...pod, arguments: { namespace: "test-namespace", hidden: "danger" } }]);
+      expect(container.querySelector('.action-affordance-notice button[aria-label="Approve"]')).toBeNull();
+      await send([pod, second]);
+      expect(container.querySelector('.action-affordance-notice button[aria-label="Approve"]')).toBeNull();
+      await send([first]);
+
       const topbarButton = topbar.querySelector<HTMLButtonElement>('button[aria-label="Actions, 1 pending"]');
       if (!topbarButton) throw new Error("missing top bar Actions count");
       await act(async () => topbarButton.click());
