@@ -21,11 +21,13 @@ def upgrade() -> None:
         "WHERE error IS NOT NULL"
     )
     op.create_check_constraint(
-        "subscription_error_kind", "subscription",
+        "subscription_error_kind",
+        "subscription",
         "error_kind IN ('rate_limited', 'unavailable', 'access_denied', 'source_changed', 'processing_error')",
     )
     op.create_check_constraint(
-        "subscription_error_state", "subscription",
+        "subscription_error_state",
+        "subscription",
         "(error IS NULL AND error_kind IS NULL AND error_since IS NULL AND error_observed_at IS NULL) OR "
         "(error IS NOT NULL AND error_kind IS NOT NULL AND error_since IS NOT NULL AND error_observed_at IS NOT NULL)",
     )

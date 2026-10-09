@@ -252,11 +252,7 @@ class Service:
                         )
                         retry_seconds = failure.retry_seconds if isinstance(failure, GitHubRetryError) else 60
                         await self.store.source_failed(
-                            claim,
-                            source,
-                            source_error,
-                            retry_seconds,
-                            kind=source_failure_kind(failure),
+                            claim, source, source_error, retry_seconds, kind=source_failure_kind(failure)
                         )
                         logger.warning(
                             "notification source retry: inbox=%s subscription=%s cause=%s retry_seconds=%s",

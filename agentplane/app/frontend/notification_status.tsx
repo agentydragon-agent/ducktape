@@ -289,11 +289,14 @@ export function NotificationStatus({
                             : ""}
                         </Text>
                         <Text size="xs" c="dimmed">
-                          {sub.last_success_at ? `Last successful processing: ${timestamp(sub.last_success_at)}` : "No successful processing recorded"}
+                          {sub.last_success_at
+                            ? `Last successful processing: ${timestamp(sub.last_success_at)}`
+                            : "No successful processing recorded"}
                         </Text>
                         {sub.error && (
                           <Text c="red" size="xs">
-                            Source: {sub.error} · since {timestamp(sub.error_since!)} · last observed {timestamp(sub.error_observed_at!)}
+                            Source: {sub.error} · since {timestamp(sub.error_since!)} · last observed{" "}
+                            {timestamp(sub.error_observed_at!)}
                           </Text>
                         )}
                       </Stack>
