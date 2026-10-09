@@ -101,6 +101,41 @@ Do not transfer SA ownership, duplicate the controller's binding names, or repla
 Flux bindings without an explicit migration. An isolated test with an externally owned SA,
 namespace addition/removal and definition deletion would answer the compatibility question.
 
+### Other binding-fan-out controllers
+
+[access-manager](https://github.com/ckotzbauer/access-manager) is particularly close to the
+**externally owned SA** requirement: its cluster-scoped `RbacDefinition` references existing
+Roles/ClusterRoles and subjects (including an SA in another namespace), and generates only
+RoleBindings/ClusterRoleBindings across explicitly named or label-selected namespaces. It
+watches definitions, namespaces and SAs, and does not take over unrelated bindings. Unlike the
+proposed group + assignment split, a definition contains its own subjects; per-SA enrollment
+still needs a separate mechanism or a definition edit. The project is **archived**, so borrow
+its bindings-only ownership and fan-out ideas rather than assuming it is a maintained dependency.
+
+The [OpenShift RBAC Permissions Operator](https://github.com/openshift/rbac-permissions-operator)
+uses a namespaced
+[`SubjectPermission`](https://github.com/openshift/rbac-permissions-operator/blob/master/api/v1alpha1/subjectpermission_types.go)
+to bind existing ClusterRoles to a `User`, `Group`, or `ServiceAccount` (with an optional
+`subjectNamespace`). `clusterPermissions` produce ClusterRoleBindings;
+`permissions` produce RoleBindings in namespaces chosen by allow/deny **name regexes**. Its
+[subject controller](https://github.com/openshift/rbac-permissions-operator/blob/master/controllers/subjectpermission/subjectpermission_controller.go)
+handles definitions, while its
+[namespace controller](https://github.com/openshift/rbac-permissions-operator/blob/master/controllers/namespace/namespace_controller.go)
+creates bindings for new matching namespaces. This is useful prior art for binding dynamically
+created, separately owned SAs, not for reusable group **membership**: the CR combines one
+subject with its permissions. Binding a Kubernetes `Group` does not add an SA to that group;
+normal SA token authentication supplies only Kubernetes' built-in SA groups, not arbitrary
+per-SA group membership. Our named grant group would be Agentplane policy expanded into native
+bindings with the SA itself as subject, not a Kubernetes RBAC `Group` subject.
+
+**Revocation caveat:** the inspected operator controllers create missing bindings and skip
+existing ones; they do not visibly prune bindings when a permission or namespace regex is
+removed. Do not assume live removal/declassification works without testing or adding a cleanup
+mechanism. Also validate SA ClusterRoleBindings separately before adopting this implementation:
+the [ClusterRoleBinding helper](https://github.com/openshift/rbac-permissions-operator/blob/master/controllers/subjectpermission/subjectpermission_controller.go)
+constructs subjects without `subjectNamespace`, whereas the namespaced RoleBinding helper
+sets it. Neither controller supplies our separately reusable, subject-free grant definition.
+
 ### Kyverno generation, GitOps and native RBAC aggregation
 
 Kyverno generate rules could produce bindings from eligible namespaces and subjects. This repo
