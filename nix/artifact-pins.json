@@ -21,8 +21,8 @@
       "sha256": "1KvHfNukys99Lq+jKi0B2v4XnMieefGWKwCAtkM6HJI="
     },
     "ducktape-util": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-2f94406f17e1/ducktape_util-0.1.0-py3-none-any.whl",
-      "sha256": "L5RAbxfh4wa7fcoWOfLOKrS3mUb2HRfii3eD+PzP4mE="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-ac75de1af9da/ducktape_util-0.1.0-py3-none-any.whl",
+      "sha256": "rHXeGvnaLz2GTcOVlK3UA9/suk5rQBlQkz4a8RwdCwg="
     },
     "ducktape": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-0bd39cb56d37/ducktape-0.1.0-py3-none-any.whl",
