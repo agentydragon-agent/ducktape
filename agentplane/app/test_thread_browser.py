@@ -1818,7 +1818,7 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
     async with asyncio.timeout(15):
         assert await source.commands.get() == command
     await expect_pending_message_bubble(page, command.submit_input.text)
-    await expect(page.get_by_text("Saved locally · awaiting admission", exact=True)).to_have_count(0)
+    await expect(page.locator('[data-stage="local"]')).to_have_count(0)
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
     # The command receipt can arrive before its admission event is replicated into the app.
     await expect_projected_cursor(page, source.entries[-1].cursor)
@@ -1882,7 +1882,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
         await expect_pending_message_bubble(page, command.submit_input.text)
-        await expect(page.get_by_text("Saved locally · awaiting admission", exact=True)).to_have_count(0)
+        await expect(page.locator('[data-stage="local"]')).to_have_count(0)
         await page.reload()
         await expect_pending_message_bubble(page, command.submit_input.text)
         await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
@@ -1918,7 +1918,7 @@ async def test_lost_runner_receipt_reconciles_from_thread_without_retry(thread_b
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert admitted in await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
     await expect_pending_message_bubble(page, original.submit_input.text)
-    await expect(page.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_have_count(0)
+    await expect(page.locator('[data-stage="unconfirmed"]')).to_have_count(0)
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
     await page.reload()
     await expect_pending_message_bubble(page, original.submit_input.text)
@@ -1943,8 +1943,8 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
     async with asyncio.timeout(15):
         original = await requests.get()
     bubble = page.locator(f'[data-command-id="{original.command_id}"]')
-    await expect(bubble.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_be_visible()
-    await expect(bubble.get_by_text("Input failed", exact=False)).to_have_count(0)
+    await expect(bubble.locator('[data-stage="unconfirmed"]')).to_be_visible()
+    await expect(bubble.locator('[data-stage="failed"]')).to_have_count(0)
     async with page.expect_request("**/threads/*/commands") as retried:
         await bubble.get_by_role("button", name="Retry", exact=True).click()
     retry = await retried.value
@@ -1959,7 +1959,7 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
         entry.event.HasField("command_admitted") and entry.event.command_admitted.command == original
         for entry in archived
     )
-    await expect(bubble.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_have_count(0)
+    await expect(bubble.locator('[data-stage="unconfirmed"]')).to_have_count(0)
 
 
 async def click_evidence(scope: Locator) -> None:
@@ -2012,7 +2012,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
             drop_reply.set()
         pending = page.get_by_role("region", name="Input messages")
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
-        await expect(pending.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_be_visible()
+        await expect(pending.locator('[data-stage="unconfirmed"]')).to_be_visible()
         await expect(page.locator('.agentplane-user-bubble[data-message-phase="local"]')).to_have_count(1)
 
         # Reload abandons the held Electric response. The new document delivers the same local
@@ -2026,14 +2026,14 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
             assert (await app.replay_held()).cursor >= 5
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
         await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
-        await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+        await expect(pending.locator('[data-stage="admitted"]')).to_be_visible()
         await expect(page.get_by_text("Catching up thread…", exact=True)).to_be_visible()
         assert source.commands.empty(), "reload must not manufacture a second command"
 
         app.release_replay()
         await expect_pending_message_bubble(page, command.submit_input.text)
         await expect(pending).to_have_count(0)
-        await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_have_count(0)
+        await expect(pending.locator('[data-stage="local"]')).to_have_count(0)
         await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
         source.append(
             event_pb2.Event(
@@ -2082,7 +2082,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
 
     pending = page.get_by_role("region", name="Input messages")
-    await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+    await expect(pending.locator('[data-stage="admitted"]')).to_be_visible()
     await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
 
@@ -2144,7 +2144,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
         pending = page.get_by_role("region", name="Input messages")
-        await expect(pending.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_be_visible()
+        await expect(pending.locator('[data-stage="unconfirmed"]')).to_be_visible()
 
         # Interrupt real shape delivery. The published Electric client must retry its own
         # handle/offset, without a document reload or an Agentplane event replay reducer.
@@ -2160,7 +2160,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
             assert (await app.replay_held()).cursor >= 5
         assert await document.evaluate("original => original === document")
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
-        await expect(pending.get_by_text("Admission unconfirmed · checking Thread history", exact=True)).to_be_visible()
+        await expect(pending.locator('[data-stage="unconfirmed"]')).to_be_visible()
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
 
         app.release_replay()

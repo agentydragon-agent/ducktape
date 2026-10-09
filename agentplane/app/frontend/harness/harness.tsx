@@ -1143,6 +1143,18 @@ function endedAttachmentRows(threadId: string): Record<string, unknown>[] {
   });
 }
 
+/** Close-packed command states so the semaphore and its real labels can be inspected on a phone. */
+function commandProgressRows(threadId: string): Record<string, unknown>[] {
+  const model = command(2, "progress-model", "change_model", "pending");
+  const effort = command(3, "progress-effort", "change_reasoning_effort", "failed", "Not supported by harness");
+  return [
+    { ...viewState(5, "t-progress"), thread_id: threadId },
+    { ...model, state: { ...(model.state as object), requested_value: "test-model-next" } },
+    { ...effort, state: { ...(effort.state as object), requested_value: "high" } },
+    command(4, "progress-input", "submit_input", "pending", null, "Please review this change."),
+  ];
+}
+
 /**
  * The statuses the main thread fixture does not produce on its own: a standalone failed tool call, a
  * run whose reasoning is still streaming beside a tool call, and queued commands. Both runs render
@@ -1151,18 +1163,6 @@ function endedAttachmentRows(threadId: string): Record<string, unknown>[] {
  * vertical room at phone width, so the queued-input dot at the bottom falls off the page; the desktop
  * capture is where every state here is visible.
  */
-/** Close-packed command states so the semaphore and its real labels can be inspected on a phone. */
-function commandProgressRows(threadId: string): Record<string, unknown>[] {
-  const model = command(2, "progress-model", "change_model", "pending");
-  const effort = command(3, "progress-effort", "change_reasoning_effort", "failed", "Not supported by harness");
-  return [
-    { ...viewState(5, null), thread_id: threadId },
-    { ...model, state: { ...(model.state as object), requested_value: "test-model-next" } },
-    { ...effort, state: { ...(effort.state as object), requested_value: "high" } },
-    command(4, "progress-input", "submit_input", "pending", null, "Please review this change."),
-  ];
-}
-
 function statesRows(threadId: string, outcomes = false): Record<string, unknown>[] {
   const rows = [
     viewState(28, "t2"),

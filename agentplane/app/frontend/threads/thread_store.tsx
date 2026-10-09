@@ -945,12 +945,13 @@ function useWindow(): EpochWindow {
   return shown;
 }
 
-/** Keep settled input outcomes in the session projection; other settled commands are selected by id. */
+/** Keep pending commands and terminal failures visible after reload, including commands from other browsers. */
 function threadRow(row: ThreadEntity): boolean {
   return (
     row.entityKind !== "command" ||
     row.pending ||
-    ("outcome" in row.state && row.state.operation === "submit_input" && row.state.outcome !== "pending")
+    ("outcome" in row.state &&
+      (row.state.operation === "submit_input" || row.state.outcome === "failed" || row.state.outcome === "noop"))
   );
 }
 

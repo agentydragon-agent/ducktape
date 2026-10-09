@@ -224,7 +224,7 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     await input_row.scroll_into_view_if_needed()
     await view.capture()
     await page.locator('[data-command-id="progress-model"]').scroll_into_view_if_needed()
-    await view.capture(name="command_progress_controls")
+    await view.capture(name=f"{view.capture_name}_controls")
 
 
 async def test_debug_history_latest_session_pending_raw(view: VisualPage, app: AgentplaneFixture) -> None:
