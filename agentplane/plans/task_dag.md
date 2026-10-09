@@ -148,12 +148,14 @@ flowchart LR
     SESSION_INPUT_CONTRACT[Decision: typed input API and durable acceptance contract]
     THREAD_ARCHIVE_OWNERSHIP[Archive ownership cutover]
     SESSION_INPUT_SUBMISSION[Blocked: input API, storage and provenance authorization]
-    SESSION_INPUT_METADATA_READ[Blocked: metadata reads and message correlation]
+    SESSION_INPUT_METADATA_READ[Blocked: status and metadata reads]
+    SESSION_INPUT_STATUS_UI[Blocked: show service-retained command status]
     NOTIFICATION_NOTICE_METADATA[Blocked: attach notice metadata to submissions]
     NOTIFICATION_PRESENTATION[Blocked: compact frontend presentation]
     SESSION_INPUT_CONTRACT --> SESSION_INPUT_SUBMISSION
     THREAD_ARCHIVE_OWNERSHIP -. persistence expansion hold .-> SESSION_INPUT_SUBMISSION
     SESSION_INPUT_SUBMISSION --> SESSION_INPUT_METADATA_READ
+    SESSION_INPUT_METADATA_READ --> SESSION_INPUT_STATUS_UI
     SESSION_INPUT_SUBMISSION --> NOTIFICATION_NOTICE_METADATA
     SESSION_INPUT_METADATA_READ --> NOTIFICATION_PRESENTATION
     NOTIFICATION_NOTICE_METADATA --> NOTIFICATION_PRESENTATION
@@ -163,25 +165,38 @@ Details: [Notification presentation and input metadata](notification_presentatio
 
 ### `SESSION_INPUT_CONTRACT` — review the input acceptance boundary
 
-**Decision; may proceed during backfill.** Specify `{command_id, text, metadata}`, exact typed
-attachments, service authentication/authorization, immutable retries and failure/receipt semantics
-against the post-migration session identity. Resolve whether an existing submission row can be
-extended. Review persistence-before-dispatch and retry recovery without implying offline execution
-or silently moving runner admission. Output is a reviewed API/storage contract, not a new database.
+**Decision; remaining details may be reviewed during backfill.** The selected direction is one RPC:
+persist a distinct service submission with typed metadata as `pending_admission`, immediately send
+its metadata-free runner Command, and return OK only on runner admission. No separate unsent/dispatching
+states or background dispatch queue. Reconcile direct receipts and planned service-owned spool
+admissions idempotently, including replay after a lost response. This is not a claim that migration
+or deployed ingestion is complete. The current app path has browser recovery, not an app database
+command queue to retire. Resolve concrete schema/auth, retention and retryable-versus-terminal
+rejection semantics in the [input plan](notification_presentation.md), without new persistence now.
 
 ### `SESSION_INPUT_SUBMISSION` — implement durable inputs and provenance
 
-**Blocked on contract review and archive ownership.** Implement the chosen service-owned record
-and API together. Enforce destination scope plus restricted notification-provenance permission;
-server-stamp trusted origin and reject unauthorized/conflicting submissions. Translate only command
-ID and text to the runner protocol. Test normal input, retries and ambiguous dispatch; do not add
-an app-owned queue or expose metadata to runners/harnesses.
+**Blocked on contract review and archive ownership.** Implement the distinct service-owned submission
+record/API, immediate dispatch and admission reconciliation through the migrated spool ingestion.
+Enforce destination scope plus restricted notification-provenance permission; server-stamp trusted
+origin and reject unauthorized/conflicting submissions. Translate only command ID and text to the
+runner. Definitive rejection records an error; ambiguous failure stays pending. Test immutable and
+concurrent retries, lost replies, receipt/ingestion races and crash-safe replay. No app-owned queue,
+background dispatcher, new runner lookup RPC, or metadata passed to runners/harnesses.
 
-### `SESSION_INPUT_METADATA_READ` — authorized annotation reads
+### `SESSION_INPUT_METADATA_READ` — authorized submission status and annotation reads
 
-**Blocked on input submission.** Expose metadata by session/command identity and join existing
-`origin_command_ids` in projections. Include pending/failed inputs, replay and retained historical
-annotations without requiring a live notification inbox. Keep canonical runner Events unchanged.
+**Blocked on input submission.** Expose status and metadata by session/command identity and join
+existing `origin_command_ids` in projections. Include pending/rejected inputs, admission receipts,
+replay and retained historical annotations without requiring a live notification inbox. Keep
+canonical runner Events unchanged.
+
+### `SESSION_INPUT_STATUS_UI` — distinguish service retention from runner admission
+
+**Blocked on submission status reads.** Add a command-state dot for service-retained inputs whose
+runner admission is unconfirmed. Reconcile after reload/lost responses; do not claim definitely
+unsent, safe cancellation, or guaranteed eventual execution. Keep browser recovery and harness
+confirmation distinct. Independent of compact notice rendering; include focused state/visual tests.
 
 ### `NOTIFICATION_NOTICE_METADATA` — producer integration
 
