@@ -75,13 +75,13 @@ First inspect the current durable submission model and coordinate with concurren
 work. Reuse an existing accepted-input record if present. Otherwise propose a narrow submitted-input
 record with:
 
-| Field | Proposed storage | Content |
-| --- | --- | --- |
-| Session identity | Existing relational session key | Full session scope, not a globally assumed session string |
-| Command ID | Existing command ID type | Unique together with session identity |
-| Text | PostgreSQL text | Immutable accepted input |
-| Metadata | Nullable JSONB | Typed, validated attachment with server-stamped provenance |
-| Accepted time | Timestamp with time zone | Service acceptance time, not harness receipt time |
+| Field            | Proposed storage                | Content                                                    |
+| ---------------- | ------------------------------- | ---------------------------------------------------------- |
+| Session identity | Existing relational session key | Full session scope, not a globally assumed session string  |
+| Command ID       | Existing command ID type        | Unique together with session identity                      |
+| Text             | PostgreSQL text                 | Immutable accepted input                                   |
+| Metadata         | Nullable JSONB                  | Typed, validated attachment with server-stamped provenance |
+| Accepted time    | Timestamp with time zone        | Service acceptance time, not harness receipt time          |
 
 This is a conceptual schema, not authorization to duplicate existing input/text storage. Determine
 foreign keys, concrete ID types, retention and deletion with the actual owning model. Prefer metadata
