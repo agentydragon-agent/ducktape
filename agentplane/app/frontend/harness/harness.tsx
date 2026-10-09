@@ -2560,11 +2560,13 @@ class HarnessEventSource extends EventTarget {
       return;
     }
     if (url.pathname === "/actions/stream") {
-      const pending = includeCompactPodAction
-        ? [COMPACT_POD_ACTION]
-        : includePendingActions
-          ? ACTIONS.filter((request) => request.state === "decision_pending")
-          : [];
+      const pending = previewAction !== null
+        ? [previewAction]
+        : includeCompactPodAction
+          ? [COMPACT_POD_ACTION]
+          : includePendingActions
+            ? ACTIONS.filter((request) => request.state === "decision_pending")
+            : [];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(pending) }));
       return;
     }
@@ -2608,6 +2610,7 @@ let dropThreadStream = false;
 let dropInventoryStream = false;
 let includePendingActions = false;
 let includeCompactPodAction = false;
+let previewAction: ActionRequestView | null = null;
 let watchHealth = FRESH;
 
 function mount(element: ReactNode): void {
@@ -2650,6 +2653,15 @@ const visualHarness = {
   },
   showCompactPodAction(): void {
     includeCompactPodAction = true;
+  },
+  showActionPreview(action: ActionRequestView["action"], args: ActionRequestView["arguments"]): void {
+    previewAction = {
+      ...COMPACT_POD_ACTION,
+      action,
+      arguments: args,
+      title: `review ${action.name}`,
+      description: "Check the exact call before approving.",
+    };
   },
   paginateActionHistory(): void {
     pageActionHistory = true;

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { type CallToolResult, parseCallToolResult } from "../call_tool_result";
 import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing";
-import { renderArguments, renderMcpResult } from "./index";
+import { compactActionArguments, compactApprovalArguments, renderArguments, renderMcpResult } from "./index";
 
 const SSH_EXEC = { group: "ssh", name: "exec" };
 
@@ -56,5 +56,78 @@ describe("renderMcpResult", () => {
     const container = await mount(renderMcpResult({ group: "test_group", name: "exec" }, stored()));
     expect(container.textContent).toContain("Structured content");
     expect(container.textContent).not.toContain("Exit 0");
+  });
+});
+
+const compactCases: Array<{ group: string; name: string; args: Record<string, unknown>; visible: string[] }> = [
+  {
+    group: "kubernetes_admin",
+    name: "resources_get",
+    args: { apiVersion: "apps/v1", kind: "Deployment", name: "api", namespace: "prod" },
+    visible: ["apps/v1", "Deployment", "api", "prod"],
+  },
+  {
+    group: "kubernetes_admin",
+    name: "resources_list",
+    args: { apiVersion: "v1", kind: "Pod", fieldSelector: "status.phase=Running", labelSelector: "app=web" },
+    visible: ["v1", "Pod", "all namespaces", "status.phase=Running", "app=web"],
+  },
+  {
+    group: "kubernetes_admin",
+    name: "pods_log",
+    args: { name: "api-0", namespace: "prod", container: "sidecar", previous: true, tail: 0 },
+    visible: ["api-0", "prod", "sidecar", "previous: yes", "tail: 0"],
+  },
+  {
+    group: "kubernetes_admin",
+    name: "resources_delete",
+    args: { apiVersion: "v1", kind: "Pod", name: "api-0", namespace: "prod", gracePeriodSeconds: 0 },
+    visible: ["Delete resource", "v1", "Pod", "api-0", "prod", "0s"],
+  },
+  {
+    group: "kubernetes_admin",
+    name: "events_list",
+    args: { namespace: "prod", fieldSelector: "type=Warning" },
+    visible: ["List events", "prod", "type=Warning"],
+  },
+  {
+    group: "github",
+    name: "create_pull_request",
+    args: {
+      owner: "example", repo: "repo", title: "Update docs", head: "feature", base: "devel", body: "",
+      draft: true, maintainer_can_modify: false, reviewers: ["reviewer1"],
+    },
+    visible: [
+      "example/repo", "Update docs", "feature → devel", "description: empty", "draft: yes",
+      "maintainer edits: no", "reviewer1",
+    ],
+  },
+];
+
+describe("compact approval widgets", () => {
+  it.each(compactCases)("shows all arguments of $group/$name", async ({ group, name, args, visible }) => {
+    const widget = compactApprovalArguments({ group, name }, args);
+    expect(widget).not.toBeNull();
+    const container = await mount(widget);
+    for (const value of visible) expect(container.textContent).toContain(value);
+  });
+
+  it.each(compactCases)("fails closed for extra arguments on $group/$name", ({ group, name, args }) => {
+    expect(compactApprovalArguments({ group, name }, { ...args, invisible: "must review" })).toBeNull();
+  });
+
+  it("requires expanded review for PR descriptions or unknown Action identities", () => {
+    const pr = compactCases[5]!;
+    expect(
+      compactApprovalArguments({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })
+    ).toBeNull();
+    expect(
+      compactActionArguments({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })
+    ).not.toBeNull();
+    expect(compactApprovalArguments({ group: "kubernetes_admin", name: "resources_delete" }, {
+      apiVersion: "v1", kind: "Pod", name: "api-0",
+    })).toBeNull(); // The backend's configured namespace would otherwise be hidden.
+    expect(compactApprovalArguments({ group: "ssh", name: "exec" }, SSH_EXEC_ARGUMENTS)).toBeNull();
+    expect(compactApprovalArguments({ group: "__proto__", name: "constructor" }, {})).toBeNull();
   });
 });

@@ -7,7 +7,7 @@ import { serviceAccountKey } from "../client";
 import { StaleNotice } from "../stream_status";
 import { TopbarActions } from "../topbar";
 import { actionService } from "./client";
-import { compactApprovalArguments } from "./rendering/index";
+import { compactActionArguments, compactApprovalArguments } from "./rendering/index";
 import { ActionRequestsContext, PendingActionCard, useActionRequests } from "./requests";
 
 /** One stream and decision state for the shell, the Actions page, and the thread composer. */
@@ -56,10 +56,11 @@ export function ComposerPendingActions(): JSX.Element | null {
 
   // Never truncate the exact operation when offering an inline decision. Multiple requests
   // stay review-only so the decision cannot be mistaken for a different request.
-  const inline =
+  const compact =
     pending.length === 1 && !pending[0].external_grant
-      ? compactApprovalArguments(pending[0].action, pending[0].arguments)
+      ? compactActionArguments(pending[0].action, pending[0].arguments)
       : null;
+  const inlineApproval = compact !== null && compactApprovalArguments(pending[0].action, pending[0].arguments) !== null;
   const summary = pending
     .slice(0, 2)
     .map((request) => `${request.action.group} / ${request.action.name} · ${request.title}`)
@@ -74,14 +75,14 @@ export function ComposerPendingActions(): JSX.Element | null {
             <Text size="sm" fw={600}>
               {pending.length} action{pending.length === 1 ? "" : "s"} waiting for review
             </Text>
-            {inline ? (
+            {compact ? (
               <Stack gap={2}>
                 <Text className="action-affordance-context" size="xs" style={{ overflowWrap: "anywhere" }}>
                   {pending[0].action.group} / {pending[0].action.name} · {pending[0].title}
                   {pending[0].description ? ` · ${pending[0].description}` : ""}
                   {pending[0].caller ? ` · requested by ${serviceAccountKey(pending[0].caller)}` : ""}
                 </Text>
-                {inline}
+                {compact}
               </Stack>
             ) : (
               <Text size="xs" c="dimmed" lineClamp={1}>
@@ -90,7 +91,7 @@ export function ComposerPendingActions(): JSX.Element | null {
               </Text>
             )}
           </div>
-          {inline && !expanded && (
+          {inlineApproval && !expanded && (
             <Button
               size="sm"
               aria-label="Approve"

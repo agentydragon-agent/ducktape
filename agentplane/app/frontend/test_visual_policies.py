@@ -65,6 +65,77 @@ async def test_compact_pod_approval(view: VisualPage, app: AgentplaneFixture, ex
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@pytest.mark.parametrize(
+    "group,name,arguments,visible",
+    [
+        (
+            "kubernetes_admin",
+            "resources_get",
+            {"apiVersion": "apps/v1", "kind": "Deployment", "name": "web", "namespace": "apps"},
+            "Deployment",
+        ),
+        (
+            "kubernetes_admin",
+            "resources_list",
+            {"apiVersion": "v1", "kind": "Pod", "namespace": "apps", "labelSelector": "app=web"},
+            "app=web",
+        ),
+        (
+            "kubernetes_admin",
+            "pods_log",
+            {"name": "web-0", "namespace": "apps", "previous": True, "tail": 10},
+            "previous: yes",
+        ),
+        (
+            "kubernetes_admin",
+            "resources_delete",
+            {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
+            "Delete resource",
+        ),
+        ("kubernetes_admin", "events_list", {"namespace": "apps", "fieldSelector": "type=Warning"}, "type=Warning"),
+        (
+            "github",
+            "create_pull_request",
+            {"owner": "example", "repo": "repo", "title": "Update docs", "head": "docs", "base": "devel", "draft": True},
+            "Update docs",
+        ),
+    ],
+    ids=["resource-get", "resource-list", "pod-log", "resource-delete", "events-list", "github-pr"],
+)
+async def test_compact_action_chips(
+    view: VisualPage, app: AgentplaneFixture, group: str, name: str, arguments: dict[str, object], visible: str
+) -> None:
+    await app.show_action_preview(group, name, arguments)
+    await app.mount_thread(IDLE_THREAD)
+    notice = view.page.get_by_role("region", name="Pending action approvals")
+    await expect(notice.get_by_text(visible)).to_be_visible()
+    await expect(notice.get_by_role("button", name="Approve")).to_be_visible()
+    await view.capture(target=notice)
+
+
+async def test_compact_pr_with_description_requires_review(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.show_action_preview(
+        "github",
+        "create_pull_request",
+        {
+            "owner": "example",
+            "repo": "repo",
+            "title": "Update docs",
+            "head": "docs",
+            "base": "devel",
+            "body": "Important PR description that must be read before approval.",
+        },
+    )
+    await app.mount_thread(IDLE_THREAD)
+    notice = view.page.get_by_role("region", name="Pending action approvals")
+    await expect(notice.get_by_text("description: open Review")).to_be_visible()
+    await expect(notice.get_by_role("button", name="Approve")).to_have_count(0)
+    await notice.get_by_role("button", name="Review pending actions").click()
+    await expect(notice.get_by_text("Important PR description that must be read before approval.")).to_be_visible()
+    await view.capture(target=notice)
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_wide_action_decisions(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     await app.show_pending_actions()
     await app.mount_app("/actions")

@@ -311,6 +311,17 @@ describe("global Action affordance", () => {
       expect(decide).toHaveBeenCalledWith(pod, "allow");
       await send([{ ...pod, arguments: { namespace: "test-namespace", hidden: "danger" } }]);
       expect(container.querySelector('.action-affordance-notice button[aria-label="Approve"]')).toBeNull();
+      const pr = {
+        ...first,
+        action: { group: "github", name: "create_pull_request" },
+        arguments: { owner: "example", repo: "repo", title: "Update docs", head: "feature", base: "devel", body: "Important description" },
+      };
+      await send([pr]);
+      expect(container.querySelector(".action-affordance-notice")?.textContent).toContain("description: open Review");
+      expect(container.querySelector('.action-affordance-notice button[aria-label="Approve"]')).toBeNull();
+      await act(async () => button(container, "Review").click());
+      expect(container.textContent).toContain("Important description");
+      await act(async () => button(container, "Hide details").click());
       await send([pod, second]);
       expect(container.querySelector('.action-affordance-notice button[aria-label="Approve"]')).toBeNull();
       await send([first]);
