@@ -52,7 +52,7 @@ async def _sandbox(
 ) -> tuple[str, list[ResolvedGrant]]:
     selected = resolve_grants(names, catalog)
     view = await inventory.create(
-        CreateSandboxRequest(slug="haku", template=TEMPLATE, kubernetes_grants=names),
+        CreateSandboxRequest(name="haku", template=TEMPLATE, kubernetes_grants=names),
         annotations={
             KUBERNETES_GRANTS_ANNOTATION: json.dumps(
                 [MessageToDict(grant, preserving_proto_field_name=True) for grant in selected]
@@ -62,6 +62,7 @@ async def _sandbox(
         if any(grant.grant.kind == "ClusterRoleBinding" or grant.grant.namespace != NAMESPACE for grant in selected)
         else None,
     )
+    await inventory.ensure_service_account(view)
     core.pods[view.name] = pod(view.name, phase="Running", ready=True, ip="10.0.0.1")
     return view.name, selected
 

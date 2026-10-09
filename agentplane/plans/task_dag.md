@@ -309,7 +309,6 @@ flowchart TD
     THREAD_CREATE_POLICY[Decision: opening a session in an existing Sandbox]
     THREAD_CREATE_AUTHORIZATION[Blocked: implement session-create grants]
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
-    SANDBOX_CREATE_RECONCILE[Idempotent Sandbox creation]
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
     MULTIAGENT_MODEL --> THREAD_READ_POLICY_DESIGN
     MULTIAGENT_MODEL --> SANDBOX_COMPARTMENT_DESIGN
@@ -329,7 +328,6 @@ flowchart TD
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     THREAD_IDENTITY_NEW[Service-owned Session identity] --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
-    SANDBOX_CREATE_RECONCILE --> AGENT_SANDBOX_LAUNCH
     THREAD_ARCHIVE_OWNERSHIP -. hold on new service persistence .-> AGENT_SANDBOX_LAUNCH
 ```
 
@@ -558,15 +556,6 @@ hosted builds do not authorize local Bazel in agent containers. Hosted build acc
 
 These candidates need no multiagent or VM decision. Any implementation that turns out to require
 app/Sandbox Service database changes inherits the migration hold; non-mutating UI work does not.
-
-### `SANDBOX_CREATE_RECONCILE` — idempotent lifecycle creation
-
-**Candidate; coordinate with migration owner for changes to shared service code.** Give Create a
-stable caller-retained request identity/target before Kubernetes writes. Normalize and compare
-intent on retry, check ownership, and resume incomplete grant provisioning without duplicating a
-Sandbox after response loss. Test conflicts, concurrent retries and ordinary partial writes. Do
-not promise exactly-once across deletion using a name lookup alone. Prerequisite for agent launch,
-not a request to add a second provisioning database.
 
 ### `THREAD_NOTIFICATION_INDICATOR` — pending notice status in the sidebar
 

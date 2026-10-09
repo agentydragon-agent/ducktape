@@ -36,9 +36,9 @@ class Provisioning:
     grants: dict[str, KubernetesGrant]
     bindings: KubernetesBindings
 
-    async def create(self, spec: CreateSandboxRequest) -> Sandbox:
-        if not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", spec.slug) or len(spec.slug) > 57 or not spec.template:
-            raise ValueError("valid slug and template are required")
+    async def create(self, spec: CreateSandboxRequest, *, caller: str = "sandbox-service") -> Sandbox:
+        if not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", spec.name) or len(spec.name) > 57 or not spec.template:
+            raise ValueError("valid name and template are required")
         if max(len(spec.bootstrap), len(spec.session_defaults.setup_script)) > 65_536:
             raise ValueError("script exceeds 65536 characters")
         if spec.session_defaults.HasField("harness") and spec.session_defaults.harness not in (
@@ -46,6 +46,10 @@ class Provisioning:
             runner_pb2.HARNESS_CODEX,
         ):
             raise ValueError("unsupported harness")
+        existing = await self.inventory.retry(spec, caller=caller)
+        if existing is not None:
+            await self.ensure(existing)
+            return await self.inventory.get(existing.name)
         grants = resolve_grants(list(spec.kubernetes_grants), self.grants)
         policies = self.egress.launch_policies(list(spec.egress_policies))
         await self.egress.require_policies(policies)
@@ -71,6 +75,7 @@ class Provisioning:
             )
         view = await self.inventory.create(
             spec,
+            caller=caller,
             annotations=annotations or None,
             finalizers=[KUBERNETES_BINDINGS_FINALIZER]
             if any(
@@ -85,8 +90,13 @@ class Provisioning:
     async def ensure(self, sandbox: Sandbox) -> None:
         if sandbox.deleting:
             return
+        initializing = await self.inventory.initialization_pending(sandbox.name)
+        if initializing:
+            await self.inventory.ensure_service_account(sandbox)
         intent = await self.inventory.pending_grants(sandbox.name)
         if intent is None:
+            if initializing:
+                await self.inventory.complete_initialization(sandbox)
             return  # Existing staging resources have no new intent to reinterpret or replace.
         if intent.egress_policies:
             await self.egress.grant(sandbox, intent.egress_policies, initial=True)
@@ -97,6 +107,8 @@ class Provisioning:
             if not (await self.inventory.get(sandbox.name)).kubernetes_grants_ready:
                 return
         await self.inventory.finish_provisioning(sandbox)
+        if initializing:
+            await self.inventory.complete_initialization(sandbox)
 
     async def reconcile_once(self) -> None:
         await self.bindings.reconcile_once()

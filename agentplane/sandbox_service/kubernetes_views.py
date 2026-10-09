@@ -41,6 +41,7 @@ class _ObjectMeta(_KubernetesModel):
     name: str
     namespace: str
     uid: str
+    resource_version: str = Field(alias="resourceVersion", default="")
     labels: dict[str, str] = Field(default_factory=dict)
     annotations: dict[str, str] = Field(default_factory=dict)
     creation_timestamp: datetime

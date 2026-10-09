@@ -139,7 +139,7 @@ async def api(case: Case, cluster: Cluster, tmp_path: Path) -> AsyncIterator[San
 async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxServiceClient, case: Case) -> None:
     view = await api.create(
         CreateSandboxRequest(
-            slug="test",
+            name="test",
             template=TEMPLATE,
             action_policy_sets=["test-actions"],
             kubernetes_grants=["test-read"],
@@ -180,23 +180,23 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
     "spec",
     [
         CreateSandboxRequest(template=TEMPLATE),
-        CreateSandboxRequest(slug="Bad_Name", template=TEMPLATE),
-        CreateSandboxRequest(slug="a" * 58, template=TEMPLATE),
-        CreateSandboxRequest(slug="test"),
-        CreateSandboxRequest(slug="test", template=TEMPLATE, bootstrap="x" * 65_537),
+        CreateSandboxRequest(name="Bad_Name", template=TEMPLATE),
+        CreateSandboxRequest(name="a" * 58, template=TEMPLATE),
+        CreateSandboxRequest(name="test"),
+        CreateSandboxRequest(name="test", template=TEMPLATE, bootstrap="x" * 65_537),
         CreateSandboxRequest(
-            slug="test", template=TEMPLATE, session_defaults=protocol_pb2.SessionDefaults(setup_script="x" * 65_537)
+            name="test", template=TEMPLATE, session_defaults=protocol_pb2.SessionDefaults(setup_script="x" * 65_537)
         ),
         CreateSandboxRequest(
-            slug="test",
+            name="test",
             template=TEMPLATE,
             session_defaults=protocol_pb2.SessionDefaults(harness=runner_pb2.HARNESS_UNSPECIFIED),
         ),
     ],
     ids=[
-        "empty-slug",
-        "invalid-slug",
-        "long-slug",
+        "empty-name",
+        "invalid-name",
+        "long-name",
         "empty-template",
         "long-bootstrap",
         "long-setup",
@@ -220,7 +220,7 @@ async def test_partial_create_recovers_from_kubernetes_state_without_app(case: C
     with pytest.raises(k8s_client.ApiException):
         await case.service.create(
             CreateSandboxRequest(
-                slug="test", template=TEMPLATE, action_policy_sets=["test-actions"], kubernetes_grants=["test-read"]
+                name="test", template=TEMPLATE, action_policy_sets=["test-actions"], kubernetes_grants=["test-read"]
             )
         )
     (view,) = await case.service.inventory.list_sandboxes()
@@ -246,7 +246,7 @@ async def test_foreign_binding_is_not_overwritten_and_provisioning_stays_pending
     case.custom.fail_plural = "actionpolicybindings"
     with pytest.raises(k8s_client.ApiException):
         await case.service.create(
-            CreateSandboxRequest(slug="test", template=TEMPLATE, action_policy_sets=["test-actions"])
+            CreateSandboxRequest(name="test", template=TEMPLATE, action_policy_sets=["test-actions"])
         )
     (view,) = await case.service.inventory.list_sandboxes()
     binding = next(value for (kind, _), value in case.custom.objects.items() if kind == "egressbindings")
@@ -265,14 +265,14 @@ async def test_authorization_precedes_creation(api: SandboxServiceClient, cluste
         audiences=(AUDIENCE,),
     )
     with pytest.raises(ServiceError) as rejected:
-        await api.create(CreateSandboxRequest(slug="test", template=TEMPLATE))
+        await api.create(CreateSandboxRequest(name="test", template=TEMPLATE))
     assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
     assert not case.core.service_accounts
     assert not await case.service.inventory.list_sandboxes()
 
 
 async def test_manual_egress_grants_cross_the_service_boundary(api: SandboxServiceClient, case: Case) -> None:
-    view = await api.create(CreateSandboxRequest(slug="test", template=TEMPLATE))
+    view = await api.create(CreateSandboxRequest(name="test", template=TEMPLATE))
     name = await api.grant_egress(view, ["test-basic"])
     assert name in {
         binding.name
@@ -298,6 +298,63 @@ async def test_manual_egress_grants_cross_the_service_boundary(api: SandboxServi
         await api.grant_egress(stale, ["test-basic"])
     assert replaced.value.code is grpc.StatusCode.NOT_FOUND
     assert case.custom.objects == before
+
+
+async def test_create_retry_finishes_initialization_after_lost_grants(case: Case) -> None:
+    spec = CreateSandboxRequest(name="retry", template=TEMPLATE, action_policy_sets=["test-actions"])
+    case.custom.fail_plural = "actionpolicybindings"
+    with pytest.raises(k8s_client.ApiException):
+        await case.service.create(spec)
+    view = await case.service.inventory.get("retry")
+    assert view.operating_mode == "Suspended"
+    assert "retry" in case.core.service_accounts
+    case.custom.fail_plural = None
+    completed = await case.service.create(spec)
+    assert completed.uid == view.uid
+    assert completed.operating_mode == "Running"
+    assert await case.service.inventory.pending_grants("retry") is None
+    assert (await case.service.create(spec)).uid == view.uid
+
+
+async def test_create_retry_after_lost_service_account_reply(case: Case) -> None:
+    original = case.core.create_namespaced_service_account
+    called = False
+
+    async def committed_then_lost(*args: object) -> object:
+        nonlocal called
+        created = await original(*args)
+        if not called:
+            called = True
+            raise k8s_client.ApiException(status=503)
+        return created
+
+    case.core.create_namespaced_service_account = committed_then_lost  # type: ignore[method-assign]
+    spec = CreateSandboxRequest(name="sa-lost", template=TEMPLATE)
+    view = await case.service.create(spec)
+    assert view.operating_mode == "Running"
+    assert list(case.core.service_accounts) == ["sa-lost"]
+    assert (await case.service.create(spec)).uid == view.uid
+
+
+async def test_reconcile_after_final_resume_reply_is_lost(case: Case) -> None:
+    original = case.custom.patch_namespaced_custom_object
+    lost = False
+
+    async def patched_then_lost(*args: object, **kwargs: object) -> object:
+        nonlocal lost
+        result = await original(*args, **kwargs)
+        if not lost and isinstance(args[5], dict) and args[5].get("spec", {}).get("operatingMode") == "Running":
+            lost = True
+            raise k8s_client.ApiException(status=503)
+        return result
+
+    case.custom.patch_namespaced_custom_object = patched_then_lost  # type: ignore[method-assign]
+    spec = CreateSandboxRequest(name="last-patch", template=TEMPLATE)
+    with pytest.raises(k8s_client.ApiException):
+        await case.service.create(spec)
+    view = await case.service.create(spec)
+    assert view.operating_mode == "Running"
+    assert await case.service.inventory.initialization_pending(view.name) is False
 
 
 if __name__ == "__main__":

@@ -143,7 +143,7 @@ async def sandbox(client: Client) -> AsyncIterator[Callable[..., Awaitable[Sandb
         if template is None:
             [template] = await client.templates()
         values: dict[str, object] = {
-            "slug": slug,
+            "name": slug,
             "template": template,
             "session_defaults": session_defaults,
             "bootstrap": bootstrap,

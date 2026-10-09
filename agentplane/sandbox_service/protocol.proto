@@ -14,7 +14,7 @@ import "google/protobuf/timestamp.proto";
 service SandboxService {
   rpc ListSandboxes(google.protobuf.Empty) returns (ListSandboxesResponse);
   rpc GetSandbox(GetSandboxRequest) returns (Sandbox);
-  // Not idempotent: an uncertain response requires inventory reconciliation, not retry.
+  // Retry with the same name and exact choices while the Sandbox CR exists.
   rpc CreateSandbox(CreateSandboxRequest) returns (Sandbox);
   rpc SuspendSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ResumeSandbox(SandboxRequest) returns (google.protobuf.Empty);
@@ -160,7 +160,7 @@ message SandboxBinding {
 }
 
 message CreateSandboxRequest {
-  string slug = 1;
+  string name = 1;
   string template = 2;
   // EgressPolicy names to grant to the new sandbox.
   repeated string egress_policies = 3;

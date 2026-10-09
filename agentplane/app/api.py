@@ -1095,6 +1095,7 @@ def create_app(
         code = {
             grpc.StatusCode.NOT_FOUND: 404,
             grpc.StatusCode.FAILED_PRECONDITION: 409,
+            grpc.StatusCode.ALREADY_EXISTS: 409,
             grpc.StatusCode.INVALID_ARGUMENT: 422,
         }.get(error.code, 503)
         return JSONResponse({"detail": str(error)}, status_code=code)
