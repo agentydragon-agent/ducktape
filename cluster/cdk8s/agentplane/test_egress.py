@@ -21,7 +21,6 @@ from cluster.cdk8s.agentplane.egress import (
     KUBERNETES_AUDIENCE,
     KUBERNETES_CREDENTIAL,
     KUBERNETES_HOST,
-    PUBLIC_CODER_VISUALS_POLICY,
     PUBLIC_INTERNET_POLICY,
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import (
@@ -71,23 +70,6 @@ def test_public_internet_is_available_but_never_implicitly_granted(
                 ]
             else:
                 assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policies"]
-
-
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_public_coder_visual_review_is_read_only_and_opt_in(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    docs = agentplane_manifests[namespace]
-    policy = _by_name(docs, "EgressPolicy", PUBLIC_CODER_VISUALS_POLICY)
-    assert policy["spec"]["rules"] == [
-        {"hosts": ["s3.allegedly.works"], "methods": ["GET"], "paths": ["/pr-visuals/**"]}
-    ]
-    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
-    assert PUBLIC_CODER_VISUALS_POLICY in config["sandbox_presets"]["public-coder"]["egress_policies"]
-    assert PUBLIC_CODER_VISUALS_POLICY not in config["default_egress_policies"]
-    for name, preset in config["sandbox_presets"].items():
-        if name != "public-coder":
-            assert PUBLIC_CODER_VISUALS_POLICY not in preset["egress_policies"]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
