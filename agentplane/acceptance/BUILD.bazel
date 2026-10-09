@@ -159,7 +159,7 @@ py_test(
         "//agentplane/app:sandbox_models",
         "//agentplane/runner:harness",
         "//agentplane/runner:protocol_pb2",
-        "//agentplane/sandbox_service:models",
+        "//util:agent_sandbox",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],

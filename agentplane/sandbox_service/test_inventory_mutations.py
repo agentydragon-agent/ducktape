@@ -13,7 +13,7 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
-from agentplane.sandbox_service.models import OperatingMode, SandboxNotFoundError
+from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -24,6 +24,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     pod,
     sandbox,
 )
+from util.agent_sandbox import OperatingMode
 
 _READY = {"conditions": [{"type": "Ready", "status": "True", "reason": "PodReady"}], "nodeName": "test-node"}
 

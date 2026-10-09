@@ -19,9 +19,8 @@ from agentplane.sandbox_service.kubernetes_grants import (
     RoleBindingGrant,
     RoleRef,
 )
-from agentplane.sandbox_service.models import OperatingMode
 from agentplane.subjects import ServiceAccountRef
-from util.agent_sandbox import SANDBOX_API
+from util.agent_sandbox import SANDBOX_API, OperatingMode
 
 # gazelle:include_dep @pypi//protobuf
 

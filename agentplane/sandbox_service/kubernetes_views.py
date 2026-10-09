@@ -12,7 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from agentplane.sandbox_service.binding_storage import read_binding
 from agentplane.sandbox_service.kubernetes_grants import DnsName, KubernetesGrant
-from agentplane.sandbox_service.models import OperatingMode
 from agentplane.sandbox_service.protocol_pb2 import (
     OwnerReference,
     ResolvedGrant,
@@ -21,6 +20,7 @@ from agentplane.sandbox_service.protocol_pb2 import (
     SandboxPod,
     ServiceAccount,
 )
+from util.agent_sandbox import OperatingMode
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
 SANDBOX_BINDING_ANNOTATION = "agentplane.allegedly.works/sandbox-binding"

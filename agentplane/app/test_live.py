@@ -61,7 +61,6 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.models import OperatingMode
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -74,7 +73,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     sandbox,
 )
 from agentplane.subjects import ServiceAccountRef
-from util.agent_sandbox import SANDBOXES_PLURAL
+from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 from util.net import pick_free_port
 
 # gazelle:include_dep @pypi//protobuf

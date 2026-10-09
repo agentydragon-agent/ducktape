@@ -17,9 +17,10 @@ from agentplane.protocol import event_log_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
-from agentplane.sandbox_service.models import OperatingMode, SandboxNotFoundError
+from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
 from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryLocator, Store
+from util.agent_sandbox import OperatingMode
 
 # Generated stubs require the protobuf runtime as a direct mypy dependency.
 # gazelle:include_dep @pypi//protobuf

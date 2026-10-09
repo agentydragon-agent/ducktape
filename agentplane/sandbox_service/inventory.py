@@ -31,10 +31,10 @@ from agentplane.sandbox_service.kubernetes_views import (
     sandbox_view,
     sandbox_views,
 )
-from agentplane.sandbox_service.models import OperatingMode, SandboxNotFoundError, SandboxRunningError
+from agentplane.sandbox_service.models import SandboxNotFoundError, SandboxRunningError
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox, SandboxBinding
 from agentplane.sandbox_service.session_config import LaunchGrants
-from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL
+from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL, OperatingMode
 from util.kubernetes import CustomObjectsClient
 
 _MERGE_PATCH = "application/merge-patch+json"
