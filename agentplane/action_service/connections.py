@@ -18,7 +18,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstrai
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.action_service.db import ConnectionGrantRow, ConnectionBindingChangeRow, ConnectionRow, SessionMaker
+from agentplane.action_service.db import ConnectionBindingChangeRow, ConnectionGrantRow, ConnectionRow, SessionMaker
 from agentplane.action_service.models import CallerPrincipal, ExternalGrantProvenance, OperatorPrincipal
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.subjects import ServiceAccountRef

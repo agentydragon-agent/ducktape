@@ -30,8 +30,8 @@ from agentplane.action_service.db import (
     ActionConflictError,
     ActionNotFoundError,
     ActionStore,
-    ConnectionGrantRow,
     ConnectionBindingChangeRow,
+    ConnectionGrantRow,
     ConnectionRow,
     make_sessionmaker,
 )
