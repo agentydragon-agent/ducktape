@@ -1062,11 +1062,7 @@ function ProjectedSessionBody({
           activeTurn={activeTurn}
           history={history}
         />
-        <ProjectedCommandRows
-          threadId={threadId}
-          entities={entities}
-          localCommands={commands.local.commands}
-        />
+        <ProjectedCommandRows threadId={threadId} entities={entities} localCommands={commands.local.commands} />
         {selectedCommandIds.length > 0 && (
           <SelectedCommandOutcomes
             commands={selectedCommandIds}

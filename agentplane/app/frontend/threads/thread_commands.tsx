@@ -331,9 +331,7 @@ function SelectedCommandRows({
                 <Button
                   size="xs"
                   variant="subtle"
-                  onClick={() =>
-                    value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
-                  }
+                  onClick={() => (value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId))}
                 >
                   {value.attempted ? "Retry" : "Cancel"}
                 </Button>
