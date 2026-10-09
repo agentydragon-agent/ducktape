@@ -20,7 +20,7 @@ from agentplane.app.frontend.visual_assertions import (
     _rollout_start,
 )
 from util.testing.page_capture import wait_for_stable
-from util.testing.viewports import DESKTOP, MOBILE, MOBILE_TOUCH
+from util.testing.viewports import DESKTOP, MOBILE, MOBILE_TOUCH, Viewport
 from util.testing.visual_capture import VisualPage
 
 # gazelle:include_dep //util/testing:visual_fixtures
@@ -209,8 +209,8 @@ async def test_debug_history_latest_session_raw(view: VisualPage, app: Agentplan
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixture) -> None:
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
+async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     await app.command_progress()
     await app.mount_thread(RUNNING_THREAD)
     await view.check(context="fixture ready")
@@ -226,15 +226,25 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     await input_row.scroll_into_view_if_needed()
     await view.capture()
     await view.capture(name=f"{view.capture_name}_controls", target=page.get_by_role("region", name="Pending commands"))
-    await input_row.locator(".agentplane-command-progress-hit").hover()
+    input_indicator = input_row.locator(".agentplane-command-progress-hit")
+    if viewport.has_touch:
+        await input_indicator.tap()
+        await expect(input_row.locator('[data-touch-open="true"]')).to_be_visible()
+    else:
+        await input_indicator.hover()
     await expect(detail).to_be_visible()
     await expect(detail).to_be_in_viewport(ratio=1)
-    await view.capture(name=f"{view.capture_name}_hover")
+    await view.capture(name=f"{view.capture_name}_detail")
     effort_row = page.locator('[data-command-id="progress-effort"]')
-    await effort_row.locator(".agentplane-command-progress-hit").hover()
+    effort_indicator = effort_row.locator(".agentplane-command-progress-hit")
+    if viewport.has_touch:
+        await effort_indicator.tap()
+        await expect(effort_row.locator('[data-touch-open="true"]')).to_be_visible()
+    else:
+        await effort_indicator.hover()
     await expect(effort_row.get_by_role("tooltip")).to_be_visible()
     await expect(effort_row.get_by_role("tooltip")).to_be_in_viewport(ratio=1)
-    await view.capture(name=f"{view.capture_name}_effort_hover")
+    await view.capture(name=f"{view.capture_name}_effort_detail")
 
 
 async def test_debug_history_latest_session_pending_raw(view: VisualPage, app: AgentplaneFixture) -> None:
