@@ -191,8 +191,13 @@ async def test_remove_pause_migration_preserves_inbox_and_stopped_intent(
 
     async with engine.begin() as connection:
         await connection.run_sync(round_trip)
+    # The old schema has no success-observation column; upgrading must not fabricate its value.
     expected = before.model_copy(
-        update={"cancelled": paused or cancelled, "version": before.version + int(paused and not cancelled)}
+        update={
+            "cancelled": paused or cancelled,
+            "version": before.version + int(paused and not cancelled),
+            "last_success_at": None,
+        }
     )
     assert await store.subscribe(PRINCIPAL, BODY) == expected
     assert await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == inbox_before
