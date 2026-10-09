@@ -297,7 +297,7 @@ describe("global Action affordance", () => {
         arguments: { namespace: "test-namespace", labelSelector: "app=example" },
       };
       await send([pod]);
-      const notice = container.querySelector(".action-affordance-notice")!;
+      const notice = container.querySelector<HTMLElement>(".action-affordance-notice")!;
       expect(notice.textContent).toContain("Get pods · namespace");
       expect(notice.textContent).not.toContain("List pods in namespace");
       expect(notice.textContent).toContain("test-namespace");
