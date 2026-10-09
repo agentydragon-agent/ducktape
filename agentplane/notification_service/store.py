@@ -839,24 +839,30 @@ class Store:
                 )
                 await add_revisions(session, key, revisions)
             receipt = GitHubDelivery(
-                    app_id=app_id,
-                    delivery_id=delivery_id,
-                    installation_id=installation_id,
-                    repository_id=repository_id,
-                    event=event,
-                    digest=digest,
-                    payload=payload,
-                    action=action,
-                    head_sha=head_sha,
-                    received_at=datetime.now(UTC),
+                app_id=app_id,
+                delivery_id=delivery_id,
+                installation_id=installation_id,
+                repository_id=repository_id,
+                event=event,
+                digest=digest,
+                payload=payload,
+                action=action,
+                head_sha=head_sha,
+                received_at=datetime.now(UTC),
             )
             session.add(receipt)
             await session.flush()
             for key in subjects:
-                await session.execute(insert(GitHubDeliverySubject).values(
-                    delivery_position=receipt.position, repository_id=key.repository_id,
-                    kind=key.kind, subject_key=key.subject_key,
-                ).on_conflict_do_nothing())
+                await session.execute(
+                    insert(GitHubDeliverySubject)
+                    .values(
+                        delivery_position=receipt.position,
+                        repository_id=key.repository_id,
+                        kind=key.kind,
+                        subject_key=key.subject_key,
+                    )
+                    .on_conflict_do_nothing()
+                )
             now = datetime.now(UTC)
             active = (
                 (Subscription.github_app_id == app_id)

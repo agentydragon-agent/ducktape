@@ -12,7 +12,13 @@ import pytest_bazel
 
 from agentplane.action_service.models import ActionEventView, ActionState
 from agentplane.notification_service.api import authenticated_caller, create_app, sandbox_status_frames
-from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionStatus, SubscriptionView
+from agentplane.notification_service.models import (
+    ActionsSource,
+    DestinationRef,
+    Subscribe,
+    SubscriptionStatus,
+    SubscriptionView,
+)
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.store import Store

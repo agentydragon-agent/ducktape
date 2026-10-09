@@ -1878,16 +1878,34 @@ routes.push(
                         {
                           id: "subscription-two",
                           github: {
-                            access: [{
-                              app_id: 42, installation_id: 11, repository_id: 102,
-                              checked_at: ago(60000), valid_until: ago(30000), currently_valid: false,
-                              last_success_at: ago(60000), error_kind: null, error: null,
-                              error_since: null, error_observed_at: null, retry_at: null, refreshing_until: null,
-                            }],
+                            access: [
+                              {
+                                app_id: 42,
+                                installation_id: 11,
+                                repository_id: 102,
+                                checked_at: ago(60000),
+                                valid_until: ago(30000),
+                                currently_valid: false,
+                                last_success_at: ago(60000),
+                                error_kind: null,
+                                error: null,
+                                error_since: null,
+                                error_observed_at: null,
+                                retry_at: null,
+                                refreshing_until: null,
+                              },
+                            ],
                             subject: {
-                              repository_id: 102, kind: "pull_request", subject_key: "42",
-                              last_success_at: ago(60000), error_kind: null, error: null,
-                              error_since: null, error_observed_at: null, retry_at: null, refreshing_until: null,
+                              repository_id: 102,
+                              kind: "pull_request",
+                              subject_key: "42",
+                              last_success_at: ago(60000),
+                              error_kind: null,
+                              error: null,
+                              error_since: null,
+                              error_observed_at: null,
+                              retry_at: null,
+                              refreshing_until: null,
                             },
                           },
                           source: {

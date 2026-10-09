@@ -259,7 +259,8 @@ class GitHubDeliverySubject(Base):
     __tablename__ = "github_delivery_subject"
     __table_args__ = (
         ForeignKeyConstraint(
-            ["delivery_position", "repository_id"], ["github_delivery.position", "github_delivery.repository_id"],
+            ["delivery_position", "repository_id"],
+            ["github_delivery.position", "github_delivery.repository_id"],
             ondelete="CASCADE",
         ),
         ForeignKeyConstraint(

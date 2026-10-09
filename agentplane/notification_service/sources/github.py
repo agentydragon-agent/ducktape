@@ -256,13 +256,19 @@ def correlation(payload: Envelope) -> tuple[str | None, list[Subject]]:
         case IssuePayload(issue=issue) if issue.pull_request is not None:
             return None, [PullRequestSubject(kind="pull_request", number=issue.number)]
         case PushPayload(ref=ref, after=sha) if ref.startswith("refs/heads/"):
-            return (None if sha == "0" * 40 else sha), [BranchSubject(kind="branch", name=ref.removeprefix("refs/heads/"))]
+            return (None if sha == "0" * 40 else sha), [
+                BranchSubject(kind="branch", name=ref.removeprefix("refs/heads/"))
+            ]
         case RefPayload(ref=ref, ref_type="branch"):
             return None, [BranchSubject(kind="branch", name=ref)]
         case CheckRunPayload(check_run=check) | CheckSuitePayload(check_suite=check):
-            return check.head_sha, [PullRequestSubject(kind="pull_request", number=pr.number) for pr in check.pull_requests]
+            return check.head_sha, [
+                PullRequestSubject(kind="pull_request", number=pr.number) for pr in check.pull_requests
+            ]
         case WorkflowPayload(workflow_run=workflow):
-            subjects: list[Subject] = [PullRequestSubject(kind="pull_request", number=pr.number) for pr in workflow.pull_requests]
+            subjects: list[Subject] = [
+                PullRequestSubject(kind="pull_request", number=pr.number) for pr in workflow.pull_requests
+            ]
             if workflow.head_branch is not None:
                 subjects.append(BranchSubject(kind="branch", name=workflow.head_branch))
             return workflow.head_sha, subjects
@@ -590,12 +596,16 @@ class GitHub:
         delivery = GitHubDelivery
         direct: ColumnElement[bool] = false()
         if not isinstance(source.subject, CommitSubject):
-            direct = select(GitHubDeliverySubject.delivery_position).where(
-                GitHubDeliverySubject.delivery_position == delivery.position,
-                GitHubDeliverySubject.repository_id == key.repository_id,
-                GitHubDeliverySubject.kind == key.kind,
-                GitHubDeliverySubject.subject_key == key.subject_key,
-            ).exists()
+            direct = (
+                select(GitHubDeliverySubject.delivery_position)
+                .where(
+                    GitHubDeliverySubject.delivery_position == delivery.position,
+                    GitHubDeliverySubject.repository_id == key.repository_id,
+                    GitHubDeliverySubject.kind == key.kind,
+                    GitHubDeliverySubject.subject_key == key.subject_key,
+                )
+                .exists()
+            )
         revision = GitHubSubjectRevision
         heads = (
             select(revision.sha)

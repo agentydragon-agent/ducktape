@@ -96,7 +96,8 @@ def upgrade() -> None:
         sa.Column("kind", sa.String(), primary_key=True),
         sa.Column("subject_key", sa.String(), primary_key=True),
         sa.ForeignKeyConstraint(
-            ["delivery_position", "repository_id"], ["github_delivery.position", "github_delivery.repository_id"],
+            ["delivery_position", "repository_id"],
+            ["github_delivery.position", "github_delivery.repository_id"],
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
@@ -104,8 +105,11 @@ def upgrade() -> None:
             ["github_subject.repository_id", "github_subject.kind", "github_subject.subject_key"],
         ),
     )
-    op.create_index("ix_github_delivery_subject_lookup", "github_delivery_subject",
-        ["repository_id", "kind", "subject_key", "delivery_position"])
+    op.create_index(
+        "ix_github_delivery_subject_lookup",
+        "github_delivery_subject",
+        ["repository_id", "kind", "subject_key", "delivery_position"],
+    )
     op.drop_constraint("subscription_source_state", "subscription", type_="check")
     for name in ("github_app_id", "github_installation_id", "github_repository_id"):
         op.add_column("subscription", sa.Column(name, sa.BigInteger()))
@@ -222,8 +226,10 @@ def downgrade() -> None:
         .scalar()
     ):
         raise RuntimeError("refusing data loss: shared GitHub observations require a reverse migration")
-    op.add_column("github_delivery", sa.Column("subjects", postgresql.ARRAY(sa.String()), nullable=False,
-        server_default=sa.text("'{}'::varchar[]")))
+    op.add_column(
+        "github_delivery",
+        sa.Column("subjects", postgresql.ARRAY(sa.String()), nullable=False, server_default=sa.text("'{}'::varchar[]")),
+    )
     op.execute("""
         UPDATE github_delivery d SET subjects = (
             SELECT array_agg(s.kind || ':' || s.subject_key ORDER BY s.kind, s.subject_key)::varchar[]
