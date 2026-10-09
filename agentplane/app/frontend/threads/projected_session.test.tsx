@@ -323,6 +323,19 @@ it("shows inferred model activity in the composer controls, not in a separate ro
   expect(container.querySelector(".agentplane-sidebar-row-activity")).toBeNull();
 });
 
+it.each([
+  ["2026-01-01T12:09:30Z", "just now"],
+  ["2026-01-01T10:10:00Z", "2h ago"],
+  ["2025-12-29T12:10:00Z", "3d ago"],
+  ["2026-01-01T12:12:00Z", "unknown"],
+  ["invalid", "unknown"],
+])("formats model activity at %s as %s", async (at, expected) => {
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:10:00Z"));
+  sharedThread = { last_model_activity_at: at };
+  const container = await render();
+  expect(container.querySelector(".agentplane-composer-model-activity")?.textContent).toContain(expected);
+});
+
 it("shows unknown at the composer before any model-originated event", async () => {
   const container = await render();
   expect(container.querySelector(".agentplane-composer-model-activity")?.textContent).toContain("unknown");

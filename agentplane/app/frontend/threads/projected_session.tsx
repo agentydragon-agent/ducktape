@@ -7,6 +7,7 @@ import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
 import IconSend from "@tabler/icons-react/dist/esm/icons/IconSend.mjs";
+import { intlFormatDistance } from "date-fns";
 import {
   type JSX,
   type KeyboardEvent,
@@ -967,11 +968,8 @@ function modelActivityAge(at: string | null | undefined, now: number): string {
   if (!at) return "unknown";
   const time = Date.parse(at);
   if (!Number.isFinite(time) || time > now + 60_000) return "unknown";
-  const minutes = Math.max(0, Math.floor((now - time) / 60_000));
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
-  return `${Math.floor(minutes / 1440)}d ago`;
+  if (now - time < 60_000) return "just now";
+  return intlFormatDistance(new Date(time), new Date(now), { locale: "en", numeric: "always", style: "narrow" });
 }
 
 function ModelActivityHint({
