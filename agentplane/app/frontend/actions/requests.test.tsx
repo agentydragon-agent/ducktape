@@ -298,10 +298,15 @@ describe("global Action affordance", () => {
       };
       await send([pod]);
       const notice = container.querySelector(".action-affordance-notice")!;
+      expect(notice.textContent).toContain("Get pods · namespace");
+      expect(notice.textContent).not.toContain("List pods in namespace");
       expect(notice.textContent).toContain("test-namespace");
       expect(notice.textContent).toContain("app=example");
       expect(notice.textContent).toContain(pod.description);
       expect(notice.querySelector('button[aria-expanded="false"]')).not.toBeNull();
+      await act(async () => button(notice, "Review").click());
+      expect(notice.textContent).toContain("List pods in namespace");
+      await act(async () => button(notice, "Hide details").click());
       await act(async () => button(notice, "Approve").click());
       expect(decide).toHaveBeenCalledWith(pod, "allow");
       await send([{ ...pod, arguments: { namespace: "test-namespace", hidden: "danger" } }]);

@@ -9,8 +9,8 @@ import type { ReactNode } from "react";
 import { type CallToolResult, CallToolResultView, toolValue } from "../call_tool_result";
 import type { ActionRequestView } from "../client";
 import { renderPreview, type ArgumentsPreview } from "./entry";
+import { podsInNamespaceCompact, podsInNamespacePreview } from "./kubernetes";
 import { renderResultPreview, type ResultPreview } from "./result_entry";
-import { podsInNamespacePreview } from "./kubernetes";
 import { execArgumentsPreview, execResultPreview } from "./ssh";
 
 type ActionIdentity = ActionRequestView["action"];
@@ -18,18 +18,19 @@ type ActionIdentity = ActionRequestView["action"];
 interface ActionRendering {
   arguments?: ArgumentsPreview;
   result?: ResultPreview;
-  /** Only explicitly reviewed, lossless argument previews may be approved without opening the card. */
-  compactApproval?: boolean;
+  /** A separate, lossless compact widget explicitly opts this Action into inline approval.
+   * The schema must reject any argument the widget does not show. */
+  compactApproval?: ArgumentsPreview;
 }
 
 // Maps rather than object literals, so no group or Action name reaches `Object.prototype`.
 const REGISTRY: ReadonlyMap<string, ReadonlyMap<string, ActionRendering>> = new Map([
   [
     "kubernetes_admin",
-    new Map([["pods_list_in_namespace", { arguments: podsInNamespacePreview, compactApproval: true }]]),
+    new Map<string, ActionRendering>([["pods_list_in_namespace", { arguments: podsInNamespacePreview, compactApproval: podsInNamespaceCompact }]]),
   ],
   // x/ssh_mcp_server/server.py, under the group name staging configures it as.
-  ["ssh", new Map([["exec", { arguments: execArgumentsPreview, result: execResultPreview }]])],
+  ["ssh", new Map<string, ActionRendering>([["exec", { arguments: execArgumentsPreview, result: execResultPreview }]])],
 ]);
 
 /** An Action's arguments drawn by its own widget when its schema parses them; otherwise `null`, which
@@ -51,6 +52,6 @@ export function renderMcpResult(action: ActionIdentity, result: CallToolResult):
 
 /** Only explicitly opted-in Actions with fully parsed arguments can be decided in the strip. */
 export function compactApprovalArguments(action: ActionIdentity, args: unknown): ReactNode | null {
-  const entry = REGISTRY.get(action.group)?.get(action.name);
-  return entry?.compactApproval && entry.arguments ? renderPreview(entry.arguments, args) : null;
+  const preview = REGISTRY.get(action.group)?.get(action.name)?.compactApproval;
+  return preview ? renderPreview(preview, args) : null;
 }
