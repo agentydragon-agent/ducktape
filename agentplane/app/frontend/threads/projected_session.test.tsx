@@ -727,13 +727,14 @@ it("shows a server-only pending command as saved, not as a local delivery", asyn
         viewState(),
         entity(
           "command",
-          { operation: "change_model", outcome: "pending", outcome_cursor: null, outcome_reason: null },
+          { operation: "change_model", outcome: "pending", outcome_cursor: null, outcome_reason: null, requested_value: "next-model" },
           {}
         ),
       ],
     })
   );
   const pending = container.querySelector('[aria-label="Pending commands"]');
+  expect(pending?.textContent).toContain("Change model to next-model");
   expect(pending?.textContent).toContain("Runner accepted · waiting for model change");
   expect(pending?.textContent).not.toContain("Saved in browser");
   expect(pending?.querySelector('[data-stage="admitted"]')).not.toBeNull();

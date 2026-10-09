@@ -280,6 +280,12 @@ function SelectedCommandRows({
                   reason={row.state.outcome_reason}
                   local
                 />
+                {value.command.operation.case === "changeModel" && (
+                  <Text>Change model to {value.command.operation.value.model}</Text>
+                )}
+                {value.command.operation.case === "changeReasoningEffort" && (
+                  <Text>Set reasoning effort to {value.command.operation.value.effort}</Text>
+                )}
                 {row.inputRef && <Body reference={row.inputRef} format="text" />}
                 <Button variant="subtle" onClick={() => store.dismiss(row.entityId)}>
                   Dismiss

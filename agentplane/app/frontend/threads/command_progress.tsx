@@ -33,7 +33,7 @@ export function CommandProgress({
     effected: subject === "input" ? "Agent confirmed message" : "Applied",
     failed: "Failed",
     noop: "Not applied",
-    refused: "Runner refused command",
+    refused: "Command refused",
   };
   const label = `${stage === "local" && !local ? "Waiting for runner to accept" : labels[stage]}${reason ? `: ${reason}` : ""}`;
   // The first light means submitted, not proof that another browser saved it locally.
