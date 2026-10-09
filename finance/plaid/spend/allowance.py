@@ -9,7 +9,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, Json, TypeAdapter, ValidationError, field_validator, model_validator
 
@@ -263,7 +263,7 @@ class AllowancePolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     monthly_minor_units: int = Field(gt=0)
     activation_at: date
-    time_zone: str = "UTC"
+    time_zone: ZoneInfo = ZoneInfo("UTC")
     spending_account_ids: set[str] = Field(min_length=1)
     currency: Literal["USD"] = "USD"
     rules: list[Rule] = Field(min_length=1)
@@ -272,15 +272,6 @@ class AllowancePolicy(BaseModel):
     analysis_categories: dict[str, AnalysisCategory] = Field(
         min_length=1, description="Display labels and colors keyed by rule analysis_category; includes unclassified."
     )
-
-    @field_validator("time_zone")
-    @classmethod
-    def _valid_time_zone(cls, value: str) -> str:
-        try:
-            ZoneInfo(value)
-        except (ZoneInfoNotFoundError, ValueError) as exc:
-            raise ValueError("time_zone must be an IANA time zone") from exc
-        return value
 
     @field_validator("forecast_basis_period_id")
     @classmethod
@@ -468,7 +459,7 @@ def calculate(
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     now = now.astimezone(UTC)
-    zone = ZoneInfo(policy.time_zone)
+    zone = policy.time_zone
     local_now = now.astimezone(zone)
     start = datetime.combine(policy.activation_at, datetime.min.time(), tzinfo=zone)
     if start > now:
@@ -630,7 +621,7 @@ def calculate(
         currency=policy.currency,
         monthly_minor_units=policy.monthly_minor_units,
         activation_at=policy.activation_at,
-        time_zone=policy.time_zone,
+        time_zone=policy.time_zone.key,
         available_minor_units=available,
         next_credit_at=next_credit,
         posted_minor_units=posted,

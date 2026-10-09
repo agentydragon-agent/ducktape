@@ -3,6 +3,7 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_bazel
@@ -44,7 +45,7 @@ def name_rule(field: Literal["name", "merchant_name"], prefix: str, kind: Kind) 
 
 
 def policy(
-    *, activation_at: date = START_DATE, rules: list[Rule] | None = None, time_zone: str = "UTC"
+    *, activation_at: date = START_DATE, rules: list[Rule] | None = None, time_zone: ZoneInfo | None = None
 ) -> AllowancePolicy:
     configured_rules = (
         rules if rules is not None else [category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)]
@@ -57,7 +58,7 @@ def policy(
         monthly_minor_units=10_000,
         spending_account_ids={"card-1"},
         activation_at=activation_at,
-        time_zone=time_zone,
+        time_zone=time_zone or ZoneInfo("UTC"),
         rules=configured_rules,
         analysis_categories={
             category_id: AnalysisCategory(label=category_id.replace("_", " ").title(), color="#336699")
@@ -112,7 +113,7 @@ def unmatched(report: AllowanceView, period_id: PeriodId) -> tuple[int, int]:
 
 
 def test_pacific_calendar_day_and_monthly_credit_follow_local_midnight():
-    chosen = policy(activation_at=date(2026, 10, 5), time_zone="America/Los_Angeles")
+    chosen = policy(activation_at=date(2026, 10, 5), time_zone=ZoneInfo("America/Los_Angeles"))
     transactions = [row("2026-10-05", 25), row("2026-11-04", 40), row("2026-11-05", 70)]
     before_activation = datetime(2026, 10, 5, 6, 59, tzinfo=UTC)
     with pytest.raises(ValueError, match="future"):
@@ -136,7 +137,7 @@ def test_pacific_calendar_day_and_monthly_credit_follow_local_midnight():
 
 def test_policy_rejects_invalid_time_zone():
     with pytest.raises(ValidationError, match="time_zone"):
-        policy(time_zone="not/a-real-zone")
+        AllowancePolicy.model_validate({**policy().model_dump(mode="json"), "time_zone": "not/a-real-zone"})
 
 
 def test_single_config_parses_cards_and_optional_allowance():

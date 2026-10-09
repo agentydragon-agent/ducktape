@@ -334,7 +334,9 @@ function AllowancePanel({
               and pending charges are included.
             </Text>
             <Divider color="teal.6" />
-            <Text size="sm">Allowance began: {allowance.activation_at} at midnight ({allowance.time_zone ?? "UTC"})</Text>
+            <Text size="sm">
+              Allowance began: {allowance.activation_at} at midnight ({allowance.time_zone ?? "UTC"})
+            </Text>
             <Text size="sm">Next credit: {time(allowance.next_credit_at)}</Text>
             <Text size="xs" c="teal.0">
               Oldest account sync: {time(allowance.last_synced_at)}. New purchases may appear later.

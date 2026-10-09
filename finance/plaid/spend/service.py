@@ -8,7 +8,6 @@ import json
 import logging
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from zoneinfo import ZoneInfo
 
 import asyncpg
 from babel.numbers import get_currency_precision
@@ -98,7 +97,7 @@ class SpendService:
     def report_day(self, instant: datetime) -> date:
         """Policy-local reporting date; UTC when no allowance is configured."""
         policy = self._configuration.allowance
-        zone = ZoneInfo(policy.time_zone) if policy else UTC
+        zone = policy.time_zone if policy else UTC
         return instant.astimezone(zone).date()
 
     def subscribe(self) -> asyncio.Queue[None]:
@@ -114,7 +113,7 @@ class SpendService:
             allowance = AllowanceConfigurationView(
                 monthly_minor_units=policy.monthly_minor_units,
                 activation_at=policy.activation_at,
-                time_zone=policy.time_zone,
+                time_zone=policy.time_zone.key,
                 currency=policy.currency,
                 spending_account_count=len(policy.spending_account_ids),
                 max_sync_age_hours=policy.max_sync_age_hours,
@@ -569,7 +568,7 @@ class SpendService:
                     currency=policy.currency,
                     monthly_minor_units=policy.monthly_minor_units,
                     activation_at=policy.activation_at,
-                    time_zone=policy.time_zone,
+                    time_zone=policy.time_zone.key,
                     available_minor_units=None,
                     next_credit_at=None,
                     posted_minor_units=0,
