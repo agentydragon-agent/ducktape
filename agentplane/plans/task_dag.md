@@ -835,6 +835,11 @@ and lifecycle/recovery acceptance in the [KubeVirt environment plan](kubevirt_en
 No existing-environment conversion or live migration is implied. This remains independent of
 current container correctness work and ordinary Sandbox Service extraction.
 
+Local Bazel clients/builds in agent environments remain deferred until VM-backed environments
+are available; remote action execution alone does not remove the local client's resource cost.
+BuildBuddy-hosted builds are a separate lane and do not depend on VM integration. Package
+availability in `runner-ducktape` does not authorize local Bazel execution.
+
 ### `THREAD_IDENTITY_NEW` — assign one canonical ID to new histories
 
 Have the creator/Open path use one canonical UUID for a newly created logical Session
@@ -1631,7 +1636,7 @@ Flux reconciliation, Pod warnings and cluster-wide discovery can be evaluated la
   Exercise reconnect/relist, duplicate signals, resource replacement and denied/revoked namespace
   access. If using notifications, prove the inbox-to-harness path and explicit acknowledgement too.
 
-This is independent of the remaining GitHub recovery tests and Action-feed implementation; neither
+This is independent of the remaining GitHub live acceptance and Action-feed implementation; neither
 is a technical prerequisite for designing Kubernetes monitoring. Prioritization remains open.
 
 ### `UISHELL_NEWTHREAD_SANDBOX` — pre-scoped "+ New thread" on a Sandbox's page
@@ -1747,10 +1752,15 @@ with explicit precedence and negative tests for stale, cross-Agent, or caller-su
 
 ### `BB` — BuildBuddy hosted-run credential boundary
 
-**Deferred decision:** accept the weaker hosted-runner boundary — a narrow `runner.RunRequest`
-rewrite that keeps the real key out of the local Sandbox but hands it to agent-controlled code on
-BuildBuddy's runner — or wait for a stronger seam (a per-run BuildBuddy credential or a run-scoped
-gateway). The boundary, wire shape and required evidence are in
+**Remaining acceptance:** prove an authenticated BuildBuddy-hosted build from a newly spawned
+staging ducktape sandbox, including the launcher consuming the configured credential without
+printing or persisting it. This is not a request to start a local Bazel client, even with remote
+execution/cache: local Bazel in agent containers is deferred until VM-backed environments.
+Do not repeat image/preset validation as a prerequisite.
+
+**Deferred hardening:** consider a per-run BuildBuddy credential or run-scoped gateway instead of
+the staging direct-key stopgap. A proxy request-body rewrite is not required for that stopgap
+and has not been selected. The implemented boundary, limitations and operator validation are in
 [`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
 
 ### `THREAD_BROWSE_PAGINATE` — paginated/searchable all-threads page

@@ -1,9 +1,9 @@
 # BuildBuddy hosted remote-run authentication
 
-Why the egress proxy's BuildBuddy support is local-client only, what a hosted `bb remote` run
-would need, and what the smallest feasible workaround does and does not protect. The implemented
-transport contract is [the egress specification](../egress/SPEC.md); whether to accept the
-workaround is still open.
+The staging direct-key stopgap and the limitations of placeholder-only authentication for
+BuildBuddy-hosted runs. The implemented proxy transport contract is
+[the egress specification](../egress/SPEC.md); request-body rewriting below is an unselected
+alternative, not a prerequisite for the staging stopgap.
 
 ## Staging-only direct-key stopgap
 
@@ -15,6 +15,18 @@ BuildBuddy-hosted runner: `bb remote` embeds it in the hosted Bazel command. It 
 represented as credential isolation, and the generic runner and egress sidecar do not mount
 it. Revoking the canonical key affects all its consumers; this change does not introduce
 a new key or a new credential lifecycle.
+
+## Validation and execution policy
+
+On 2026-10-09 the operator confirmed that the ducktape preset works and that the BuildBuddy
+key was included for subsequently spawned agents. This closes image/preset acceptance, not
+end-to-end hosted-build acceptance: no successful authenticated hosted build was demonstrated
+in this session, and launcher consumption of the projected key remains to be verified.
+
+The intended container workflow is BuildBuddy-hosted builds. Do not run a local Bazel client
+in an agent container, even when actions execute remotely; local Bazel is deferred until agents
+have VM-backed environments. Installed `bb`, `bbr`, or Bazelisk binaries are not permission to
+exercise that path. This is an operator execution policy, not a claim of technical enforcement.
 
 ## Two products called "remote"
 
