@@ -24,6 +24,7 @@ py_library(
         "//agentplane/workload_auth:principal",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )

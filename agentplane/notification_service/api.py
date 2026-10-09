@@ -13,6 +13,7 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from agentplane.notification_service.models import (
@@ -28,9 +29,12 @@ from agentplane.notification_service.models import (
 from agentplane.notification_service.service import DestinationRejectedError, Service
 from agentplane.notification_service.sources.actions import SourceNotOwnedError
 from agentplane.notification_service.sources.github import (
+    PAYLOAD_MODELS,
     GitHubRetryError,
     GitHubUnavailableError,
     InvalidSignatureError,
+    MissingWebhookRepositoryError,
+    UnsupportedWebhookEventError,
 )
 from agentplane.notification_service.store import ConflictError, NotFoundError, QuotaError
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
@@ -165,6 +169,31 @@ async def sources(caller: Caller, service: Notifications) -> dict[str, SourceVie
     return result
 
 
+def log_webhook_rejection(event: str, delivery_id: UUID | None, reason: str, error: ValueError | None) -> None:
+    # Header values are untrusted even when the body signature is valid. Bound and JSON-escape
+    # the event; never retain a malformed delivery ID, signature, body or exception message.
+    diagnostic: dict[str, object] = {
+        "event": event[:64],
+        "event_truncated": len(event) > 64,
+        "delivery_id": str(delivery_id) if delivery_id is not None else None,
+        "reason": reason,
+    }
+    if isinstance(error, ValidationError):
+        model = PAYLOAD_MODELS.get(event)
+        fields = model.model_fields if model is not None else {}
+        diagnostic["error_count"] = error.error_count()
+        # Locations below the schema's top-level fields can contain payload-controlled map keys.
+        # Only report known top-level fields and Pydantic error codes, not messages or context.
+        diagnostic["validation"] = [
+            {
+                "field": item["loc"][0] if item["loc"] and item["loc"][0] in fields else "<payload>",
+                "type": item["type"],
+            }
+            for item in error.errors(include_input=False, include_context=False, include_url=False)[:8]
+        ]
+    logger.warning("GitHub webhook rejected: %s", json.dumps(diagnostic, ensure_ascii=True))
+
+
 @router.post("/v1/webhooks/github", status_code=202)
 async def github_webhook(request: Request, service: Notifications) -> dict[str, bool]:
     github = service.github
@@ -178,17 +207,32 @@ async def github_webhook(request: Request, service: Notifications) -> dict[str, 
             if len(raw) + len(chunk) > github.settings.max_body_bytes:
                 raise HTTPException(413, "GitHub payload exceeds configured limit")
             raw.extend(chunk)
+        event = request.headers.get("x-github-event", "")
+        delivery_id = None
         try:
+            delivery_id = UUID(request.headers.get("x-github-delivery", ""))
             created = await github.ingest(
                 service.store,
-                request.headers.get("x-github-event", ""),
-                UUID(request.headers.get("x-github-delivery", "")),
+                event,
+                delivery_id,
                 request.headers.get("x-hub-signature-256", ""),
                 bytes(raw),
             )
         except InvalidSignatureError as error:
+            log_webhook_rejection(event, delivery_id, "invalid_signature", None)
             raise HTTPException(401, "invalid GitHub signature") from error
         except ValueError as error:
+            if delivery_id is None:
+                reason = "invalid_delivery_id"
+            elif isinstance(error, UnsupportedWebhookEventError):
+                reason = "unsupported_event"
+            elif isinstance(error, MissingWebhookRepositoryError):
+                reason = "missing_repository"
+            elif isinstance(error, ValidationError):
+                reason = "payload_validation"
+            else:
+                reason = "invalid_delivery"
+            log_webhook_rejection(event, delivery_id, reason, error)
             raise HTTPException(400, "invalid GitHub delivery") from error
     return {"accepted": True, "duplicate": not created}
 

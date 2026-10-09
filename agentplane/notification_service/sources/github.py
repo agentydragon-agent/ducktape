@@ -115,6 +115,14 @@ class InvalidSignatureError(Exception):
     pass
 
 
+class UnsupportedWebhookEventError(ValueError):
+    pass
+
+
+class MissingWebhookRepositoryError(ValueError):
+    pass
+
+
 class Upstream(BaseModel):
     model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
 
@@ -399,11 +407,11 @@ class GitHub:
         if event == "ping":
             return True
         if event not in PAYLOAD_MODELS:
-            raise ValueError("unsupported GitHub webhook event")
+            raise UnsupportedWebhookEventError("unsupported GitHub webhook event")
         payload = _PAYLOAD.validate_json(raw)
         envelope = PAYLOAD_MODELS[event].model_validate(payload)
         if event in SUPPORTED_EVENTS and envelope.repository is None:
-            raise ValueError("repository event requires a repository")
+            raise MissingWebhookRepositoryError("repository event requires a repository")
         sha, subjects = correlation(envelope)
         keys = []
         revisions = []

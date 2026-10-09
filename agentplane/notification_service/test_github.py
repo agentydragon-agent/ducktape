@@ -281,6 +281,89 @@ async def test_signed_http_durable_acceptance_and_disabled_provider(
         assert delivery.payload == comment()
 
 
+@pytest.mark.parametrize(
+    ("case", "reason", "status"),
+    [
+        ("delivery_id", "invalid_delivery_id", 400),
+        ("signature", "invalid_signature", 401),
+        ("event", "unsupported_event", 400),
+        ("repository", "missing_repository", 400),
+        ("schema", "payload_validation", 400),
+        ("json", "payload_validation", 400),
+        ("value_error", "invalid_delivery", 400),
+    ],
+)
+async def test_webhook_rejection_diagnostics_are_bounded_and_redacted(
+    store: Store,
+    provider: tuple[GitHub, Upstream],
+    caplog: pytest.LogCaptureFixture,
+    case: str,
+    reason: str,
+    status: int,
+) -> None:
+    github, _ = provider
+    service = create_autospec(Service, instance=True)
+    service.github = github
+    service.store = store
+    app = create_app(service, create_autospec(WorkloadPrincipalResolver))
+    private = "private-payload-sentinel"
+    payload = comment()
+    payload["comment"] = {"body": private}
+    event = "issue_comment"
+    if case == "event":
+        event = "untrusted\n" + "x" * 200
+    elif case == "repository":
+        del payload["repository"]
+    elif case == "schema":
+        payload["installation"] = {"id": private}
+        payload["repository"] = {"id": private, "full_name": private}
+        payload["issue"] = {"number": private, "pull_request": private}
+        payload["action"] = private * 10
+    raw, headers = signed(payload, event)
+    delivery_id = headers["X-GitHub-Delivery"]
+    if case == "delivery_id":
+        headers["X-GitHub-Delivery"] = private
+    elif case == "signature":
+        headers["X-Hub-Signature-256"] = private
+    elif case == "json":
+        raw = ("{invalid " + private).encode()
+        headers["X-Hub-Signature-256"] = "sha256=" + hmac.new(SECRET, raw, hashlib.sha256).hexdigest()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://notifications") as client:
+        if case == "value_error":
+            with patch.object(Store, "ingest_github", side_effect=ValueError(private)):
+                response = await client.post("/v1/webhooks/github", content=raw, headers=headers)
+        else:
+            response = await client.post("/v1/webhooks/github", content=raw, headers=headers)
+    assert response.status_code == status
+    assert response.json() == {
+        "detail": "invalid GitHub signature" if status == 401 else "invalid GitHub delivery"
+    }
+    records = [record for record in caplog.records if record.message.startswith("GitHub webhook rejected: ")]
+    assert len(records) == 1
+    record = records[0]
+    assert record.exc_info is None
+    assert "\n" not in record.message
+    assert len(record.message) < 2000
+    diagnostic = json.loads(record.message.removeprefix("GitHub webhook rejected: "))
+    assert diagnostic["reason"] == reason
+    assert diagnostic["delivery_id"] == (None if case == "delivery_id" else delivery_id)
+    assert diagnostic["event"] == event[:64]
+    assert diagnostic["event_truncated"] == (len(event) > 64)
+    if case in {"schema", "json"}:
+        assert diagnostic["error_count"] > 0
+        assert 0 < len(diagnostic["validation"]) <= 8
+        assert all(set(item) == {"field", "type"} for item in diagnostic["validation"])
+    if case == "schema":
+        assert {"field": "installation", "type": "int_parsing"} in diagnostic["validation"]
+    if case == "json":
+        assert diagnostic["validation"] == [{"field": "<payload>", "type": "json_invalid"}]
+    assert private not in caplog.text
+    assert SECRET.decode() not in caplog.text
+    assert headers["X-Hub-Signature-256"] not in caplog.text
+    async with store.sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(GitHubDelivery)) == 0
+
+
 async def test_redelivery_after_restart_replays_one_committed_receipt(
     store: Store, engine: AsyncEngine, provider: tuple[GitHub, Upstream]
 ) -> None:

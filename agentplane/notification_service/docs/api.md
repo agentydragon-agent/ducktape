@@ -144,6 +144,15 @@ payload/metadata before returning 202. Identical App/delivery-ID retries are ded
 reuse returns 409. Ping is verified but does not create an event. Invalid signatures, unsupported/malformed
 events, oversized bodies and busy ingress are rejected. Upstream signatures and installation tokens are
 never returned to agents. Installation lifecycle payloads are retained internally, not delivered as PR activity.
+HTTP 400/401 rejection logs include a parsed delivery UUID (or null for a malformed/missing ID),
+a JSON-escaped event header capped at 64 characters, and a stable reason: `invalid_delivery_id`,
+`invalid_signature`, `unsupported_event`, `missing_repository`, `payload_validation`, or the
+fallback `invalid_delivery`. Validation logs include the total error count and at most eight
+Pydantic error codes with known top-level schema fields. Nested locations, input values, error
+messages/context, raw payloads and signatures are omitted. Event headers are untrusted labels,
+not evidence of signature verification. Rejections retain their existing generic HTTP responses;
+they do not create durable receipts or inbox entries.
+
 GitHub does not automatically retry failed webhook requests: failures/timeouts require redelivery.
 Durable recovery starts at the committed receipt, not at the start of the HTTP request.
 If GitHub reports a failed delivery, an App operator should inspect the webhook's Recent Deliveries
