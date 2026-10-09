@@ -284,9 +284,13 @@ agentplane_vitest_test(
 
 ts_library(
     name = "command_progress",
-    srcs = ["command_progress.tsx"],
+    srcs = [
+        "command_progress.tsx",
+        "tabler_icons.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
+        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
