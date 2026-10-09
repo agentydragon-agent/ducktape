@@ -578,11 +578,14 @@ app/Sandbox Service database changes inherits the migration hold; non-mutating U
 delivered and acknowledged states. Reconnect against backend state; any countdown is an estimate.
 Independent of compact delivered-message rendering. Never acknowledge from viewing the sidebar.
 
-### `THREAD_CACHE_WARMTH` — last-turn age with an honest heuristic
+### `THREAD_CACHE_WARMTH` — inferred LLM-request recency
 
-**Candidate.** Show authoritative last-turn age and optional provider-specific likely-cache-warmth,
-with unknown state. It is not observed provider cache evidence. Accessible/reduced-motion behavior
-and active/missing/completed-turn cases suffice; no new storage authority.
+**Candidate.** Derive a recency hint from existing Thread events attributable to model activity,
+not turn completion or general event age: user input, tool output and harness bookkeeping do not
+refresh it. Show unknown when there is no usable observation, even if a turn is active;
+do not present inferred timing as a measured provider request or cache hit. Keep the indicator
+accessible and avoid new storage authority. Coordinate any snapshot read change with the archive
+read cutover. Direct ingress measurement is a separate [deferred option](task_freezer.md#llm_ingress_request_recency--direct-outbound-request-timing).
 
 ### `THREAD_BROWSE_PAGINATE` — bounded history browsing
 
