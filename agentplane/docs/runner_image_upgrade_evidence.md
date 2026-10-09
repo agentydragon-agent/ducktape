@@ -3,7 +3,8 @@
 On 2026-10-09 UTC, an existing **Codex** Thread in a staging `runner-ducktape`
 Sandbox continued after its runner image changed. This establishes the
 pause/patch/resume route as viable for that Thread; it does not make it a
-supported upgrade workflow for all Sandboxes.
+reliable automatic migration or update step. The operator is comfortable
+using the guarded procedure manually for chosen Codex Sandboxes.
 
 ## Observed sequence
 
@@ -28,7 +29,8 @@ storage or losing the observed conversation's ability to continue. It does
 cursor equivalence, pending-command behavior during a pause, Claude parity,
 or recovery from an incompatible image. Those remain distinct acceptance
 checks in [`RUNNER_IMAGE_UPGRADE_PROOF`](../plans/task_dag.md#runner_image_upgrade_proof--same-storage-image-replacement-evidence)
-before `RUNNER_IMAGE_ROLLOUT` is supported.
+before an automatic `RUNNER_IMAGE_ROLLOUT` is enabled. They do not block
+operator-supervised manual Codex upgrades.
 
 The operator performed the mutation with `kubectl patch --type=json`; the
 current `kubernetes_admin` MCP tool only offers full server-side apply for

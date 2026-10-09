@@ -803,13 +803,15 @@ evidence without blocking ordinary messaging and UI work.
 [staging probe](../docs/runner_image_upgrade_evidence.md). Pause, patching the
 Sandbox CR runner image, and resuming the original Thread produced a replacement
 Pod on the same state PVC and a successful hosted build from the continued Thread.
-This is evidence for the upgrade approach, not yet a supported upgrade API.
+This is enough to use the guarded pause/JSON Patch/resume procedure manually
+on a chosen Codex Sandbox, with an operator verifying its state and storage.
+It is **not** evidence that automatically migrating/updating Sandboxes is safe.
 
-Remaining proof before `RUNNER_IMAGE_ROLLOUT`: exercise the Claude path,
-incompatible-image rollback, and pending-command/fencing behavior, and pin the
-native-history and journal-cursor invariants needed for a supported workflow.
-Do not infer those properties from the Codex smoke test or reconstruct native
-sessions from app history.
+Before an automatic `RUNNER_IMAGE_ROLLOUT`, verify quiescence and writer fencing,
+pending commands, interrupted/retried updates, incompatible-image rollback,
+and the native-history and journal-cursor invariants that automation must
+preserve. Test Claude continuity separately; the Codex path feasibility check
+is complete. Do not reconstruct native sessions from app history.
 
 TODO: add an operator-approved `kubernetes_admin` JSON Patch Action (or contribute a
 patch tool upstream) before letting agents perform this step. The deployed
@@ -822,14 +824,14 @@ until then, use an operator-run `kubectl patch` for image-upgrade probes.
 
 ### `RUNNER_IMAGE_ROLLOUT` — upgrade runner images on existing Sandboxes
 
-**Planned operator workflow:** a runner image version is recorded in each Sandbox CR's
-`podTemplate`, so updating the default image only affects newly created Sandboxes. Define
-and implement a supported way to move an existing Thread to a fixed runner image while
-preserving its Sandbox storage and native session state. After
-`RUNNER_IMAGE_UPGRADE_PROOF`, make the tested pause/patch/resume sequence a
-supported operator workflow rather than relying on hand-editing CRs.
-Specify writer fencing, interruption handling, and rollback, then verify that an existing
-Thread resumes on the fixed image without losing state or repeating side effects.
+**Planned automatic/operator-assisted rollout:** a runner image version is recorded
+in each Sandbox CR's `podTemplate`, so updating the default image only affects
+newly created Sandboxes. Manually upgrading a chosen Codex Sandbox with a
+guarded patch is already viable; do not treat that result as a safe automatic
+migration for existing Threads. Define a supported update workflow that
+preserves Sandbox storage and native session state, then prove its writer
+fencing, interruption/retry handling, rollback, and no-duplicate-side-effects
+semantics before enabling automatic updates.
 This is a prerequisite for a live `THREAD_EVENT_CONTINUITY` runner/protocol cutover
 that keeps existing Threads resumable; it does not require portable state or renaming
 their runner storage. A brief pause is acceptable, not an untested zero-downtime handoff.
