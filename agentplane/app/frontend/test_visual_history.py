@@ -228,10 +228,12 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     await view.capture(name=f"{view.capture_name}_controls", target=page.get_by_role("region", name="Pending commands"))
     await input_row.locator(".agentplane-command-progress-hit").hover()
     await expect(detail).to_be_visible()
+    await expect(detail).to_be_in_viewport(ratio=1)
     await view.capture(name=f"{view.capture_name}_hover")
     effort_row = page.locator('[data-command-id="progress-effort"]')
     await effort_row.locator(".agentplane-command-progress-hit").hover()
     await expect(effort_row.get_by_role("tooltip")).to_be_visible()
+    await expect(effort_row.get_by_role("tooltip")).to_be_in_viewport(ratio=1)
     await view.capture(name=f"{view.capture_name}_effort_hover")
 
 
