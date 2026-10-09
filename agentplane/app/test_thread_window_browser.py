@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Page, Request, Route, TimeoutError as PlaywrightTimeoutError, expect
 
-from agentplane.app.testing import history_trace
+from agentplane.app.testing import thread_view_marks
 from agentplane.app.testing.electric_service import ElectricService
 from agentplane.app.testing.thread_browser import (
     ThreadBrowser,
@@ -283,11 +283,11 @@ async def test_repeated_pagination_through_wildly_uneven_row_heights_keeps_the_r
         try:
             await expect_reading_anchor(page, anchor)
         except PlaywrightTimeoutError:
-            trace = history_trace.as_json_lines(await history_trace.events(page, since=cycle_began))
+            trace = thread_view_marks.as_json_lines(await thread_view_marks.events(page, since=cycle_began))
             raise AssertionError(f"cycle {cycle} anchor={anchor}\n{trace}") from None
         await page.screenshot(path=undeclared_outputs_dir() / f"thread-window-uneven-cycle-{cycle}.png")
     # A passing run still parses all it recorded, so an event the typed trace lacks fails here, not only in a dump.
-    await history_trace.events(page)
+    await thread_view_marks.events(page)
 
 
 async def test_a_thread_shorter_than_the_eager_load_shows_in_full_without_a_scroll(

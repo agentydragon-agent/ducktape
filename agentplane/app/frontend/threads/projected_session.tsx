@@ -54,7 +54,7 @@ import {
 } from "./thread_commands";
 import { revealEvidenceOnTap } from "./thread_evidence";
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
-import { historyTrace, LayoutSettle, type FollowReason } from "./history_trace";
+import { markThreadViewEvent, LayoutSettle, type FollowReason } from "./thread_view_timing";
 import { rememberRowHeight, rememberedRowHeight } from "./history_sizes";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "../thread_status_indicator";
@@ -344,7 +344,7 @@ function VirtualizedHistory({
     (following: boolean, reason: FollowReason) => {
       if (atBottom.current === following) return;
       atBottom.current = following;
-      historyTrace.record({ kind: "follow", following, reason });
+      markThreadViewEvent({ kind: "follow", following, reason });
       publishMode();
     },
     [publishMode]
@@ -401,7 +401,7 @@ function VirtualizedHistory({
         const key = rowKey(row);
         const previous = measuredHeights.current.get(key);
         if (previous === undefined || Math.abs(previous - measured) >= 1) {
-          historyTrace.record({
+          markThreadViewEvent({
             kind: "measure",
             key,
             estimate: previous ?? estimatedHeights.current.get(key)?.height ?? ESTIMATED_ROW_HEIGHT,
@@ -497,7 +497,7 @@ function VirtualizedHistory({
         };
         readingAnchor.current = anchor;
         if (clickedTarget) stickyAnchorPending.current = clickedHeadingIsSticky ? anchor.key : null;
-        historyTrace.record({ kind: "anchor", key: anchor.key, offset: anchor.offset });
+        markThreadViewEvent({ kind: "anchor", key: anchor.key, offset: anchor.offset });
       }
     },
     [rows]
@@ -538,7 +538,7 @@ function VirtualizedHistory({
       return correction;
     };
     const correction = correctFromDom();
-    historyTrace.record({ kind: "restore", key: anchor.key, correction });
+    markThreadViewEvent({ kind: "restore", key: anchor.key, correction });
     if (correction === null) virtualizer.scrollToIndex(index, { align: "start" });
     // Waiting for measurement assumes the row is mounted and in place. One scrolled to by its
     // estimate needs the frames, whose pending state keeps a clamped scroll from reading as the bottom.
@@ -565,19 +565,15 @@ function VirtualizedHistory({
       () => restoringScroll() || loading(),
       (settled) => {
         element.dataset.layoutSettled = String(settled);
-        historyTrace.record({ kind: "settled", settled });
+        markThreadViewEvent({ kind: "settled", settled });
       }
     );
     layoutSettle.current = settle;
     element.dataset.layoutSettled = "false";
     publishMode();
-    window.agentplaneHistoryTrace = () => historyTrace.events();
-    window.agentplaneHistoryEstimateErrors = () => historyTrace.estimateErrors();
     return () => {
       settle.dispose();
       layoutSettle.current = null;
-      delete window.agentplaneHistoryTrace;
-      delete window.agentplaneHistoryEstimateErrors;
     };
   }, [publishMode]);
   useLayoutEffect(() => {
@@ -598,7 +594,7 @@ function VirtualizedHistory({
         // effect below, once this commit lands) before restoreAnchor ever runs for it -- rather
         // than letting restoreAnchor guess via estimateSize now and chase a correction once the
         // real heights are known.
-        historyTrace.record({ kind: "prepend", added });
+        markThreadViewEvent({ kind: "prepend", added });
         setPageOverscan((current) => Math.max(current, added));
         setPagePrepended((current) => current + 1);
       } else {
@@ -637,7 +633,7 @@ function VirtualizedHistory({
       // that grows the last card, before the browser dispatches its scroll event. Preserve that
       // user choice across the resize without interpreting arbitrary layout movement as intent.
       const pinned = followPreviousBottom(element) || atBottom.current;
-      historyTrace.record({ kind: "resize", scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, pinned });
+      markThreadViewEvent({ kind: "resize", scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, pinned });
       if (pinned) {
         element.scrollTop = element.scrollHeight;
         // This component-owned bottom correction may dispatch its scroll event after another
@@ -692,7 +688,7 @@ function VirtualizedHistory({
     const element = viewport.current;
     if (!element) return;
     const onScrollEnd = () => {
-      historyTrace.record({
+      markThreadViewEvent({
         kind: "scrollend",
         restoring: restoringAnchor.current !== null,
         capturing: captureNextScroll.current,
@@ -777,7 +773,7 @@ function VirtualizedHistory({
           clickedAt.current = element.scrollTop;
         }
         captureReadingAnchor(element, clickedTarget);
-        historyTrace.record({
+        markThreadViewEvent({
           kind: "click",
           scrollTop: element.scrollTop,
           scrollHeight: element.scrollHeight,
@@ -799,7 +795,7 @@ function VirtualizedHistory({
         if (captureNextScroll.current && element.scrollTop !== clickedAt.current) clickedAt.current = null;
         const followed = followPreviousBottom(element);
         recentBottoms.current = [element.scrollHeight - element.clientHeight];
-        historyTrace.record({
+        markThreadViewEvent({
           kind: "scroll",
           scrollTop: element.scrollTop,
           scrollHeight: element.scrollHeight,
@@ -829,7 +825,7 @@ function VirtualizedHistory({
         // where they were reading before, not where this gesture has since taken them.
         captureReadingAnchor(element);
         if (element.scrollTop < loadOlderWithin(element)) {
-          historyTrace.record({ kind: "load-older" });
+          markThreadViewEvent({ kind: "load-older" });
           history.loadOlder();
         }
       }}

@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
 
-from agentplane.app.testing import history_probe, history_trace
+from agentplane.app.testing import history_probe, thread_view_marks
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
@@ -74,8 +74,8 @@ async def page(
                     await history_probe.write_results(
                         opened, undeclared_outputs_dir() / f"{request.node.name}-history-probe.json"
                     )
-                    await history_trace.write(
-                        opened, undeclared_outputs_dir() / f"{request.node.name}-history-trace.jsonl"
+                    await thread_view_marks.write(
+                        opened, undeclared_outputs_dir() / f"{request.node.name}-thread-view-marks.jsonl"
                     )
                     await context.tracing.stop(path=undeclared_outputs_dir() / f"{request.node.name}-trace.zip")
         finally:

@@ -1,7 +1,7 @@
 /**
- * What `VirtualizedHistory` publishes about itself, for tests and for chasing a reader-position
- * bug: a flight recorder of its scroll and layout decisions, and whether its layout has come to
- * rest.
+ * What `VirtualizedHistory` marks for inspection, for tests and for chasing a reader-position
+ * bug: User Timing marks for its scroll and layout decisions, and whether its layout has come
+ * to rest. The Playwright harness installs the test-only mark collector before the app loads.
  */
 
 /** Why the history started or stopped following the tail. */
@@ -15,8 +15,8 @@ export type FollowReason =
   | "touch-up"
   | "disclosure-click";
 
-/** Mirrored by the typed events in agentplane/app/testing/history_trace.py. */
-export type HistoryEvent =
+/** Mirrored by the typed events in agentplane/app/testing/thread_view_marks.py. */
+export type ThreadViewEvent =
   | { kind: "follow"; following: boolean; reason: FollowReason }
   | { kind: "scroll"; scrollTop: number; scrollHeight: number; followed: boolean }
   | { kind: "scrollend"; restoring: boolean; capturing: boolean }
@@ -32,53 +32,18 @@ export type HistoryEvent =
   | { kind: "measure"; key: string; estimate: number; measured: number; first: boolean; remembered: boolean }
   | { kind: "settled"; settled: boolean };
 
-export interface TimedHistoryEvent {
-  /** `performance.now()`, in milliseconds. */
-  at: number;
-  event: HistoryEvent;
-}
-
 declare global {
   interface Window {
-    /** The recent events of the history on screen, oldest first; absent while none is mounted. */
-    agentplaneHistoryTrace?: () => readonly TimedHistoryEvent[];
-    /** `measured - estimate`, in pixels, for each row's first reading since the page loaded. */
-    agentplaneHistoryEstimateErrors?: () => readonly EstimateError[];
+    /** Set by the Playwright init script before the app loads, not by production code. */
+    __agentplaneThreadViewMarksEnabled?: boolean;
   }
 }
 
-/** Long enough for every scroll event of a few seconds of gesture plus a thread opening. */
-const CAPACITY = 2000;
-const ERROR_CAPACITY = 20_000;
-
-export interface EstimateError {
-  error: number;
-  remembered: boolean;
+/** Emits browser User Timing marks only when the test harness enables them. */
+export function markThreadViewEvent(event: ThreadViewEvent): void {
+  if (!window.__agentplaneThreadViewMarksEnabled) return;
+  performance.mark(`agentplane:thread-view:${event.kind}`, { detail: event });
 }
-
-export class HistoryTrace {
-  readonly #events: TimedHistoryEvent[] = [];
-  readonly #estimateErrors: EstimateError[] = [];
-
-  record(event: HistoryEvent): void {
-    this.#events.push({ at: performance.now(), event });
-    if (this.#events.length > CAPACITY) this.#events.shift();
-    if (event.kind === "measure" && event.first && this.#estimateErrors.length < ERROR_CAPACITY) {
-      this.#estimateErrors.push({ error: event.measured - event.estimate, remembered: event.remembered });
-    }
-  }
-
-  events(): readonly TimedHistoryEvent[] {
-    return this.#events;
-  }
-
-  estimateErrors(): readonly EstimateError[] {
-    return this.#estimateErrors;
-  }
-}
-
-/** One for the page: it outlives the history component, so it spans a switch between threads. */
-export const historyTrace: HistoryTrace = new HistoryTrace();
 
 /** A layout counts as at rest once this many frames pass without it changing. */
 const QUIET_FRAMES = 5;
