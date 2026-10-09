@@ -1590,29 +1590,17 @@ claim classifiers replace the sender/recipient authorization checks in `AGENT_ME
 
 ### `NOTIFICATION_PRESENTATION` — structured metadata and compact notification rendering
 
-**Unranked future capability:** attach Agentplane notification metadata to generated runner input,
-then preserve it through the runner journal, Sandbox Service event transport and app projection so
-the frontend knows "this is a notification about this thing." The agent still receives the useful
-retrieval instructions; the human-facing UI should default to a compact summary rather than the
-whole machine-oriented message, with expansion/raw evidence available.
+**Unranked future capability:** add typed, authenticated notification provenance to a Sandbox
+Service–owned input-submission API and render delivered notices compactly in the frontend.
+Metadata stays outside the runner protocol and model input; reuse command IDs and confirmed
+message origin IDs for correlation. Sandbox Service owns durable input metadata; Notification
+Service continues owning inboxes and delivery bookkeeping.
 
-- Define versioned provenance and identity fields: notification origin, inbox/notice identity,
-  covered cursor and safe subject/summary data as appropriate. Decide how a batched notice refers
-  to multiple entries/sources without copying full provider payloads into runner metadata.
-- Preserve metadata through retries, replay, archival and coalesced inputs. Explicitly represent
-  mixed human/notification origins rather than relabeling an entire combined message. Reuse the
-  existing command/Event authority; no parallel frontend notification log or app-owned ingress.
-- Use explicit trusted origin metadata, never a text-prefix heuristic. Ordinary user text that
-  resembles "Agentplane automated notification" must not be hidden or acquire system provenance.
-  Missing/unknown metadata falls back to normal text rendering, and provider content remains untrusted.
-- Acceptance: a real notification renders compactly by default and expands to full retained text;
-  the agent sees unchanged actionable content. Verify older messages, replay/reconnect, mixed-origin
-  coalescing and notification-looking human messages. Rendering must not acknowledge the inbox,
-  hide human input or discard the authoritative message/evidence.
-
-The owning backend/protocol carries metadata without depending on the integration app; the app is
-its presentation client. This is independent of the shipped notice debounce and of Kubernetes
-source selection.
+Design, storage boundaries, implementation sequence and acceptance are in
+[Notification presentation and input metadata](notification_presentation.md). Resolve its durable
+submission boundary against the current Sandbox Service persistence model before implementation;
+this is not a new execution-event archive or an offline command queue. Independent of notice
+pacing, pending-notice sidebar indicators and Kubernetes source selection.
 
 ### `THREAD_NOTIFICATION_INDICATOR` — show pending and upcoming notices in the Thread sidebar
 
