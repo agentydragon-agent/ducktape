@@ -38,6 +38,8 @@ service SandboxService {
   rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
   // Privileged, bounded retained raw history by public Session ID; survives Sandbox deletion.
   rpc ReadSessionEvents(ReadSessionEventsRequest) returns (ReadSessionEventsResponse);
+  // Same reader authorization; chronological metadata without transmitting native payloads.
+  rpc ReadSessionObservations(ReadSessionObservationsRequest) returns (ReadSessionObservationsResponse);
 }
 
 message ServiceAccount {
@@ -113,6 +115,24 @@ message ReadSessionEventsRequest {
 message ReadSessionEventsResponse {
   uint64 last_cursor = 1;
   repeated ducktape.agentplane.protocol.v1.EventEntry entries = 2;
+}
+
+message ReadSessionObservationsRequest {
+  string session_id = 1;
+  // Neither bound selects the tail. All responses are in ascending cursor order.
+  optional uint64 before_cursor = 2;
+  optional uint64 after_cursor = 3;
+  uint32 limit = 4;
+}
+
+message SessionObservation {
+  uint64 cursor = 1;
+  string kind = 2;
+}
+
+message ReadSessionObservationsResponse {
+  uint64 last_cursor = 1;
+  repeated SessionObservation observations = 2;
 }
 
 // Internal frozen launch snapshot, committed before contacting the runner.

@@ -207,5 +207,34 @@ async def test_imported_history_keeps_its_id_and_fences_duplicate_locator(engine
     assert reservation.session_id != session_id
 
 
+@pytest.mark.asyncio
+async def test_observation_pages_seek_retained_prefix_without_returning_payloads(engine: AsyncEngine) -> None:
+    store = Store(engine)
+    session_id = uuid4()
+    await opened(store, session_id)
+    assert await store.read_observations(session_id) == (0, [])
+    native = entry(3)
+    native.event.ClearField("harness_started")
+    native.event.native.line = "retained\0native"
+    await store.append(session_id, [entry(1), entry(2), native, entry(4), entry(5)])
+    assert await store.read_observations(session_id, limit=2) == (5, [(4, "harness_started"), (5, "harness_started")])
+    assert await store.read_observations(session_id, before_cursor=4, limit=2) == (
+        5,
+        [(2, "harness_started"), (3, "native")],
+    )
+    assert await store.read_observations(session_id, after_cursor=2, limit=2) == (
+        5,
+        [(3, "native"), (4, "harness_started")],
+    )
+    assert await store.read_observations(session_id, before_cursor=0) == (5, [])
+    assert await store.read_observations(session_id, after_cursor=9) == (5, [])
+    with pytest.raises(ValueError, match="invalid observation"):
+        await store.read_observations(session_id, before_cursor=3, after_cursor=1)
+    with pytest.raises(ValueError, match="invalid observation"):
+        await store.read_observations(session_id, limit=201)
+    with pytest.raises(HistoryNotFoundError):
+        await store.read_observations(uuid4())
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

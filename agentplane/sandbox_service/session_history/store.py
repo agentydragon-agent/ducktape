@@ -281,3 +281,37 @@ class Store:
                 .limit(limit)
             )
             return history.last_cursor, [event_log_pb2.EventEntry.FromString(row.payload) for row in rows]
+
+    async def read_observations(
+        self, session_id: UUID, *, before_cursor: int | None = None, after_cursor: int | None = None, limit: int = 30
+    ) -> tuple[int, list[tuple[int, str]]]:
+        """Seek a bounded metadata window in the retained prefix, including deleted Sandboxes."""
+        if (
+            not 1 <= limit <= 200
+            or (before_cursor is not None and before_cursor < 0)
+            or (after_cursor is not None and after_cursor < 0)
+            or (before_cursor is not None and after_cursor is not None)
+        ):
+            raise ValueError("invalid observation page")
+        async with self._sessions() as session:
+            history = await session.get(SessionHistory, session_id)
+            if history is None:
+                raise HistoryNotFoundError(session_id)
+            query = select(SessionEvent.cursor, SessionEvent.payload).where(
+                SessionEvent.session_id == session_id, SessionEvent.cursor <= history.last_cursor
+            )
+            if after_cursor is not None:
+                query = query.where(SessionEvent.cursor > after_cursor).order_by(SessionEvent.cursor)
+            else:
+                if before_cursor is not None:
+                    query = query.where(SessionEvent.cursor < before_cursor)
+                query = query.order_by(SessionEvent.cursor.desc())
+            # Stream rows so native payloads are not accumulated into a metadata page.
+            rows = await session.stream(query.limit(limit).execution_options(yield_per=1))
+            observations = [
+                (cursor, event_log_pb2.EventEntry.FromString(payload).event.WhichOneof("observation") or "")
+                async for cursor, payload in rows
+            ]
+            if after_cursor is None:
+                observations.reverse()
+            return history.last_cursor, observations

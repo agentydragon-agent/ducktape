@@ -158,10 +158,11 @@ class EventLogStore:
 
     async def read_watermark(self, thread_id: UUID) -> int:
         """Return the selected archive's committed cursor, not the UI projection's cursor."""
-        local = await self.last_cursor(thread_id)
         if self._history_reader is None:
-            return local
-        page = await self._history_reader.read_session_events(str(thread_id), after_cursor=local, limit=1)
+            return await self.last_cursor(thread_id)
+        # Do not use the independently advancing app cursor as a service resume
+        # position. Metadata avoids downloading an arbitrary native payload.
+        page = await self._history_reader.read_session_observations(str(thread_id), limit=1)
         return page.last_cursor
 
     async def events(self, thread_id: UUID, *, after_cursor: int = 0, limit: int) -> list[event_log_pb2.EventEntry]:
@@ -217,6 +218,26 @@ class EventLogStore:
             or (before_cursor is not None and after_cursor is not None)
         ):
             raise ValueError("invalid chronological observation page bounds")
+        if self._history_reader is not None:
+            page = await self._history_reader.read_session_observations(
+                str(thread_id), before_cursor=before_cursor, after_cursor=after_cursor, limit=limit
+            )
+            rows = page.observations
+            # Service history is a contiguous, immutable prefix. Boundaries need no
+            # app raw lookups and refer to the watermark captured by this response.
+            if after_cursor is not None:
+                start = after_cursor + 1
+                end = min(page.last_cursor, after_cursor + limit)
+            else:
+                end = page.last_cursor if before_cursor is None else min(page.last_cursor, max(0, before_cursor - 1))
+                start = max(1, end - limit + 1)
+            if [row.cursor for row in rows] != list(range(start, end + 1)):
+                raise ConnectionError("invalid service observation page")
+            return ObservationPage(
+                observations=[ArchivedObservation(cursor=str(row.cursor), kind=row.kind) for row in rows],
+                next_before_cursor=str(rows[0].cursor) if rows and rows[0].cursor > 1 else None,
+                next_after_cursor=str(rows[-1].cursor) if rows and rows[-1].cursor < page.last_cursor else None,
+            )
         async with self._sessions() as session:
             query = select(Event.cursor, Event.kind).where(Event.thread_id == thread_id)
             if after_cursor is not None:

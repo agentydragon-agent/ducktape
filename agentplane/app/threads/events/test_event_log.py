@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 from typing import cast
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
@@ -70,6 +71,13 @@ async def test_remote_history_reads_its_own_committed_prefix(
 
     class Reader:
         last_cursor = 0
+
+        async def read_session_observations(
+            self, session_id: str, *, limit: int
+        ) -> protocol_pb2.ReadSessionObservationsResponse:
+            assert session_id == str(thread_id)
+            assert limit == 1
+            return protocol_pb2.ReadSessionObservationsResponse(last_cursor=self.last_cursor)
 
         async def read_session_events(
             self, session_id: str, *, after_cursor: int = 0, limit: int = 128
@@ -139,6 +147,44 @@ async def test_concurrent_replicas_create_one_thread(event_logs: EventLogStore, 
     )
     assert first == second
     assert len(await replica.store.list_threads()) == 1
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "cursors", "older", "newer"),
+    [
+        (None, None, [4, 5], "4", None),
+        (4, None, [2, 3], "2", "3"),
+        (None, 0, [1, 2], None, "2"),
+        (0, None, [], None, None),
+        (None, 5, [], None, None),
+    ],
+)
+async def test_service_observation_pages_do_not_require_app_raw_rows(
+    engine: AsyncEngine, before: int | None, after: int | None, cursors: list[int], older: str | None, newer: str | None
+) -> None:
+    thread = UUID("00000000-0000-0000-0000-000000000001")
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(
+        last_cursor=5,
+        observations=[protocol_pb2.SessionObservation(cursor=cursor, kind="native") for cursor in cursors],
+    )
+    remote = EventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
+    page = await remote.observations(thread, before_cursor=before, after_cursor=after, limit=2)
+    assert [row.cursor for row in page.observations] == [str(cursor) for cursor in cursors]
+    assert page.next_before_cursor == older
+    assert page.next_after_cursor == newer
+    reader.read_session_events.assert_not_awaited()
+    reader.read_session_observations.assert_awaited_once_with(
+        str(thread), before_cursor=before, after_cursor=after, limit=2
+    )
+
+
+async def test_service_observation_page_rejects_missing_entries(engine: AsyncEngine) -> None:
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(last_cursor=5)
+    remote = EventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
+    with pytest.raises(ConnectionError, match="invalid service observation"):
+        await remote.observations(UUID("00000000-0000-0000-0000-000000000001"), limit=2)
 
 
 if __name__ == "__main__":
