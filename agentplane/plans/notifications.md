@@ -7,9 +7,6 @@ and the [staging acceptance record](../notification_service/docs/staging_github_
 
 ## Remaining live verification
 
-- [ ] Verify shared GitHub refresh reuse across overlapping live subscriptions and service restarts.
-      CI coverage and a successful deployed status read do not establish these live behaviors.
-
 - [ ] Audit remaining event/permission coverage, including PR lifecycle/reviews, pushes/ref changes,
       installation lifecycle, revoked access and fork-head correlation, plus live action-filter and
       issue/PR exclusion cases beyond the recorded successful deliveries. An uninstalled fork is not
