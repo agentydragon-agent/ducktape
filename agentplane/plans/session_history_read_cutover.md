@@ -24,3 +24,13 @@ frames, and inability to read raw history with a non-app ServiceAccount.
 A follow-on change must make the service the durable write authority and
 move remaining app raw observation _metadata_ reads without breaking app-only folds.
 Until then keep app event ingestion and do not remove its tables.
+
+## Executable preflight and concurrent-write gate
+
+Use the [catch-up/handoff runbook](../sandbox_service/session_history/CUTOVER.md) and its bounded,
+read-only verifier for fixed-watermark archive parity and runner overlap evidence. The verifier
+does not assign legacy UIDs or implement the consumer handoff. A one-time cursor match while app
+and service ingest independently does not make the fail-closed read switch safe: coordinate the
+app read/projection cursor with the service's committed prefix before switching. Keep runner
+execution and at least one ingestion path active; fence only the old app consumer at its recorded
+final cursor under a reviewed handoff. No global quiet period or automatic stale-table rollback.

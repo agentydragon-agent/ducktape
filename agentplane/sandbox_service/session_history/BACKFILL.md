@@ -34,3 +34,9 @@ need a separate verified-incarnation strategy before their app ingestion is
 retired. Proto-JSON does not retain unknown wire fields; compare the
 canonical serialized messages the app actually stored, not original runner
 wire bytes, for imported historical events.
+
+## Catch-up and verification
+
+Use the [cutover preflight runbook](CUTOVER.md) for primary watermarks, bounded full-prefix
+verification, legacy runner overlap evidence and the concurrent-write handoff gates. Re-running
+this importer closes suffix gaps but does not replace independent verification of skipped Events.

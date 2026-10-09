@@ -78,6 +78,8 @@ runbook's canonical-byte/prefix comparison and close live-writing gaps before ha
 active legacy histories with unknown Sandbox UID using verified incarnation evidence, not name
 matching. Completion is all scoped histories accounted for, not a Job being Running or one session
 reaching its ceiling. Keep backups/high-water marks; do not rename native files or reset databases.
+Use the [bounded verification and handoff preflight](../sandbox_service/session_history/CUTOVER.md);
+its runner overlap result is evidence, not authorization to populate a legacy UID.
 
 ### `THREAD_ARCHIVE_INGEST` — shadow parity and writer handoff
 
@@ -92,7 +94,9 @@ actual migration. An incomplete source prefix or unresolved legacy locator is a 
 **Blocked on verified backfill and ingestion parity.** Deploy the service reader before enabling
 the app's opt-in history switch. Check raw paging, stream resume, old native evidence and denial to
 non-authorized service accounts. Lag must remain explicit, not fall back to stale app rows. This
-read-only step does not establish sole write ownership or permit deleting app tables.
+read-only step does not establish sole write ownership or permit deleting app tables. Coordinate
+the app-known cursor with the service committed prefix; a one-time equality check under concurrent
+ingestion is insufficient for the fail-closed reader.
 
 ### `THREAD_ARCHIVE_UI_CUTOVER` — app becomes an archive consumer
 
