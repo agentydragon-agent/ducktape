@@ -12,17 +12,36 @@ extension for the 2026-07-28 protocol era with different wire shapes
 `tasks/list`). That package's Docket queue is **not** a framework requirement.
 Do not turn on the packaged extension and claim the 2025-11-25 contract works.
 
-First add a wire-level conformance test for the protocol version we advertise:
-capability negotiation, augmented `tools/call`, task reads and final result, all
-using actual MCP JSON-RPC over `/mcp`. Implement request interception and task
-method handlers against Agentplane's Action Service, using FastMCP's extension
-and low-level handler seams where they support that protocol version. If the
-pinned MCP SDK cannot advertise/serialize the 2025-11-25 task capability and
-result models, make the needed SDK upgrade or narrowly scoped low-level wire
-adapter explicit and test it; do not silently negotiate only SEP-2663. A later
-SEP-2663 adapter can expose the _same_ Action backing record with its own wire
-shapes, without routing execution through Docket. A client must see only the
-contract negotiated for its protocol version.
+### Preflight: the pinned SDK does not yet serve legacy tasks
+
+The repository pins `fastmcp-slim==4.0.3`, `mcp[cli]==2.2.0`, and
+`mcp-types==2.2.0` (`requirements_bazel.txt`). Inspecting those versions:
+`mcp-types` has **generated** 2025-11-25 task models, including a nested
+`CreateTaskResult` and `ServerCapabilities.tasks`, but its runtime method
+maps **deliberately omit** the 2025-11-25 `tasks/*` requests and task-status
+notification. The SDK's `ServerRunner` validates known spec methods against
+those maps before handler lookup, and validates a `tools/call` response
+against the ordinary tool result shape. Its handshake capability builder
+uses the version-free capability model (with extensions for modern versions),
+not the generated 2025-11-25 `tasks` field. Consequently, simply registering
+FastMCP handlers or enabling `tasks=True` cannot advertise or deliver the
+2025-11-25 contract. `ServerExtension` supports custom request methods and
+interception but only advertises `capabilities.extensions`, appropriate to
+SEP-2663, not legacy `capabilities.tasks`.
+
+**First code milestone:** make the SDK's optional 2025-11-25 task capability,
+method dispatch, result variants and task-status notification work (prefer a
+small upstream-compatible change to the SDK dependency and its wire tests
+over ad-hoc HTTP interception). Upgrade the pinned SDK if an upstream release
+supplies this; otherwise keep the compatibility change explicitly isolated,
+covered by integration tests, and tracked for upstreaming. Then implement an
+Agentplane-specific FastMCP request interceptor and handlers that use canonical
+Actions rather than Docket. Prove capability negotiation, augmented
+`tools/call`, `tasks/get`/`list`/`result`/`cancel`, and unchanged non-task
+calls over the actual `/mcp` mount **before advertising** task support. A
+later SEP-2663 adapter can expose the same Action-backed task through that
+protocol's wire shapes. A client only sees the contract negotiated for its
+protocol version.
 
 ## Where execution actually lives
 
@@ -36,11 +55,15 @@ is _not_ the executor worker. Do not enqueue a second tool call or restart a
 lost Action merely to create/poll an MCP task.
 
 Make the Action request UUID the MCP task ID (or a stable opaque encoding of
-it). An augmented `request_action` must validate its usual arguments, submit
-exactly once with its caller-authored idempotency key, then return a task
-snapshot. No second task queue, worker, or task-result database is needed:
-Action rows hold owner, state and final result. A lost response is recovered
-with `get_action_request(idempotency_key=...)` by the original caller; the
+it). For task augmentation, require `respond_with=result` and the default
+zero wait; reject incompatible receipt/wait options _before submission_, or
+persist their exact result shape for `tasks/result`. An augmented
+`request_action` must validate its usual arguments, submit exactly once
+with its caller-authored idempotency key, then return a task snapshot. No second task queue or worker is needed:
+Action rows hold owner, state and final result. Persist only the task-specific metadata that cannot be
+reconstructed from an Action (e.g. creation protocol/version, expiry policy,
+terminal-status latch and safe final diagnostic); never store caller bearer
+credentials in it. A lost response is recovered with `get_action_request(idempotency_key=...)` by the original caller; the
 existing duplicate-key refusal stays in force, and task lookup never submits.
 Keep ordinary (non-augmented) tools and the HTTP Action API unchanged.
 
@@ -57,17 +80,27 @@ of completed task views explicitly against Action history retention.
 
 ## Map Action states and results
 
-| Canonical Action                    | MCP task    | Meaning                                          |
-| ----------------------------------- | ----------- | ------------------------------------------------ |
-| `decision_pending`                  | `working`   | Awaiting operator; nothing ran.                  |
-| `allowed`, `dispatching`, `running` | `working`   | Approved / claimed / executing, respectively.    |
-| `succeeded`                         | `completed` | Result available.                                |
-| `denied`, `failed`                  | `failed`    | Readable, distinct diagnostic; denied never ran. |
-| `cancelled`                         | `cancelled` | Withdrawn before dispatch.                       |
-| `execution_unknown`                 | `failed`    | May have run; do not retry automatically.        |
+| Canonical Action                    | MCP task                | Meaning                                                                        |
+| ----------------------------------- | ----------------------- | ------------------------------------------------------------------------------ |
+| `decision_pending`                  | `working`               | Awaiting operator; nothing ran.                                                |
+| `allowed`, `dispatching`, `running` | `working`               | Approved / claimed / executing, respectively.                                  |
+| `succeeded`                         | `completed` or `failed` | `CallToolResult.isError=true` requires `failed`; preserve the original result. |
+| `denied`, `failed`                  | `failed`                | Readable, distinct diagnostic; denied never ran.                               |
+| `cancelled`                         | `cancelled`             | Withdrawn before dispatch.                                                     |
+| `execution_unknown`                 | `failed`                | May have run; latch the terminal task snapshot; do not retry.                  |
 
 `tasks/get` maps an authorized `ActionRequestView` into a task snapshot,
-including a truthful `statusMessage` and timestamps. `tasks/result` waits for
+including a truthful `statusMessage` and timestamps. **Do not map terminal
+states from the current Action state alone:** an `execution_unknown` Action
+can later be reconciled by a late lease-authenticated completion or authority
+lookup. MCP tasks cannot leave a terminal state. Persist a terminal task
+snapshot on first terminal transition (including unknown) and preserve its
+result/diagnostic across later Action reconciliation; direct Action reads may
+show the newer canonical truth. Similarly, inspect upstream MCP
+`CallToolResult.isError`: Action execution can be `succeeded` when the
+underlying tool returned an error, but task status must be `failed` while
+`tasks/result` still returns that tool's original error result.
+`tasks/result` waits for
 terminal state using `ActionWaiter` and its subscribe-then-read, cross-replica
 `ActionUpdates` invalidation; unlike existing bounded waits, a protocol result
 wait may need a transport-long-lived SSE response and reconnect handling. Never
@@ -111,11 +144,17 @@ or retry execution.
 Capture `_meta.progressToken` on the _original augmented request_. Where an
 MCP transport can carry notifications for that task, send optional
 `notifications/progress` with that same token throughout its lifetime, stopping
-at terminal state. The existing stateless HTTP mount cannot be assumed to keep
-an unsolicited notification channel alive after an immediate task-creation
-response: test notification delivery over real Streamable HTTP/SSE, and do not
-promise pushes across a disconnected client or arbitrary replicas. Durable
-`tasks/get` status plus a cursor-based update read are the reconnect fallback;
+at terminal state. The stateless HTTP manager creates a fresh transport
+for every request with no standalone GET stream. Once the task-creation POST returns, that transport
+is gone; it **cannot** send later unsolicited notifications over the initial
+request. For live progress, provide a deliberately open SSE response (e.g. an
+in-flight `tasks/result` wait with a subscribed update reader) and verify the
+2025-11-25 progress-token rule and JSON-RPC notification routing on real
+Streamable HTTP. Do not claim background push after that stream closes. If
+the SDK cannot send the original token on the later stream, either add that
+support at the transport layer or restrict live progress to an open
+original-request stream and expose later updates as durable reads; test both
+cases. Durable `tasks/get` status plus a cursor-based update read are the reconnect fallback;
 use a task `statusMessage` for the latest safe milestone. Do not fabricate a
 new progress token on polling calls. Test client disconnects and absent tokens.
 
@@ -143,7 +182,8 @@ partial output support just because an Action takes a long time.
 
 ## Rollout and tests
 
-1. Prove the 2025-11-25 wire contract on the actual `/mcp` transport; implement
+1. Close the pinned SDK method-map/capability/result gap above; prove the
+   2025-11-25 contract on actual `/mcp`. Then implement
    durable Action-backed create/get/result/list/cancel and update tool
    descriptions. Test authorization per read, idempotency-loss recovery,
    ordinary calls, multi-replica/restart reads, decision wait, denial, backend
@@ -169,3 +209,15 @@ partial output support just because an Action takes a long time.
 - Task-augment dynamically exposed direct tools after working out their
   auto-approval-only refusal path and bounded-wait behavior. The first
   implementation only augments `request_action`.
+
+## Validation preflight (2026-10-10)
+
+`pre-commit` for the design and TODO edits passed. A baseline
+`bbr test //agentplane/action_service:test_mcp_frontend` first found no
+BuildBuddy API key. A second attempt with the egress placeholder in
+`BUILDBUDDY_API_KEY` reached a BuildBuddy remote runner but its Bazel step
+rejected that literal as an invalid key: proxy substitution on the sandbox's
+outbound request does not provision a key _inside_ the remote runner. Do not
+repeat that credential pattern or copy a real key into the repository; use
+PR CI or an authorized runner configuration that provisions the key through
+the approved route. No runtime tests were validated by this preflight.
