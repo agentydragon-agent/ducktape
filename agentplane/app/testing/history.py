@@ -65,7 +65,6 @@ class SeededEventLogStore(EventLogStore):
                 .values(
                     id=public_id,
                     sandbox=sandbox,
-                    session_id=session_id,
                     harness=Harness(runner_pb2.Harness.Name(spec.harness)),
                     model=spec.model,
                     cwd=spec.cwd,
@@ -109,10 +108,7 @@ class ProjectedHistory(Ingestion):
     async def set_attached(self, thread_id: UUID, attached: runner_pb2.Attached, *, lease: ProjectionLease) -> None:
         snapshot = runner_pb2.Attached()
         snapshot.CopyFrom(attached)
-        async with self._sessions() as session:
-            row = await session.get(EventLog, thread_id)
-            assert row is not None
-            snapshot.session_id = row.session_id
+        snapshot.session_id = str(thread_id)
         history = self.peer.histories[str(thread_id)]
         covered = (history.entries[-1].cursor if history.entries else 0) >= snapshot.last_cursor
         if not covered:

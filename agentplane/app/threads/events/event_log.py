@@ -99,7 +99,6 @@ class EventLogStore:
                 .values(
                     id=thread_id,
                     sandbox=sandbox,
-                    session_id=session_id,
                     harness=Harness(protocol_pb2.Harness.Name(spec.harness)),
                     model=spec.model,
                     cwd=spec.cwd,

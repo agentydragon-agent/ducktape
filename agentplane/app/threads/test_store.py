@@ -18,8 +18,8 @@ from agentplane.runner import protocol_pb2
 # gazelle:include_dep @pypi//protobuf
 
 
-async def seed_projection(engine: AsyncEngine, *, sandbox: str, locator: str, cursor: int) -> UUID:
-    thread = await seed_retained_session(engine, sandbox=sandbox, locator=locator)
+async def seed_projection(engine: AsyncEngine, *, sandbox: str, cursor: int) -> UUID:
+    thread = await seed_retained_session(engine, sandbox=sandbox)
     async with async_sessionmaker(engine).begin() as session:
         session.add(
             ThreadCheckpoint(thread_id=thread, source_id="source", projection_epoch="epoch", through_cursor=cursor)
@@ -39,8 +39,8 @@ async def seed_projection(engine: AsyncEngine, *, sandbox: str, locator: str, cu
 
 
 async def test_thread_views_and_operator_edits_need_no_raw_events(engine: AsyncEngine) -> None:
-    thread = await seed_projection(engine, sandbox="one", locator="s-retained", cursor=7)
-    other = await seed_projection(engine, sandbox="two", locator="s-other", cursor=3)
+    thread = await seed_projection(engine, sandbox="one", cursor=7)
+    other = await seed_projection(engine, sandbox="two", cursor=3)
     store = ThreadStore(engine)
     view = await store.get_thread(thread)
     assert view is not None
@@ -69,7 +69,7 @@ async def test_thread_views_and_operator_edits_need_no_raw_events(engine: AsyncE
     "status", [None, event_pb2.TURN_STATUS_COMPLETED, event_pb2.TURN_STATUS_FAILED, event_pb2.TURN_STATUS_INTERRUPTED]
 )
 async def test_thread_turn_status_comes_from_projection_summary(engine: AsyncEngine, status: int | None) -> None:
-    thread = await seed_projection(engine, sandbox="one", locator="s-retained", cursor=7)
+    thread = await seed_projection(engine, sandbox="one", cursor=7)
     async with async_sessionmaker(engine).begin() as session:
         summary = await session.get(ThreadHistorySummary, thread)
         assert summary is not None
