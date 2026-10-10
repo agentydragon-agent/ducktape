@@ -23,7 +23,7 @@ from agentplane.app.testing.electric_service import electric_service
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.models import ThreadEntity
 from agentplane.app.threads.view.recording import THREAD_FOLD_EPOCH
 from agentplane.protocol import event_pb2
@@ -96,7 +96,7 @@ def _key(row: Row) -> tuple[str, str]:
 
 
 async def _record(
-    ingestion: Ingestion, source: ReplicationSource, thread: UUID, lease: IngestionLease, *events: event_pb2.Event
+    ingestion: Ingestion, source: ReplicationSource, thread: UUID, lease: ProjectionLease, *events: event_pb2.Event
 ) -> None:
     await ingestion.record(thread, [source.append(event) for event in events], lease=lease)
 

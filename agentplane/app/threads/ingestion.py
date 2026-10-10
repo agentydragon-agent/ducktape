@@ -10,9 +10,9 @@ import grpc
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.threads.events import ingestion_lease
+from agentplane.app.threads.events import projection_lease
 from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, RunnerSession
-from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
+from agentplane.app.threads.events.projection_lease import ProjectionLease, ProjectionLeaseLostError
 from agentplane.app.threads.history_projector import HistoryProjector
 from agentplane.app.threads.sessions import SandboxNotReachableError, SandboxSessions
 from agentplane.sandbox_service.models import SandboxNotFoundError
@@ -30,17 +30,17 @@ class Ingestion:
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
 
-    async def acquire(self, sandbox: str, duration: timedelta) -> IngestionLease | None:
+    async def acquire(self, sandbox: str, duration: timedelta) -> ProjectionLease | None:
         async with self._sessions.begin() as session:
-            return await ingestion_lease.acquire(session, sandbox, duration)
+            return await projection_lease.acquire(session, sandbox, duration)
 
-    async def renew(self, lease: IngestionLease, duration: timedelta) -> bool:
+    async def renew(self, lease: ProjectionLease, duration: timedelta) -> bool:
         async with self._sessions.begin() as session:
-            return await ingestion_lease.renew(session, lease, duration)
+            return await projection_lease.renew(session, lease, duration)
 
-    async def release(self, lease: IngestionLease) -> None:
+    async def release(self, lease: ProjectionLease) -> None:
         async with self._sessions.begin() as session:
-            await ingestion_lease.release(session, lease)
+            await projection_lease.release(session, lease)
 
 
 class Ingester:
@@ -58,7 +58,7 @@ class Ingester:
         self._history_projector = history_projector
         self._event_logs = event_logs
         self._ingestion = ingestion
-        self._leases: dict[str, IngestionLease] = {}
+        self._leases: dict[str, ProjectionLease] = {}
         self._changed = asyncio.Event()
         self._reconcile_lock = asyncio.Lock()
         self._coordinator: asyncio.Task[None] | None = None
@@ -136,7 +136,7 @@ class Ingester:
         except SQLAlchemyError, OSError, TimeoutError:
             logger.warning("sandbox %s ingestion reconciliation failed; will retry", sandbox, exc_info=True)
 
-    async def _project_history(self, thread_id: UUID, lease: IngestionLease) -> None:
+    async def _project_history(self, thread_id: UUID, lease: ProjectionLease) -> None:
         try:
             progress = await self._history_projector.project_batch(thread_id, lease=lease)
             logger.debug(
@@ -147,7 +147,7 @@ class Ingester:
             )
         except (
             EventReplicationError,
-            IngestionLeaseLostError,
+            ProjectionLeaseLostError,
             SQLAlchemyError,
             grpc.aio.AioRpcError,
             ConnectionError,

@@ -20,8 +20,8 @@ py_library(
 )
 
 py_library(
-    name = "ingestion_lease",
-    srcs = ["ingestion_lease.py"],
+    name = "projection_lease",
+    srcs = ["projection_lease.py"],
     deps = [
         "//agentplane/app/threads:models",
         "@pypi//sqlalchemy",

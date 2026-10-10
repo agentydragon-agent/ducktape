@@ -21,7 +21,7 @@ from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.replication_process import CommitBoundary, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.models import SandboxIngestion
+from agentplane.app.threads.models import SandboxProjectionLease
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -134,12 +134,12 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
         try:
             async with engine.begin() as database:
                 old_token = await database.scalar(
-                    select(SandboxIngestion.token).where(SandboxIngestion.sandbox == SANDBOX)
+                    select(SandboxProjectionLease.token).where(SandboxProjectionLease.sandbox == SANDBOX)
                 )
                 assert old_token is not None
                 await database.execute(
-                    update(SandboxIngestion)
-                    .where(SandboxIngestion.sandbox == SANDBOX)
+                    update(SandboxProjectionLease)
+                    .where(SandboxProjectionLease.sandbox == SANDBOX)
                     .values(expires_at=func.clock_timestamp() - timedelta(seconds=1))
                 )
 
@@ -200,7 +200,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                 await wait_snapshot(event_logs, database_updates, thread.id, 8)
                 async with engine.connect() as database:
                     new_token = await database.scalar(
-                        select(SandboxIngestion.token).where(SandboxIngestion.sandbox == SANDBOX)
+                        select(SandboxProjectionLease.token).where(SandboxProjectionLease.sandbox == SANDBOX)
                     )
                     assert new_token is not None
                     assert new_token != old_token

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.retained_history import seed_retained_session
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.history_handoff import fence_raw_ingestion
 from agentplane.app.threads.ingestion import Ingestion
 from agentplane.app.threads.models import Event, FeedState
@@ -23,7 +23,7 @@ from agentplane.runner import protocol_pb2
 
 
 async def test_fence_is_idempotent_and_blocks_old_writer_after_lease_reacquisition(
-    engine: AsyncEngine, lease: IngestionLease
+    engine: AsyncEngine, lease: ProjectionLease
 ) -> None:
     thread = await seed_retained_session(engine)
     ingestion = Ingestion(engine)

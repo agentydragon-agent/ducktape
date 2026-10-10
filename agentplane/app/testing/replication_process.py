@@ -46,7 +46,7 @@ from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.app.threads import ingestion as ingestion_module
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.history_projector import HistoryProjector, ProjectionProgress
 from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.sessions import SandboxSessions
@@ -196,7 +196,7 @@ class GatedProjector(HistoryProjector):
         self._gate = gate
         self._cursor = cursor
 
-    async def project_batch(self, thread_id: UUID, *, lease: IngestionLease) -> ProjectionProgress:
+    async def project_batch(self, thread_id: UUID, *, lease: ProjectionLease) -> ProjectionProgress:
         page = await self._reader.read_session_events(str(thread_id), limit=1)
         token = _record_gate.set(self._gate if page.last_cursor >= self._cursor else None)
         try:

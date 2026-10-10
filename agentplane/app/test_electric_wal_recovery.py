@@ -19,7 +19,7 @@ from agentplane.app.testing.electric_service import ElectricService, electric_se
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.protocol import event_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -141,7 +141,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap(
 
 async def _project_initial_item(
     event_logs: EventLogStore, ingestion: Ingestion
-) -> tuple[UUID, ReplicationSource, IngestionLease]:
+) -> tuple[UUID, ReplicationSource, ProjectionLease]:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))

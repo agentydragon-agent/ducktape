@@ -38,7 +38,7 @@ from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.ingestion import Ingester
-from agentplane.app.threads.models import SandboxIngestion
+from agentplane.app.threads.models import SandboxProjectionLease
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -207,7 +207,9 @@ async def _leases(database: AsyncEngine) -> int:
     async with database.connect() as connection:
         return (
             await connection.scalar(
-                select(func.count()).select_from(SandboxIngestion).where(SandboxIngestion.sandbox == SANDBOX)
+                select(func.count())
+                .select_from(SandboxProjectionLease)
+                .where(SandboxProjectionLease.sandbox == SANDBOX)
             )
         ) or 0
 

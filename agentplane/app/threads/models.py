@@ -100,9 +100,11 @@ class Event(Base):
     payload: Mapped[dict[str, JsonValue]] = mapped_column(JSON)
 
 
-class SandboxIngestion(Base):
-    # TODO(session-schema-cleanup): Rename to an app projection lease; this remains
-    # active coordination state, not a retired archive-ingestion table.
+class SandboxProjectionLease(Base):
+    """Replica ownership of app projection work, not service archive ingestion."""
+
+    # TODO(session-schema-cleanup): Rename the physical table in the explicit schema
+    # cleanup. Keep its current name here until that migration; existing leases stay valid.
     __tablename__ = "sandbox_ingestion"
 
     sandbox: Mapped[str] = mapped_column(Text, primary_key=True)

@@ -35,7 +35,7 @@ from agentplane.app.testing.history import (
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -229,7 +229,7 @@ async def stored_login(store: OperatorSessionStore, login: OperatorSession) -> S
 
 
 @pytest.fixture
-async def lease(ingestion: Ingestion) -> IngestionLease:
+async def lease(ingestion: Ingestion) -> ProjectionLease:
     lease = await ingestion.acquire("sb-1", timedelta(minutes=1))
     assert lease is not None
     return lease
