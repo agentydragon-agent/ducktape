@@ -74,8 +74,8 @@ class ImageUpdatePush(Construct):
     """An ImageUpdateAutomation committing Setters-marker tag bumps under `path` to `branch` of the
     GitHub repository at `url`, and the GitRepository, authenticated by the ducktape-automation
     GitHub App, that it checks out and pushes through. Both live in the App Secret's namespace:
-    the automation's `sourceRef` is by name alone. Our policy: the source polls every minute, the
-    automation runs every five.
+    the automation's `sourceRef` is by name alone. The source polls every `source_interval`, the
+    automation every five minutes.
     """
 
     def __init__(
@@ -89,6 +89,7 @@ class ImageUpdatePush(Construct):
         branch: str,
         path: str,
         source_description: str,
+        source_interval: str,
         description: str | None = None,
         sparse_checkout: Sequence[str] | None = None,
     ) -> None:
@@ -99,7 +100,7 @@ class ImageUpdatePush(Construct):
             metadata=ApiObjectMetadata(
                 name=source_name, namespace=_GITHUB_APP_NAMESPACE, annotations={"description": source_description}
             ),
-            interval="1m",
+            interval=source_interval,
             provider=GitRepositorySpecProvider.GITHUB,
             ref=GitRepositorySpecRef(branch=branch),
             secret_ref=GitRepositorySpecSecretRef(name=_GITHUB_APP_SECRET),
