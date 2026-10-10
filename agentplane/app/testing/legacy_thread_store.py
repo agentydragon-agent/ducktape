@@ -1,8 +1,4 @@
-"""`ThreadStore`, the thread component's API over PostgreSQL.
-
-A thread is assembled from its event log: listing and reading it join the log with what an operator
-has set on the thread, its name and archive state, which is written here.
-"""
+"""Test-only retained-schema Thread views for legacy ingestion regression fixtures."""
 
 from __future__ import annotations
 
@@ -10,22 +6,25 @@ from datetime import datetime
 from uuid import UUID
 
 from google.protobuf.json_format import ParseDict
-from sqlalchemy import select
+from pydantic import JsonValue
+from sqlalchemy import Select, case, literal_column, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import InstrumentedAttribute
 
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
-from agentplane.app.threads.models import EventLog, Thread, ThreadCheckpoint, ThreadHistorySummary
+from agentplane.app.threads.models import Event, EventLog, FeedState, Thread, ThreadCheckpoint, ThreadHistorySummary
+from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.views import ThreadView
-from agentplane.protocol import event_pb2
+from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
 
-class ThreadStore:
+class LegacyThreadStore(ThreadStore):
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -34,19 +33,33 @@ class ThreadStore:
     ) -> list[ThreadView]:
         """Newest first; each filter given narrows the list to threads matching it. Archived
         threads are excluded unless asked for, mirroring the Sandbox inventory's own default."""
+        last_cursor = (
+            select(Event.cursor)
+            .where(Event.thread_id == EventLog.id)
+            .order_by(Event.cursor.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        last_at = (
+            select(Event.at).where(Event.thread_id == EventLog.id).order_by(Event.at.desc()).limit(1).scalar_subquery()
+        )
+        last_turn = _last_turn_completed(EventLog.id).scalar_subquery()
+        fenced = EventLog.raw_ingestion_fenced_at_cursor.is_not(None)
         query = (
             select(
                 EventLog,
                 Thread,
-                ThreadCheckpoint.through_cursor,
-                ThreadHistorySummary.last_event_at,
-                ThreadHistorySummary.attached,
-                ThreadHistorySummary.end,
+                case((fenced, ThreadCheckpoint.through_cursor), else_=last_cursor),
+                case((fenced, ThreadHistorySummary.last_event_at), else_=last_at),
+                case((fenced, ThreadHistorySummary.attached), else_=FeedState.attached),
+                case((fenced, ThreadHistorySummary.end), else_=FeedState.end),
+                case((fenced, None), else_=last_turn),
                 ThreadHistorySummary,
             )
             .outerjoin(Thread, Thread.id == EventLog.id)
             .outerjoin(ThreadCheckpoint, ThreadCheckpoint.thread_id == EventLog.id)
             .outerjoin(ThreadHistorySummary, ThreadHistorySummary.thread_id == EventLog.id)
+            .outerjoin(FeedState, FeedState.thread_id == EventLog.id)
             .order_by(EventLog.created_at.desc())
         )
         if sandbox is not None:
@@ -57,8 +70,8 @@ class ThreadStore:
             query = query.where(Thread.archived.is_not(True))
         async with self._sessions() as session:
             return [
-                _view(log, thread, cursor, at, attached, end, summary)
-                for log, thread, cursor, at, attached, end, summary in await session.execute(query)
+                _view(log, thread, cursor, at, attached, end, turn, summary)
+                for log, thread, cursor, at, attached, end, turn, summary in await session.execute(query)
             ]
 
     async def get_thread(self, thread_id: UUID) -> ThreadView | None:
@@ -89,16 +102,51 @@ class ThreadStore:
         return view
 
 
+def _last_turn_completed(thread_id: UUID | InstrumentedAttribute[UUID]) -> Select[tuple[dict[str, JsonValue]]]:
+    """The thread's newest `turn_completed` entry. The kind is written inline rather than bound, so the
+    planner can match the partial index whatever the plan cache holds."""
+    return (
+        select(Event.payload)
+        .where(Event.thread_id == thread_id, Event.kind == literal_column("'turn_completed'"))
+        .order_by(Event.cursor.desc())
+        .limit(1)
+    )
+
+
 async def _last(
     session: AsyncSession, thread_id: UUID
-) -> tuple[int | None, datetime | None, dict[str, object] | None, dict[str, str] | None, ThreadHistorySummary | None]:
-    summary = await session.get(ThreadHistorySummary, thread_id)
-    if summary is None:
-        raise ValueError("missing service projection metadata")
-    cursor = await session.scalar(
-        select(ThreadCheckpoint.through_cursor).where(ThreadCheckpoint.thread_id == thread_id)
+) -> tuple[
+    int | None,
+    datetime | None,
+    dict[str, object] | None,
+    dict[str, str] | None,
+    dict[str, JsonValue] | None,
+    ThreadHistorySummary | None,
+]:
+    log = await session.get(EventLog, thread_id)
+    state = await session.get(FeedState, thread_id)
+    if log is not None and log.raw_ingestion_fenced_at_cursor is not None:
+        summary = await session.get(ThreadHistorySummary, thread_id)
+        if summary is None:
+            raise ValueError("missing service projection metadata at raw fence")
+        cursor = await session.scalar(
+            select(ThreadCheckpoint.through_cursor).where(ThreadCheckpoint.thread_id == thread_id)
+        )
+        return (cursor, summary.last_event_at, summary.attached, summary.end, None, summary)
+    last_cursor = await session.scalar(
+        select(Event.cursor).where(Event.thread_id == thread_id).order_by(Event.cursor.desc()).limit(1)
     )
-    return (cursor, summary.last_event_at, summary.attached, summary.end, summary)
+    last_at = await session.scalar(
+        select(Event.at).where(Event.thread_id == thread_id).order_by(Event.at.desc()).limit(1)
+    )
+    return (
+        last_cursor,
+        last_at,
+        (state.attached if state is not None else None),
+        (state.end if state is not None else None),
+        await session.scalar(_last_turn_completed(thread_id)),
+        None,
+    )
 
 
 async def _set_thread(session: AsyncSession, thread_id: UUID, **values: object) -> ThreadView:
@@ -122,11 +170,17 @@ def _view(
     last_at: datetime | None,
     attached: dict[str, object] | None,
     end: dict[str, str] | None,
+    last_turn: dict[str, JsonValue] | None,
     summary: ThreadHistorySummary | None,
 ) -> ThreadView:
-    if summary is None:
-        raise ValueError("missing service projection metadata")
-    last_turn_status = None if summary.last_turn_status is None else event_pb2.TurnStatus.Name(summary.last_turn_status)
+    if log.raw_ingestion_fenced_at_cursor is not None:
+        if summary is None:
+            raise ValueError("missing service projection metadata at raw fence")
+        last_turn_status = (
+            None if summary.last_turn_status is None else event_pb2.TurnStatus.Name(summary.last_turn_status)
+        )
+    else:
+        last_turn_status = None if last_turn is None else _turn_status(last_turn)
     attachment = ParseDict(attached, protocol_pb2.Attached()) if attached is not None else None
     harness_state = attachment.harness_state if attachment is not None else protocol_pb2.HARNESS_STATE_UNSPECIFIED
     return ThreadView(
@@ -149,3 +203,8 @@ def _view(
         reasoning_effort=attachment.spec.reasoning_effort if attachment is not None else None,
         last_turn_status=last_turn_status,
     )
+
+
+def _turn_status(payload: dict[str, JsonValue]) -> str:
+    """Parsed as the message it is: proto-JSON omits an UNSPECIFIED status, so it has no key to read."""
+    return event_pb2.TurnStatus.Name(ParseDict(payload, event_log_pb2.EventEntry()).event.turn_completed.status)

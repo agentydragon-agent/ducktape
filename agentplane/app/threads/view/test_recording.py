@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
 from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
+from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
 from agentplane.app.threads.models import (
@@ -24,7 +25,6 @@ from agentplane.app.threads.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.recording import ThreadFoldError
 from agentplane.app.threads.view.views import EntityKind, ThreadOperationalState
 from agentplane.protocol import command_pb2, event_pb2
