@@ -540,7 +540,7 @@ Independent of compact delivered-message rendering. Never acknowledge from viewi
 **Candidate.** Paginate/search the Thread listing with authorized
 stable cursors, independent of deferred transcript full-text search. Verify ordering, navigation and
 permissions rather than making the frontend load every Thread. The paging cursors come from the History Service's
-list API (`FOLD_READ_API`); client-only work can start earlier.
+list API (`ListSessionSummaries`); client-only work can start earlier.
 
 ### `THREAD_SYNC_STOPPED_RECOVERY` — recover stopped UI synchronization
 
@@ -700,9 +700,7 @@ flowchart TD
     SANDBOX_HISTORY_READS_RETIRE[Blocked: delete Sandbox Service history reads]
     HISTORY_WRITE_HANDOFF[Blocked: History Service ingester takes over staging]
     SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: delete Sandbox Service ingester and store]
-    FOLD_LIBRARY_EXTRACT[Blocked: fold and projector in a neutral package]
     FOLD_SHADOW[Blocked: History Service folds in shadow]
-    FOLD_READ_API[Blocked: History Service serves Thread reads]
     ELECTRIC_HISTORY_SOURCE[Blocked: Electric replicates the history database]
     FOLD_READ_CUTOVER[Blocked: app and browser read the History Service fold]
     APP_PROJECTOR_RETIRE[Blocked: delete app projector code]
@@ -722,11 +720,8 @@ flowchart TD
     RUNNER_TEARDOWN_SEAL[Runner seals Sessions at teardown] -. holds clear .-> HISTORY_WRITE_HANDOFF
     HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
     SANDBOX_HISTORY_READS_RETIRE --> SANDBOX_LOCAL_HISTORY_RETIRE
-    FOLD_LIBRARY_EXTRACT --> FOLD_SHADOW
     HISTORY_WRITE_HANDOFF --> FOLD_SHADOW
-    FOLD_SHADOW --> FOLD_READ_API
     FOLD_SHADOW --> ELECTRIC_HISTORY_SOURCE
-    FOLD_READ_API --> FOLD_READ_CUTOVER
     FOLD_READ_CUTOVER -. paginated list API .-> THREAD_BROWSE_PAGINATE
     ELECTRIC_HISTORY_SOURCE --> FOLD_READ_CUTOVER
     FOLD_READ_CUTOVER --> APP_PROJECTOR_RETIRE
@@ -769,15 +764,9 @@ Service's ingester and `session_history` store code and revoke its grants on his
 that the Sandbox Service provisions, drives and reconciles commands with no History Service
 running, and update `sandbox_service/API.md`.
 
-### `FOLD_LIBRARY_EXTRACT` — the fold leaves `agentplane.app`
-
-**Candidate.** Move the fold and projector into a neutral package the app and the
-History Service both import, since backends may not import the app. The app keeps running it; no
-behavior change.
-
 ### `FOLD_SHADOW` — History Service folds beside the app
 
-**Blocked on the neutral fold and the write handoff.** History Service copies of the projection
+**Blocked on the write handoff.** History Service copies of `agentplane.thread_fold`'s projection
 tables (`thread_entity`, payload chunks and manifests, `thread_evidence`, `thread_native_link`,
 `thread_checkpoint`), `session_projection_lease` and `thread_history_summary`, with the projector,
 built in a new epoch by rebuild (all decided by the operator, 2026-10-10 PDT), while the app projector keeps serving. The rebuild reads
@@ -787,13 +776,6 @@ keep up, and reports per-Session progress. Exit: materialized
 threads (entities and bodies) equal the app's on a bounded sample of Sessions, plus live catch-up.
 Rollback: drop the shadow tables.
 
-### `FOLD_READ_API` — History Service serves Thread reads
-
-**Blocked on the shadow.** The Thread read API, keyed by public Session ID (list summaries, an entity window,
-payloads by reference, raw/debug reads), authorized per Session,
-with fold lag and errors explicit. List summaries page with stable, authorized cursors from the
-start (operator, 2026-10-10 PDT), so `THREAD_BROWSE_PAGINATE` only adds the UI. No callers yet.
-
 ### `ELECTRIC_HISTORY_SOURCE` — Electric over the history database
 
 **Blocked on the shadow.** An Electric deployment replicating the History
@@ -802,7 +784,7 @@ shape count and memory as `thread_sync` requires.
 
 ### `FOLD_READ_CUTOVER` — read the History Service fold
 
-**Blocked on the read API and the new Electric source.** App Thread reads and the proxy's Electric
+**Blocked on the new Electric source.** App Thread reads and the proxy's Electric
 upstream switch together; the app projector stops but keeps its checkpoint. Test with the app
 unavailable: ingestion and folding continue. Rollback: switch back and resume the app projector.
 Open tabs need a reload after the switch; `THREAD_SYNC_STOPPED_RECOVERY` is not a prerequisite

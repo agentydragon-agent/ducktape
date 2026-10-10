@@ -1,9 +1,10 @@
-"""Bounded service-history projection under app replica leases.
+"""Bounded service-history projection under per-Session replica leases.
 
 Resume the UI checkpoint without acquiring runner storage or copying raw Event rows.
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC
 from uuid import UUID
@@ -11,20 +12,18 @@ from uuid import UUID
 import grpc
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.app.database_updates import Channel, notify
-from agentplane.app.threads.events import projection_lease
-from agentplane.app.threads.events.event_log import EventReplicationError
-from agentplane.app.threads.events.projection_lease import ProjectionLease, ProjectionLeaseLostError
-from agentplane.app.threads.model_activity import record_model_activity
-from agentplane.app.threads.models import ThreadCheckpoint, ThreadHistorySummary
-from agentplane.app.threads.projected_lifecycle import project_lifecycle
-from agentplane.app.threads.view.recording import record_thread_fold, set_operational
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.sandbox_service import protocol_pb2
+from agentplane.thread_fold import projection_lease
+from agentplane.thread_fold.lifecycle import project_lifecycle
+from agentplane.thread_fold.model_activity import record_model_activity
+from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
+from agentplane.thread_fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
+from agentplane.thread_fold.recording import EventReplicationError, record_thread_fold, set_operational
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/sandbox_service:protocol_pb2
 
 
 logger = logging.getLogger(__name__)
@@ -36,10 +35,31 @@ class ProjectionProgress:
     service_cursor: int
 
 
+# Up to `limit` entries of a Session's committed prefix after a cursor, with its watermark and lifecycle.
+PageReader = Callable[[UUID, int, int], Awaitable[protocol_pb2.ReadSessionEventsResponse]]
+
+
+def service_pages(client: HistoryServiceClient) -> PageReader:
+    async def read(session_id: UUID, after_cursor: int, limit: int) -> protocol_pb2.ReadSessionEventsResponse:
+        return await client.read_session_events(str(session_id), after_cursor=after_cursor, limit=limit)
+
+    return read
+
+
 class HistoryProjector:
-    def __init__(self, engine: AsyncEngine, reader: HistoryServiceClient) -> None:
+    def __init__(
+        self,
+        engine: AsyncEngine,
+        read_page: PageReader,
+        *,
+        projection_epoch: str,
+        notify: Callable[[AsyncSession], Awaitable[None]],
+    ) -> None:
+        """`notify` runs inside each transaction that changes what a Thread's readers see."""
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
-        self._reader = reader
+        self._read_page = read_page
+        self._projection_epoch = projection_epoch
+        self._notify = notify
 
     async def project_batch(self, thread_id: UUID, *, lease: ProjectionLease) -> ProjectionProgress:
         """Resume from the UI checkpoint; a failed fold leaves that checkpoint unchanged."""
@@ -73,10 +93,10 @@ class HistoryProjector:
                 error="Session history projection stalled; retained events and the last verified view are unchanged.",
                 error_cursor=error.cursor if isinstance(error, EventReplicationError) else None,
             )
-            await notify(session, Channel.THREADS)
+            await self._notify(session)
 
     async def _project_prefix(self, thread_id: UUID, *, lease: ProjectionLease, after: int) -> ProjectionProgress:
-        page = await self._reader.read_session_events(str(thread_id), after_cursor=after, limit=128)
+        page = await self._read_page(thread_id, after, 128)
         if page.last_cursor < after:
             raise ConnectionError("History Service has not covered the app projection checkpoint")
         if len(page.entries) > 128 or any(
@@ -106,20 +126,24 @@ class HistoryProjector:
                 raise EventReplicationError("missing service projection metadata")
             if not page.entries:
                 if await project_lifecycle(session, thread_id, summary, page, through_cursor=after):
-                    await notify(session, Channel.THREADS)
+                    await self._notify(session)
                 return ProjectionProgress(after, page.last_cursor)
             source_id = page.entries[0].origin.source_id
             if any(entry.origin.source_id != source_id for entry in page.entries):
                 raise EventReplicationError("mixed source identities in projection page")
-            await record_thread_fold(session, thread_id, source_id, page.entries)
+            await record_thread_fold(
+                session, thread_id, source_id, page.entries, projection_epoch=self._projection_epoch
+            )
             await record_model_activity(session, thread_id, page.entries)
             for entry in page.entries:
                 at = entry.event.at.ToDatetime(tzinfo=UTC)
+                if entry.cursor == 1:
+                    summary.first_event_at = at
                 if summary.last_event_at is None or at > summary.last_event_at:
                     summary.last_event_at = at
                 if entry.event.HasField("turn_completed"):
                     summary.last_turn_status = entry.event.turn_completed.status
 
             await project_lifecycle(session, thread_id, summary, page, through_cursor=page.entries[-1].cursor)
-            await notify(session, Channel.THREADS)
+            await self._notify(session)
         return ProjectionProgress(page.entries[-1].cursor, page.last_cursor)
