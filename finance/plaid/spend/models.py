@@ -17,7 +17,6 @@ from finance.plaid.spend.allowance import (
     AnalysisCategory,
     Disposition,
     Kind,
-    OneOffOverride,
     Period,
     PeriodId,
     PlaidCounterparty,
@@ -116,7 +115,6 @@ class AllowanceConfigurationView(BaseModel):
     max_sync_age_hours: int
     forecast_basis_period_id: PeriodId
     rules: list[Rule]
-    overrides: list[OneOffOverride] = Field(default_factory=list)
     analysis_categories: dict[str, AnalysisCategory]
 
 
@@ -291,16 +289,6 @@ class AnalysisCategoryView(BaseModel):
     color: str
 
 
-class AppliedOverride(BaseModel):
-    """Per-transaction correction that took precedence over the ordered rules."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    id: str
-    kind: Kind
-    note: str
-
-
 class SpendTransactionRow(BaseModel):
     """A read-only explanation plus named, typed Plaid source fields."""
 
@@ -315,11 +303,13 @@ class SpendTransactionRow(BaseModel):
     pending: bool
     allowance_in_scope: bool
     disposition: Disposition | None
-    rule_number: int | None
-    rule: Rule | None
-    override: AppliedOverride | None = None
+    rule_number: int | None = Field(
+        default=None, description="1-based position in the ordered rule list; the first match governs."
+    )
+    rule: Rule | None = None
     effective_kind: Kind | None = Field(
-        default=None, description="The kind that governs this transaction: the override's, else the rule's."
+        default=None,
+        description="The matched rule's kind, resolved server-side; null for an unmatched default-flexible purchase.",
     )
     allowance_minor_units: int
     pace_effects: list[PaceEffect]

@@ -24,14 +24,13 @@ from finance.plaid.spend.allowance import (
     Kind,
     NameContains,
     NamePrefix,
-    OneOffOverride,
     PaceAlert,
     PeriodId,
     Rule,
+    RuleScope,
     Status,
     Transaction,
     calculate,
-    matching_override,
     matching_rule,
     month_anniversary,
 )
@@ -55,20 +54,14 @@ def name_rule(field: Literal["name", "merchant_name"], prefix: str, kind: Kind) 
 
 
 def policy(
-    *,
-    activation_at: date = START_DATE,
-    rules: list[Rule] | None = None,
-    time_zone: ZoneInfo | None = None,
-    overrides: list[OneOffOverride] | None = None,
+    *, activation_at: date = START_DATE, rules: list[Rule] | None = None, time_zone: ZoneInfo | None = None
 ) -> AllowancePolicy:
     configured_rules = (
         rules if rules is not None else [category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)]
     )
-    configured_overrides = overrides or []
     category_ids = {
         "unclassified",
         *(rule.analysis_category for rule in configured_rules if rule.analysis_category is not None),
-        *(override.analysis_category for override in configured_overrides if override.analysis_category is not None),
     }
     return AllowancePolicy(
         monthly_minor_units=10_000,
@@ -76,7 +69,6 @@ def policy(
         activation_at=activation_at,
         time_zone=time_zone or ZoneInfo("UTC"),
         rules=configured_rules,
-        overrides=configured_overrides,
         analysis_categories={
             category_id: AnalysisCategory(label=category_id.replace("_", " ").title(), color="#336699")
             for category_id in category_ids
@@ -423,8 +415,8 @@ def test_reviewed_negative_credit_is_not_spending_or_income():
     assert result.unmatched_refunds_minor_units == 500
 
 
-def override(
-    override_id: str,
+def one_off(
+    rule_id: str,
     kind: Kind,
     *,
     prefix: str = "EXAMPLE",
@@ -432,15 +424,21 @@ def override(
     amount: str | None = None,
     analysis_category: str | None = None,
     note: str = "Corrected by the owner 2026-02-01.",
-) -> OneOffOverride:
+) -> Rule:
+    """A decision about one observed transaction: a Rule whose scope narrows it to a bounded match."""
     conditions: list = [
         NamePrefix(field="name", prefix=prefix),
         DateRange(start=date.fromisoformat(day), end=date.fromisoformat(day)),
     ]
     if amount is not None:
         conditions.append(AmountExact(value=amount))
-    return OneOffOverride(
-        id=override_id, match=AllOf(conditions=conditions), kind=kind, analysis_category=analysis_category, note=note
+    return Rule(
+        condition=AllOf(conditions=conditions),
+        kind=kind,
+        scope=RuleScope.ONE_OFF,
+        id=rule_id,
+        analysis_category=analysis_category,
+        description=note,
     )
 
 
@@ -448,87 +446,104 @@ def override(
 NO_MATCH_RULE = name_rule("name", "NO OTHER MERCHANT", Kind.FIXED)
 
 
-def test_override_addresses_a_transaction_by_match_not_by_plaid_id():
-    correction = override("holiday-stay-is-travel", Kind.FIXED, amount="60.00", analysis_category="fixed_travel")
+def test_one_off_addresses_a_transaction_by_match_not_by_plaid_id():
+    correction = one_off("holiday-stay-is-travel", Kind.FIXED, amount="60.00", analysis_category="fixed_travel")
     purchase = row("2026-01-31", 60)
-    assert matching_override(purchase, [correction]) == correction
-    assert matching_override(purchase.model_copy(update={"name": "OTHER SHOP"}), [correction]) is None
-    assert matching_override(purchase.model_copy(update={"amount": Decimal(61)}), [correction]) is None
-    assert matching_override(purchase.model_copy(update={"date": date(2026, 2, 1)}), [correction]) is None
+    assert matching_rule(purchase, [correction]) == correction
+    assert matching_rule(purchase.model_copy(update={"name": "OTHER SHOP"}), [correction]) is None
+    assert matching_rule(purchase.model_copy(update={"amount": Decimal(61)}), [correction]) is None
+    assert matching_rule(purchase.model_copy(update={"date": date(2026, 2, 1)}), [correction]) is None
     # A relink that rewrites Plaid ids cannot dangle the correction: ids are not consulted.
-    assert matching_override(purchase.model_copy(update={"transaction_id": "relinked-id"}), [correction]) == correction
+    assert matching_rule(purchase.model_copy(update={"transaction_id": "relinked-id"}), [correction]) == correction
 
 
-def test_override_takes_precedence_over_rules_and_the_default_flexible_bucket():
+def test_one_off_precedes_the_patterns_it_corrects_by_position():
     purchase = row("2026-01-31", 60)
-    default = calculate(policy(rules=[NO_MATCH_RULE]), [purchase], now=START, last_synced_at=START)
+    pattern = name_rule("name", "EXAMPLE", Kind.FLEXIBLE)
+    default = calculate(
+        policy(rules=[name_rule("name", "NO OTHER MERCHANT", Kind.FIXED)]), [purchase], now=START, last_synced_at=START
+    )
     assert default.available_minor_units == 4_000
     assert default.review_transaction_count == 1
 
     corrected = calculate(
-        policy(rules=[name_rule("name", "EXAMPLE", Kind.FLEXIBLE)], overrides=[override("rent", Kind.FIXED)]),
-        [purchase],
-        now=START,
-        last_synced_at=START,
+        policy(rules=[one_off("rent", Kind.FIXED), pattern]), [purchase], now=START, last_synced_at=START
     )
     assert corrected.available_minor_units == 10_000
     assert corrected.review_transaction_count == 0
 
     excluded = calculate(
-        policy(rules=[name_rule("name", "EXAMPLE", Kind.FIXED)], overrides=[override("transfer", Kind.EXCLUDED)]),
+        policy(rules=[one_off("transfer", Kind.EXCLUDED), name_rule("name", "EXAMPLE", Kind.FIXED)]),
         [purchase],
         now=START,
         last_synced_at=START,
     )
     assert excluded.available_minor_units == 10_000
 
+    # Position is the whole precedence story: placed last, the one-off never governs.
     decisions: list = []
     calculate(
-        policy(rules=[name_rule("name", "EXAMPLE", Kind.FLEXIBLE)], overrides=[override("rent", Kind.FIXED)]),
+        policy(rules=[pattern, one_off("rent", Kind.FIXED)]),
         [purchase],
         now=START,
         last_synced_at=START,
         decisions=decisions,
     )
-    assert decisions[0].override is not None
-    assert decisions[0].override.id == "rent"
-    assert decisions[0].override.note == "Corrected by the owner 2026-02-01."
-    assert decisions[0].rule is None
-    assert decisions[0].rule_number is None
-    # The server resolves which kind governs the money, so no client re-derives the precedence.
-    assert decisions[0].effective_kind == Kind.FIXED
+    assert decisions[0].rule_number == 1
+    governed = decisions[0].rule
+    assert governed is not None
+    assert governed.scope == RuleScope.PATTERN
+    assert decisions[0].effective_kind == Kind.FLEXIBLE
 
-    without: list = []
+    decisions = []
     calculate(
-        policy(rules=[name_rule("name", "EXAMPLE", Kind.FIXED)]),
+        policy(rules=[one_off("rent", Kind.FIXED), pattern]),
         [purchase],
         now=START,
         last_synced_at=START,
-        decisions=without,
+        decisions=decisions,
     )
-    assert without[0].override is None
+    applied = decisions[0].rule
+    assert applied is not None
+    assert applied.id == "rent"
+    assert applied.scope == RuleScope.ONE_OFF
+    assert applied.description == "Corrected by the owner 2026-02-01."
+    # A one-off is a rule, so it is reported by its position in the same list and resolves to its own kind.
+    assert decisions[0].rule_number == 1
+    assert decisions[0].effective_kind == Kind.FIXED
+
+    without: list = []
+    calculate(policy(rules=[pattern]), [purchase], now=START, last_synced_at=START, decisions=without)
     assert without[0].rule_number == 1
-    assert without[0].effective_kind == Kind.FIXED
+    assert without[0].effective_kind == Kind.FLEXIBLE
 
     unclassified: list = []
-    calculate(policy(rules=[NO_MATCH_RULE]), [purchase], now=START, last_synced_at=START, decisions=unclassified)
+    calculate(
+        policy(rules=[name_rule("name", "NO OTHER MERCHANT", Kind.FIXED)]),
+        [purchase],
+        now=START,
+        last_synced_at=START,
+        decisions=unclassified,
+    )
     assert unclassified[0].effective_kind is None
 
 
-def test_override_can_keep_a_purchase_counted_for_review():
-    review = override("unclear-charge", Kind.REVIEW, analysis_category="merchant_review")
+def test_one_off_can_keep_a_purchase_counted_for_review():
+    review = one_off("unclear-charge", Kind.REVIEW, analysis_category="merchant_review")
     result = calculate(
-        policy(rules=[NO_MATCH_RULE], overrides=[review]), [row("2026-01-31", 20)], now=START, last_synced_at=START
+        policy(rules=[name_rule("name", "NO OTHER MERCHANT", Kind.FIXED), review]),
+        [row("2026-01-31", 20)],
+        now=START,
+        last_synced_at=START,
     )
     assert result.available_minor_units == 8_000
     assert result.review_minor_units == 2_000
     assert result.review_transaction_count == 1
 
 
-def test_override_on_a_negative_credit_avoids_the_held_refund_bucket():
-    correction = OneOffOverride(
-        id="reversal-pair",
-        match=AllOf(
+def test_one_off_on_a_negative_credit_avoids_the_held_refund_bucket():
+    correction = Rule(
+        condition=AllOf(
             conditions=[
                 NamePrefix(field="name", prefix="EXAMPLE"),
                 DateRange(start=date(2026, 1, 31), end=date(2026, 1, 31)),
@@ -536,64 +551,93 @@ def test_override_on_a_negative_credit_avoids_the_held_refund_bucket():
             ]
         ),
         kind=Kind.EXCLUDED,
-        note="Paired reversal leg; confirmed by the owner 2026-02-01.",
+        scope=RuleScope.ONE_OFF,
+        id="reversal-pair",
+        description="Paired reversal leg; confirmed by the owner 2026-02-01.",
     )
     credit = row("2026-01-31", -250)
-    held = calculate(policy(rules=[NO_MATCH_RULE]), [credit], now=START, last_synced_at=START)
+    standing = name_rule("name", "NO OTHER MERCHANT", Kind.FIXED)
+    held = calculate(policy(rules=[standing]), [credit], now=START, last_synced_at=START)
     assert held.unmatched_refunds_minor_units == 25_000
-    paired = calculate(policy(rules=[NO_MATCH_RULE], overrides=[correction]), [credit], now=START, last_synced_at=START)
+    paired = calculate(policy(rules=[correction, standing]), [credit], now=START, last_synced_at=START)
     assert paired.unmatched_refunds_minor_units == 0
     assert paired.available_minor_units == 10_000
     decisions: list = []
-    calculate(
-        policy(rules=[NO_MATCH_RULE], overrides=[correction]),
-        [credit],
-        now=START,
-        last_synced_at=START,
-        decisions=decisions,
-    )
-    applied = decisions[0].override
+    calculate(policy(rules=[correction, standing]), [credit], now=START, last_synced_at=START, decisions=decisions)
+    applied = decisions[0].rule
     assert applied is not None
     assert applied.id == "reversal-pair"
+    assert decisions[0].effective_kind == Kind.EXCLUDED
 
 
-def test_override_match_must_be_bounded_and_specific():
-    def build(conditions: list, override_id: str = "example") -> dict:
+def test_one_off_scope_is_validated_from_its_condition():
+    def build(conditions: list, rule_id: str = "example") -> dict:
         return {
-            "id": override_id,
-            "match": {"type": "all_of", "conditions": conditions},
+            "condition": {"type": "all_of", "conditions": conditions},
             "kind": "excluded",
-            "note": "owner confirmed 2026-02-01.",
+            "scope": "one_off",
+            "id": rule_id,
+            "description": "owner confirmed 2026-02-01.",
         }
 
     named = {"type": "name_prefix", "field": "name", "prefix": "EXAMPLE"}
     one_day = {"type": "date_range", "start": "2026-01-31", "end": "2026-01-31"}
-    assert OneOffOverride.model_validate(build([named, one_day]))
+    assert Rule.model_validate(build([named, one_day]))
     with pytest.raises(ValidationError, match="all_of"):
-        OneOffOverride.model_validate(
-            {"id": "example", "match": named, "kind": "excluded", "note": "owner confirmed 2026-02-01."}
+        Rule.model_validate(
+            {"condition": named, "kind": "excluded", "scope": "one_off", "id": "example", "description": "confirmed."}
         )
     with pytest.raises(ValidationError, match="all_of"):
-        OneOffOverride.model_validate(build([{"type": "any_of", "conditions": [named, one_day]}]))
+        Rule.model_validate(build([{"type": "any_of", "conditions": [named, one_day]}]))
     with pytest.raises(ValidationError, match="date_range"):
-        OneOffOverride.model_validate(build([named, {"type": "date_range", "start": "2026-01-31"}]))
+        Rule.model_validate(build([named, {"type": "date_range", "start": "2026-01-31"}]))
     with pytest.raises(ValidationError, match="at most"):
-        OneOffOverride.model_validate(
-            build([named, {"type": "date_range", "start": "2026-01-01", "end": "2026-06-30"}])
-        )
+        Rule.model_validate(build([named, {"type": "date_range", "start": "2026-01-01", "end": "2026-06-30"}]))
     with pytest.raises(ValidationError, match="name, category, amount, field, or counterparty"):
-        OneOffOverride.model_validate(build([one_day, {"type": "amount_sign", "sign": "positive"}]))
+        Rule.model_validate(build([one_day, {"type": "amount_sign", "sign": "positive"}]))
+    with pytest.raises(ValidationError, match="requires an id"):
+        Rule.model_validate(
+            {
+                "condition": {"type": "all_of", "conditions": [named, one_day]},
+                "kind": "excluded",
+                "scope": "one_off",
+                "description": "confirmed.",
+            }
+        )
+    with pytest.raises(ValidationError, match="requires a description"):
+        Rule.model_validate(
+            {
+                "condition": {"type": "all_of", "conditions": [named, one_day]},
+                "kind": "excluded",
+                "scope": "one_off",
+                "id": "unexplained",
+            }
+        )
+    with pytest.raises(ValidationError, match="only a one_off rule takes an id"):
+        Rule.model_validate(
+            {
+                "condition": {"type": "name_prefix", "field": "name", "prefix": "EXAMPLE"},
+                "kind": "excluded",
+                "id": "mislabelled-pattern",
+            }
+        )
     with pytest.raises(ValidationError, match="unique ids"):
-        policy(rules=[NO_MATCH_RULE], overrides=[override("same", Kind.EXCLUDED), override("same", Kind.FIXED)])
-    unconfigured = policy(rules=[NO_MATCH_RULE]).model_dump(mode="json")
-    unconfigured["overrides"] = [
-        override("missing", Kind.FIXED, analysis_category="absent_category").model_dump(mode="json")
-    ]
+        policy(
+            rules=[
+                name_rule("name", "NO OTHER MERCHANT", Kind.FIXED),
+                one_off("same", Kind.EXCLUDED),
+                one_off("same", Kind.FIXED),
+            ]
+        )
+    unconfigured = policy(rules=[name_rule("name", "NO OTHER MERCHANT", Kind.FIXED)]).model_dump(mode="json")
+    unconfigured["rules"].append(
+        one_off("missing", Kind.FIXED, analysis_category="absent_category").model_dump(mode="json")
+    )
     with pytest.raises(ValidationError, match="analysis_categories is missing"):
         AllowancePolicy.model_validate(unconfigured)
 
 
-def test_override_yaml_round_trip_and_configuration_view():
+def test_one_off_yaml_round_trip_and_configuration_view():
     document = """
 cards: []
 allowance:
@@ -610,14 +654,6 @@ allowance:
       color: "#D97706"
   rules:
     - condition:
-        type: name_prefix
-        field: name
-        prefix: EXAMPLE RENT
-      kind: fixed
-      analysis_category: fixed_travel
-  overrides:
-    - id: example-hotel-2026-06-04
-      match:
         type: all_of
         conditions:
           - type: name_prefix
@@ -629,15 +665,24 @@ allowance:
           - type: amount_exact
             value: '2430.78'
       kind: fixed
+      scope: one_off
+      id: example-hotel-2026-06-04
       analysis_category: fixed_travel
-      note: Confirmed example holiday stay; date and amount limit this to the observed charge.
+      description: Confirmed example holiday stay; date and amount limit this to the observed charge.
+    - condition:
+        type: name_prefix
+        field: name
+        prefix: EXAMPLE RENT
+      kind: fixed
+      analysis_category: fixed_travel
 """
-    path = Path("/tmp/ducktape-override-round-trip.yaml")
+    path = Path("/tmp/ducktape-one-off-round-trip.yaml")
     path.write_text(document, encoding="utf-8")
     loaded = load_configuration(path)
     parsed = loaded.allowance
     assert parsed is not None
-    assert [item.id for item in parsed.overrides] == ["example-hotel-2026-06-04"]
+    assert [rule.id for rule in parsed.rules] == ["example-hotel-2026-06-04", None]
+    assert [rule.scope for rule in parsed.rules] == [RuleScope.ONE_OFF, RuleScope.PATTERN]
     assert SpendConfiguration.model_validate(loaded.model_dump(mode="json")) == loaded
     assert load_configuration(path) == loaded
     view = SpendConfigurationView(
@@ -650,12 +695,12 @@ allowance:
             max_sync_age_hours=parsed.max_sync_age_hours,
             forecast_basis_period_id=parsed.forecast_basis_period_id,
             rules=parsed.rules,
-            overrides=parsed.overrides,
             analysis_categories=parsed.analysis_categories,
         ),
     )
     assert view.allowance is not None
-    assert view.allowance.overrides[0].note.startswith("Confirmed example")
+    assert view.allowance.rules[0].description is not None
+    assert view.allowance.rules[0].description.startswith("Confirmed example")
 
 
 if __name__ == "__main__":

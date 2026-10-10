@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import calendar
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -232,7 +232,7 @@ class AllOf(BaseModel):
 type Condition = SimpleCondition | AnyOf | AllOf
 
 
-_MAX_OVERRIDE_WINDOW_DAYS = 31
+_MAX_ONE_OFF_WINDOW_DAYS = 31
 
 
 def _is_identity(condition: Condition) -> bool:
@@ -242,56 +242,69 @@ def _is_identity(condition: Condition) -> bool:
     return not isinstance(condition, DateRange | AmountSign)
 
 
+class RuleScope(StrEnum):
+    """What a rule claims to be about: a recurring pattern, or one observed transaction."""
+
+    PATTERN = "pattern"
+    ONE_OFF = "one_off"
+
+
 class Rule(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    condition: Annotated[Condition, Field(discriminator="type")]
-    kind: Kind
-    analysis_category: str | None = Field(default=None, min_length=1)
-    description: str | None = Field(
-        default=None, min_length=1, max_length=240, description="Human-readable rationale for this classification rule."
-    )
+    """One classification decision: a condition and the kind it assigns.
 
-
-class OneOffOverride(BaseModel):
-    """Correct one observed transaction by match, never by Plaid transaction id.
-
-    Plaid rewrites transaction ids when an account is relinked, so an id-addressed correction silently stops
-    applying and quietly restores the wrong classification. An override states the same intent as a bounded
-    match: a date window plus at least one name, category, amount, field, or counterparty condition. Overrides
-    are evaluated before `rules`, so an override always wins, while the narrower `rules` list stays a pattern
-    list rather than accumulating per-transaction exceptions.
+    Every decision is the same object, and precedence is its position in `AllowancePolicy.rules`: the first
+    condition that matches governs the transaction. A `one_off` states a fact about one observed transaction
+    and is placed above the patterns it corrects; a `pattern` states a standing rule that may be wrong for a
+    given purchase. Nothing else differs between them -- the same matcher, the same kinds, the same
+    accounting -- and a one-off addresses a transaction by a bounded match rather than by Plaid transaction
+    id, because relinking an account rewrites those ids and silently dangles any id-addressed correction.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    id: str = Field(
+    condition: Annotated[Condition, Field(discriminator="type")]
+    kind: Kind
+    scope: RuleScope = Field(
+        default=RuleScope.PATTERN,
+        description="One_off narrows this decision to observed transactions and requires a key and a note.",
+    )
+    id: str | None = Field(
+        default=None,
         min_length=3,
         max_length=60,
         pattern=r"^[a-z0-9][a-z0-9._/-]*$",
-        description="Stable, human-written identifier reported with each matched transaction.",
+        description="Stable, human-written key, required for a one_off and reported with each matched transaction.",
     )
-    match: Annotated[Condition, Field(discriminator="type")]
-    kind: Kind
     analysis_category: str | None = Field(default=None, min_length=1)
-    note: str = Field(
+    description: str | None = Field(
+        default=None,
         min_length=1,
         max_length=240,
-        description="Why this transaction is classified this way, including who confirmed it and when.",
+        description="Human-readable rationale: why this classification is right, and who confirmed it when.",
     )
 
     @model_validator(mode="after")
-    def _addresses_one_moment(self) -> OneOffOverride:
-        if not isinstance(self.match, AllOf):
-            raise ValueError("override match must be an all_of of conditions")
-        window = next((part for part in self.match.conditions if isinstance(part, DateRange)), None)
+    def _scope_matches_condition(self) -> Rule:
+        if self.scope == RuleScope.PATTERN:
+            if self.id is not None:
+                raise ValueError("only a one_off rule takes an id; a standing rule is addressed by its number")
+            return self
+        if self.id is None:
+            raise ValueError("a one_off rule requires an id: a key to cite the correction by")
+        if self.description is None:
+            raise ValueError("a one_off rule requires a description: why this is the right classification")
+        if not isinstance(self.condition, AllOf):
+            raise ValueError("a one_off condition must be an all_of of conditions")
+        window = next((part for part in self.condition.conditions if isinstance(part, DateRange)), None)
         if window is None or window.start is None or window.end is None:
-            raise ValueError("override requires a bounded date_range with both start and end")
-        if (window.end - window.start).days > _MAX_OVERRIDE_WINDOW_DAYS:
+            raise ValueError("a one_off requires a bounded date_range with both start and end")
+        if (window.end - window.start).days > _MAX_ONE_OFF_WINDOW_DAYS:
             raise ValueError(
-                f"override window must span at most {_MAX_OVERRIDE_WINDOW_DAYS} days; use a rule for a standing pattern"
+                f"a one_off window must span at most {_MAX_ONE_OFF_WINDOW_DAYS} days; "
+                "use a pattern rule for a standing classification"
             )
-        if not any(_is_identity(part) for part in self.match.conditions):
-            raise ValueError("override requires a name, category, amount, field, or counterparty condition")
+        if not any(_is_identity(part) for part in self.condition.conditions):
+            raise ValueError("a one_off requires a name, category, amount, field, or counterparty condition")
         return self
 
 
@@ -319,9 +332,8 @@ class AllowancePolicy(BaseModel):
     time_zone: ZoneInfo = ZoneInfo("UTC")
     spending_account_ids: set[str] = Field(min_length=1)
     currency: Literal["USD"] = "USD"
-    rules: list[Rule] = Field(min_length=1)
-    overrides: list[OneOffOverride] = Field(
-        default_factory=list, description="Match-addressed per-transaction corrections, evaluated before rules."
+    rules: list[Rule] = Field(
+        min_length=1, description="Ordered decisions, most specific first: the first match governs the transaction."
     )
     max_sync_age_hours: int = Field(default=72, ge=1, le=720)
     forecast_basis_period_id: PeriodId = PeriodId.ROLLING_7D
@@ -342,14 +354,13 @@ class AllowancePolicy(BaseModel):
             raise ValueError("analysis category keys must be nonblank and trimmed")
         if "unclassified" not in self.analysis_categories:
             raise ValueError("analysis_categories must define the reserved unclassified category")
-        override_ids = [override.id for override in self.overrides]
-        if len(override_ids) != len(set(override_ids)):
-            raise ValueError("overrides must have unique ids")
-        decisions: list[Rule | OneOffOverride] = [*self.rules, *self.overrides]
+        keyed = [rule.id for rule in self.rules if rule.id is not None]
+        if len(keyed) != len(set(keyed)):
+            raise ValueError("rules must have unique ids")
         missing = {
             category
-            for decision in decisions
-            if (category := decision.analysis_category) is not None and category not in self.analysis_categories
+            for rule in self.rules
+            if (category := rule.analysis_category) is not None and category not in self.analysis_categories
         }
         if missing:
             raise ValueError(f"analysis_categories is missing rule categories: {', '.join(sorted(missing))}")
@@ -392,25 +403,6 @@ class Disposition(StrEnum):
     OTHER_CURRENCY = "other_currency"
 
 
-def resolve_effective_kind(override_kind: Kind | None, rule_kind: Kind | None) -> Kind | None:
-    """The kind that governs a transaction: an applied override replaces the rule decision outright.
-
-    The review tally, the transaction rows, and every client must agree on which decision governs the
-    money, so the precedence is resolved once here rather than re-derived by each consumer.
-    """
-    return override_kind if override_kind is not None else rule_kind
-
-
-@dataclass(frozen=True)
-class OverrideDecision:
-    """The applied per-transaction override, reported instead of a rule number."""
-
-    id: str
-    kind: Kind
-    analysis_category: str | None
-    note: str
-
-
 @dataclass(frozen=True)
 class TransactionDecision:
     transaction: Transaction
@@ -419,13 +411,15 @@ class TransactionDecision:
     disposition: Disposition
     allowance_minor_units: int
     pace_effects_minor_units: dict[PeriodId, int]
-    override: OverrideDecision | None = None
 
     @property
     def effective_kind(self) -> Kind | None:
-        return resolve_effective_kind(
-            self.override.kind if self.override is not None else None, self.rule.kind if self.rule is not None else None
-        )
+        """The kind that governs this transaction: the first matching rule's, else default-flexible (None).
+
+        The review tally, the transaction rows, and every client read this instead of re-deriving which
+        decision won, so there is one answer to "what kind is this money" and it comes from the matcher.
+        """
+        return self.rule.kind if self.rule is not None else None
 
 
 class AllowanceView(BaseModel):
@@ -530,25 +524,12 @@ def matches_fields(fields: Transaction | Mapping[str, object], condition: Condit
 
 
 def matching_rule(transaction: Transaction | Mapping[str, object], rules: list[Rule]) -> Rule | None:
+    """The single decision that governs a transaction: the first matching rule, with no second tier above it.
+
+    Ordering is the whole precedence story, so a one_off correction is written where it reads -- above the
+    patterns it narrows -- rather than in a list whose priority is implied by its type.
+    """
     return next((rule for rule in rules if matches_fields(transaction, rule.condition)), None)
-
-
-def matching_override(
-    transaction: Transaction | Mapping[str, object], overrides: Sequence[OneOffOverride]
-) -> OneOffOverride | None:
-    """First override whose match applies. Overrides precede rules by design: they state a fact about one
-    transaction, while rules state a pattern that may be wrong for it."""
-    return next((override for override in overrides if matches_fields(transaction, override.match)), None)
-
-
-def override_as_rule(override: OneOffOverride) -> Rule:
-    """View an override as a rule so existing kind accounting (fixed/excluded/review/flexible) applies."""
-    return Rule(
-        condition=override.match,
-        kind=override.kind,
-        analysis_category=override.analysis_category,
-        description=override.note,
-    )
 
 
 def calculate(
@@ -595,7 +576,6 @@ def calculate(
         *,
         allowance_minor_units: int = 0,
         pace_effects_minor_units: dict[PeriodId, int] | None = None,
-        override: OverrideDecision | None = None,
     ) -> None:
         if decisions is not None:
             decisions.append(
@@ -606,7 +586,6 @@ def calculate(
                     disposition=disposition,
                     allowance_minor_units=allowance_minor_units,
                     pace_effects_minor_units=pace_effects_minor_units or dict.fromkeys(rolling_periods, 0),
-                    override=override,
                 )
             )
 
@@ -619,31 +598,17 @@ def calculate(
         if transaction.currency not in (None, policy.currency):
             record(transaction, None, Disposition.OTHER_CURRENCY)
             continue
-        override = matching_override(transaction, policy.overrides)
-        applied = (
-            OverrideDecision(
-                id=override.id, kind=override.kind, analysis_category=override.analysis_category, note=override.note
-            )
-            if override is not None
-            else None
-        )
-        # An override replaces the rule decision; every accounting branch below is unchanged, so a corrected
-        # transaction behaves exactly like a transaction a rule classified the same way.
-        rule = override_as_rule(override) if override is not None else matching_rule(transaction, policy.rules)
+        # First match wins, so a one_off placed above the patterns it corrects governs this transaction.
+        rule = matching_rule(transaction, policy.rules)
         if rule is not None and rule.kind in (Kind.FIXED, Kind.EXCLUDED):
-            record(
-                transaction,
-                None if applied else rule,
-                Disposition.FIXED if rule.kind == Kind.FIXED else Disposition.EXCLUDED,
-                override=applied,
-            )
+            record(transaction, rule, Disposition.FIXED if rule.kind == Kind.FIXED else Disposition.EXCLUDED)
             continue
         amount = int((transaction.amount * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
         # A merchant rule does not prove which earlier purchase a credit reverses.
         if amount < 0:
             if transaction.date >= start.date():
                 unmatched += -amount
-            record(transaction, None if applied else rule, Disposition.HELD_REFUND, override=applied)
+            record(transaction, rule, Disposition.HELD_REFUND)
             continue
         pace_effects = {
             period_id: max(0, amount) if transaction.date >= period_start else 0
@@ -662,11 +627,10 @@ def calculate(
             )
         record(
             transaction,
-            None if applied else rule,
+            rule,
             Disposition.COUNTED if transaction.date >= start.date() else Disposition.PACE_ONLY,
             allowance_minor_units=amount if transaction.date >= start.date() else 0,
             pace_effects_minor_units=pace_effects,
-            override=applied,
         )
 
     posted = sum(p.minor_units for p in included if not p.transaction.pending)

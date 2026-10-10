@@ -59,7 +59,7 @@ allowance:
 An inclusive `date_range` condition accepts `start`, `end`, or both as ISO dates. Combine it with a merchant condition
 and, when needed, `amount_exact` in an `all_of` rule to limit a historical classification without a Plaid transaction ID.
 
-## One-off overrides
+## One rule type, ordered: patterns and one-offs
 
 ```yaml
 allowance:
@@ -75,15 +75,8 @@ allowance:
       label: Unclassified
       color: "#D97706"
   rules:
+    # A one-off: a fact about one observed transaction, placed above the patterns it corrects.
     - condition:
-        type: name_prefix
-        field: name
-        prefix: EXAMPLE RENT
-      kind: fixed
-      analysis_category: fixed_housing
-  overrides:
-    - id: example-hotel-2026-06-04
-      match:
         type: all_of
         conditions:
           - type: name_prefix
@@ -95,26 +88,44 @@ allowance:
           - type: amount_exact
             value: "2430.78"
       kind: fixed
+      scope: one_off
+      id: example-hotel-2026-06-04
       analysis_category: fixed_housing
-      note: Confirmed example stay; date and amount limit this to the observed charge (owner confirmed 2026-10-04).
+      description: Confirmed example stay; date and amount limit this to the observed charge (owner confirmed 2026-10-04).
+    # A pattern: a standing classification.
+    - condition:
+        type: name_prefix
+        field: name
+        prefix: EXAMPLE RENT
+      kind: fixed
+      analysis_category: fixed_housing
 ```
 
-An `override` corrects **one observed transaction** while `rules` describe recurring patterns. Overrides are checked
-first, so a correction always wins over a rule that also matches. They address a transaction by **match** — a bounded
-`all_of` requiring a `date_range` with both `start` and `end` (at most 31 days) plus at least one name, category,
-amount, field, or counterparty condition — and never by Plaid transaction ID: relinking an account rewrites those ids
-and silently dangles any id-addressed correction, restoring the wrong classification without an error. Use an `all_of`
-rule instead when the classification applies to more than the handful of transactions inside that window. `id` is a
-stable human-written key shown with each matched transaction, and `note` records why, ideally who confirmed it and
-when. Overrides reuse the same `kind` values and `analysis_category` catalog as rules, so an overridden transaction is
-accounted for exactly like a rule-classified one: `fixed`/`excluded` leave the allowance, `flexible` and `review`
-remain counted, and a negative credit addressed by an `excluded` override is a paired transfer leg rather than an
-unmatched refund. The Configuration tab lists overrides separately from rules, and the Transactions tab names the
-applied override and its note in place of a rule number. Because an override replaces the rule decision, each
-transaction row also reports the resolved `effective_kind` — the override's kind when one applied, otherwise the rule's,
-otherwise null for a default-flexible purchase. Clients read that field rather than re-deriving precedence, so the
-review tally and every display agree on which decision governs the money. Keep the override list short: it is a ledger
-of reviewed exceptions, not a second rule engine.
+There is **one kind of decision**. A rule is a condition plus a `kind`, and precedence is its position in `rules`:
+the first condition that matches governs the transaction, and nothing is checked after it. `scope` states what the
+rule claims, and defaults to `pattern`.
+
+`scope: one_off` says "this is true of these observed transactions, not of a category". It is a normal rule with a
+stricter shape, enforced when the policy loads: an `all_of` condition carrying a `date_range` with **both** `start`
+and `end` spanning at most 31 days, plus at least one name, category, amount, field, or counterparty condition, plus
+a stable `id` to cite the correction by and a `description` for why it is right. Placed above the patterns it
+corrects, it wins by position; the pattern list stays a list of patterns rather than accumulating exceptions.
+
+A one-off never addresses a transaction by Plaid transaction ID. Relinking an account rewrites those ids, so an
+id-addressed correction silently stops applying and quietly restores the wrong classification with no error to show
+for it. Write the bounded match instead, and use a `pattern` rule when the classification applies to more than the
+handful of transactions inside the window.
+
+Because there is one decision type, one number reports where a classification came from: `rule_number` is a rule's
+1-based position in the ordered list, whether it is a pattern or a one-off. Each transaction row also reports the
+resolved `effective_kind` — the matched rule's kind, or null for an unmatched default-flexible purchase — so the
+review tally and every display read one server-side answer to "what kind is this money" instead of re-deriving which
+tier won. The Configuration tab lists one ordered rule list, with a **One-off** badge on the entries that carry a
+bounded match.
+
+Accounting is the same for both scopes: `fixed`/`excluded` leave the allowance, `flexible` and `review` remain
+counted, and a negative credit matched by an `excluded` one-off is a paired transfer leg rather than an unmatched
+refund. Keep the one-offs short: they are a ledger of reviewed corrections, not a second rule engine.
 
 When `allowance` is present, it is active. Supply a required `activation_at` ISO date (YYYY-MM-DD) as the stable
 credit-cycle anchor; null or omission is invalid. To disable the allowance, omit the entire `allowance` object. Plaid

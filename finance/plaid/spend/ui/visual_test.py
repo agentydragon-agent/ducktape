@@ -34,13 +34,13 @@ from finance.plaid.spend.allowance import (
     Kind,
     NameContains,
     NamePrefix,
-    OneOffOverride,
     PaceAlert,
     Period,
     PeriodId,
     PlaidCounterparty,
     RecordedPacePeriod,
     Rule,
+    RuleScope,
     Status,
     TransactionPeriodId,
     UnmatchedCharges,
@@ -49,7 +49,6 @@ from finance.plaid.spend.models import (
     AlertState,
     AllowanceConfigurationView,
     AnalysisCategoryView,
-    AppliedOverride,
     CardConfigurationView,
     CardView,
     PaceEffect,
@@ -259,20 +258,19 @@ def dashboard_url() -> Iterator[str]:
                 spending_account_count=1,
                 max_sync_age_hours=72,
                 forecast_basis_period_id=PeriodId.ROLLING_7D,
-                overrides=[
-                    OneOffOverride(
-                        id="example-funding-transfer",
-                        match=AllOf(
+                rules=[
+                    Rule(
+                        condition=AllOf(
                             conditions=[
                                 NameContains(field="name", substring="EXAMPLE FUNDING"),
                                 DateRange(start=date(2026, 10, 3), end=date(2026, 10, 3)),
                             ]
                         ),
                         kind=Kind.EXCLUDED,
-                        note="Own-account funding leg, confirmed by the owner 2026-10-04.",
-                    )
-                ],
-                rules=[
+                        scope=RuleScope.ONE_OFF,
+                        id="example-funding-transfer",
+                        description="Own-account funding leg, confirmed by the owner 2026-10-04.",
+                    ),
                     Rule(
                         condition=AllOf(
                             conditions=[
@@ -288,7 +286,7 @@ def dashboard_url() -> Iterator[str]:
                         kind=Kind.REVIEW,
                         analysis_category="refund_review",
                         description="Unverified credit; inspect the earlier purchase before netting it.",
-                    )
+                    ),
                 ],
                 analysis_categories={
                     "unclassified": AnalysisCategory(label="Unclassified", color="#D97706"),
@@ -419,13 +417,19 @@ def dashboard_url() -> Iterator[str]:
                 pending=False,
                 allowance_in_scope=True,
                 disposition=Disposition.EXCLUDED,
-                rule_number=None,
-                rule=None,
+                rule_number=3,
                 effective_kind=Kind.EXCLUDED,
-                override=AppliedOverride(
-                    id="example-own-account-leg",
+                rule=Rule(
+                    condition=AllOf(
+                        conditions=[
+                            NameContains(field="name", substring="EXAMPLE OWN ACCOUNT TRANSFER"),
+                            DateRange(start=date(2026, 10, 11), end=date(2026, 10, 11)),
+                        ]
+                    ),
                     kind=Kind.EXCLUDED,
-                    note="Second leg of one own-account transfer, confirmed by the owner 2026-10-12.",
+                    scope=RuleScope.ONE_OFF,
+                    id="example-own-account-leg",
+                    description="Second leg of one own-account transfer, confirmed by the owner 2026-10-12.",
                 ),
                 allowance_minor_units=0,
                 pace_effects=[
@@ -674,7 +678,7 @@ async def test_review_rule_configuration_render(
     await page.get_by_text("Unverified credit; inspect the earlier purchase before netting it.").wait_for()
     await expect(page.get_by_text("Review", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Amount is negative AND (Transaction name starts with", exact=False)).to_have_count(1)
-    await expect(page.get_by_text("One-off overrides", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("One-off", exact=True)).to_have_count(1)
     await page.get_by_text("example-funding-transfer", exact=True).wait_for()
     await expect(
         page.get_by_text("Own-account funding leg, confirmed by the owner 2026-10-04.", exact=True)
@@ -724,7 +728,7 @@ async def test_transaction_explanations_render(
     await expect(rows.get_by_text("Document shipping", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("Holiday travel", exact=True)).to_have_count(1)
     await expect(rows.locator('[data-category-id="travel"]')).to_have_count(1)
-    await expect(rows.get_by_text("Excluded (override)", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Excluded (one-off)", exact=True)).to_have_count(1)
     await expect(page.get_by_text("1 · $15", exact=True)).to_have_count(1)
     if width >= 992:
         await expect(rows.locator("tbody tr")).to_have_count(5)
