@@ -136,3 +136,14 @@ coordinator serialization; these are not new runner terminal states.
 
 New-session handoff and explicit projection lag presentation remain unfinished.
 EOF is not inferred from a service outage or projection failure.
+
+### New-session admission (implementation in progress)
+
+With service projection enabled, new app Threads require a canonical public Session
+ID and a successful metadata-only service history lookup. Creation atomically writes
+the zero raw-writer fence and empty projection summary. Existing unfenced Threads,
+including an old replica winning a concurrent creation, require explicit handoff;
+opening a Thread never silently migrates its retained history. Reconciliation checks
+the durable fence after discovery, not just its earlier inventory snapshot, so it
+cannot start a legacy Follow for a just-created service projection. Existing flags
+remain off until coordinated cutover; this adds no new temporary flag.

@@ -3,6 +3,7 @@
 from datetime import UTC
 from typing import cast
 from unittest.mock import AsyncMock, Mock, patch
+from uuid import uuid4
 
 import pytest
 import pytest_bazel
@@ -383,6 +384,35 @@ async def test_projection_failure_retains_checkpoint_not_eof_and_recovers(
     await ingestion.release(lease)
     with pytest.raises(IngestionLeaseLostError):
         await projector._record_failure(thread, lease=lease, after=2, error=ConnectionError())
+
+
+async def test_discovery_of_new_service_thread_never_starts_legacy_follow(
+    engine: AsyncEngine, ingestion: Ingestion
+) -> None:
+    public_id = uuid4()
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
+    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=0)
+    logs = EventLogStore(engine, history_creator=cast(SandboxServiceClient, reader))
+    client = AsyncMock()
+    client.list_sessions.return_value = [runner_pb2.SessionSummary(session_id=str(public_id), spec=SPEC)]
+    runners = Mock(spec=SandboxSessions)
+    runners.running.return_value = {"sb-1"}
+    runners.client.return_value = client
+    coordinator = Ingester(
+        runners=cast(SandboxSessions, runners),
+        event_logs=logs,
+        ingestion=ingestion,
+        history_projector=HistoryProjector(engine, cast(SandboxServiceClient, reader)),
+    )
+    try:
+        await coordinator.reconcile()
+        assert await logs.is_raw_ingestion_fenced(public_id)
+        await coordinator.reconcile()
+        reader.read_session_events.assert_awaited_once_with(str(public_id), after_cursor=0, limit=128)
+        client.follow.assert_not_called()
+    finally:
+        await coordinator.close()
 
 
 if __name__ == "__main__":
