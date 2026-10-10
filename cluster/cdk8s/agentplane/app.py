@@ -42,6 +42,7 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     Deployment,
+    DeploymentStrategy,
     EnvValue,
     IApiResource,
     ImagePullPolicy,
@@ -270,7 +271,10 @@ class App(Construct):
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=self.env.replicas.count,
-            strategy=self.env.replicas.strategy,
+            # Temporary prerequisite for locator-column retirement (#9712).
+            # Old app Pods must exit before the replacement migration drops a column
+            # their ORM still selects/writes. Restore the environment strategy afterward.
+            strategy=DeploymentStrategy.recreate(),
             min_ready=self.env.replicas.min_ready,
             # 5s HTTP/SSE drain (--shutdown-timeout), with room for the bridge's lease
             # release and the store's close.
