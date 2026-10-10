@@ -257,7 +257,9 @@ _CODEX_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 # Astra's 872K came from Codex 0.153.4's configurable client window, not an input
 # capacity measurement. The 2026-10-10 source audit found no justified replacement
 # pair; preserve these provisional proxy values without using them as client budgets.
-# See model_catalog/client_budgets.md; raw OpenAI API limits are not evidence for this path.
+# Luna subsequently accepted 900,419 input tokens in one approved probe; its legacy
+# 372K publication is not a serving ceiling. See model_catalog/client_budgets.md for
+# the failed larger probe and evidence limits; no client-budget change follows.
 _CHATGPT_LIMITS = TokenLimits(max_input_tokens=372_000, max_output_tokens=128_000)
 _ASTRA_LIMITS = TokenLimits(max_input_tokens=872_000, max_output_tokens=128_000)
 

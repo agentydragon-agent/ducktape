@@ -294,6 +294,30 @@ the 128000 catalogue declaration is not evidence of request-cap enforcement.
   or proof of long-context attention quality. Its reported short output cap does not
   establish cap enforcement through our pinned translator.
 
+### Third-party endpoint measurements, rechecked 2026-10-10
+
+There are concrete subscription-endpoint tests beyond catalogue/client observations:
+
+- [Hermes #126483](https://github.com/NousResearch/hermes-agent/issues/126483)
+  reports ChatGPT OAuth requests to `https://chatgpt.com/backend-api/codex/responses`
+  on 2026-09-28, with streaming, `store: false`, low reasoning and generated records.
+  Server-reported input: **Luna 689512 accepted; Sol 909312 accepted**. Sol rejected
+  approximately 995K and 1.06M, with `context_length_exceeded` inside HTTP 200 SSE.
+  The issue also cites an earlier Astra receipt: **920043 accepted / 1000043 rejected**.
+  Its title groups Sol/Luna at ~909K, but its table only establishes 689512 for Luna.
+  All three markers were retrieved in the successful rows; exact mid-record recall
+  was inconsistent for Sol/Luna. Acceptance is not general long-context quality.
+- [Jcode #1505](https://github.com/1jehuang/jcode/pull/1505) reports the live Codex
+  catalogue at 272000 default / 872000 maximum client window for all three GPT-6
+  models, and successful 403043/846043-input-token requests for **Sol**, GPT-5.6 Sol
+  and a preview model. It does not report a Luna boundary test. Its assertion that
+  the backend enforces 872K is not established by those below-872K successes and
+  does not hold for the Luna request measured below.
+
+These are third-party receipts, not a provider guarantee or measurements of our
+account. They support investigating large subscription requests; they do not
+establish a universal 922000 input / 128000 output / 1050000 combined contract.
+
 ### Decision and remaining evidence
 
 There is no justified universal subscription input/output pair to install from these
@@ -302,16 +326,62 @@ sources. In particular, do not copy the API's 922000/128000, promote our histori
 The Astra maintainer claim is a candidate contract requiring corroboration; it is not
 permission to extend it to Sol/Luna. The 2026-10-10 recheck therefore leaves the six
 retained GPT-6 route declarations provisional: Astra 872000/128000, Sol/Luna 372000/128000. No newly justified
-input/output pair was found. Keep published metadata and consumer budgets unchanged;
-the unresolved publication decision is not another automatic source-audit task.
+input/output pair was found. The subsequent Luna probe below establishes a much
+larger accepted input, but still not an exact maximum or joint input/output pair.
+Published metadata and consumer budgets are unchanged by these investigations;
+the legacy Luna input value is demonstrably below its observed accepted input.
 
 A next non-inference check would be a sanitized catalogue for the actual upstream
 account and client path, through an explicitly authorized credential-substitution
 route; that still establishes only advertised metadata. The public-internet grant
 does not grant upstream account credentials. Any backend boundary probes require a
 separate quota/cost budget and authorization: the deployed gateway strips output caps,
-so requesting a tiny output is not a reliable cost bound. No near-limit inference,
-credential-file inspection, or header-spoofing experiment was performed for this research.
+so requesting a tiny output is not a reliable cost bound. The public-source review did not inspect credential files or spoof headers. The
+operator subsequently authorized exactly two Luna requests, recorded below.
+
+## Luna subscription-path probes, 2026-10-10
+
+At the operator's explicit approval, two requests were sent at approximately
+09:32 PDT through `chatgpt/oai-responses/gpt-6-luna` on the existing
+LiteLLM → CLIProxyAPI → Codex subscription path. No direct OpenAI API key was
+used, and no client budget, route, credential, or server configuration changed.
+
+| Probe                   | Input                                               | Result                                                                                                                   | Wall time | Output                               |
+| ----------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------- | ------------------------------------ |
+| 300000 six-digit groups | **900419 server-reported input tokens**             | HTTP 200, `response.completed`, returned model `gpt-6-luna`, `truncation: disabled`                                      | 10.163s   | 23 tokens, all three markers correct |
+| 330000 six-digit groups | **~990K estimated input**, 2310300 input characters | HTTP 200, created/in-progress events followed by LiteLLM `Response API in-stream error`, code `500`; no completion/usage | 3.732s    | No output text                       |
+
+The successful response reports **900442 total tokens**, zero cached input and zero
+reasoning output. The second request has **no authoritative token count or visible
+`context_length_exceeded` code**. Both corresponding gateway access-log entries
+record one upstream attempt. Matching LiteLLM logs confirm an in-stream error with
+no model-group fallback; the gateway access logs do not reveal the underlying
+rejection reason. Treat the larger request as a failed observation, **not a proven
+upper capacity bound**. Neither request was retried; no third inference was sent.
+
+Method: public synthetic data only, `random.Random(20261010)`, successive
+`randrange(100000, 1000000)` integers separated by spaces, newline after every ten.
+Distinct marker values were inserted at start/middle/end; the final question asked
+for those three values only. Six-digit groups were estimated at three tokens each
+(two digit groups plus whitespace); no local tokenizer was available. Accepted
+request usage, not this estimate, establishes the 900419 lower bound. The client
+requested `reasoning.effort: low`, streaming, `store: false` and 64 output tokens;
+the output cap is stripped on this path and was **not** a guaranteed cost bound.
+Both client requests had zero transport retries and a 300-second timeout.
+
+Request-body SHA-256 (first/second), for matching the local receipts:
+
+```text
+aa1fcd51e95cbe62ebd205f10544d8fd9e1471a11feb8ae4e0e3e9d0470117dd
+84bb3626086023f27ec5cdd57d023f46304612a6836a407a7fc76784943af76e
+```
+
+Only sanitized findings belong in the public repo, not raw response/account IDs
+or upstream safety/cache identifiers. This demonstrates Luna accepting more than
+both the published 372000 input value and the 872000 client-catalogue maximum.
+It does **not** establish the exact input maximum, 128000 output capacity, joint
+capacity, other account/model/wire behavior, or useful long-context coding quality.
+No automatic runner-budget increase follows from these two requests.
 
 ## Opt-in long-context experiment and costs
 
