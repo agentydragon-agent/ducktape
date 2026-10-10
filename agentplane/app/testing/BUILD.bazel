@@ -223,3 +223,15 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "history_service",
+    srcs = ["history_service.py"],
+    deps = [
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)

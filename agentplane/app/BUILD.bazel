@@ -1395,3 +1395,20 @@ py_library(
         "@pypi//pyyaml",
     ],
 )
+
+py_test(
+    name = "test_history_boundary",
+    srcs = ["test_history_boundary.py"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:history_service",
+        "//agentplane/app/testing:thread_test_support",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service:client",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
