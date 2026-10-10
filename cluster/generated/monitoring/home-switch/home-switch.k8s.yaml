@@ -1,0 +1,68 @@
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: home-switch-tofu
+  namespace: monitoring
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: Password of the home switch's full-access RouterOS user tf/gitops/home-switch logs in as.
+  name: home-switch-tofu
+  namespace: monitoring
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: home-switch-tofu
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    name: home-switch-tofu
+    template:
+      data:
+        password: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: home-switch-tls
+  namespace: monitoring
+spec:
+  commonName: CRS310
+  ipAddresses:
+    - 192.168.1.100
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  secretName: home-switch-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: home-switch-bootstrap-tls
+  namespace: monitoring
+spec:
+  commonName: CRS310
+  ipAddresses:
+    - 192.168.1.100
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  secretName: home-switch-bootstrap-tls
