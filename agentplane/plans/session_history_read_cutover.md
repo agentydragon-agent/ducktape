@@ -209,3 +209,26 @@ Execution order:
 
 The staging-switch PR must include generator-produced manifest output. A source-only
 preparation draft is not ready for merge or a claim that live flags changed.
+
+## Runtime cleanup rollout hold
+
+Migration agent status, 2026-10-09 22:50 PDT: staging's 55 retained Sessions have
+handoff receipts and checkpoint coverage. The flags and import Jobs are retired;
+this is not permission to delete retained tables, records, or runner storage.
+
+Prepare runtime code deletion in separate review units: mandatory service-backed
+archive readers (#9659), then removal of the app runner-copy loop. Retained-schema
+regression setup moves to test-only helpers, not another production fallback.
+The service projection coordinator remains lease-fenced and discovers new Sessions.
+
+**Do not merge the runner-copy deletion until testing is handed off.** Its last
+preflight found 142 matching app/service histories with service watermark coverage
+but zero app fences. Without handoff, deleting Follow would leave their UI projections
+stale. Use indexed inventories/checkpoints and the existing transactional handoff,
+then bounded new-session, live-update and retained-history checks in testing. Do not
+repeat a full-history verification scan or treat staging's six empty histories as
+blockers. CI must cover the production coordinator, including the absence of raw
+Follow for unfenced records, and retained-schema regression fixtures.
+
+Further removal of raw writers, old feed-state fallbacks and table models remains
+separate work; these drafts neither drop data nor claim complete raw-table retirement.

@@ -119,6 +119,14 @@ This does not grant agent reads, make harness state portable, or move command ad
 
 ### `APP_RAW_HISTORY_RETIRE` — remove obsolete storage
 
+**In flight (migration agent, 2026-10-09 22:50 PDT):** runtime reader deletion is
+[draft #9659](https://github.com/agentydragon/ducktape/pull/9659); a stacked draft
+removes the app runner-copy loop while preserving test-only old-schema fixtures.
+These code deletions do not authorize table/data deletion. The runner-copy deletion
+has an operational hold on testing's retained-Session handoff and bounded acceptance;
+its last preflight found 142 histories and no fences. See the
+[cleanup rollout hold](session_history_read_cutover.md#runtime-cleanup-rollout-hold).
+
 **Blocked on ownership handoff.** Inventory remaining references, preserve required identity and
 fold associations, then remove old raw writes/tables and one-off import tooling when rollback no
 longer needs them. Do not delete the durable legacy runner-locator mapping. This is a separate

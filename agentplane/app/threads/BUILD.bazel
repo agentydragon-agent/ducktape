@@ -23,7 +23,6 @@ py_library(
         "//agentplane/app/threads/events:ingestion_lease",
         "//agentplane/sandbox_service:models",
         "@pypi//grpcio",
-        "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
 )
