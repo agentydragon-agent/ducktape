@@ -1745,9 +1745,9 @@ def _create_recall_tables() -> None:
 
 def _preserve_deployed_constraint_names() -> None:
     # PostgreSQL kept these names through column renames; reproduce them on fresh databases.
-    op.execute(r"""
-ALTER TABLE public.kubernetes_grants RENAME CONSTRAINT kubernetes_grants_owner_agent_id_not_null TO kubernetes_grants_agent_id_not_null;
-    """)
+    op.execute(
+        "ALTER TABLE public.kubernetes_grants RENAME CONSTRAINT kubernetes_grants_owner_agent_id_not_null TO kubernetes_grants_agent_id_not_null"
+    )
 
 
 def _create_foreign_keys() -> None:
@@ -2100,110 +2100,110 @@ def _create_indexes() -> None:
 
 
 def _create_triggers() -> None:
-    op.execute(r"""
-CREATE CONSTRAINT TRIGGER ctrg_haku_0009_agent_active_bindings AFTER INSERT OR UPDATE ON public.agents DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_agent_active_bindings();
-    """)
+    op.execute(
+        "CREATE CONSTRAINT TRIGGER ctrg_haku_0009_agent_active_bindings AFTER INSERT OR UPDATE ON public.agents DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_agent_active_bindings()"
+    )
 
-    op.execute(r"""
-CREATE CONSTRAINT TRIGGER ctrg_haku_0009_binding_activation AFTER INSERT OR UPDATE ON public.credential_bindings DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_binding_activation();
-    """)
+    op.execute(
+        "CREATE CONSTRAINT TRIGGER ctrg_haku_0009_binding_activation AFTER INSERT OR UPDATE ON public.credential_bindings DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_binding_activation()"
+    )
 
-    op.execute(r"""
-CREATE CONSTRAINT TRIGGER ctrg_haku_0009_binding_subtype AFTER INSERT OR DELETE OR UPDATE ON public.credential_bindings DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_subtype_from_binding();
-    """)
+    op.execute(
+        "CREATE CONSTRAINT TRIGGER ctrg_haku_0009_binding_subtype AFTER INSERT OR DELETE OR UPDATE ON public.credential_bindings DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_subtype_from_binding()"
+    )
 
-    op.execute(r"""
-CREATE CONSTRAINT TRIGGER ctrg_haku_0009_call_has_principal AFTER INSERT OR UPDATE ON public.mcp_tool_calls DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_principal_from_call();
-    """)
+    op.execute(
+        "CREATE CONSTRAINT TRIGGER ctrg_haku_0009_call_has_principal AFTER INSERT OR UPDATE ON public.mcp_tool_calls DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_principal_from_call()"
+    )
 
-    op.execute(r"""
-CREATE CONSTRAINT TRIGGER ctrg_haku_0009_grant_consistency AFTER INSERT OR UPDATE ON public.authorization_grants DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_grant_consistency();
-    """)
+    op.execute(
+        "CREATE CONSTRAINT TRIGGER ctrg_haku_0009_grant_consistency AFTER INSERT OR UPDATE ON public.authorization_grants DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_grant_consistency()"
+    )
 
-    op.execute(r"""
-CREATE CONSTRAINT TRIGGER ctrg_haku_0009_grant_interaction_aggregate AFTER INSERT OR DELETE OR UPDATE ON public.authorization_grants DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_aggregate_from_grant();
-    """)
+    op.execute(
+        "CREATE CONSTRAINT TRIGGER ctrg_haku_0009_grant_interaction_aggregate AFTER INSERT OR DELETE OR UPDATE ON public.authorization_grants DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_aggregate_from_grant()"
+    )
 
-    op.execute(r"""
-CREATE CONSTRAINT TRIGGER ctrg_haku_0009_grant_subtype AFTER INSERT OR DELETE OR UPDATE ON public.authorization_grants DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_subtype_from_grant();
-    """)
+    op.execute(
+        "CREATE CONSTRAINT TRIGGER ctrg_haku_0009_grant_subtype AFTER INSERT OR DELETE OR UPDATE ON public.authorization_grants DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_subtype_from_grant()"
+    )
 
-    op.execute(r"""
-CREATE CONSTRAINT TRIGGER ctrg_haku_0009_interaction_aggregate AFTER INSERT OR UPDATE ON public.enrollment_interactions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_aggregate_from_interaction();
-    """)
+    op.execute(
+        "CREATE CONSTRAINT TRIGGER ctrg_haku_0009_interaction_aggregate AFTER INSERT OR UPDATE ON public.enrollment_interactions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_aggregate_from_interaction()"
+    )
 
-    op.execute(r"""
-CREATE CONSTRAINT TRIGGER ctrg_haku_0009_name_interaction_aggregate AFTER INSERT OR DELETE OR UPDATE ON public.agent_name_reservations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_aggregate_from_name();
-    """)
+    op.execute(
+        "CREATE CONSTRAINT TRIGGER ctrg_haku_0009_name_interaction_aggregate AFTER INSERT OR DELETE OR UPDATE ON public.agent_name_reservations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_aggregate_from_name()"
+    )
 
-    op.execute(r"""
-CREATE CONSTRAINT TRIGGER ctrg_haku_0009_name_promotion AFTER INSERT OR UPDATE ON public.agent_name_reservations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_name_promotion();
-    """)
+    op.execute(
+        "CREATE CONSTRAINT TRIGGER ctrg_haku_0009_name_promotion AFTER INSERT OR UPDATE ON public.agent_name_reservations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_name_promotion()"
+    )
 
-    op.execute(r"""
-CREATE CONSTRAINT TRIGGER ctrg_haku_0009_new_interaction_has_correlation AFTER INSERT ON public.enrollment_interactions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_new_interaction_correlation();
-    """)
+    op.execute(
+        "CREATE CONSTRAINT TRIGGER ctrg_haku_0009_new_interaction_has_correlation AFTER INSERT ON public.enrollment_interactions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_new_interaction_correlation()"
+    )
 
-    op.execute(r"""
-CREATE CONSTRAINT TRIGGER ctrg_haku_0009_principal_has_call AFTER INSERT OR DELETE OR UPDATE ON public.mcp_tool_call_principals DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_principal_from_principal();
-    """)
+    op.execute(
+        "CREATE CONSTRAINT TRIGGER ctrg_haku_0009_principal_has_call AFTER INSERT OR DELETE OR UPDATE ON public.mcp_tool_call_principals DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_principal_from_principal()"
+    )
 
-    op.execute(r"""
-CREATE CONSTRAINT TRIGGER ctrg_haku_0009_static_subtype AFTER INSERT OR DELETE OR UPDATE ON public.static_credentials DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_subtype_from_static();
-    """)
+    op.execute(
+        "CREATE CONSTRAINT TRIGGER ctrg_haku_0009_static_subtype AFTER INSERT OR DELETE OR UPDATE ON public.static_credentials DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_subtype_from_static()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_haku_0009_agent_invariants BEFORE INSERT OR DELETE OR UPDATE ON public.agents FOR EACH ROW EXECUTE FUNCTION public.haku_0009_agent_invariants();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_haku_0009_agent_invariants BEFORE INSERT OR DELETE OR UPDATE ON public.agents FOR EACH ROW EXECUTE FUNCTION public.haku_0009_agent_invariants()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_haku_0009_agent_name_invariants BEFORE INSERT OR DELETE OR UPDATE ON public.agent_name_reservations FOR EACH ROW EXECUTE FUNCTION public.haku_0009_agent_name_invariants();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_haku_0009_agent_name_invariants BEFORE INSERT OR DELETE OR UPDATE ON public.agent_name_reservations FOR EACH ROW EXECUTE FUNCTION public.haku_0009_agent_name_invariants()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_haku_0009_authorization_grant_immutable BEFORE UPDATE ON public.authorization_grants FOR EACH ROW EXECUTE FUNCTION public.haku_0009_authorization_grant_immutable();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_haku_0009_authorization_grant_immutable BEFORE UPDATE ON public.authorization_grants FOR EACH ROW EXECUTE FUNCTION public.haku_0009_authorization_grant_immutable()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_haku_0009_client_software_invariants BEFORE INSERT OR UPDATE ON public.client_software FOR EACH ROW EXECUTE FUNCTION public.haku_0009_client_software_invariants();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_haku_0009_client_software_invariants BEFORE INSERT OR UPDATE ON public.client_software FOR EACH ROW EXECUTE FUNCTION public.haku_0009_client_software_invariants()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_haku_0009_correlation_reservation_invariants BEFORE DELETE OR UPDATE ON public.enrollment_correlation_reservations FOR EACH ROW EXECUTE FUNCTION public.haku_0009_correlation_reservation_invariants();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_haku_0009_correlation_reservation_invariants BEFORE DELETE OR UPDATE ON public.enrollment_correlation_reservations FOR EACH ROW EXECUTE FUNCTION public.haku_0009_correlation_reservation_invariants()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_haku_0009_credential_binding_invariants BEFORE INSERT OR UPDATE ON public.credential_bindings FOR EACH ROW EXECUTE FUNCTION public.haku_0009_credential_binding_invariants();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_haku_0009_credential_binding_invariants BEFORE INSERT OR UPDATE ON public.credential_bindings FOR EACH ROW EXECUTE FUNCTION public.haku_0009_credential_binding_invariants()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_haku_0009_enrollment_interaction_delete_guard BEFORE DELETE ON public.enrollment_interactions FOR EACH ROW EXECUTE FUNCTION public.haku_0009_enrollment_interaction_delete_guard();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_haku_0009_enrollment_interaction_delete_guard BEFORE DELETE ON public.enrollment_interactions FOR EACH ROW EXECUTE FUNCTION public.haku_0009_enrollment_interaction_delete_guard()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_haku_0009_enrollment_interaction_invariants BEFORE INSERT OR UPDATE ON public.enrollment_interactions FOR EACH ROW EXECUTE FUNCTION public.haku_0009_enrollment_interaction_invariants();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_haku_0009_enrollment_interaction_invariants BEFORE INSERT OR UPDATE ON public.enrollment_interactions FOR EACH ROW EXECUTE FUNCTION public.haku_0009_enrollment_interaction_invariants()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_haku_0009_identity_anchor_immutable BEFORE UPDATE ON public.identity_anchors FOR EACH ROW EXECUTE FUNCTION public.haku_0009_identity_anchor_immutable();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_haku_0009_identity_anchor_immutable BEFORE UPDATE ON public.identity_anchors FOR EACH ROW EXECUTE FUNCTION public.haku_0009_identity_anchor_immutable()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_haku_0009_lock_grant_authority BEFORE INSERT OR UPDATE ON public.authorization_grants FOR EACH ROW EXECUTE FUNCTION public.haku_0009_lock_grant_authority();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_haku_0009_lock_grant_authority BEFORE INSERT OR UPDATE ON public.authorization_grants FOR EACH ROW EXECUTE FUNCTION public.haku_0009_lock_grant_authority()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_haku_0009_oidc_identity_immutable BEFORE UPDATE ON public.oidc_identities FOR EACH ROW EXECUTE FUNCTION public.haku_0009_oidc_identity_immutable();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_haku_0009_oidc_identity_immutable BEFORE UPDATE ON public.oidc_identities FOR EACH ROW EXECUTE FUNCTION public.haku_0009_oidc_identity_immutable()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_haku_0009_static_credential_immutable BEFORE UPDATE ON public.static_credentials FOR EACH ROW EXECUTE FUNCTION public.haku_0009_static_credential_immutable();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_haku_0009_static_credential_immutable BEFORE UPDATE ON public.static_credentials FOR EACH ROW EXECUTE FUNCTION public.haku_0009_static_credential_immutable()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_haku_0009_tool_call_principal_immutable BEFORE UPDATE ON public.mcp_tool_call_principals FOR EACH ROW EXECUTE FUNCTION public.haku_0009_tool_call_principal_immutable();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_haku_0009_tool_call_principal_immutable BEFORE UPDATE ON public.mcp_tool_call_principals FOR EACH ROW EXECUTE FUNCTION public.haku_0009_tool_call_principal_immutable()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_haku_0119_kubernetes_grant_source_invariants BEFORE INSERT OR UPDATE OF owner_agent_id, principal_kind, principal_agent_id, principal_access_profile_id, source_tool_call_id ON public.kubernetes_grants FOR EACH ROW EXECUTE FUNCTION public.haku_0119_kubernetes_grant_source_invariants();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_haku_0119_kubernetes_grant_source_invariants BEFORE INSERT OR UPDATE OF owner_agent_id, principal_kind, principal_agent_id, principal_access_profile_id, source_tool_call_id ON public.kubernetes_grants FOR EACH ROW EXECUTE FUNCTION public.haku_0119_kubernetes_grant_source_invariants()"
+    )
