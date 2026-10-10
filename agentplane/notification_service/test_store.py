@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -25,7 +25,7 @@ from agentplane.notification_service.models import (
     Subscribe,
     SubscriptionUpdate,
 )
-from agentplane.notification_service.store import ClaimLostError, ConflictError, NotFoundError, Store
+from agentplane.notification_service.store import ClaimLostError, ConflictError, NotFoundError, QuotaError, Store
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal
@@ -46,6 +46,92 @@ def events(count: int = 3) -> list[ActionEventView]:
         ActionEventView(sequence=i, state=ActionState.DECISION_PENDING, at=datetime.now(UTC))
         for i in range(1, count + 1)
     ]
+
+
+@pytest.mark.parametrize("inactive", ["cancelled", "expired"])
+async def test_only_active_subscriptions_consume_inbox_quota(store: Store, inactive: str) -> None:
+    subscriptions = [
+        await store.subscribe(PRINCIPAL, BODY.model_copy(update={"idempotency_key": f"slot-{i}"})) for i in range(64)
+    ]
+    extra = BODY.model_copy(update={"idempotency_key": "extra"})
+    with pytest.raises(QuotaError, match="64 active subscriptions"):
+        await store.subscribe(PRINCIPAL, extra)
+    # Idempotent replay and active renewal do not need another slot.
+    first_body = BODY.model_copy(update={"idempotency_key": "slot-0"})
+    assert await store.subscribe(PRINCIPAL, first_body) == subscriptions[0]
+    renewed = await store.change(PRINCIPAL.account, subscriptions[0].id, SubscriptionUpdate(version=1))
+    assert renewed.version == 2
+    # The quota is per inbox, not shared across an account's sessions.
+    other = await store.subscribe(PRINCIPAL, extra.model_copy(update={"session_id": "other-session"}))
+    assert other.inbox_id != subscriptions[0].inbox_id
+
+    if inactive == "cancelled":
+        await store.change(PRINCIPAL.account, renewed.id, None)
+    else:
+        async with store.sessions.begin() as session:
+            await session.execute(
+                update(Subscription)
+                .where(Subscription.id == renewed.id)
+                .values(expires_at=datetime.now(UTC) - timedelta(seconds=1))
+            )
+    replacement = await store.subscribe(PRINCIPAL, extra)
+    assert replacement.inbox_id == renewed.inbox_id
+    # Keep the inactive record and its idempotency key; replay does not reactivate it.
+    retained = await store.subscription(PRINCIPAL.account, renewed.id)
+    assert await store.subscribe(PRINCIPAL, first_body) == retained
+    with pytest.raises(ConflictError):
+        await store.subscribe(PRINCIPAL, first_body.model_copy(update={"lifetime_days": 30}))
+    with pytest.raises(QuotaError):
+        await store.subscribe(PRINCIPAL, BODY.model_copy(update={"idempotency_key": "overflow"}))
+    if inactive == "expired":
+        with pytest.raises(QuotaError):
+            await store.change(PRINCIPAL.account, renewed.id, SubscriptionUpdate(version=retained.version))
+        # Rejected revival must not alter the old record/version.
+        assert await store.subscription(PRINCIPAL.account, renewed.id) == retained
+        await store.change(PRINCIPAL.account, replacement.id, None)
+        revived = await store.change(PRINCIPAL.account, renewed.id, SubscriptionUpdate(version=retained.version))
+        assert revived.expires_at > datetime.now(UTC)
+        assert revived.version == retained.version + 1
+    async with store.sessions() as session:
+        assert (
+            await session.scalar(
+                select(func.count()).select_from(Subscription).where(Subscription.inbox_id == renewed.inbox_id)
+            )
+            == 65
+        )
+
+
+async def test_creation_and_expired_renewal_share_the_last_active_slot(store: Store) -> None:
+    subscriptions = [
+        await store.subscribe(PRINCIPAL, BODY.model_copy(update={"idempotency_key": f"slot-{i}"})) for i in range(64)
+    ]
+    expired = subscriptions[0]
+    async with store.sessions.begin() as session:
+        await session.execute(
+            update(Subscription)
+            .where(Subscription.id == expired.id)
+            .values(expires_at=datetime.now(UTC) - timedelta(seconds=1))
+        )
+    results = await asyncio.gather(
+        store.subscribe(PRINCIPAL, BODY.model_copy(update={"idempotency_key": "last-slot"})),
+        store.change(PRINCIPAL.account, expired.id, SubscriptionUpdate(version=1)),
+        return_exceptions=True,
+    )
+    assert sum(isinstance(result, QuotaError) for result in results) == 1
+    assert sum(isinstance(result, BaseException) for result in results) == 1
+    async with store.sessions() as session:
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(Subscription)
+                .where(
+                    Subscription.inbox_id == expired.inbox_id,
+                    ~Subscription.cancelled,
+                    Subscription.expires_at > func.now(),
+                )
+            )
+            == 64
+        )
 
 
 async def test_owner_idempotence_cancel_and_version(store: Store) -> None:

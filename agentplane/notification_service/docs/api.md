@@ -112,7 +112,7 @@ There is no exactly-once native execution claim. Coverage is independent of ackn
 reminders for unacknowledged entries, including after a worker restart. Only a running harness can receive
 input; this service never calls OpenSession, ResumeSession, or sandbox provisioning APIs.
 
-V1 limits: 64 inboxes per account; 64 subscriptions per inbox including cancelled records; 10000
+V1 limits: 64 inboxes per account; 64 active (not cancelled and not expired) subscriptions per inbox; 10000
 source-event identities per inbox lifetime; 128 entries per read/poll/replay step; subscriptions last
 7 days by default and can be renewed up to 30 days at a time. A full inbox stops source progress with
 an observable error rather than dropping events. Provider payloads expire after 30 days, preserving
@@ -331,3 +331,9 @@ restart and never become per-subscription copies or inbox history.
 These are current-state tables, not temporal versions. `github_subject_revision` accumulates observed
 membership without ordering or a current-head marker. Retained webhook receipts remain the event
 journal; repository names, access observations, refresh failures and leases are updated in place.
+
+Cancelled and expired subscription records do not consume active capacity; they remain
+available for history and idempotent replay. Renewing an expired subscription consumes
+an active slot and is subject to the same limit as creating one. Renewing an already
+active subscription does not consume another slot. Replaying a creation idempotency
+key returns the retained subscription without reactivating it, even at the limit.

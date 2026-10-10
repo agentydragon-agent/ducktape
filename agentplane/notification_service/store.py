@@ -164,6 +164,17 @@ async def subscription_view(session: AsyncSession, row: Subscription) -> Subscri
     )
 
 
+async def check_active_subscription_quota(session: AsyncSession, inbox_id: UUID, *, now: datetime) -> None:
+    """Check capacity while the caller holds the inbox row lock, including on renewal."""
+    count = await session.scalar(
+        select(func.count())
+        .select_from(Subscription)
+        .where(Subscription.inbox_id == inbox_id, ~Subscription.cancelled, Subscription.expires_at > now)
+    )
+    if count is not None and count >= 64:
+        raise QuotaError("64 active subscriptions per inbox")
+
+
 class Store:
     def __init__(self, engine: AsyncEngine) -> None:
         self.wakeups = Wakeups(engine.url)
@@ -253,11 +264,8 @@ class Store:
                 if Subscribe.model_validate(row.creation) != body:
                     raise ConflictError("idempotency key already names another subscription")
                 return await subscription_view(session, row)
-            count = await session.scalar(
-                select(func.count()).select_from(Subscription).where(Subscription.inbox_id == inbox.id)
-            )
-            if count is not None and count >= 64:
-                raise QuotaError("64 subscriptions per inbox, including cancelled subscriptions")
+            now = datetime.now(UTC)
+            await check_active_subscription_quota(session, inbox.id, now=now)
             actions_after_sequence: int | None
             github_start_position: int | None
             if isinstance(body.source, ActionsSource):
@@ -374,8 +382,11 @@ class Store:
             else:
                 if row.version != update.version or row.cancelled:
                     raise ConflictError("subscription version changed or subscription cancelled")
-                row.expires_at = datetime.now(UTC) + timedelta(days=update.lifetime_days)
-                row.next_attempt = datetime.now(UTC)
+                now = datetime.now(UTC)
+                if row.expires_at <= now:
+                    await check_active_subscription_quota(session, inbox.id, now=now)
+                row.expires_at = now + timedelta(days=update.lifetime_days)
+                row.next_attempt = now
             row.version += 1
             inbox.next_attempt = datetime.now(UTC)
             await notify(session)
