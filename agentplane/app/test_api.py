@@ -5,12 +5,14 @@ from __future__ import annotations
 import asyncio
 import socket
 from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 from uuid import UUID, uuid4
 
+import grpc
 import httpx
 import pytest
 import pytest_bazel
@@ -43,7 +45,6 @@ from agentplane.app.threads.view.recording import THREAD_FOLD_EPOCH
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
-from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBindingGrant, RoleRef
@@ -742,11 +743,57 @@ def test_a_runner_that_does_not_answer_is_a_503(
     assert "UNAVAILABLE" in response.json()["detail"]
 
 
-async def test_a_runner_that_never_answers_open_is_a_504_and_releases_its_stream(
+@asynccontextmanager
+async def unanswered_command_service(
+    token_file: Path,
+) -> AsyncIterator[tuple[SandboxServiceClient, asyncio.Queue[str]]]:
+    cancelled: asyncio.Queue[str] = asyncio.Queue()
+
+    async def submit(request: service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext) -> None:
+        del context
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.put_nowait(request.destination.session_id)
+
+    server = grpc.aio.server()
+    server.add_generic_rpc_handlers(
+        [
+            grpc.method_handlers_generic_handler(
+                "ducktape.agentplane.sandbox.v1.SandboxService",
+                {
+                    "SubmitCommand": grpc.unary_unary_rpc_method_handler(
+                        submit,
+                        request_deserializer=service_pb2.SubmitCommandRequest.FromString,
+                        response_serializer=event_log_pb2.EventEntry.SerializeToString,
+                    )
+                },
+            )
+        ]
+    )
+    port = server.add_insecure_port("127.0.0.1:0")
+    await asyncio.to_thread(token_file.write_text, "test-app-command-peer")
+    service = SandboxServiceClient(
+        f"127.0.0.1:{port}",
+        namespace="test",
+        token_file=token_file,
+        command_admission_timeout_s=1,
+        request_timeout_s=5,
+        lifecycle_timeout_s=5,
+        follow_timeout_s=5,
+    )
+    await server.start()
+    try:
+        yield service, cancelled
+    finally:
+        await service.close()
+        await server.stop(0)
+
+
+async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     tmp_path: Path,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
-    monkeypatch: pytest.MonkeyPatch,
     inventory: SandboxServiceClient,
     store: ThreadStore,
     database_updates: DatabaseUpdates,
@@ -760,49 +807,45 @@ async def test_a_runner_that_never_answers_open_is_a_504_and_releases_its_stream
     content: ContentStore,
     ingestion: Ingestion,
 ) -> None:
-    """A runner that takes the command's Attach but never answers its Open, as a wedged one: the
-    route answers rather than holding the request, and lets go of the runner's stream."""
-    monkeypatch.setattr("agentplane.runner.client.OBSERVE_ANSWER_S", 1)
+    """Bound command admission at the public service RPC, without runner internals."""
     live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     session_id = str(uuid4())
     thread_id = await event_logs.open("live", session_id, spec)
-    wedged = UnansweringRunner()
-    async with wedged.serve() as port:
-        with backend(custom_objects, core_v1, tmp_path / "wedged-token", runner_port=port) as endpoint:
-            runners = SandboxSessions(live_index, endpoint.client())
-            ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
-            app = create_app(
-                inventory,
-                RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester),
-                store,
-                TEST_MODELS,
-                egress,
-                decisions,
-                live_index,
-                action_policy,
-                reviewer=reviewer,
-                event_logs=event_logs,
-                content=content,
-                database_updates=database_updates,
-                operator_sessions=operator_sessions,
-            )
-            try:
-                async with (
-                    httpx.AsyncClient(
-                        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
-                    ) as http,
-                    asyncio.timeout(10),
-                ):
-                    response = await http.post(
-                        f"/threads/{thread_id}/commands",
-                        json={"commandId": "test-unanswered-command", "submitInput": {"text": "never admitted"}},
-                    )
-                    assert response.status_code == 504, response.text
-                    assert await wedged.cancelled.get() == session_id
-            finally:
-                await ingester.close()
-                await runners.close()
+    async with unanswered_command_service(tmp_path / "wedged-token") as (service, cancelled):
+        runners = SandboxSessions(live_index, service)
+        ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
+        app = create_app(
+            inventory,
+            RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester),
+            store,
+            TEST_MODELS,
+            egress,
+            decisions,
+            live_index,
+            action_policy,
+            reviewer=reviewer,
+            event_logs=event_logs,
+            content=content,
+            database_updates=database_updates,
+            operator_sessions=operator_sessions,
+        )
+        try:
+            async with (
+                httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+                ) as http,
+                asyncio.timeout(10),
+            ):
+                response = await http.post(
+                    f"/threads/{thread_id}/commands",
+                    json={"commandId": "test-unanswered-command", "submitInput": {"text": "never admitted"}},
+                )
+                assert response.status_code == 504, response.text
+                assert await cancelled.get() == session_id
+        finally:
+            await ingester.close()
+            await runners.close()
 
 
 def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> None:
