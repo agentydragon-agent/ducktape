@@ -3,7 +3,7 @@ kind: Component
 images:
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-commands-migrate
-    newTag: devel-20261010201055-0390dd0 # {"$imagepolicy": "flux-system:agentplane-sandbox-commands-migrate:tag"}
+    newTag: devel-20261010205159-9d6503d # {"$imagepolicy": "flux-system:agentplane-sandbox-commands-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
     newTag: devel-20261010124026-105ded3 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress
@@ -31,7 +31,7 @@ images:
     newTag: devel-20261010184900-c87ad85 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
   # Bootstrap only: keep rollout suspended until CI publishes and automation pins a real tag.
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-service
-    newTag: devel-20261010202029-d432218 # {"$imagepolicy": "flux-system:agentplane-sandbox-service:tag"}
+    newTag: devel-20261010205209-9d6503d # {"$imagepolicy": "flux-system:agentplane-sandbox-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-service-history-migrate
     newTag: devel-20261010184814-c87ad85 # {"$imagepolicy": "flux-system:agentplane-sandbox-service-history-migrate:tag"}
   # Bootstrap only: CI publishes the first images after merge; Flux must select real tags before rollout.
@@ -41,4 +41,4 @@ images:
     newTag: devel-20261010184911-c87ad85 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261010202036-d432218 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+    newTag: devel-20261010205123-9d6503d # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
