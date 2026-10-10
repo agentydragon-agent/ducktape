@@ -236,34 +236,16 @@ class Runner:
         self, *, idempotency_key: str, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.CreateSessionResponse:
         # The key is for an explicit Open attempt, not a runner/session identifier.
-        launch = wire.open_proto(protocol_pb2.SessionDestination(sandbox=self.destination), spec, setup_script)
-        request = protocol_pb2.CreateSessionRequest(
-            sandbox=self.destination,
-            idempotency_key=idempotency_key,
-            spec=launch.spec,
-            override_mask=launch.override_mask,
-        )
-        if setup_script is not None:
-            request.setup_script = setup_script
         return await self.service.unary(
-            self.service.stub.CreateSession, request, timeout_s=self.service.lifecycle_timeout_s
+            self.service.stub.CreateSession,
+            wire.create_proto(self.destination, idempotency_key, spec, setup_script),
+            timeout_s=self.service.lifecycle_timeout_s,
         )
 
     async def lookup(self, *, idempotency_key: str) -> protocol_pb2.LookupSessionResponse:
         return await self.service.unary(
             self.service.stub.LookupSession,
             protocol_pb2.LookupSessionRequest(sandbox=self.destination, idempotency_key=idempotency_key),
-        )
-
-    async def open(
-        self, session_id: str, spec: dict[str, object], setup_script: str | None = None
-    ) -> runner_pb2.Attached:
-        return await self.service.unary(
-            self.service.stub.OpenSession,
-            wire.open_proto(
-                protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id), spec, setup_script
-            ),
-            timeout_s=self.service.lifecycle_timeout_s,
         )
 
     async def place_hold(self, session_id: str, *, holder: str) -> protocol_pb2.Hold:
