@@ -1,1 +1,27 @@
-Generic single-database configuration.
+Props Alembic migrations
+=======================
+
+20260926000000 is the squashed, frozen final schema through the former chain's
+last revision of the same name. A database already at that revision applies no
+DDL or data changes. An older deployed database must first upgrade with an image
+containing the old chain; never stamp it forward to hide missing migrations.
+
+The baseline creates the final schema directly, without intermediate tables or
+historical data rewrites. It preserves functions, triggers, materialized views,
+constraints, RLS policies, grants, evaluator role setup and default privileges.
+Fresh databases get a new agent-role salt and a populated (empty) examples view.
+Downgrade-to-base retains the original baseline's destructive public-schema drop;
+it is not a route back to an intermediate revision. No deployed DB is reset.
+
+Provenance: schema-only CI artifact from the original chain at f481072738,
+BuildBuddy invocation 529ec531-065b-5cdc-b113-51a1b6d56572,
+//props/db/migrations:test_schema_baseline, test.outputs/props_schema.sql.
+The test compares a normalized dump digest against that independent capture and
+checks that an at-head upgrade preserves object OIDs and the salt. This uses only
+an isolated PostgreSQL testcontainer. PostgreSQL version banners, psql restriction
+keys, blank lines and dump comments are excluded from the digest, not schema SQL.
+
+Future schema changes are ordinary child revisions. The squash equivalence check
+is landing evidence, not a requirement to freeze this schema forever: retire its
+historical digest assertion when advancing the schema, retaining current-schema
+and at-head no-op tests. Specimen snapshots are not part of this migration tree.

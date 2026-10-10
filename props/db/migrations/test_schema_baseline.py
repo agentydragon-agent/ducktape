@@ -1,9 +1,10 @@
-"""Capture the final migrated schema and prove upgrade-to-head is a no-op at head.
+"""Compare the squashed baseline to the captured final schema of the original chain.
 
-The schema-only artifact supplies the frozen baseline when squashing the chain.
+The canonical dump digest pins all physical names, function bodies, policies and ACLs.
 Only a disposable testcontainer database is used; no deployed database is contacted.
 """
 
+import hashlib
 import re
 
 import pytest_bazel
@@ -33,14 +34,31 @@ def test_schema_baseline(postgres_container: PostgresContainer, postgres_base_co
         upgrade_database(engine)
         before = _schema(postgres_container, database)
         (undeclared_outputs_dir() / "props_schema.sql").write_text(before)
+        # Original-chain CI capture; keep exact names, function bodies, policies and ACLs.
+        canonical = "\n".join(
+            line.rstrip() for line in before.splitlines() if line.strip() and not line.startswith(("--", "\\"))
+        )
+        assert (
+            hashlib.sha256(canonical.encode()).hexdigest()
+            == "a3b158e323d11912a2a5f0531a424b61e58a996c9c8ef805e50109faad93d18d"
+        )
         with engine.connect() as conn:
             revision = conn.scalar(text("SELECT version_num FROM alembic_version"))
             objects = conn.execute(
                 text("SELECT oid, relname FROM pg_class WHERE relnamespace = 'public'::regnamespace ORDER BY oid")
             ).all()
         assert revision == "20260926000000"
+        with engine.connect() as conn:
+            salt = conn.scalar(text("SELECT salt FROM agent_role_salt WHERE id = 1"))
+            assert salt is not None
+            assert len(salt) == 32
+            assert conn.scalar(text("SELECT relispopulated FROM pg_class WHERE oid = 'examples'::regclass"))
+            assert conn.scalar(text("SELECT rolbypassrls FROM pg_roles WHERE rolname = 'evaluator_base'")) is False
+            assert conn.scalar(text("SELECT pg_has_role('evaluator', 'evaluator_base', 'MEMBER')"))
         upgrade_database(engine)
         assert _schema(postgres_container, database) == before
+        with engine.connect() as conn:
+            assert conn.scalar(text("SELECT salt FROM agent_role_salt WHERE id = 1")) == salt
         with engine.connect() as conn:
             assert (
                 conn.execute(
