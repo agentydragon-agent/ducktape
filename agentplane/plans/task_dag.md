@@ -11,17 +11,20 @@ The archive ownership cutover is complete in testing and staging. Sandbox Servic
 owns raw history; the app consumes it through gRPC and owns UI projections. Backfill,
 writer/read/UI handoff, runtime migration flags/tooling, per-Session leases and app
 locator retirement are completed work, with evidence in the
-[read-cutover record](session_history_read_cutover.md#runtime-cleanup-acceptance).
+[cutover completion record](../sandbox_service/session_history/CUTOVER.md#completion-and-retirement).
 The old archive-ownership scheduling hold is lifted; contract review, authorization,
 and task-specific dependencies below still apply. Do not repeat backfill or full-history
 verification. The six empty staging Sessions remain explicitly excluded from extra checks.
 
 Raw-table/fence retirement (#9725) is deployed in both environments, and #9723
 removed the temporary rollout override/test. The
-[retirement evidence and staging overlap incident](session_history_read_cutover.md#raw-history-retirement-evidence)
+[retirement evidence and staging overlap incident](../sandbox_service/session_history/CUTOVER.md#completion-and-retirement)
 close that task; the incident is not a clean coordinated-rollout result. Remaining
 schema naming, metadata/tooling/grant audits and identity-checklist reconciliation
-are listed in [schema cleanup](session_history_read_cutover.md#post-cutover-schema-cleanup).
+remain unfinished. Audit metadata consumers (`sandbox`, `harness`, `model`, `cwd`,
+summary/activity fields) before deleting useful UI projections; inventory remaining
+migration-only tools and grants before removing them. Naming and identity work are
+tracked below; squash Alembic only once that schema settles.
 
 States: **in flight** means reported work is underway; **decision** needs a reviewed outcome;
 **blocked** names prerequisites; **candidate** is dispatchable when selected, not a priority claim.

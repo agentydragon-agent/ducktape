@@ -1,16 +1,14 @@
 # Session Event archive placement and first cutover
 
-Status: **placement implemented; post-cutover cleanup in progress**. Sandbox Service
-owns the archive and live ingestion; the app reads service history and maintains UI
-projections. The app runtime/test port landed in #9670. Accepted bounded handoff and
-rollout evidence lives in the [read-cutover plan](session_history_read_cutover.md#runtime-cleanup-acceptance).
-This is not a claim that every later cleanup revision has finished deployment.
-
-The one-shot importer and its image are retired. Do not start another importer or
-backfill; future repair requires separate review. The [historical handoff checks](../sandbox_service/session_history/CUTOVER.md)
-retain the bounded-verification contract while legacy app tables remain. Table drops,
-identity cleanup and migration squashing remain explicit follow-up work in the
-[task DAG](task_dag.md#current-state-and-scheduling). No agent read grants are implied.
+Status: **placement and archive cutover complete; redundant app raw storage retired**.
+Sandbox Service owns archive and ingestion; the app reads service history and maintains
+UI projections. Bounded acceptance and the rollout incident are recorded in the
+[historical cutover record](../sandbox_service/session_history/CUTOVER.md#completion-and-retirement).
+The one-shot importer and its image are retired. Do not restart import or backfill;
+future repair requires separate review. Remaining schema naming, metadata/grant audits,
+identity-checklist reconciliation and eventual migration squashing belong in the
+[task DAG](task_dag.md#current-state-and-scheduling), not another archive cutover.
+No agent read grants are implied.
 
 ## Choice
 
