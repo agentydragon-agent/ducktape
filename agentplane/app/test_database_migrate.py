@@ -216,7 +216,7 @@ def _migrate_from_0015(db_url: str, column_type: str, stored: list[str]) -> list
             connection.execute(
                 text(
                     "INSERT INTO event_log (id, sandbox, harness, model, cwd, created_at) "
-                    "VALUES (:thread, 'test-sandbox', 'test-session', 'HARNESS_CODEX', 'test-model', '/test', now())"
+                    "VALUES (:thread, 'test-sandbox', 'HARNESS_CODEX', 'test-model', '/test', now())"
                 ),
                 {"thread": thread},
             )
