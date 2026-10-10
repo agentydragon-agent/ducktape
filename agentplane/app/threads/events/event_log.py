@@ -17,7 +17,7 @@ from datetime import UTC
 from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict, ParseDict
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -94,11 +94,16 @@ class EventLogStore:
             thread_id = parsed if str(parsed) == session_id else uuid4()
         except ValueError:
             thread_id = uuid4()
+        # Migrated Sessions retain their old runner locator but discovery now returns
+        # their public UUID. Resolve either identity without rewriting that locator.
+        existing_query = select(EventLog).where(EventLog.sandbox == sandbox)
+        if str(thread_id) == session_id:
+            existing_query = existing_query.where(or_(EventLog.session_id == session_id, EventLog.id == thread_id))
+        else:
+            existing_query = existing_query.where(EventLog.session_id == session_id)
         if self._history_creator is not None:
             async with self._sessions() as session:
-                existing = await session.scalar(
-                    select(EventLog).where(EventLog.sandbox == sandbox, EventLog.session_id == session_id)
-                )
+                existing = await session.scalar(existing_query)
                 if existing is not None:
                     # Discovery must keep existing Threads running during staged handoff.
                     # Only explicit handoff may fence an already-created legacy prefix.
@@ -120,7 +125,7 @@ class EventLogStore:
                     cwd=spec.cwd,
                     raw_ingestion_fenced_at_cursor=0 if self._history_creator is not None else None,
                 )
-                .on_conflict_do_nothing(index_elements=[EventLog.sandbox, EventLog.session_id])
+                .on_conflict_do_nothing()
                 .returning(EventLog.id)
             )
             if created is not None:
@@ -128,11 +133,9 @@ class EventLogStore:
                     session.add(ThreadHistorySummary(thread_id=created))
                 await notify(session, Channel.THREADS)
                 return created
-            existing = (
-                await session.scalars(
-                    select(EventLog).where(EventLog.sandbox == sandbox, EventLog.session_id == session_id)
-                )
-            ).one()
+            existing = (await session.scalars(existing_query)).one_or_none()
+            if existing is None:
+                raise EventReplicationError("public Session ID belongs to another sandbox")
             # A legacy replica may win this insert race. Preserve its mapping and
             # leave its final cursor to the explicit handoff, rather than killing discovery.
             return existing.id

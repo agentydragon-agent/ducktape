@@ -254,5 +254,62 @@ async def test_legacy_creator_winning_registration_race_remains_unfenced(engine:
         assert await session.scalar(select(func.count()).select_from(ThreadHistorySummary)) == 0
 
 
+@pytest.mark.parametrize("fenced_at", [None, 1697])
+async def test_public_session_alias_preserves_legacy_locator(engine: AsyncEngine, fenced_at: int | None) -> None:
+    legacy = EventLogStore(engine)
+    public_id = await legacy.open("sb-1", "s-retained", SPEC)
+    async with async_sessionmaker(engine).begin() as session:
+        row = await session.get(EventLog, public_id)
+        assert row is not None
+        row.raw_ingestion_fenced_at_cursor = fenced_at
+    reader = AsyncMock(spec=SandboxServiceClient)
+    current = EventLogStore(engine, history_creator=cast(SandboxServiceClient, reader))
+    assert await current.open("sb-1", str(public_id), SPEC) == public_id
+    reader.read_session_observations.assert_not_awaited()
+    async with async_sessionmaker(engine)() as session:
+        row = await session.get(EventLog, public_id)
+        assert row is not None
+        assert row.session_id == "s-retained"
+        assert row.raw_ingestion_fenced_at_cursor == fenced_at
+        assert await session.scalar(select(func.count()).select_from(EventLog)) == 1
+
+
+async def test_public_session_alias_cannot_cross_sandboxes(engine: AsyncEngine) -> None:
+    public_id = await EventLogStore(engine).open("sb-1", "s-retained", SPEC)
+    reader = AsyncMock(spec=SandboxServiceClient)
+    current = EventLogStore(engine, history_creator=cast(SandboxServiceClient, reader))
+    with pytest.raises(EventReplicationError, match="another sandbox"):
+        await current.open("sb-2", str(public_id), SPEC)
+    async with async_sessionmaker(engine)() as session:
+        assert await session.scalar(select(func.count()).select_from(EventLog)) == 1
+        assert await session.scalar(select(func.count()).select_from(ThreadHistorySummary)) == 0
+
+
+async def test_legacy_alias_winning_registration_race_is_preserved(engine: AsyncEngine) -> None:
+    public_id = uuid4()
+    legacy = EventLogStore(engine)
+    reader = AsyncMock(spec=SandboxServiceClient)
+
+    async def register(session_id: str, *, limit: int) -> protocol_pb2.ReadSessionObservationsResponse:
+        assert session_id == str(public_id)
+        assert limit == 1
+        await legacy.open("sb-1", session_id, SPEC)
+        async with async_sessionmaker(engine).begin() as session:
+            row = await session.get(EventLog, public_id)
+            assert row is not None
+            row.session_id = "s-retained"
+        return protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
+
+    reader.read_session_observations.side_effect = register
+    current = EventLogStore(engine, history_creator=cast(SandboxServiceClient, reader))
+    assert await current.open("sb-1", str(public_id), SPEC) == public_id
+    assert not await current.is_raw_ingestion_fenced(public_id)
+    async with async_sessionmaker(engine)() as session:
+        row = await session.get(EventLog, public_id)
+        assert row is not None
+        assert row.session_id == "s-retained"
+        assert await session.scalar(select(func.count()).select_from(ThreadHistorySummary)) == 0
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
