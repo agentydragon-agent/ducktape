@@ -12,8 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
 from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
+from agentplane.app.testing.legacy_thread_store import LegacyThreadStore
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
-from agentplane.app.threads.events.event_log import EventReplicationError, FeedEnd
+from agentplane.app.threads.events.event_log import (
+    EventLogStore as ServiceEventLogStore,
+    EventReplicationError,
+    FeedEnd,
+)
 from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.threads.history_handoff import fence_raw_ingestion
 from agentplane.app.threads.history_projector import HistoryProjector
@@ -209,9 +214,10 @@ async def test_thread_metadata_survives_handoff_and_projection_retry(
     await ingestion.record(thread, first, lease=lease)
     await ingestion.record(sibling, first, lease=lease)
     store = ThreadStore(engine)
-    before = await store.get_thread(thread)
+    before = await LegacyThreadStore(engine).get_thread(thread)
     assert before is not None
     await fence_raw_ingestion(engine, thread)
+    await fence_raw_ingestion(engine, sibling)
     assert await store.get_thread(thread) == before
     assert (await store.list_threads())[0].last_cursor == 2
     later = [
@@ -234,6 +240,8 @@ async def test_thread_metadata_survives_handoff_and_projection_retry(
     after = await store.get_thread(thread)
     assert after is not None
     assert after.last_cursor == 4
+    service_logs = ServiceEventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
+    assert await service_logs.last_cursor(thread) == 4
     assert after.last_event_at == before.last_event_at
     assert after.last_turn_status == "TURN_STATUS_INTERRUPTED"
     views = {view.id: view for view in await store.list_threads()}
@@ -446,6 +454,34 @@ async def test_supervisor_never_restarts_raw_follow_for_unfenced_thread(
         assert await event_logs.last_cursor(thread) == 0
     finally:
         await coordinator.close()
+
+
+async def test_runtime_feed_metadata_does_not_fall_back_to_retained_raw_state(
+    engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
+) -> None:
+    thread = await event_logs.open("sb-1", "legacy-feed", SPEC)
+    await ingestion.set_attached(thread, runner_pb2.Attached(spec=SPEC), lease=lease)
+    await ingestion.end_feed(thread, lease=lease, error=None)
+    reader = AsyncMock(spec=SandboxServiceClient)
+    runtime = ServiceEventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
+    assert await runtime.feed_state(thread) is None
+    await runtime.resume_pending(thread)
+    async with async_sessionmaker(engine)() as session:
+        old = await session.get(FeedState, thread)
+        assert old is not None
+        assert old.end == {}
+    with pytest.raises(ValueError, match="missing service projection metadata"):
+        await ThreadStore(engine).get_thread(thread)
+    await fence_raw_ingestion(engine, thread)
+    assert await runtime.feed_state(thread) == await event_logs.feed_state(thread)
+    await runtime.resume_pending(thread)
+    current = await runtime.feed_state(thread)
+    assert current is not None
+    assert current.end is None
+    async with async_sessionmaker(engine)() as session:
+        old = await session.get(FeedState, thread)
+        assert old is not None
+        assert old.end == {}
 
 
 if __name__ == "__main__":

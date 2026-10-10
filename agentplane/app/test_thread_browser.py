@@ -34,6 +34,7 @@ from agentplane.app.testing.electric_service import ElectricService, electric_se
 from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
 from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
 from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
+from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.testing.thread_browser import (
@@ -54,7 +55,6 @@ from agentplane.app.threads.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.threads.view.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2

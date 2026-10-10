@@ -235,3 +235,18 @@ heads and post-merge rollout checks remain required; passing tests are not rollo
 No full-history verification scan was repeated. No retained records, tables or runner
 storage were deleted. Further removal of raw writers, old feed-state fallbacks and
 table models remains separate work; these PRs do not claim complete raw-table retirement.
+
+### Runtime retirement rollout evidence
+
+The merged #9660 image (`52b4e8e`) was checked Ready in testing (1/1) and staging
+(2/2). Testing still had 142 matching fenced histories and service coverage. The live
+staging `haku` Session advanced to cursor 54,132 in both service and app projection,
+with app raw cursor zero, active state and no feed error. App logs from all three
+replicas showed no projection-stalled, reconciliation-failed or error lines in the
+checked ten-minute window.
+
+The following single code cleanup removes remaining runtime raw writer helpers,
+uses the app projection checkpoint for its local cursor, and reads lifecycle/Thread
+metadata solely from ThreadHistorySummary. Retained-schema test setup moves to
+test-only helpers. This does not remove table models, historical migrations, retained
+records or the handoff tool; tooling and grant retirement remain separate work.

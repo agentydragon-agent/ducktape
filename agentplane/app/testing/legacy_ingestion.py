@@ -12,7 +12,8 @@ import grpc
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.app.database_updates import Channel, notify
-from agentplane.app.threads.events import event_log, ingestion_lease
+from agentplane.app.testing import legacy_event_log as event_log
+from agentplane.app.threads.events import ingestion_lease
 from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, FeedError, RunnerSession
 from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.threads.history_projector import HistoryProjector

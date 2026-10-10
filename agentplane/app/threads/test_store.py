@@ -14,10 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
 from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
+from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
-from agentplane.app.threads.store import ThreadStore
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness

@@ -42,13 +42,13 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
 from agentplane.app.testing.legacy_ingestion import Feed, LegacyIngester as Ingester, LegacyIngestion as Ingestion
+from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.threads.events.event_log import FeedError
 from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.app.threads.sessions import SandboxSessions
-from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.threads.view.views import ThreadOperationalState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2

@@ -119,20 +119,18 @@ This does not grant agent reads, make harness state portable, or move command ad
 
 ### `APP_RAW_HISTORY_RETIRE` — remove obsolete storage
 
-**In flight (migration agent, 2026-10-09):** runtime reader deletion is
-[#9659](https://github.com/agentydragon/ducktape/pull/9659); stacked
-[#9660](https://github.com/agentydragon/ducktape/pull/9660) removes the app runner-copy
-loop while preserving test-only old-schema fixtures. Testing's 142 retained Sessions
-are now fenced with summary/checkpoint coverage. The operator accepted live use of
-the new staging `haku` Session, independently checked as fully service-backed.
-The testing-handoff hold is released; code review, CI and rollout checks remain.
-These changes do not authorize table/data deletion. See the
-[cleanup acceptance evidence](session_history_read_cutover.md#runtime-cleanup-acceptance).
+**In flight (migration agent, 2026-10-09):** #9660 landed the reader and runner-copy
+retirements and is deployed in testing (1/1 Ready) and staging (2/2 Ready). Testing's
+142 retained histories remain fenced; the staging `haku` Session advanced with service
+and projection cursors at 54,132 and app raw cursor zero, with no feed error.
 
-**Blocked on ownership handoff.** Inventory remaining references, preserve required identity and
-fold associations, then remove old raw writes/tables and one-off import tooling when rollback no
-longer needs them. Do not delete the durable legacy runner-locator mapping. This is a separate
-finishable change, not something hidden inside enabling the read flag.
+The next single cleanup PR removes lower-level app raw writers, production raw cursor
+lookups and old FeedState/Thread view fallbacks. Old-schema regression setup stays
+in test-only fixtures. CI and rollout verification remain required for that change.
+One-off import/handoff tooling and temporary grants remain separate cleanup. Retained
+tables, rows and runner storage must not be deleted incidentally. Preserve the durable
+legacy runner-locator mapping and fold associations. See the
+[cleanup acceptance evidence](session_history_read_cutover.md#runtime-cleanup-acceptance).
 
 ### `THREAD_IDENTITY_NEW` — service-owned identity for new histories
 
