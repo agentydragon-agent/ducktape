@@ -104,8 +104,9 @@ contiguous Event prefix into the Service database under the existing canonical S
 ID. It verifies the current Sandbox UID/owner before connecting and never sends an Open
 spec or starts a harness. Copies from concurrent service replicas may overlap: the
 shared store serializes them, accepts exact duplicate bytes and refuses conflicts.
-Stopped or deleted Sandboxes retain their already-copied prefix. The ingester always
-runs when the Service starts; there is no runtime feature gate. The app's projection
+Stopped or deleted Sandboxes retain their already-copied prefix. The ingester runs when
+`ingest_history` is set, which is off wherever the History Service ingester writes the
+tables instead. The app's projection
 consumes this archive independently. Legacy rows without a known Sandbox UID remain
 readable but are not polled until their binding is established by a verified handoff.
 
@@ -187,7 +188,7 @@ Sandbox Service serves them from no copy of its own. A cursor beyond the journal
    not native closure.
 5. Alternatively, a terminal `sealed` observation carrying the incarnation's final cursor, after
    every entry through it. It is defined for the runner's teardown seal and not sent yet: no runner
-   journals a seal.
+   journals a seal. A history copier records it as the stored feed state's `sealed`.
 
 Reconnect from the last durably committed cursor; each reconnect rereads the projected token and
 checks identity and destination again. The app flushes its buffered batch before planned renewal,
@@ -216,7 +217,9 @@ subsequent cutover work, not part of this Open RPC.
 `ReadSessionEvents` it needs no history-reader grant, since it carries no transcript. It sends every recorded Session, including those of deleted Sandboxes and
 reservations whose runner Open never succeeded, in `position` order, then each later change as it
 commits on any replica. A `SessionChange` is the Session's current record: public ID, Sandbox name
-and current incarnation UID (empty for imported Sessions without one). A Session that changes again
+and current incarnation UID (empty for imported Sessions without one), and that Sandbox's owner
+ServiceAccount, which completes the `SessionDestination` for `FollowSession`. The owner is read from
+inventory as the change is sent and is unset once the incarnation is gone. A Session that changes again
 reappears at a larger position, so a lagging reader sees only its latest record. The feed carries no
 harness lifecycle; the Sandbox Service records none, and `FollowSession` reports it.
 
