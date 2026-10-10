@@ -13,14 +13,14 @@ import { canQuickApproveEventsList, eventsListPane } from "./kubernetes_admin/ev
 import {
   canQuickApprovePodsInNamespace,
   podsInNamespaceCollapsed,
+  podsInNamespaceDetails,
   podsInNamespaceLabel,
   podsInNamespacePane,
-  podsInNamespacePreview,
   podsInNamespaceTitleIsRedundant,
 } from "./kubernetes_admin/pods_list_in_namespace";
 import { canQuickApprovePodsLog, podsLogPreview } from "./kubernetes_admin/pods_log";
 import { canQuickApproveResourcesDelete, resourcesDeletePane } from "./kubernetes_admin/resources_delete";
-import { canQuickApproveResourcesGet, resourcesGetPreview } from "./kubernetes_admin/resources_get";
+import { canQuickApproveResourcesGet, resourcesGetPane } from "./kubernetes_admin/resources_get";
 import { canQuickApproveResourcesList, resourcesListPane } from "./kubernetes_admin/resources_list";
 import { renderResultPreview, type ResultPreview } from "./result_entry";
 import { execArgumentsPreview, execCollapsedPreview, execResultPreview } from "./ssh/exec";
@@ -28,21 +28,22 @@ import { execArgumentsPreview, execCollapsedPreview, execResultPreview } from ".
 type ActionIdentity = ActionRequestView["action"];
 
 interface ActionPresentation {
-  /** Replaces the host's technical group/name label in the pane and full details header. */
-  label?: ArgumentsPreview;
+  /** Omit a slot for the generic fallback, set null to suppress it, or provide its own React DOM. */
+  label?: ArgumentsPreview | null;
   pane?: {
-    collapsed?: ArgumentsPreview;
-    opened?: ArgumentsPreview;
+    collapsed?: ArgumentsPreview | null;
+    opened?: ArgumentsPreview | null;
     requestTitleIsRedundant?: (title: string, args: unknown) => boolean;
   };
   details?: {
-    arguments?: ArgumentsPreview;
-    result?: ResultPreview;
+    arguments?: ArgumentsPreview | null;
+    result?: ResultPreview | null;
   };
 }
 
-// Maps rather than object literals, so no group or Action name reaches `Object.prototype`.
-const PRESENTATIONS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentation>> = new Map([
+// React-only per-Action registry. Entries own arbitrary DOM for the slots they implement; they do
+// not describe data fields for a shared renderer. Maps avoid prototype-key lookups for Action names.
+const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentation>> = new Map([
   [
     "kubernetes_admin",
     new Map<string, ActionPresentation>([
@@ -55,19 +56,24 @@ const PRESENTATIONS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentation>
             opened: podsInNamespacePane,
             requestTitleIsRedundant: podsInNamespaceTitleIsRedundant,
           },
-          details: { arguments: podsInNamespacePreview },
+          details: { arguments: podsInNamespaceDetails },
         },
       ],
-      ["resources_get", { pane: { opened: resourcesGetPreview }, details: { arguments: resourcesGetPreview } }],
-      ["resources_list", { pane: { opened: resourcesListPane } }],
-      ["resources_delete", { pane: { opened: resourcesDeletePane } }],
+      ["resources_get", { pane: { opened: resourcesGetPane }, details: { arguments: resourcesGetPane } }],
+      ["resources_list", { pane: { opened: resourcesListPane }, details: { arguments: resourcesListPane } }],
+      ["resources_delete", { pane: { opened: resourcesDeletePane }, details: { arguments: resourcesDeletePane } }],
       ["pods_log", { pane: { opened: podsLogPreview }, details: { arguments: podsLogPreview } }],
-      ["events_list", { pane: { opened: eventsListPane } }],
+      ["events_list", { pane: { opened: eventsListPane }, details: { arguments: eventsListPane } }],
     ]),
   ],
   [
     "github",
-    new Map<string, ActionPresentation>([["create_pull_request", { pane: { opened: createPullRequestPane } }]]),
+    new Map<string, ActionPresentation>([
+      [
+        "create_pull_request",
+        { pane: { opened: createPullRequestPane }, details: { arguments: createPullRequestPane } },
+      ],
+    ]),
   ],
   // x/ssh_mcp_server/server.py, under the group name staging configures it as.
   [
@@ -102,7 +108,7 @@ const QUICK_APPROVALS: ReadonlyMap<string, ReadonlyMap<string, (args: unknown) =
 ]);
 
 function presentation(action: ActionIdentity): ActionPresentation | undefined {
-  return PRESENTATIONS.get(action.group)?.get(action.name);
+  return ACTION_RENDERERS.get(action.group)?.get(action.name);
 }
 
 /** An Action's human-facing name; `null` keeps the host's group/name label. */
@@ -125,7 +131,8 @@ export function renderPaneOpened(action: ActionIdentity, args: unknown): ReactNo
 
 /** Whether the caller's title repeats the Action label shown in the pane heading. */
 export function shouldRenderPaneRequestTitle(action: ActionIdentity, args: unknown, title: string): boolean {
-  return !(presentation(action)?.pane?.requestTitleIsRedundant?.(title, args) ?? false);
+  const customCheck = presentation(action)?.pane?.requestTitleIsRedundant;
+  return !(customCheck?.(title, args) ?? false);
 }
 
 /** The pretty argument view on the full details page; Raw remains the host's shared exact-JSON view. */

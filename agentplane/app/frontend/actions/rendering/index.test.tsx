@@ -43,7 +43,8 @@ describe("Action presentation slots", () => {
     expect(opened.textContent).toContain("label selector app=web");
     expect(opened.textContent).not.toContain("List pods in namespace");
     expect(opened.textContent).not.toContain("namespace prod");
-    expect(details.textContent).toContain("List pods in namespace");
+    expect(details.textContent).not.toContain("List pods in namespace");
+    expect(details.textContent).not.toContain("namespace prod");
   });
 
   it("uses a human-facing Action label in place of the technical identity", async () => {
@@ -77,8 +78,8 @@ describe("Action presentation slots", () => {
   });
 
   it.each([
-    ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api" }, ["namespace: (not specified)"]],
-    ["pods_log", { name: "api-0", tail: -1 }, ["namespace: (not specified)", "container: (not specified)"]],
+    ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api" }, ["API version: apps/v1"]],
+    ["pods_log", { name: "api-0", tail: -1 }, ["container: (default)", "previous: no", "tail: -1"]],
   ] as const)(
     "uses the opened-pane argument widget for %s when optional fields are omitted",
     async (name, args, visible) => {
@@ -123,37 +124,37 @@ const quickApprovalCases: Array<{ group: string; name: string; args: Record<stri
     group: "kubernetes_admin",
     name: "resources_get",
     args: { apiVersion: "apps/v1", kind: "Deployment", name: "api" },
-    visible: ["apps/v1", "Deployment", "api", "namespace: (not specified)"],
+    visible: ["API version: apps/v1"],
   },
   {
     group: "kubernetes_admin",
     name: "pods_list_in_namespace",
     args: { namespace: "prod", fieldSelector: "status.phase=Running", labelSelector: "app=web" },
-    visible: ["Get pods", "prod", "status.phase=Running", "app=web"],
+    visible: ["Filters", "status.phase=Running", "app=web"],
   },
   {
     group: "kubernetes_admin",
     name: "resources_list",
     args: { apiVersion: "v1", kind: "Pod", fieldSelector: "status.phase=Running", labelSelector: "app=web" },
-    visible: ["v1", "Pod", "all namespaces", "status.phase=Running", "app=web"],
+    visible: ["API version: v1", "status.phase=Running", "app=web"],
   },
   {
     group: "kubernetes_admin",
     name: "pods_log",
     args: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
-    visible: ["api-0", "namespace: (not specified)", "sidecar", "previous: yes", "tail: -1"],
+    visible: ["sidecar", "previous: yes", "tail: -1"],
   },
   {
     group: "kubernetes_admin",
     name: "resources_delete",
     args: { apiVersion: "v1", kind: "Pod", name: "api-0", namespace: "prod", gracePeriodSeconds: 0 },
-    visible: ["Delete resource", "v1", "Pod", "api-0", "prod", "0s"],
+    visible: ["grace period: 0s"],
   },
   {
     group: "kubernetes_admin",
     name: "events_list",
     args: { namespace: "prod", fieldSelector: "type=Warning" },
-    visible: ["List events", "prod", "type=Warning"],
+    visible: ["field selector: type=Warning"],
   },
   {
     group: "github",
