@@ -16,7 +16,19 @@ import pytest_asyncio
 from sqlalchemy.engine import make_url
 
 from finance.plaid.db.link_store import PlaidLinkStorage
-from finance.plaid.spend.allowance import AllowancePolicy, AnalysisCategory, CategoryExact, Kind, PeriodId, Rule, Status
+from finance.plaid.spend.allowance import (
+    AllOf,
+    AllowancePolicy,
+    AnalysisCategory,
+    CategoryExact,
+    DateRange,
+    Kind,
+    NameContains,
+    PeriodId,
+    Rule,
+    RuleScope,
+    Status,
+)
 from finance.plaid.spend.app import _event_stream
 from finance.plaid.spend.models import AlertState, CardConfig, SpendConfiguration
 from finance.plaid.spend.service import SpendService
@@ -225,6 +237,44 @@ def test_report_day_uses_policy_zone_for_card_and_allowance_dates() -> None:
     allowance_config = service.read_configuration().allowance
     assert allowance_config is not None
     assert allowance_config.time_zone == "America/Los_Angeles"
+    assert all(rule.id is None for rule in allowance_config.rules)
+
+
+def test_configuration_view_lists_one_off_rules_without_account_ids() -> None:
+    config = SpendConfiguration(
+        cards=[],
+        allowance=AllowancePolicy(
+            monthly_minor_units=10_000,
+            activation_at=date(2026, 10, 5),
+            spending_account_ids={"example-card"},
+            analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#D97706")},
+            rules=[
+                Rule(
+                    condition=AllOf(
+                        conditions=[
+                            NameContains(field="name", substring="EXAMPLE FUND"),
+                            DateRange(start=date(2026, 9, 1), end=date(2026, 9, 2)),
+                        ]
+                    ),
+                    kind=Kind.EXCLUDED,
+                    scope=RuleScope.ONE_OFF,
+                    id="example-transfer-leg",
+                    description="Own-account transfer leg; confirmed by the owner 2026-10-09.",
+                ),
+                Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE),
+            ],
+        ),
+    )
+    service = SpendService("unused", config, dashboard_url="https://spend.example.test")
+    allowance = service.read_configuration().allowance
+    assert allowance is not None
+    assert [rule.id for rule in allowance.rules] == ["example-transfer-leg", None]
+    applied = allowance.rules[0]
+    assert applied.scope == RuleScope.ONE_OFF
+    assert isinstance(applied.condition, AllOf)
+    name_condition = applied.condition.conditions[0]
+    assert isinstance(name_condition, NameContains)
+    assert name_condition.substring == "EXAMPLE FUND"
 
 
 async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg.Connection, postgres_url: str) -> None:

@@ -16,6 +16,7 @@ from finance.plaid.spend.allowance import (
     AllowanceView,
     AnalysisCategory,
     Disposition,
+    Kind,
     Period,
     PeriodId,
     PlaidCounterparty,
@@ -302,8 +303,14 @@ class SpendTransactionRow(BaseModel):
     pending: bool
     allowance_in_scope: bool
     disposition: Disposition | None
-    rule_number: int | None
-    rule: Rule | None
+    rule_number: int | None = Field(
+        default=None, description="1-based position in the ordered rule list; the first match governs."
+    )
+    rule: Rule | None = None
+    effective_kind: Kind | None = Field(
+        default=None,
+        description="The matched rule's kind, resolved server-side; null for an unmatched default-flexible purchase.",
+    )
     allowance_minor_units: int
     pace_effects: list[PaceEffect]
     statement_minor_units: int | None

@@ -696,6 +696,7 @@ function ConfigurationPanel({
                   <Stack gap="xs">
                     {allowance.rules.map((rule, index) => {
                       const { label, color } = ruleKindDisplay[rule.kind];
+                      const oneOff = rule.scope === "one_off";
                       return (
                         <Paper key={`${rule.kind}-${index}`} withBorder radius="md" p="sm">
                           <Group align="flex-start" gap="sm" wrap="nowrap">
@@ -705,7 +706,17 @@ function ConfigurationPanel({
                             <Badge color={color} variant="light" style={{ flexShrink: 0 }}>
                               {label}
                             </Badge>
+                            {oneOff && (
+                              <Badge color="violet" variant="light" style={{ flexShrink: 0 }}>
+                                One-off
+                              </Badge>
+                            )}
                             <Stack gap={2} miw={0}>
+                              {rule.id && (
+                                <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
+                                  {rule.id}
+                                </Text>
+                              )}
                               <Text size="sm" style={{ overflowWrap: "anywhere" }}>
                                 {ruleConditionText(rule.condition)}
                               </Text>
@@ -721,7 +732,7 @@ function ConfigurationPanel({
                     })}
                   </Stack>
                   <Text size="xs" c="dimmed" mt="sm">
-                    Rules are checked in order; the first matching rule applies. Unmatched purchases count as flexible.
+                    {rulesFootnote}
                   </Text>
                 </div>
               </Stack>
@@ -798,18 +809,32 @@ const statementText = {
 } satisfies Record<NonNullable<TransactionRow["statement_reason"]>, string>;
 
 function isReviewRow(row: TransactionRow): boolean {
+  // The server resolves which rule governs the money (first match in the ordered list); the client only reads it.
+  const kind = row.effective_kind;
   return (
     row.allowance_in_scope &&
-    ((row.disposition === "counted" && (row.rule == null || row.rule.kind === "review")) ||
-      row.disposition === "held_refund")
+    ((row.disposition === "counted" && (kind == null || kind === "review")) || row.disposition === "held_refund")
   );
 }
+
+const rulesFootnote =
+  "Rules are checked in order and the first match governs the transaction, so a one-off correction sits above the patterns it narrows. A one-off names one observed transaction by a bounded date-and-amount match rather than a Plaid transaction id, which relinking rewrites. Unmatched purchases count as flexible.";
+
+const dispositionKindText = {
+  fixed: "Counted as mandatory",
+  excluded: "Excluded",
+  review: "Counted as flexible pending review",
+  flexible: "Counted as flexible",
+} satisfies Record<RuleKind, string>;
 
 function classificationForRow(row: TransactionRow): { label: string; color: string } {
   if (row.disposition === "held_refund") return { label: "Refund held", color: "orange" };
   if (row.disposition === "superseded_pending") return { label: "Superseded", color: "gray" };
   if (row.disposition === "other_currency") return { label: "Other currency", color: "gray" };
-  if (row.rule) return ruleKindDisplay[row.rule.kind];
+  if (row.rule)
+    return row.rule.scope === "one_off"
+      ? { label: `${ruleKindDisplay[row.rule.kind].label} (one-off)`, color: "violet" }
+      : ruleKindDisplay[row.rule.kind];
   if (!row.allowance_in_scope) return { label: "Outside allowance", color: "gray" };
   if (row.disposition === null) return { label: "Unavailable", color: "gray" };
   return { label: "Unmatched", color: "orange" };
@@ -996,12 +1021,30 @@ function TransactionDetails({ row, currency }: { row: TransactionRow; currency: 
       </Text>
       {row.rule && (
         <Stack gap={2}>
-          <Text size="sm">
-            <strong>Rule #{row.rule_number}:</strong> {ruleConditionText(row.rule.condition)}
-          </Text>
+          <Group gap="xs" wrap="wrap">
+            <Text size="sm" component="span">
+              <strong>Rule #{row.rule_number}:</strong> {ruleConditionText(row.rule.condition)}
+            </Text>
+            {row.rule.scope === "one_off" && (
+              <Badge color="violet" variant="light" size="xs">
+                One-off
+              </Badge>
+            )}
+          </Group>
+          <Text size="sm">{dispositionKindText[row.rule.kind]}</Text>
+          {row.rule.id && (
+            <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+              {row.rule.id}
+            </Text>
+          )}
           {row.rule.description && (
             <Text size="sm" c="dimmed">
               {row.rule.description}
+            </Text>
+          )}
+          {row.rule.scope === "one_off" && (
+            <Text size="xs" c="dimmed">
+              One observed transaction, named by a bounded date-and-amount match rather than a Plaid transaction id.
             </Text>
           )}
           {row.category && (

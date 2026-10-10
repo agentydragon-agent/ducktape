@@ -232,14 +232,80 @@ class AllOf(BaseModel):
 type Condition = SimpleCondition | AnyOf | AllOf
 
 
+_MAX_ONE_OFF_WINDOW_DAYS = 31
+
+
+def _is_identity(condition: Condition) -> bool:
+    """Whether a condition identifies a merchant or movement, rather than only bounding a date or sign."""
+    if isinstance(condition, AllOf | AnyOf):
+        return any(_is_identity(part) for part in condition.conditions)
+    return not isinstance(condition, DateRange | AmountSign)
+
+
+class RuleScope(StrEnum):
+    """What a rule claims to be about: a recurring pattern, or one observed transaction."""
+
+    PATTERN = "pattern"
+    ONE_OFF = "one_off"
+
+
 class Rule(BaseModel):
+    """One classification decision: a condition and the kind it assigns.
+
+    Every decision is the same object, and precedence is its position in `AllowancePolicy.rules`: the first
+    condition that matches governs the transaction. A `one_off` states a fact about one observed transaction
+    and is placed above the patterns it corrects; a `pattern` states a standing rule that may be wrong for a
+    given purchase. Nothing else differs between them -- the same matcher, the same kinds, the same
+    accounting -- and a one-off addresses a transaction by a bounded match rather than by Plaid transaction
+    id, because relinking an account rewrites those ids and silently dangles any id-addressed correction.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
+
     condition: Annotated[Condition, Field(discriminator="type")]
     kind: Kind
+    scope: RuleScope = Field(
+        default=RuleScope.PATTERN,
+        description="One_off narrows this decision to observed transactions and requires a key and a note.",
+    )
+    id: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=60,
+        pattern=r"^[a-z0-9][a-z0-9._/-]*$",
+        description="Stable, human-written key, required for a one_off and reported with each matched transaction.",
+    )
     analysis_category: str | None = Field(default=None, min_length=1)
     description: str | None = Field(
-        default=None, min_length=1, max_length=240, description="Human-readable rationale for this classification rule."
+        default=None,
+        min_length=1,
+        max_length=240,
+        description="Human-readable rationale: why this classification is right, and who confirmed it when.",
     )
+
+    @model_validator(mode="after")
+    def _scope_matches_condition(self) -> Rule:
+        if self.scope == RuleScope.PATTERN:
+            if self.id is not None:
+                raise ValueError("only a one_off rule takes an id; a standing rule is addressed by its number")
+            return self
+        if self.id is None:
+            raise ValueError("a one_off rule requires an id: a key to cite the correction by")
+        if self.description is None:
+            raise ValueError("a one_off rule requires a description: why this is the right classification")
+        if not isinstance(self.condition, AllOf):
+            raise ValueError("a one_off condition must be an all_of of conditions")
+        window = next((part for part in self.condition.conditions if isinstance(part, DateRange)), None)
+        if window is None or window.start is None or window.end is None:
+            raise ValueError("a one_off requires a bounded date_range with both start and end")
+        if (window.end - window.start).days > _MAX_ONE_OFF_WINDOW_DAYS:
+            raise ValueError(
+                f"a one_off window must span at most {_MAX_ONE_OFF_WINDOW_DAYS} days; "
+                "use a pattern rule for a standing classification"
+            )
+        if not any(_is_identity(part) for part in self.condition.conditions):
+            raise ValueError("a one_off requires a name, category, amount, field, or counterparty condition")
+        return self
 
 
 class AnalysisCategory(BaseModel):
@@ -266,7 +332,9 @@ class AllowancePolicy(BaseModel):
     time_zone: ZoneInfo = ZoneInfo("UTC")
     spending_account_ids: set[str] = Field(min_length=1)
     currency: Literal["USD"] = "USD"
-    rules: list[Rule] = Field(min_length=1)
+    rules: list[Rule] = Field(
+        min_length=1, description="Ordered decisions, most specific first: the first match governs the transaction."
+    )
     max_sync_age_hours: int = Field(default=72, ge=1, le=720)
     forecast_basis_period_id: PeriodId = PeriodId.ROLLING_7D
     analysis_categories: dict[str, AnalysisCategory] = Field(
@@ -286,10 +354,13 @@ class AllowancePolicy(BaseModel):
             raise ValueError("analysis category keys must be nonblank and trimmed")
         if "unclassified" not in self.analysis_categories:
             raise ValueError("analysis_categories must define the reserved unclassified category")
+        keyed = [rule.id for rule in self.rules if rule.id is not None]
+        if len(keyed) != len(set(keyed)):
+            raise ValueError("rules must have unique ids")
         missing = {
-            rule.analysis_category
+            category
             for rule in self.rules
-            if rule.analysis_category is not None and rule.analysis_category not in self.analysis_categories
+            if (category := rule.analysis_category) is not None and category not in self.analysis_categories
         }
         if missing:
             raise ValueError(f"analysis_categories is missing rule categories: {', '.join(sorted(missing))}")
@@ -340,6 +411,15 @@ class TransactionDecision:
     disposition: Disposition
     allowance_minor_units: int
     pace_effects_minor_units: dict[PeriodId, int]
+
+    @property
+    def effective_kind(self) -> Kind | None:
+        """The kind that governs this transaction: the first matching rule's, else default-flexible (None).
+
+        The review tally, the transaction rows, and every client read this instead of re-deriving which
+        decision won, so there is one answer to "what kind is this money" and it comes from the matcher.
+        """
+        return self.rule.kind if self.rule is not None else None
 
 
 class AllowanceView(BaseModel):
@@ -444,6 +524,11 @@ def matches_fields(fields: Transaction | Mapping[str, object], condition: Condit
 
 
 def matching_rule(transaction: Transaction | Mapping[str, object], rules: list[Rule]) -> Rule | None:
+    """The single decision that governs a transaction: the first matching rule, with no second tier above it.
+
+    Ordering is the whole precedence story, so a one_off correction is written where it reads -- above the
+    patterns it narrows -- rather than in a list whose priority is implied by its type.
+    """
     return next((rule for rule in rules if matches_fields(transaction, rule.condition)), None)
 
 
@@ -513,6 +598,7 @@ def calculate(
         if transaction.currency not in (None, policy.currency):
             record(transaction, None, Disposition.OTHER_CURRENCY)
             continue
+        # First match wins, so a one_off placed above the patterns it corrects governs this transaction.
         rule = matching_rule(transaction, policy.rules)
         if rule is not None and rule.kind in (Kind.FIXED, Kind.EXCLUDED):
             record(transaction, rule, Disposition.FIXED if rule.kind == Kind.FIXED else Disposition.EXCLUDED)
