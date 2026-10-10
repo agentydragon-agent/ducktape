@@ -102,8 +102,6 @@ class EventLogStore:
                     harness=Harness(protocol_pb2.Harness.Name(spec.harness)),
                     model=spec.model,
                     cwd=spec.cwd,
-                    # Preserve old-table write rejection until schema/trigger retirement.
-                    raw_ingestion_fenced_at_cursor=0 if self._history_creator is not None else None,
                 )
                 .on_conflict_do_nothing()
                 .returning(EventLog.id)

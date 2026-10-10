@@ -9,7 +9,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from pydantic import JsonValue
 from sqlalchemy import BigInteger, Boolean, DateTime, Enum as SqlEnum, ForeignKey, Index, Text, text
 from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -29,10 +28,6 @@ class EventLog(Base):
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     sandbox: Mapped[str] = mapped_column(Text)
-    # Retired migration state. Runtime projection no longer reads this barrier.
-    # TODO(session-schema-cleanup): Drop with the raw tables and their write-rejection
-    # triggers. New identities retain a zero value until that explicit schema change.
-    raw_ingestion_fenced_at_cursor: Mapped[int | None] = mapped_column(BigInteger)
     harness: Mapped[Harness] = mapped_column(
         SqlEnum(
             Harness,
@@ -66,33 +61,6 @@ class Thread(Base):
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
 
 
-class Event(Base):
-    # TODO(session-schema-cleanup): Drop the retained raw archive only after deployed
-    # readers/writers and handoff tooling no longer depend on it.
-    __tablename__ = "event"
-    __table_args__ = (
-        Index("ix_event_thread_at", "thread_id", "at"),
-        # Reads a thread's newest completed turn without walking the rest of its log.
-        Index(
-            "ix_event_thread_turn_completed", "thread_id", "cursor", postgresql_where=text("kind = 'turn_completed'")
-        ),
-    )
-
-    thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("event_log.id", ondelete="CASCADE"), primary_key=True
-    )
-    # `record` admits an entry only where `origin.sequence == cursor`, so this key is also the
-    # runner's follow sequence that `ThreadNativeLink.source_sequence` names. The entry's own
-    # proto-JSON `payload` names its `origin.source_id`, which is constant for a Thread.
-    cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    # The observation's oneof case, for filtering without opening the payload; "native" for frames.
-    kind: Mapped[str] = mapped_column(Text)
-    # Proto-JSON of the protocol's EventEntry, exactly what the bridge streams. JSONB cannot
-    # represent U+0000 in strings, which can occur in tool output; JSON preserves it as an escape.
-    payload: Mapped[dict[str, JsonValue]] = mapped_column(JSON)
-
-
 class SessionProjectionLease(Base):
     """Replica ownership of app projection work, not service archive ingestion."""
 
@@ -103,19 +71,6 @@ class SessionProjectionLease(Base):
     )
     token: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-
-
-class FeedState(Base):
-    # TODO(session-schema-cleanup): Drop with the retired raw archive after handoff
-    # tooling is removed; current projection metadata lives in ThreadHistorySummary.
-    __tablename__ = "feed_state"
-
-    thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("event_log.id", ondelete="CASCADE"), primary_key=True
-    )
-    attached: Mapped[dict[str, object]] = mapped_column(JSONB)
-    # NULL means the stream has not ended. Empty JSON is a normal end; a message is an error end.
-    end: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
 
 
 class ThreadCheckpoint(Base):

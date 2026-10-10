@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy import event, func, select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
@@ -22,14 +22,7 @@ from agentplane.app.threads.events.event_log import (
 from agentplane.app.threads.events.projection_lease import ProjectionLeaseLostError
 from agentplane.app.threads.history_projector import HistoryProjector
 from agentplane.app.threads.ingestion import Ingester
-from agentplane.app.threads.models import (
-    Event,
-    EventLog,
-    FeedState,
-    ThreadCheckpoint,
-    ThreadEntity,
-    ThreadHistorySummary,
-)
+from agentplane.app.threads.models import EventLog, ThreadCheckpoint, ThreadEntity, ThreadHistorySummary
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.views import ThreadViewState
@@ -60,7 +53,6 @@ async def test_projection_resumes_existing_checkpoint_without_copying_raw_events
     assert reader.read_session_events.call_args.kwargs["after_cursor"] == 2
     assert await event_logs.last_cursor(thread) == 2
     async with async_sessionmaker(engine)() as session:
-        assert await session.scalar(select(func.count()).select_from(Event)) == 0
         assert await session.scalar(select(ThreadCheckpoint.through_cursor)) == 2
 
 
@@ -116,26 +108,6 @@ async def test_invalid_history_does_not_advance_projection(
     with pytest.raises(EventReplicationError):
         await HistoryProjector(engine, cast(SandboxServiceClient, reader)).project_batch(thread, lease=lease)
     assert await event_logs.last_cursor(thread) == 0
-
-
-@pytest.mark.parametrize("retired_fence", [None, 999])
-async def test_projection_does_not_depend_on_retired_handoff_column(
-    engine: AsyncEngine, event_logs: EventLogStore, lease_for: LeaseFactory, retired_fence: int | None
-) -> None:
-    thread = await event_logs.open("sb-1", "retired-fence", SPEC)
-    lease = await lease_for(thread)
-    async with async_sessionmaker(engine).begin() as session:
-        row = await session.get(EventLog, thread)
-        assert row is not None
-        row.raw_ingestion_fenced_at_cursor = retired_fence
-    assert thread in await event_logs.projection_sessions()
-    reader = AsyncMock(spec=SandboxServiceClient)
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(
-        last_cursor=1, entries=[event_entry(1, harness_started=event_pb2.HarnessStarted(pid=7))]
-    )
-    assert (
-        await HistoryProjector(engine, cast(SandboxServiceClient, reader)).project_batch(thread, lease=lease)
-    ).through_cursor == 1
 
 
 async def test_projection_requires_service_coverage_of_checkpoint(
@@ -221,7 +193,6 @@ async def test_projection_updates_activity_atomically_and_ignores_tool_output(
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(EventLog.last_model_activity_at)) == activity.event.at.ToDatetime(tzinfo=UTC)
         assert await session.scalar(select(ThreadCheckpoint.through_cursor)) == 4
-        assert await session.scalar(select(func.count()).select_from(Event)) == 0
 
 
 async def test_thread_metadata_survives_projection_retry(
@@ -310,8 +281,6 @@ async def test_lifecycle_uses_only_covered_service_snapshot(
     views = {view.id: view for view in await ThreadStore(engine).list_threads()}
     assert views[thread].feed_status == "ended"
     assert views[thread].harness_state == "HARNESS_STATE_STOPPED"
-    async with async_sessionmaker(engine)() as session:
-        assert await session.get(FeedState, thread) is None
 
     # A confirmed resume must not be undone by stale EOF from the service.
     await event_logs.resume_pending(thread)
@@ -512,11 +481,9 @@ async def test_sessions_without_projection_metadata_are_not_scheduled(
         await coordinator.close()
 
 
-async def test_runtime_feed_metadata_does_not_fall_back_to_retained_raw_state(engine: AsyncEngine) -> None:
+async def test_runtime_feed_metadata_requires_projection_summary(engine: AsyncEngine) -> None:
     thread = await seed_retained_session(engine)
     attached = {"sessionId": "s-retained"}
-    async with async_sessionmaker(engine).begin() as session:
-        session.add(FeedState(thread_id=thread, attached=attached, end={}))
     reader = AsyncMock(spec=SandboxServiceClient)
     runtime = ServiceEventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
     assert await runtime.feed_state(thread) is None
@@ -532,10 +499,6 @@ async def test_runtime_feed_metadata_does_not_fall_back_to_retained_raw_state(en
     current = await runtime.feed_state(thread)
     assert current is not None
     assert current.end is None
-    async with async_sessionmaker(engine)() as session:
-        old = await session.get(FeedState, thread)
-        assert old is not None
-        assert old.end == {}
 
 
 async def test_coordinator_projects_sibling_owned_by_another_replica_independently(
