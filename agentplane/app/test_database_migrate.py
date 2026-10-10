@@ -39,7 +39,7 @@ def _restore_raw_history_schema(connection: Connection) -> None:
     connection.execute(
         text(
             "CREATE TABLE feed_state (thread_id uuid PRIMARY KEY REFERENCES event_log(id), "
-            "attached jsonb NOT NULL, end jsonb)"
+            'attached jsonb NOT NULL, "end" jsonb)'
         )
     )
 
