@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from functools import wraps
-from typing import Annotated, Any, Final, Literal, Self, cast
+from typing import Annotated, Any, Final, cast
 from uuid import UUID, uuid4
 
 from fastmcp import FastMCP
@@ -18,7 +18,7 @@ from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.dependencies import CurrentAccessToken, get_access_token, get_http_request
 from fastmcp.tools import ToolResult
 from more_itertools import one
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import BaseModel, Field, JsonValue
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -115,25 +115,6 @@ DEFAULT_POLICY_FIELDS: Final[list[PolicyField]] = [PolicyField.SUBJECT, PolicyFi
 # FastMCP resolves a parameter by its dependency default and strips it from a tool's input schema;
 # module-level because a call in a default is what ruff's B008 refuses (also below, for CURRENT_ACCESS_TOKEN).
 DEFAULT_WAIT: Final = WaitOptions()
-
-
-class TaskRequestArguments(BaseModel):
-    """Validate augmented calls before submission; the interceptor skips tool invocation."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    request: ActionRequestInput
-    respond_with: Literal[ResponseForm.RESULT] = ResponseForm.RESULT
-    wait: WaitOptions = Field(default_factory=WaitOptions)
-    include_fields: list[RequestField] = Field(default_factory=DEFAULT_RECEIPT_FIELDS.copy)
-
-    @model_validator(mode="after")
-    def task_compatible_options(self) -> Self:
-        if self.wait != DEFAULT_WAIT:
-            raise ValueError("Task requests require default zero wait")
-        if set(self.include_fields) != set(DEFAULT_RECEIPT_FIELDS):
-            raise ValueError("Task requests cannot customize receipt fields")
-        return self
 
 
 class ActionSummary(BaseModel):
@@ -369,12 +350,13 @@ def create_server(
             "Discover Action identifiers, fetch details only when needed, then submit each request once under "
             "a fresh idempotency key. A pending receipt is not execution success. A repeated key is refused; "
             "recover a lost response with get_action_request(idempotency_key=...), never with a replacement key. "
+            "For task-enabled callers, use start_action_task followed by tasks/get; request_action retains its receipt/wait workflow. "
             f"This instance allows wait.wait_seconds up to {max_wait_seconds:g} seconds."
         ),
         auth=verifier,
         mask_error_details=True,
-        # Do not task-enable other generic or direct tools by default. The Action
-        # task extension below opts request_action in explicitly.
+        # Only start_action_task is task-enabled; the legacy request_action and
+        # dynamically exposed tools retain their original non-task semantics.
         tasks=False,
     )
 
@@ -508,7 +490,7 @@ def create_server(
         data = view.model_dump(mode="json")
         return ToolResult(structured_content={key: value for key, value in data.items() if key in requested})
 
-    @server.tool(task=True, annotations={"readOnlyHint": False, "idempotentHint": True})
+    @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
     @_tool_errors
     async def request_action(
         request: ActionRequestInput,
@@ -534,6 +516,23 @@ def create_server(
         if respond_with is ResponseForm.RESULT:
             return tool_result(view, catalog.groups[view.action.group].executor, max_wait_seconds=max_wait_seconds)
         return _result(_receipt(view, set(include_fields)), exclude_unset=True)
+
+    @server.tool(task=True, annotations={"readOnlyHint": False, "idempotentHint": True})
+    async def start_action_task(
+        idempotency_key: IdempotencyKey,
+        action: ActionIdentity,
+        arguments: dict[str, JsonValue],
+        title: Annotated[str, Field(min_length=1, max_length=60)],
+        description: Annotated[str | None, Field(max_length=250)] = None,
+    ) -> None:
+        """Submit an Action as an MCP task; tasks/get returns status and the final tool result.
+        Requires the negotiated MCP tasks extension. Use the original idempotency key to
+        recover a lost creation response with get_action_request; never resubmit.
+        For non-task submission, use request_action instead.
+        """
+        # Task-enabled calls are intercepted before the tool body. Do not fall
+        # through to submission without negotiated task support.
+        raise ToolError("start_action_task requires MCP tasks; use request_action for non-task calls")
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
@@ -617,9 +616,9 @@ def create_server(
         )
 
     async def task_submit(arguments: dict[str, Any]) -> ActionRequestView:
-        options = TaskRequestArguments.model_validate(arguments)
+        request = ActionRequestInput.model_validate(arguments)
         verified = _caller_token(get_access_token())
-        return await service.submit(options.request, verified.principal, external_grant=verified.external_grant)
+        return await service.submit(request, verified.principal, external_grant=verified.external_grant)
 
     async def task_get(request_id: UUID) -> tuple[ActionRequestView, ActionState | None, datetime | None]:
         return await service.get_mcp_task(request_id, _caller_token(get_access_token()).principal)

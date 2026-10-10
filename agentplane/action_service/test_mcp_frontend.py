@@ -331,7 +331,16 @@ def _text(content: list[ContentBlock]) -> str:
 async def test_compact_catalog_opt_in_pagination_and_small_generic_schema(frontend: Frontend) -> None:
     async with frontend.client(egress=True) as client:
         tools = await client.list_tools()
-        assert len(tools) == 8
+        assert len(tools) == 9
+        task_tool = next(tool for tool in tools if tool.name == "start_action_task")
+        assert set(task_tool.input_schema["properties"]) == {
+            "idempotency_key",
+            "action",
+            "arguments",
+            "title",
+            "description",
+        }
+        assert set(task_tool.input_schema["required"]) == {"idempotency_key", "action", "arguments", "title"}
         cancellation = next(tool for tool in tools if tool.name == "cancel_action_request")
         assert set(cancellation.input_schema["properties"]) == {"request_id", "include_fields"}
         assert cancellation.input_schema["required"] == ["request_id"]
@@ -1075,7 +1084,12 @@ if __name__ == "__main__":
 
 
 async def _action_task_rpc(
-    http: httpx2.AsyncClient, method: str, params: dict[str, Any], *, caller: str = "test-token-a"
+    http: httpx2.AsyncClient,
+    method: str,
+    params: dict[str, Any],
+    *,
+    caller: str = "test-token-a",
+    task_capability: bool = True,
 ) -> dict[str, Any]:
     body = {
         "jsonrpc": "2.0",
@@ -1085,7 +1099,9 @@ async def _action_task_rpc(
             **params,
             "_meta": {
                 PROTOCOL_VERSION_META_KEY: "2026-07-28",
-                CLIENT_CAPABILITIES_META_KEY: {"extensions": {"io.modelcontextprotocol/tasks": {}}},
+                CLIENT_CAPABILITIES_META_KEY: {
+                    "extensions": {"io.modelcontextprotocol/tasks": {}} if task_capability else {}
+                },
             },
         },
     }
@@ -1104,15 +1120,21 @@ async def test_action_tasks_use_canonical_request_and_owner_scoped_reads(fronten
             "action": {"group": "test-group", "name": "beta"},
             "arguments": {"message": "hello"},
         }
-        created = await _action_task_rpc(
-            http, "tools/call", {"name": "request_action", "arguments": {"request": request}}
-        )
+        created = await _action_task_rpc(http, "tools/call", {"name": "start_action_task", "arguments": request})
         assert "error" not in created, created
         task = created["result"]
         assert task["resultType"] == "task"
         assert task["status"] == "working"
         assert "ttlMs" in task
         assert task["ttlMs"] is None
+        repeated = await _action_task_rpc(http, "tools/call", {"name": "start_action_task", "arguments": request})
+        assert "error" in repeated
+        assert [
+            view.id
+            for view in await frontend.service.list_requests(
+                CallerPrincipal(account=workload("a")), idempotency_key="task-pending"
+            )
+        ] == [UUID(task["taskId"])]
         # An ordinary Action, submitted without task negotiation, is also readable by ID.
         async with frontend.client() as ordinary:
             receipt = await ordinary.call_tool(
@@ -1136,8 +1158,8 @@ async def test_action_tasks_use_canonical_request_and_owner_scoped_reads(fronten
             http,
             "tools/call",
             {
-                "name": "request_action",
-                "arguments": {"request": {**request, "idempotency_key": "not-submitted"}, "respond_with": "receipt"},
+                "name": "start_action_task",
+                "arguments": {**request, "idempotency_key": "not-submitted", "respond_with": "receipt"},
             },
         )
         assert "error" in invalid
@@ -1146,30 +1168,40 @@ async def test_action_tasks_use_canonical_request_and_owner_scoped_reads(fronten
                 http,
                 "tools/call",
                 {
-                    "name": "request_action",
-                    "arguments": {"request": {**request, "idempotency_key": "not-submitted"}, **incompatible},
+                    "name": "start_action_task",
+                    "arguments": {**request, "idempotency_key": "not-submitted", **incompatible},
                 },
             )
             assert "error" in rejected
         assert not await frontend.service.list_requests(
             CallerPrincipal(account=workload("a")), idempotency_key="not-submitted"
         )
-        explicit = await _action_task_rpc(
+        # Without task negotiation, the task-only tool cannot submit anything.
+        refused = await _action_task_rpc(
+            http,
+            "tools/call",
+            {"name": "start_action_task", "arguments": {**request, "idempotency_key": "no-task-capability"}},
+            task_capability=False,
+        )
+        assert "error" in refused or refused["result"]["isError"]
+        assert not await frontend.service.list_requests(
+            CallerPrincipal(account=workload("a")), idempotency_key="no-task-capability"
+        )
+        # Task negotiation must not change the legacy request_action contract.
+        legacy = await _action_task_rpc(
             http,
             "tools/call",
             {
                 "name": "request_action",
                 "arguments": {
-                    "request": {**request, "idempotency_key": "explicit-defaults"},
-                    "respond_with": "result",
-                    "wait": {},
-                    "include_fields": ["id", "state", "version", "created_at", "updated_at"],
+                    "request": {**request, "idempotency_key": "legacy-with-task-capability"},
+                    "respond_with": "receipt",
                 },
             },
         )
-        assert "error" not in explicit, explicit
-        assert explicit["result"]["resultType"] == "task"
-        assert "error" not in await _action_task_rpc(http, "tasks/cancel", {"taskId": explicit["result"]["taskId"]})
+        assert "error" not in legacy, legacy
+        assert "structuredContent" in legacy["result"]
+        assert "resultType" not in legacy["result"]
         assert "error" not in await _action_task_rpc(http, "tasks/cancel", params)
         cancelled = await _action_task_rpc(http, "tasks/get", params)
         assert cancelled["result"]["status"] == "cancelled"
@@ -1184,14 +1216,12 @@ async def test_action_task_denial_is_terminal_without_execution(frontend: Fronte
             http,
             "tools/call",
             {
-                "name": "request_action",
+                "name": "start_action_task",
                 "arguments": {
-                    "request": {
-                        "idempotency_key": "task-denied",
-                        "title": "Test denied task",
-                        "action": {"group": "test-group", "name": "beta"},
-                        "arguments": {"message": "denied"},
-                    }
+                    "idempotency_key": "task-denied",
+                    "title": "Test denied task",
+                    "action": {"group": "test-group", "name": "beta"},
+                    "arguments": {"message": "denied"},
                 },
             },
         )
@@ -1222,14 +1252,12 @@ async def test_action_task_completed_result_is_inlined(
             http,
             "tools/call",
             {
-                "name": "request_action",
+                "name": "start_action_task",
                 "arguments": {
-                    "request": {
-                        "idempotency_key": "task-done",
-                        "title": "Test completed task",
-                        "action": {"group": "test-mcp", "name": "act"},
-                        "arguments": {"message": "task-result"},
-                    }
+                    "idempotency_key": "task-done",
+                    "title": "Test completed task",
+                    "action": {"group": "test-mcp", "name": "act"},
+                    "arguments": {"message": "task-result"},
                 },
             },
         )

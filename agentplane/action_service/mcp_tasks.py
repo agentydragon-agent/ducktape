@@ -110,7 +110,7 @@ class ActionTasksExtension(ServerExtension):
     async def intercept_tool_call(self, params: Any, context: Context, call_next: Callable[[], Awaitable[Any]]) -> Any:
         rc = context.request_context
         if (
-            params.name != "request_action"
+            params.name != "start_action_task"
             or rc is None
             or rc.protocol_version not in MODERN_PROTOCOL_VERSIONS
             or context.client_extension_settings(IDENTIFIER) is None
@@ -174,7 +174,7 @@ class ActionTasksExtension(ServerExtension):
 
     async def cancel_task(self, ctx: ServerRequestContext[Any, Any], params: GetTaskParams) -> dict[str, str]:
         request_id = self._check(ctx, params.task_id)
-        await self._snapshot(request_id)  # authorize and ensure this Action is a task
+        await self._snapshot(request_id)  # authorize this Action before cancellation
         outcome = await self._cancel(request_id)
         if outcome in (CancellationOutcome.TOO_LATE, CancellationOutcome.ALREADY_FINISHED):
             raise MCPError(code=INVALID_PARAMS, message=f"Task could not be cancelled: {outcome.value}")

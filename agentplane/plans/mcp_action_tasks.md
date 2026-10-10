@@ -3,12 +3,13 @@
 ## Scope
 
 Implement **MCP tasks first**, using the protocol FastMCP 4.0.3 supports:
-`io.modelcontextprotocol/tasks` (SEP-2663). An opted-in `request_action`
-returns a flat task-creation result. `tasks/get` returns its status and,
-when complete, the final result inline. `tasks/cancel` requests
-cancellation; `tasks/update` is unsupported for Action-backed tasks because
-Actions cannot pause for client input. Non-task `request_action` and the
-existing HTTP Action API stay unchanged.
+`io.modelcontextprotocol/tasks` (SEP-2663). `start_action_task` is the task-only
+submission tool, with just the flat canonical Action input fields. It requires
+negotiated task support and returns a flat task-creation result. `tasks/get`
+returns status and, when complete, the final result inline. `tasks/cancel`
+requests cancellation; `tasks/update` is unsupported for Action-backed tasks
+because Actions cannot pause for client input. The existing `request_action`
+receipt/wait workflow and HTTP Action API stay unchanged.
 
 **Out of scope:** executor-reported progress, numeric percentages, progress
 notifications, partial output, and an update stream. Decide whether to
@@ -22,22 +23,23 @@ Implement an Agentplane-specific `ServerExtension` registered by
 `create_server()` in `mcp_frontend.py`. Use the FastMCP extension's
 `settings`, `methods` (`MethodBinding`) and `intercept_tool_call` hooks.
 The extension advertises `io.modelcontextprotocol/tasks` only when installed.
-Keep `FastMCP(tasks=False)` as the global default and opt **only** the
-`request_action` tool into task support. The dynamic direct tools, other
-Action tools, and ordinary calls are not intercepted. Do not use the
+Keep `FastMCP(tasks=False)` as the global default and opt **only**
+`start_action_task` into task support. The old `request_action`, dynamic direct
+tools, other Action tools, and ordinary calls are not intercepted. Do not use the
 optional `fastmcp-tasks` Docket execution queue: the Action Service already
 has its own durable queue, dispatcher and executor leases. This does not
 require an MCP SDK fork or implementing the old `tasks/result` protocol.
 
 The interceptor should:
 
-1. Check the tool name, negotiated protocol version and the client's
-   per-request tasks-extension opt-in. Otherwise call `call_next()` so the
-   existing behavior is untouched.
+1. Intercept only `start_action_task` when the protocol version and per-request
+   tasks extension are negotiated. All other tools call `call_next()` and
+   preserve their old behavior. Without task negotiation, the task-only tool
+   itself refuses the call without submitting.
 2. Authenticate through the existing `CallerTokenVerifier`/`CallerToken`
-   context and validate `request_action` arguments with a Pydantic model before any submission.
-   Require `respond_with=result` and default zero wait for augmented calls;
-   reject incompatible response/wait options before side effects.
+   context. Validate the tool's flat Action fields with `ActionRequestInput`
+   before submission. `wait`, `respond_with`, `include_fields`, and a nested
+   `request` are not in its schema.
 3. Submit through `ActionService.submit` exactly once with the caller's
    supplied idempotency key, using the normal policy/approval path.
    Return a SEP-2663 `CreateTaskResult` with a task ID derived from the
@@ -51,7 +53,8 @@ the same caller-scoped `ActionService.get` path as existing MCP reads. A
 foreign task ID must look like not-found. An update request returns a clear
 unsupported-input error; it must not invent an `input_required` state.
 Conformance tests must exercise real JSON-RPC over the `/mcp` mount,
-including task creation, follow-up reads, and ordinary calls.
+including task creation, follow-up reads, legacy `request_action` calls,
+and refusal of non-task calls to `start_action_task` without side effects.
 
 ## Canonical Action is the execution engine
 
