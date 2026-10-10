@@ -345,10 +345,11 @@ class AllowancePolicy(BaseModel):
         override_ids = [override.id for override in self.overrides]
         if len(override_ids) != len(set(override_ids)):
             raise ValueError("overrides must have unique ids")
+        decisions: list[Rule | OneOffOverride] = [*self.rules, *self.overrides]
         missing = {
             category
-            for rule in [*self.rules, *self.overrides]
-            if (category := rule.analysis_category) is not None and category not in self.analysis_categories
+            for decision in decisions
+            if (category := decision.analysis_category) is not None and category not in self.analysis_categories
         }
         if missing:
             raise ValueError(f"analysis_categories is missing rule categories: {', '.join(sorted(missing))}")
@@ -391,6 +392,15 @@ class Disposition(StrEnum):
     OTHER_CURRENCY = "other_currency"
 
 
+def resolve_effective_kind(override_kind: Kind | None, rule_kind: Kind | None) -> Kind | None:
+    """The kind that governs a transaction: an applied override replaces the rule decision outright.
+
+    The review tally, the transaction rows, and every client must agree on which decision governs the
+    money, so the precedence is resolved once here rather than re-derived by each consumer.
+    """
+    return override_kind if override_kind is not None else rule_kind
+
+
 @dataclass(frozen=True)
 class OverrideDecision:
     """The applied per-transaction override, reported instead of a rule number."""
@@ -410,6 +420,12 @@ class TransactionDecision:
     allowance_minor_units: int
     pace_effects_minor_units: dict[PeriodId, int]
     override: OverrideDecision | None = None
+
+    @property
+    def effective_kind(self) -> Kind | None:
+        return resolve_effective_kind(
+            self.override.kind if self.override is not None else None, self.rule.kind if self.rule is not None else None
+        )
 
 
 class AllowanceView(BaseModel):

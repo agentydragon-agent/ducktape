@@ -472,6 +472,7 @@ class SpendService:
                         if decision is not None and decision.override is not None
                         else None
                     ),
+                    effective_kind=decision.effective_kind if decision else None,
                     allowance_minor_units=decision.allowance_minor_units if decision else 0,
                     pace_effects=[
                         PaceEffect(
@@ -526,7 +527,7 @@ class SpendService:
             if row.allowance_in_scope
             and row.disposition == Disposition.COUNTED
             and row.amount_minor_units > 0
-            and (row.rule is None or row.rule.kind == Kind.REVIEW)
+            and (row.effective_kind is None or row.effective_kind == Kind.REVIEW)
         ]
         return SpendTransactionsView(
             generated_at=view.generated_at,

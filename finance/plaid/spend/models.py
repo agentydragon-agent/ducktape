@@ -318,6 +318,9 @@ class SpendTransactionRow(BaseModel):
     rule_number: int | None
     rule: Rule | None
     override: AppliedOverride | None = None
+    effective_kind: Kind | None = Field(
+        default=None, description="The kind that governs this transaction: the override's, else the rule's."
+    )
     allowance_minor_units: int
     pace_effects: list[PaceEffect]
     statement_minor_units: int | None

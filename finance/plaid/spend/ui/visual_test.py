@@ -338,6 +338,7 @@ def dashboard_url() -> Iterator[str]:
                 allowance_in_scope=True,
                 disposition=Disposition.FIXED,
                 rule_number=2,
+                effective_kind=Kind.FIXED,
                 rule=Rule(
                     condition=NamePrefix(field="name", prefix="UPS"),
                     kind=Kind.FIXED,
@@ -390,6 +391,7 @@ def dashboard_url() -> Iterator[str]:
                 allowance_in_scope=True,
                 disposition=Disposition.HELD_REFUND,
                 rule_number=1,
+                effective_kind=Kind.REVIEW,
                 rule=Rule(
                     condition=NamePrefix(field="name", prefix="EXAMPLE"),
                     kind=Kind.REVIEW,
@@ -419,6 +421,7 @@ def dashboard_url() -> Iterator[str]:
                 disposition=Disposition.EXCLUDED,
                 rule_number=None,
                 rule=None,
+                effective_kind=Kind.EXCLUDED,
                 override=AppliedOverride(
                     id="example-own-account-leg",
                     kind=Kind.EXCLUDED,
@@ -447,6 +450,7 @@ def dashboard_url() -> Iterator[str]:
                 allowance_in_scope=True,
                 disposition=Disposition.COUNTED,
                 rule_number=3,
+                effective_kind=Kind.FLEXIBLE,
                 rule=Rule(
                     condition=NamePrefix(field="name", prefix="EXAMPLE TRAVEL"),
                     kind=Kind.FLEXIBLE,

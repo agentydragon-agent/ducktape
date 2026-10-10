@@ -495,6 +495,8 @@ def test_override_takes_precedence_over_rules_and_the_default_flexible_bucket():
     assert decisions[0].override.note == "Corrected by the owner 2026-02-01."
     assert decisions[0].rule is None
     assert decisions[0].rule_number is None
+    # The server resolves which kind governs the money, so no client re-derives the precedence.
+    assert decisions[0].effective_kind == Kind.FIXED
 
     without: list = []
     calculate(
@@ -506,6 +508,11 @@ def test_override_takes_precedence_over_rules_and_the_default_flexible_bucket():
     )
     assert without[0].override is None
     assert without[0].rule_number == 1
+    assert without[0].effective_kind == Kind.FIXED
+
+    unclassified: list = []
+    calculate(policy(rules=[NO_MATCH_RULE]), [purchase], now=START, last_synced_at=START, decisions=unclassified)
+    assert unclassified[0].effective_kind is None
 
 
 def test_override_can_keep_a_purchase_counted_for_review():
@@ -628,28 +635,27 @@ allowance:
     path = Path("/tmp/ducktape-override-round-trip.yaml")
     path.write_text(document, encoding="utf-8")
     loaded = load_configuration(path)
-    assert loaded.allowance is not None
-    assert [item.id for item in loaded.allowance.overrides] == ["example-hotel-2026-06-04"]
+    parsed = loaded.allowance
+    assert parsed is not None
+    assert [item.id for item in parsed.overrides] == ["example-hotel-2026-06-04"]
     assert SpendConfiguration.model_validate(loaded.model_dump(mode="json")) == loaded
     assert load_configuration(path) == loaded
-    assert (
-        SpendConfigurationView(
-            cards=[],
-            allowance=AllowanceConfigurationView(
-                monthly_minor_units=loaded.allowance.monthly_minor_units,
-                activation_at=loaded.allowance.activation_at,
-                currency=loaded.allowance.currency,
-                spending_account_count=len(loaded.allowance.spending_account_ids),
-                max_sync_age_hours=loaded.allowance.max_sync_age_hours,
-                forecast_basis_period_id=loaded.allowance.forecast_basis_period_id,
-                rules=loaded.allowance.rules,
-                overrides=loaded.allowance.overrides,
-                analysis_categories=loaded.allowance.analysis_categories,
-            ),
-        )
-        .allowance.overrides[0]
-        .note.startswith("Confirmed example")
+    view = SpendConfigurationView(
+        cards=[],
+        allowance=AllowanceConfigurationView(
+            monthly_minor_units=parsed.monthly_minor_units,
+            activation_at=parsed.activation_at,
+            currency=parsed.currency,
+            spending_account_count=len(parsed.spending_account_ids),
+            max_sync_age_hours=parsed.max_sync_age_hours,
+            forecast_basis_period_id=parsed.forecast_basis_period_id,
+            rules=parsed.rules,
+            overrides=parsed.overrides,
+            analysis_categories=parsed.analysis_categories,
+        ),
     )
+    assert view.allowance is not None
+    assert view.allowance.overrides[0].note.startswith("Confirmed example")
 
 
 if __name__ == "__main__":

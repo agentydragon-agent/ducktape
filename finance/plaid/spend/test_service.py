@@ -268,7 +268,11 @@ def test_configuration_view_lists_overrides_without_account_ids() -> None:
     allowance = service.read_configuration().allowance
     assert allowance is not None
     assert [override.id for override in allowance.overrides] == ["example-transfer-leg"]
-    assert allowance.overrides[0].match.conditions[0].substring == "EXAMPLE FUND"
+    applied = allowance.overrides[0]
+    assert isinstance(applied.match, AllOf)
+    name_condition = applied.match.conditions[0]
+    assert isinstance(name_condition, NameContains)
+    assert name_condition.substring == "EXAMPLE FUND"
 
 
 async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg.Connection, postgres_url: str) -> None:

@@ -836,14 +836,9 @@ const statementText = {
   unavailable: "Card cycle unavailable",
 } satisfies Record<NonNullable<TransactionRow["statement_reason"]>, string>;
 
-// An override replaces the rule decision, so the kind that governs the money is the override's kind.
-function effectiveKind(row: TransactionRow): RuleKind | null {
-  if (row.override) return row.override.kind;
-  return row.rule?.kind ?? null;
-}
-
 function isReviewRow(row: TransactionRow): boolean {
-  const kind = effectiveKind(row);
+  // The server resolves which decision governs the money (override first, then rule); the client only reads it.
+  const kind = row.effective_kind;
   return (
     row.allowance_in_scope &&
     ((row.disposition === "counted" && (kind == null || kind === "review")) || row.disposition === "held_refund")

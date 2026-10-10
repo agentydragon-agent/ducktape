@@ -110,8 +110,11 @@ when. Overrides reuse the same `kind` values and `analysis_category` catalog as 
 accounted for exactly like a rule-classified one: `fixed`/`excluded` leave the allowance, `flexible` and `review`
 remain counted, and a negative credit addressed by an `excluded` override is a paired transfer leg rather than an
 unmatched refund. The Configuration tab lists overrides separately from rules, and the Transactions tab names the
-applied override and its note in place of a rule number. Keep the override list short: it is a ledger of reviewed
-exceptions, not a second rule engine.
+applied override and its note in place of a rule number. Because an override replaces the rule decision, each
+transaction row also reports the resolved `effective_kind` — the override's kind when one applied, otherwise the rule's,
+otherwise null for a default-flexible purchase. Clients read that field rather than re-deriving precedence, so the
+review tally and every display agree on which decision governs the money. Keep the override list short: it is a ledger
+of reviewed exceptions, not a second rule engine.
 
 When `allowance` is present, it is active. Supply a required `activation_at` ISO date (YYYY-MM-DD) as the stable
 credit-cycle anchor; null or omission is invalid. To disable the allowance, omit the entire `allowance` object. Plaid
