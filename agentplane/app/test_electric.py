@@ -28,10 +28,10 @@ from testcontainers.postgres import PostgresContainer
 from agentplane.app.conftest import migrated_database
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.electric import SUBSET_BODY_LIMIT, SUBSET_ROW_LIMIT, ElectricProxy, router
+from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
+from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
-from agentplane.app.threads.ingestion import Ingestion
 from agentplane.app.threads.view.content import ContentStore, ThreadScope
 from agentplane.protocol import event_pb2
 

@@ -19,9 +19,9 @@ from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeou
 from agentplane.app.testing import history_probe, thread_view_marks
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
+from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
-from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import event_log_pb2, event_pb2

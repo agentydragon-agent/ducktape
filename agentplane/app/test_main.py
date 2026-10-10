@@ -34,9 +34,9 @@ from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.settings import Settings
 from agentplane.app.shutdown import drain_of
+from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.models import SandboxIngestion
 from agentplane.app.threads.sessions import SandboxSessions

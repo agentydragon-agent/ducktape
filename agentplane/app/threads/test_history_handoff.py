@@ -9,11 +9,11 @@ from sqlalchemy import insert
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
+from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
-from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
 from agentplane.app.threads.history_handoff import fence_raw_ingestion
-from agentplane.app.threads.ingestion import Ingestion
 from agentplane.app.threads.models import Event
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2

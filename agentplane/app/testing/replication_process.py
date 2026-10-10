@@ -41,12 +41,12 @@ from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
+from agentplane.app.testing.legacy_ingestion import LegacyIngester as Ingester, LegacyIngestion as Ingestion
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
-from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
