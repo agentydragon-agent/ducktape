@@ -253,6 +253,13 @@ records or the handoff tool; tooling and grant retirement remain separate work.
 
 ## Post-cutover schema cleanup
 
+Follow-up runtime cleanup retires `history_handoff.py` and its migration-only tests.
+The coordinator selects Sessions by `ThreadHistorySummary`, not the old raw-writer
+fence. The projector still checks service coverage of the app checkpoint and fences
+commits with the replica lease; it no longer consults the migration barrier. Tests
+seed service evidence through the app's gRPC peer rather than a retained raw writer.
+This is code retirement, not a claim of deployed schema removal.
+
 TODO(session-schema-cleanup): follow the runtime/test port in #9670 with an explicit
 schema-cleanup PR after the new readers are deployed. This is migration completion
 work, not an indefinitely deferred task. Preserve public Session/Thread UUIDs and
@@ -267,9 +274,9 @@ runner storage; use bounded checks, not another full-history scan.
   `(sandbox, session_id)` uniqueness constraint after replacing current consumers.
   Audit legacy HTTP filters/links and identifier translation explicitly; preserve
   mappings in Sandbox Service, not by inventing another app-owned routing map.
-- Remove `raw_ingestion_fenced_at_cursor` together with active projector fence checks,
-  handoff commands, flags and migration-only tests. It is still used today; do not
-  drop the column ahead of its callers.
+- Drop `raw_ingestion_fenced_at_cursor` with the old-table write-rejection triggers.
+  Runtime projection no longer reads it; new identity setup still writes zero to
+  preserve old-table write rejection until that explicit schema change.
 - Drop retained app `event` and `feed_state` tables and their ORM classes only after
   deployment verification shows no runtime dependencies and handoff tooling is retired.
   Make retained-data deletion explicit in that PR rather than incidental to a rename.

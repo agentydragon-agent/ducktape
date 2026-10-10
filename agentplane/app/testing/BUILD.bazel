@@ -169,17 +169,8 @@ py_library(
     srcs = ["retained_history.py"],
     visibility = ["//agentplane/app:__subpackages__"],
     deps = [
-        "//agentplane/app/threads:ingestion",
-        "//agentplane/app/threads:model_activity",
         "//agentplane/app/threads:models",
-        "//agentplane/app/threads/events:event_log",
-        "//agentplane/app/threads/events:projection_lease",
-        "//agentplane/app/threads/view:recording",
-        "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:harness",
-        "//agentplane/runner:protocol_pb2",
-        "//agentplane/sandbox_service:client",
-        "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
 )

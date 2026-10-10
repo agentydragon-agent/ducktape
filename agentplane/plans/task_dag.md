@@ -18,6 +18,9 @@ another backfill, whole-history scan, or competing cutover.
 its split prerequisites #9677–#9679 are merged. Follow-up code cleanup renames the
 app projection lease API; it leaves the deployed schema and retained data unchanged.
 Post-merge deployment verification and explicit schema retirement remain separate.
+The next code-only PR retires app handoff tooling and selects projection work by
+summary metadata, keeping replica lease fencing and checkpoint validation. It does
+not drop raw tables or remove their database triggers.
 
 Schema retirement also includes the [post-cutover schema cleanup](session_history_read_cutover.md#post-cutover-schema-cleanup):
 rename stale archive/ingestion names, route app commands/resume by public Session ID,

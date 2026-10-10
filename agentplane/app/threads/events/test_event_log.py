@@ -156,7 +156,7 @@ async def test_service_observation_page_rejects_missing_entries(engine: AsyncEng
         await remote.observations(UUID("00000000-0000-0000-0000-000000000001"), limit=2)
 
 
-async def test_new_service_thread_is_atomically_fenced_and_idempotent(engine: AsyncEngine) -> None:
+async def test_new_service_thread_has_atomic_projection_metadata_and_is_idempotent(engine: AsyncEngine) -> None:
     reader = AsyncMock(spec=SandboxServiceClient)
     reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
     left = EventLogStore(
@@ -171,15 +171,15 @@ async def test_new_service_thread_is_atomically_fenced_and_idempotent(engine: As
     )
     assert left_id == public_id
     assert right_id == public_id
-    assert await left.is_raw_ingestion_fenced(public_id)
+    assert await left.has_projection_metadata(public_id)
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(func.count()).select_from(ThreadHistorySummary)) == 1
         row = await session.get(ThreadHistorySummary, public_id)
         assert row is not None
         assert row.attached is None
-    # A legacy replica observes the same ID, but cannot unfence it by opening it.
+    # Another reader observes the same ID without resetting projection metadata.
     assert await EventLogStore(engine, history_reader=reader).open("sb-1", str(public_id), SPEC) == public_id
-    assert await right.is_raw_ingestion_fenced(public_id)
+    assert await right.has_projection_metadata(public_id)
 
 
 async def test_failed_service_registration_does_not_create_app_thread(engine: AsyncEngine) -> None:
@@ -197,7 +197,7 @@ async def test_failed_service_registration_does_not_create_app_thread(engine: As
         await store.open("sb-1", "legacy-id", SPEC)
 
 
-async def test_projection_mode_never_silently_hands_off_existing_thread(engine: AsyncEngine) -> None:
+async def test_discovery_does_not_reconstruct_missing_projection_metadata(engine: AsyncEngine) -> None:
     public_id = uuid4()
     await seed_retained_session(engine, locator=str(public_id), public_id=public_id)
     reader = AsyncMock(spec=SandboxServiceClient)
@@ -206,10 +206,10 @@ async def test_projection_mode_never_silently_hands_off_existing_thread(engine: 
     )
     assert await store.open("sb-1", str(public_id), SPEC) == public_id
     reader.read_session_observations.assert_not_awaited()
-    assert not await store.is_raw_ingestion_fenced(public_id)
+    assert not await store.has_projection_metadata(public_id)
 
 
-async def test_legacy_creator_winning_registration_race_remains_unfenced(engine: AsyncEngine) -> None:
+async def test_existing_identity_winning_registration_race_is_not_reinitialized(engine: AsyncEngine) -> None:
     public_id = uuid4()
     reader = AsyncMock(spec=SandboxServiceClient)
 
@@ -224,7 +224,7 @@ async def test_legacy_creator_winning_registration_race_remains_unfenced(engine:
         engine, history_reader=cast(SandboxServiceClient, reader), history_creator=cast(SandboxServiceClient, reader)
     )
     assert await current.open("sb-1", str(public_id), SPEC) == public_id
-    assert not await current.is_raw_ingestion_fenced(public_id)
+    assert not await current.has_projection_metadata(public_id)
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(func.count()).select_from(ThreadHistorySummary)) == 0
 
@@ -282,7 +282,7 @@ async def test_legacy_alias_winning_registration_race_is_preserved(engine: Async
         engine, history_reader=cast(SandboxServiceClient, reader), history_creator=cast(SandboxServiceClient, reader)
     )
     assert await current.open("sb-1", str(public_id), SPEC) == public_id
-    assert not await current.is_raw_ingestion_fenced(public_id)
+    assert not await current.has_projection_metadata(public_id)
     async with async_sessionmaker(engine)() as session:
         row = await session.get(EventLog, public_id)
         assert row is not None
