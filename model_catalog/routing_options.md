@@ -156,6 +156,23 @@ not Bifrost's. So the client context/recognition problem remains even with this 
 
 ### 4. “Has Langfuse integration” is weaker than full long-context logging
 
+**Operator clarification: logging is required for every API format we end up using.**
+An exporter that handles Chat Completions but loses Responses or Messages content
+fails this requirement. Selecting multiple proxies does not exempt any served path.
+Upstream or downstream capture remains acceptable; a translated path need not log
+both representations, but its chosen capture must be complete and associated with
+that request, not merely summarize tokens or the final assistant text.
+
+Use a per-protocol logging acceptance matrix for OpenAI Responses, OpenAI Chat
+Completions, Anthropic Messages, and native Ollama/embedding APIs if retained. For
+each applicable streaming/non-streaming form, verify complete request context,
+system/instruction fields, tool definitions/calls/results, output-schema parameters,
+sampled content and returned reasoning where exposed. Include terminal status,
+upstream errors, partial streams and cancellation; incomplete output must be marked
+incomplete, never presented as a successfully captured full response. Require the
+same large-payload/no-silent-loss behavior for every selected format. This does not
+require adding protocols or unpausing routes just to populate the matrix.
+
 Bifrost documents full normalized content export and raw payload export to OTLP/Langfuse,
 but raw bodies **over 256 KB are dropped rather than truncated**. Our successful Luna
 probe's request alone was about 2 MB. This does not prove normalized export is incomplete,
