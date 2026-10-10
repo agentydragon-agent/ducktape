@@ -195,10 +195,11 @@ async def test_new_service_thread_is_atomically_fenced_and_idempotent(engine: As
     left = EventLogStore(engine, history_creator=cast(SandboxServiceClient, reader))
     right = EventLogStore(engine, history_creator=cast(SandboxServiceClient, reader))
     public_id = uuid4()
-    assert await asyncio.gather(left.open("sb-1", str(public_id), SPEC), right.open("sb-1", str(public_id), SPEC)) == [
-        public_id,
-        public_id,
-    ]
+    left_id, right_id = await asyncio.gather(
+        left.open("sb-1", str(public_id), SPEC), right.open("sb-1", str(public_id), SPEC)
+    )
+    assert left_id == public_id
+    assert right_id == public_id
     assert await left.is_raw_ingestion_fenced(public_id)
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(func.count()).select_from(ThreadHistorySummary)) == 1
