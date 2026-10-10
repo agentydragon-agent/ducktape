@@ -118,8 +118,8 @@ class HistoryProjector:
             if summary is None:
                 raise EventReplicationError("missing service projection metadata at raw fence")
             if not page.entries:
-                await project_lifecycle(session, thread_id, summary, page, through_cursor=after)
-                await notify(session, Channel.THREADS)
+                if await project_lifecycle(session, thread_id, summary, page, through_cursor=after):
+                    await notify(session, Channel.THREADS)
                 return ProjectionProgress(after, page.last_cursor)
             source_id = page.entries[0].origin.source_id
             if any(entry.origin.source_id != source_id for entry in page.entries):
