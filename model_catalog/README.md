@@ -38,6 +38,8 @@ See [consumer wiring](../cluster/docs/model_catalog.md) for projections and chec
 - [Design](design.md): goals, ownership, example wiring, rollout and shared vocabulary.
 - [Migration inventory](migration_inventory.md): settled boundaries and remaining
   file/consumer disposition decisions.
+- [Routing review](routing_review.md) and [options/source audit](routing_options.md):
+  routing-first requirements, candidate features and acceptance gaps.
 - Supporting research: [LiteLLM metadata](litellm_metadata.md),
   [Antigravity limits](antigravity_limits.md), and [client budgets](client_budgets.md).
 - [Tracking issue #9574](https://github.com/agentydragon/ducktape/issues/9574): PR/rollout
