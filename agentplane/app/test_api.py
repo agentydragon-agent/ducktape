@@ -1045,7 +1045,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
     ) as http:
-        (found,) = (await http.get("/threads", params={"sandbox": "live", "session_id": "s-1"})).json()
+        (found,) = (await http.get("/threads", params={"sandbox": "live", "session_id": thread_id})).json()
         assert (found["id"], found["name"]) == (thread_id, None)
         assert (await http.get("/threads", params={"sandbox": "other"})).json() == []
 
