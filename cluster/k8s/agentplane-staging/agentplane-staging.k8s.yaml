@@ -2839,7 +2839,10 @@ spec:
     matchLabels:
       cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
   strategy:
-    type: Recreate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
   template:
     metadata:
       labels:
