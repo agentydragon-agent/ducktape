@@ -118,6 +118,8 @@ receipt lookup and direct/spooled reconciliation. No notification metadata, back
 automatic startup. Keep runner journal admission independent of `Attach`; do not require new inbound
 `InsertCommand`/`ListenSpool` endpoints before inversion. Unique command keys and per-command updates
 must not serialize unrelated queue work with ingestion; no database lock spans a runner call.
+Admission tables go in the `sandbox_commands` database, never the `sandbox_service` database the
+History Service takes over.
 
 In-flight source: operator discussion and draft [#9573](https://github.com/agentydragon/ducktape/pull/9573),
 2026-10-09 PDT. Draft implementation is not deployed capability or verified runtime acceptance.
@@ -460,20 +462,6 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-### `SERVICE_BOUNDARIES` — target service split
-
-**Decision; wiring agreed in operator discussion, 2026-10-10 PDT.** The runner keeps harness
-driving, journal-ordered admission and its journal; the Sandbox Service keeps provisioning, the
-runner channel, command submission, and live follow with replay from the journal, but stores no
-history; a new History Service owns the raw log, settlement and the thread fold, and subscribes to
-the Sandbox Service like any other client; the app fronts it. Use cases kept possible: driving a runner
-with no service, and driving without history or without service-side submission. The remaining
-choices are separate decisions in [section 7](#7-history-service-extraction-and-delta-settlement);
-target, reasoning and gates are in the [History Service plan](history_service.md). The locator ↔
-Sandbox binding stays with the Sandbox Service, since the History Service never reads runners.
-This does not reopen `SESSION_COMMAND_CONTRACT` beyond the reconciliation clause
-`SESSION_FOLLOW_CONTRACT` restates.
-
 ### `RUNNER_OUTBOUND_CHANNEL` — implement outbound command delivery
 
 **Blocked on the admission contract review and admission core; draft code/isolated tests permitted,
@@ -760,13 +748,9 @@ node switches which service reads or writes it. Only the fold double-runs.
 
 ```mermaid
 flowchart TD
-    SERVICE_BOUNDARIES[Decision: target service split]
     SESSION_FOLLOW_CONTRACT[Decision: History Service as an ordinary subscriber]
     SESSION_COMMAND_CONTRACT[Command admission contract]
-    SESSION_COMMAND_CORE[Draft: admission foundation]
-    SANDBOX_COMMAND_DATABASE[Blocked: Sandbox Service database for admission]
-    HISTORY_SERVICE_BRINGUP[Blocked: deploy History Service raw read API]
-    HISTORY_READ_CUTOVER[Blocked: app reads raw history from History Service]
+    HISTORY_READ_CUTOVER[App reads raw history from History Service]
     SANDBOX_HISTORY_READS_RETIRE[Blocked: delete Sandbox Service history reads]
     SESSION_WATCH[Blocked: Sandbox Service Session feed]
     FOLLOW_REPLAY[Blocked: follow from any cursor via the runner]
@@ -793,12 +777,7 @@ flowchart TD
     RUNNER_OUTBOUND_SPOOL[Spool on the runner channel]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     SANDBOX_LIFECYCLE_DURABILITY[Archive before storage deletion]
-    SERVICE_BOUNDARIES --> SESSION_FOLLOW_CONTRACT
     SESSION_COMMAND_CONTRACT --> SESSION_FOLLOW_CONTRACT
-    SERVICE_BOUNDARIES --> SANDBOX_COMMAND_DATABASE
-    SANDBOX_COMMAND_DATABASE -. merge gate .-> SESSION_COMMAND_CORE
-    SERVICE_BOUNDARIES --> HISTORY_SERVICE_BRINGUP
-    HISTORY_SERVICE_BRINGUP --> HISTORY_READ_CUTOVER
     HISTORY_READ_CUTOVER --> SANDBOX_HISTORY_READS_RETIRE
     SESSION_FOLLOW_CONTRACT --> SESSION_WATCH
     SESSION_FOLLOW_CONTRACT --> FOLLOW_REPLAY
@@ -809,7 +788,6 @@ flowchart TD
     HISTORY_READ_CUTOVER --> HISTORY_WRITE_HANDOFF
     HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
     SANDBOX_HISTORY_READS_RETIRE --> SANDBOX_LOCAL_HISTORY_RETIRE
-    SERVICE_BOUNDARIES --> FOLD_LIBRARY_EXTRACT
     FOLD_LIBRARY_EXTRACT --> FOLD_SHADOW
     HISTORY_WRITE_HANDOFF --> FOLD_SHADOW
     FOLD_SHADOW --> FOLD_READ_API
@@ -851,25 +829,11 @@ For now only the app's ServiceAccount reads history, for every Session; agent re
 the operator releases it, and `GetSandbox` shows which hold blocks deletion. API sketch:
 [History Service plan](history_service.md#apis).
 
-### `SANDBOX_COMMAND_DATABASE` — a database for command admission
-
-**Blocked on the service split.** A new Sandbox Service database and role,
-so admission tables never land in the database handed to the History Service. Draft #9573 targets
-it before merge. Rollout: deploy the empty database; nothing reads it until #9573.
-
-### `HISTORY_SERVICE_BRINGUP` — deploy the History Service
-
-**Blocked on the service split.** Deployment, ServiceAccount, the
-`session_history` package and migrations, and raw and observation read RPCs over the tables in the
-existing `sandbox_service` database, with a read-only grant. Leave a `TODO` at the database
-declaration in `cluster/cdk8s/agentplane/database.py` that the name is a misnomer once the History
-Service owns it. No callers; the Sandbox Service stays the only writer. Exit: reads
-match the Sandbox Service's on a bounded sample in both environments.
-
 ### `HISTORY_READ_CUTOVER` — app reads raw history from the History Service
 
-**Blocked on bring-up.** Switch the app's raw and observation reads, with authorization and lag
-explicit. Rollback: point the app back at the same tables.
+**Candidate.** Switch the app's raw and observation reads to the deployed History Service, with
+authorization and lag explicit, after its reads match the Sandbox Service's on a bounded sample in
+both environments. Rollback: point the app back at the same tables.
 
 ### `SANDBOX_HISTORY_READS_RETIRE` — delete the old read path
 
@@ -912,7 +876,7 @@ running, and update `sandbox_service/API.md`.
 
 ### `FOLD_LIBRARY_EXTRACT` — the fold leaves `agentplane.app`
 
-**Blocked on the service split.** Move the fold and projector into a neutral package the app and the
+**Candidate.** Move the fold and projector into a neutral package the app and the
 History Service both import, since backends may not import the app. The app keeps running it; no
 behavior change.
 
