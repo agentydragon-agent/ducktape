@@ -1888,7 +1888,6 @@ metadata:
 data:
   config.yaml: |
     sandbox_namespace: agentplane-staging
-    history_ingestion_enabled: true
     caller_accounts:
       - namespace: agentplane-staging
         name: agentplane-app
@@ -4081,8 +4080,6 @@ data:
       scope: openid
       mode: exchange
       token_endpoint: https://auth.allegedly.works/application/o/token/
-    history_reads_enabled: true
-    history_projection_enabled: true
 immutable: false
 ---
 apiVersion: apps/v1
