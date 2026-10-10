@@ -765,7 +765,8 @@ async def test_a_runner_that_never_answers_open_is_a_504_and_releases_its_stream
     monkeypatch.setattr("agentplane.runner.client.OBSERVE_ANSWER_S", 1)
     live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
-    thread_id = await event_logs.open("live", "test-unanswered", spec)
+    session_id = str(uuid4())
+    thread_id = await event_logs.open("live", session_id, spec)
     wedged = UnansweringRunner()
     async with wedged.serve() as port:
         with backend(custom_objects, core_v1, tmp_path / "wedged-token", runner_port=port) as endpoint:
@@ -798,7 +799,7 @@ async def test_a_runner_that_never_answers_open_is_a_504_and_releases_its_stream
                         json={"commandId": "test-unanswered-command", "submitInput": {"text": "never admitted"}},
                     )
                     assert response.status_code == 504, response.text
-                    assert await wedged.cancelled.get() == "test-unanswered"
+                    assert await wedged.cancelled.get() == session_id
             finally:
                 await ingester.close()
                 await runners.close()
