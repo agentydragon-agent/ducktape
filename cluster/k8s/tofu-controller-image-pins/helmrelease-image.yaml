@@ -10,5 +10,5 @@ metadata:
 spec:
   values:
     image:
-      repository: ghcr.io/flux-iac/tofu-controller # {"$imagepolicy": "flux-system:tofu-controller:name"}
-      tag: v0.16.5 # {"$imagepolicy": "flux-system:tofu-controller:tag"}
+      repository: ghcr.io/agentydragon/tofu-controller # {"$imagepolicy": "flux-system:tofu-controller:name"}
+      tag: devel-20261010073040-f6208e7 # {"$imagepolicy": "flux-system:tofu-controller:tag"}
