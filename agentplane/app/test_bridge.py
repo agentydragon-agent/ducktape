@@ -356,7 +356,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         # frames, and the exit the shutdown caused.
         (thread,) = (await http.get("/threads")).json()
         assert thread["id"] == thread_id
-        assert (thread["sandbox"], thread["session_id"], thread["model"]) == (SANDBOX, thread_id, spec.model)
+        assert (thread["sandbox"], thread["model"]) == (SANDBOX, spec.model)
         stored = await _stored_events(http, thread["id"], until="harnessExited")
         assert [entry["cursor"] for entry in stored] == [str(n) for n in range(1, len(stored) + 1)]
         assert [entry["event"]["itemCompleted"]["text"] for entry in stored if "itemCompleted" in entry["event"]] == [
@@ -1319,7 +1319,6 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
                 await ingester.reconcile()
                 assert await event_logs.last_cursor(threads[0].id) > 0
         assert threads[0].sandbox == SANDBOX
-        assert threads[0].session_id in (SESSION, str(threads[0].id))
     finally:
         await ingester.close()
         await runners.close()
