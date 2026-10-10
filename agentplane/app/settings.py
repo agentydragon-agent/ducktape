@@ -62,6 +62,10 @@ class AppSettingsConfig(BaseSettings):
     )
     egress_admin_url: HttpEndpointUrl = Field(description="The egress proxy's admin port, serving /decisions.")
     action_federation: ActionFederationSettings | None = None
+    history_reads_enabled: bool = False
+    # Projects fenced Threads and creates new service-backed Threads fenced at zero.
+    # Existing Threads require explicit handoff; never bulk-fence on startup.
+    history_projection_enabled: bool = False
 
 
 class Settings(AppSettingsConfig):
@@ -82,10 +86,6 @@ class Settings(AppSettingsConfig):
     notifications_token_file: Path | None = None
     sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
     sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
-    history_reads_enabled: bool = False
-    # Projects fenced Threads and creates new service-backed Threads fenced at zero.
-    # Existing Threads require explicit handoff; never bulk-fence on startup.
-    history_projection_enabled: bool = False
     sandbox_service_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
     sandbox_service_follow_timeout_s: float = Field(default=960, gt=0, allow_inf_nan=False)
     sandbox_service_command_admission_timeout_s: float = Field(

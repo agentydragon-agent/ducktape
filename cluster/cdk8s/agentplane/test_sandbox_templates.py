@@ -135,5 +135,18 @@ def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner
         assert specialized == generic
 
 
+def test_history_handoff_is_enabled_only_in_staging(agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:
+    for namespace in NAMESPACES:
+        config = one(
+            doc
+            for doc in agentplane_manifests[namespace]
+            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
+        )
+        settings = yaml.safe_load(one(config["data"].values()))
+        enabled = namespace == "agentplane-staging"
+        assert settings.get("history_reads_enabled", False) is enabled
+        assert settings.get("history_projection_enabled", False) is enabled
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

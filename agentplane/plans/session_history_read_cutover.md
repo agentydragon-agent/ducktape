@@ -150,3 +150,36 @@ other Sessions in the Sandbox. Reconciliation checks
 the durable fence after discovery, not just its earlier inventory snapshot, so it
 cannot start a legacy Follow for a just-created service projection. Existing flags
 remain off until coordinated cutover; this adds no new temporary flag.
+
+## Coordinated staging switch
+
+Prerequisites deployed: service lifecycle (#9610), projected app lifecycle (#9620),
+projection error reporting (#9622), and new-session fencing (#9626). Deploy the
+mixed-discovery repair (#9634) before merging the staging configuration switch.
+The switch enables service reads and the projector together; existing unfenced
+Threads keep their raw writer until individually handed off. New service Sessions
+start with a zero fence. Testing retains its previous configuration.
+
+Execution order:
+
+1. Confirm the repair image on both Ready app replicas and the service ingester's
+   continued progress. Compare only indexed per-Thread watermarks and Session
+   inventories. Previously accepted bounded verification remains accepted.
+2. Deploy the staging configuration and verify both replicas have it. Do not fence
+   old writers before a ready projector exists. During mixed replicas, durable
+   fences reject legacy writes regardless of which replica holds the lease.
+3. Run the existing transactional `fence_raw_ingestion` per retained Thread, with
+   bounded lock/statement timeouts and resumable per-Thread receipts. It seeds
+   projection metadata and captures a fixed final raw cursor. Runners continue;
+   their service-owned archive does not depend on the app handoff transaction.
+4. Check service and UI checkpoint coverage of each final raw cursor, retained
+   terminal state, and continued live projection. Repeat inventory to include
+   creations concurrent with handoff. A failed fold retains the last good view;
+   investigate rather than clearing fences or pretending EOF.
+5. Once all Threads are fenced and service-backed reads/projection are verified,
+   delete temporary flags, legacy paths, migration jobs and temporary grants.
+   Do not delete retained data. After fences, disabling the projector alone is
+   not a safe rollback: it would strand service-owned suffixes.
+
+The staging-switch PR must include generator-produced manifest output. A source-only
+preparation draft is not ready for merge or a claim that live flags changed.
