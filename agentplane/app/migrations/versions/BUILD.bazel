@@ -21,6 +21,7 @@ exports_files(
         "0017_event_turn_completed_index.py",
         "0018_thread_model_activity.py",
         "0019_app_raw_ingestion_fence.py",
+        "0020_thread_history_summary.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
