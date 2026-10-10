@@ -1,0 +1,21 @@
+load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+
+exports_files(["variables.tf"])
+
+tf_providers_versions(
+    name = "providers",
+    providers = {
+        "kubernetes": "hashicorp/kubernetes:~>3.2.0",
+        "routeros": "terraform-routeros/routeros:~>1.99.0",
+    },
+    tf_version = "1.12.6",
+)
+
+tf_module(
+    name = "home-switch",
+    providers = [
+        "kubernetes",
+        "routeros",
+    ],
+    providers_versions = ":providers",
+)
