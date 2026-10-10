@@ -474,3 +474,19 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_schema_baseline",
+    size = "medium",
+    srcs = ["test_schema_baseline.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        "//:conftest",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
