@@ -1217,7 +1217,9 @@ async def test_a_running_thread_cannot_be_archived(
     async def running_sessions(sandbox: str) -> list[protocol_pb2.SessionSummary]:
         consulted.append(sandbox)
         return [
-            protocol_pb2.SessionSummary(session_id="s-1", spec=spec, harness_state=protocol_pb2.HARNESS_STATE_RUNNING)
+            protocol_pb2.SessionSummary(
+                session_id=str(thread_id), spec=spec, harness_state=protocol_pb2.HARNESS_STATE_RUNNING
+            )
         ]
 
     monkeypatch.setattr(bridge, "list_sessions", running_sessions)

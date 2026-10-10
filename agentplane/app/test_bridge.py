@@ -18,7 +18,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -916,10 +916,11 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
     app_url: str, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     """Opening a session starts its feed, so a turn driven over REST alone lands in the store."""
+    session_id = str(uuid4())
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
-        opened = await http.post(SESSIONS, json={"session_id": "unwatched", "spec": MessageToDict(spec)})
+        opened = await http.post(SESSIONS, json={"session_id": session_id, "spec": MessageToDict(spec)})
         assert opened.status_code == 201, opened.text
-        thread_id = await _thread_id(http, "unwatched")
+        thread_id = await _thread_id(http, session_id)
         accepted = await http.post(
             _commands(thread_id),
             json={"commandId": "input-1", "submitInput": {"text": "Reply with exactly: UNWATCHED_OK"}},
