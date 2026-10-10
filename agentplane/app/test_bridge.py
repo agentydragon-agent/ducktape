@@ -1152,7 +1152,7 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
     assert await content.admitted_command(thread, command) is None
     assert await event_logs.events(thread, limit=10) == []
 
-    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
+    lease = await ingestion.acquire(thread, timedelta(minutes=1))
     assert lease is not None
     await ingestion.record(thread, [receipt], lease=lease)
     assert await content.admitted_command(thread, command) == receipt
