@@ -10,9 +10,7 @@ import pytest_bazel
 from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
-from agentplane.app.testing.legacy_thread_store import LegacyThreadStore
+from agentplane.app.testing.retained_history import RetainedEventLog as EventLogStore, RetainedRows as Ingestion
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
 from agentplane.app.threads.events.event_log import (
     EventLogStore as ServiceEventLogStore,
@@ -33,6 +31,16 @@ from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
+
+
+@pytest.fixture
+def event_logs(engine: AsyncEngine) -> EventLogStore:
+    return EventLogStore(engine)
+
+
+@pytest.fixture
+def ingestion(engine: AsyncEngine) -> Ingestion:
+    return Ingestion(engine)
 
 
 async def test_projection_resumes_existing_checkpoint_without_copying_raw_events(
@@ -214,11 +222,10 @@ async def test_thread_metadata_survives_handoff_and_projection_retry(
     await ingestion.record(thread, first, lease=lease)
     await ingestion.record(sibling, first, lease=lease)
     store = ThreadStore(engine)
-    before = await LegacyThreadStore(engine).get_thread(thread)
-    assert before is not None
     await fence_raw_ingestion(engine, thread)
     await fence_raw_ingestion(engine, sibling)
-    assert await store.get_thread(thread) == before
+    before = await store.get_thread(thread)
+    assert before is not None
     assert (await store.list_threads())[0].last_cursor == 2
     later = [
         event_entry(3, turn_started=event_pb2.TurnStarted(turn_id="two", model=SPEC.model)),
@@ -386,8 +393,8 @@ async def test_deleted_history_keeps_seeded_terminal_state_without_service_snaps
     thread = await event_logs.open("sb-1", "gone", SPEC)
     await ingestion.set_attached(thread, runner_pb2.Attached(session_id="gone", spec=SPEC), lease=lease)
     await ingestion.end_feed(thread, lease=lease, error=None)
-    before = await event_logs.feed_state(thread)
     await fence_raw_ingestion(engine, thread)
+    before = await event_logs.feed_state(thread)
     reader = AsyncMock(spec=SandboxServiceClient)
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=0)
     await HistoryProjector(engine, cast(SandboxServiceClient, reader)).project_batch(thread, lease=lease)

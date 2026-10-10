@@ -7,8 +7,7 @@ from uuid import UUID
 import pytest
 import pytest_bazel
 
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
+from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
