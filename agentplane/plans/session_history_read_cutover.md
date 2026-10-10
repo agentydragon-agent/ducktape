@@ -1,5 +1,31 @@
 # App raw history read handoff (opt-in code; migration in flight)
 
+## Current rollout status (2026-10-09 PDT)
+
+Staging handoff is committed for all 55 retained Sessions. Indexed post-checks confirmed
+matching inventories, 55 summaries, raw watermarks equal to their fixed fences, service
+coverage of every fence, and app checkpoint coverage for every nonempty Session. The live
+canary's raw cursor remained 118104 while its app projection advanced to 118777. Recent
+logs from both app replicas contained no projection-stalled or reconciliation-failure
+messages after the batch. These checks do not claim full historical payload parity.
+
+The six empty Sessions are explicitly not a verification blocker per operator instruction;
+leave their records intact. Cleanup is unfinished: remove flags, legacy paths, migration
+jobs and temporary grants, verify normal new-Session/read behavior, and validate testing's
+state before changing its defaults. Do not delete retained app data or runner storage.
+
+Cleanup rollout order: first deploy unconditional service-backed app wiring while accepting
+the old configuration keys with true defaults. Only after that image is live remove the keys
+from both Settings and generated manifests. Removing manifest keys first would restart an
+older image with false defaults and stop projection. The acceptance fields are temporary and
+must be deleted in the second change, not retained as configurable legacy-path switches.
+
+Testing preflight: 142 app Sessions and 142 service histories, matching IDs, with service
+coverage of every captured app watermark. No testing Threads were fenced by this check.
+
+The sections below retain the staged migration design and earlier evidence; their default-off
+flags and pre-handoff descriptions are historical, not the current staging state.
+
 The [DAG migration lane](task_dag.md#1-finish-the-history-migration-before-expanding-persistence)
 separates `THREAD_ARCHIVE_BACKFILL`, `THREAD_ARCHIVE_INGEST`, `THREAD_ARCHIVE_READ_CUTOVER`,
 `THREAD_ARCHIVE_UI_CUTOVER`, `THREAD_ARCHIVE_OWNERSHIP` and `APP_RAW_HISTORY_RETIRE`.
