@@ -328,3 +328,22 @@ migration-specific Recreate regression test: staging returns to RollingUpdate;
 testing retains its normal Recreate strategy. This is not a schema rollback.
 A binary rollback across the ownership-scope change still requires stopping the app
 and downgrading the lease schema first.
+
+### Locator-column deployment prerequisite
+
+Before merging #9712, deploy the app-only Recreate strategy and verify it in both
+environments. #9707 is deployed on image `devel-20261010132451-80294e6`: testing
+has one updated/Ready replica and staging two; all migration init containers exited
+zero. Bounded startup logs from all three app Pods had no error/exception matches.
+Those binaries still select/write the locator column, so rolling overlap with the
+column-drop migration is unsafe despite their public-ID routing.
+
+The prerequisite changes only app deployment strategy, not its Pod template. The
+subsequent migration image rollout stops old app Pods normally before replacement
+init containers run. Expect brief app unavailability; Sandbox Service, runners and
+archive storage stay unchanged. Do not force-delete Pods.
+
+After #9712 passes CI and this strategy is verified live, merge the schema change.
+Check migration exit status, revision/column removal, readiness and bounded
+projection progress. Then restore the environment strategy and remove the temporary
+rollout regression test. No full-history scan or backfill is required.
