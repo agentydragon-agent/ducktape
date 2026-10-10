@@ -1,156 +1,142 @@
-# MCP tasks backed by Agentplane Actions
+# MCP tasks for canonical Actions
 
-## Choice of protocol and execution engine
+## Scope
 
-Target the MCP tasks protocol FastMCP 4.0.3 actually supports:
-`io.modelcontextprotocol/tasks` (SEP-2663, 2026-07-28 era). This means a
-negotiated extension, an immediately returned flat `CreateTaskResult`,
-`tasks/get` with the final result inlined, `tasks/update` for input-required
-tasks, and `tasks/cancel`. Do **not** implement the obsolete separate
-`tasks/result` / `tasks/list` flow or patch the SDK to advertise it. The
-initial feature targets task-augmented `request_action` only; continue to
-accept ordinary, synchronous calls.
+Implement **MCP tasks first**, using the protocol FastMCP 4.0.3 supports:
+`io.modelcontextprotocol/tasks` (SEP-2663). An opted-in `request_action`
+returns a flat task-creation result. `tasks/get` returns its status and,
+when complete, the final result inline. `tasks/cancel` requests
+cancellation; `tasks/update` is unsupported for Action-backed tasks because
+Actions cannot pause for client input. Non-task `request_action` and the
+existing HTTP Action API stay unchanged.
 
-FastMCP provides `ServerExtension`, `MethodBinding`, and
-`intercept_tool_call` for custom task backends. Its optional
-`fastmcp-tasks` package uses Docket, with memory or Redis storage, to queue
-and rerun ordinary tools. Agentplane has its own durable Action submission,
-policy decision, execution claim, and final-result storage, so write an
-Agentplane-specific extension instead of adding a second worker/queue. Use
-FastMCP's extension interface and negotiated capability; this is not a
-change to the MCP SDK or a fork of the Docket extension.
+**Out of scope:** executor-reported progress, numeric percentages, progress
+notifications, partial output, and an update stream. Decide whether to
+build any of these separately, later. Task status comes only from the
+existing durable Action states, not from heartbeats or invented progress.
+An MCP task is useful without a progress feature.
 
-Start with a wire-level acceptance test against the existing `/mcp` endpoint
-that opts into the tasks extension, checks a task-augmented `tools/call`,
-`tasks/get` throughout its lifecycle (including inlined final result),
-`tasks/cancel`, and an unchanged non-task call. Also test an unsupported
-`tasks/update` on an Action-backed task produces a clear error rather than
-inventing an `input_required` state. Advertise the extension only after
-its handlers are registered and this test passes.
+## FastMCP seam
 
-## Execution and durable identity
+Implement an Agentplane-specific `ServerExtension` registered by
+`create_server()` in `mcp_frontend.py`. Use the FastMCP extension's
+`settings`, `methods` (`MethodBinding`) and `intercept_tool_call` hooks.
+The extension advertises `io.modelcontextprotocol/tasks` only when installed.
+Keep `FastMCP(tasks=False)` as the global default and opt **only** the
+`request_action` tool into task support. The dynamic direct tools, other
+Action tools, and ordinary calls are not intercepted. Do not use the
+optional `fastmcp-tasks` Docket execution queue: the Action Service already
+has its own durable queue, dispatcher and executor leases. This does not
+require an MCP SDK fork or implementing the old `tasks/result` protocol.
 
-`request_action` already calls `ActionService.submit`, which evaluates
-policy and persists one `ActionRequestRow`. The service dispatch loop claims
-one `ExecutionRow`; `_execute_claim` runs the selected `Executor.execute`
-and stores the final `ExecutionResult`. MCP and sandbox executors keep their
-existing ownership and lease behavior. A task lookup must never call an
-executor or resubmit an Action.
+The interceptor should:
 
-Intercept only an opted-in task call to `request_action`; validate its
-normal action arguments, policy admission, and idempotency key, and submit
-through the existing service path once. Use the request UUID as the task ID.
-Task-augmented calls must use default `respond_with=result` and zero wait;
-reject incompatible options before submission. Leave normal tool calls
-alone. Preserve the existing recovery contract: after a lost create response,
-read by the same caller's idempotency key; never submit under a new one.
-Persist just the metadata not derivable from the Action (task creation/TTL,
-and a terminal state/result latch). Do not persist caller tokens, backend
-credentials, or process-local task handles. Cross-replica and restarted
-servers read the same Action and task rows. Task IDs alone grant no access:
-authenticate and authorize each task method with the existing caller
-verification and `ActionService.get`/`list_requests` owner projection. Return
-not-found for another caller.
+1. Check the tool name, negotiated protocol version and the client's
+   per-request tasks-extension opt-in. Otherwise call `call_next()` so the
+   existing behavior is untouched.
+2. Authenticate through the existing `CallerTokenVerifier`/`CallerToken`
+   context and validate `request_action` arguments before any submission.
+   Require `respond_with=result` and default zero wait for augmented calls;
+   reject incompatible response/wait options before side effects.
+3. Submit through `ActionService.submit` exactly once with the caller's
+   supplied idempotency key, using the normal policy/approval path.
+   Return a SEP-2663 `CreateTaskResult` with a task ID derived from the
+   canonical Action request UUID. Do **not** invoke `call_next()` after
+   submission, enqueue a worker, or re-execute an Action during polling.
 
-## Map results and cancellation honestly
+Register handlers for `tasks/get`, `tasks/cancel`, and `tasks/update`,
+using the extension's protocol-version and per-request capability gates.
+Task methods authenticate on _every_ request and check ownership through
+the same caller-scoped `ActionService.get` path as existing MCP reads. A
+foreign task ID must look like not-found. An update request returns a clear
+unsupported-input error; it must not invent an `input_required` state.
+Conformance tests must exercise real JSON-RPC over the `/mcp` mount,
+including task creation, follow-up reads, and ordinary calls.
 
-| Action state                        | Task state              | Response                                                          |
-| ----------------------------------- | ----------------------- | ----------------------------------------------------------------- |
-| `decision_pending`                  | `working`               | Awaiting approval; nothing ran.                                   |
-| `allowed`, `dispatching`, `running` | `working`               | Approved, claimed, executing.                                     |
-| `succeeded`                         | `completed` or `failed` | Inline the final tool result; `isError=true` means a failed task. |
-| `denied`, `failed`                  | `failed`                | Distinct diagnostic/error.                                        |
-| `cancelled`                         | `cancelled`             | Withdrawn before dispatch.                                        |
-| `execution_unknown`                 | `failed`                | May have run; no automatic retry.                                 |
+## Canonical Action is the execution engine
 
-SEP-2663 `tasks/get` includes the completed result, rather than requiring a
-second `tasks/result` call. Adapt the existing `tool_result` conversion so
-upstream MCP content (including images, structured content and `isError`)
-and sandbox results keep their shapes. An upstream tool's `isError=true`
-currently still counts as a successfully executed Action, but it must map
-to `failed` _task status_ without losing the original tool result.
+`ActionService.submit` evaluates admission and persists one
+`ActionRequestRow`. The service dispatch loop claims an `ExecutionRow`;
+`_execute_claim` invokes the group's `Executor.execute(request, lease)` and
+persists an `ExecutionResult`. An MCP executor calls an upstream MCP tool;
+a sandbox executor runs a sandbox Action. An MCP task neither schedules
+another execution nor owns the executor lease.
 
-MCP task statuses are terminal once `completed`/`failed`/`cancelled`. An
-`execution_unknown` Action can subsequently be reconciled by the owner or
-backend authority. Latch the first terminal task status and final
-result/diagnostic durably; subsequent canonical Action reads may show newer
-truth, but a completed MCP task cannot revert to `working` or change its
-published outcome. Bound task retention without expiring an active Action.
+Make the Action request UUID the MCP task ID (or a stable encoding). A lost
+creation response is recovered through the existing owner-scoped lookup
+by the original idempotency key; a repeated key remains refused. A client
+must not be instructed to submit a replacement key. The existing `/mcp`
+transport is stateless Streamable HTTP, so task reads must work after a
+transport disconnect, restart, or request landing on a different replica.
+No task-worker process state or caller bearer is stored in the task record.
+Define task retention without expiring an active Action or encouraging
+another execution.
 
-`tasks/cancel` must use `ActionService.cancel`. Only its `cancelled` and
-`already_cancelled` outcomes warrant a cancelled task; `too_late` must
-return a clear cannot-cancel error because the current executor cannot be
-stopped. `already_finished` requires inspecting the existing outcome.
-A disconnect from `/mcp` ends only a waiter, never an Action. An
-uncertain outcome must not be replayed. Leave cooperative cancellation
-for executor implementations as a follow-up.
+| Action state                        | Task state              | Meaning                                                              |
+| ----------------------------------- | ----------------------- | -------------------------------------------------------------------- |
+| `decision_pending`                  | `working`               | Awaiting approval; nothing ran.                                      |
+| `allowed`, `dispatching`, `running` | `working`               | Approved / claimed / executing.                                      |
+| `succeeded`                         | `completed` or `failed` | Inline the final tool result; `isError=true` requires a failed task. |
+| `denied`, `failed`                  | `failed`                | Give a distinct safe diagnostic.                                     |
+| `cancelled`                         | `cancelled`             | Withdrawn before dispatch.                                           |
+| `execution_unknown`                 | `failed`                | May have run; never retry automatically.                             |
 
-## Backend progress and partial output
+For `tasks/get`, adapt the existing `tool_result` conversion to preserve
+MCP content blocks (including images), structured content and `isError`,
+and sandbox results. The upstream tool can return `isError=true` even
+though the Action execution state is `succeeded`; its task state must be
+`failed` while the inlined result remains that original error result.
+A status message may say "waiting for operator approval" or "running",
+but must not claim execution progress beyond those states.
 
-Action events currently store sequenced state transitions and wake all
-replicas via PostgreSQL NOTIFY. `ExecutionLease.heartbeat` only proves
-ownership; it does **not** mean the backend advanced. Start with truthful
-status messages derived from those state changes, without made-up numeric
-percentages. `tasks/get` is the durable reconnect path.
+MCP terminal task states cannot change. An `execution_unknown` Action may
+later be reconciled by an authenticated late completion or authority
+lookup. Persist an immutable terminal _task_ state and result/diagnostic
+snapshot on first terminal transition, rather than deriving terminal
+status solely from the current Action row. The Action receipt may later
+reflect the reconciled truth; the task cannot change a published terminal
+answer. Store only task-specific metadata, never credentials. Test this
+race and any result-retention behavior explicitly.
 
-For actual progress, add a bounded, append-only Action execution update
-stream with sequence, time, type, safe message, and optional increasing
-progress/total. Extend the executor lease/reporter seam so only the
-currently owning `executor_id + lease_token` can append an update. Reject
-stale owners and terminal updates; commit data before NOTIFY and page by
-cursor. Readers subscribe then reread as `ActionWaiter` does today to avoid
-missing a racing commit. Apply rate/size limits and never let progress
-reports decide, finish, or re-execute an Action.
+`tasks/cancel` delegates to `ActionService.cancel`, whose atomic store
+operation can only withdraw before execution is claimed. Only
+`cancelled`/`already_cancelled` make a task cancelled. `too_late` must
+return an error rather than pretending to stop an executor;
+`already_finished` leaves the terminal outcome intact. Disconnecting a
+client does not cancel its Action.
 
-Progress notifications are optional: `/mcp` currently uses _stateless_
-Streamable HTTP with a fresh transport for each request, so a quick
-create response cannot deliver unsolicited notifications after it closes.
-If a client holds open a streaming request and the transport supports
-out-of-band progress, test that path against actual MCP JSON-RPC; do not
-promise push after disconnect or across an arbitrary replica. In any case,
-`tasks/get.statusMessage` and a caller-authorized `get_action_updates`
-read tool with `after_sequence` provide reliable progress on reconnect.
-Do not confuse the old `_meta.progressToken` examples with requirements
-for SEP-2663; follow the negotiated version's wire contract in tests.
+## Tests and delivery
 
-Partial output is a **separate, opt-in update type** with bounded content
-and a durable cursor. Label it provisional; a failed Action can have
-partial output, and it never becomes an inlined successful final result
-until `finish_execution` writes the final answer. The sandbox adapter
-currently returns `ExecResult` at completion; it should report milestones
-first and only advertise streaming for actions whose backend actually
-supports it. The MCP adapter currently calls an upstream tool normally;
-forward supported upstream progress only where safe. Leave upstream MCP
-task proxying as a follow-up, including its cancellation and
-execution-unknown handling.
+1. Implement the FastMCP extension and model its SEP-2663 wire shapes.
+   Check capability negotiation, `request_action` opt-in only, ordinary
+   calls, malformed arguments before submission, and `tasks/update`
+   unsupported behavior via the actual `/mcp` endpoint.
+2. Exercise pending approval, allowed, running, final success, backend
+   error, upstream tool `isError`, denial, unknown outcome and late
+   reconciliation. Ensure task reads and inlined results are authorized,
+   immutable after terminal, and work across reconnects and replicas.
+3. Exercise lost create responses and idempotency recovery, concurrent
+   creation/cancellation races, and `too_late` without duplicate work.
+   Run the relevant Bazel and HTTP acceptance tests before advertising
+   the extension.
 
-## Implementation checkpoints
+Deferred, separately scoped work:
 
-1. Build the Agentplane-specific FastMCP task extension against
-   `ActionService`, not Docket, and test capability negotiation, create,
-   get-with-inline-result, cancel, task scoping, ordinary calls, idempotency
-   loss recovery, denial and execution-unknown over `/mcp`.
-2. Add the terminal snapshot, reconciling-unknown case, `isError` mapping,
-   retention and replica/restart tests before enabling the capability.
-3. Add lease-checked progress and cursor reads, then opt-in partial output
-   with authorization, bounds, ordering and final-result isolation tests.
-4. Test live transport behavior and add optional notifications only when
-   proven, keeping durable reads as the baseline. Keep TODOs in code for
-   post-dispatch cooperative cancellation, upstream task proxying, and
-   direct-tool tasks; they require separate semantics.
+- Cooperative cancellation inside executors that support it after dispatch.
+- Proxy an upstream MCP task through a single canonical Action; the current
+  MCP adapter uses a conventional `call_tool_mcp`.
+- Task-augment dynamically exposed direct tools after defining their
+  auto-approval-only refusal and bounded-wait semantics.
+- **If later desired**, design Action progress/partial output independently
+  of MCP tasks. It would need its own authorized storage and reporting
+  contract; nothing here promises it.
 
-## Preflight findings
+## Test preflight
 
-The pinned SDK and FastMCP provide the 2026-era extension seams needed;
-no SDK fork or Docket deployment is a prerequisite. The existing
-`mcp_frontend.py` has `tasks=False` and the direct-tool provider returns no
-tasks; neither currently implements the Action-backed extension.
-
-Pre-commit for plan edits passed. A baseline remote
+Pre-commit passed for plan edits. A baseline remote
 `bbr test //agentplane/action_service:test_mcp_frontend` could not run:
-without a BuildBuddy key the client refused, and passing the egress
-placeholder as `BUILDBUDDY_API_KEY` caused remote Bazel to reject the
-literal. The sandbox proxy cannot provision that key inside a remote
-runner. Do not repeat that approach; validate through PR CI or an
-approved runner configuration. This preflight did not validate runtime
-tests.
+without a BuildBuddy API key the client refused; using the sandbox egress
+placeholder in `BUILDBUDDY_API_KEY` caused remote Bazel to reject the
+literal. The sandbox proxy does not provision a key inside the remote
+runner. Do not repeat that credential pattern; use PR CI or an approved
+runner configuration. This preflight did not validate runtime tests.
