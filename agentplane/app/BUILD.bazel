@@ -14,6 +14,7 @@ package(default_visibility = [
 # gazelle:resolve py agentplane.protocol.command_pb2 //agentplane/protocol:command_pb2
 # gazelle:resolve py agentplane.protocol.event_pb2 //agentplane/protocol:event_pb2
 # gazelle:resolve py agentplane.protocol.event_log_pb2 //agentplane/protocol:event_log_pb2
+# gazelle:resolve py agentplane.history_service.protocol_pb2 //agentplane/history_service:protocol_pb2
 # gazelle:resolve py httpx_sse @pypi//httpx_sse
 
 # No test here is small, and none of that is about the tests being slow: on the CI executor image
@@ -143,6 +144,8 @@ py_library(
         "//agentplane/app/threads:ingestion",
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
+        "//agentplane/app/threads:summaries",
+        "//agentplane/app/threads:summary_watch",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:content",
         "//agentplane/history_service:client",
@@ -182,6 +185,7 @@ py_library(
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
+        "//agentplane/app/threads:summaries",
         "//agentplane/app/threads/view:content",
         "//agentplane/history_service:client",
         "//agentplane/runner/testing:fixtures",
@@ -246,6 +250,7 @@ py_test(
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:store",
+        "//agentplane/app/threads:summaries",
         "//agentplane/app/threads/view:content",
         "//agentplane/history_service:client",
         "//agentplane/runner:harness",
@@ -408,6 +413,7 @@ py_library(
         "//agentplane/app/threads:ingestion",
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
+        "//agentplane/app/threads:summaries",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:content",
         "//agentplane/history_service:client",
@@ -696,6 +702,7 @@ py_test(
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
+        "//agentplane/app/threads:summaries",
         "//agentplane/app/threads/view:content",
         "//agentplane/history_service:client",
         "//agentplane/runner:harness",
@@ -966,6 +973,7 @@ py_test(
         "//agentplane/app/testing:thread_browser",
         "//agentplane/app/testing:thread_view_marks",
         "//agentplane/app/threads:store",
+        "//agentplane/app/threads:summaries",
         "//agentplane/app/threads/view:content",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
@@ -1308,6 +1316,8 @@ py_test(
         "//agentplane/app/testing:history",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:sessions",
+        "//agentplane/app/threads:store",
+        "//agentplane/app/threads:summaries",
         "//agentplane/app/threads/view:content",
         "//agentplane/history_service/testing:backend",
         "//agentplane/protocol:command_pb2",
@@ -1317,6 +1327,7 @@ py_test(
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
+        "//agentplane/thread_fold:views",
         "//util:agent_sandbox",
         "@pypi//asyncpg",
         "@pypi//grpcio",

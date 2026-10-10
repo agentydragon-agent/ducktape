@@ -13,15 +13,18 @@ from typing import cast
 import grpc
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.evidence import EvidenceReader
+from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.summaries import SummaryReader
+from agentplane.history_service.summary_changes import SummaryChanges, notify_summaries
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.subjects import ServiceAccountRef
+from agentplane.thread_fold.models import Base
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 
 # The asyncpg dialect is loaded by SQLAlchemy from the driver name.
@@ -48,12 +51,15 @@ class Authentication:
 
 
 @asynccontextmanager
-async def history_service(database_url: str, token_file: Path) -> AsyncIterator[HistoryServiceClient]:
+async def history_service(
+    database_url: str, token_file: Path, *, watch_lease_s: float = 300
+) -> AsyncIterator[HistoryServiceClient]:
     engine = create_async_engine(
         make_url(database_url).set(drivername="postgresql+asyncpg"),
         connect_args={"server_settings": {"default_transaction_read_only": "on"}},
     )
     history = Store(engine)
+    summary_changes = SummaryChanges(make_url(database_url))
     server = grpc.aio.server()
     add_service(
         Resources(
@@ -68,6 +74,8 @@ async def history_service(database_url: str, token_file: Path) -> AsyncIterator[
             evidence=EvidenceReader(engine, history),
             reader_accounts=frozenset({READER}),
             request_timeout_s=10,
+            summary_changes=summary_changes,
+            watch_lease_s=watch_lease_s,
         ),
         server,
     )
@@ -76,8 +84,38 @@ async def history_service(database_url: str, token_file: Path) -> AsyncIterator[
     client = HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=20)
     await server.start()
     try:
-        yield client
+        async with summary_changes.listener.listen():
+            yield client
     finally:
         await client.close()
         await server.stop(0)
+        await engine.dispose()
+
+
+async def fold_history(database_url: str) -> None:
+    """Fold every retained Session in the history database until the History Service fold has caught up.
+
+    The fold is this database's writer of the projection tables, so it creates them as migrations would.
+    """
+    engine = create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        shadow = FoldShadow(engine=engine, history=Store(engine), concurrency=1)
+        try:
+            while (await shadow.cycle()).behind:
+                pass
+        finally:
+            await shadow.release()
+    finally:
+        await engine.dispose()
+
+
+async def announce_fold_commit(database_url: str) -> None:
+    """Commit the notice a fold commit sends, without folding anything."""
+    engine = create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
+    try:
+        async with engine.begin() as connection, AsyncSession(bind=connection) as session:
+            await notify_summaries(session)
+    finally:
         await engine.dispose()

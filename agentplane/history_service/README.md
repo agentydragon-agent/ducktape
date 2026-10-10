@@ -33,13 +33,19 @@ no retention holds yet.
 ## Thread fold
 
 With `fold_shadow` set, it folds every retained Session into its own copy of the thread
-projection (`agentplane.thread_fold`), in epoch `history-v1`, from cursor 0: a page per Session per
+projection (`agentplane.thread_fold`; `thread_*` tables, since a Thread is the projection of a
+Session: [layering](../docs/thread_layering.md#authorities-and-representations)), in epoch `history-v1`, from cursor 0: a page per Session per
 cycle under the per-Session projection leases, so replicas share the work. The fold writes only those
 tables. Each cycle logs how many Sessions and events the fold is behind.
 
 Session summaries (`ListSessionSummaries`, `GetSessionSummary`) read that fold. They list newest
 first by the time of a Session's first event, with not-yet-folded Sessions ahead, and report the
 committed cursor beside the folded one. A page token continues only the filter it was issued for.
+
+`WatchSessionSummaries` tells a reader when to re-read: each fold commit NOTIFYs the history
+database, and every replica forwards that to its watchers as a payload-free `changed`. A stream opens
+with one `changed` to cover whatever the caller missed, and ends with `reconnect_required` after
+`watch_lease_s`.
 
 `ReadThreadEntities` serves a window of a Session's fold rows, by entity index or by key, each as
 the `ThreadEntityView` JSON browsers sync, and `ReadPayload` the chunks of a payload revision an

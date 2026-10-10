@@ -85,12 +85,12 @@ py_library(
     srcs = ["store.py"],
     deps = [
         ":models",
+        ":summaries",
         ":thread_view",
         "//agentplane/app:database_updates",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
-        "//agentplane/thread_fold:models",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
@@ -102,6 +102,7 @@ py_test(
     srcs = ["test_store.py"],
     deps = [
         ":store",
+        ":summaries",
         "//:conftest",
         "//agentplane/app:conftest",
         "//agentplane/app/testing:retained_history",
@@ -112,6 +113,45 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "summaries",
+    srcs = ["summaries.py"],
+    deps = [
+        "//agentplane/app:database_updates",
+        "//agentplane/history_service:client",
+        "//agentplane/history_service:protocol_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/thread_fold:models",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "summary_watch",
+    srcs = ["summary_watch.py"],
+    deps = [
+        "//agentplane/app:changes",
+        "//agentplane/history_service:client",
+    ],
+)
+
+py_test(
+    name = "test_summary_watch",
+    size = "medium",
+    srcs = ["test_summary_watch.py"],
+    requires_docker = True,
+    deps = [
+        ":summary_watch",
+        "//:conftest",
+        "//agentplane/app:changes",
+        "//agentplane/app:conftest",
+        "//agentplane/history_service/testing:backend",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -136,6 +176,7 @@ py_library(
     deps = [
         ":ingestion",
         ":sessions",
+        ":summaries",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:content",
         "//agentplane/protocol:command_pb2",
@@ -159,6 +200,7 @@ py_test(
         ":ingestion",
         ":sessions",
         ":store",
+        ":summaries",
         "//:conftest",
         "//agentplane/app:conftest",
         "//agentplane/app:database_updates",

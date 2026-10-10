@@ -3,20 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 from typing import Never
 
 import grpc
 
 from agentplane.grpc_options import grpc_channel_option_kvps
-from agentplane.history_service import protocol_pb2_grpc
+from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.sandbox_service import protocol_pb2
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
-# protocol_pb2_grpc stubs name the History Service messages.
-# gazelle:include_dep //agentplane/history_service:protocol_pb2
 
 
 class HistoryServiceError(ConnectionError):
@@ -53,8 +51,11 @@ class HistoryServiceClient:
     @property
     def stub(self) -> protocol_pb2_grpc.HistoryServiceAsyncStub:
         if self._stub is None:
+            # A local subchannel pool makes a channel after `close()` dial anew; from the process-wide
+            # pool it would inherit the closed channel's connection.
             self._channel = grpc.aio.insecure_channel(
-                self.target, options=grpc_channel_option_kvps(self._channel_options)
+                self.target,
+                options=grpc_channel_option_kvps(self._channel_options, required={"grpc.use_local_subchannel_pool": 1}),
             )
             self._stub = protocol_pb2_grpc.HistoryServiceStub(self._channel)
         return self._stub
@@ -100,6 +101,76 @@ class HistoryServiceClient:
             )
         except grpc.aio.AioRpcError as error:
             _raise(error)
+
+    async def get_session_summary(self, session_id: str) -> history_pb2.SessionSummary:
+        try:
+            return await self.stub.GetSessionSummary(
+                history_pb2.GetSessionSummaryRequest(session_id=session_id),
+                metadata=await self.metadata(),
+                timeout=self.request_timeout_s,
+            )
+        except grpc.aio.AioRpcError as error:
+            _raise(error)
+
+    async def list_session_summaries(
+        self, request: history_pb2.ListSessionSummariesRequest
+    ) -> history_pb2.ListSessionSummariesResponse:
+        try:
+            return await self.stub.ListSessionSummaries(
+                request, metadata=await self.metadata(), timeout=self.request_timeout_s
+            )
+        except grpc.aio.AioRpcError as error:
+            _raise(error)
+
+    async def read_thread_entities(
+        self, request: history_pb2.ReadThreadEntitiesRequest
+    ) -> history_pb2.ReadThreadEntitiesResponse:
+        try:
+            return await self.stub.ReadThreadEntities(
+                request, metadata=await self.metadata(), timeout=self.request_timeout_s
+            )
+        except grpc.aio.AioRpcError as error:
+            _raise(error)
+
+    async def read_entity_evidence(
+        self, request: history_pb2.ReadEntityEvidenceRequest
+    ) -> history_pb2.ReadEntityEvidenceResponse:
+        try:
+            return await self.stub.ReadEntityEvidence(
+                request, metadata=await self.metadata(), timeout=self.request_timeout_s
+            )
+        except grpc.aio.AioRpcError as error:
+            _raise(error)
+
+    async def read_native_frames(
+        self, request: history_pb2.ReadNativeFramesRequest
+    ) -> history_pb2.ReadNativeFramesResponse:
+        try:
+            return await self.stub.ReadNativeFrames(
+                request, metadata=await self.metadata(), timeout=self.request_timeout_s
+            )
+        except grpc.aio.AioRpcError as error:
+            _raise(error)
+
+    async def watch_session_summaries(self, *, timeout_s: float) -> AsyncIterator[None]:
+        """Yield once per change notice until planned renewal, which returns; anything else raises."""
+        call = self.stub.WatchSessionSummaries(
+            history_pb2.WatchSessionSummariesRequest(), metadata=await self.metadata(), timeout=timeout_s
+        )
+        try:
+            while True:
+                try:
+                    message = await call.read()
+                except grpc.aio.AioRpcError as error:
+                    _raise(error)
+                if message is grpc.aio.EOF:
+                    raise ConnectionError("History Service ended the summary watch without planned renewal")
+                assert isinstance(message, history_pb2.WatchSessionSummariesResponse)
+                if message.HasField("reconnect_required"):
+                    return
+                yield
+        finally:
+            call.cancel()
 
     async def close(self) -> None:
         if self._channel is not None:

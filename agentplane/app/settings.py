@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,11 @@ from util.urls import HttpEndpointUrl
 
 # Names the YAML settings file a deployment mounts; not a field, so not a flag.
 CONFIG_FILE_ENV = "AGENTPLANE_CONFIG_FILE"
+
+
+class ThreadReads(StrEnum):
+    APP = "app"
+    HISTORY_SERVICE = "history_service"
 
 
 class AppSettingsConfig(BaseSettings):
@@ -87,6 +93,12 @@ class Settings(AppSettingsConfig):
     sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
     history_service_token_file: Path = Path("/var/run/secrets/agentplane-history-service/token")
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
+    history_service_watch_timeout_s: float = Field(
+        default=960,
+        gt=0,
+        allow_inf_nan=False,
+        description="Deadline of one summary watch stream. Keep above the History Service's watch_lease_s.",
+    )
     sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     sandbox_service_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
     sandbox_service_follow_timeout_s: float = Field(default=960, gt=0, allow_inf_nan=False)
@@ -103,6 +115,11 @@ class Settings(AppSettingsConfig):
     database_url: str = Field(description="SQLAlchemy asyncpg URL of the thread store.")
     electric_url: HttpEndpointUrl | None = Field(
         default=None, description="Cluster-internal Electric root URL; omitted leaves thread sync routes disabled."
+    )
+    thread_reads: ThreadReads = Field(
+        default=ThreadReads.APP,
+        description="Which fold Thread reads come from. `history_service` also stops the app's own projector, "
+        "whose checkpoint stays for switching back; point `electric_url` at the history Electric with it.",
     )
     egress_admin_timeout: float = Field(
         default=5, description="Seconds to wait for the proxy before showing rules only."
