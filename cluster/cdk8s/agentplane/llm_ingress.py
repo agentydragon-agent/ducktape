@@ -19,7 +19,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.llm_ingress.models import ModelContextWindow
+from agentplane.llm_ingress.models import ModelConfig
 from agentplane.llm_ingress.settings import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane.environment import Environment
@@ -44,9 +44,9 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 WORKLOAD_TOKEN_AUDIENCE = "agentplane-egress"
 
 
-def model_context_windows(models: HarnessRoutes) -> list[ModelContextWindow]:
+def model_configs(models: HarnessRoutes) -> list[ModelConfig]:
     return [
-        ModelContextWindow(model=route.id, context_window_tokens=RUNNER_CONTEXT_OVERRIDES[route])
+        ModelConfig(model=route.id, total_context_budget_tokens=RUNNER_CONTEXT_OVERRIDES[route])
         for route in sorted(models.all, key=lambda route: route.id)
         if route in RUNNER_CONTEXT_OVERRIDES
     ]
@@ -95,9 +95,7 @@ class LlmIngress(Construct):
             content={
                 "allowed_service_account_namespaces": [env.namespace],
                 "log_llm_requests": env.llm_ingress.log_llm_requests,
-                "model_context_windows": [
-                    item.model_dump(mode="json") for item in env.llm_ingress.model_context_windows
-                ],
+                "models": [item.model_dump(mode="json") for item in env.llm_ingress.models],
             },
             path="/etc/agentplane-llm-ingress/settings.yaml",
         )

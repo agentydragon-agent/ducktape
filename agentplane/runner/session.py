@@ -19,9 +19,9 @@ from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import RunnerConfig
-from agentplane.runner.context_window import ContextWindowLookupError
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.journal import Journal
+from agentplane.runner.model_config import ModelConfigLookupError
 from agentplane.runner.observation import Observation
 from agentplane.runner.recovery import observed_items, unknown_report
 from agentplane.runner.store import SessionRecord, SessionStore
@@ -369,13 +369,14 @@ class Session:
                 await self._noop(command_id, "the requested model is already active", sources=[])
                 return
             try:
-                requested_window = await self.config.resolve_context_window(
+                model_config = await self.config.resolve_model_config(
                     harness=protocol_pb2.Harness.Value(self.record.harness), model=model
                 )
-            except ContextWindowLookupError as error:
+            except ModelConfigLookupError as error:
                 await self._fail(command_id, str(error), sources=[])
                 return
-            current_window = self.record.context_window_tokens
+            requested_window = model_config.total_context_budget_tokens if model_config is not None else None
+            current_window = self.record.total_context_budget_tokens
             if current_window != requested_window:
                 await self._fail(
                     command_id,

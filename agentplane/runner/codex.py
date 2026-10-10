@@ -66,7 +66,7 @@ class CodexAdapter(HarnessAdapter):
         self._turn_starts: dict[wire.RequestId, _TurnStart] = {}
 
     def command(self) -> list[str]:
-        context_window = self.session.record.context_window_tokens
+        context_window = self.session.record.total_context_budget_tokens
         return scenarios.command(
             str(self.launch.binary), endpoint=self.launch.base_url, model_context_window=context_window
         )

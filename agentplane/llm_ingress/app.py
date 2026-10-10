@@ -12,7 +12,7 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from starlette.responses import Response, StreamingResponse
 
-from agentplane.llm_ingress.models import ModelContextWindow
+from agentplane.llm_ingress.models import ModelConfig
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipal
 
@@ -48,7 +48,7 @@ class IngressResources:
     backend: httpx.AsyncClient
     litellm_key: str
     log_llm_requests: bool = False
-    model_context_windows: Mapping[str, int] = field(default_factory=dict)
+    models: Mapping[str, ModelConfig] = field(default_factory=dict)
 
 
 def _verified_metadata(principal: WorkloadPrincipal) -> str:
@@ -121,17 +121,15 @@ def create_app(resources: IngressResources) -> FastAPI:
 
     principal_dependency = Depends(principal)
 
-    @app.get("/agentplane/model-context-window")
-    async def model_context_window(
-        model: str, verified: WorkloadPrincipal = principal_dependency
-    ) -> ModelContextWindow:
+    @app.get("/agentplane/model-config")
+    async def model_config(model: str, verified: WorkloadPrincipal = principal_dependency) -> ModelConfig:
         # Requiring the same verified workload identity as inference prevents this from becoming
-        # a public model inventory endpoint. Only explicit generated overrides are returned.
+        # a public model inventory endpoint. Only explicit generated configuration is returned.
         del verified
-        window = resources.model_context_windows.get(model)
-        if window is None:
-            raise HTTPException(status_code=404, detail="no configured context-window override for model")
-        return ModelContextWindow(model=model, context_window_tokens=window)
+        config = resources.models.get(model)
+        if config is None:
+            raise HTTPException(status_code=404, detail="no configuration for model")
+        return config
 
     @app.api_route("/{path:path}", methods=_REQUEST_METHODS)
     async def forward(request: Request, path: str, verified: WorkloadPrincipal = principal_dependency) -> Response:

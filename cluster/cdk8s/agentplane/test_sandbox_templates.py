@@ -135,12 +135,12 @@ def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner
         assert specialized == generic
 
 
-def test_context_windows_are_generated_into_the_llm_ingress_configmap(
+def test_model_configs_are_generated_into_the_llm_ingress_configmap(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
     expected = [
-        {"model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k", "context_window_tokens": 128 * 1024},
-        {"model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k", "context_window_tokens": 256 * 1024},
+        {"model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k", "total_context_budget_tokens": 128 * 1024},
+        {"model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k", "total_context_budget_tokens": 256 * 1024},
     ]
     for namespace, manifests in agentplane_manifests.items():
         settings = one(
@@ -157,7 +157,7 @@ def test_context_windows_are_generated_into_the_llm_ingress_configmap(
             deployment["metadata"]["annotations"]["configmap.reloader.stakater.com/reload"]
             == "agentplane-llm-ingress-settings"
         )
-        assert yaml.safe_load(settings["data"]["settings.yaml"])["model_context_windows"] == expected, namespace
+        assert yaml.safe_load(settings["data"]["settings.yaml"])["models"] == expected, namespace
         runners = [
             container
             for template in manifests

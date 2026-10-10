@@ -91,7 +91,7 @@ class ClaudeAdapter(HarnessAdapter):
                 endpoint=self.launch.base_url, token=self.launch.auth_token, config_dir=str(config_dir)
             ),
         }
-        if context_window := self.session.record.context_window_tokens:
+        if context_window := self.session.record.total_context_budget_tokens:
             environment["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(context_window)
         return environment
 

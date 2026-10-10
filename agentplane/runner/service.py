@@ -18,10 +18,10 @@ from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.claude import ClaudeAdapter
 from agentplane.runner.codex import CodexAdapter
 from agentplane.runner.config import RunnerConfig
-from agentplane.runner.context_window import ContextWindowLookupError
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.initialization import InitializationLog
 from agentplane.runner.journal import Journal
+from agentplane.runner.model_config import ModelConfigLookupError
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord, SessionStore, StateOwner, validate_session_id
 
@@ -196,14 +196,17 @@ class Runner:
                 selected = hashlib.sha256(source).hexdigest() if source else None
                 if selected != session.record.setup_script_sha256:
                     raise OpenError(f"session {session_id} exists with a different setup script")
-            if request.HasField("spec") and not session.record.context_window_resolved:
+            if request.HasField("spec") and not session.record.context_budget_resolved:
                 try:
-                    session.record.context_window_tokens = await self.config.resolve_context_window(
+                    model_config = await self.config.resolve_model_config(
                         harness=protocol_pb2.Harness.Value(session.record.harness), model=session.record.model
                     )
-                except ContextWindowLookupError as error:
+                except ModelConfigLookupError as error:
                     raise OpenError(str(error)) from error
-                session.record.context_window_resolved = True
+                session.record.total_context_budget_tokens = (
+                    model_config.total_context_budget_tokens if model_config is not None else None
+                )
+                session.record.context_budget_resolved = True
                 self.store.write(session_id, session.record)
         else:
             if not request.HasField("spec"):
@@ -222,13 +225,17 @@ class Runner:
             if len(source) > _MAX_BOOTSTRAP_BYTES:
                 raise OpenError(f"setup_script exceeds {_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
             try:
-                context_window_tokens = await self.config.resolve_context_window(
+                model_config = await self.config.resolve_model_config(
                     harness=request.spec.harness, model=request.spec.model
                 )
-            except ContextWindowLookupError as error:
+            except ModelConfigLookupError as error:
                 raise OpenError(str(error)) from error
             record = SessionRecord.from_spec(
-                request.spec, setup_script=request.setup_script, context_window_tokens=context_window_tokens
+                request.spec,
+                setup_script=request.setup_script,
+                total_context_budget_tokens=(
+                    model_config.total_context_budget_tokens if model_config is not None else None
+                ),
             )
             self.store.write(session_id, record)
             session = await self._load(session_id)

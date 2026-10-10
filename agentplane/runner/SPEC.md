@@ -47,8 +47,10 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   orders that hold for every turn of it. They reach the model appended to the harness's own system
   prompt, so each harness keeps its coding-agent policy; empty is a session without any. They are
   fixed for the session's life, because a `spec` supplied on re-attach must equal the stored one.
-- The runner asks the workload-authenticated LLM ingress for a model's configured
-  `context_window_tokens` when a session or model selection is made. A configured value sets Claude's
+- The runner asks the workload-authenticated LLM ingress for `ModelConfig` when a
+  session or model selection is made. Its `total_context_budget_tokens` is a client
+  budget shared by input and output, not a provider maximum or an output request cap.
+  The runner consumes this field to set Claude's
   `CLAUDE_CODE_MAX_CONTEXT_TOKENS` or Codex's `model_context_window`; routes without an override use
   the harness's normal metadata. The resolved value is retained in the runner's session record so a
   resume uses the same compaction window. Model changes across different resolved windows require a

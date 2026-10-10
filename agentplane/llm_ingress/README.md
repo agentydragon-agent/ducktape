@@ -34,11 +34,35 @@ The workload bearer is sent only to Kubernetes TokenReview. The LiteLLM virtual 
 the internal LiteLLM hop. Neither credential is logged, placed in errors, returned to callers, or
 mounted into a runner or harness container.
 
-The authenticated `GET /agentplane/model-context-window?model=...` endpoint returns only an explicitly
-configured `context_window_tokens` override. Its route map is generated at deployment time from the
-model roster and mounted as ingress settings; lookups are answered locally and never forwarded to
-LiteLLM. Unknown routes return 404 so runners retain their harness defaults. Context-window changes
-should use a new route ID so retained sessions keep matching their persisted compaction window.
+## Per-model client configuration
+
+The authenticated `GET /agentplane/model-config?model=...` endpoint returns a
+`ModelConfig` record for an exposed route. The ingress retains complete records,
+indexed by their exposed model IDs, rather than reducing them to integer budgets.
+Lookups are answered locally and never forwarded to LiteLLM. An explicit 404
+`"no configuration for model"` response lets the runner use harness defaults;
+authentication, transport, malformed-response and other 404 errors fail the lookup.
+
+Configuration is authored as a list in ingress settings, for example:
+
+```yaml
+models:
+  - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+    total_context_budget_tokens: 131072
+```
+
+`total_context_budget_tokens` is the configured **input + output total** budget
+for the harness, not separate maximum input or output tokens, an output request
+cap, or verified provider capacity. Harness-specific reserves and compaction still
+apply. Changing this policy should use a new route ID so retained sessions keep
+matching their persisted budget. More client configuration fields can be added
+when needed; no speculative options map is defined.
+
+TODO(#9574): support an exposed model ID distinct from the LiteLLM model ID, e.g.
+expose `x` to satisfy a harness's model-name expectations while forwarding inference
+as `y`. Review request/response translation (including streaming), lookup identity,
+authorization and accounting together. Current inference remains pass-through;
+this TODO does not enable aliases or infer budgets/capabilities from a model name.
 
 For targeted debugging, set `log_llm_requests: true` in the ingress settings (or
 `AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=true`). The ingress logs each request body and every raw
@@ -47,6 +71,6 @@ include prompts, reasoning, generated text, and tool arguments; keep it disabled
 restrict access and retention while enabled. Authorization and other request headers are not logged.
 
 Each environment projects selected routes through the explicit runner budget map
-into `LlmIngressProps.model_context_windows`, then `settings.py`'s configuration schema. `models.py` owns the lightweight
-`ModelContextWindow` API contract shared by ingress, runner, and config generation.
+into `LlmIngressProps.models`, then `settings.py`'s configuration schema. `models.py` owns the lightweight
+`ModelConfig` API contract shared by ingress, runner, and config generation.
 These are configured harness overrides, not a catalog of every known model capacity.

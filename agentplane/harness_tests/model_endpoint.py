@@ -228,7 +228,7 @@ class ModelEndpoint[RequestT: StreamableRequest]:
 
     async def start(self) -> None:
         app = web.Application()
-        app.router.add_get("/agentplane/model-context-window", self._no_context_window)
+        app.router.add_get("/agentplane/model-config", self._no_model_config)
         app.router.add_post("/{tail:.*}", self._post)
         self._runner = web.AppRunner(app, handler_cancellation=True)
         await self._runner.setup()
@@ -254,9 +254,9 @@ class ModelEndpoint[RequestT: StreamableRequest]:
                 return exchange
 
     @staticmethod
-    async def _no_context_window(request: web.Request) -> web.Response:
+    async def _no_model_config(request: web.Request) -> web.Response:
         del request
-        return web.json_response({"detail": "no configured context-window override for model"}, status=404)
+        return web.json_response({"detail": "no configuration for model"}, status=404)
 
     async def _post(self, request: web.Request) -> web.StreamResponse:
         try:

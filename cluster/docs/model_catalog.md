@@ -51,15 +51,15 @@ distinguishes provider documentation, reviewed catalogue entries, and the Groq b
 
 ## Projections
 
-| Consumer               | Input                                                               | Output                                                           |
-| ---------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| LiteLLM                | `SERVED_ROUTES`, `HIDDEN_ALIASES`, deployment bindings              | Proxy config and alias settings                                  |
-| Terraform virtual keys | `KEY_MODEL_LANES`                                                   | `model_lanes`: allowed IDs and ordered fallback IDs              |
-| Agentplane app         | `HarnessRoutes`                                                     | App-owned `ModelCatalog` records and harness ID lists            |
-| OpenClaw public coder  | Explicit selections and budgets in `public_coder/app.py`            | OpenClaw IDs, names, limits, and reasoning flags                 |
-| Parked Haku OpenClaw   | Selected subscription routes and command aliases                    | Native Claude Code model slugs                                   |
-| Gatus                  | Selected Ollama route                                               | Probe request model ID                                           |
-| LLM ingress            | Environment-selected routes and explicit `RUNNER_CONTEXT_OVERRIDES` | Ingress-owned context-window settings and authenticated response |
+| Consumer               | Input                                                               | Output                                                       |
+| ---------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------ |
+| LiteLLM                | `SERVED_ROUTES`, `HIDDEN_ALIASES`, deployment bindings              | Proxy config and alias settings                              |
+| Terraform virtual keys | `KEY_MODEL_LANES`                                                   | `model_lanes`: allowed IDs and ordered fallback IDs          |
+| Agentplane app         | `HarnessRoutes`                                                     | App-owned `ModelCatalog` records and harness ID lists        |
+| OpenClaw public coder  | Explicit selections and budgets in `public_coder/app.py`            | OpenClaw IDs, names, limits, and reasoning flags             |
+| Parked Haku OpenClaw   | Selected subscription routes and command aliases                    | Native Claude Code model slugs                               |
+| Gatus                  | Selected Ollama route                                               | Probe request model ID                                       |
+| LLM ingress            | Environment-selected routes and explicit `RUNNER_CONTEXT_OVERRIDES` | Ingress-owned model configuration and authenticated response |
 
 For example, a preset chooses `GPT6_LUNA_RESPONSES`; the app renderer emits its ID,
 display name, and reasoning choices. The key renderer emits only its ID. Neither knows
@@ -101,12 +101,20 @@ separate behavioral change; do not replace account metadata with a borrowed Goog
 limit.
 
 Each environment projects its selected routes and explicit runner budgets into
-`LlmIngressProps.model_context_windows`. Ingress serializes those values through its
-lightweight `ModelContextWindow` schema; the runner validates the same API contract.
+`LlmIngressProps.models`. Ingress serializes those values through its
+lightweight `ModelConfig` schema; the runner validates the same API contract. Ingress
+retains complete records rather than flattening them to budgets. The current field,
+`total_context_budget_tokens`, is a configured input-plus-output total client budget,
+not independently attainable input/output maxima.
 The removed `Environment.model_routes` placeholder stays removed: no app-config
 strings are read back, and provider limits or GGUF context are not used as budgets.
 Only an explicit no-override response retains harness defaults; authentication,
 transport, malformed-response, and wrong-route errors fail the lookup.
+
+TODO(#9574): support exposed model IDs different from LiteLLM IDs for harness
+model-name recognition; coordinate inference and lookup identities as described in
+[the ingress contract](../../agentplane/llm_ingress/README.md#per-model-client-configuration).
+No model renaming or request/response translation is implemented here.
 
 Runtime services own their configuration/API schemas and consume serialized data;
 they do not import generator internals. Diagnostic probes and acceptance tests likewise

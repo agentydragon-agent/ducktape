@@ -48,9 +48,7 @@ async def async_main(settings: Settings) -> None:
                 backend=backend,
                 litellm_key=settings.litellm_key.get_secret_value(),
                 log_llm_requests=settings.log_llm_requests,
-                model_context_windows={
-                    item.model: item.context_window_tokens for item in settings.model_context_windows
-                },
+                models={item.model: item for item in settings.models},
             )
         )
         logger.info("forwarding authenticated Sandbox model traffic to %s", settings.litellm_url)

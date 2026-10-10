@@ -12,8 +12,8 @@ from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
-from agentplane.runner.context_window import HttpContextWindowResolver
 from agentplane.runner.errors import RunnerError
+from agentplane.runner.model_config import HttpModelConfigResolver
 from agentplane.runner.service import Runner
 from agentplane.runner.store import SessionRecord, StateOwner, StateOwnershipError
 
@@ -43,9 +43,9 @@ def config(harness: protocol_pb2.Harness, harness_binary: Path, tmp_path: Path) 
     """Overrides the package fixture: the session's harness is `harness_binary`, not the pinned one."""
     return RunnerConfig(
         state_dir=tmp_path / "state",
-        context_window_resolver=HttpContextWindowResolver(
+        model_config_resolver=HttpModelConfigResolver(
             transport=httpx.MockTransport(
-                lambda _request: httpx.Response(404, json={"detail": "no configured context-window override for model"})
+                lambda _request: httpx.Response(404, json={"detail": "no configuration for model"})
             )
         ),
         native_state_dir=tmp_path / "native-state",

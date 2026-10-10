@@ -70,6 +70,7 @@ py_test(
     srcs = ["test_ingress.py"],
     deps = [
         ":app",
+        ":models",
         "//:conftest",
         "//agentplane/testing:fake_apiserver",
         "//agentplane/workload_auth:http",

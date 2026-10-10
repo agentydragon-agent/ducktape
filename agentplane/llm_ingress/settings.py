@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
-from agentplane.llm_ingress.models import ModelContextWindow
+from agentplane.llm_ingress.models import ModelConfig
 from util.urls import HttpEndpointUrl
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
@@ -35,9 +35,8 @@ class Settings(BaseSettings):
             "reasoning, generated text, and tool arguments."
         ),
     )
-    model_context_windows: list[ModelContextWindow] = Field(
-        default_factory=list,
-        description="Explicit per-route harness context-window overrides exposed to authenticated workloads.",
+    models: list[ModelConfig] = Field(
+        default_factory=list, description="Per-route client configuration exposed to authenticated workloads."
     )
     litellm_url: HttpEndpointUrl = Field(description="Internal LiteLLM base URL.")
     litellm_key: SecretStr = Field(description="The one server-held LiteLLM virtual key.")
