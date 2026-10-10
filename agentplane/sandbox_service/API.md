@@ -78,10 +78,6 @@ runs when the Service starts; there is no runtime feature gate. The app's projec
 consumes this archive independently. Legacy rows without a known Sandbox UID remain
 readable but are not polled until their binding is established by a verified handoff.
 
-During rolling configuration cleanup, `history_ingestion_enabled` is accepted but ignored.
-After this image is deployed, remove that compatibility field and its ConfigMap entries.
-Deleting the entries before replacing older default-off images would interrupt ingestion.
-
 - `ListSessions`: Sandbox destination; maps Service-created runner IDs to public Session IDs in
   the returned summaries. Legacy runner-owned sessions retain their existing IDs.
 - `OpenSession`: legacy caller-chosen runner ID; retained for deployed app sessions until cutover.

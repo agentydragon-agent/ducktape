@@ -62,10 +62,6 @@ class AppSettingsConfig(BaseSettings):
     )
     egress_admin_url: HttpEndpointUrl = Field(description="The egress proxy's admin port, serving /decisions.")
     action_federation: ActionFederationSettings | None = None
-    # Accepted until declarative configuration removes these keys after this image
-    # rolls out. Runtime wiring is unconditional; neither value selects a legacy path.
-    history_reads_enabled: bool = True
-    history_projection_enabled: bool = True
 
 
 class Settings(AppSettingsConfig):

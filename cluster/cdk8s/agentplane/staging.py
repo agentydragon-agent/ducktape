@@ -319,7 +319,6 @@ ENV = Environment(
         sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     ),
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
-    sandbox_service_history_ingestion_enabled=True,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     db=DbProps(instances=2),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, log_llm_requests=True),

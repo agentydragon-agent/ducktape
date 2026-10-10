@@ -24,9 +24,6 @@ class Settings(BaseSettings):
 
     sandbox_namespace: str = Field(min_length=1)
     database_url: str | None = Field(default=None, min_length=1)
-    # Accept the old ConfigMap key until this unconditional-ingestion image is live.
-    # The key no longer controls runtime behavior; remove it with the manifest key.
-    history_ingestion_enabled: bool = True
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
     history_reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     platform_instructions: str = Field(min_length=1)
