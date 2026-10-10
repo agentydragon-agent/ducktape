@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
@@ -309,6 +309,46 @@ async def test_fenced_lifecycle_uses_covered_snapshot_and_preserves_legacy_feed(
     assert snapshot.attached.last_cursor == 3
     assert snapshot.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
     assert snapshot.end is None
+
+
+async def test_unchanged_idle_projection_does_not_write_or_notify(
+    engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
+) -> None:
+    thread = await event_logs.open("sb-1", "idle", SPEC)
+    await ingestion.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted(pid=7))], lease=lease)
+    await fence_raw_ingestion(engine, thread)
+    reader = AsyncMock(spec=SandboxServiceClient)
+    page = protocol_pb2.ReadSessionEventsResponse(
+        last_cursor=1,
+        feed_state=protocol_pb2.SessionFeedState(
+            attached=runner_pb2.Attached(session_id="idle", spec=SPEC, last_cursor=1)
+        ),
+    )
+    reader.read_session_events.return_value = page
+    projector = HistoryProjector(engine, cast(SandboxServiceClient, reader))
+    await projector.project_batch(thread, lease=lease)
+
+    statements = Mock()
+    event.listen(engine.sync_engine, "before_cursor_execute", statements)
+    try:
+        with patch("agentplane.app.threads.history_projector.notify", new_callable=AsyncMock) as notify:
+            await projector.project_batch(thread, lease=lease)
+            notify.assert_not_awaited()
+        assert not any(
+            call.args[2].lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE"))
+            for call in statements.call_args_list
+        )
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", statements)
+
+    # A lifecycle-only change must still reach subscribers, exactly once.
+    page.feed_state.ended = True
+    with patch("agentplane.app.threads.history_projector.notify", new_callable=AsyncMock) as notify:
+        await projector.project_batch(thread, lease=lease)
+        notify.assert_awaited_once()
+        notify.reset_mock()
+        await projector.project_batch(thread, lease=lease)
+        notify.assert_not_awaited()
 
 
 async def test_empty_page_adopts_eof_and_rolls_back_invalid_snapshot(
