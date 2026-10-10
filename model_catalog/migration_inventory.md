@@ -59,16 +59,30 @@ finds another consumer or source of independently maintained configuration.
 
 #### Agentplane selection, projection and runtime
 
-| Current file(s)                                                                                              | Question to resolve                                                                                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster/cdk8s/model_selections.py`                                                                          | Which selections belong together? Decide the homes and shapes of harness offerings, defaults, `PUBLIC_CODER_MODELS` and `RUNNER_CONTEXT_OVERRIDES` rather than preserving or moving them by assumption. |
-| `cluster/cdk8s/agentplane/app_settings.py`                                                                   | What is the smallest projection into app offerings/presets, and which presentation/default choices are independently owned?                                                                             |
-| `cluster/cdk8s/agentplane/environment.py`; `staging.py`, `testing.py`, `staging_config.py` in that directory | Which structured selections should flow to each renderer, and where should environment-specific choices live?                                                                                           |
-| `cluster/cdk8s/agentplane/app.py`                                                                            | How should runner configuration be emitted without treating model token limits as universal client budgets?                                                                                             |
-| `agentplane/app/api.py`                                                                                      | Does the runtime-owned offering schema need to change, or can existing records express the chosen design? No generator imports.                                                                         |
-| `agentplane/runner/config.py`, `main.py`, `guest_config.py`, `session.py`                                    | What runner-owned configuration shape supports launch, switching and resume without duplicate metadata or misleading shared semantics?                                                                  |
-| `agentplane/runner/codex.py`; `agentplane/runner/claude.py`                                                  | Which settings must be applied in each native client's vocabulary, and what logic is unnecessary? Preserve the approved Claude offering-pause boundary.                                                 |
-| `agentplane/llm_ingress/app.py`, `settings.py`; `cluster/cdk8s/agentplane/llm_ingress.py`                    | Is model-ID translation useful enough to introduce, and where would its authorized mapping/configuration belong? Pass-through is not required, but translation is not yet selected.                     |
+The settled boundaries are:
+
+- `cluster/cdk8s/agentplane/app_settings.py` projects named selections into the app's
+  existing offering schema. Environments supply those selections at the renderer;
+  `Environment` does not carry an unused `model_routes` field.
+- `cluster/cdk8s/agentplane/llm_ingress.py` projects selected routes and explicit
+  `RUNNER_CONTEXT_OVERRIDES` into ingress-owned configuration, not runner environment
+  or guest-config budget maps. `agentplane/llm_ingress/models.py` owns the shared
+  `ModelConfig` contract; `settings.py` owns ingress configuration.
+- `agentplane/runner/model_config.py` performs the authenticated lookup. Runner
+  configuration selects the harness endpoint/credential, and session handling applies
+  the resolved budget in the native adapter's vocabulary. The
+  [client-budget description](client_budgets.md#codex-and-agentplane) owns these semantics.
+
+Remaining review is narrower than reworking those boundaries:
+
+| Files / boundary                                                                   | Remaining question                                                                                                                                                                         |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cluster/cdk8s/model_selections.py`; Agentplane environment and preset definitions | Are any selection/default identities still independently reconstructed? Keep offering, default and budget policy distinct; review `PUBLIC_CODER_MODELS` with its consumer.                 |
+| Ingress `app.py`, `settings.py`; runner lookup and session handling                | Should exposed model IDs differ from LiteLLM IDs? Translation remains a TODO, not an implemented or activated mapping. Coordinate request/response identity, authorization and accounting. |
+
+Runtime acceptance remains open: verify new-runner startup/session/model-switch
+behavior and existing-runner inference/stream continuity. Source wiring and template
+inspection do not establish those outcomes; the tracker owns the dated evidence.
 
 #### Nix wrappers and direct local clients
 
@@ -99,12 +113,12 @@ finds another consumer or source of independently maintained configuration.
 
 #### Generated outputs, tests, build boundaries and documentation
 
-| Current file(s)                                                                                                                                                                               | Question to resolve                                                                                                                                                                                    |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Affected `cluster/k8s/…` manifests and Nix JSON artifacts                                                                                                                                     | Which outputs follow from the eventual source changes? Regenerate them from their owners, never make them another authored source.                                                                     |
-| `cluster/cdk8s/test_model_rosters.py`; `cluster/cdk8s/litellm/test_config.py`, `test_openclaw_models.py`; `model_catalog/test_nix.py`, `test_policies.py`; affected Agentplane/OpenClaw tests | Which tests prove identity, authorization, fallback, serialization or native-client behavior, and which merely restate fields? Decide retention/consolidation based on that distinction.               |
-| Affected `BUILD.bazel` files, including `cluster/cdk8s/BUILD.bazel`, `cluster/cdk8s/litellm/BUILD.bazel`, `cluster/cdk8s/agentplane/BUILD.bazel`                                              | Which dependency/visibility edges should change as ownership is decided? Preserve the cdk8s generation/runtime boundary.                                                                               |
-| `model_catalog/design.md`; `model_catalog/README.md`; `cluster/docs/model_catalog.md`                                                                                                         | The neutral design/research split is approved; the cluster guide's fate remains open. See [documentation consolidation](#documentation-consolidation); preserve evidence and restoration instructions. |
+| Current file(s)                                                                                                                                                                               | Question to resolve                                                                                                                                                                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Affected `cluster/k8s/…` manifests and Nix JSON artifacts                                                                                                                                     | Which outputs follow from the eventual source changes? Regenerate them from their owners, never make them another authored source.                                                             |
+| `cluster/cdk8s/test_model_rosters.py`; `cluster/cdk8s/litellm/test_config.py`, `test_openclaw_models.py`; `model_catalog/test_nix.py`, `test_policies.py`; affected Agentplane/OpenClaw tests | Which tests prove identity, authorization, fallback, serialization or native-client behavior, and which merely restate fields? Decide retention/consolidation based on that distinction.       |
+| Affected `BUILD.bazel` files, including `cluster/cdk8s/BUILD.bazel`, `cluster/cdk8s/litellm/BUILD.bazel`, `cluster/cdk8s/agentplane/BUILD.bazel`                                              | Which dependency/visibility edges should change as ownership is decided? Preserve the cdk8s generation/runtime boundary.                                                                       |
+| `model_catalog/design.md`; `model_catalog/README.md`; `cluster/docs/model_catalog.md`                                                                                                         | The neutral design/research split and cluster operations-guide scope are settled. See [documentation consolidation](#documentation-ownership); preserve evidence and restoration instructions. |
 
 ### Approved file disposition: cross-layer harness audit
 
@@ -172,60 +186,27 @@ name or successful oversized request is not capacity proof. No alias provisionin
 model pruning, client-budget increase or automatic unpause is approved by this change.
 [#9574](https://github.com/agentydragon/ducktape/issues/9574) tracks source/rollout status.
 
-## Documentation consolidation
+## Documentation ownership
 
-[`cluster/docs/model_catalog.md`](../cluster/docs/model_catalog.md) is part of the
-refactor, not a second specification to leave untouched beside this design. **One
-candidate is to retain it as a smaller cluster wiring and operations guide; its exact
-fate and proposed operational responsibility remain undecided.** Do not move the neutral
-catalogue's ownership back under `cluster/`, or maintain parallel explanations of
-model-limit semantics in both places.
+Retain [`cluster/docs/model_catalog.md`](../cluster/docs/model_catalog.md) as the
+cluster wiring and operations guide. It owns deployment bindings, projection and
+regeneration entry points, and cluster-specific pause/restoration instructions.
+Neutral model semantics stay outside `cluster/`; the guide links to them rather than
+maintaining a second specification.
 
-| Document                                          | Responsibility / decision status                                                                                                                                                                |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model_catalog/design.md` and its linked research | **Topic split approved:** design owns cross-layer constraints and unresolved choices; linked research owns dated supporting evidence                                                            |
-| `model_catalog/README.md`                         | Short neutral-package entry point: module responsibilities, generation entry points, links to the design and deployment guide                                                                   |
-| `cluster/docs/model_catalog.md`                   | **Candidate, not approved:** current cluster bindings and projections, where to change deployment selections, regeneration/check commands, and cluster-specific pause/restoration procedures    |
-| `model_catalog/debug/harness_model_metadata.md`   | **[Location approved](#approved-file-disposition-cross-layer-harness-audit):** historical version-scoped cross-layer audit, linked as evidence rather than treated as current deployment policy |
-| Tracking issue #9574                              | Current work/PR status; links to #9121's historical parked-state inventory and restoration instructions                                                                                         |
+| Document                                        | Responsibility                                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `model_catalog/design.md`                       | Cross-consumer ownership, constraints and unresolved design choices                         |
+| Linked limits/client-budget research            | Dated supporting evidence and semantic investigations, not independent activation decisions |
+| `model_catalog/README.md`                       | Neutral-package entry point and generation entry points                                     |
+| `cluster/docs/model_catalog.md`                 | Landed cluster wiring and operations; not proof of live rollout                             |
+| `model_catalog/debug/harness_model_metadata.md` | Historical version-scoped cross-layer audit, not current deployment policy                  |
+| Tracking issue #9574                            | Current PR/rollout status and parked-integration restoration obligations                    |
 
-### Candidate treatment of the existing cluster guide
-
-The following suggestions apply if we choose the smaller-guide option; they are not
-a commitment to retain these sections or this exact document structure.
-
-- **Ownership:** replace the duplicated `Model`/`Upstream`/`Route` definitions and
-  generic context-limit explanations with links to the neutral package and this
-  design. Keep cluster endpoint/credential binding locations and the visibility and
-  serialized-runtime boundaries.
-- **Projections:** retain a compact cluster-consumer wiring table, grounded in the
-  landed code. Clearly distinguish active consumers from paused renderers. Do not
-  maintain another hand-written roster, token-limit table, or route-construction rule.
-- **Consumer boundaries:** retain cluster authorization versus offering/default policy
-  and the actual runner/ingress configuration flow. Replace Nix-wrapper budget details
-  with links to their owning documentation/code. Replace speculative ingress follow-up
-  prose with actual wiring when that change lands, including any model-ID translation.
-- **Checks and regeneration:** keep the practical manifest/key generation and validation
-  entry points; link to the neutral Nix generator rather than duplicating its contract.
-- **Parked Agentplane Claude:** retain the deployment-specific offering-pause semantics
-  and restoration steps already here. Do not move them into a generic Agentplane
-  service document or lose them while consolidating. Link the tracking issue for the
-  full parked inventory; this guide need not duplicate its PR/rollout history.
-
-### Update discipline
-
-The cluster guide describes **landed source configuration**, not proof of live rollout.
-The docs-only PR does not remove `publish_limits`, `PUBLIC_CODER_MODELS`, or any other
-currently implemented behavior. Each implementation PR must update the affected guide
-sections alongside its code, removing obsolete names and claims rather than appending
-another migration note. Remove the temporary proposal notice when no longer useful.
-
-As decisions land, record the approved dispositions here and remove resolved alternatives and
-completed rollout checklists; retain only useful dated evidence/rationale. Do not copy
-this entire design into the cluster guide, create a third overview, or keep two current
-specifications. Completion means the documentation
-is accurate and non-duplicated, neutral semantics have one home, and paused integrations
-remain recoverable.
+Update affected wiring descriptions with implementation changes. Remove resolved
+alternatives and completed instructions instead of appending migration histories;
+preserve useful evidence and restoration requirements. Remaining metadata decisions,
+consumer dispositions and runtime acceptance are not closed by documentation cleanup.
 
 ### Tana exposure parked (2026-10-09)
 

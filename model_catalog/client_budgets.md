@@ -83,11 +83,18 @@ for fixing the active Codex path.
 
 ## Codex and Agentplane
 
-Agentplane receives a route-ID-to-budget map through runner configuration
-(`model_context_windows`, including the environment and guest-config inputs).
-The current cluster override selection is only Qwen IQ4_XS 128K/256K, both wires:
-131072 and 262144 respectively. The active GPT subscription routes do **not** receive
-872000 or 372000 from this map merely because a wrapper or OpenClaw uses those values.
+Agentplane's ingress owns per-model client configuration. Each environment projects
+its selected routes and explicit `RUNNER_CONTEXT_OVERRIDES` into ingress settings;
+the runner looks up the selected model through authenticated
+`GET /agentplane/model-config?model=...`. The shared `ModelConfig` record carries
+`total_context_budget_tokens`, an input-plus-output client budget, not provider
+capacity. The resolved budget is persisted with the session and used when resuming
+its harness. See the [lookup contract](../agentplane/llm_ingress/README.md#per-model-client-configuration)
+for no-override and failure behavior.
+
+The cluster override selection is only Qwen IQ4_XS 128K/256K, both wires: 131072 and
+262144 respectively. The active GPT subscription routes do **not** receive 872000
+or 372000 merely because a wrapper or OpenClaw uses those values.
 
 - Claude adapter sets `CLAUDE_CODE_MAX_CONTEXT_TOKENS` when an override exists.
 - Codex adapter passes `model_context_window` in its startup configuration. Our
