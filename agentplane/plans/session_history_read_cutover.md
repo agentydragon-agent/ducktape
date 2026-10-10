@@ -107,3 +107,18 @@ watermark under the existing app reader authorization.
 This schema/RPC addition is a prerequisite, not the app lifecycle switch. The app still needs
 to adopt service snapshots at covered projection cursors, fold later lifecycle Events, preserve
 retained legacy terminal evidence, and expose projection lag/failure independently of runner EOF.
+
+### Projected lifecycle adoption (implementation in progress)
+
+The service lifecycle prerequisite (#9610) is deployed: two Ready replicas, schema
+`0003_history_feed_state`, and retained snapshots observed with a metadata-only query.
+The app follow-up stores lifecycle in `ThreadHistorySummary`, seeded from legacy
+`FeedState` at the raw-writer fence. Service snapshots are adopted only once their
+cursor is covered by the app fold; newer Events advance that snapshot atomically
+with the checkpoint. Empty suffixes can confirm EOF. Missing snapshots preserve
+retained terminal evidence for deleted histories. A confirmed resume suppresses
+old-cursor EOF until newer evidence arrives, without writing frozen `FeedState`.
+
+The follow-up remains under test, not a cutover. Projection failure/lag presentation,
+new-Session handoff, mixed-replica acceptance and removal of temporary flags and
+legacy paths remain unfinished. No raw Event rewrite or full verification scan.
