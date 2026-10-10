@@ -1143,8 +1143,19 @@ async def test_action_tasks_use_canonical_request_and_owner_scoped_reads(fronten
         )
 
 
-async def test_action_task_completed_result_is_inlined(frontend: Frontend) -> None:
-    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(frontend.app), base_url="http://actions.test") as http:
+@pytest.mark.parametrize("upstream_error", [False, True])
+async def test_action_task_completed_result_is_inlined(
+    results_frontend: Frontend, scripted: ScriptedExecutor, upstream_error: bool
+) -> None:
+    scripted.results[ActionIdentity(group="test-mcp", name="act")] = ExecutionResult(
+        state=ExecutionState.SUCCEEDED,
+        result=CallToolResult(
+            content=[TextContent(type="text", text="task-result")], is_error=upstream_error
+        ).model_dump(mode="json", by_alias=True, exclude_none=True),
+    )
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(results_frontend.app), base_url="http://actions.test"
+    ) as http:
         created = await _action_task_rpc(
             http,
             "tools/call",
@@ -1154,7 +1165,7 @@ async def test_action_task_completed_result_is_inlined(frontend: Frontend) -> No
                     "request": {
                         "idempotency_key": "task-done",
                         "title": "Test completed task",
-                        "action": {"group": "test-group", "name": "alpha"},
+                        "action": {"group": "test-mcp", "name": "act"},
                         "arguments": {"message": "task-result"},
                     }
                 },
@@ -1163,7 +1174,7 @@ async def test_action_task_completed_result_is_inlined(frontend: Frontend) -> No
         assert "error" not in created, created
         task_id = created["result"]["taskId"]
         # This fixture's policy is deliberately unsynced; approval is required before dispatch.
-        await _decide(frontend, await frontend.store.get(UUID(task_id), OPERATOR), Verdict.ALLOW)
+        await _decide(results_frontend, await results_frontend.store.get(UUID(task_id), OPERATOR), Verdict.ALLOW)
         for _ in range(100):
             result = await _action_task_rpc(http, "tasks/get", {"taskId": task_id})
             assert "error" not in result, result
@@ -1173,4 +1184,5 @@ async def test_action_task_completed_result_is_inlined(frontend: Frontend) -> No
         else:
             pytest.fail("Action task did not complete")
         assert "task-result" in json.dumps(result["result"]["result"])
+        assert result["result"]["result"].get("isError", False) is upstream_error
         assert (await _action_task_rpc(http, "tasks/cancel", {"taskId": task_id}))["error"]
