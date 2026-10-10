@@ -36,8 +36,8 @@ See [consumer wiring](../cluster/docs/model_catalog.md) for projections and chec
 ## Refactor documentation
 
 - [Design](design.md): goals, ownership, example wiring, rollout and shared vocabulary.
-- [Migration inventory](migration_inventory.md): files requiring disposition decisions;
-  most fates remain open, including the cluster guide's.
+- [Migration inventory](migration_inventory.md): settled boundaries and remaining
+  file/consumer disposition decisions.
 - Supporting research: [LiteLLM metadata](litellm_metadata.md),
   [Antigravity limits](antigravity_limits.md), and [client budgets](client_budgets.md).
 - [Tracking issue #9574](https://github.com/agentydragon/ducktape/issues/9574): PR/rollout

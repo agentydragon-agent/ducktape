@@ -110,8 +110,8 @@ No universal `context_window` field, universal client-budget object, duplicate m
 registry, automatic equation between `num_ctx` and input/output limits, or promise
 that every client interprets a field identically. No broad LiteLLM fork or middleware
 framework just to preserve unused routes. Do not remove billing metadata while
-fixing token-limit publication. Keep independent refactors out of #8899, whose scope
-is the runner context-size endpoint.
+fixing token-limit publication. The ingress model-config endpoint transports explicit
+client policy; it does not automatically derive budgets from provider metadata.
 
 ## Ownership and data flow
 
@@ -457,7 +457,8 @@ with the already-configured output limit is intentional, not response-only filte
 5. Regenerate artifacts and check route/name propagation, key-versus-picker policy,
    fallback ordering and unknown-metadata behavior at their real boundaries. Confirm
    Nix remains independent of cdk8s and runtime code cannot import generator internals.
-   Review net source/plumbing removal, then adapt #8899 separately.
+   Review net source/plumbing removal. Verify ingress lookup runtime acceptance
+   separately from configuration rollout.
 
 The optional long-context offering is a separate follow-up. Neither enabling it nor
 finding a subscription backend maximum is a prerequisite for this wiring cleanup.
