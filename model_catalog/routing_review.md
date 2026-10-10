@@ -6,6 +6,11 @@ including alternative gateways. **No replacement, catalogue suppression, budget 
 route reactivation or runtime migration is approved by this document.** Existing
 configuration stays in place while its behavioral contract is evaluated.
 
+The [options/source audit](routing_options.md) now records the refined requirements,
+client constraints and candidate feature matrix. Its current operator requirements
+supersede broader proposed parity requirements below (notably cost accounting,
+automatic fallback, image input and Haku recall). No candidate is approved or live-tested.
+
 ## Work ordering: routing decision before further roster implementation
 
 Operator direction, 2026-10-10: prioritize this review **before further roster
