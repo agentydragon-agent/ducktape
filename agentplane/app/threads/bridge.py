@@ -131,11 +131,11 @@ class RunnerBridge:
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
-        runner_session = await self._event_logs.runner_session(thread_id)
+        runner_session = await self._event_logs.service_session(thread_id)
         if runner_session is None:
             raise ThreadNotFoundError(thread_id)
         sessions = await self.list_sessions(runner_session.sandbox)
-        summary = next((row for row in sessions if row.session_id in (str(thread_id), runner_session.session_id)), None)
+        summary = next((row for row in sessions if row.session_id == str(thread_id)), None)
         if summary is None:
             raise RunnerError(
                 f"runner has no retained session {runner_session.session_id!r}; this Thread cannot be resumed"
@@ -165,7 +165,7 @@ class RunnerBridge:
         """
         if admitted := await self._content.admitted_command(thread_id, command):
             return admitted
-        runner_session = await self._event_logs.runner_session(thread_id)
+        runner_session = await self._event_logs.service_session(thread_id)
         if runner_session is None:
             raise ThreadNotFoundError(thread_id)
         snapshot = await self._event_logs.feed_state(thread_id)

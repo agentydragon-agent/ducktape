@@ -70,7 +70,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 # gazelle:include_dep @pypi//protobuf
 
 SANDBOX = "bridge-test-sandbox"
-SESSION = "bridge-1"
+SESSION = "8e414bdd-1310-4687-b768-3f1d69047122"
 SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
 
 
