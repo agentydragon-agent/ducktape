@@ -6,12 +6,14 @@ last revision of the same name. A database already at that revision applies no
 DDL or data changes. An older deployed database must first upgrade with an image
 containing the old chain; never stamp it forward to hide missing migrations.
 
-The baseline creates the final schema directly, without intermediate tables or
+The baseline uses explicit Alembic/SQLAlchemy definitions for the final schema, without intermediate tables or
 historical data rewrites. It preserves functions, triggers, materialized views,
 constraints, RLS policies, grants, evaluator role setup and default privileges.
 Fresh databases get a new agent-role salt and a populated (empty) examples view.
 Downgrade-to-base retains the original baseline's destructive public-schema drop;
 it is not a route back to an intermediate revision. No deployed DB is reset.
+
+Dumps are independent test evidence, not migration code.
 
 Provenance: schema-only CI artifact from the original chain at f481072738,
 BuildBuddy invocation 529ec531-065b-5cdc-b113-51a1b6d56572,
