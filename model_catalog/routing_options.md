@@ -70,8 +70,11 @@ Sources: [Codex config schema][codex-config], [Codex clamp/fallback][codex-model
 [existing client audit](client_budgets.md).
 
 Codex also exposes startup-only `model_catalog_json`; per-thread config does not reload
-it. This is a candidate for giving an exposed route its own correct recognition/context
-entry, not a tested solution or permission to copy every backend claim into a harness.
+it. The [pinned 0.157.0 audit](client_budgets.md#codex-local-model-catalogue-2026-10-10)
+confirms per-model context windows, override ceilings, effective input headroom and
+compaction thresholds in full model entries, not a sparse limits map. This could
+simplify Agentplane's runner independently of the proxy/logging choice, but is not a
+tested integration or permission to copy every backend claim into a harness.
 Coordinated native model aliases are another option, but must not select the wrong
 capabilities or merely inherit another too-small maximum.
 

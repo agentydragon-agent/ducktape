@@ -212,6 +212,96 @@ Responses-lite and compaction before enabling it. Do not build a general harness
 metadata service to preserve paused consumers. Separate Claude/Codex configuration
 vocabularies only when both actually need supported overrides.
 
+## Codex local model catalogue, 2026-10-10
+
+**`model_catalog_json` can supply per-model token windows**, independently of the
+central logging/proxy decision. This is a source audit of the runner's **0.157.0**
+([commit `00c972ed5d6f`](https://github.com/openai/codex/tree/00c972ed5d6ff6499317fd41b7f23605b8e6850d)),
+not just upstream main and **not a tested Agentplane integration**.
+
+### File contract and token semantics
+
+The setting is a **path to a local JSON file**, not inline JSON or a URL. The
+[loader][catalog-loader] deserializes a `ModelsResponse`: an object containing a
+nonempty `models` array of full [`ModelInfo` entries][catalog-types]. Invalid JSON,
+missing required fields, an unreadable file, or an empty array fails loading.
+This is not a sparse slug/window overlay: entries also require fields such as
+`display_name`, `supported_reasoning_levels`, `shell_type`, `visibility`,
+`supported_in_api`, `priority`, `support_verbosity`, `truncation_policy`, and
+`experimental_supported_tools`.
+
+| Field                              | Meaning in pinned Codex                                                                                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `context_window`                   | Nominal context budget in tokens, before Codex's input headroom deduction. Not an independent maximum-input or maximum-output declaration.             |
+| `max_context_window`               | Ceiling for an explicit `model_context_window` config override; also the resolved window if `context_window` is absent. Not an output-token limit.     |
+| `effective_context_window_percent` | Percentage usable for inputs after reserving headroom for system prompts, tools, and model output. Defaults to **95**.                                 |
+| `auto_compact_token_limit`         | Optional token threshold; defaults to **90% of the resolved window**. An explicit value is capped at that 90% threshold when a resolved window exists. |
+| `truncation_policy`                | Tool-output truncation (`mode: "bytes"` or `"tokens"`, plus `limit`), not a model-generation cap or another context-window declaration.                |
+
+`ModelInfo` has no separate `max_input_tokens` / `max_output_tokens` pair. Treat
+`context_window` as Codex's overall accounting budget with reserved headroom, not
+proof of an upstream input+output capacity contract. A route's verified input,
+output and joint limits still need an explicit translation into client policy.
+
+For illustration, these are **fields within a full model entry**, not a complete
+loadable catalogue and not a proposed capacity claim for any deployed model:
+
+```json
+{
+  "slug": "example/responses/model-a",
+  "context_window": 256000,
+  "max_context_window": 256000,
+  "effective_context_window_percent": 95,
+  "auto_compact_token_limit": 220000
+}
+```
+
+That example gives **243200** usable tokens and an auto-compaction threshold of
+**220000**. Without the explicit threshold, compaction defaults to **230400**
+(90% of 256000, not 90% of 243200). A startup `model_context_window` still overrides
+the entry's window, clamped to its `max_context_window`; a startup
+`model_auto_compact_token_limit` also overrides the entry before the 90% cap.
+
+### Resolution, lifecycle and possible runner simplification
+
+- For the OpenAI-compatible provider, a supplied catalogue selects
+  [`StaticModelsManager`][catalog-provider]: it **replaces the active catalogue**,
+  rather than merging sparse entries into bundled/remote metadata. It does not
+  fetch `/models` or refresh from ETags. It is not an authorization allowlist:
+  unmatched model names can still resolve to fallback metadata.
+- [Lookup][catalog-manager] uses longest-prefix matching, then the restricted
+  single-namespace fallback described above. Providing the **full exposed route
+  slug** can directly recognize a multiply-namespaced route without renaming it
+  or inheriting the generic **272000** override ceiling. Include all intended
+  routes and test overlapping prefixes; this does not itself rewrite upstream names.
+- The [config schema][catalog-schema] explicitly says **startup only**. Per-thread
+  config overrides do not reapply it. Updating the file is not hot reload: plan
+  catalogue snapshots and process restarts/resume deliberately.
+- These are full behavioral entries: instructions, reasoning/tool capabilities,
+  tool mode, Responses-lite and other flags accompany token metadata. Do not
+  blindly clone a bundled entry or assume omitted optional fields are neutral.
+  Pin the schema/entry construction to the launched Codex version.
+
+**Runner TODO:** consider generating this startup file from the ingress model-config
+snapshot plus deliberate Codex capability defaults, in place of the single
+process-wide `model_context_window` override. It could represent each exposed route's
+budget directly and avoid context-only alias workarounds, without any LiteLLM metadata
+reader or change to the chosen proxy/logger. The existing override must not accidentally
+flatten all per-model windows.
+
+Before implementing, test native tools/reasoning, reported effective windows,
+compaction, unknown/prefix-matching routes, and process restart/thread resume. Revisit
+Agentplane's persisted session budget and **different-window model-switch rejection**
+together; a static per-model catalogue does not automatically make that guard obsolete.
+Keep current behavior until those tests justify a change. No new budgets, model
+switching behavior, gateway configuration, or live probes are introduced by this note.
+
+[catalog-loader]: https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/core/src/config/mod.rs#L2119-L2149
+[catalog-types]: https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/protocol/src/openai_models.rs#L404-L539
+[catalog-provider]: https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/model-provider/src/provider.rs#L546-L568
+[catalog-manager]: https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/models-manager/src/manager.rs#L745-L805
+[catalog-schema]: https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/core/config.schema.json
+
 ## Subscription-path public evidence, 2026-10-05
 
 **A Responses-shaped endpoint does not establish the public API's capacity contract.**

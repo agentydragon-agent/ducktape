@@ -66,6 +66,10 @@ class CodexAdapter(HarnessAdapter):
         self._turn_starts: dict[wire.RequestId, _TurnStart] = {}
 
     def command(self) -> list[str]:
+        # TODO: Consider startup model_catalog_json for per-route windows instead of this global
+        # override. Validate full Codex capability entries, compaction, restart/resume, and the
+        # persisted-budget/model-switch guard; see model_catalog/client_budgets.md
+        # (Codex local model catalogue). Independent of the central proxy/logging decision.
         context_window = self.session.record.total_context_budget_tokens
         return scenarios.command(
             str(self.launch.binary), endpoint=self.launch.base_url, model_context_window=context_window
