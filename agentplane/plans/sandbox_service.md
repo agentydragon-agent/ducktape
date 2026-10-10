@@ -6,12 +6,13 @@ session access. The production app calls it for lifecycle, manual egress grants,
 commands and event following; there is no direct-runner fallback. Deployment source transfers backend
 RBAC/network authority to the service and projects an audience-specific app token. Existing app
 PostgreSQL archives/checkpoints and runner volumes were preserved for that initial extraction.
-Raw-history transfer to service-owned PostgreSQL is now a separate migration in flight; see
+Raw-history transfer to service-owned PostgreSQL and app raw-table retirement are complete; see
 [archive placement and cutover](session_archive_placement.md). The notification smoke test in
 [#8853](https://github.com/agentydragon/ducktape/pull/8853) verified the deployed session-command/receipt
 path in staging. Extraction is no longer a pending notification prerequisite. This evidence does not
-claim archive-migration completion. Historical extraction checklists below are reference material,
-not new acceptance obligations; the DAG owns the remaining migration phases.
+claim archive-migration completion; that later evidence is recorded in the archive placement doc.
+Historical extraction checklists below are reference material, not new acceptance obligations;
+the DAG owns remaining schema and identity follow-up.
 
 This is the concrete backend boundary required by the
 [service dependency rule](../docs/service_boundaries.md). The integration app must be a client;
@@ -139,20 +140,18 @@ make transport acknowledgement look like harness consumption. Serving-log cursor
 identity remain distinct when history is copied.
 
 The initial runner-follow-only boundary is superseded by the selected
-[service-owned PostgreSQL archive](session_archive_placement.md). Migration is in flight: store,
-import and shadow-copy code exist, but enabling raw reads alone does not finish writer ownership.
-The [DAG](task_dag.md#1-finish-the-history-migration-before-expanding-persistence) tracks each handoff.
+[service-owned PostgreSQL archive](session_archive_placement.md). Writer/read/UI handoff and
+app raw-table retirement are complete. The
+[DAG](task_dag.md#1-session-schema-and-identity-follow-up) tracks remaining schema and identity work.
 
 - The runner remains the author of execution Events; the service archive retains a contiguous
   copied prefix independent of Sandbox/Pod/PVC survival. `FollowSession` remains a live-runner
   interface, distinct from retained archive reads.
-- The app retains UI folds/operator metadata and consumes service history after cutover. Until
-  then preserve its old rows/checkpoints; remove them only under the explicit retirement phase.
-- A one-way migration tool imports app data. Runtime backends never query app tables or fall back
-  to the app when the archive is unavailable. Lag/error must remain explicit.
-- Unrelated service database additions (including input metadata) and app schema surgery wait for
-  the archive ownership capstone. Contract/policy design may proceed. No offline command queue or
-  central execution authority is implied by archival storage.
+- The app retains UI folds/operator metadata and projection checkpoints and consumes service history.
+  Its legacy raw-history tables and one-shot import tooling are retired.
+- Runtime backends never query app tables or fall back to the app when the archive is unavailable.
+  Lag/error must remain explicit.
+- No offline command queue or central execution authority is implied by archival storage.
 
 Preserve identities, historical prefixes and runner native storage during cutover. Moving the
 hosted product Thread lifecycle is not a prerequisite for the session-scoped service API.

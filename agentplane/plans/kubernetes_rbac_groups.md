@@ -51,8 +51,7 @@ propagation to existing SAs is a preference, not an unconditional requirement.
 - Define authorization, audit, revocation, cleanup and same-name SA replacement behavior for
   assignments. An SA cannot grant itself arbitrary RBAC by naming a powerful role. Existing
   Sandboxes with snapshotted concrete grants require an explicit migration decision; do not
-  retroactively enroll them because a preset changes. New app/Sandbox Service DB persistence is
-  under the archive-ownership scheduling hold in the [task DAG](task_dag.md).
+  retroactively enroll them because a preset changes.
 
 ## Preferred live design (proposal)
 

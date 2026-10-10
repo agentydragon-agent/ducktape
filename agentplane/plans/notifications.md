@@ -114,8 +114,7 @@ Specify staleness targets, active-subscription eligibility, rate-limit/backoff b
 when a target cannot be met. Pick a durable scheduling/checkpoint scheme and atomic or replay-safe
 emission rule. A general cron product is not required for a service's next-refresh deadline; if agent
 reminders are selected, add only the scheduler dependency actually needed. Keep processing inside
-the current notification service. Changes touching app/Sandbox Service persistence still honor the
-archive-migration hold, but notification-owned reconciliation has no inherent archive dependency.
+the current notification service. Notification-owned reconciliation has no inherent archive dependency.
 
 Acceptance: suppress a webhook in a controlled test peer and show the selected mechanism discovers
 a relevant current-state change within its configured check interval; test restart and webhook/poll

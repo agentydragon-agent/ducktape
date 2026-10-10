@@ -22,7 +22,7 @@ Choose transport, heartbeat/liveness semantics, replica connection ownership, re
 before `VM_CONTROL_NETWORKING`. Implement `RUNNER_OUTBOUND_CHANNEL` only if selected; migrate existing
 container runners separately under `RUNNER_OUTBOUND_ROLLOUT`. Image/storage and process-boundary work
 can proceed independently. This decision does not remove the runner journal or choose central command
-admission. New service persistence remains behind the archive-migration hold.
+admission.
 
 ## Proposed shape
 
@@ -293,8 +293,8 @@ The [DAG VM lane](task_dag.md#4-vm-environment-phases) now sequences these separ
 - `VM_CONTROL_NETWORKING`: implement the chosen route after the transport decision and provider,
   depending on outbound transport only if selected. Gate integrated VM lifecycle on this path.
 - `VM_IMAGE`: digest-pinned guest and bounded retained storage, tested with both harnesses.
-- `VM_PROVIDER`: typed provider/API, reconciliation, grants and UI. Coordinate production service
-  changes after the archive ownership handoff; design and image work can proceed independently.
+- `VM_PROVIDER`: typed provider/API, reconciliation, grants and UI. Review its service contracts
+  and schema rollout; design and image work can proceed independently.
 - `VM_EGRESS`: integrate the already-selected launcher admission/proxy path with production policy.
 - `VM_PROCESS_ISOLATION`: enforce/test harness-process boundaries and aggregate resource budgets
   after image/provider support. This is the concrete agent-kills-itself risk, not a cosmetic VM switch.

@@ -176,10 +176,9 @@ per request or blindly resend ambiguous commands through an old route. Rollback 
 submissions, command IDs, journal/history and exclusive command-route ownership. Remove inbound
 access only after all relevant consumers, including lifecycle callers, move.
 
-Draft code and isolated tests may proceed during backfill subject to their narrow contract reviews.
-This does not lift merge/schema-application/deployment gates on archive ownership and compatibility
-verification, or unrelated VM/service-change holds. No notification metadata, background dispatch
-or automatic wake is part of this rollout.
+Implementation remains subject to the narrow contract reviews and compatibility verification
+for this transport change. No notification metadata, background dispatch or automatic wake is
+part of this rollout.
 
 ### Authority is separate from connection direction
 
@@ -258,7 +257,7 @@ not prove that either direction is making application progress.
 Before `VM_CONTROL_NETWORKING`, finalize the outbound control design and state which guest ports,
 endpoint discovery and network policies it replaces. Outbound control may simplify VM reachability,
 but guest access to LLM/Action APIs still needs its authorized relay. Image/resource-isolation work
-can proceed independently; service/persistence merge and deployment honor the archive-migration hold.
+can proceed independently; review service/persistence changes as part of their own rollout.
 
 Implement `RUNNER_OUTBOUND_CHANNEL` after the narrow command-channel review; validate auth denial,
 revocation, ordinary reconnect, stale-owner fencing, notification loss and command/receipt races with
