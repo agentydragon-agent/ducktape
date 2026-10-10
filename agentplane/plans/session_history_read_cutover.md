@@ -347,3 +347,23 @@ After #9712 passes CI and this strategy is verified live, merge the schema chang
 Check migration exit status, revision/column removal, readiness and bounded
 projection progress. Then restore the environment strategy and remove the temporary
 rollout regression test. No full-history scan or backfill is required.
+### App locator column retirement gate
+
+The follow-up to #9707 removes the ORM locator field and compatibility writes with
+migration `0023_drop_app_runner_locator`. It drops only `event_log.session_id` and
+its local unique constraint; public IDs, checkpoints, archive tables and service
+runner bindings are unchanged. Regression coverage upgrades a retained identity
+with a private locator and verifies the public ID and projection checkpoint survive.
+
+**Do not merge the schema-removal image before a separately deployed app-only
+Recreate prerequisite is verified in both environments.** #9707's public-ID readers
+still select/write the compatibility column, so normal rolling overlap is unsafe.
+First verify #9707 deployed; then deploy the strategy prerequisite, then merge the
+schema change. Stop old app Pods normally before migration; do not force-delete.
+After readiness, revision/column checks and bounded checkpoint progress, restore
+environment-specific strategy. No history verification scan or backfill is needed.
+
+Downgrade requires the same coordinated stop. It recreates the compatibility column
+with public UUID strings, not the removed private copies, and supports rollback
+only to #9707 or later public-ID readers. Authoritative private mappings remain in
+Sandbox Service. Retained `event`/`feed_state` retirement remains separate.

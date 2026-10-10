@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue
-from sqlalchemy import BigInteger, Boolean, DateTime, Enum as SqlEnum, ForeignKey, Index, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, Boolean, DateTime, Enum as SqlEnum, ForeignKey, Index, Text, text
 from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,7 +26,6 @@ class EventLog(Base):
     # See plans/session_history_read_cutover.md#post-cutover-schema-cleanup.
 
     __tablename__ = "event_log"
-    __table_args__ = (UniqueConstraint("sandbox", "session_id"),)
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     sandbox: Mapped[str] = mapped_column(Text)
@@ -34,11 +33,6 @@ class EventLog(Base):
     # TODO(session-schema-cleanup): Drop with the raw tables and their write-rejection
     # triggers. New identities retain a zero value until that explicit schema change.
     raw_ingestion_fenced_at_cursor: Mapped[int | None] = mapped_column(BigInteger)
-    # Compatibility write only; runtime lookups and views use the public UUID (id).
-    # TODO(session-schema-cleanup): After public-ID-only readers are deployed, remove
-    # this column and (sandbox, session_id) uniqueness in an explicit migration.
-    # Sandbox Service retains the authoritative private runner-locator mapping.
-    session_id: Mapped[str] = mapped_column(Text)
     harness: Mapped[Harness] = mapped_column(
         SqlEnum(
             Harness,

@@ -199,7 +199,7 @@ async def test_failed_service_registration_does_not_create_app_thread(engine: As
 
 async def test_discovery_does_not_reconstruct_missing_projection_metadata(engine: AsyncEngine) -> None:
     public_id = uuid4()
-    await seed_retained_session(engine, locator=str(public_id), public_id=public_id)
+    await seed_retained_session(engine, public_id=public_id)
     reader = AsyncMock(spec=SandboxServiceClient)
     store = EventLogStore(
         engine, history_reader=cast(SandboxServiceClient, reader), history_creator=cast(SandboxServiceClient, reader)
@@ -216,7 +216,7 @@ async def test_existing_identity_winning_registration_race_is_not_reinitialized(
     async def register(session_id: str, *, limit: int) -> protocol_pb2.ReadSessionObservationsResponse:
         assert session_id == str(public_id)
         assert limit == 1
-        await seed_retained_session(engine, locator=session_id, public_id=public_id)
+        await seed_retained_session(engine, public_id=public_id)
         return protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
 
     reader.read_session_observations.side_effect = register
@@ -230,7 +230,7 @@ async def test_existing_identity_winning_registration_race_is_not_reinitialized(
 
 
 @pytest.mark.parametrize("fenced_at", [None, 1697])
-async def test_public_session_alias_preserves_legacy_locator(engine: AsyncEngine, fenced_at: int | None) -> None:
+async def test_public_session_open_preserves_retained_identity(engine: AsyncEngine, fenced_at: int | None) -> None:
     public_id = await seed_retained_session(engine)
     async with async_sessionmaker(engine).begin() as session:
         row = await session.get(EventLog, public_id)
@@ -245,14 +245,13 @@ async def test_public_session_alias_preserves_legacy_locator(engine: AsyncEngine
     async with async_sessionmaker(engine)() as session:
         row = await session.get(EventLog, public_id)
         assert row is not None
-        assert row.session_id == "s-retained"
         assert row.raw_ingestion_fenced_at_cursor == fenced_at
         assert await session.scalar(select(func.count()).select_from(EventLog)) == 1
 
 
-async def test_lookup_uses_public_identity_not_retained_locator(engine: AsyncEngine) -> None:
+async def test_lookup_uses_only_public_identity(engine: AsyncEngine) -> None:
     private_id = uuid4()
-    public_id = await seed_retained_session(engine, locator=str(private_id))
+    public_id = await seed_retained_session(engine)
     reader = AsyncMock(spec=SandboxServiceClient)
     current = EventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
     assert await current.find("sb-1", str(public_id)) == public_id
@@ -263,7 +262,7 @@ async def test_lookup_uses_public_identity_not_retained_locator(engine: AsyncEng
         await current.open("sb-1", "s-retained", SPEC)
 
 
-async def test_service_routes_ignore_retained_private_locator(engine: AsyncEngine) -> None:
+async def test_service_routes_use_public_identity(engine: AsyncEngine) -> None:
     public_id = await seed_retained_session(engine)
     reader = AsyncMock(spec=SandboxServiceClient)
     current = EventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
@@ -278,7 +277,6 @@ async def test_service_routes_ignore_retained_private_locator(engine: AsyncEngin
     async with async_sessionmaker(engine)() as session:
         row = await session.get(EventLog, public_id)
         assert row is not None
-        assert row.session_id == "s-retained"
 
 
 async def test_public_session_alias_cannot_cross_sandboxes(engine: AsyncEngine) -> None:
@@ -294,18 +292,14 @@ async def test_public_session_alias_cannot_cross_sandboxes(engine: AsyncEngine) 
         assert await session.scalar(select(func.count()).select_from(ThreadHistorySummary)) == 0
 
 
-async def test_legacy_alias_winning_registration_race_is_preserved(engine: AsyncEngine) -> None:
+async def test_existing_identity_winning_registration_race_is_preserved(engine: AsyncEngine) -> None:
     public_id = uuid4()
     reader = AsyncMock(spec=SandboxServiceClient)
 
     async def register(session_id: str, *, limit: int) -> protocol_pb2.ReadSessionObservationsResponse:
         assert session_id == str(public_id)
         assert limit == 1
-        await seed_retained_session(engine, locator=session_id, public_id=public_id)
-        async with async_sessionmaker(engine).begin() as session:
-            row = await session.get(EventLog, public_id)
-            assert row is not None
-            row.session_id = "s-retained"
+        await seed_retained_session(engine, public_id=public_id)
         return protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
 
     reader.read_session_observations.side_effect = register
@@ -317,7 +311,6 @@ async def test_legacy_alias_winning_registration_race_is_preserved(engine: Async
     async with async_sessionmaker(engine)() as session:
         row = await session.get(EventLog, public_id)
         assert row is not None
-        assert row.session_id == "s-retained"
         assert await session.scalar(select(func.count()).select_from(ThreadHistorySummary)) == 0
 
 

@@ -45,6 +45,44 @@ def test_a_second_run_over_a_migrated_database_changes_nothing(db_url: str) -> N
     RUNNER.apply(db_url)
 
 
+def test_drop_locator_preserves_identity_and_checkpoint(db_url: str) -> None:
+    engine = create_engine(RUNNER.sync_url(db_url))
+    thread = uuid.uuid4()
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE event_log ADD COLUMN session_id text"))
+            connection.execute(text("ALTER TABLE event_log ADD UNIQUE (sandbox, session_id)"))
+            connection.execute(text("UPDATE alembic_version_app SET version_num = '0022_session_projection_lease'"))
+            connection.execute(
+                text(
+                    "INSERT INTO event_log (id, sandbox, session_id, harness, model, cwd, created_at) "
+                    "VALUES (:id, 'retained', 'private-locator', 'HARNESS_CODEX', 'model', '/', now())"
+                ),
+                {"id": thread},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO thread_checkpoint (thread_id, source_id, projection_epoch, through_cursor) "
+                    "VALUES (:id, 'source', 'epoch', 17)"
+                ),
+                {"id": thread},
+            )
+        RUNNER.apply(db_url)
+        RUNNER.apply(db_url)
+        with engine.connect() as connection:
+            assert "session_id" not in {c["name"] for c in inspect(connection).get_columns("event_log")}
+            assert not inspect(connection).get_unique_constraints("event_log")
+            assert connection.scalar(text("SELECT id FROM event_log WHERE id = :id"), {"id": thread}) == thread
+            assert (
+                connection.scalar(
+                    text("SELECT through_cursor FROM thread_checkpoint WHERE thread_id = :id"), {"id": thread}
+                )
+                == 17
+            )
+    finally:
+        engine.dispose()
+
+
 def test_session_leases_replace_sandbox_ownership_without_changing_identity(db_url: str) -> None:
     engine = create_engine(RUNNER.sync_url(db_url))
     token, thread = uuid.uuid4(), uuid.uuid4()
@@ -64,8 +102,8 @@ def test_session_leases_replace_sandbox_ownership_without_changing_identity(db_u
             )
             connection.execute(
                 text(
-                    "INSERT INTO event_log (id, sandbox, session_id, harness, model, cwd, created_at) "
-                    "VALUES (:id, 'retained-sandbox', 'private-locator', 'HARNESS_CODEX', 'model', '/', now())"
+                    "INSERT INTO event_log (id, sandbox, harness, model, cwd, created_at) "
+                    "VALUES (:id, 'retained-sandbox', 'HARNESS_CODEX', 'model', '/', now())"
                 ),
                 {"id": thread},
             )
@@ -74,10 +112,7 @@ def test_session_leases_replace_sandbox_ownership_without_changing_identity(db_u
         with engine.begin() as connection:
             assert not inspect(connection).has_table("sandbox_ingestion")
             assert connection.scalar(text("SELECT count(*) FROM session_projection_lease")) == 0
-            assert (
-                connection.scalar(text("SELECT session_id FROM event_log WHERE id = :id"), {"id": thread})
-                == "private-locator"
-            )
+            assert connection.scalar(text("SELECT id FROM event_log WHERE id = :id"), {"id": thread}) == thread
             connection.execute(
                 text("INSERT INTO session_projection_lease VALUES (:id, :token, '2030-01-01T00:00:00Z')"),
                 {"id": thread, "token": token},
@@ -123,8 +158,8 @@ def test_model_activity_backfills_existing_threads_without_counting_tool_output(
             connection.execute(text("UPDATE alembic_version_app SET version_num = '0017_event_turn_completed_index'"))
             connection.execute(
                 text(
-                    "INSERT INTO event_log (id, sandbox, session_id, harness, model, cwd, created_at) "
-                    "VALUES (:thread, 'sandbox', 'session', 'HARNESS_CODEX', 'model', '/', now())"
+                    "INSERT INTO event_log (id, sandbox, harness, model, cwd, created_at) "
+                    "VALUES (:thread, 'sandbox', 'HARNESS_CODEX', 'model', '/', now())"
                 ),
                 {"thread": thread},
             )
@@ -180,7 +215,7 @@ def _migrate_from_0015(db_url: str, column_type: str, stored: list[str]) -> list
             connection.execute(text("UPDATE alembic_version_app SET version_num = '0015_event_payload_json'"))
             connection.execute(
                 text(
-                    "INSERT INTO event_log (id, sandbox, session_id, harness, model, cwd, created_at) "
+                    "INSERT INTO event_log (id, sandbox, harness, model, cwd, created_at) "
                     "VALUES (:thread, 'test-sandbox', 'test-session', 'HARNESS_CODEX', 'test-model', '/test', now())"
                 ),
                 {"thread": thread},

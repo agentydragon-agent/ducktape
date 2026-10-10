@@ -99,7 +99,7 @@ async def test_only_current_lease_can_fence_or_renew(
     with pytest.raises(ProjectionLeaseLostError):
         await check_fence(engine, lease, thread)
     await check_fence(engine, successor, thread)
-    other = await seed_retained_session(engine, sandbox="sb-1", locator="s-other")
+    other = await seed_retained_session(engine, sandbox="sb-1")
     with pytest.raises(ProjectionLeaseLostError):
         await check_fence(engine, successor, other)
     await replica.release(successor)
@@ -107,8 +107,8 @@ async def test_only_current_lease_can_fence_or_renew(
 
 
 async def test_sessions_in_same_sandbox_have_independent_owners(engine: AsyncEngine) -> None:
-    first = await seed_retained_session(engine, locator="first")
-    second = await seed_retained_session(engine, locator="second")
+    first = await seed_retained_session(engine)
+    second = await seed_retained_session(engine)
     a, b = Ingestion(engine), Ingestion(engine)
     first_lease = await a.acquire(first, timedelta(minutes=1))
     second_lease = await b.acquire(second, timedelta(minutes=1))
