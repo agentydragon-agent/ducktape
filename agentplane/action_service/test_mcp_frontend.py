@@ -1111,6 +1111,7 @@ async def test_action_tasks_use_canonical_request_and_owner_scoped_reads(fronten
         task = created["result"]
         assert task["resultType"] == "task"
         assert task["status"] == "working"
+        assert "ttlMs" in task and task["ttlMs"] is None
         request_id = UUID(task["taskId"])
         assert (await frontend.store.get_mcp_task(request_id, CallerPrincipal(account=workload("a"))))[
             0
@@ -1160,6 +1161,8 @@ async def test_action_task_completed_result_is_inlined(frontend: Frontend) -> No
         )
         assert "error" not in created, created
         task_id = created["result"]["taskId"]
+        # This fixture's policy is deliberately unsynced; approval is required before dispatch.
+        await _decide(frontend, await frontend.store.get(UUID(task_id), OPERATOR), Verdict.ALLOW)
         for _ in range(100):
             result = await _action_task_rpc(http, "tasks/get", {"taskId": task_id})
             assert "error" not in result, result
