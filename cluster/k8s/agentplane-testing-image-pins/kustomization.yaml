@@ -26,7 +26,7 @@ images:
     newTag: devel-20261006064326-bd856fc # {"$imagepolicy": "flux-system:agentplane-oauth-fixture:tag"}
   # Bootstrap only: keep rollout suspended until CI publishes and automation pins a real tag.
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-service
-    newTag: devel-20261009235804-d9e304a # {"$imagepolicy": "flux-system:agentplane-sandbox-service:tag"}
+    newTag: devel-20261010010738-55dcdbb # {"$imagepolicy": "flux-system:agentplane-sandbox-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-service-history-migrate
     newTag: devel-20261010010643-55dcdbb # {"$imagepolicy": "flux-system:agentplane-sandbox-service-history-migrate:tag"}
   # Bootstrap only: CI publishes the first images after merge; Flux must select real tags before rollout.
