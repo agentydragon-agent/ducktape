@@ -48,7 +48,7 @@ ChatGPT account serving Anthropic's wire shape. Definer slugs stay short and fix
 definer name (openai/openai-chat, ollama/ollama-chat).
 
 Segments are separated by `/`, not `-`: provider model slugs are dash-heavy
-(gpt-5.6-sol, claude-sonnet-4-6, gemini-embedding-001), so a dash cannot mark segment
+(gpt-6-sol, claude-sonnet-4-6, gemini-embedding-001), so a dash cannot mark segment
 boundaries unambiguously. `/` is LiteLLM's own model-group idiom (its docs' recommended
 `model_name: openai/gpt-4o`, wildcard `openai/*`) and is already served in-cluster by
 tana-litellm (`claude-sonnet-4-6/medium`, `gpt-5.1/medium`); clients carry the model in
@@ -244,16 +244,10 @@ _CODEX_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 #   gpt-6-astra:   $10 / $1 / $12.50 / $50
 #   gpt-6-sol:      $2 / $0.20 / $2.50 / $10
 #   gpt-6-luna:  $0.10 / $0.01 / $0.125 / $0.50
-#   gpt-5.6-sol:    $4 / $0.40 / $5 / $20
-#   gpt-5.6-terra:  $2 / $0.20 / $2.50 / $12
-#   gpt-5.6-luna: $0.20 / $0.02 / $0.25 / $1.20
 # GPT-6 long-context input/output rates are $20/$75, $4/$15, and $0.20/$0.75 for
 # Astra/Sol/Luna; prompts over 272K are billed at those long-context rates for the
-# full request. GPT-5.6 model pages state the same 2x-input/1.5x-output rule (so the
-# implied long-context rates are $8/$30, $4/$18, and $0.40/$1.80). These are direct
-# API prices, not measured subscription/CLIProxyAPI costs; GPT-5.6 Sol's promotional
-# rate is documented through at least 2026-11-21. They are kept here as dated
-# accounting reference only.
+# full request. These are direct API prices, not measured subscription/CLIProxyAPI
+# costs; they are kept here as dated accounting reference only.
 
 
 # Existing ChatGPT-subscription metadata allowances, NOT a verified capacity pair.
@@ -271,9 +265,6 @@ _ASTRA_LIMITS = TokenLimits(max_input_tokens=872_000, max_output_tokens=128_000)
 GPT_6_ASTRA = Model(id="gpt-6-astra", display_name="GPT-6 Astra", limits=_ASTRA_LIMITS, reasoning=True)
 GPT_6_LUNA = Model(id="gpt-6-luna", display_name="GPT-6 Luna", limits=_CHATGPT_LIMITS, reasoning=True)
 GPT_6_SOL = Model(id="gpt-6-sol", display_name="GPT-6 Sol", limits=_CHATGPT_LIMITS, reasoning=True)
-GPT_5_6_LUNA = Model(id="gpt-5.6-luna", display_name="GPT-5.6 Luna", limits=_CHATGPT_LIMITS, reasoning=True)
-GPT_5_6_TERRA = Model(id="gpt-5.6-terra", display_name="GPT-5.6 Terra", limits=_CHATGPT_LIMITS, reasoning=True)
-GPT_5_6_SOL = Model(id="gpt-5.6-sol", display_name="GPT-5.6 Sol", limits=_CHATGPT_LIMITS, reasoning=True)
 
 # Tana-UI models served by the main LiteLLM proxy's in-process Tana provider. Tana
 # encodes reasoning effort in the
@@ -571,28 +562,12 @@ GPT6_ASTRA_MESSAGES = Route(GPT_6_ASTRA, CHATGPT_MESSAGES, publish_limits=True)
 GPT6_LUNA_MESSAGES = Route(GPT_6_LUNA, CHATGPT_MESSAGES, publish_limits=True)
 GPT6_SOL_MESSAGES = Route(GPT_6_SOL, CHATGPT_MESSAGES, publish_limits=True)
 GPT6_MESSAGES_ROUTES = (GPT6_ASTRA_MESSAGES, GPT6_LUNA_MESSAGES, GPT6_SOL_MESSAGES)
-CHATGPT_MESSAGES_ROUTES = (
-    GPT6_ASTRA_MESSAGES,
-    GPT6_SOL_MESSAGES,
-    GPT6_LUNA_MESSAGES,
-    *(
-        Route(model, CHATGPT_MESSAGES, publish_limits=model.limits is not None)
-        for model in (GPT_5_6_SOL, GPT_5_6_TERRA, GPT_5_6_LUNA)
-    ),
-)
+CHATGPT_MESSAGES_ROUTES = (GPT6_ASTRA_MESSAGES, GPT6_SOL_MESSAGES, GPT6_LUNA_MESSAGES)
 GPT6_ASTRA_RESPONSES = Route(GPT_6_ASTRA, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
 GPT6_LUNA_RESPONSES = Route(GPT_6_LUNA, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
 GPT6_SOL_RESPONSES = Route(GPT_6_SOL, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
 GPT6_RESPONSES_ROUTES = (GPT6_ASTRA_RESPONSES, GPT6_LUNA_RESPONSES, GPT6_SOL_RESPONSES)
-CHATGPT_RESPONSES_ROUTES = (
-    GPT6_ASTRA_RESPONSES,
-    GPT6_SOL_RESPONSES,
-    GPT6_LUNA_RESPONSES,
-    *(
-        Route(model, CHATGPT_RESPONSES, publish_limits=model.limits is not None, reasoning_efforts=_CODEX_EFFORTS)
-        for model in (GPT_5_6_SOL, GPT_5_6_TERRA, GPT_5_6_LUNA)
-    ),
-)
+CHATGPT_RESPONSES_ROUTES = (GPT6_ASTRA_RESPONSES, GPT6_SOL_RESPONSES, GPT6_LUNA_RESPONSES)
 ANTHROPIC_SUBSCRIPTION = Upstream(Provider.ANTHROPIC_MAX20, "anthropic", "messages", supports_function_calling=True)
 OPUS_SUBSCRIPTION = Route(
     _SUBSCRIPTION_OPUS, ANTHROPIC_SUBSCRIPTION, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
