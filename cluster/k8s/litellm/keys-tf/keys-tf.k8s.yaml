@@ -117,9 +117,6 @@ spec:
             - chatgpt/ant-messages/gpt-6-astra
             - chatgpt/ant-messages/gpt-6-sol
             - chatgpt/ant-messages/gpt-6-luna
-            - chatgpt/ant-messages/gpt-5.6-sol
-            - chatgpt/ant-messages/gpt-5.6-terra
-            - chatgpt/ant-messages/gpt-5.6-luna
           fallback_models:
             - chatgpt/ant-messages/gpt-6-luna
         embedding_client_models:
