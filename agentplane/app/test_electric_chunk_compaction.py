@@ -44,8 +44,8 @@ from agentplane.app.changes import Changes
 from agentplane.app.database import connect
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.electric_service import electric_service
+from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.ingestion import Ingestion
 from agentplane.app.threads.models import ThreadEntity, ThreadPayloadChunk
 from agentplane.app.threads.view.content import ContentStore

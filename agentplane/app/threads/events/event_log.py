@@ -77,7 +77,7 @@ class EventLogStore:
         self,
         engine: AsyncEngine,
         *,
-        history_reader: SandboxServiceClient | None = None,
+        history_reader: SandboxServiceClient,
         history_creator: SandboxServiceClient | None = None,
     ) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
@@ -202,8 +202,6 @@ class EventLogStore:
 
     async def read_watermark(self, thread_id: UUID) -> int:
         """Return the selected archive's committed cursor, not the UI projection's cursor."""
-        if self._history_reader is None:
-            return await self.last_cursor(thread_id)
         # Do not use the independently advancing app cursor as a service resume
         # position. Metadata avoids downloading an arbitrary native payload.
         page = await self._history_reader.read_session_observations(str(thread_id), limit=1)
@@ -211,45 +209,32 @@ class EventLogStore:
 
     async def events(self, thread_id: UUID, *, after_cursor: int = 0, limit: int) -> list[event_log_pb2.EventEntry]:
         """Up to `limit` entries after the cursor, in cursor order; a reader pages until a short page."""
-        if self._history_reader is not None:
-            # Fix the page ceiling at the first service response. Independent app
-            # ingestion may advance meanwhile; it is not this reader's watermark.
-            result: list[event_log_pb2.EventEntry] = []
-            cursor = after_cursor
-            through: int | None = None
-            while len(result) < limit:
-                requested = min(limit - len(result), 1000)
-                if through is not None:
-                    requested = min(requested, through - cursor)
-                    if requested == 0:
-                        break
-                page = await self._history_reader.read_session_events(
-                    str(thread_id), after_cursor=cursor, limit=requested
-                )
-                if through is None:
-                    through = page.last_cursor
-                if page.last_cursor < through or cursor > page.last_cursor:
-                    raise ConnectionError("Sandbox Service history regressed behind the reader's cursor")
-                if len(page.entries) > requested or any(
-                    entry.cursor != cursor + index + 1 or entry.cursor > page.last_cursor
-                    for index, entry in enumerate(page.entries)
-                ):
-                    raise ConnectionError("Sandbox Service history page is not contiguous or exceeds its watermark")
-                if not page.entries:
-                    if cursor < through:
-                        raise ConnectionError("Sandbox Service omitted entries from a published prefix")
+        result: list[event_log_pb2.EventEntry] = []
+        cursor = after_cursor
+        through: int | None = None
+        while len(result) < limit:
+            requested = min(limit - len(result), 1000)
+            if through is not None:
+                requested = min(requested, through - cursor)
+                if requested == 0:
                     break
-                result.extend(entry for entry in page.entries if entry.cursor <= through)
-                cursor = result[-1].cursor
-            return result
-        async with self._sessions() as session:
-            payloads = await session.scalars(
-                select(Event.payload)
-                .where(Event.thread_id == thread_id, Event.cursor > after_cursor)
-                .order_by(Event.cursor)
-                .limit(limit)
-            )
-            return [ParseDict(payload, event_log_pb2.EventEntry()) for payload in payloads]
+            page = await self._history_reader.read_session_events(str(thread_id), after_cursor=cursor, limit=requested)
+            if through is None:
+                through = page.last_cursor
+            if page.last_cursor < through or cursor > page.last_cursor:
+                raise ConnectionError("Sandbox Service history regressed behind the reader's cursor")
+            if len(page.entries) > requested or any(
+                entry.cursor != cursor + index + 1 or entry.cursor > page.last_cursor
+                for index, entry in enumerate(page.entries)
+            ):
+                raise ConnectionError("Sandbox Service history page is not contiguous or exceeds its watermark")
+            if not page.entries:
+                if cursor < through:
+                    raise ConnectionError("Sandbox Service omitted entries from a published prefix")
+                break
+            result.extend(entry for entry in page.entries if entry.cursor <= through)
+            cursor = result[-1].cursor
+        return result
 
     async def observations(
         self, thread_id: UUID, *, before_cursor: int | None = None, after_cursor: int | None = None, limit: int = 30
@@ -262,76 +247,43 @@ class EventLogStore:
             or (before_cursor is not None and after_cursor is not None)
         ):
             raise ValueError("invalid chronological observation page bounds")
-        if self._history_reader is not None:
-            page = await self._history_reader.read_session_observations(
-                str(thread_id), before_cursor=before_cursor, after_cursor=after_cursor, limit=limit
-            )
-            observations = page.observations
-            # Service history is a contiguous, immutable prefix. Boundaries need no
-            # app raw lookups and refer to the watermark captured by this response.
-            if after_cursor is not None:
-                start = after_cursor + 1
-                end = min(page.last_cursor, after_cursor + limit)
-            else:
-                end = page.last_cursor if before_cursor is None else min(page.last_cursor, max(0, before_cursor - 1))
-                start = max(1, end - limit + 1)
-            if [row.cursor for row in observations] != list(range(start, end + 1)):
-                raise ConnectionError("invalid service observation page")
-            return ObservationPage(
-                observations=[ArchivedObservation(cursor=str(row.cursor), kind=row.kind) for row in observations],
-                next_before_cursor=str(observations[0].cursor) if observations and observations[0].cursor > 1 else None,
-                next_after_cursor=str(observations[-1].cursor)
-                if observations and observations[-1].cursor < page.last_cursor
-                else None,
-            )
-        async with self._sessions() as session:
-            query = select(Event.cursor, Event.kind).where(Event.thread_id == thread_id)
-            if after_cursor is not None:
-                query = query.where(Event.cursor > after_cursor).order_by(Event.cursor)
-            else:
-                if before_cursor is not None:
-                    query = query.where(Event.cursor < before_cursor)
-                query = query.order_by(Event.cursor.desc())
-            rows = list(await session.execute(query.limit(limit)))
-            if after_cursor is None:
-                rows.reverse()
-            if not rows:
-                return ObservationPage(observations=[], next_before_cursor=None, next_after_cursor=None)
-            has_older = await session.scalar(
-                select(select(Event.cursor).where(Event.thread_id == thread_id, Event.cursor < rows[0].cursor).exists())
-            )
-            has_newer = await session.scalar(
-                select(
-                    select(Event.cursor).where(Event.thread_id == thread_id, Event.cursor > rows[-1].cursor).exists()
-                )
-            )
-            return ObservationPage(
-                observations=[ArchivedObservation(cursor=str(row.cursor), kind=row.kind) for row in rows],
-                next_before_cursor=str(rows[0].cursor) if has_older else None,
-                next_after_cursor=str(rows[-1].cursor) if has_newer else None,
-            )
+        page = await self._history_reader.read_session_observations(
+            str(thread_id), before_cursor=before_cursor, after_cursor=after_cursor, limit=limit
+        )
+        observations = page.observations
+        # Service history is a contiguous, immutable prefix. Boundaries need no
+        # app raw lookups and refer to the watermark captured by this response.
+        if after_cursor is not None:
+            start = after_cursor + 1
+            end = min(page.last_cursor, after_cursor + limit)
+        else:
+            end = page.last_cursor if before_cursor is None else min(page.last_cursor, max(0, before_cursor - 1))
+            start = max(1, end - limit + 1)
+        if [row.cursor for row in observations] != list(range(start, end + 1)):
+            raise ConnectionError("invalid service observation page")
+        return ObservationPage(
+            observations=[ArchivedObservation(cursor=str(row.cursor), kind=row.kind) for row in observations],
+            next_before_cursor=str(observations[0].cursor) if observations and observations[0].cursor > 1 else None,
+            next_after_cursor=str(observations[-1].cursor)
+            if observations and observations[-1].cursor < page.last_cursor
+            else None,
+        )
 
     async def observation_entry(self, thread_id: UUID, cursor: int) -> ArchivedObservationEntry | None:
         """One raw archive entry, read only when a reader expands that observation."""
-        if self._history_reader is not None:
-            if cursor < 1:
-                return None
-            page = await self._history_reader.read_session_events(str(thread_id), after_cursor=cursor - 1, limit=1)
-            if page.last_cursor < cursor <= await self.last_cursor(thread_id):
-                raise ConnectionError("Requested observation is not committed in Sandbox Service history yet")
-            if not page.entries:
-                if cursor <= page.last_cursor:
-                    raise ConnectionError("Sandbox Service omitted a published entry")
-                return None
-            entry = page.entries[0]
-            if len(page.entries) != 1 or entry.cursor != cursor or entry.cursor > page.last_cursor:
-                raise ConnectionError("Sandbox Service returned an entry outside the requested committed position")
-            return ArchivedObservationEntry(cursor=str(cursor), entry=MessageToDict(entry))
-        async with self._sessions() as session:
-            payload = await session.scalar(
-                select(Event.payload).where(Event.thread_id == thread_id, Event.cursor == cursor)
-            )
-            return None if payload is None else ArchivedObservationEntry(cursor=str(cursor), entry=payload)
+        if cursor < 1:
+            return None
+        page = await self._history_reader.read_session_events(str(thread_id), after_cursor=cursor - 1, limit=1)
+        if page.last_cursor < cursor <= await self.last_cursor(thread_id):
+            raise ConnectionError("Requested observation is not committed in Sandbox Service history yet")
+        if not page.entries:
+            if cursor <= page.last_cursor:
+                raise ConnectionError("Sandbox Service omitted a published entry")
+            return None
+        entry = page.entries[0]
+        if len(page.entries) != 1 or entry.cursor != cursor or entry.cursor > page.last_cursor:
+            raise ConnectionError("Sandbox Service returned an entry outside the requested committed position")
+        return ArchivedObservationEntry(cursor=str(cursor), entry=MessageToDict(entry))
 
     async def feed_state(self, thread_id: UUID) -> FeedSnapshot | None:
         async with self._sessions() as session:

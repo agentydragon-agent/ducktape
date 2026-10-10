@@ -10,8 +10,9 @@ import pytest_bazel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
-from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, FeedEnd
+from agentplane.app.threads.events.event_log import EventReplicationError, FeedEnd
 from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.threads.history_handoff import fence_raw_ingestion
 from agentplane.app.threads.history_projector import HistoryProjector

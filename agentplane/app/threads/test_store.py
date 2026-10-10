@@ -12,8 +12,9 @@ import pytest_bazel
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
-from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
+from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
 from agentplane.app.threads.ingestion import Ingestion
 from agentplane.app.threads.store import ThreadStore

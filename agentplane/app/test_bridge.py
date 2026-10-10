@@ -40,9 +40,10 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
-from agentplane.app.threads.events.event_log import EventLogStore, FeedError
+from agentplane.app.threads.events.event_log import FeedError
 from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.ingestion import Feed, Ingester, Ingestion
 from agentplane.app.threads.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk

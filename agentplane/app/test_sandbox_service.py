@@ -14,9 +14,9 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.live import LiveIndex
+from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
 from agentplane.app.threads import ingestion as ingestion_module
 from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
-from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.ingestion import Feed, Ingester, Ingestion
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.view.content import ContentStore

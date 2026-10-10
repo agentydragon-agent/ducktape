@@ -16,10 +16,10 @@ py_library(
     srcs = ["thread_test_support.py"],
     visibility = ["//agentplane/app:__subpackages__"],
     deps = [
+        ":legacy_event_log",
         "//agentplane/app:operator_sessions",
         "//agentplane/app/threads:ingestion",
         "//agentplane/app/threads:store",
-        "//agentplane/app/threads/events:event_log",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
@@ -37,6 +37,7 @@ py_library(
     name = "replication_process",
     srcs = ["replication_process.py"],
     deps = [
+        ":legacy_event_log",
         ":model_test_data",
         ":replication_source",
         "//agentplane/app:action_policy",
@@ -54,7 +55,6 @@ py_library(
         "//agentplane/app/threads:ingestion",
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
-        "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/events:ingestion_lease",
         "//agentplane/app/threads/view:content",
         "//agentplane/protocol:event_log_pb2",
@@ -144,11 +144,11 @@ py_library(
         ":electric_service",
         ":history_probe",
         ":http2_proxy",
+        ":legacy_event_log",
         ":replication_process",
         ":replication_source",
         ":thread_view_marks",
         "//agentplane/app/threads:store",
-        "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:content",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
@@ -159,5 +159,20 @@ py_library(
         "@pypi//playwright",
         "@pypi//protobuf",
         "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "legacy_event_log",
+    srcs = ["legacy_event_log.py"],
+    visibility = ["//agentplane/app:__subpackages__"],
+    deps = [
+        "//agentplane/app/threads:models",
+        "//agentplane/app/threads/events:debug",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/sandbox_service:client",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
     ],
 )

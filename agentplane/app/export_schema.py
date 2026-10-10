@@ -54,7 +54,10 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
     engine = connect("postgresql+asyncpg://schema@localhost/schema")
     database_updates = DatabaseUpdates(engine.url)
-    event_logs, content = EventLogStore(engine), ContentStore(engine)
+    event_logs, content = (
+        EventLogStore(engine, history_reader=inventory, history_creator=inventory),
+        ContentStore(engine),
+    )
     live = LiveIndex(stale_after_seconds=900, core_v1=CoreV1Api(api_client))
     runners = SandboxSessions(live, inventory)
     document: dict[str, Any] = create_app(

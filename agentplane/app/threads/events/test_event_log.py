@@ -14,8 +14,9 @@ import pytest_bazel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
-from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError
+from agentplane.app.threads.events.event_log import EventLogStore as ServiceEventLogStore, EventReplicationError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
 from agentplane.app.threads.ingestion import Ingestion
 from agentplane.app.threads.models import EventLog, ThreadHistorySummary
@@ -91,7 +92,7 @@ async def test_remote_history_reads_its_own_committed_prefix(
             )
 
     reader = Reader()
-    remote = EventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
+    remote = ServiceEventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
     assert await remote.events(thread_id, limit=1) == []
     assert await remote.read_watermark(thread_id) == 0
     with pytest.raises(ConnectionError, match="not committed"):
@@ -122,7 +123,7 @@ async def test_service_read_does_not_chase_a_growing_watermark(engine: AsyncEngi
                 entries=[event_entry(after_cursor + 1, harness_stderr=event_pb2.HarnessStderr(text="x"))],
             )
 
-    remote = EventLogStore(engine, history_reader=cast(SandboxServiceClient, Reader()))
+    remote = ServiceEventLogStore(engine, history_reader=cast(SandboxServiceClient, Reader()))
     assert [e.cursor for e in await remote.events(thread_id, limit=10)] == [1, 2]
     assert calls == [0, 1]
 
@@ -138,7 +139,7 @@ async def test_service_read_rejects_invalid_pages(engine: AsyncEngine, case: str
             entries = [] if case != "beyond_watermark" else [event_entry(1)]
             return protocol_pb2.ReadSessionEventsResponse(last_cursor=1 if case == "gap" else 0, entries=entries)
 
-    remote = EventLogStore(engine, history_reader=cast(SandboxServiceClient, Reader()))
+    remote = ServiceEventLogStore(engine, history_reader=cast(SandboxServiceClient, Reader()))
     with pytest.raises(ConnectionError):
         await remote.events(thread_id, after_cursor=1 if case == "resume_ahead" else 0, limit=1)
 
@@ -170,7 +171,7 @@ async def test_service_observation_pages_do_not_require_app_raw_rows(
         last_cursor=5,
         observations=[protocol_pb2.SessionObservation(cursor=cursor, kind="native") for cursor in cursors],
     )
-    remote = EventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
+    remote = ServiceEventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
     page = await remote.observations(thread, before_cursor=before, after_cursor=after, limit=2)
     assert [row.cursor for row in page.observations] == [str(cursor) for cursor in cursors]
     assert page.next_before_cursor == older
@@ -184,7 +185,7 @@ async def test_service_observation_pages_do_not_require_app_raw_rows(
 async def test_service_observation_page_rejects_missing_entries(engine: AsyncEngine) -> None:
     reader = AsyncMock(spec=SandboxServiceClient)
     reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(last_cursor=5)
-    remote = EventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
+    remote = ServiceEventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
     with pytest.raises(ConnectionError, match="invalid service observation"):
         await remote.observations(UUID("00000000-0000-0000-0000-000000000001"), limit=2)
 
