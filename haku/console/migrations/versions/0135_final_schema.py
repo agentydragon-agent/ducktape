@@ -1,145 +1,89 @@
-"""Frozen final Haku console schema, retaining deployed revision 0135.
+"""Create the final Haku console schema, retaining deployed revision 0135.
 
-A database already at 0135 applies nothing. Older deployed revisions must first
-reach 0135 using the pre-squash image. Fresh databases create the final schema
-without replaying intermediate data rewrites or retired tables.
-
-DDL captured from the original chain in PostgreSQL 18 CI; see the adjacent
-baseline test for its provenance and exact schema comparison. No runtime ORM
-metadata is used. Specimen migration histories are independent and unchanged.
+Already-at-head databases apply nothing. Older databases must first reach this
+revision with the pre-squash image. These definitions are independent of live ORM
+metadata; the original-chain schema capture is used only as test evidence.
 """
 
+import sqlalchemy as sa
 from alembic import op
-from sqlalchemy import text
+from sqlalchemy.dialects import postgresql
+
+from haku.recall_index.vector_type import HalfVector
 
 revision: str = "0135"
 down_revision: str | None = None
 branch_labels: str | None = None
 depends_on: str | None = None
 
+_AGENT_STATUS = postgresql.ENUM(
+    "draft", "active", "abandoned", "disabled", "deleted", name="agent_status", create_type=False
+)
+_CLIENT_REGISTRATION_KIND = postgresql.ENUM(
+    "oauth_proxy_unclassified", "dcr", "cimd", "preregistered", name="client_registration_kind", create_type=False
+)
+_CREDENTIAL_BINDING_STATUS = postgresql.ENUM(
+    "issuing", "issued", "active", "revoked", "expired", "failed", name="credential_binding_status", create_type=False
+)
+_CREDENTIAL_KIND = postgresql.ENUM("oauth", "static", name="credential_kind", create_type=False)
+_ENROLLMENT_PHASE = postgresql.ENUM(
+    "awaiting_browser",
+    "awaiting_approval",
+    "allowed",
+    "exchanging",
+    "completed",
+    "denied",
+    "expired",
+    "failed",
+    name="enrollment_phase",
+    create_type=False,
+)
+_OPERATOR_STATUS = postgresql.ENUM("active", "disabled", name="operator_status", create_type=False)
+_TOOL_CALL_STATUS = postgresql.ENUM(
+    "pending_approval", "running", "ok", "error", "denied", "withdrawn", name="tool_call_status", create_type=False
+)
+
 
 def upgrade() -> None:
     conn = op.get_bind()
-    # Some frozen function bodies reference tables created later in the dump.
-    check_bodies = conn.scalar(text("SHOW check_function_bodies"))
+    check_bodies = conn.scalar(sa.text("SHOW check_function_bodies"))
     op.execute("SET LOCAL check_function_bodies = false")
-    # Execute the multi-statement DDL without DBAPI parameter interpolation:
-    # function bodies contain literal percent signs and dollar quoting.
-    conn.exec_driver_sql(_SCHEMA_SQL, execution_options={"no_parameters": True})
-    conn.execute(text("SELECT set_config('check_function_bodies', :value, true)"), {"value": check_bodies})
-    # The surviving logical index registration is bootstrap data, not DDL.
-    # The deleted chat registration must not return with the squash.
-    op.execute("INSERT INTO recall_index.indexes (index_id, index_type) VALUES ('haku-state', 'git')")
+    op.execute(sa.schema.CreateSchema("recall_index"))
+    _create_types()
+    _create_functions()
+    _create_authority_tables()
+    _create_console_tables()
+    _create_recall_tables()
+    _preserve_deployed_constraint_names()
+    _create_foreign_keys()
+    _create_indexes()
+    _create_triggers()
+    conn.execute(sa.text("SELECT set_config('check_function_bodies', :value, true)"), {"value": check_bodies})
+    # The git index remains; the retired chat index must not return.
+    op.bulk_insert(
+        sa.table(
+            "indexes", sa.column("index_id", sa.Text()), sa.column("index_type", sa.Text()), schema="recall_index"
+        ),
+        [{"index_id": "haku-state", "index_type": "git"}],
+    )
 
 
 def downgrade() -> None:
     raise RuntimeError("0135 is the forward-only Haku console baseline")
 
 
-# Frozen SQL, not generated from the live ORM at migration time.
-_SCHEMA_SQL = r"""
--- Name: recall_index; Type: SCHEMA; Schema: -; Owner: -
---
-
-CREATE SCHEMA recall_index;
-
-
---
-
-
---
--- Name: agent_status; Type: TYPE; Schema: public; Owner: -
---
-
-CREATE TYPE public.agent_status AS ENUM (
-    'draft',
-    'active',
-    'abandoned',
-    'disabled',
-    'deleted'
-);
+def _create_types() -> None:
+    _AGENT_STATUS.create(op.get_bind(), checkfirst=False)
+    _CLIENT_REGISTRATION_KIND.create(op.get_bind(), checkfirst=False)
+    _CREDENTIAL_BINDING_STATUS.create(op.get_bind(), checkfirst=False)
+    _CREDENTIAL_KIND.create(op.get_bind(), checkfirst=False)
+    _ENROLLMENT_PHASE.create(op.get_bind(), checkfirst=False)
+    _OPERATOR_STATUS.create(op.get_bind(), checkfirst=False)
+    _TOOL_CALL_STATUS.create(op.get_bind(), checkfirst=False)
 
 
---
--- Name: client_registration_kind; Type: TYPE; Schema: public; Owner: -
---
-
-CREATE TYPE public.client_registration_kind AS ENUM (
-    'oauth_proxy_unclassified',
-    'dcr',
-    'cimd',
-    'preregistered'
-);
-
-
---
--- Name: credential_binding_status; Type: TYPE; Schema: public; Owner: -
---
-
-CREATE TYPE public.credential_binding_status AS ENUM (
-    'issuing',
-    'issued',
-    'active',
-    'revoked',
-    'expired',
-    'failed'
-);
-
-
---
--- Name: credential_kind; Type: TYPE; Schema: public; Owner: -
---
-
-CREATE TYPE public.credential_kind AS ENUM (
-    'oauth',
-    'static'
-);
-
-
---
--- Name: enrollment_phase; Type: TYPE; Schema: public; Owner: -
---
-
-CREATE TYPE public.enrollment_phase AS ENUM (
-    'awaiting_browser',
-    'awaiting_approval',
-    'allowed',
-    'exchanging',
-    'completed',
-    'denied',
-    'expired',
-    'failed'
-);
-
-
---
--- Name: operator_status; Type: TYPE; Schema: public; Owner: -
---
-
-CREATE TYPE public.operator_status AS ENUM (
-    'active',
-    'disabled'
-);
-
-
---
--- Name: tool_call_status; Type: TYPE; Schema: public; Owner: -
---
-
-CREATE TYPE public.tool_call_status AS ENUM (
-    'pending_approval',
-    'running',
-    'ok',
-    'error',
-    'denied',
-    'withdrawn'
-);
-
-
---
--- Name: haku_0009_agent_invariants(); Type: FUNCTION; Schema: public; Owner: -
---
-
+def _create_functions() -> None:
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_agent_invariants() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -193,12 +137,9 @@ CREATE FUNCTION public.haku_0009_agent_invariants() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_agent_name_invariants(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_agent_name_invariants() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -249,12 +190,9 @@ CREATE FUNCTION public.haku_0009_agent_name_invariants() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_assert_binding_activation(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_assert_binding_activation(target_binding_id uuid) RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -302,12 +240,9 @@ CREATE FUNCTION public.haku_0009_assert_binding_activation(target_binding_id uui
             END IF;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_assert_binding_subtype(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_assert_binding_subtype(target_binding_id uuid) RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -332,12 +267,9 @@ CREATE FUNCTION public.haku_0009_assert_binding_subtype(target_binding_id uuid) 
             END IF;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_assert_correlation_reservation(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_assert_correlation_reservation(target_interaction_id uuid) RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -353,12 +285,9 @@ CREATE FUNCTION public.haku_0009_assert_correlation_reservation(target_interacti
             END IF;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_assert_grant_consistency(uuid, boolean); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_assert_grant_consistency(target_grant_id uuid, require_initial_state boolean) RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -477,12 +406,9 @@ CREATE FUNCTION public.haku_0009_assert_grant_consistency(target_grant_id uuid, 
             END IF;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_assert_interaction_aggregate(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_assert_interaction_aggregate(target_interaction_id uuid) RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -571,12 +497,9 @@ CREATE FUNCTION public.haku_0009_assert_interaction_aggregate(target_interaction
             END IF;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_assert_name_promotion(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_assert_name_promotion(target_reservation_id uuid) RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -604,12 +527,9 @@ CREATE FUNCTION public.haku_0009_assert_name_promotion(target_reservation_id uui
             END IF;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_assert_tool_call_principal(text); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_assert_tool_call_principal(target_tool_call_id text) RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -630,12 +550,9 @@ CREATE FUNCTION public.haku_0009_assert_tool_call_principal(target_tool_call_id 
             END IF;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_authorization_grant_immutable(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_authorization_grant_immutable() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -668,12 +585,9 @@ CREATE FUNCTION public.haku_0009_authorization_grant_immutable() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_check_agent_active_bindings(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_check_agent_active_bindings() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -719,12 +633,9 @@ CREATE FUNCTION public.haku_0009_check_agent_active_bindings() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_check_aggregate_from_grant(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_check_aggregate_from_grant() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -737,12 +648,9 @@ CREATE FUNCTION public.haku_0009_check_aggregate_from_grant() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_check_aggregate_from_interaction(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_check_aggregate_from_interaction() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -754,12 +662,9 @@ CREATE FUNCTION public.haku_0009_check_aggregate_from_interaction() RETURNS trig
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_check_aggregate_from_name(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_check_aggregate_from_name() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -782,12 +687,9 @@ CREATE FUNCTION public.haku_0009_check_aggregate_from_name() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_check_binding_activation(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_check_binding_activation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -799,12 +701,9 @@ CREATE FUNCTION public.haku_0009_check_binding_activation() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_check_grant_consistency(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_check_grant_consistency() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -816,12 +715,9 @@ CREATE FUNCTION public.haku_0009_check_grant_consistency() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_check_name_promotion(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_check_name_promotion() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -833,12 +729,9 @@ CREATE FUNCTION public.haku_0009_check_name_promotion() RETURNS trigger
             RETURN OLD;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_check_new_interaction_correlation(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_check_new_interaction_correlation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -847,12 +740,9 @@ CREATE FUNCTION public.haku_0009_check_new_interaction_correlation() RETURNS tri
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_check_principal_from_call(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_check_principal_from_call() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -864,12 +754,9 @@ CREATE FUNCTION public.haku_0009_check_principal_from_call() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_check_principal_from_principal(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_check_principal_from_principal() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -882,12 +769,9 @@ CREATE FUNCTION public.haku_0009_check_principal_from_principal() RETURNS trigge
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_check_subtype_from_binding(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_check_subtype_from_binding() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -900,12 +784,9 @@ CREATE FUNCTION public.haku_0009_check_subtype_from_binding() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_check_subtype_from_grant(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_check_subtype_from_grant() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -918,12 +799,9 @@ CREATE FUNCTION public.haku_0009_check_subtype_from_grant() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_check_subtype_from_static(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_check_subtype_from_static() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -936,12 +814,9 @@ CREATE FUNCTION public.haku_0009_check_subtype_from_static() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_client_software_invariants(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_client_software_invariants() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -969,12 +844,9 @@ CREATE FUNCTION public.haku_0009_client_software_invariants() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_correlation_reservation_invariants(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_correlation_reservation_invariants() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -997,12 +869,9 @@ CREATE FUNCTION public.haku_0009_correlation_reservation_invariants() RETURNS tr
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_credential_binding_invariants(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_credential_binding_invariants() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1063,12 +932,9 @@ CREATE FUNCTION public.haku_0009_credential_binding_invariants() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_enrollment_interaction_delete_guard(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_enrollment_interaction_delete_guard() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1080,12 +946,9 @@ CREATE FUNCTION public.haku_0009_enrollment_interaction_delete_guard() RETURNS t
             RETURN OLD;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_enrollment_interaction_invariants(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_enrollment_interaction_invariants() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1204,12 +1067,9 @@ CREATE FUNCTION public.haku_0009_enrollment_interaction_invariants() RETURNS tri
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_identity_anchor_immutable(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_identity_anchor_immutable() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1225,12 +1085,9 @@ CREATE FUNCTION public.haku_0009_identity_anchor_immutable() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_lock_grant_authority(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_lock_grant_authority() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1250,12 +1107,9 @@ CREATE FUNCTION public.haku_0009_lock_grant_authority() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_oidc_identity_immutable(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_oidc_identity_immutable() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1269,12 +1123,9 @@ CREATE FUNCTION public.haku_0009_oidc_identity_immutable() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_static_credential_immutable(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_static_credential_immutable() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1283,12 +1134,9 @@ CREATE FUNCTION public.haku_0009_static_credential_immutable() RETURNS trigger
                 USING ERRCODE = '23514';
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0009_tool_call_principal_immutable(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0009_tool_call_principal_immutable() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1301,12 +1149,9 @@ CREATE FUNCTION public.haku_0009_tool_call_principal_immutable() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+    """)
 
-
---
--- Name: haku_0113_kubernetes_grant_source_invariants(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0113_kubernetes_grant_source_invariants() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1370,12 +1215,9 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+    """)
 
-
---
--- Name: haku_0119_kubernetes_grant_source_invariants(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.haku_0119_kubernetes_grant_source_invariants() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1428,12 +1270,9 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+    """)
 
-
---
--- Name: prevent_conversation_identity_update(); Type: FUNCTION; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE FUNCTION public.prevent_conversation_identity_update() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1446,1268 +1285,925 @@ CREATE FUNCTION public.prevent_conversation_identity_update() RETURNS trigger
                 RETURN NEW;
             END;
             $$;
-
-
-SET LOCAL default_tablespace = '';
-
-SET LOCAL default_table_access_method = heap;
-
---
--- Name: agent_name_reservations; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.agent_name_reservations (
-    reservation_id uuid NOT NULL,
-    display_name text NOT NULL,
-    display_name_key text NOT NULL,
-    originating_interaction_id uuid,
-    pending_interaction_id uuid,
-    agent_id uuid,
-    created_at timestamp with time zone NOT NULL,
-    activated_at timestamp with time zone,
-    CONSTRAINT ck_agent_name_reservations_activation_shape CHECK (((agent_id IS NULL) = (activated_at IS NULL))),
-    CONSTRAINT ck_agent_name_reservations_display_name_length CHECK ((char_length(display_name) <= 80)),
-    CONSTRAINT ck_agent_name_reservations_display_name_nonempty CHECK ((display_name ~ U&'[^[:space:][:cntrl:]\00a0\1680\2000-\200a\2028\2029\202f\205f\3000\feff]'::text)),
-    CONSTRAINT ck_agent_name_reservations_exactly_one_owner CHECK ((num_nonnulls(pending_interaction_id, agent_id) = 1)),
-    CONSTRAINT ck_agent_name_reservations_key_nonempty CHECK ((display_name_key ~ U&'[^[:space:][:cntrl:]\00a0\1680\2000-\200a\2028\2029\202f\205f\3000\feff]'::text)),
-    CONSTRAINT ck_agent_name_reservations_pending_origin CHECK (((pending_interaction_id IS NULL) OR (originating_interaction_id = pending_interaction_id)))
-);
-
-
---
--- Name: agents; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.agents (
-    agent_id uuid NOT NULL,
-    owner_operator_id uuid NOT NULL,
-    current_name_reservation_id uuid NOT NULL,
-    status public.agent_status NOT NULL,
-    created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL,
-    activated_at timestamp with time zone,
-    last_seen_at timestamp with time zone,
-    auto_approval_policy text,
-    access_profile_id text,
-    CONSTRAINT ck_agents_access_profile_id_nonempty CHECK (((access_profile_id IS NULL) OR (btrim(access_profile_id) <> ''::text))),
-    CONSTRAINT ck_agents_status_shape CHECK ((((status = 'draft'::public.agent_status) AND (activated_at IS NULL)) OR ((status = 'abandoned'::public.agent_status) AND (activated_at IS NULL)) OR ((status = ANY (ARRAY['active'::public.agent_status, 'disabled'::public.agent_status, 'deleted'::public.agent_status])) AND (activated_at IS NOT NULL))))
-);
-
-
---
--- Name: authorization_grants; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.authorization_grants (
-    grant_id uuid NOT NULL,
-    binding_id uuid NOT NULL,
-    authorizing_identity_id uuid NOT NULL,
-    client_software_id uuid NOT NULL,
-    enrollment_interaction_id uuid NOT NULL,
-    allowed_scopes text[] NOT NULL,
-    initial_access_jti text,
-    initial_refresh_jti text,
-    token_family_persisted_at timestamp with time zone,
-    created_at timestamp with time zone NOT NULL,
-    CONSTRAINT ck_authorization_grants_allowed_scopes_no_null CHECK ((array_position(allowed_scopes, NULL::text) IS NULL)),
-    CONSTRAINT ck_authorization_grants_token_family_evidence_shape CHECK ((((token_family_persisted_at IS NULL) AND (initial_access_jti IS NULL) AND (initial_refresh_jti IS NULL)) OR ((token_family_persisted_at IS NOT NULL) AND (initial_access_jti IS NOT NULL) AND (btrim(initial_access_jti) <> ''::text) AND ((initial_refresh_jti IS NULL) OR (btrim(initial_refresh_jti) <> ''::text)))))
-);
-
-
---
--- Name: client_software; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.client_software (
-    client_software_id uuid NOT NULL,
-    registration_kind public.client_registration_kind NOT NULL,
-    oauth_client_id text NOT NULL,
-    validated_redirect_uris text[] NOT NULL,
-    metadata_hash bytea NOT NULL,
-    observed_name text,
-    observed_icon_uri text,
-    created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL,
-    CONSTRAINT ck_client_software_metadata_hash_nonempty CHECK ((octet_length(metadata_hash) > 0)),
-    CONSTRAINT ck_client_software_oauth_client_id_nonempty CHECK ((btrim(oauth_client_id) <> ''::text)),
-    CONSTRAINT ck_client_software_validated_redirect_uris_no_null CHECK ((array_position(validated_redirect_uris, NULL::text) IS NULL)),
-    CONSTRAINT ck_client_software_validated_redirect_uris_nonempty CHECK ((cardinality(validated_redirect_uris) > 0))
-);
-
-
---
--- Name: credential_bindings; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.credential_bindings (
-    binding_id uuid NOT NULL,
-    agent_id uuid NOT NULL,
-    kind public.credential_kind NOT NULL,
-    status public.credential_binding_status NOT NULL,
-    generation bigint NOT NULL,
-    supersedes_binding_id uuid,
-    created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL,
-    issued_at timestamp with time zone,
-    activated_at timestamp with time zone,
-    ended_at timestamp with time zone,
-    end_reason text,
-    CONSTRAINT ck_credential_bindings_generation_positive CHECK ((generation > 0)),
-    CONSTRAINT ck_credential_bindings_status_shape CHECK ((((status = 'issuing'::public.credential_binding_status) AND (issued_at IS NULL) AND (activated_at IS NULL) AND (ended_at IS NULL) AND (end_reason IS NULL)) OR ((status = 'issued'::public.credential_binding_status) AND (issued_at IS NOT NULL) AND (activated_at IS NULL) AND (ended_at IS NULL) AND (end_reason IS NULL)) OR ((status = 'active'::public.credential_binding_status) AND (issued_at IS NOT NULL) AND (activated_at IS NOT NULL) AND (ended_at IS NULL) AND (end_reason IS NULL)) OR ((status = ANY (ARRAY['revoked'::public.credential_binding_status, 'expired'::public.credential_binding_status, 'failed'::public.credential_binding_status])) AND (ended_at IS NOT NULL) AND (end_reason IS NOT NULL) AND (btrim(end_reason) <> ''::text)))),
-    CONSTRAINT ck_credential_bindings_timestamp_order CHECK ((((issued_at IS NULL) OR (issued_at >= created_at)) AND ((activated_at IS NULL) OR ((issued_at IS NOT NULL) AND (activated_at >= issued_at))) AND ((ended_at IS NULL) OR (ended_at >= COALESCE(activated_at, issued_at, created_at)))))
-);
-
-
---
--- Name: enrollment_correlation_reservations; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.enrollment_correlation_reservations (
-    interaction_id uuid NOT NULL,
-    client_id text NOT NULL,
-    redirect_uri text NOT NULL,
-    code_challenge text NOT NULL,
-    release_after timestamp with time zone NOT NULL
-);
-
-
---
--- Name: enrollment_interactions; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.enrollment_interactions (
-    interaction_id uuid NOT NULL,
-    client_software_id uuid NOT NULL,
-    client_id text NOT NULL,
-    redirect_uri text NOT NULL,
-    code_challenge text NOT NULL,
-    requested_scopes text[] NOT NULL,
-    presentation_snapshot jsonb NOT NULL,
-    upstream_authorization_url text NOT NULL,
-    phase public.enrollment_phase NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    correlation_release_after timestamp with time zone NOT NULL,
-    browser_nonce_digest bytea,
-    browser_identity_id uuid,
-    browser_binding_digest bytea,
-    decision_digest bytea,
-    reconnect_agent_id uuid,
-    reconnect_predecessor_binding_id uuid,
-    closure_reason text,
-    created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL,
-    closed_at timestamp with time zone,
-    auto_approval_policy text,
-    access_profile_id text,
-    CONSTRAINT ck_enrollment_interactions_access_profile_id_nonempty CHECK (((access_profile_id IS NULL) OR (btrim(access_profile_id) <> ''::text))),
-    CONSTRAINT ck_enrollment_interactions_browser_binding_shape CHECK (((browser_binding_digest IS NULL) OR (browser_identity_id IS NOT NULL))),
-    CONSTRAINT ck_enrollment_interactions_client_id_nonempty CHECK ((btrim(client_id) <> ''::text)),
-    CONSTRAINT ck_enrollment_interactions_code_challenge_nonempty CHECK ((btrim(code_challenge) <> ''::text)),
-    CONSTRAINT ck_enrollment_interactions_correlation_outlives_interaction CHECK ((correlation_release_after > expires_at)),
-    CONSTRAINT ck_enrollment_interactions_phase_shape CHECK ((((phase = 'awaiting_browser'::public.enrollment_phase) AND (browser_nonce_digest IS NOT NULL) AND (browser_identity_id IS NULL) AND (decision_digest IS NULL) AND (reconnect_agent_id IS NULL) AND (closed_at IS NULL) AND (closure_reason IS NULL)) OR ((phase = 'awaiting_approval'::public.enrollment_phase) AND (browser_nonce_digest IS NULL) AND (browser_identity_id IS NOT NULL) AND (browser_binding_digest IS NOT NULL) AND (decision_digest IS NULL) AND (reconnect_agent_id IS NULL) AND (closed_at IS NULL) AND (closure_reason IS NULL)) OR ((phase = ANY (ARRAY['allowed'::public.enrollment_phase, 'exchanging'::public.enrollment_phase])) AND (browser_nonce_digest IS NULL) AND (browser_identity_id IS NOT NULL) AND (browser_binding_digest IS NOT NULL) AND (decision_digest IS NOT NULL) AND (closed_at IS NULL) AND (closure_reason IS NULL)) OR ((phase = 'completed'::public.enrollment_phase) AND (browser_nonce_digest IS NULL) AND (browser_identity_id IS NOT NULL) AND (browser_binding_digest IS NULL) AND (decision_digest IS NOT NULL) AND (closed_at IS NOT NULL) AND (closure_reason IS NOT NULL) AND (btrim(closure_reason) <> ''::text)) OR ((phase = 'denied'::public.enrollment_phase) AND (browser_nonce_digest IS NULL) AND (browser_identity_id IS NOT NULL) AND (browser_binding_digest IS NULL) AND (decision_digest IS NOT NULL) AND (reconnect_agent_id IS NULL) AND (closed_at IS NOT NULL) AND (closure_reason IS NOT NULL) AND (btrim(closure_reason) <> ''::text)) OR ((phase = ANY (ARRAY['expired'::public.enrollment_phase, 'failed'::public.enrollment_phase])) AND (browser_nonce_digest IS NULL) AND (browser_binding_digest IS NULL) AND (closed_at IS NOT NULL) AND (closure_reason IS NOT NULL) AND (btrim(closure_reason) <> ''::text)))),
-    CONSTRAINT ck_enrollment_interactions_reconnect_shape CHECK (((reconnect_agent_id IS NULL) = (reconnect_predecessor_binding_id IS NULL))),
-    CONSTRAINT ck_enrollment_interactions_redirect_uri_nonempty CHECK ((btrim(redirect_uri) <> ''::text)),
-    CONSTRAINT ck_enrollment_interactions_requested_scopes_no_null CHECK ((array_position(requested_scopes, NULL::text) IS NULL)),
-    CONSTRAINT ck_enrollment_interactions_upstream_url_nonempty CHECK ((btrim(upstream_authorization_url) <> ''::text))
-);
-
-
---
--- Name: identity_anchors; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.identity_anchors (
-    anchor_id uuid NOT NULL,
-    operator_id uuid NOT NULL,
-    trust_domain text NOT NULL,
-    stable_external_user_key text NOT NULL,
-    created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL,
-    CONSTRAINT ck_identity_anchors_external_key_nonempty CHECK ((btrim(stable_external_user_key) <> ''::text)),
-    CONSTRAINT ck_identity_anchors_trust_domain_nonempty CHECK ((btrim(trust_domain) <> ''::text))
-);
-
-
---
--- Name: kubernetes_grants; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.kubernetes_grants (
-    grant_id uuid NOT NULL,
-    owner_agent_id uuid CONSTRAINT kubernetes_grants_agent_id_not_null NOT NULL,
-    source_tool_call_id text NOT NULL,
-    scope jsonb NOT NULL,
-    rules jsonb NOT NULL,
-    created_at timestamp with time zone NOT NULL,
-    expires_at timestamp with time zone,
-    end_reason text,
-    principal_kind text NOT NULL,
-    principal_agent_id uuid,
-    principal_access_profile_id text,
-    ended_at timestamp with time zone,
-    CONSTRAINT ck_kubernetes_grants_end_shape CHECK ((((ended_at IS NOT NULL) OR (end_reason IS NULL)) AND ((end_reason IS NULL) OR (btrim(end_reason) <> ''::text)))),
-    CONSTRAINT ck_kubernetes_grants_expiration_after_creation CHECK (((expires_at IS NULL) OR (expires_at > created_at))),
-    CONSTRAINT ck_kubernetes_grants_principal_shape CHECK ((((principal_kind = 'agent'::text) AND (principal_agent_id IS NOT NULL) AND (principal_access_profile_id IS NULL)) OR ((principal_kind = 'access_profile'::text) AND (principal_agent_id IS NULL) AND (principal_access_profile_id IS NOT NULL)))),
-    CONSTRAINT ck_kubernetes_grants_rules_nonempty CHECK (((jsonb_typeof(rules) = 'array'::text) AND (jsonb_array_length(rules) > 0))),
-    CONSTRAINT ck_kubernetes_grants_scope_shape CHECK (((jsonb_typeof(scope) = 'object'::text) AND (scope ? 'kind'::text) AND ((scope ->> 'kind'::text) = ANY (ARRAY['namespaces'::text, 'all_namespaces'::text, 'cluster'::text, 'non_resource'::text])) AND ((((scope ->> 'kind'::text) = 'namespaces'::text) AND (scope ? 'namespaces'::text) AND (jsonb_typeof((scope -> 'namespaces'::text)) = 'array'::text) AND (jsonb_array_length((scope -> 'namespaces'::text)) > 0)) OR (((scope ->> 'kind'::text) <> 'namespaces'::text) AND (NOT (scope ? 'namespaces'::text)))))),
-    CONSTRAINT ck_kubernetes_grants_source_tool_call_nonempty CHECK ((btrim(source_tool_call_id) <> ''::text))
-);
-
-
---
--- Name: mcp_tool_call_principals; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.mcp_tool_call_principals (
-    tool_call_id text NOT NULL,
-    operator_id uuid,
-    binding_id uuid,
-    session_id uuid,
-    CONSTRAINT ck_mcp_tool_call_principals_exactly_one_variant CHECK ((num_nonnulls(operator_id, binding_id) = 1)),
-    CONSTRAINT ck_mcp_tool_call_principals_session_agent CHECK (((session_id IS NULL) OR (binding_id IS NOT NULL)))
-);
-
-
---
--- Name: mcp_tool_calls; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.mcp_tool_calls (
-    tool_call_id text NOT NULL,
-    server_id text NOT NULL,
-    tool_name text NOT NULL,
-    status public.tool_call_status NOT NULL,
-    created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL,
-    arguments_json jsonb NOT NULL,
-    rationale text NOT NULL,
-    title text,
-    result_json jsonb,
-    error text,
-    approval_policy_id text,
-    auto_approval_evaluation text,
-    approved_at timestamp with time zone,
-    withdrawal_reason text,
-    decision_note text,
-    decision_operator_id uuid,
-    CONSTRAINT ck_mcp_tool_calls_decision_note_length CHECK (((decision_note IS NULL) OR (char_length(decision_note) <= 4096)))
-);
-
-
---
--- Name: oidc_identities; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.oidc_identities (
-    identity_id uuid NOT NULL,
-    anchor_id uuid NOT NULL,
-    issuer text NOT NULL,
-    subject text NOT NULL,
-    first_seen_at timestamp with time zone NOT NULL,
-    last_seen_at timestamp with time zone NOT NULL,
-    CONSTRAINT ck_oidc_identities_issuer_nonempty CHECK ((btrim(issuer) <> ''::text)),
-    CONSTRAINT ck_oidc_identities_subject_nonempty CHECK ((btrim(subject) <> ''::text))
-);
-
-
---
--- Name: operator_login_flows; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.operator_login_flows (
-    state text NOT NULL,
-    browser_binding text NOT NULL,
-    return_to text,
-    data jsonb NOT NULL,
-    created_at timestamp with time zone NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    CONSTRAINT ck_operator_login_flows_browser_binding_nonempty CHECK ((btrim(browser_binding) <> ''::text))
-);
-
-
---
--- Name: operators; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.operators (
-    operator_id uuid NOT NULL,
-    status public.operator_status NOT NULL,
-    created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL
-);
-
-
---
--- Name: push_subscriptions; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.push_subscriptions (
-    endpoint text NOT NULL,
-    operator_id uuid NOT NULL,
-    p256dh text NOT NULL,
-    auth text NOT NULL,
-    user_agent text,
-    created_at timestamp with time zone NOT NULL,
-    last_failure_at timestamp with time zone
-);
-
-
---
--- Name: static_credentials; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.static_credentials (
-    binding_id uuid NOT NULL,
-    secret_reference text NOT NULL,
-    credential_fingerprint bytea NOT NULL,
-    created_at timestamp with time zone NOT NULL,
-    CONSTRAINT ck_static_credentials_fingerprint_nonempty CHECK ((octet_length(credential_fingerprint) > 0)),
-    CONSTRAINT ck_static_credentials_secret_reference_nonempty CHECK ((btrim(secret_reference) <> ''::text))
-);
-
-
---
--- Name: content_embeddings; Type: TABLE; Schema: recall_index; Owner: -
---
-
-CREATE TABLE recall_index.content_embeddings (
-    content_sha text NOT NULL,
-    model_key text NOT NULL,
-    embedding public.halfvec NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: contents; Type: TABLE; Schema: recall_index; Owner: -
---
-
-CREATE TABLE recall_index.contents (
-    content_sha text NOT NULL,
-    content text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: git_chunks; Type: TABLE; Schema: recall_index; Owner: -
---
-
-CREATE TABLE recall_index.git_chunks (
-    blob_sha text NOT NULL,
-    chunker_key text NOT NULL,
-    byte_start bigint NOT NULL,
-    byte_end bigint NOT NULL,
-    content_sha text NOT NULL,
-    index_id text NOT NULL
-);
-
-
---
--- Name: git_sync_state; Type: TABLE; Schema: recall_index; Owner: -
---
-
-CREATE TABLE recall_index.git_sync_state (
-    branch text NOT NULL,
-    remote_commit text,
-    remote_seen_at timestamp with time zone,
-    commit_sha text,
-    chunker_key text,
-    synced_at timestamp with time zone,
-    index_id text NOT NULL,
-    CONSTRAINT ck_git_sync_state_indexed_half CHECK ((((commit_sha IS NULL) = (chunker_key IS NULL)) AND ((commit_sha IS NULL) = (synced_at IS NULL))))
-);
-
-
---
--- Name: git_tip; Type: TABLE; Schema: recall_index; Owner: -
---
-
-CREATE TABLE recall_index.git_tip (
-    path text NOT NULL,
-    blob_sha text NOT NULL,
-    index_id text NOT NULL
-);
-
-
---
--- Name: indexes; Type: TABLE; Schema: recall_index; Owner: -
---
-
-CREATE TABLE recall_index.indexes (
-    index_id text NOT NULL,
-    index_type text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_indexes_index_type CHECK ((index_type = 'git'::text))
-);
-
-
---
--- Name: agent_name_reservations agent_name_reservations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.agent_name_reservations
-    ADD CONSTRAINT agent_name_reservations_pkey PRIMARY KEY (reservation_id);
-
-
---
--- Name: agents agents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.agents
-    ADD CONSTRAINT agents_pkey PRIMARY KEY (agent_id);
-
-
---
--- Name: authorization_grants authorization_grants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.authorization_grants
-    ADD CONSTRAINT authorization_grants_pkey PRIMARY KEY (grant_id);
-
-
---
--- Name: client_software client_software_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.client_software
-    ADD CONSTRAINT client_software_pkey PRIMARY KEY (client_software_id);
-
-
---
--- Name: credential_bindings credential_bindings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.credential_bindings
-    ADD CONSTRAINT credential_bindings_pkey PRIMARY KEY (binding_id);
-
-
---
--- Name: enrollment_correlation_reservations enrollment_correlation_reservations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.enrollment_correlation_reservations
-    ADD CONSTRAINT enrollment_correlation_reservations_pkey PRIMARY KEY (interaction_id);
-
-
---
--- Name: enrollment_interactions enrollment_interactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.enrollment_interactions
-    ADD CONSTRAINT enrollment_interactions_pkey PRIMARY KEY (interaction_id);
-
-
---
--- Name: identity_anchors identity_anchors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.identity_anchors
-    ADD CONSTRAINT identity_anchors_pkey PRIMARY KEY (anchor_id);
-
-
---
--- Name: kubernetes_grants kubernetes_grants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.kubernetes_grants
-    ADD CONSTRAINT kubernetes_grants_pkey PRIMARY KEY (grant_id);
-
-
---
--- Name: mcp_tool_call_principals mcp_tool_call_principals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_tool_call_principals
-    ADD CONSTRAINT mcp_tool_call_principals_pkey PRIMARY KEY (tool_call_id);
-
-
---
--- Name: mcp_tool_calls mcp_tool_calls_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_tool_calls
-    ADD CONSTRAINT mcp_tool_calls_pkey PRIMARY KEY (tool_call_id);
-
-
---
--- Name: oidc_identities oidc_identities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.oidc_identities
-    ADD CONSTRAINT oidc_identities_pkey PRIMARY KEY (identity_id);
-
-
---
--- Name: operator_login_flows operator_login_flows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.operator_login_flows
-    ADD CONSTRAINT operator_login_flows_pkey PRIMARY KEY (state);
-
-
---
--- Name: operators operators_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.operators
-    ADD CONSTRAINT operators_pkey PRIMARY KEY (operator_id);
-
-
---
--- Name: push_subscriptions push_subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.push_subscriptions
-    ADD CONSTRAINT push_subscriptions_pkey PRIMARY KEY (endpoint);
-
-
---
--- Name: static_credentials static_credentials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.static_credentials
-    ADD CONSTRAINT static_credentials_pkey PRIMARY KEY (binding_id);
-
-
---
--- Name: agent_name_reservations uq_agent_name_reservations_agent_reservation; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.agent_name_reservations
-    ADD CONSTRAINT uq_agent_name_reservations_agent_reservation UNIQUE (agent_id, reservation_id);
-
-
---
--- Name: agent_name_reservations uq_agent_name_reservations_display_name_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.agent_name_reservations
-    ADD CONSTRAINT uq_agent_name_reservations_display_name_key UNIQUE (display_name_key);
-
-
---
--- Name: agent_name_reservations uq_agent_name_reservations_pending_interaction; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.agent_name_reservations
-    ADD CONSTRAINT uq_agent_name_reservations_pending_interaction UNIQUE (pending_interaction_id);
-
-
---
--- Name: authorization_grants uq_authorization_grants_binding_id; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.authorization_grants
-    ADD CONSTRAINT uq_authorization_grants_binding_id UNIQUE (binding_id);
-
-
---
--- Name: authorization_grants uq_authorization_grants_enrollment_interaction_id; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.authorization_grants
-    ADD CONSTRAINT uq_authorization_grants_enrollment_interaction_id UNIQUE (enrollment_interaction_id);
-
-
---
--- Name: client_software uq_client_software_id_oauth_client_id; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.client_software
-    ADD CONSTRAINT uq_client_software_id_oauth_client_id UNIQUE (client_software_id, oauth_client_id);
-
-
---
--- Name: client_software uq_client_software_oauth_client_id; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.client_software
-    ADD CONSTRAINT uq_client_software_oauth_client_id UNIQUE (oauth_client_id);
-
-
---
--- Name: credential_bindings uq_credential_bindings_agent_binding; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.credential_bindings
-    ADD CONSTRAINT uq_credential_bindings_agent_binding UNIQUE (agent_id, binding_id);
-
-
---
--- Name: credential_bindings uq_credential_bindings_agent_generation; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.credential_bindings
-    ADD CONSTRAINT uq_credential_bindings_agent_generation UNIQUE (agent_id, generation);
-
-
---
--- Name: enrollment_correlation_reservations uq_enrollment_correlation_reservations_tuple; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.enrollment_correlation_reservations
-    ADD CONSTRAINT uq_enrollment_correlation_reservations_tuple UNIQUE (client_id, redirect_uri, code_challenge);
-
-
---
--- Name: enrollment_interactions uq_enrollment_interactions_correlation_component; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.enrollment_interactions
-    ADD CONSTRAINT uq_enrollment_interactions_correlation_component UNIQUE (interaction_id, client_id, redirect_uri, code_challenge, correlation_release_after);
-
-
---
--- Name: identity_anchors uq_identity_anchors_trust_domain_external_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.identity_anchors
-    ADD CONSTRAINT uq_identity_anchors_trust_domain_external_key UNIQUE (trust_domain, stable_external_user_key);
-
-
---
--- Name: oidc_identities uq_oidc_identities_issuer_subject; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.oidc_identities
-    ADD CONSTRAINT uq_oidc_identities_issuer_subject UNIQUE (issuer, subject);
-
-
---
--- Name: static_credentials uq_static_credentials_fingerprint; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.static_credentials
-    ADD CONSTRAINT uq_static_credentials_fingerprint UNIQUE (credential_fingerprint);
-
-
---
--- Name: content_embeddings content_embeddings_pkey; Type: CONSTRAINT; Schema: recall_index; Owner: -
---
-
-ALTER TABLE ONLY recall_index.content_embeddings
-    ADD CONSTRAINT content_embeddings_pkey PRIMARY KEY (content_sha, model_key);
-
-
---
--- Name: contents contents_pkey; Type: CONSTRAINT; Schema: recall_index; Owner: -
---
-
-ALTER TABLE ONLY recall_index.contents
-    ADD CONSTRAINT contents_pkey PRIMARY KEY (content_sha);
-
-
---
--- Name: git_chunks git_chunks_pkey; Type: CONSTRAINT; Schema: recall_index; Owner: -
---
-
-ALTER TABLE ONLY recall_index.git_chunks
-    ADD CONSTRAINT git_chunks_pkey PRIMARY KEY (index_id, blob_sha, chunker_key, byte_start);
-
-
---
--- Name: git_sync_state git_sync_state_pkey; Type: CONSTRAINT; Schema: recall_index; Owner: -
---
-
-ALTER TABLE ONLY recall_index.git_sync_state
-    ADD CONSTRAINT git_sync_state_pkey PRIMARY KEY (index_id);
-
-
---
--- Name: git_tip git_tip_pkey; Type: CONSTRAINT; Schema: recall_index; Owner: -
---
-
-ALTER TABLE ONLY recall_index.git_tip
-    ADD CONSTRAINT git_tip_pkey PRIMARY KEY (index_id, path);
-
-
---
--- Name: indexes indexes_pkey; Type: CONSTRAINT; Schema: recall_index; Owner: -
---
-
-ALTER TABLE ONLY recall_index.indexes
-    ADD CONSTRAINT indexes_pkey PRIMARY KEY (index_id);
-
-
---
--- Name: idx_agent_name_reservations_agent_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_agent_name_reservations_agent_id ON public.agent_name_reservations USING btree (agent_id);
-
-
---
--- Name: idx_agents_owner_operator_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_agents_owner_operator_id ON public.agents USING btree (owner_operator_id);
-
-
---
--- Name: idx_authorization_grants_authorizing_identity_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_authorization_grants_authorizing_identity_id ON public.authorization_grants USING btree (authorizing_identity_id);
-
-
---
--- Name: idx_authorization_grants_client_software_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_authorization_grants_client_software_id ON public.authorization_grants USING btree (client_software_id);
-
-
---
--- Name: idx_credential_bindings_agent_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_credential_bindings_agent_id ON public.credential_bindings USING btree (agent_id);
-
-
---
--- Name: idx_enrollment_interactions_client_software_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_enrollment_interactions_client_software_id ON public.enrollment_interactions USING btree (client_software_id);
-
-
---
--- Name: idx_enrollment_interactions_phase_expires_at; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_enrollment_interactions_phase_expires_at ON public.enrollment_interactions USING btree (phase, expires_at);
-
-
---
--- Name: idx_identity_anchors_operator_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_identity_anchors_operator_id ON public.identity_anchors USING btree (operator_id);
-
-
---
--- Name: idx_kubernetes_grants_access_profile_principal_expiry; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_kubernetes_grants_access_profile_principal_expiry ON public.kubernetes_grants USING btree (principal_access_profile_id, expires_at);
-
-
---
--- Name: idx_kubernetes_grants_agent_principal_expiry; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_kubernetes_grants_agent_principal_expiry ON public.kubernetes_grants USING btree (principal_agent_id, expires_at);
-
-
---
--- Name: idx_kubernetes_grants_owner_expiry; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_kubernetes_grants_owner_expiry ON public.kubernetes_grants USING btree (owner_agent_id, expires_at);
-
-
---
--- Name: idx_kubernetes_grants_source_tool_call; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_kubernetes_grants_source_tool_call ON public.kubernetes_grants USING btree (source_tool_call_id);
-
-
---
--- Name: idx_mcp_tool_call_principals_binding_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_mcp_tool_call_principals_binding_id ON public.mcp_tool_call_principals USING btree (binding_id);
-
-
---
--- Name: idx_mcp_tool_call_principals_operator_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_mcp_tool_call_principals_operator_id ON public.mcp_tool_call_principals USING btree (operator_id);
-
-
---
--- Name: idx_mcp_tool_call_principals_session_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_mcp_tool_call_principals_session_id ON public.mcp_tool_call_principals USING btree (session_id);
-
-
---
--- Name: idx_mcp_tool_calls_created_at; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_mcp_tool_calls_created_at ON public.mcp_tool_calls USING btree (created_at);
-
-
---
--- Name: idx_oidc_identities_anchor_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_oidc_identities_anchor_id ON public.oidc_identities USING btree (anchor_id);
-
-
---
--- Name: idx_operator_login_flows_expires_at; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_operator_login_flows_expires_at ON public.operator_login_flows USING btree (expires_at);
-
-
---
--- Name: idx_push_subscriptions_operator_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_push_subscriptions_operator_id ON public.push_subscriptions USING btree (operator_id);
-
-
---
--- Name: uq_credential_bindings_one_active_per_agent; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX uq_credential_bindings_one_active_per_agent ON public.credential_bindings USING btree (agent_id) WHERE (status = 'active'::public.credential_binding_status);
-
-
---
--- Name: agents ctrg_haku_0009_agent_active_bindings; Type: TRIGGER; Schema: public; Owner: -
---
-
+    """)
+
+
+def _create_authority_tables() -> None:
+    op.create_table(
+        "agent_name_reservations",
+        sa.Column("reservation_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("display_name", sa.Text(), nullable=False),
+        sa.Column("display_name_key", sa.Text(), nullable=False),
+        sa.Column("originating_interaction_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("pending_interaction_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("agent_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("activated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint(
+            "((agent_id IS NULL) = (activated_at IS NULL))", name="ck_agent_name_reservations_activation_shape"
+        ),
+        sa.CheckConstraint("(char_length(display_name) <= 80)", name="ck_agent_name_reservations_display_name_length"),
+        sa.CheckConstraint(
+            "(display_name ~ '[^[:space:][:cntrl:]\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]'::text)",
+            name="ck_agent_name_reservations_display_name_nonempty",
+        ),
+        sa.CheckConstraint(
+            "(num_nonnulls(pending_interaction_id, agent_id) = 1)", name="ck_agent_name_reservations_exactly_one_owner"
+        ),
+        sa.CheckConstraint(
+            "(display_name_key ~ '[^[:space:][:cntrl:]\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]'::text)",
+            name="ck_agent_name_reservations_key_nonempty",
+        ),
+        sa.CheckConstraint(
+            "((pending_interaction_id IS NULL) OR (originating_interaction_id = pending_interaction_id))",
+            name="ck_agent_name_reservations_pending_origin",
+        ),
+        sa.PrimaryKeyConstraint("reservation_id", name="agent_name_reservations_pkey"),
+        sa.UniqueConstraint("agent_id", "reservation_id", name="uq_agent_name_reservations_agent_reservation"),
+        sa.UniqueConstraint("display_name_key", name="uq_agent_name_reservations_display_name_key"),
+        sa.UniqueConstraint("pending_interaction_id", name="uq_agent_name_reservations_pending_interaction"),
+    )
+
+    op.create_table(
+        "agents",
+        sa.Column("agent_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("owner_operator_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("current_name_reservation_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("status", _AGENT_STATUS, nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("activated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("auto_approval_policy", sa.Text(), nullable=True),
+        sa.Column("access_profile_id", sa.Text(), nullable=True),
+        sa.CheckConstraint(
+            "((access_profile_id IS NULL) OR (btrim(access_profile_id) <> ''::text))",
+            name="ck_agents_access_profile_id_nonempty",
+        ),
+        sa.CheckConstraint(
+            "(((status = 'draft'::public.agent_status) AND (activated_at IS NULL)) OR ((status = 'abandoned'::public.agent_status) AND (activated_at IS NULL)) OR ((status = ANY (ARRAY['active'::public.agent_status, 'disabled'::public.agent_status, 'deleted'::public.agent_status])) AND (activated_at IS NOT NULL)))",
+            name="ck_agents_status_shape",
+        ),
+        sa.PrimaryKeyConstraint("agent_id", name="agents_pkey"),
+    )
+
+    op.create_table(
+        "authorization_grants",
+        sa.Column("grant_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("binding_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("authorizing_identity_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("client_software_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("enrollment_interaction_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("allowed_scopes", postgresql.ARRAY(sa.Text()), nullable=False),
+        sa.Column("initial_access_jti", sa.Text(), nullable=True),
+        sa.Column("initial_refresh_jti", sa.Text(), nullable=True),
+        sa.Column("token_family_persisted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "(array_position(allowed_scopes, NULL::text) IS NULL)",
+            name="ck_authorization_grants_allowed_scopes_no_null",
+        ),
+        sa.CheckConstraint(
+            "(((token_family_persisted_at IS NULL) AND (initial_access_jti IS NULL) AND (initial_refresh_jti IS NULL)) OR ((token_family_persisted_at IS NOT NULL) AND (initial_access_jti IS NOT NULL) AND (btrim(initial_access_jti) <> ''::text) AND ((initial_refresh_jti IS NULL) OR (btrim(initial_refresh_jti) <> ''::text))))",
+            name="ck_authorization_grants_token_family_evidence_shape",
+        ),
+        sa.PrimaryKeyConstraint("grant_id", name="authorization_grants_pkey"),
+        sa.UniqueConstraint("binding_id", name="uq_authorization_grants_binding_id"),
+        sa.UniqueConstraint("enrollment_interaction_id", name="uq_authorization_grants_enrollment_interaction_id"),
+    )
+
+    op.create_table(
+        "client_software",
+        sa.Column("client_software_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("registration_kind", _CLIENT_REGISTRATION_KIND, nullable=False),
+        sa.Column("oauth_client_id", sa.Text(), nullable=False),
+        sa.Column("validated_redirect_uris", postgresql.ARRAY(sa.Text()), nullable=False),
+        sa.Column("metadata_hash", sa.LargeBinary(), nullable=False),
+        sa.Column("observed_name", sa.Text(), nullable=True),
+        sa.Column("observed_icon_uri", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("(octet_length(metadata_hash) > 0)", name="ck_client_software_metadata_hash_nonempty"),
+        sa.CheckConstraint("(btrim(oauth_client_id) <> ''::text)", name="ck_client_software_oauth_client_id_nonempty"),
+        sa.CheckConstraint(
+            "(array_position(validated_redirect_uris, NULL::text) IS NULL)",
+            name="ck_client_software_validated_redirect_uris_no_null",
+        ),
+        sa.CheckConstraint(
+            "(cardinality(validated_redirect_uris) > 0)", name="ck_client_software_validated_redirect_uris_nonempty"
+        ),
+        sa.PrimaryKeyConstraint("client_software_id", name="client_software_pkey"),
+        sa.UniqueConstraint("client_software_id", "oauth_client_id", name="uq_client_software_id_oauth_client_id"),
+        sa.UniqueConstraint("oauth_client_id", name="uq_client_software_oauth_client_id"),
+    )
+
+    op.create_table(
+        "credential_bindings",
+        sa.Column("binding_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("agent_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("kind", _CREDENTIAL_KIND, nullable=False),
+        sa.Column("status", _CREDENTIAL_BINDING_STATUS, nullable=False),
+        sa.Column("generation", sa.BigInteger(), nullable=False, autoincrement=False),
+        sa.Column("supersedes_binding_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("issued_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("activated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("ended_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("end_reason", sa.Text(), nullable=True),
+        sa.CheckConstraint("(generation > 0)", name="ck_credential_bindings_generation_positive"),
+        sa.CheckConstraint(
+            "(((status = 'issuing'::public.credential_binding_status) AND (issued_at IS NULL) AND (activated_at IS NULL) AND (ended_at IS NULL) AND (end_reason IS NULL)) OR ((status = 'issued'::public.credential_binding_status) AND (issued_at IS NOT NULL) AND (activated_at IS NULL) AND (ended_at IS NULL) AND (end_reason IS NULL)) OR ((status = 'active'::public.credential_binding_status) AND (issued_at IS NOT NULL) AND (activated_at IS NOT NULL) AND (ended_at IS NULL) AND (end_reason IS NULL)) OR ((status = ANY (ARRAY['revoked'::public.credential_binding_status, 'expired'::public.credential_binding_status, 'failed'::public.credential_binding_status])) AND (ended_at IS NOT NULL) AND (end_reason IS NOT NULL) AND (btrim(end_reason) <> ''::text)))",
+            name="ck_credential_bindings_status_shape",
+        ),
+        sa.CheckConstraint(
+            "(((issued_at IS NULL) OR (issued_at >= created_at)) AND ((activated_at IS NULL) OR ((issued_at IS NOT NULL) AND (activated_at >= issued_at))) AND ((ended_at IS NULL) OR (ended_at >= COALESCE(activated_at, issued_at, created_at))))",
+            name="ck_credential_bindings_timestamp_order",
+        ),
+        sa.PrimaryKeyConstraint("binding_id", name="credential_bindings_pkey"),
+        sa.UniqueConstraint("agent_id", "binding_id", name="uq_credential_bindings_agent_binding"),
+        sa.UniqueConstraint("agent_id", "generation", name="uq_credential_bindings_agent_generation"),
+    )
+
+    op.create_table(
+        "enrollment_correlation_reservations",
+        sa.Column("interaction_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("client_id", sa.Text(), nullable=False),
+        sa.Column("redirect_uri", sa.Text(), nullable=False),
+        sa.Column("code_challenge", sa.Text(), nullable=False),
+        sa.Column("release_after", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("interaction_id", name="enrollment_correlation_reservations_pkey"),
+        sa.UniqueConstraint(
+            "client_id", "redirect_uri", "code_challenge", name="uq_enrollment_correlation_reservations_tuple"
+        ),
+    )
+
+    op.create_table(
+        "enrollment_interactions",
+        sa.Column("interaction_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("client_software_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("client_id", sa.Text(), nullable=False),
+        sa.Column("redirect_uri", sa.Text(), nullable=False),
+        sa.Column("code_challenge", sa.Text(), nullable=False),
+        sa.Column("requested_scopes", postgresql.ARRAY(sa.Text()), nullable=False),
+        sa.Column("presentation_snapshot", postgresql.JSONB(), nullable=False),
+        sa.Column("upstream_authorization_url", sa.Text(), nullable=False),
+        sa.Column("phase", _ENROLLMENT_PHASE, nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("correlation_release_after", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("browser_nonce_digest", sa.LargeBinary(), nullable=True),
+        sa.Column("browser_identity_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("browser_binding_digest", sa.LargeBinary(), nullable=True),
+        sa.Column("decision_digest", sa.LargeBinary(), nullable=True),
+        sa.Column("reconnect_agent_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("reconnect_predecessor_binding_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("closure_reason", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("auto_approval_policy", sa.Text(), nullable=True),
+        sa.Column("access_profile_id", sa.Text(), nullable=True),
+        sa.CheckConstraint(
+            "((access_profile_id IS NULL) OR (btrim(access_profile_id) <> ''::text))",
+            name="ck_enrollment_interactions_access_profile_id_nonempty",
+        ),
+        sa.CheckConstraint(
+            "((browser_binding_digest IS NULL) OR (browser_identity_id IS NOT NULL))",
+            name="ck_enrollment_interactions_browser_binding_shape",
+        ),
+        sa.CheckConstraint("(btrim(client_id) <> ''::text)", name="ck_enrollment_interactions_client_id_nonempty"),
+        sa.CheckConstraint(
+            "(btrim(code_challenge) <> ''::text)", name="ck_enrollment_interactions_code_challenge_nonempty"
+        ),
+        sa.CheckConstraint(
+            "(correlation_release_after > expires_at)",
+            name="ck_enrollment_interactions_correlation_outlives_interaction",
+        ),
+        sa.CheckConstraint(
+            "(((phase = 'awaiting_browser'::public.enrollment_phase) AND (browser_nonce_digest IS NOT NULL) AND (browser_identity_id IS NULL) AND (decision_digest IS NULL) AND (reconnect_agent_id IS NULL) AND (closed_at IS NULL) AND (closure_reason IS NULL)) OR ((phase = 'awaiting_approval'::public.enrollment_phase) AND (browser_nonce_digest IS NULL) AND (browser_identity_id IS NOT NULL) AND (browser_binding_digest IS NOT NULL) AND (decision_digest IS NULL) AND (reconnect_agent_id IS NULL) AND (closed_at IS NULL) AND (closure_reason IS NULL)) OR ((phase = ANY (ARRAY['allowed'::public.enrollment_phase, 'exchanging'::public.enrollment_phase])) AND (browser_nonce_digest IS NULL) AND (browser_identity_id IS NOT NULL) AND (browser_binding_digest IS NOT NULL) AND (decision_digest IS NOT NULL) AND (closed_at IS NULL) AND (closure_reason IS NULL)) OR ((phase = 'completed'::public.enrollment_phase) AND (browser_nonce_digest IS NULL) AND (browser_identity_id IS NOT NULL) AND (browser_binding_digest IS NULL) AND (decision_digest IS NOT NULL) AND (closed_at IS NOT NULL) AND (closure_reason IS NOT NULL) AND (btrim(closure_reason) <> ''::text)) OR ((phase = 'denied'::public.enrollment_phase) AND (browser_nonce_digest IS NULL) AND (browser_identity_id IS NOT NULL) AND (browser_binding_digest IS NULL) AND (decision_digest IS NOT NULL) AND (reconnect_agent_id IS NULL) AND (closed_at IS NOT NULL) AND (closure_reason IS NOT NULL) AND (btrim(closure_reason) <> ''::text)) OR ((phase = ANY (ARRAY['expired'::public.enrollment_phase, 'failed'::public.enrollment_phase])) AND (browser_nonce_digest IS NULL) AND (browser_binding_digest IS NULL) AND (closed_at IS NOT NULL) AND (closure_reason IS NOT NULL) AND (btrim(closure_reason) <> ''::text)))",
+            name="ck_enrollment_interactions_phase_shape",
+        ),
+        sa.CheckConstraint(
+            "((reconnect_agent_id IS NULL) = (reconnect_predecessor_binding_id IS NULL))",
+            name="ck_enrollment_interactions_reconnect_shape",
+        ),
+        sa.CheckConstraint(
+            "(btrim(redirect_uri) <> ''::text)", name="ck_enrollment_interactions_redirect_uri_nonempty"
+        ),
+        sa.CheckConstraint(
+            "(array_position(requested_scopes, NULL::text) IS NULL)",
+            name="ck_enrollment_interactions_requested_scopes_no_null",
+        ),
+        sa.CheckConstraint(
+            "(btrim(upstream_authorization_url) <> ''::text)", name="ck_enrollment_interactions_upstream_url_nonempty"
+        ),
+        sa.PrimaryKeyConstraint("interaction_id", name="enrollment_interactions_pkey"),
+        sa.UniqueConstraint(
+            "interaction_id",
+            "client_id",
+            "redirect_uri",
+            "code_challenge",
+            "correlation_release_after",
+            name="uq_enrollment_interactions_correlation_component",
+        ),
+    )
+
+    op.create_table(
+        "identity_anchors",
+        sa.Column("anchor_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("operator_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("trust_domain", sa.Text(), nullable=False),
+        sa.Column("stable_external_user_key", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "(btrim(stable_external_user_key) <> ''::text)", name="ck_identity_anchors_external_key_nonempty"
+        ),
+        sa.CheckConstraint("(btrim(trust_domain) <> ''::text)", name="ck_identity_anchors_trust_domain_nonempty"),
+        sa.PrimaryKeyConstraint("anchor_id", name="identity_anchors_pkey"),
+        sa.UniqueConstraint(
+            "trust_domain", "stable_external_user_key", name="uq_identity_anchors_trust_domain_external_key"
+        ),
+    )
+
+    op.create_table(
+        "oidc_identities",
+        sa.Column("identity_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("anchor_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("issuer", sa.Text(), nullable=False),
+        sa.Column("subject", sa.Text(), nullable=False),
+        sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("(btrim(issuer) <> ''::text)", name="ck_oidc_identities_issuer_nonempty"),
+        sa.CheckConstraint("(btrim(subject) <> ''::text)", name="ck_oidc_identities_subject_nonempty"),
+        sa.PrimaryKeyConstraint("identity_id", name="oidc_identities_pkey"),
+        sa.UniqueConstraint("issuer", "subject", name="uq_oidc_identities_issuer_subject"),
+    )
+
+    op.create_table(
+        "operators",
+        sa.Column("operator_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("status", _OPERATOR_STATUS, nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("operator_id", name="operators_pkey"),
+    )
+
+    op.create_table(
+        "static_credentials",
+        sa.Column("binding_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("secret_reference", sa.Text(), nullable=False),
+        sa.Column("credential_fingerprint", sa.LargeBinary(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "(octet_length(credential_fingerprint) > 0)", name="ck_static_credentials_fingerprint_nonempty"
+        ),
+        sa.CheckConstraint(
+            "(btrim(secret_reference) <> ''::text)", name="ck_static_credentials_secret_reference_nonempty"
+        ),
+        sa.PrimaryKeyConstraint("binding_id", name="static_credentials_pkey"),
+        sa.UniqueConstraint("credential_fingerprint", name="uq_static_credentials_fingerprint"),
+    )
+
+
+def _create_console_tables() -> None:
+    op.create_table(
+        "kubernetes_grants",
+        sa.Column("grant_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("owner_agent_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("source_tool_call_id", sa.Text(), nullable=False),
+        sa.Column("scope", postgresql.JSONB(), nullable=False),
+        sa.Column("rules", postgresql.JSONB(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("end_reason", sa.Text(), nullable=True),
+        sa.Column("principal_kind", sa.Text(), nullable=False),
+        sa.Column("principal_agent_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("principal_access_profile_id", sa.Text(), nullable=True),
+        sa.Column("ended_at", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint(
+            "(((ended_at IS NOT NULL) OR (end_reason IS NULL)) AND ((end_reason IS NULL) OR (btrim(end_reason) <> ''::text)))",
+            name="ck_kubernetes_grants_end_shape",
+        ),
+        sa.CheckConstraint(
+            "((expires_at IS NULL) OR (expires_at > created_at))", name="ck_kubernetes_grants_expiration_after_creation"
+        ),
+        sa.CheckConstraint(
+            "(((principal_kind = 'agent'::text) AND (principal_agent_id IS NOT NULL) AND (principal_access_profile_id IS NULL)) OR ((principal_kind = 'access_profile'::text) AND (principal_agent_id IS NULL) AND (principal_access_profile_id IS NOT NULL)))",
+            name="ck_kubernetes_grants_principal_shape",
+        ),
+        sa.CheckConstraint(
+            "((jsonb_typeof(rules) = 'array'::text) AND (jsonb_array_length(rules) > 0))",
+            name="ck_kubernetes_grants_rules_nonempty",
+        ),
+        sa.CheckConstraint(
+            "((jsonb_typeof(scope) = 'object'::text) AND (scope ? 'kind'::text) AND ((scope ->> 'kind'::text) = ANY (ARRAY['namespaces'::text, 'all_namespaces'::text, 'cluster'::text, 'non_resource'::text])) AND ((((scope ->> 'kind'::text) = 'namespaces'::text) AND (scope ? 'namespaces'::text) AND (jsonb_typeof((scope -> 'namespaces'::text)) = 'array'::text) AND (jsonb_array_length((scope -> 'namespaces'::text)) > 0)) OR (((scope ->> 'kind'::text) <> 'namespaces'::text) AND (NOT (scope ? 'namespaces'::text)))))",
+            name="ck_kubernetes_grants_scope_shape",
+        ),
+        sa.CheckConstraint(
+            "(btrim(source_tool_call_id) <> ''::text)", name="ck_kubernetes_grants_source_tool_call_nonempty"
+        ),
+        sa.PrimaryKeyConstraint("grant_id", name="kubernetes_grants_pkey"),
+    )
+
+    op.create_table(
+        "mcp_tool_call_principals",
+        sa.Column("tool_call_id", sa.Text(), nullable=False),
+        sa.Column("operator_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("binding_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("session_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.CheckConstraint(
+            "(num_nonnulls(operator_id, binding_id) = 1)", name="ck_mcp_tool_call_principals_exactly_one_variant"
+        ),
+        sa.CheckConstraint(
+            "((session_id IS NULL) OR (binding_id IS NOT NULL))", name="ck_mcp_tool_call_principals_session_agent"
+        ),
+        sa.PrimaryKeyConstraint("tool_call_id", name="mcp_tool_call_principals_pkey"),
+    )
+
+    op.create_table(
+        "mcp_tool_calls",
+        sa.Column("tool_call_id", sa.Text(), nullable=False),
+        sa.Column("server_id", sa.Text(), nullable=False),
+        sa.Column("tool_name", sa.Text(), nullable=False),
+        sa.Column("status", _TOOL_CALL_STATUS, nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("arguments_json", postgresql.JSONB(), nullable=False),
+        sa.Column("rationale", sa.Text(), nullable=False),
+        sa.Column("title", sa.Text(), nullable=True),
+        sa.Column("result_json", postgresql.JSONB(), nullable=True),
+        sa.Column("error", sa.Text(), nullable=True),
+        sa.Column("approval_policy_id", sa.Text(), nullable=True),
+        sa.Column("auto_approval_evaluation", sa.Text(), nullable=True),
+        sa.Column("approved_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("withdrawal_reason", sa.Text(), nullable=True),
+        sa.Column("decision_note", sa.Text(), nullable=True),
+        sa.Column("decision_operator_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.CheckConstraint(
+            "((decision_note IS NULL) OR (char_length(decision_note) <= 4096))",
+            name="ck_mcp_tool_calls_decision_note_length",
+        ),
+        sa.PrimaryKeyConstraint("tool_call_id", name="mcp_tool_calls_pkey"),
+    )
+
+    op.create_table(
+        "operator_login_flows",
+        sa.Column("state", sa.Text(), nullable=False),
+        sa.Column("browser_binding", sa.Text(), nullable=False),
+        sa.Column("return_to", sa.Text(), nullable=True),
+        sa.Column("data", postgresql.JSONB(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "(btrim(browser_binding) <> ''::text)", name="ck_operator_login_flows_browser_binding_nonempty"
+        ),
+        sa.PrimaryKeyConstraint("state", name="operator_login_flows_pkey"),
+    )
+
+    op.create_table(
+        "push_subscriptions",
+        sa.Column("endpoint", sa.Text(), nullable=False),
+        sa.Column("operator_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("p256dh", sa.Text(), nullable=False),
+        sa.Column("auth", sa.Text(), nullable=False),
+        sa.Column("user_agent", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("last_failure_at", sa.DateTime(timezone=True), nullable=True),
+        sa.PrimaryKeyConstraint("endpoint", name="push_subscriptions_pkey"),
+    )
+
+
+def _create_recall_tables() -> None:
+    op.create_table(
+        "content_embeddings",
+        sa.Column("content_sha", sa.Text(), nullable=False),
+        sa.Column("model_key", sa.Text(), nullable=False),
+        sa.Column("embedding", HalfVector(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.PrimaryKeyConstraint("content_sha", "model_key", name="content_embeddings_pkey"),
+        schema="recall_index",
+    )
+
+    op.create_table(
+        "contents",
+        sa.Column("content_sha", sa.Text(), nullable=False),
+        sa.Column("content", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.PrimaryKeyConstraint("content_sha", name="contents_pkey"),
+        schema="recall_index",
+    )
+
+    op.create_table(
+        "git_chunks",
+        sa.Column("blob_sha", sa.Text(), nullable=False),
+        sa.Column("chunker_key", sa.Text(), nullable=False),
+        sa.Column("byte_start", sa.BigInteger(), nullable=False, autoincrement=False),
+        sa.Column("byte_end", sa.BigInteger(), nullable=False, autoincrement=False),
+        sa.Column("content_sha", sa.Text(), nullable=False),
+        sa.Column("index_id", sa.Text(), nullable=False),
+        sa.PrimaryKeyConstraint("index_id", "blob_sha", "chunker_key", "byte_start", name="git_chunks_pkey"),
+        schema="recall_index",
+    )
+
+    op.create_table(
+        "git_sync_state",
+        sa.Column("branch", sa.Text(), nullable=False),
+        sa.Column("remote_commit", sa.Text(), nullable=True),
+        sa.Column("remote_seen_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("commit_sha", sa.Text(), nullable=True),
+        sa.Column("chunker_key", sa.Text(), nullable=True),
+        sa.Column("synced_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("index_id", sa.Text(), nullable=False),
+        sa.CheckConstraint(
+            "(((commit_sha IS NULL) = (chunker_key IS NULL)) AND ((commit_sha IS NULL) = (synced_at IS NULL)))",
+            name="ck_git_sync_state_indexed_half",
+        ),
+        sa.PrimaryKeyConstraint("index_id", name="git_sync_state_pkey"),
+        schema="recall_index",
+    )
+
+    op.create_table(
+        "git_tip",
+        sa.Column("path", sa.Text(), nullable=False),
+        sa.Column("blob_sha", sa.Text(), nullable=False),
+        sa.Column("index_id", sa.Text(), nullable=False),
+        sa.PrimaryKeyConstraint("index_id", "path", name="git_tip_pkey"),
+        schema="recall_index",
+    )
+
+    op.create_table(
+        "indexes",
+        sa.Column("index_id", sa.Text(), nullable=False),
+        sa.Column("index_type", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.CheckConstraint("(index_type = 'git'::text)", name="ck_indexes_index_type"),
+        sa.PrimaryKeyConstraint("index_id", name="indexes_pkey"),
+        schema="recall_index",
+    )
+
+
+def _preserve_deployed_constraint_names() -> None:
+    # PostgreSQL kept these names through column renames; reproduce them on fresh databases.
+    op.execute(r"""
+ALTER TABLE public.kubernetes_grants RENAME CONSTRAINT kubernetes_grants_owner_agent_id_not_null TO kubernetes_grants_agent_id_not_null;
+    """)
+
+
+def _create_foreign_keys() -> None:
+    # Added after tables because the authority/reference graph contains cycles.
+    op.create_foreign_key(
+        "agent_name_reservations_originating_interaction_id_fkey",
+        "agent_name_reservations",
+        "enrollment_interactions",
+        ["originating_interaction_id"],
+        ["interaction_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "agent_name_reservations_pending_interaction_id_fkey",
+        "agent_name_reservations",
+        "enrollment_interactions",
+        ["pending_interaction_id"],
+        ["interaction_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "agents_owner_operator_id_fkey",
+        "agents",
+        "operators",
+        ["owner_operator_id"],
+        ["operator_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "authorization_grants_authorizing_identity_id_fkey",
+        "authorization_grants",
+        "oidc_identities",
+        ["authorizing_identity_id"],
+        ["identity_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "authorization_grants_client_software_id_fkey",
+        "authorization_grants",
+        "client_software",
+        ["client_software_id"],
+        ["client_software_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "authorization_grants_enrollment_interaction_id_fkey",
+        "authorization_grants",
+        "enrollment_interactions",
+        ["enrollment_interaction_id"],
+        ["interaction_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "credential_bindings_agent_id_fkey",
+        "credential_bindings",
+        "agents",
+        ["agent_id"],
+        ["agent_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "enrollment_interactions_browser_identity_id_fkey",
+        "enrollment_interactions",
+        "oidc_identities",
+        ["browser_identity_id"],
+        ["identity_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "fk_agent_name_reservations_agent",
+        "agent_name_reservations",
+        "agents",
+        ["agent_id"],
+        ["agent_id"],
+        deferrable=True,
+        initially="DEFERRED",
+    )
+
+    op.create_foreign_key(
+        "fk_agents_owned_current_name",
+        "agents",
+        "agent_name_reservations",
+        ["agent_id", "current_name_reservation_id"],
+        ["agent_id", "reservation_id"],
+        deferrable=True,
+        initially="DEFERRED",
+    )
+
+    op.create_foreign_key(
+        "fk_authorization_grants_binding",
+        "authorization_grants",
+        "credential_bindings",
+        ["binding_id"],
+        ["binding_id"],
+        deferrable=True,
+        initially="DEFERRED",
+    )
+
+    op.create_foreign_key(
+        "fk_credential_bindings_same_agent_predecessor",
+        "credential_bindings",
+        "credential_bindings",
+        ["agent_id", "supersedes_binding_id"],
+        ["agent_id", "binding_id"],
+        deferrable=True,
+        initially="DEFERRED",
+    )
+
+    op.create_foreign_key(
+        "fk_enrollment_correlation_reservations_exact_interaction",
+        "enrollment_correlation_reservations",
+        "enrollment_interactions",
+        ["interaction_id", "client_id", "redirect_uri", "code_challenge", "release_after"],
+        ["interaction_id", "client_id", "redirect_uri", "code_challenge", "correlation_release_after"],
+        ondelete="CASCADE",
+    )
+
+    op.create_foreign_key(
+        "fk_enrollment_interactions_exact_client_software",
+        "enrollment_interactions",
+        "client_software",
+        ["client_software_id", "client_id"],
+        ["client_software_id", "oauth_client_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "fk_enrollment_interactions_reconnect_predecessor",
+        "enrollment_interactions",
+        "credential_bindings",
+        ["reconnect_agent_id", "reconnect_predecessor_binding_id"],
+        ["agent_id", "binding_id"],
+        deferrable=True,
+        initially="DEFERRED",
+    )
+
+    op.create_foreign_key(
+        "fk_mcp_tool_calls_decision_operator",
+        "mcp_tool_calls",
+        "operators",
+        ["decision_operator_id"],
+        ["operator_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "fk_static_credentials_binding",
+        "static_credentials",
+        "credential_bindings",
+        ["binding_id"],
+        ["binding_id"],
+        deferrable=True,
+        initially="DEFERRED",
+    )
+
+    op.create_foreign_key(
+        "identity_anchors_operator_id_fkey",
+        "identity_anchors",
+        "operators",
+        ["operator_id"],
+        ["operator_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "kubernetes_grants_owner_agent_id_fkey",
+        "kubernetes_grants",
+        "agents",
+        ["owner_agent_id"],
+        ["agent_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "kubernetes_grants_principal_agent_id_fkey",
+        "kubernetes_grants",
+        "agents",
+        ["principal_agent_id"],
+        ["agent_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "kubernetes_grants_source_tool_call_id_fkey",
+        "kubernetes_grants",
+        "mcp_tool_calls",
+        ["source_tool_call_id"],
+        ["tool_call_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "mcp_tool_call_principals_binding_id_fkey",
+        "mcp_tool_call_principals",
+        "credential_bindings",
+        ["binding_id"],
+        ["binding_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "mcp_tool_call_principals_operator_id_fkey",
+        "mcp_tool_call_principals",
+        "operators",
+        ["operator_id"],
+        ["operator_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "mcp_tool_call_principals_tool_call_id_fkey",
+        "mcp_tool_call_principals",
+        "mcp_tool_calls",
+        ["tool_call_id"],
+        ["tool_call_id"],
+        ondelete="CASCADE",
+    )
+
+    op.create_foreign_key(
+        "oidc_identities_anchor_id_fkey",
+        "oidc_identities",
+        "identity_anchors",
+        ["anchor_id"],
+        ["anchor_id"],
+        ondelete="RESTRICT",
+    )
+
+    op.create_foreign_key(
+        "push_subscriptions_operator_id_fkey",
+        "push_subscriptions",
+        "operators",
+        ["operator_id"],
+        ["operator_id"],
+        ondelete="CASCADE",
+    )
+
+    op.create_foreign_key(
+        "content_embeddings_content_sha_fkey",
+        "content_embeddings",
+        "contents",
+        ["content_sha"],
+        ["content_sha"],
+        source_schema="recall_index",
+        referent_schema="recall_index",
+    )
+
+    op.create_foreign_key(
+        "git_chunks_content_sha_fkey",
+        "git_chunks",
+        "contents",
+        ["content_sha"],
+        ["content_sha"],
+        source_schema="recall_index",
+        referent_schema="recall_index",
+    )
+
+    op.create_foreign_key(
+        "git_chunks_index_id_fkey",
+        "git_chunks",
+        "indexes",
+        ["index_id"],
+        ["index_id"],
+        source_schema="recall_index",
+        referent_schema="recall_index",
+    )
+
+    op.create_foreign_key(
+        "git_sync_state_index_id_fkey",
+        "git_sync_state",
+        "indexes",
+        ["index_id"],
+        ["index_id"],
+        source_schema="recall_index",
+        referent_schema="recall_index",
+    )
+
+    op.create_foreign_key(
+        "git_tip_index_id_fkey",
+        "git_tip",
+        "indexes",
+        ["index_id"],
+        ["index_id"],
+        source_schema="recall_index",
+        referent_schema="recall_index",
+    )
+
+
+def _create_indexes() -> None:
+    op.create_index("idx_agent_name_reservations_agent_id", "agent_name_reservations", ["agent_id"])
+
+    op.create_index("idx_agents_owner_operator_id", "agents", ["owner_operator_id"])
+
+    op.create_index(
+        "idx_authorization_grants_authorizing_identity_id", "authorization_grants", ["authorizing_identity_id"]
+    )
+
+    op.create_index("idx_authorization_grants_client_software_id", "authorization_grants", ["client_software_id"])
+
+    op.create_index("idx_credential_bindings_agent_id", "credential_bindings", ["agent_id"])
+
+    op.create_index("idx_enrollment_interactions_client_software_id", "enrollment_interactions", ["client_software_id"])
+
+    op.create_index("idx_enrollment_interactions_phase_expires_at", "enrollment_interactions", ["phase", "expires_at"])
+
+    op.create_index("idx_identity_anchors_operator_id", "identity_anchors", ["operator_id"])
+
+    op.create_index(
+        "idx_kubernetes_grants_access_profile_principal_expiry",
+        "kubernetes_grants",
+        ["principal_access_profile_id", "expires_at"],
+    )
+
+    op.create_index(
+        "idx_kubernetes_grants_agent_principal_expiry", "kubernetes_grants", ["principal_agent_id", "expires_at"]
+    )
+
+    op.create_index("idx_kubernetes_grants_owner_expiry", "kubernetes_grants", ["owner_agent_id", "expires_at"])
+
+    op.create_index("idx_kubernetes_grants_source_tool_call", "kubernetes_grants", ["source_tool_call_id"])
+
+    op.create_index("idx_mcp_tool_call_principals_binding_id", "mcp_tool_call_principals", ["binding_id"])
+
+    op.create_index("idx_mcp_tool_call_principals_operator_id", "mcp_tool_call_principals", ["operator_id"])
+
+    op.create_index("idx_mcp_tool_call_principals_session_id", "mcp_tool_call_principals", ["session_id"])
+
+    op.create_index("idx_mcp_tool_calls_created_at", "mcp_tool_calls", ["created_at"])
+
+    op.create_index("idx_oidc_identities_anchor_id", "oidc_identities", ["anchor_id"])
+
+    op.create_index("idx_operator_login_flows_expires_at", "operator_login_flows", ["expires_at"])
+
+    op.create_index("idx_push_subscriptions_operator_id", "push_subscriptions", ["operator_id"])
+
+    op.create_index(
+        "uq_credential_bindings_one_active_per_agent",
+        "credential_bindings",
+        ["agent_id"],
+        unique=True,
+        postgresql_where=sa.text("(status = 'active'::public.credential_binding_status)"),
+    )
+
+
+def _create_triggers() -> None:
+    op.execute(r"""
 CREATE CONSTRAINT TRIGGER ctrg_haku_0009_agent_active_bindings AFTER INSERT OR UPDATE ON public.agents DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_agent_active_bindings();
+    """)
 
-
---
--- Name: credential_bindings ctrg_haku_0009_binding_activation; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE CONSTRAINT TRIGGER ctrg_haku_0009_binding_activation AFTER INSERT OR UPDATE ON public.credential_bindings DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_binding_activation();
+    """)
 
-
---
--- Name: credential_bindings ctrg_haku_0009_binding_subtype; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE CONSTRAINT TRIGGER ctrg_haku_0009_binding_subtype AFTER INSERT OR DELETE OR UPDATE ON public.credential_bindings DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_subtype_from_binding();
+    """)
 
-
---
--- Name: mcp_tool_calls ctrg_haku_0009_call_has_principal; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE CONSTRAINT TRIGGER ctrg_haku_0009_call_has_principal AFTER INSERT OR UPDATE ON public.mcp_tool_calls DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_principal_from_call();
+    """)
 
-
---
--- Name: authorization_grants ctrg_haku_0009_grant_consistency; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE CONSTRAINT TRIGGER ctrg_haku_0009_grant_consistency AFTER INSERT OR UPDATE ON public.authorization_grants DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_grant_consistency();
+    """)
 
-
---
--- Name: authorization_grants ctrg_haku_0009_grant_interaction_aggregate; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE CONSTRAINT TRIGGER ctrg_haku_0009_grant_interaction_aggregate AFTER INSERT OR DELETE OR UPDATE ON public.authorization_grants DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_aggregate_from_grant();
+    """)
 
-
---
--- Name: authorization_grants ctrg_haku_0009_grant_subtype; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE CONSTRAINT TRIGGER ctrg_haku_0009_grant_subtype AFTER INSERT OR DELETE OR UPDATE ON public.authorization_grants DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_subtype_from_grant();
+    """)
 
-
---
--- Name: enrollment_interactions ctrg_haku_0009_interaction_aggregate; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE CONSTRAINT TRIGGER ctrg_haku_0009_interaction_aggregate AFTER INSERT OR UPDATE ON public.enrollment_interactions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_aggregate_from_interaction();
+    """)
 
-
---
--- Name: agent_name_reservations ctrg_haku_0009_name_interaction_aggregate; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE CONSTRAINT TRIGGER ctrg_haku_0009_name_interaction_aggregate AFTER INSERT OR DELETE OR UPDATE ON public.agent_name_reservations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_aggregate_from_name();
+    """)
 
-
---
--- Name: agent_name_reservations ctrg_haku_0009_name_promotion; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE CONSTRAINT TRIGGER ctrg_haku_0009_name_promotion AFTER INSERT OR UPDATE ON public.agent_name_reservations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_name_promotion();
+    """)
 
-
---
--- Name: enrollment_interactions ctrg_haku_0009_new_interaction_has_correlation; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE CONSTRAINT TRIGGER ctrg_haku_0009_new_interaction_has_correlation AFTER INSERT ON public.enrollment_interactions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_new_interaction_correlation();
+    """)
 
-
---
--- Name: mcp_tool_call_principals ctrg_haku_0009_principal_has_call; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE CONSTRAINT TRIGGER ctrg_haku_0009_principal_has_call AFTER INSERT OR DELETE OR UPDATE ON public.mcp_tool_call_principals DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_principal_from_principal();
+    """)
 
-
---
--- Name: static_credentials ctrg_haku_0009_static_subtype; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE CONSTRAINT TRIGGER ctrg_haku_0009_static_subtype AFTER INSERT OR DELETE OR UPDATE ON public.static_credentials DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.haku_0009_check_subtype_from_static();
+    """)
 
-
---
--- Name: agents trg_haku_0009_agent_invariants; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE TRIGGER trg_haku_0009_agent_invariants BEFORE INSERT OR DELETE OR UPDATE ON public.agents FOR EACH ROW EXECUTE FUNCTION public.haku_0009_agent_invariants();
+    """)
 
-
---
--- Name: agent_name_reservations trg_haku_0009_agent_name_invariants; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE TRIGGER trg_haku_0009_agent_name_invariants BEFORE INSERT OR DELETE OR UPDATE ON public.agent_name_reservations FOR EACH ROW EXECUTE FUNCTION public.haku_0009_agent_name_invariants();
+    """)
 
-
---
--- Name: authorization_grants trg_haku_0009_authorization_grant_immutable; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE TRIGGER trg_haku_0009_authorization_grant_immutable BEFORE UPDATE ON public.authorization_grants FOR EACH ROW EXECUTE FUNCTION public.haku_0009_authorization_grant_immutable();
+    """)
 
-
---
--- Name: client_software trg_haku_0009_client_software_invariants; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE TRIGGER trg_haku_0009_client_software_invariants BEFORE INSERT OR UPDATE ON public.client_software FOR EACH ROW EXECUTE FUNCTION public.haku_0009_client_software_invariants();
+    """)
 
-
---
--- Name: enrollment_correlation_reservations trg_haku_0009_correlation_reservation_invariants; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE TRIGGER trg_haku_0009_correlation_reservation_invariants BEFORE DELETE OR UPDATE ON public.enrollment_correlation_reservations FOR EACH ROW EXECUTE FUNCTION public.haku_0009_correlation_reservation_invariants();
+    """)
 
-
---
--- Name: credential_bindings trg_haku_0009_credential_binding_invariants; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE TRIGGER trg_haku_0009_credential_binding_invariants BEFORE INSERT OR UPDATE ON public.credential_bindings FOR EACH ROW EXECUTE FUNCTION public.haku_0009_credential_binding_invariants();
+    """)
 
-
---
--- Name: enrollment_interactions trg_haku_0009_enrollment_interaction_delete_guard; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE TRIGGER trg_haku_0009_enrollment_interaction_delete_guard BEFORE DELETE ON public.enrollment_interactions FOR EACH ROW EXECUTE FUNCTION public.haku_0009_enrollment_interaction_delete_guard();
+    """)
 
-
---
--- Name: enrollment_interactions trg_haku_0009_enrollment_interaction_invariants; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE TRIGGER trg_haku_0009_enrollment_interaction_invariants BEFORE INSERT OR UPDATE ON public.enrollment_interactions FOR EACH ROW EXECUTE FUNCTION public.haku_0009_enrollment_interaction_invariants();
+    """)
 
-
---
--- Name: identity_anchors trg_haku_0009_identity_anchor_immutable; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE TRIGGER trg_haku_0009_identity_anchor_immutable BEFORE UPDATE ON public.identity_anchors FOR EACH ROW EXECUTE FUNCTION public.haku_0009_identity_anchor_immutable();
+    """)
 
-
---
--- Name: authorization_grants trg_haku_0009_lock_grant_authority; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE TRIGGER trg_haku_0009_lock_grant_authority BEFORE INSERT OR UPDATE ON public.authorization_grants FOR EACH ROW EXECUTE FUNCTION public.haku_0009_lock_grant_authority();
+    """)
 
-
---
--- Name: oidc_identities trg_haku_0009_oidc_identity_immutable; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE TRIGGER trg_haku_0009_oidc_identity_immutable BEFORE UPDATE ON public.oidc_identities FOR EACH ROW EXECUTE FUNCTION public.haku_0009_oidc_identity_immutable();
+    """)
 
-
---
--- Name: static_credentials trg_haku_0009_static_credential_immutable; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE TRIGGER trg_haku_0009_static_credential_immutable BEFORE UPDATE ON public.static_credentials FOR EACH ROW EXECUTE FUNCTION public.haku_0009_static_credential_immutable();
+    """)
 
-
---
--- Name: mcp_tool_call_principals trg_haku_0009_tool_call_principal_immutable; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE TRIGGER trg_haku_0009_tool_call_principal_immutable BEFORE UPDATE ON public.mcp_tool_call_principals FOR EACH ROW EXECUTE FUNCTION public.haku_0009_tool_call_principal_immutable();
+    """)
 
-
---
--- Name: kubernetes_grants trg_haku_0119_kubernetes_grant_source_invariants; Type: TRIGGER; Schema: public; Owner: -
---
-
+    op.execute(r"""
 CREATE TRIGGER trg_haku_0119_kubernetes_grant_source_invariants BEFORE INSERT OR UPDATE OF owner_agent_id, principal_kind, principal_agent_id, principal_access_profile_id, source_tool_call_id ON public.kubernetes_grants FOR EACH ROW EXECUTE FUNCTION public.haku_0119_kubernetes_grant_source_invariants();
-
-
---
--- Name: agent_name_reservations agent_name_reservations_originating_interaction_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.agent_name_reservations
-    ADD CONSTRAINT agent_name_reservations_originating_interaction_id_fkey FOREIGN KEY (originating_interaction_id) REFERENCES public.enrollment_interactions(interaction_id) ON DELETE RESTRICT;
-
-
---
--- Name: agent_name_reservations agent_name_reservations_pending_interaction_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.agent_name_reservations
-    ADD CONSTRAINT agent_name_reservations_pending_interaction_id_fkey FOREIGN KEY (pending_interaction_id) REFERENCES public.enrollment_interactions(interaction_id) ON DELETE RESTRICT;
-
-
---
--- Name: agents agents_owner_operator_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.agents
-    ADD CONSTRAINT agents_owner_operator_id_fkey FOREIGN KEY (owner_operator_id) REFERENCES public.operators(operator_id) ON DELETE RESTRICT;
-
-
---
--- Name: authorization_grants authorization_grants_authorizing_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.authorization_grants
-    ADD CONSTRAINT authorization_grants_authorizing_identity_id_fkey FOREIGN KEY (authorizing_identity_id) REFERENCES public.oidc_identities(identity_id) ON DELETE RESTRICT;
-
-
---
--- Name: authorization_grants authorization_grants_client_software_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.authorization_grants
-    ADD CONSTRAINT authorization_grants_client_software_id_fkey FOREIGN KEY (client_software_id) REFERENCES public.client_software(client_software_id) ON DELETE RESTRICT;
-
-
---
--- Name: authorization_grants authorization_grants_enrollment_interaction_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.authorization_grants
-    ADD CONSTRAINT authorization_grants_enrollment_interaction_id_fkey FOREIGN KEY (enrollment_interaction_id) REFERENCES public.enrollment_interactions(interaction_id) ON DELETE RESTRICT;
-
-
---
--- Name: credential_bindings credential_bindings_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.credential_bindings
-    ADD CONSTRAINT credential_bindings_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(agent_id) ON DELETE RESTRICT;
-
-
---
--- Name: enrollment_interactions enrollment_interactions_browser_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.enrollment_interactions
-    ADD CONSTRAINT enrollment_interactions_browser_identity_id_fkey FOREIGN KEY (browser_identity_id) REFERENCES public.oidc_identities(identity_id) ON DELETE RESTRICT;
-
-
---
--- Name: agent_name_reservations fk_agent_name_reservations_agent; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.agent_name_reservations
-    ADD CONSTRAINT fk_agent_name_reservations_agent FOREIGN KEY (agent_id) REFERENCES public.agents(agent_id) DEFERRABLE INITIALLY DEFERRED;
-
-
---
--- Name: agents fk_agents_owned_current_name; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.agents
-    ADD CONSTRAINT fk_agents_owned_current_name FOREIGN KEY (agent_id, current_name_reservation_id) REFERENCES public.agent_name_reservations(agent_id, reservation_id) DEFERRABLE INITIALLY DEFERRED;
-
-
---
--- Name: authorization_grants fk_authorization_grants_binding; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.authorization_grants
-    ADD CONSTRAINT fk_authorization_grants_binding FOREIGN KEY (binding_id) REFERENCES public.credential_bindings(binding_id) DEFERRABLE INITIALLY DEFERRED;
-
-
---
--- Name: credential_bindings fk_credential_bindings_same_agent_predecessor; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.credential_bindings
-    ADD CONSTRAINT fk_credential_bindings_same_agent_predecessor FOREIGN KEY (agent_id, supersedes_binding_id) REFERENCES public.credential_bindings(agent_id, binding_id) DEFERRABLE INITIALLY DEFERRED;
-
-
---
--- Name: enrollment_correlation_reservations fk_enrollment_correlation_reservations_exact_interaction; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.enrollment_correlation_reservations
-    ADD CONSTRAINT fk_enrollment_correlation_reservations_exact_interaction FOREIGN KEY (interaction_id, client_id, redirect_uri, code_challenge, release_after) REFERENCES public.enrollment_interactions(interaction_id, client_id, redirect_uri, code_challenge, correlation_release_after) ON DELETE CASCADE;
-
-
---
--- Name: enrollment_interactions fk_enrollment_interactions_exact_client_software; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.enrollment_interactions
-    ADD CONSTRAINT fk_enrollment_interactions_exact_client_software FOREIGN KEY (client_software_id, client_id) REFERENCES public.client_software(client_software_id, oauth_client_id) ON DELETE RESTRICT;
-
-
---
--- Name: enrollment_interactions fk_enrollment_interactions_reconnect_predecessor; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.enrollment_interactions
-    ADD CONSTRAINT fk_enrollment_interactions_reconnect_predecessor FOREIGN KEY (reconnect_agent_id, reconnect_predecessor_binding_id) REFERENCES public.credential_bindings(agent_id, binding_id) DEFERRABLE INITIALLY DEFERRED;
-
-
---
--- Name: mcp_tool_calls fk_mcp_tool_calls_decision_operator; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_tool_calls
-    ADD CONSTRAINT fk_mcp_tool_calls_decision_operator FOREIGN KEY (decision_operator_id) REFERENCES public.operators(operator_id) ON DELETE RESTRICT;
-
-
---
--- Name: static_credentials fk_static_credentials_binding; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.static_credentials
-    ADD CONSTRAINT fk_static_credentials_binding FOREIGN KEY (binding_id) REFERENCES public.credential_bindings(binding_id) DEFERRABLE INITIALLY DEFERRED;
-
-
---
--- Name: identity_anchors identity_anchors_operator_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.identity_anchors
-    ADD CONSTRAINT identity_anchors_operator_id_fkey FOREIGN KEY (operator_id) REFERENCES public.operators(operator_id) ON DELETE RESTRICT;
-
-
---
--- Name: kubernetes_grants kubernetes_grants_owner_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.kubernetes_grants
-    ADD CONSTRAINT kubernetes_grants_owner_agent_id_fkey FOREIGN KEY (owner_agent_id) REFERENCES public.agents(agent_id) ON DELETE RESTRICT;
-
-
---
--- Name: kubernetes_grants kubernetes_grants_principal_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.kubernetes_grants
-    ADD CONSTRAINT kubernetes_grants_principal_agent_id_fkey FOREIGN KEY (principal_agent_id) REFERENCES public.agents(agent_id) ON DELETE RESTRICT;
-
-
---
--- Name: kubernetes_grants kubernetes_grants_source_tool_call_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.kubernetes_grants
-    ADD CONSTRAINT kubernetes_grants_source_tool_call_id_fkey FOREIGN KEY (source_tool_call_id) REFERENCES public.mcp_tool_calls(tool_call_id) ON DELETE RESTRICT;
-
-
---
--- Name: mcp_tool_call_principals mcp_tool_call_principals_binding_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_tool_call_principals
-    ADD CONSTRAINT mcp_tool_call_principals_binding_id_fkey FOREIGN KEY (binding_id) REFERENCES public.credential_bindings(binding_id) ON DELETE RESTRICT;
-
-
---
--- Name: mcp_tool_call_principals mcp_tool_call_principals_operator_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_tool_call_principals
-    ADD CONSTRAINT mcp_tool_call_principals_operator_id_fkey FOREIGN KEY (operator_id) REFERENCES public.operators(operator_id) ON DELETE RESTRICT;
-
-
---
--- Name: mcp_tool_call_principals mcp_tool_call_principals_tool_call_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_tool_call_principals
-    ADD CONSTRAINT mcp_tool_call_principals_tool_call_id_fkey FOREIGN KEY (tool_call_id) REFERENCES public.mcp_tool_calls(tool_call_id) ON DELETE CASCADE;
-
-
---
--- Name: oidc_identities oidc_identities_anchor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.oidc_identities
-    ADD CONSTRAINT oidc_identities_anchor_id_fkey FOREIGN KEY (anchor_id) REFERENCES public.identity_anchors(anchor_id) ON DELETE RESTRICT;
-
-
---
--- Name: push_subscriptions push_subscriptions_operator_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.push_subscriptions
-    ADD CONSTRAINT push_subscriptions_operator_id_fkey FOREIGN KEY (operator_id) REFERENCES public.operators(operator_id) ON DELETE CASCADE;
-
-
---
--- Name: content_embeddings content_embeddings_content_sha_fkey; Type: FK CONSTRAINT; Schema: recall_index; Owner: -
---
-
-ALTER TABLE ONLY recall_index.content_embeddings
-    ADD CONSTRAINT content_embeddings_content_sha_fkey FOREIGN KEY (content_sha) REFERENCES recall_index.contents(content_sha);
-
-
---
--- Name: git_chunks git_chunks_content_sha_fkey; Type: FK CONSTRAINT; Schema: recall_index; Owner: -
---
-
-ALTER TABLE ONLY recall_index.git_chunks
-    ADD CONSTRAINT git_chunks_content_sha_fkey FOREIGN KEY (content_sha) REFERENCES recall_index.contents(content_sha);
-
-
---
--- Name: git_chunks git_chunks_index_id_fkey; Type: FK CONSTRAINT; Schema: recall_index; Owner: -
---
-
-ALTER TABLE ONLY recall_index.git_chunks
-    ADD CONSTRAINT git_chunks_index_id_fkey FOREIGN KEY (index_id) REFERENCES recall_index.indexes(index_id);
-
-
---
--- Name: git_sync_state git_sync_state_index_id_fkey; Type: FK CONSTRAINT; Schema: recall_index; Owner: -
---
-
-ALTER TABLE ONLY recall_index.git_sync_state
-    ADD CONSTRAINT git_sync_state_index_id_fkey FOREIGN KEY (index_id) REFERENCES recall_index.indexes(index_id);
-
-
---
--- Name: git_tip git_tip_index_id_fkey; Type: FK CONSTRAINT; Schema: recall_index; Owner: -
---
-
-ALTER TABLE ONLY recall_index.git_tip
-    ADD CONSTRAINT git_tip_index_id_fkey FOREIGN KEY (index_id) REFERENCES recall_index.indexes(index_id);
-
-
---
--- PostgreSQL database dump complete
---
-"""
+    """)

@@ -6,13 +6,15 @@ ID. Databases already at `0135` apply nothing. An older deployment must reach
 older database forward or reset it. Downgrade-to-base remains unsupported, as it
 was for the previous console baseline.
 
-The baseline directly creates the surviving tables, types, functions, triggers,
+The baseline uses explicit Alembic/SQLAlchemy definitions to create the surviving tables, types, functions, triggers,
 constraints and indexes, including their physical legacy names. It preserves the
 `haku-state` logical index registration, without resurrecting the removed chat
 registration. The `vector` extension remains an external provisioning prerequisite
 (CNPG in deployment, the fixture in tests), not a new superuser migration operation.
 
 ## Equivalence evidence
+
+Dumps are independent verification artifacts, not executable migration code.
 
 The original chain at `b78b07ffce` ran in disposable PostgreSQL CI:
 
