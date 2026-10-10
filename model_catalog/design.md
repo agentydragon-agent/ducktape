@@ -30,7 +30,10 @@ in force; listing a file does not authorize modifying, deleting or re-enabling i
 
 The operator requested a [routing-contract review](routing_review.md), including
 LiteLLM's transformations and possible alternatives, after finding catalogue-derived
-request defaults. The all-routes token-publication target below is **under reconsideration**,
+request defaults. This review precedes **further roster restructuring**, not just token-metadata work:
+the resulting architecture may remove configuration/projection responsibilities.
+Revise the roster implementation plan after the routing decision.
+The all-routes token-publication target below is **under reconsideration**,
 not the next implementation requirement. Existing overrides and runtime policy remain
 unchanged pending a decision. No router replacement or metadata removal is approved.
 The primary acceptance criterion is working clients on required protocols, with usable

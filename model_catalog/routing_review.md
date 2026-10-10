@@ -6,6 +6,21 @@ including alternative gateways. **No replacement, catalogue suppression, budget 
 route reactivation or runtime migration is approved by this document.** Existing
 configuration stays in place while its behavioral contract is evaluated.
 
+## Work ordering: routing decision before further roster implementation
+
+Operator direction, 2026-10-10: prioritize this review **before further roster
+restructuring**, not only before token-metadata expansion. The chosen routing design
+may eliminate LiteLLM configuration and projection responsibilities; do not simplify
+or generalize wiring we may no longer need. Keep existing behavior and record necessary
+maintenance separately rather than treating the remaining roster inventory as an
+implementation queue during this review.
+
+Sequence: agree the client/protocol/context acceptance matrix, map current behavior,
+evaluate where routing/translation/policy should live and compare options, then record
+a routing decision. Only then revise the roster design and resume implementation with
+the smaller set of responsibilities actually required. This is an investigation-first
+checkpoint, not approval to replace LiteLLM or build a new abstraction layer.
+
 ## Why reopen the design
 
 The [LiteLLM audit](litellm_metadata.md#catalogue-fallback-and-request-defaults-2026-10-10)

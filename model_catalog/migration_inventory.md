@@ -7,6 +7,15 @@ The [tracking issue](https://github.com/agentydragon/ducktape/issues/9574) owns 
 status and links to the historical parked-integration inventory in
 [#9121](https://github.com/agentydragon/ducktape/issues/9121).
 
+## Current sequencing checkpoint
+
+The [routing review](routing_review.md#work-ordering-routing-decision-before-further-roster-implementation)
+precedes further roster restructuring. This inventory remains a record of existing
+responsibilities and unfinished acceptance, not a queue to implement while the routing
+architecture is reconsidered. Reconcile dispositions after that decision; some LiteLLM
+configuration and projection wiring may no longer be needed. No runtime change follows
+from this checkpoint.
+
 ## Consumer inventory and side effects
 
 Before deletion or renaming, check these as well as the obvious clients:
