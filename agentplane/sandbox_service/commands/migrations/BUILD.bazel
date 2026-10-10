@@ -5,6 +5,9 @@ filegroup(
     srcs = [
         "env.py",
         "//agentplane/sandbox_service/commands/migrations/versions:0001_command_admission.py",
+        "//agentplane/sandbox_service/commands/migrations/versions:0002_runner_connection.py",
+        "//agentplane/sandbox_service/commands/migrations/versions:0003_submission_attempt.py",
+        "//agentplane/sandbox_service/commands/migrations/versions:0004_session.py",
     ],
     visibility = ["//agentplane/sandbox_service/commands:__pkg__"],
 )

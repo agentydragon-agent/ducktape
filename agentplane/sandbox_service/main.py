@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import socket
 from contextlib import suppress
 from typing import cast
 
@@ -12,7 +13,11 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from agentplane.runner_channel import protocol_pb2_grpc
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service.channel_delivery import ChannelDelivery
+from agentplane.sandbox_service.commands.connections import ConnectionStore
+from agentplane.sandbox_service.commands.dispatch import DispatchStore
 from agentplane.sandbox_service.commands.store import SubmissionStore
 from agentplane.sandbox_service.controller import SandboxController
 from agentplane.sandbox_service.destinations import DestinationResolver
@@ -22,15 +27,22 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.runner_channel import ChannelTiming, RunnerChannelService
 from agentplane.sandbox_service.session_history.ingestion import HistoryIngester
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_history.store import Store
+from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.settings import Settings
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
 # The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.
 # gazelle:include_dep @pypi//asyncpg
+# The channel servicer stub names its messages; mypy reads stubs only from direct deps.
+# gazelle:include_dep //agentplane/runner_channel:protocol_pb2
+# gazelle:include_dep @pypi//protobuf
+
+logger = logging.getLogger(__name__)
 
 
 async def serve(settings: Settings) -> None:
@@ -57,7 +69,7 @@ async def serve(settings: Settings) -> None:
 async def serve_with_engines(
     settings: Settings, configuration: k8s_client.Configuration, engine: AsyncEngine, commands_engine: AsyncEngine
 ) -> None:
-    session_changes = SessionChanges(engine.url)
+    session_changes = SessionChanges(commands_engine.url)
     async with k8s_client.ApiClient(configuration) as api, session_changes.listener.listen():
         core = k8s_client.CoreV1Api(api)
         inventory = SandboxInventory(
@@ -97,11 +109,24 @@ async def serve_with_engines(
             ),
         )
         history_store = Store(engine)
+        sessions = SessionRegistry(commands_engine, history_store)
+        imported = await sessions.import_history()
+        logger.info("Imported %d Sessions from the history database's registry", imported)
         submissions = SubmissionStore(commands_engine)
+        connections = ConnectionStore(commands_engine)
+        timing = ChannelTiming()
+        delivery = ChannelDelivery(
+            commands_engine.url,
+            dispatches=DispatchStore(commands_engine),
+            connections=connections,
+            liveness_s=timing.liveness_s,
+        )
         resources = Resources(
             principals=principals,
             history=history_store,
+            sessions=sessions,
             submissions=submissions,
+            delivery=delivery,
             session_changes=session_changes,
             destinations=DestinationResolver(inventory, core, settings.runner_port),
             admission_timeout_s=settings.admission_timeout_s,
@@ -113,45 +138,68 @@ async def serve_with_engines(
             runner_grpc_channel_options=settings.runner_grpc_channel_options,
             provisioning=provisioning,
         )
-        if settings.port == settings.health_port:
-            raise ValueError("gRPC and health ports must differ")
-        server = grpc.aio.server()
-        add_service(resources, server)
-        server.add_insecure_port(f"{settings.host}:{settings.port}")
-        await server.start()
-        health = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
-
-        @health.get("/healthz")
-        async def healthz() -> dict[str, str]:
-            return {"status": "ok"}
-
-        reconcile = asyncio.create_task(SandboxController(provisioning).run(), name="sandbox-provisioning")
-        history = (
-            asyncio.create_task(
-                HistoryIngester(
-                    history_store,
-                    submissions,
-                    resources.destinations,
-                    runner_grpc_channel_options=settings.runner_grpc_channel_options,
-                ).run(),
-                name="sandbox-session-history-ingestion",
+        async with delivery.listener.listen():
+            if len({settings.port, settings.health_port, settings.runner_channel_port}) != 3:
+                raise ValueError("gRPC, runner channel and health ports must differ")
+            server = grpc.aio.server()
+            add_service(resources, server)
+            server.add_insecure_port(f"{settings.host}:{settings.port}")
+            await server.start()
+            # A separate listener, so the network fence can admit runners to the channel and nothing else.
+            channel_server = grpc.aio.server()
+            protocol_pb2_grpc.add_RunnerChannelServicer_to_server(
+                RunnerChannelService(
+                    principals=WorkloadPrincipalResolver(
+                        authentication=k8s_client.AuthenticationV1Api(api),
+                        audience=settings.runner_channel_audience,
+                        allowed_service_account_namespaces={settings.sandbox_namespace},
+                    ),
+                    inventory=inventory,
+                    core=core,
+                    connections=connections,
+                    delivery=delivery,
+                    replica=socket.gethostname(),  # the Pod name
+                    timing=timing,
+                ),
+                channel_server,
             )
-            if settings.ingest_history
-            else None
-        )
-        try:
-            await uvicorn.Server(
-                uvicorn.Config(health, host=settings.host, port=settings.health_port, access_log=False)
-            ).serve()
-        finally:
-            await server.stop(grace=5)
-            reconcile.cancel()
-            with suppress(asyncio.CancelledError):
-                await reconcile
-            if history is not None:
-                history.cancel()
+            channel_server.add_insecure_port(f"{settings.host}:{settings.runner_channel_port}")
+            await channel_server.start()
+            health = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+
+            @health.get("/healthz")
+            async def healthz() -> dict[str, str]:
+                return {"status": "ok"}
+
+            reconcile = asyncio.create_task(SandboxController(provisioning).run(), name="sandbox-provisioning")
+            history = (
+                asyncio.create_task(
+                    HistoryIngester(
+                        history_store,
+                        sessions,
+                        submissions,
+                        resources.destinations,
+                        runner_grpc_channel_options=settings.runner_grpc_channel_options,
+                    ).run(),
+                    name="sandbox-session-history-ingestion",
+                )
+                if settings.ingest_history
+                else None
+            )
+            try:
+                await uvicorn.Server(
+                    uvicorn.Config(health, host=settings.host, port=settings.health_port, access_log=False)
+                ).serve()
+            finally:
+                await server.stop(grace=5)
+                await channel_server.stop(grace=5)
+                reconcile.cancel()
                 with suppress(asyncio.CancelledError):
-                    await history
+                    await reconcile
+                if history is not None:
+                    history.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await history
 
 
 def main() -> None:

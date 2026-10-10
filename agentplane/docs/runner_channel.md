@@ -1,8 +1,11 @@
 # Runner channel
 
-Status: **accepted design, not implemented.** Runners still serve the inbound `Attach` RPC
-([runner discovery](../plans/runner_discovery.md)); this is the contract the runner-initiated
-replacement implements. It covers command delivery, authentication, connection ownership and
+Status: **accepted design, partly implemented.** The Sandbox Service's side is built: the channel
+listener (`sandbox_service/runner_channel.py`) authenticates, fences and keeps connections alive,
+and delivers dispatch attempts (`sandbox_service/channel_delivery.py`) for Sandboxes routed to it.
+The runner's side is not built yet, so runners still serve the inbound `Attach` RPC
+([runner discovery](../plans/runner_discovery.md)). This is the contract the
+runner-initiated replacement implements. It covers command delivery, authentication, connection ownership and
 dispatch attempts. Event replay over the channel and the remaining lifecycle operations are added
 to it later as separate RPCs and do not change what is fixed here.
 
@@ -48,15 +51,15 @@ message Welcome {
   repeated string capabilities = 2;   // what the service will use on this connection
 }
 
+// The runner deduplicates on `command.command_id` within a session, so redelivery is safe.
 message DeliverCommand {
-  string attempt_id = 1;
-  string session_id = 2;
-  ducktape.agentplane.protocol.v1.Command command = 3;
+  string session_id = 1;
+  ducktape.agentplane.protocol.v1.Command command = 2;
 }
 
 message CommandReceipt {
-  string attempt_id = 1;
-  string session_id = 2;
+  string session_id = 1;
+  string command_id = 2;
   oneof outcome {
     // The runner journal's CommandAdmitted entry, with its cursor. Fresh or already journaled.
     ducktape.agentplane.protocol.v1.EventEntry admitted = 3;
@@ -96,7 +99,7 @@ message Heartbeat {}
   a submission is the [command admission](../plans/command_admission.md) contract's decision, not
   the channel's.
 - **Status codes.** The service ends a stream with a gRPC status naming the cause:
-  `UNAUTHENTICATED`, `PERMISSION_DENIED` (not a channel-routed Sandbox), `ABORTED` (superseded by a
+  `UNAUTHENTICATED`, `PERMISSION_DENIED` (not a Sandbox Pod of this service), `ABORTED` (superseded by a
   newer connection), `INVALID_ARGUMENT` (protocol error) or `UNAVAILABLE` (replica draining or the
   connection's maximum age). The runner logs the status and reconnects, except that
   `PERMISSION_DENIED` backs off to its maximum interval.
@@ -153,7 +156,7 @@ those recipients can replay a token they saw as a runner connection, and a chann
 call the Sandbox Service API.
 
 The rule that admits the channel host lives in its own egress policy, which the Sandbox Service
-binds to every channel-routed Sandbox at creation. It is not one of the launch-selectable
+binds to every Sandbox at creation. It is not one of the launch-selectable
 policies, so choosing a narrow egress set cannot cut a Sandbox off from its own control plane.
 
 When a `Connect` stream opens, the Sandbox Service authenticates the bearer with the shared
@@ -164,7 +167,6 @@ resolves the principal the way destination resolution does, in reverse:
 2. It has exactly one controller reference, a `Sandbox` of the agent-sandbox API, and that Sandbox
    is in the service's inventory with the same UID.
 3. The Sandbox runs as the token's ServiceAccount.
-4. The Sandbox is channel-routed (below).
 
 A VM environment's runner reaches the channel from its `virt-launcher` Pod's egress relay, and that
 Pod resolves to its environment through its own controller chain under the same rules.
@@ -174,8 +176,9 @@ to the Sandbox UID and Pod UID that resolution returned. A Sandbox being deleted
 accepted, because the runner must stay reachable while it seals its Sessions; a deleted Pod fails
 TokenReview.
 
-**Revocation.** Every RPC is authenticated when it opens. Each replica watches the Pods and Sandboxes behind the connections it holds, and
-ends a connection's streams when its Pod is deleted or replaced or its Sandbox's ServiceAccount changes. As a backstop for a
+**Revocation.** Every RPC is authenticated when it opens. With each liveness write (every 15 s) the
+owning replica resolves the connection's Pod and Sandbox again, and ends the connection's streams
+when its Pod is deleted or replaced or its Sandbox's ServiceAccount changes. As a backstop for a
 missed watch event, it ends every `Connect` stream after one hour; the runner reconnects and
 authenticates again.
 
@@ -189,30 +192,31 @@ that keeps the runner outside the agent's reach.
 
 ## Route selection
 
-Whether a Sandbox's runner is reached over the channel is fixed for that Sandbox, never inferred
-per request from whether a connection happens to exist. The SandboxTemplate declares the operations
-its runner image carries over the channel; the Sandbox Service copies that set onto the Sandbox
-as an annotation at creation, as it already copies the template's Pod shape (`agentplane.allegedly.works/runner-channel`, for example
-`commands`), so editing a template does not move existing Sandboxes. The set grows on an existing
-Sandbox only by explicit operator action, one operation at a time.
+The runner says which operations it carries over the channel in `Hello`, and `Welcome` agrees the
+ones the service also supports. The Sandbox Service records every operation any connection of the
+Sandbox has agreed, and the set only grows: once an operation has been agreed, that Sandbox's
+operation is channel-routed for good, whether or not a connection exists right now. Routing is
+never inferred per request from whether a connection happens to be live.
 
 For a channel-routed operation with no current connection, the service reports the destination
 unavailable. It never falls back to `Attach`, and the inbound route never takes over a command
-whose channel delivery was ambiguous. Operations not in the set keep their inbound route, so a
-Sandbox can carry commands over the channel while its events are still read through `Attach`.
+whose channel delivery was ambiguous. Operations no connection has agreed keep their inbound route,
+so a Sandbox can carry commands over the channel while its events are still read through `Attach`,
+and an old runner that never dials out keeps working unchanged.
 
 ## Connection ownership and fencing
 
 The Sandbox Service keeps one row per Sandbox in its own database:
 
-| column             | meaning                                            |
-| ------------------ | -------------------------------------------------- |
-| `sandbox_uid`      | primary key                                        |
-| `pod_uid`          | the Pod the current connection authenticated as    |
-| `connection_epoch` | increases by one for every accepted connection     |
-| `owner_replica`    | the service replica holding the current connection |
-| `runner_boot_id`   | from `Hello`                                       |
-| `last_seen_at`     | last frame received, written at most every 15 s    |
+| column             | meaning                                             |
+| ------------------ | --------------------------------------------------- |
+| `sandbox_uid`      | primary key                                         |
+| `pod_uid`          | the Pod the current connection authenticated as     |
+| `connection_epoch` | increases by one for every accepted connection      |
+| `owner_replica`    | the service replica holding the current connection  |
+| `runner_boot_id`   | from `Hello`                                        |
+| `last_seen_at`     | last frame received, written at most every 15 s     |
+| `operations`       | every operation a connection has agreed; grows only |
 
 Accepting a connection increments the epoch and sets the owner in one transaction, commits, then
 sends `Welcome` with the new epoch. The previous owner, if it still holds a stream, sees its epoch
@@ -229,37 +233,42 @@ harness nor proves that anything failed.
 ## Dispatch attempts
 
 A retained `pending_admission` submission is not permission to deliver it later. Delivery always
-belongs to one bounded **attempt**:
+belongs to the submission's bounded **attempt**, kept as columns on the submission row.
+`DeliverCommand` and its receipt name the command by the runner's Session ID and the command's own
+ID, which the runner already deduplicates on; no separate attempt ID exists.
 
-| column       | meaning                                                         |
-| ------------ | --------------------------------------------------------------- |
-| `attempt_id` | primary key, sent in `DeliverCommand` and echoed in the receipt |
-| submission   | the admission record (Session destination and `command_id`)     |
-| `deadline`   | the submitting RPC's deadline, capped at 60 s                   |
-| `sent_epoch` | connection epoch it was last sent on, or none                   |
-| outcome      | admitted, refused, or none                                      |
+| column       | meaning                                                                 |
+| ------------ | ----------------------------------------------------------------------- |
+| destination  | the Sandbox UID and the runner's Session ID; unique with the command ID |
+| `deadline`   | the latest submitting RPC's deadline, capped at 60 s                    |
+| `sent_epoch` | connection epoch it was last sent on, or none                           |
+| `refusal`    | the runner's refusal, or none; admission is the submission's own record |
 
-1. The replica serving the submit RPC persists the submission and an attempt, commits, then sends
-   `NOTIFY runner_dispatch` with the Sandbox UID and attempt ID.
+1. The replica serving the submit RPC persists the submission and opens its attempt, commits, then
+   sends `NOTIFY runner_dispatch` with the Sandbox UID, Session ID and command ID.
 2. Every replica listens on that channel. The one owning the Sandbox's current epoch claims the
    attempt with a conditional update that succeeds only before the deadline and when `sent_epoch`
    is none or older than its epoch, and sends `DeliverCommand` after that commits. An attempt is
    therefore sent at most once per connection epoch and never after its deadline. No transaction or
    row lock is held across the send.
-3. On a receipt the owner records the outcome on the submission and the attempt in one
-   transaction (positive admission evidence never regresses), commits, then sends
-   `NOTIFY command_outcome` with the attempt ID.
+3. On a receipt the owner records the outcome on the submission in one transaction (positive
+   admission evidence never regresses), commits, then sends
+   `NOTIFY command_outcome` with the Session ID and command ID.
 4. The waiting RPC listens on `command_outcome` before its first state check, then re-reads
    committed state on each notification and every 2 s. While its attempt is open it repeats the
    `runner_dispatch` notification on each check, which also covers a missed notification and an
    owner that changed mid-attempt: the new owner's epoch is newer than `sent_epoch`, so it may send
    again, and the runner answers a duplicate with the existing receipt.
 
-At the deadline the RPC returns without an outcome and the submission stays `pending_admission`.
-An expired attempt is never sent again, but a send already underway cannot be retracted, so a late
-receipt is still recorded on the submission. A caller retry with the same command creates a new
-attempt. Reconnecting never scans pending submissions for delivery, so a stale interrupt or stop
-command is never fired at a reconnecting runner.
+At the deadline the RPC returns without an outcome and the submission stays `pending_admission`. An
+expired attempt is not sent again unless a retry reopens it, but a send already underway cannot be
+retracted, so a late receipt is still recorded on the submission. A caller retry with the same
+command reopens the same attempt: while it is still open to the same Sandbox
+the retry only extends the deadline; after a refusal or the deadline it starts afresh, with no
+refusal and no `sent_epoch`, so it may be sent again on the current connection. A refusal sent
+before the reopen ends the reopened wait too; the submission stays pending either way. Only the
+latest refusal is kept. Reconnecting never scans pending submissions for delivery, so a stale
+interrupt or stop command is never fired at a reconnecting runner.
 
 Each `Connect` stream carries at most 64 undelivered-receipt attempts; past that, a claim fails and the
 attempt waits for its next re-notification.

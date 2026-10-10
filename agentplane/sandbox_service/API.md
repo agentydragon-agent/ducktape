@@ -144,7 +144,12 @@ readable but are not polled until their binding is established by a verified han
   reply or from history ingestion; a different command or caller under the same ID is `ALREADY_EXISTS`.
   The service picks the replay cursor itself and ignores `follow`. For a legacy caller-chosen runner ID
   nothing is recorded: specify a native `Follow` cursor before the possible admission when reconciling
-  an uncertain submission.
+  an uncertain submission. Once a Sandbox's runner has agreed `commands` on the
+  [runner channel](../docs/runner_channel.md), the Sandbox receives its commands only over it,
+  through the submission's dispatch attempt. Such a Sandbox takes public Session IDs only, and with no
+  live runner connection the call is `UNAVAILABLE` rather than relayed. A runner refusal returns
+  `FAILED_PRECONDITION` (`ALREADY_EXISTS` for a conflicting command, `INVALID_ARGUMENT` for an
+  invalid one) and leaves the submission pending; an exact retry reopens the attempt.
 
 Read/follow/command RPCs never provision, resume, or wake a Sandbox or harness.
 
@@ -271,6 +276,11 @@ still uses the short request timeout. Renewal repeats TokenReview and destinatio
 is not in-stream reauthentication or a lease derived from the token's exact expiry. The app's
 30-second database ingestion-ownership lease is independently renewed without closing follows.
 Runner RPC authentication/TLS remains a separate TODO.
+
+`runner_channel_port` (default 8082) is a separate gRPC listener serving only the
+[runner channel](../docs/runner_channel.md), so a Sandbox's network fence can admit it alone. It
+accepts Pod tokens for `runner_channel_audience` (default `agentplane-runner-channel`), and
+`commands_database_url` holds its connection rows next to command admission.
 
 Deployment must grant the service the appropriate Kubernetes/TokenReview/provisioning permissions,
 project an audience-correct token for app-to-service calls, and enforce sole normal production access
