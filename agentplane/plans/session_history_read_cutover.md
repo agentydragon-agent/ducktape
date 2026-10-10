@@ -210,25 +210,28 @@ Execution order:
 The staging-switch PR must include generator-produced manifest output. A source-only
 preparation draft is not ready for merge or a claim that live flags changed.
 
-## Runtime cleanup rollout hold
+## Runtime cleanup acceptance
 
-Migration agent status, 2026-10-09 22:50 PDT: staging's 55 retained Sessions have
-handoff receipts and checkpoint coverage. The flags and import Jobs are retired;
-this is not permission to delete retained tables, records, or runner storage.
+Migration agent evidence, 2026-10-09 (PDT): staging's 55 retained Sessions have
+handoff receipts and checkpoint coverage. The flags and import Jobs are retired.
+Testing subsequently completed the same handoff: 142 matching app/service histories,
+142 fences, 142 preserved summaries and zero nonempty projections behind their final
+raw cursor. Indexed watermarks showed service coverage of every retained prefix;
+recent app logs showed no projection-stalled or reconciliation errors.
 
-Prepare runtime code deletion in separate review units: mandatory service-backed
-archive readers (#9659), then removal of the app runner-copy loop. Retained-schema
-regression setup moves to test-only helpers, not another production fallback.
-The service projection coordinator remains lease-fenced and discovers new Sessions.
+The operator accepted new-session/live-use behavior after creating the staging
+`haku` Session (`31d54d02-d197-4fc7-b9be-37b4a177ec2d`). Read-only checks found service
+and app projection cursors both at 42,086, app raw cursor zero, a zero-origin fence,
+and active projection state with no feed error. This is staging live-use evidence,
+not a claim of a new testing Sandbox acceptance run. Together with testing's retained
+handoff and the operator's acceptance, it releases the runner-copy deletion hold.
 
-**Do not merge the runner-copy deletion until testing is handed off.** Its last
-preflight found 142 matching app/service histories with service watermark coverage
-but zero app fences. Without handoff, deleting Follow would leave their UI projections
-stale. Use indexed inventories/checkpoints and the existing transactional handoff,
-then bounded new-session, live-update and retained-history checks in testing. Do not
-repeat a full-history verification scan or treat staging's six empty histories as
-blockers. CI must cover the production coordinator, including the absence of raw
-Follow for unfenced records, and retained-schema regression fixtures.
+Runtime cleanup remains split into mandatory service-backed archive readers (#9659)
+and removal of the app runner-copy loop (#9660). Retained-schema regression setup
+moves to test-only helpers, not another production fallback. The service projection
+coordinator remains lease-fenced and discovers new Sessions. Review, CI on the current
+heads and post-merge rollout checks remain required; passing tests are not rollout.
 
-Further removal of raw writers, old feed-state fallbacks and table models remains
-separate work; these drafts neither drop data nor claim complete raw-table retirement.
+No full-history verification scan was repeated. No retained records, tables or runner
+storage were deleted. Further removal of raw writers, old feed-state fallbacks and
+table models remains separate work; these PRs do not claim complete raw-table retirement.
