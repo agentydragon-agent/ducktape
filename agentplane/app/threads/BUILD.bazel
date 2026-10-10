@@ -8,7 +8,6 @@ py_library(
     deps = [
         "//agentplane/app:database",
         "//agentplane/runner:harness",
-        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )
