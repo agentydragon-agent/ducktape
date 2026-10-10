@@ -14,6 +14,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.live import LiveIndex
+from agentplane.app.testing import legacy_ingestion
 from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
 from agentplane.app.testing.legacy_ingestion import Feed, LegacyIngester as Ingester, LegacyIngestion as Ingestion
 from agentplane.app.threads import ingestion as ingestion_module
@@ -155,7 +156,8 @@ async def test_reconnect_diagnostics(
     warns: bool,
 ) -> None:
     monkeypatch.setattr(ingestion_module, "RECONCILE_S", 0.01)
-    monkeypatch.setattr(ingestion_module, "RECONNECT_WARNING_S", 0.025)
+    monkeypatch.setattr(legacy_ingestion, "RECONNECT_WARNING_S", 0.025)
+    monkeypatch.setattr(legacy_ingestion, "RECONCILE_S", 0.01)
     attempts = 0
 
     async def copy(feed: Feed) -> None:
