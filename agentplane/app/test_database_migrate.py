@@ -45,6 +45,32 @@ def test_a_second_run_over_a_migrated_database_changes_nothing(db_url: str) -> N
     RUNNER.apply(db_url)
 
 
+def test_projection_lease_rename_preserves_fencing_state(db_url: str) -> None:
+    engine = create_engine(RUNNER.sync_url(db_url))
+    token = uuid.uuid4()
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE sandbox_projection_lease RENAME TO sandbox_ingestion"))
+            connection.execute(text("UPDATE alembic_version_app SET version_num = '0021_projected_feed_state'"))
+            connection.execute(
+                text(
+                    "INSERT INTO sandbox_ingestion (sandbox, token, expires_at) "
+                    "VALUES ('retained-sandbox', :token, '2030-01-01T00:00:00Z')"
+                ),
+                {"token": token},
+            )
+        RUNNER.apply(db_url)
+        RUNNER.apply(db_url)
+        with engine.connect() as connection:
+            assert not inspect(connection).has_table("sandbox_ingestion")
+            row = connection.execute(text("SELECT sandbox, token, expires_at FROM sandbox_projection_lease")).one()
+            assert row.sandbox == "retained-sandbox"
+            assert row.token == token
+            assert row.expires_at.isoformat() == "2030-01-01T00:00:00+00:00"
+    finally:
+        engine.dispose()
+
+
 def test_tables_the_history_does_not_own_are_not_drift(db_url: str) -> None:
     """Histories can share a database, each with a version table of its own."""
     _execute(db_url, "CREATE TABLE another_history_test_table (id integer PRIMARY KEY)")

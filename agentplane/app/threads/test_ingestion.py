@@ -43,7 +43,7 @@ async def test_fence_rechecks_expiry_after_waiting_for_the_lease_row(
                     waiting = await connection.scalar(
                         text(
                             "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() "
-                            "AND wait_event_type = 'Lock' AND query LIKE 'SELECT sandbox_ingestion.%'"
+                            "AND wait_event_type = 'Lock' AND query LIKE 'SELECT sandbox_projection_lease.%'"
                         )
                     )
                     if waiting:

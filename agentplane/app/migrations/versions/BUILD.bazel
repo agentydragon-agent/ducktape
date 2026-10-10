@@ -194,3 +194,9 @@ py_library(
     srcs = ["0021_projected_feed_state.py"],
     deps = ["@pypi//alembic"],
 )
+
+py_library(
+    name = "0022_projection_lease_name",
+    srcs = ["0022_projection_lease_name.py"],
+    deps = ["@pypi//alembic"],
+)

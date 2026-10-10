@@ -102,9 +102,7 @@ class Event(Base):
 class SandboxProjectionLease(Base):
     """Replica ownership of app projection work, not service archive ingestion."""
 
-    # TODO(session-schema-cleanup): Rename the physical table in the explicit schema
-    # cleanup. Keep its current name here until that migration; existing leases stay valid.
-    __tablename__ = "sandbox_ingestion"
+    __tablename__ = "sandbox_projection_lease"
 
     sandbox: Mapped[str] = mapped_column(Text, primary_key=True)
     token: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True))
