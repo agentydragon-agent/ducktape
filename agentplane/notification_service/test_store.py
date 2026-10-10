@@ -25,6 +25,7 @@ from agentplane.notification_service.models import (
     Subscribe,
     SubscriptionUpdate,
 )
+from agentplane.notification_service.settings import QuotaSettings
 from agentplane.notification_service.store import ClaimLostError, ConflictError, NotFoundError, QuotaError, Store
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.subjects import ServiceAccountRef
@@ -49,12 +50,14 @@ def events(count: int = 3) -> list[ActionEventView]:
 
 
 @pytest.mark.parametrize("inactive", ["cancelled", "expired"])
-async def test_only_active_subscriptions_consume_inbox_quota(store: Store, inactive: str) -> None:
+@pytest.mark.parametrize("limit", [2, 64])
+async def test_only_active_subscriptions_consume_inbox_quota(engine: AsyncEngine, inactive: str, limit: int) -> None:
+    store = Store(engine, quotas=QuotaSettings(active_subscriptions_per_inbox=limit))
     subscriptions = [
-        await store.subscribe(PRINCIPAL, BODY.model_copy(update={"idempotency_key": f"slot-{i}"})) for i in range(64)
+        await store.subscribe(PRINCIPAL, BODY.model_copy(update={"idempotency_key": f"slot-{i}"})) for i in range(limit)
     ]
     extra = BODY.model_copy(update={"idempotency_key": "extra"})
-    with pytest.raises(QuotaError, match="64 active subscriptions"):
+    with pytest.raises(QuotaError, match=f"{limit} active subscriptions"):
         await store.subscribe(PRINCIPAL, extra)
     # Idempotent replay and active renewal do not need another slot.
     first_body = BODY.model_copy(update={"idempotency_key": "slot-0"})
@@ -97,7 +100,7 @@ async def test_only_active_subscriptions_consume_inbox_quota(store: Store, inact
             await session.scalar(
                 select(func.count()).select_from(Subscription).where(Subscription.inbox_id == renewed.inbox_id)
             )
-            == 65
+            == limit + 1
         )
 
 
@@ -132,6 +135,27 @@ async def test_creation_and_expired_renewal_share_the_last_active_slot(store: St
             )
             == 64
         )
+
+
+async def test_configured_inbox_and_entry_quotas(engine: AsyncEngine) -> None:
+    limited = Store(engine, quotas=QuotaSettings(inboxes_per_account=1, entries_per_inbox=2))
+    subscription = await limited.subscribe(PRINCIPAL, BODY)
+    with pytest.raises(QuotaError, match="1 inboxes"):
+        await limited.subscribe(PRINCIPAL, BODY.model_copy(update={"session_id": "second"}))
+    # Another account has its own capacity, even under the same configuration.
+    other = WorkloadPrincipal("test", "other", "system:serviceaccount:test:other", "pod", "pod-uid")
+    claim = await limited.claim()
+    assert claim is not None
+    source = await limited.source(claim)
+    assert source is not None
+    await limited.record(claim, source, events(2))
+    await limited.record(claim, source, events(2))  # replay needs no capacity
+    with pytest.raises(QuotaError, match="2-entry lifetime limit"):
+        await limited.record(claim, source, events(3))
+    page = await limited.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
+    assert page.inbox.last_cursor == 2
+    assert len(page.entries) == 2
+    await limited.subscribe(other, BODY)
 
 
 async def test_owner_idempotence_cancel_and_version(store: Store) -> None:
