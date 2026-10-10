@@ -1,8 +1,9 @@
-"""Capture the final console schema for a same-head Alembic squash.
+"""Compare the squashed console baseline with the original chain's final schema.
 
 This only uses the isolated pgvector testcontainer; it never reads a deployed DB.
 """
 
+import hashlib
 import re
 
 import pytest_bazel
@@ -29,6 +30,14 @@ def test_schema_baseline(postgres_container: PostgresContainer, db_url: str) -> 
     assert database is not None
     before = _schema(postgres_container, database)
     (undeclared_outputs_dir() / "haku_console_schema.sql").write_text(before)
+    # Original-chain CI capture; keep exact names, function bodies, policies and ACLs.
+    canonical = "\n".join(
+        line.rstrip() for line in before.splitlines() if line.strip() and not line.startswith(("--", "\\"))
+    )
+    assert (
+        hashlib.sha256(canonical.encode()).hexdigest()
+        == "d0590497f09e653f26f44871c3b792a375cb58afd600cad772cba7d4947b1eca"
+    )
     engine = create_engine(sync_database_url(db_url))
     try:
         with engine.connect() as conn:
@@ -37,6 +46,10 @@ def test_schema_baseline(postgres_container: PostgresContainer, db_url: str) -> 
                 text("SELECT oid, relname FROM pg_class WHERE relnamespace = 'public'::regnamespace ORDER BY oid")
             ).all()
         assert revision == "0135"
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT index_id, index_type FROM recall_index.indexes")).all() == [
+                ("haku-state", "git")
+            ]
         apply_migrations(db_url)
         assert _schema(postgres_container, database) == before
         with engine.connect() as conn:

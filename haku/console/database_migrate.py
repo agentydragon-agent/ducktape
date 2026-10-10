@@ -17,8 +17,6 @@ from haku.console.database_schema import metadata
 # SQLAlchemy loads the psycopg dialect at runtime via the `postgresql+psycopg://`
 # URL scheme; nothing imports it directly, so Gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//psycopg
-# Alembic imports migration modules dynamically, including their frozen schema types.
-# gazelle:include_dep //haku/recall_index:schema
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
