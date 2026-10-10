@@ -551,11 +551,11 @@ data:
     allowed_service_account_namespaces:
       - agentplane-testing
     log_llm_requests: false
-    model_context_windows:
+    models:
       - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-        context_window_tokens: 131072
+        total_context_budget_tokens: 131072
       - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-        context_window_tokens: 262144
+        total_context_budget_tokens: 262144
 immutable: false
 ---
 apiVersion: apps/v1
