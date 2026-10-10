@@ -16,7 +16,7 @@ from agentplane.app.testing.history import ProjectedHistory as Ingestion, Seeded
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 
@@ -170,7 +170,7 @@ def _bodies(*references: dict[str, Any]) -> dict[str, object]:
 
 
 async def _cross_replica_sync(
-    service: ElectricService, ingestion: Ingestion, source: ReplicationSource, thread: UUID, lease: IngestionLease
+    service: ElectricService, ingestion: Ingestion, source: ReplicationSource, thread: UUID, lease: ProjectionLease
 ) -> None:
     async with (
         asyncio.timeout(60),
@@ -239,7 +239,7 @@ async def _command_outcome(
     ingestion: Ingestion,
     source: ReplicationSource,
     thread: UUID,
-    lease: IngestionLease,
+    lease: ProjectionLease,
 ) -> None:
     entities = await _open(client_one, f"{path}/entities", epoch)
     selected = {
@@ -293,7 +293,7 @@ async def _history_window(
     ingestion: Ingestion,
     source: ReplicationSource,
     thread: UUID,
-    lease: IngestionLease,
+    lease: ProjectionLease,
 ) -> None:
     start = len(source.entries)
     for index in range(95):

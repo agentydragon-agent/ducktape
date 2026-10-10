@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.models import ThreadEntity
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -36,7 +36,7 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     content: ContentStore,
     ingestion: Ingestion,
     engine: AsyncEngine,
-    lease: IngestionLease,
+    lease: ProjectionLease,
     history_size: int,
     materialized_item_count: int,
     request: pytest.FixtureRequest,

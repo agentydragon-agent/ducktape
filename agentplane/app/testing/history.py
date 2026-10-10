@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.history_projector import HistoryProjector
 from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.models import EventLog, ThreadHistorySummary
@@ -80,14 +80,14 @@ class ProjectedHistory(Ingestion):
         self.projector = HistoryProjector(engine, history_reader)
         self._attachments: dict[UUID, runner_pb2.Attached] = {}
 
-    async def project(self, thread_id: UUID, lease: IngestionLease) -> None:
+    async def project(self, thread_id: UUID, lease: ProjectionLease) -> None:
         while True:
             progress = await self.projector.project_batch(thread_id, lease=lease)
             if progress.through_cursor >= progress.service_cursor:
                 return
 
     async def record(
-        self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: IngestionLease
+        self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: ProjectionLease
     ) -> None:
         self.peer.publish(thread_id, entries)
         history = self.peer.histories[str(thread_id)]
@@ -98,7 +98,7 @@ class ProjectedHistory(Ingestion):
             del self._attachments[thread_id]
         await self.project(thread_id, lease)
 
-    async def set_attached(self, thread_id: UUID, attached: runner_pb2.Attached, *, lease: IngestionLease) -> None:
+    async def set_attached(self, thread_id: UUID, attached: runner_pb2.Attached, *, lease: ProjectionLease) -> None:
         snapshot = runner_pb2.Attached()
         snapshot.CopyFrom(attached)
         async with self._sessions() as session:
@@ -116,7 +116,7 @@ class ProjectedHistory(Ingestion):
         await self.project(thread_id, lease)
 
     async def end_feed(
-        self, thread_id: UUID, *, lease: IngestionLease, error: str | None, error_cursor: int | None = None
+        self, thread_id: UUID, *, lease: ProjectionLease, error: str | None, error_cursor: int | None = None
     ) -> None:
         if error is not None:
             # Explicit projected failure state for UI tests, not a fake archive failure.

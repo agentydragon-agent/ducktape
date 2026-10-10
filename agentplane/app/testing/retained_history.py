@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.ingestion import Ingestion
 from agentplane.app.threads.model_activity import record_model_activity
 from agentplane.app.threads.models import Event, EventLog, FeedState
@@ -81,7 +81,7 @@ class RetainedRows(Ingestion):
     """Insert explicit historical rows, without replay/validation/reconnect behavior."""
 
     async def record(
-        self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: IngestionLease
+        self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: ProjectionLease
     ) -> None:
         async with self._sessions.begin() as session:
             session.add_all(
@@ -100,11 +100,11 @@ class RetainedRows(Ingestion):
                 await record_thread_fold(session, thread_id, entries[0].origin.source_id, entries)
                 await record_model_activity(session, thread_id, entries)
 
-    async def set_attached(self, thread_id: UUID, attached: protocol_pb2.Attached, *, lease: IngestionLease) -> None:
+    async def set_attached(self, thread_id: UUID, attached: protocol_pb2.Attached, *, lease: ProjectionLease) -> None:
         async with self._sessions.begin() as session:
             session.add(FeedState(thread_id=thread_id, attached=MessageToDict(attached)))
 
-    async def end_feed(self, thread_id: UUID, *, lease: IngestionLease, error: str | None) -> None:
+    async def end_feed(self, thread_id: UUID, *, lease: ProjectionLease, error: str | None) -> None:
         async with self._sessions.begin() as session:
             state = await session.get(FeedState, thread_id)
             assert state is not None

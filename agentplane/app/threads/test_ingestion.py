@@ -10,9 +10,9 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from agentplane.app.testing.retained_history import seed_retained_session
-from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError, fence
+from agentplane.app.threads.events.projection_lease import ProjectionLease, ProjectionLeaseLostError, fence
 from agentplane.app.threads.ingestion import Ingestion
-from agentplane.app.threads.models import SandboxIngestion
+from agentplane.app.threads.models import SandboxProjectionLease
 
 
 @pytest.fixture
@@ -20,13 +20,13 @@ def ingestion(engine: AsyncEngine) -> Ingestion:
     return Ingestion(engine)
 
 
-async def check_fence(engine: AsyncEngine, lease: IngestionLease, thread: UUID) -> None:
+async def check_fence(engine: AsyncEngine, lease: ProjectionLease, thread: UUID) -> None:
     async with async_sessionmaker(engine).begin() as session:
         await fence(session, lease, thread)
 
 
 async def test_fence_rechecks_expiry_after_waiting_for_the_lease_row(
-    engine: AsyncEngine, lease: IngestionLease, db_url: str
+    engine: AsyncEngine, lease: ProjectionLease, db_url: str
 ) -> None:
     thread = await seed_retained_session(engine)
     engine = create_async_engine(db_url)
@@ -34,7 +34,7 @@ async def test_fence_rechecks_expiry_after_waiting_for_the_lease_row(
     try:
         async with engine.begin() as connection:
             await connection.execute(
-                select(SandboxIngestion).where(SandboxIngestion.sandbox == lease.sandbox).with_for_update()
+                select(SandboxProjectionLease).where(SandboxProjectionLease.sandbox == lease.sandbox).with_for_update()
             )
             write = asyncio.create_task(check_fence(engine, lease, thread))
             async with asyncio.timeout(5):
@@ -51,11 +51,11 @@ async def test_fence_rechecks_expiry_after_waiting_for_the_lease_row(
             # Expire after record's transaction began. Transaction-start now() would accept the
             # write; clock_timestamp() checked after the lock must reject it.
             await connection.execute(
-                update(SandboxIngestion)
-                .where(SandboxIngestion.sandbox == lease.sandbox)
+                update(SandboxProjectionLease)
+                .where(SandboxProjectionLease.sandbox == lease.sandbox)
                 .values(expires_at=func.clock_timestamp())
             )
-        with pytest.raises(IngestionLeaseLostError):
+        with pytest.raises(ProjectionLeaseLostError):
             await write
     finally:
         if write is not None and not write.done():
@@ -72,7 +72,7 @@ async def test_concurrent_replicas_choose_one_owner(engine: AsyncEngine) -> None
 
 
 async def test_only_current_lease_can_fence_or_renew(
-    engine: AsyncEngine, ingestion: Ingestion, lease: IngestionLease
+    engine: AsyncEngine, ingestion: Ingestion, lease: ProjectionLease
 ) -> None:
     thread = await seed_retained_session(engine)
     replica = Ingestion(engine)
@@ -80,8 +80,8 @@ async def test_only_current_lease_can_fence_or_renew(
     assert await ingestion.renew(lease, timedelta(minutes=2))
     async with engine.begin() as connection:
         await connection.execute(
-            update(SandboxIngestion)
-            .where(SandboxIngestion.sandbox == "sb-1")
+            update(SandboxProjectionLease)
+            .where(SandboxProjectionLease.sandbox == "sb-1")
             .values(expires_at=func.clock_timestamp() - timedelta(seconds=1))
         )
     assert not await ingestion.renew(lease, timedelta(minutes=1))
@@ -90,11 +90,11 @@ async def test_only_current_lease_can_fence_or_renew(
     assert successor.token != lease.token
     await ingestion.release(lease)
     assert await replica.renew(successor, timedelta(minutes=1))
-    with pytest.raises(IngestionLeaseLostError):
+    with pytest.raises(ProjectionLeaseLostError):
         await check_fence(engine, lease, thread)
     await check_fence(engine, successor, thread)
     other = await seed_retained_session(engine, sandbox="sb-2")
-    with pytest.raises(IngestionLeaseLostError):
+    with pytest.raises(ProjectionLeaseLostError):
         await check_fence(engine, successor, other)
     await replica.release(successor)
     assert await ingestion.acquire("sb-1", timedelta(minutes=1)) is not None

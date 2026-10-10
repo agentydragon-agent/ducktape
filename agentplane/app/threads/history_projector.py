@@ -15,9 +15,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.database_updates import Channel, notify
-from agentplane.app.threads.events import ingestion_lease
+from agentplane.app.threads.events import projection_lease
 from agentplane.app.threads.events.event_log import EventReplicationError
-from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
+from agentplane.app.threads.events.projection_lease import ProjectionLease, ProjectionLeaseLostError
 from agentplane.app.threads.model_activity import record_model_activity
 from agentplane.app.threads.models import EventLog, ThreadCheckpoint, ThreadHistorySummary
 from agentplane.app.threads.projected_lifecycle import project_lifecycle
@@ -42,7 +42,7 @@ class HistoryProjector:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._reader = reader
 
-    async def project_batch(self, thread_id: UUID, *, lease: IngestionLease) -> ProjectionProgress:
+    async def project_batch(self, thread_id: UUID, *, lease: ProjectionLease) -> ProjectionProgress:
         """Resume from the UI checkpoint; a failed fold leaves that checkpoint unchanged."""
         async with self._sessions() as session:
             after = (
@@ -61,13 +61,13 @@ class HistoryProjector:
         except (ConnectionError, TimeoutError, grpc.RpcError, ValueError) as error:
             try:
                 await self._record_failure(thread_id, lease=lease, after=after, error=error)
-            except IngestionLeaseLostError, SQLAlchemyError:
+            except ProjectionLeaseLostError, SQLAlchemyError:
                 logger.warning("could not retain projection failure for %s", thread_id, exc_info=True)
             raise
 
-    async def _record_failure(self, thread_id: UUID, *, lease: IngestionLease, after: int, error: Exception) -> None:
+    async def _record_failure(self, thread_id: UUID, *, lease: ProjectionLease, after: int, error: Exception) -> None:
         async with self._sessions.begin() as session:
-            await ingestion_lease.fence(session, lease, thread_id)
+            await projection_lease.fence(session, lease, thread_id)
             checkpoint = await session.get(ThreadCheckpoint, thread_id, with_for_update=True)
             if checkpoint is None or checkpoint.through_cursor != after:
                 return  # no materialized view, or a newer batch already recovered
@@ -82,7 +82,7 @@ class HistoryProjector:
             await notify(session, Channel.THREADS)
 
     async def _project_prefix(
-        self, thread_id: UUID, *, lease: IngestionLease, after: int, barrier: int
+        self, thread_id: UUID, *, lease: ProjectionLease, after: int, barrier: int
     ) -> ProjectionProgress:
         page = await self._reader.read_session_events(str(thread_id), after_cursor=after, limit=128)
         if page.last_cursor < max(after, barrier):
@@ -100,7 +100,7 @@ class HistoryProjector:
         async with self._sessions.begin() as session:
             # Serializes with other writes under this sandbox lease, including a
             # delayed batch from an old owner. Do not hold the fence over the RPC.
-            await ingestion_lease.fence(session, lease, thread_id)
+            await projection_lease.fence(session, lease, thread_id)
             persisted_barrier = await session.scalar(
                 select(EventLog.raw_ingestion_fenced_at_cursor).where(EventLog.id == thread_id).with_for_update()
             )

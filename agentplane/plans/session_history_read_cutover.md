@@ -273,8 +273,10 @@ runner storage; use bounded checks, not another full-history scan.
 - Drop retained app `event` and `feed_state` tables and their ORM classes only after
   deployment verification shows no runtime dependencies and handoff tooling is retired.
   Make retained-data deletion explicit in that PR rather than incidental to a rename.
-- Rename `SandboxIngestion` / `sandbox_ingestion` and lease-facing terminology to
-  describe app projection coordination. Keep its lease token and expiry semantics.
+- Rename the physical `sandbox_ingestion` table in the schema cleanup. The Python
+  API is now `SandboxProjectionLease` / `ProjectionLease` / `projection_lease`; it
+  coordinates app projection work, not archive ingestion. The naming cleanup keeps
+  the physical table, lease tokens, expiry and fencing semantics unchanged.
 - Audit app `sandbox`, `harness`, `model` and `cwd` fields: distinguish necessary UI
   projections from redundant launch/routing metadata. They are not all proven dead.
   Session identity, runner bindings and frozen launch configuration remain service-owned;
