@@ -11,12 +11,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
+from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
 from agentplane.app.threads.events.event_log import EventReplicationError, FeedEnd
 from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.threads.history_handoff import fence_raw_ingestion
 from agentplane.app.threads.history_projector import HistoryProjector
-from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.models import Event, EventLog, FeedState, ThreadCheckpoint, ThreadEntity
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
@@ -415,6 +416,34 @@ async def test_discovery_of_new_service_thread_never_starts_legacy_follow(
         await coordinator.reconcile()
         reader.read_session_events.assert_awaited_once_with(str(public_id), after_cursor=0, limit=128)
         client.follow.assert_not_called()
+    finally:
+        await coordinator.close()
+
+
+async def test_supervisor_never_restarts_raw_follow_for_unfenced_thread(
+    engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion
+) -> None:
+    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    reader = AsyncMock(spec=SandboxServiceClient)
+    client = AsyncMock()
+    client.list_sessions.return_value = [runner_pb2.SessionSummary(session_id="s-1", spec=SPEC)]
+    runners = Mock(spec=SandboxSessions)
+    runners.running.return_value = {"sb-1"}
+    runners.client.return_value = client
+    coordinator = Ingester(
+        runners=cast(SandboxSessions, runners),
+        event_logs=event_logs,
+        ingestion=ingestion,
+        history_projector=HistoryProjector(engine, cast(SandboxServiceClient, reader)),
+    )
+    try:
+        await coordinator.reconcile()
+        await coordinator.reconcile()
+        client.attach.assert_not_called()
+        client.follow.assert_not_called()
+        reader.read_session_events.assert_not_called()
+        assert not await event_logs.is_raw_ingestion_fenced(thread)
+        assert await event_logs.last_cursor(thread) == 0
     finally:
         await coordinator.close()
 

@@ -15,10 +15,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
+from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.events.event_log import EventLogStore as ServiceEventLogStore, EventReplicationError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
-from agentplane.app.threads.ingestion import Ingestion
 from agentplane.app.threads.models import EventLog, ThreadHistorySummary
 from agentplane.protocol import event_pb2
 from agentplane.sandbox_service import protocol_pb2

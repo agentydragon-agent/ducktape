@@ -17,10 +17,10 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
+from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion, event_batches
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.events.event_log import EventReplicationError, FeedEnd, FeedError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
-from agentplane.app.threads.ingestion import Ingestion, event_batches
 from agentplane.app.threads.models import SandboxIngestion
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2

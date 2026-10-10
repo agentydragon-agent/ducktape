@@ -13,9 +13,9 @@ import pytest_bazel
 from sqlalchemy import select
 
 from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
+from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
-from agentplane.app.threads.ingestion import Ingestion
 from agentplane.app.threads.models import (
     ThreadCheckpoint,
     ThreadEntity,

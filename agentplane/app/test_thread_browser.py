@@ -33,6 +33,7 @@ from agentplane.app.testing import thread_view_marks
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
 from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
+from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.testing.thread_browser import (
@@ -44,7 +45,6 @@ from agentplane.app.testing.thread_browser import (
     frames,
     message_composer,
 )
-from agentplane.app.threads.ingestion import Ingestion
 from agentplane.app.threads.models import (
     FeedState,
     ThreadCheckpoint,
