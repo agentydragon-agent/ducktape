@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Iterator, Mapping
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import Any, cast
 from unittest.mock import AsyncMock
 from uuid import UUID
 
@@ -1074,8 +1075,8 @@ if __name__ == "__main__":
 
 
 async def _action_task_rpc(
-    http: httpx2.AsyncClient, method: str, params: dict[str, object], *, caller: str = "test-token-a"
-) -> dict[str, object]:
+    http: httpx2.AsyncClient, method: str, params: dict[str, Any], *, caller: str = "test-token-a"
+) -> dict[str, Any]:
     body = {
         "jsonrpc": "2.0",
         "id": 12,
@@ -1092,7 +1093,7 @@ async def _action_task_rpc(
     if method == "tools/call":
         headers["Mcp-Name"] = str(params["name"])
     response = await http.post("/mcp", headers=headers, json=body)
-    return response.json()
+    return cast(dict[str, Any], response.json())
 
 
 async def test_action_tasks_use_canonical_request_and_owner_scoped_reads(frontend: Frontend) -> None:
@@ -1118,6 +1119,20 @@ async def test_action_tasks_use_canonical_request_and_owner_scoped_reads(fronten
         params = {"taskId": str(request_id)}
         assert (await _action_task_rpc(http, "tasks/get", params))["result"]["status"] == "working"
         assert "error" in await _action_task_rpc(http, "tasks/get", params, caller="test-token-b")
+        assert "error" in await _action_task_rpc(http, "tasks/cancel", params, caller="test-token-b")
+        # Failed task admission must not consume a different idempotency key.
+        invalid = await _action_task_rpc(
+            http,
+            "tools/call",
+            {
+                "name": "request_action",
+                "arguments": {"request": {**request, "idempotency_key": "not-submitted"}, "respond_with": "receipt"},
+            },
+        )
+        assert "error" in invalid
+        assert not await frontend.service.list_requests(
+            CallerPrincipal(account=workload("a")), idempotency_key="not-submitted"
+        )
         assert "error" not in await _action_task_rpc(http, "tasks/cancel", params)
         cancelled = await _action_task_rpc(http, "tasks/get", params)
         assert cancelled["result"]["status"] == "cancelled"
