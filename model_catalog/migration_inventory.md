@@ -153,7 +153,12 @@ and runtime code stay in Agentplane. This decision does not settle any other fil
 
 ## Token metadata ownership migration
 
-**Agreed target:** every retained served route gets its applicable token metadata from
+**Prior target, under reconsideration (2026-10-10):** the [routing review](routing_review.md)
+now precedes further publication expansion or unwiring. The inventory below records
+existing state and gaps, not an instruction to fill every gap before that review.
+No runtime change or replacement has been selected.
+
+The prior target was that every retained served route gets its applicable token metadata from
 Ducktape declarations. LiteLLM catalogue values may be copied with entry/revision
 provenance; live fallback is not the long-term authority. Legacy schema aliases are
 projected from the same declaration, not independent facts. Fresh probing of every model

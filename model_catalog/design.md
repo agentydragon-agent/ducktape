@@ -26,6 +26,17 @@ ownership shapes and consolidation suggestions below are proposals to evaluate, 
 instructions to execute. The inventory records what needs a disposition decision. Agreed goals, dependency/safety constraints and already-approved pauses remain
 in force; listing a file does not authorize modifying, deleting or re-enabling it.
 
+## Routing review checkpoint, 2026-10-10
+
+The operator requested a [routing-contract review](routing_review.md), including
+LiteLLM's transformations and possible alternatives, after finding catalogue-derived
+request defaults. The all-routes token-publication target below is **under reconsideration**,
+not the next implementation requirement. Existing overrides and runtime policy remain
+unchanged pending a decision. No router replacement or metadata removal is approved.
+The primary acceptance criterion is working clients on required protocols, with usable
+route context not accidentally reduced by gateway or harness fallback metadata; see
+the [end-to-end requirements](routing_review.md#primary-success-criterion-working-clients-and-usable-route-context).
+
 ## Reading guide
 
 - **This design:** [goals](#scope-and-priorities), [ownership and examples](#ownership-and-data-flow),
