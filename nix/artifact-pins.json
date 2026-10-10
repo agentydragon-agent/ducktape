@@ -181,8 +181,8 @@
       "sha256": "BLRbTVupl++pIpqmQZ7WZVzCw1IGy/JDG50ZOqc7HGg="
     },
     "skill-session_logs": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-session_logs-b03e78000a82/session_logs.skill",
-      "sha256": "sD54AAqCIBPyyQKDdITPqAJxlED5Ng36c35+ggd0Gqc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-session_logs-4b5f18ae4cdb/session_logs.skill",
+      "sha256": "S18YrkzbqQ9j5DonAC8QZt/biTEMbvp5rDTK+wr60E4="
     },
     "skill-superforecaster": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-superforecaster-6619e2155fb3/superforecaster.skill",
@@ -225,8 +225,8 @@
       "sha256": "6yC0MaTqNDzJh7BZ+lx5VH49MTUjhKjF/+Mu2Wt2ggc="
     },
     "agentplane-runner": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-b1f5a494fcac/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
-      "sha256": "sfWklPyslHFU0DOVZuz81rIGr7OomJxrgB9K5wteuAo="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-6a53d139d668/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
+      "sha256": "alPROdZob72okkY1y54Ra3MG/euopoQDW5/XMNAEKyA="
     },
     "skill-cdk8s_builders": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-7a1104aadfb6/cdk8s_builders.skill",
