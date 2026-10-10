@@ -1077,7 +1077,7 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
     """A reload asks the authoritative scope about browser-held ids without resending commands."""
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread = await event_logs.open("live", "command-reconcile", spec)
-    lease = await ingestion.acquire("live", timedelta(minutes=1))
+    lease = await ingestion.acquire(thread, timedelta(minutes=1))
     assert lease is not None
     failed = command_pb2.Command(
         command_id="failed", submit_input=command_pb2.SubmitInput(text="persisted before the reply was lost")

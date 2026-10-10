@@ -280,11 +280,14 @@ runner storage; use bounded checks, not another full-history scan.
 - Drop retained app `event` and `feed_state` tables and their ORM classes only after
   deployment verification shows no runtime dependencies and handoff tooling is retired.
   Make retained-data deletion explicit in that PR rather than incidental to a rename.
-- Migration `0022_projection_lease_name` renames physical `sandbox_ingestion` to
-  `sandbox_projection_lease`, matching the Python projection-lease API. It preserves
-  rows, lease tokens, expiry and fencing semantics. Old app binaries still query the
-  old name: deploy the matching app revision with the migration; a binary rollback
-  requires reversing this rename. This is not raw-table retirement or rollout evidence.
+- Migration `0022_session_projection_lease` replaces ephemeral Sandbox-wide leases
+  with `session_projection_lease`, keyed by public Session/Thread UUID. Each Session
+  independently acquires, renews and fences projection commits; Sandbox discovery does
+  not own projection authority. Deleted-Sandbox histories remain projectable.
+  Stop old app replicas before migration and deploy the matching app code. The migration
+  waits on the old table's writes, removes old lease authority and starts new leases empty;
+  it does not alter archive rows, app projections, checkpoints or runner storage. Stop new
+  replicas before downgrading and restarting old binaries. This is not rollout evidence.
 - Audit app `sandbox`, `harness`, `model` and `cwd` fields: distinguish necessary UI
   projections from redundant launch/routing metadata. They are not all proven dead.
   Session identity, runner bindings and frozen launch configuration remain service-owned;
