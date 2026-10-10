@@ -120,7 +120,7 @@ When selecting routed search. Requires config isolation, reviewed network route 
 
 ### `THREAD_UPLOADS` — authorized upload, retained bytes, agent access
 
-When selecting file/image attachments. Review authorized bytes/storage/retention before composer/agent access; new persistence waits for archive migration.
+When selecting file/image attachments. Review authorized bytes/storage/retention before composer/agent access.
 
 ### `HARNESS_VISUAL_INPUT` — composer, protocol, storage, replay
 

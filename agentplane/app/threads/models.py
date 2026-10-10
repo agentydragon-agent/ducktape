@@ -22,7 +22,7 @@ class EventLog(Base):
 
     # TODO(session-schema-cleanup): Rename EventLog/event_log to describe the app's
     # Session reference, not archive ownership; migrate referencing FKs together.
-    # See plans/session_history_read_cutover.md#post-cutover-schema-cleanup.
+    # See plans/task_dag.md#app_session_schema_rename--name-the-app-session-reference-accurately.
 
     __tablename__ = "event_log"
 

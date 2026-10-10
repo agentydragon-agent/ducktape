@@ -11,17 +11,20 @@ The archive ownership cutover is complete in testing and staging. Sandbox Servic
 owns raw history; the app consumes it through gRPC and owns UI projections. Backfill,
 writer/read/UI handoff, runtime migration flags/tooling, per-Session leases and app
 locator retirement are completed work, with evidence in the
-[read-cutover record](session_history_read_cutover.md#runtime-cleanup-acceptance).
+[cutover completion record](../sandbox_service/session_history/CUTOVER.md#completion-and-retirement).
 The old archive-ownership scheduling hold is lifted; contract review, authorization,
 and task-specific dependencies below still apply. Do not repeat backfill or full-history
 verification. The six empty staging Sessions remain explicitly excluded from extra checks.
 
 Raw-table/fence retirement (#9725) is deployed in both environments, and #9723
 removed the temporary rollout override/test. The
-[retirement evidence and staging overlap incident](session_history_read_cutover.md#raw-history-retirement-evidence)
+[retirement evidence and staging overlap incident](../sandbox_service/session_history/CUTOVER.md#completion-and-retirement)
 close that task; the incident is not a clean coordinated-rollout result. Remaining
 schema naming, metadata/tooling/grant audits and identity-checklist reconciliation
-are listed in [schema cleanup](session_history_read_cutover.md#post-cutover-schema-cleanup).
+remain unfinished. Audit metadata consumers (`sandbox`, `harness`, `model`, `cwd`,
+summary/activity fields) before deleting useful UI projections; inventory remaining
+migration-only tools and grants before removing them. Naming and identity work are
+tracked below; squash Alembic only once that schema settles.
 
 States: **in flight** means reported work is underway; **decision** needs a reviewed outcome;
 **blocked** names prerequisites; **candidate** is dispatchable when selected, not a priority claim.
@@ -29,7 +32,7 @@ A **capstone** closes an integrated contract, not another implementation. Solid 
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
-## 1. Finish the history migration before expanding persistence
+## 1. Session schema and identity follow-up
 
 ```mermaid
 flowchart TD
@@ -56,7 +59,7 @@ consumer audits remain scoped cleanup, not permission to discard useful UI proje
 [app identity cutover](app_session_identity_cutover.md): use the service-reserved public UUID,
 resolve cwd after reservation, and recover a committed Open via authorized lookup. Preserve
 legacy private runner locators, native storage and existing URLs. This is not a new public-ID
-placement decision. Coordinate any already-open implementation with the migration owner.
+placement decision. Reconcile already-open implementations before dispatching duplicate work.
 
 ### `THREAD_EVENT_CONTINUITY` — identity cutover capstone
 
@@ -113,7 +116,7 @@ Details: [Command admission](command_admission.md); later
 
 ### `SESSION_COMMAND_CONTRACT` — review durable command admission
 
-**Decision; draft code permitted during backfill.** Route all supported runner Commands through
+**Decision.** Route all supported runner Commands through
 Sandbox Service with persistence, immediate dispatch and spool-based admission reconciliation.
 No notification metadata or producer integration in the initial PR. Review authenticated destination
 scope, immutable retries, rejection semantics and retention. The command is a protobuf message, not
@@ -413,7 +416,7 @@ operation also opens a session; if so, depend on `THREAD_CREATE_AUTHORIZATION` f
 
 ### `AGENT_SANDBOX_LAUNCH` — constrained agent-requested launch
 
-**Blocked on launch policy, idempotent create and the persistence hold.** Enforce the reviewed
+**Blocked on launch policy and idempotent create.** Enforce the reviewed
 effective spec and delegation server-side. Test allowed and forbidden launch parameters and
 concurrent retries. Reuse Sandbox Service creation, not harness-native agent tools. Launch alone
 does not grant history read, messaging, credentials or execution of another principal's Actions.
@@ -438,7 +441,7 @@ flowchart LR
     RUNNER_OUTBOUND_ROLLOUT[Blocked: migrate selected existing runners]
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
-    VM_PROVIDER[Blocked: production provider and API]
+    VM_PROVIDER[Candidate: production provider and API]
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
@@ -469,7 +472,7 @@ flowchart LR
 
 ### `RUNNER_TRANSPORT_DESIGN` — runner dial-out and connection lifecycle
 
-**Decision; narrow command-channel design can proceed during backfill.** The operator selected
+**Decision.** The operator selected
 one runner-initiated connection per runner incarnation, multiplexing Sessions, using protobuf over
 binary WebSocket frames. On disconnect the runner reconnects to an available service replica.
 Postgres `LISTEN`/`NOTIFY` is a wakeup/routing signal only, not durable delivery or an admission
@@ -563,9 +566,9 @@ real credentials baked into the image. Reuse the proven prototype, not another p
 
 ### `VM_PROVIDER` — production provider API and lifecycle intent
 
-**Blocked by scheduling hold on concurrent service surgery.** Integrate typed environment kinds,
-templates/destinations, inventory, reconciliation, RBAC and UI. Container behavior remains intact.
-Existing provider design can proceed during backfill; no uncoordinated service schema changes.
+**Candidate.** Integrate typed environment kinds, templates/destinations, inventory, reconciliation,
+RBAC and UI. Container behavior remains intact. Review the changed service contracts and schema
+rollout as part of this work.
 
 ### `VM_EGRESS` — integrate production admission and proxy path
 
@@ -614,7 +617,7 @@ Independent of compact delivered-message rendering. Never acknowledge from viewi
 
 ### `THREAD_BROWSE_PAGINATE` — bounded history browsing
 
-**Candidate; data changes wait for migration.** Paginate/search the Thread listing with authorized
+**Candidate.** Paginate/search the Thread listing with authorized
 stable cursors, independent of deferred transcript full-text search. Verify ordering, navigation and
 permissions rather than making the frontend load every Thread.
 
@@ -680,8 +683,7 @@ an acceptable simpler fallback.
 expanded Kubernetes bindings, a one-SA runtime change and inspection. Reconcile changed group
 membership for existing SAs if live semantics are chosen; otherwise make snapshots explicit and
 support deliberate updates. Retain managed binding conflict/cleanup safeguards and verify
-add/remove, overlaps and restart. Any new app or Sandbox Service database persistence remains
-under the archive-ownership hold. See the [plan](kubernetes_rbac_groups.md).
+add/remove, overlaps and restart. See the [plan](kubernetes_rbac_groups.md).
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 
@@ -708,7 +710,7 @@ creating subscriptions or inbox entries. Record the result once; no exhaustive p
 
 ### `BINDING_SUBJECT_ARITY` — singular subject shape
 
-**Candidate; schema changes wait for migration if they touch service/app persistence.** Align the
+**Candidate.** Align the
 binding kinds on one explicit subject before adding multi-subject use. Preserve owner/replacement
 and authorization semantics; this cleanup does not authorize broader grants.
 
