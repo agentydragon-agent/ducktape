@@ -1143,6 +1143,33 @@ async def test_action_tasks_use_canonical_request_and_owner_scoped_reads(fronten
         )
 
 
+async def test_action_task_denial_is_terminal_without_execution(frontend: Frontend) -> None:
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(frontend.app), base_url="http://actions.test") as http:
+        created = await _action_task_rpc(
+            http,
+            "tools/call",
+            {
+                "name": "request_action",
+                "arguments": {
+                    "request": {
+                        "idempotency_key": "task-denied",
+                        "title": "Test denied task",
+                        "action": {"group": "test-group", "name": "beta"},
+                        "arguments": {"message": "denied"},
+                    }
+                },
+            },
+        )
+        assert "error" not in created, created
+        task_id = created["result"]["taskId"]
+        await _decide(frontend, await frontend.store.get(UUID(task_id), OPERATOR), Verdict.DENY)
+        denied = await _action_task_rpc(http, "tasks/get", {"taskId": task_id})
+        assert "error" not in denied, denied
+        assert denied["result"]["status"] == "failed"
+        assert denied["result"]["error"]["message"].startswith("Action denied")
+        assert (await frontend.store.get(UUID(task_id), OPERATOR)).execution is None
+
+
 @pytest.mark.parametrize("upstream_error", [False, True])
 async def test_action_task_completed_result_is_inlined(
     results_frontend: Frontend, scripted: ScriptedExecutor, upstream_error: bool
