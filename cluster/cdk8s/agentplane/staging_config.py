@@ -251,4 +251,8 @@ def config(
     sandbox.template = "runner-ducktape"
     sandbox.thread_preset = "public-coder-ducktape-codex"
     cfg.sandbox_presets["public-coder-ducktape"] = sandbox
+    # Explicit staging handoff: legacy Threads keep their writers until individually
+    # fenced; the service projector then takes over under the same app lease.
+    cfg.history_reads_enabled = True
+    cfg.history_projection_enabled = True
     return cfg
