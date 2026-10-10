@@ -106,6 +106,144 @@ message Heartbeat {}
   connection's maximum age). The runner logs the status and reconnects, except that
   `PERMISSION_DENIED` backs off to its maximum interval.
 
+## Event following
+
+Status: **accepted (operator, 2026-10-10 PDT), not built.** Until it is, every runner's Events are read through
+`Attach`.
+
+A runner that lists `events` in `Hello` serves its journal over the channel, and the Sandbox Service
+then reads that Sandbox's journals only that way: `FollowSession` for every subscriber, and its own
+admission reconciliation. The journal stays the buffer for every subscriber. Nothing is
+acknowledged to the runner and the runner deletes nothing on a read; a subscriber's progress is the
+cursor it committed, and it resumes from there.
+
+```protobuf
+service RunnerChannel {
+  rpc Connect(stream RunnerFrame) returns (stream ServiceFrame);
+  // Opened by the runner when asked by `OpenFollow`; carries epoch and follow ID in metadata.
+  rpc Follow(stream FollowFrame) returns (google.protobuf.Empty);
+}
+
+message ServiceFrame {
+  oneof frame {
+    // ...
+    OpenFollow open_follow = 4;
+    CloseFollow close_follow = 5;
+  }
+}
+
+message OpenFollow {
+  string follow_id = 1;               // chosen by the service, unique per connection epoch
+  string session_id = 2;              // the runner's Session ID
+  uint64 after_cursor = 3;
+}
+
+message CloseFollow {
+  string follow_id = 1;
+}
+
+message FollowFrame {
+  oneof frame {
+    ducktape.agentplane.runner.v1.Attached attached = 1;  // first frame: snapshot and last cursor
+    ducktape.agentplane.protocol.v1.EventEntry entry = 2; // cursors strictly increasing by one
+    uint64 sealed = 3;                // terminal: journal sealed at this cursor
+    FollowRefused refused = 4;        // terminal: unknown Session or cursor beyond the journal
+  }
+}
+```
+
+1. **Opening.** The replica that owns the connection sends `OpenFollow`; the runner opens one
+   `Follow` RPC on the same HTTP/2 connection and streams the journal after `after_cursor`, then
+   live entries. Each follow is its own HTTP/2 stream, so gRPC's per-stream flow control bounds
+   what is in flight: a slow reader stalls its own follow, never `Connect` or another follow. The
+   runner reads the journal in pages as the stream drains and holds no unbounded queue. A
+   connection carries at most 64 follows; past that, `OpenFollow` is refused and the caller gets
+   `UNAVAILABLE`.
+2. **Ending.** `CloseFollow`, the subscriber going away, the follow's lease (`follow_lease_s`,
+   unchanged) or a superseded epoch ends the follow, and the subscriber resumes from its committed
+   cursor. Ending a follow is a transport event only: it never interrupts a turn or stops a harness,
+   and a runner never reads a cancelled `Follow` as a command.
+3. **Cross-replica.** Subscribers dial the Sandbox's own control Service
+   ([Connection records](#connection-records-in-kubernetes)), which resolves to the replica holding
+   the runner's connection. A replica asked to follow a Sandbox whose runner stream it does not
+   hold refuses with `UNAVAILABLE`, and the subscriber resolves again and retries from its cursor.
+   The runner is the fence: it opens `Follow` only on the connection that received its latest
+   `Welcome`.
+4. **Admission reconciliation.** Each replica's `AdmissionReconciler` takes the channel-routed
+   Sandboxes whose Lease it holds and follows their journals locally, from the reconciled cursor,
+   advancing it after committing each batch. Positive admission evidence still never regresses.
+5. **Errors.** Entries arrive with consecutive cursors; a gap, a regression below the requested
+   cursor or a frame after a terminal one fails the follow, and the subscriber's `Store.append`
+   refuses a conflicting replay. `sealed` and `refused` map to `FollowSessionResponse.sealed` and a
+   `DestinationUnavailable` status.
+
+Rejected for cross-replica follows: a relay between replicas, which adds a hop and an internal
+API; a redirect carried in gRPC status details, which every client would have to implement; making
+the runner hold a connection to every replica; and passing entries through Postgres, which would
+make the Sandbox Service store history.
+
+## Connection records in Kubernetes
+
+Status: **accepted (operator, 2026-10-10 PDT), not built.** It replaces the `runner_connection` table, the
+`Connection ownership and fencing` table below and Postgres-based liveness; command submissions
+and dispatch attempts stay in Postgres.
+
+Per Sandbox, all in the Sandbox's namespace and owned by the `Sandbox`, so deleting it removes them:
+
+```yaml
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: <sandbox>-runner
+  annotations:
+    agentplane.ducktape.dev/pod-uid: <the Pod the connection authenticated as>
+    agentplane.ducktape.dev/runner-boot-id: <from Hello>
+spec:
+  holderIdentity: <replica Pod name>
+  leaseTransitions: <connection epoch>
+  renewTime: <last frame received, written at most every 15 s>
+  leaseDurationSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: <sandbox>-control
+spec:
+  clusterIP: None # headless: DNS returns the endpoint, no ClusterIP or kube-proxy rules
+  ports: [{ name: grpc, port: 8080 }]
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: <sandbox>-control
+  labels: { kubernetes.io/service-name: <sandbox>-control }
+  annotations: { agentplane.ducktape.dev/connection-epoch: "<epoch>" }
+addressType: IPv4
+endpoints: [{ addresses: [<owning replica's Pod IP>] }]
+ports: [{ name: grpc, port: 8080 }]
+```
+
+No routing record is kept: once every runner dials out, as the operator decided for a clean cutover
+(2026-10-10 PDT), nothing is routed inbound. Agent-sandbox already names a Service after the
+Sandbox, hence `-control`.
+
+- **Accepting a connection.** After authenticating `Hello`, the replica updates the Lease with the
+  `resourceVersion` it read: holder itself, transitions plus one, fresh renew time and annotations.
+  A conflict means another replica won a race; it re-reads and retries, and the runner's own
+  newest-connection rule decides which stream survives. It then writes the EndpointSlice with the new epoch, and only then sends `Welcome`.
+  An EndpointSlice write carrying an older epoch than the one stored is skipped.
+- **Liveness.** The holder renews the Lease with each liveness write. A renew that finds another
+  holder or a newer epoch means the connection was superseded, and the replica ends the stream with
+  `ABORTED`. A runner counts as connected while `renewTime` is under 30 s old.
+- **Reading.** Every replica keeps an informer on Leases in the namespace: `SubmitCommand` reads
+  liveness, and the reconciler picks the Leases it holds. No read goes to the API server per request.
+- **Stale endpoints.** During a roll, DNS can return a replica that no longer holds the stream for a
+  few seconds; it refuses, and the client retries. Nothing reads the endpoint as proof of
+  ownership.
+- **Costs.** One Lease renewal per connected Sandbox every 15 s and one EndpointSlice write per
+  reconnect. The Sandbox Service gains RBAC to write Leases, Services and EndpointSlices in the
+  Sandbox namespace. Network policy is unchanged: the endpoints are Sandbox Service Pods.
+
 ## Prior art and alternatives
 
 Two harnesses already ship a dial-out control channel, and the choices above borrow from both:
