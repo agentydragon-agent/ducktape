@@ -16,12 +16,12 @@ The old archive-ownership scheduling hold is lifted; contract review, authorizat
 and task-specific dependencies below still apply. Do not repeat backfill or full-history
 verification. The six empty staging Sessions remain explicitly excluded from extra checks.
 
-**In flight (migration agent, 2026-10-10):** explicit app raw-table/fence retirement
-and plan cleanup. This intentionally deletes only redundant app raw copies, never
-Sandbox Service history, public identities, UI projections or runner storage.
-#9723 restores the temporary deployment strategy after the completed locator drop;
-raw-table retirement has its own coordinated-stop gate. See
-[schema cleanup](session_history_read_cutover.md#post-cutover-schema-cleanup).
+Raw-table/fence retirement (#9725) is deployed in both environments, and #9723
+removed the temporary rollout override/test. The
+[retirement evidence and staging overlap incident](session_history_read_cutover.md#raw-history-retirement-evidence)
+close that task; the incident is not a clean coordinated-rollout result. Remaining
+schema naming, metadata/tooling/grant audits and identity-checklist reconciliation
+are listed in [schema cleanup](session_history_read_cutover.md#post-cutover-schema-cleanup).
 
 States: **in flight** means reported work is underway; **decision** needs a reviewed outcome;
 **blocked** names prerequisites; **candidate** is dispatchable when selected, not a priority claim.
@@ -33,26 +33,22 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 ```mermaid
 flowchart TD
-    APP_RAW_HISTORY_RETIRE[Blocked: retire obsolete app raw tables and import tooling]
-    THREAD_IDENTITY_NEW[Blocked: finish service-owned new Session identity cutover]
+    APP_SESSION_SCHEMA_RENAME[Candidate: name app Session reference accurately]
+    THREAD_IDENTITY_NEW[Candidate: audit remaining new Session identity requirements]
     THREAD_EVENT_CONTINUITY[Capstone: new and legacy identity continuity]
     APP_ALEMBIC_SQUASH[Blocked: baseline final app schema]
     SESSION_EVENT_RETENTION[Draft: settle redundant streamed deltas, flag off]
     THREAD_IDENTITY_NEW --> THREAD_EVENT_CONTINUITY
-    APP_RAW_HISTORY_RETIRE --> APP_ALEMBIC_SQUASH
+    APP_SESSION_SCHEMA_RENAME --> APP_ALEMBIC_SQUASH
     THREAD_EVENT_CONTINUITY --> APP_ALEMBIC_SQUASH
-    APP_RAW_HISTORY_RETIRE --> SESSION_EVENT_RETENTION
 ```
 
-### `APP_RAW_HISTORY_RETIRE` — remove obsolete storage
+### `APP_SESSION_SCHEMA_RENAME` — name the app Session reference accurately
 
-**In flight (migration agent, 2026-10-10):** remove retained app `event`/`feed_state`,
-the old ingestion fence column, trigger/function and ORM models. Runtime readers and
-writers have already retired; this is explicit schema/data deletion, not another
-handoff. Require migration preservation tests, a verified coordinated app stop before
-schema application, bounded rollout checks, and removal of temporary rollout settings.
-No full-history scan. Keep service history, public IDs, current projections and runner
-storage. Audit remaining one-off tools/grants separately rather than claiming they are gone.
+**Candidate.** Rename `EventLog`/`event_log` with their foreign keys, queries and
+references. Preserve public IDs and app projection/operator metadata; do not rename
+service archive tables or runner storage. Coordinate a safe schema rollout. Metadata
+consumer audits remain scoped cleanup, not permission to discard useful UI projections.
 
 ### `THREAD_IDENTITY_NEW` — service-owned identity for new histories
 
@@ -72,14 +68,14 @@ compatible guarded rollout; automatic fleet upgrades are not inherently a prereq
 
 ### `APP_ALEMBIC_SQUASH` — consolidate the final app schema
 
-**Blocked on raw-table retirement and identity continuity.** Baseline only the settled schema,
+**Blocked on final schema naming/cleanup and identity continuity.** Baseline only the settled schema,
 verify fresh and migrated databases and their deployed stamps before pruning old revisions.
 Retain the data-preserving rollback procedure. No Action Service or other database squash implied.
 
 ### `SESSION_EVENT_RETENTION` — measure before changing history retention
 
-**Draft [#9713](https://github.com/agentydragon/ducktape/pull/9713) (2026-10-10 PDT); merge waits
-on old-copy retirement unless the operator lifts that dependency.** A bounded staging
+**Draft [#9713](https://github.com/agentydragon/ducktape/pull/9713) (2026-10-10 PDT); the old-copy
+retirement dependency is satisfied.** A bounded staging
 sample on 2026-10-10 put streamed deltas at ~85–90% of `session_event` bytes. The operator approved
 the policy the same day: behind a Sandbox Service default plus per-Session override (default off),
 the service removes an item's delta frames and derived deltas only when every frame matches an exact
