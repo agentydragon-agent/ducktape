@@ -23,6 +23,10 @@ These refinements supersede the broader proposed requirements in the initial rev
 - Logging: Langfuse is acceptable, alternatives are acceptable; either client-facing
   or upstream content is sufficient. No need to capture both. Exclude credentials;
   decide retention/access for sensitive full-content logs before rollout.
+  **Operator clarification: do not silently drop traces or their request/response
+  content because they are large.** This includes the exporter, transport, collector
+  and storage path, not merely the gateway's local capture. A surviving metadata-only
+  span does not satisfy full-content logging.
 - Auth/credential isolation is preferred, not a hard product requirement. Spending
   limits/cost accounting and automatic model fallback are not requirements. Existing
   security boundaries still apply during research; removals require a reviewed migration.
@@ -157,6 +161,21 @@ but raw bodies **over 256 KB are dropped rather than truncated**. Our successful
 probe's request alone was about 2 MB. This does not prove normalized export is incomplete,
 but makes “enable raw logging” insufficient. Verify normalized messages/tools and the
 whole collector/storage path using large synthetic payloads without inference.
+
+**Acceptance gate:** Bifrost's documented raw-OTLP path does not meet the requirement
+as-is. This is body loss, not proof that the whole trace is dropped, but either silent
+trace loss or silent selected-content loss is unacceptable. Keep Bifrost conditional
+on a verified alternative (complete normalized content, a corrected exporter, or durable
+payload storage with reliable trace links and full retrieval). Do not assume another
+representation is lossless without comparing captured content. No silent sampling,
+truncation or size-triggered omission of the required content.
+
+Exercise maximum intended context sizes, collector record/attribute limits, temporary
+exporter failures and backpressure. Durable spooling/retry or referenced payload storage
+may help; an unbounded in-memory queue is not a durability strategy. Log-delivery failure
+must be observable. The operator has not chosen whether persistent logging failure should
+block inference or use another durable sink; decide that failure policy before rollout,
+rather than promising impossible unconditional delivery.
 
 Agent Router documents OpenInference full-content defaults, but its alternative GenAI
 mode currently omits Responses message content. Choose instrumentation consciously.
