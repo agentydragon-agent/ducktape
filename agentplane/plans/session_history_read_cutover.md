@@ -274,6 +274,12 @@ runner storage; use bounded checks, not another full-history scan.
   `(sandbox, session_id)` uniqueness constraint after replacing current consumers.
   Audit legacy HTTP filters/links and identifier translation explicitly; preserve
   mappings in Sandbox Service, not by inventing another app-owned routing map.
+  Runtime cleanup is staged before the column drop: discovery/Open and find use
+  public UUIDs; Thread views expose that same UUID and `/threads?session_id=` filters
+  by it. Private runner locators are no longer HTTP filter aliases (invalid UUIDs
+  return an empty list). Existing public Thread URLs and service mappings stay intact.
+  The old non-null column remains a compatibility write for overlapping old replicas;
+  deploy these readers before removing it in the schema-retirement PR.
 - Drop `raw_ingestion_fenced_at_cursor` with the old-table write-rejection triggers.
   Runtime projection no longer reads it; new identity setup still writes zero to
   preserve old-table write rejection until that explicit schema change.

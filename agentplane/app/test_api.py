@@ -1045,7 +1045,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
     ) as http:
-        (found,) = (await http.get("/threads", params={"sandbox": "live", "session_id": "s-1"})).json()
+        (found,) = (await http.get("/threads", params={"sandbox": "live", "session_id": thread_id})).json()
         assert (found["id"], found["name"]) == (thread_id, None)
         assert (await http.get("/threads", params={"sandbox": "other"})).json() == []
 
@@ -1217,7 +1217,9 @@ async def test_a_running_thread_cannot_be_archived(
     async def running_sessions(sandbox: str) -> list[protocol_pb2.SessionSummary]:
         consulted.append(sandbox)
         return [
-            protocol_pb2.SessionSummary(session_id="s-1", spec=spec, harness_state=protocol_pb2.HARNESS_STATE_RUNNING)
+            protocol_pb2.SessionSummary(
+                session_id=str(thread_id), spec=spec, harness_state=protocol_pb2.HARNESS_STATE_RUNNING
+            )
         ]
 
     monkeypatch.setattr(bridge, "list_sessions", running_sessions)
