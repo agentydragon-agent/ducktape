@@ -1201,7 +1201,11 @@ async def test_action_tasks_use_canonical_request_and_owner_scoped_reads(fronten
         )
         assert "error" not in legacy, legacy
         assert "structuredContent" in legacy["result"]
-        assert "resultType" not in legacy["result"]
+        # Under task negotiation the protocol wraps a synchronous tool response as
+        # resultType=complete; it is not a task creation and has no taskId.
+        assert legacy["result"]["resultType"] == "complete"
+        assert "taskId" not in legacy["result"]
+        assert legacy["result"]["structuredContent"]["state"] == "decision_pending"
         assert "error" not in await _action_task_rpc(http, "tasks/cancel", params)
         cancelled = await _action_task_rpc(http, "tasks/get", params)
         assert cancelled["result"]["status"] == "cancelled"
