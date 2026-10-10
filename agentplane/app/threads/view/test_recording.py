@@ -12,9 +12,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy import select
 
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
-from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
+from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
 from agentplane.app.threads.models import (
@@ -25,7 +23,8 @@ from agentplane.app.threads.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.app.threads.view.recording import ThreadFoldError
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.fold import ObservationNotUnderstoodError
 from agentplane.app.threads.view.views import EntityKind, ThreadOperationalState
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
@@ -234,8 +233,9 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     assert item.text_ref["generation"] == item.text_ref["revision_cursor"] == "4"
     assert item.text_ref["chunk_count"] == "0"
 
-    with pytest.raises(ThreadFoldError, match="cursor 5"):
+    with pytest.raises(ObservationNotUnderstoodError) as failure:
         await ingestion.record(thread, [event_entry(5)], lease=lease)
+    assert failure.value.cursor == 5
     assert await event_logs.last_cursor(thread) == 4
 
 

@@ -20,7 +20,7 @@ from agentplane.sandbox_service.models import SandboxNotFoundError
 # gazelle:include_dep @pypi//grpcio
 
 logger = logging.getLogger(__name__)
-RECONCILE_S = 2
+RECONCILE_S: float = 2
 LEASE_DURATION = timedelta(seconds=30)
 
 
