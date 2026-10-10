@@ -294,3 +294,24 @@ runner storage; use bounded checks, not another full-history scan.
 - Update misleading model/helper docstrings (`runner_session`, raw-reader wording,
   "app ingestion") as their contracts change. Leave durable rules in AGENTS.md;
   keep this temporary cleanup checklist here and in the DAG.
+
+### Session-lease deployment gate
+
+Before merging the per-Session lease schema change (#9692), land the deployment-only
+change selecting `Recreate` for **only** `agentplane-app` in testing and staging.
+Verify both live Deployments show `spec.strategy.type: Recreate`, without a
+`rollingUpdate` field. A strategy-only change does not itself change the Pod template.
+Also verify the public-Session routing image from #9691 is healthy before proceeding.
+
+The subsequent image rollout terminates old app Pods before starting replacements;
+the replacement Pods run the migration init container before starting the app. This
+intentionally causes a brief app outage. Sandbox Service, runners and their storage
+are unchanged, and projection resumes from retained checkpoints. Do not force-delete
+Pods or bypass graceful shutdown to accelerate this transition.
+
+After the migration image is deployed, check app readiness, the Alembic revision,
+Session-keyed lease rows and advancing projection checkpoints with bounded queries.
+Then restore the app's environment-specific rolling-update strategy and remove the
+temporary Recreate regression test in a deployment-only follow-up. Reverting the
+strategy is not a schema rollback: a binary rollback across the ownership-scope
+change still requires stopping the app and downgrading the lease schema first.
