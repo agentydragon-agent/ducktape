@@ -376,7 +376,7 @@ LiteLLM projects the mode-appropriate limits; Nix wrappers, OpenClaw, and Agentp
 client budgets separately and do not read it. Ollama `num_ctx` stays independent.
 
 The mode-specific representation does **not** finish the source audit. ChatGPT's
-12 retained entries still include Astra's inherited Codex window and Sol/Luna's
+six retained entries still include Astra's inherited Codex window and Sol/Luna's
 inherited GPT-5.6 values, not independently established provider maxima. Their
 comments preserve this limitation; publication coverage does not validate them.
 Antigravity text declarations now use the recorded Google response/gateway convention,

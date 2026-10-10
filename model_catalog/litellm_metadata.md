@@ -391,8 +391,8 @@ ceiling, and context must accommodate prompt, generated tokens and overhead.
 We do not manufacture a generative input/output pair from these numbers, introduce
 request caps, or change the pair-or-none publication contract in `design.md`.
 
-Published coverage therefore remains **64/80 entries** (60 generative pairs and
-four embedding input-only declarations). The 13 Ollama chat entries still have no
+After removing the six GPT-5.6 ChatGPT entries, published coverage is **58/74 entries**
+(54 generative pairs and four embedding input-only declarations). The 13 Ollama chat entries still have no
 catalogue-owned token limits; two audio and one image entry also remain unresolved.
 `publish_limits` is still transitional, not switched on by this source audit.
 

@@ -4,6 +4,12 @@ Paved 2026-08-28 against `codex-cli 0.150.1`, workers on `chatgpt/oai-responses/
 the cluster LiteLLM gateway. Every command and shape here was executed, not read from docs. Helper
 scripts live in `scripts/` next to this file.
 
+Current helper scripts default to `chatgpt/oai-responses/gpt-6-luna`; the GPT-5.6
+routes used for the historical observations below are no longer served. Existing
+`CODEX_FLEET_HOME/config.toml` files are not rewritten by the helpers: update the
+model there or use a fresh home before running them. GPT-6 behavior has not been
+revalidated by this route-removal change.
+
 ## The one constraint everything follows from
 
 A Codex worker is a subprocess. **It cannot push a message into the orchestrator's (Claude Code's)

@@ -139,10 +139,12 @@ provenance; live fallback is not the long-term authority. Legacy schema aliases 
 projected from the same declaration, not independent facts. Fresh probing of every model
 is not required. This does not reopen consumer-budget ownership or authorize route removal.
 
-**Source snapshot, reconciled 2026-10-10:** 64 of 80 public entries publish explicit
-metadata: 60 generative pairs and four embedding input-only declarations. This is
+**Source snapshot, reconciled 2026-10-10:** 58 of 74 public entries publish explicit
+metadata: 54 generative pairs and four embedding input-only declarations. This is
 publication coverage, not a percentage of programme completion or validated capacity.
-The 12 ChatGPT entries below count as published despite their provisional provenance.
+The six ChatGPT entries below count as published despite their provisional provenance.
+GPT-5.6 Sol/Terra/Luna have been removed from both ChatGPT wires and derived key
+allowlists; GPT-6 selections and consumer budgets are unchanged.
 
 Direct-provider chat, Antigravity text, the refreshed Claude subscription roster and
 embedding declarations have landed. The three larger GPT-OSS OpenAI exposures and
@@ -152,7 +154,7 @@ successive implementation/CI states here.
 
 | Family                                                           | Remaining work                                                                                                                                                                                                                                                                                                       |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ChatGPT GPT-6 and GPT-5.6, both wires (12 published entries)     | Audit the mixed historical/client-derived declarations. Current/legacy aliases are already coherent; they do not validate the numbers. Preserve the active subscription path and consumer budgets.                                                                                                                   |
+| ChatGPT GPT-6, both wires (six published entries)                | Audit the mixed historical/client-derived declarations. Current/legacy aliases are already coherent; they do not validate the numbers. Preserve the active subscription path and consumer budgets.                                                                                                                   |
 | Anthropic subscription                                           | Opus/Sonnet/Haiku 5.5 and Fable 5.1 have sourced gateway declarations. Registration/configuration/pricing presence was verified on 2026-10-09 ([record](litellm_metadata.md#claude-subscription-refresh-2026-10-09)); account request success and beta-dependent/full-output/joint capacity remain untested.         |
 | Antigravity                                                      | Text publication is complete from the recorded response and gateway convention; Claude/GPT-OSS boundaries and joint capacity remain untested. The one image entry still needs applicable metadata or an explicit disposition.                                                                                        |
 | Ollama chat (13 unpublished entries)                             | Installed GGUF context facts are recorded ([audit](litellm_metadata.md#ollama-gguf-context-audit-2026-10-09)). Choose defensible publication semantics: GGUF context and requested `num_ctx` are not an input/output pair. Larger native GPT-OSS variants remain; the audit does not prove their labeled capacities. |
