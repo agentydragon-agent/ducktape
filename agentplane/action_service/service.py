@@ -285,9 +285,8 @@ class ActionService:
         principal: CallerPrincipal,
         *,
         external_grant: ExternalGrantProvenance | None = None,
-        mcp_task: bool = False,
     ) -> ActionRequestView:
-        return await self._submit(body, principal, external_grant=external_grant, decided_only=False, mcp_task=mcp_task)
+        return await self._submit(body, principal, external_grant=external_grant, decided_only=False)
 
     async def submit_decided(
         self,
@@ -298,7 +297,7 @@ class ActionService:
     ) -> ActionRequestView:
         """Submit only a request a policy decides at admission. Anything else raises
         `UndecidedRequestError` before a row exists, so no one is asked and nothing is left to cancel."""
-        return await self._submit(body, principal, external_grant=external_grant, decided_only=True, mcp_task=False)
+        return await self._submit(body, principal, external_grant=external_grant, decided_only=True)
 
     async def _submit(
         self,
@@ -307,7 +306,6 @@ class ActionService:
         *,
         external_grant: ExternalGrantProvenance | None,
         decided_only: bool,
-        mcp_task: bool,
     ) -> ActionRequestView:
         if self.draining:
             raise ServiceDrainingError("Action Service is draining")
@@ -326,7 +324,7 @@ class ActionService:
                 or "no decision provider is configured"
             )
         view = await self._store.submit(
-            body, principal, request_id=request_id, vote=vote, external_grant=external_grant, mcp_task=mcp_task
+            body, principal, request_id=request_id, vote=vote, external_grant=external_grant
         )
         if vote is not None and vote.outcome.verdict is ProviderVerdict.ALLOW:
             self._schedule(view.id)

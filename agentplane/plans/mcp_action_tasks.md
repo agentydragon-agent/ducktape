@@ -35,7 +35,7 @@ The interceptor should:
    per-request tasks-extension opt-in. Otherwise call `call_next()` so the
    existing behavior is untouched.
 2. Authenticate through the existing `CallerTokenVerifier`/`CallerToken`
-   context and validate `request_action` arguments before any submission.
+   context and validate `request_action` arguments with a Pydantic model before any submission.
    Require `respond_with=result` and default zero wait for augmented calls;
    reject incompatible response/wait options before side effects.
 3. Submit through `ActionService.submit` exactly once with the caller's
@@ -68,9 +68,10 @@ by the original idempotency key; a repeated key remains refused. A client
 must not be instructed to submit a replacement key. The existing `/mcp`
 transport is stateless Streamable HTTP, so task reads must work after a
 transport disconnect, restart, or request landing on a different replica.
-No task-worker process state or caller bearer is stored in the task record.
-Define task retention without expiring an active Action or encouraging
-another execution.
+No task-worker state, task marker, separate task row, or caller bearer is
+stored: any existing Action owned by the caller can be read by ID as a task.
+Task retention follows the canonical Action and its append-only event history;
+never expire an active Action or encourage another execution.
 
 | Action state                        | Task state  | Meaning                                             |
 | ----------------------------------- | ----------- | --------------------------------------------------- |
@@ -92,13 +93,14 @@ but must not claim execution progress beyond those states.
 
 MCP terminal task states cannot change. An `execution_unknown` Action may
 later be reconciled by an authenticated late completion or authority
-lookup. Persist an immutable terminal _task_ state and timestamp on first terminal
-transition, rather than deriving terminal status solely from the current Action
-row. A successful Action cannot transition again, so its execution result is
-read from that same durable row; for a failed task the diagnostic derives from
-the latched state, not from a later reconciliation. The Action receipt may later
-reflect the reconciled truth; the task cannot change a published terminal
-answer. Store only task-specific metadata, never credentials. Test this race.
+lookup. Read the earliest terminal event (ordered by sequence) from the
+append-only Action event history to determine the task's immutable state and
+timestamp. This works for Actions created before task support as well. A
+successful Action cannot transition again, so its execution result is read
+from that same durable row; for a failed task the diagnostic derives from the
+first terminal event, not from a later reconciliation. The Action receipt may
+later reflect the reconciled truth; the task cannot change a published terminal
+answer. No new database columns or migration are needed. Test this race.
 
 `tasks/cancel` delegates to `ActionService.cancel`, whose atomic store
 operation can only withdraw before execution is claimed. Only

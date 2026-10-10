@@ -56,7 +56,7 @@ class SlowSilentExecutor(Executor):
         return ExecutionResult(state=ExecutionState.SUCCEEDED, result={"echo": request.arguments})
 
 
-async def _allowed_execution(store: ActionStore, *, idempotency_key: str, mcp_task: bool = False) -> Any:
+async def _allowed_execution(store: ActionStore, *, idempotency_key: str) -> Any:
     view = await store.submit(
         ActionRequestInput(
             idempotency_key=idempotency_key, title=f"test title for {idempotency_key}", action=ACTION_ID, arguments={}
@@ -64,7 +64,6 @@ async def _allowed_execution(store: ActionStore, *, idempotency_key: str, mcp_ta
         CALLER,
         request_id=uuid4(),
         vote=None,
-        mcp_task=mcp_task,
     )
     await store.decide(
         view.id,
@@ -184,9 +183,9 @@ async def test_late_completion_from_the_original_executor_reconciles_the_unknown
         assert row.reconciled_by == "slow-executor"
 
 
-async def test_mcp_task_terminal_state_is_latched_before_late_completion(engine: AsyncEngine) -> None:
+async def test_task_projection_uses_first_terminal_event_before_late_completion(engine: AsyncEngine) -> None:
     store = ActionStore(make_sessionmaker(engine))
-    request_id = await _allowed_execution(store, idempotency_key="task-late-completion", mcp_task=True)
+    request_id = await _allowed_execution(store, idempotency_key="task-late-completion")
     claim = await store.claim_execution(request_id, executor_id="task-executor", lease_duration=ALREADY_EXPIRED)
     assert claim is not None
     await store.mark_running(request_id)

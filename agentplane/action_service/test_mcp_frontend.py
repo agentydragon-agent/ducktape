@@ -1113,6 +1113,15 @@ async def test_action_tasks_use_canonical_request_and_owner_scoped_reads(fronten
         assert task["status"] == "working"
         assert "ttlMs" in task
         assert task["ttlMs"] is None
+        # An ordinary Action, submitted without task negotiation, is also readable by ID.
+        async with frontend.client() as ordinary:
+            receipt = await ordinary.call_tool(
+                "request_action",
+                {"request": {**request, "idempotency_key": "ordinary-action"}, "respond_with": "receipt"},
+            )
+        assert receipt.structured_content is not None
+        ordinary_task = await _action_task_rpc(http, "tasks/get", {"taskId": receipt.structured_content["id"]})
+        assert ordinary_task["result"]["status"] == "working"
         request_id = UUID(task["taskId"])
         assert (await frontend.store.get_mcp_task(request_id, CallerPrincipal(account=workload("a"))))[
             0
@@ -1132,9 +1141,35 @@ async def test_action_tasks_use_canonical_request_and_owner_scoped_reads(fronten
             },
         )
         assert "error" in invalid
+        for incompatible in ({"wait": {"wait_seconds": 1}}, {"include_fields": ["id"]}, {"unknown_option": True}):
+            rejected = await _action_task_rpc(
+                http,
+                "tools/call",
+                {
+                    "name": "request_action",
+                    "arguments": {"request": {**request, "idempotency_key": "not-submitted"}, **incompatible},
+                },
+            )
+            assert "error" in rejected
         assert not await frontend.service.list_requests(
             CallerPrincipal(account=workload("a")), idempotency_key="not-submitted"
         )
+        explicit = await _action_task_rpc(
+            http,
+            "tools/call",
+            {
+                "name": "request_action",
+                "arguments": {
+                    "request": {**request, "idempotency_key": "explicit-defaults"},
+                    "respond_with": "result",
+                    "wait": {},
+                    "include_fields": ["id", "state", "version", "created_at", "updated_at"],
+                },
+            },
+        )
+        assert "error" not in explicit, explicit
+        assert explicit["result"]["resultType"] == "task"
+        assert "error" not in await _action_task_rpc(http, "tasks/cancel", {"taskId": explicit["result"]["taskId"]})
         assert "error" not in await _action_task_rpc(http, "tasks/cancel", params)
         cancelled = await _action_task_rpc(http, "tasks/get", params)
         assert cancelled["result"]["status"] == "cancelled"

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from functools import wraps
-from typing import Annotated, Any, Final, cast
+from typing import Annotated, Any, Final, Literal, Self, cast
 from uuid import UUID, uuid4
 
 from fastmcp import FastMCP
@@ -18,7 +18,7 @@ from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.dependencies import CurrentAccessToken, get_access_token, get_http_request
 from fastmcp.tools import ToolResult
 from more_itertools import one
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -115,6 +115,25 @@ DEFAULT_POLICY_FIELDS: Final[list[PolicyField]] = [PolicyField.SUBJECT, PolicyFi
 # FastMCP resolves a parameter by its dependency default and strips it from a tool's input schema;
 # module-level because a call in a default is what ruff's B008 refuses (also below, for CURRENT_ACCESS_TOKEN).
 DEFAULT_WAIT: Final = WaitOptions()
+
+
+class TaskRequestArguments(BaseModel):
+    """Validate augmented calls before submission; the interceptor skips tool invocation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    request: ActionRequestInput
+    respond_with: Literal[ResponseForm.RESULT] = ResponseForm.RESULT
+    wait: WaitOptions = Field(default_factory=WaitOptions)
+    include_fields: list[RequestField] = Field(default_factory=DEFAULT_RECEIPT_FIELDS.copy)
+
+    @model_validator(mode="after")
+    def task_compatible_options(self) -> Self:
+        if self.wait != DEFAULT_WAIT:
+            raise ValueError("Task requests require default zero wait")
+        if set(self.include_fields) != set(DEFAULT_RECEIPT_FIELDS):
+            raise ValueError("Task requests cannot customize receipt fields")
+        return self
 
 
 class ActionSummary(BaseModel):
@@ -598,18 +617,9 @@ def create_server(
         )
 
     async def task_submit(arguments: dict[str, Any]) -> ActionRequestView:
-        if set(arguments) - {"request", "respond_with", "wait", "include_fields"} or "request" not in arguments:
-            raise ValueError("Task request must include only known arguments and a request")
-        if arguments.get("respond_with", "result") != "result":
-            raise ValueError("Task requests require respond_with=result")
-        wait = WaitOptions.model_validate(arguments.get("wait", {}))
-        if wait != WaitOptions():
-            raise ValueError("Task requests require default zero wait")
-        if set(arguments.get("include_fields", DEFAULT_RECEIPT_FIELDS)) != set(DEFAULT_RECEIPT_FIELDS):
-            raise ValueError("Task requests cannot customize receipt fields")
-        request = ActionRequestInput.model_validate(arguments["request"])
+        options = TaskRequestArguments.model_validate(arguments)
         verified = _caller_token(get_access_token())
-        return await service.submit(request, verified.principal, external_grant=verified.external_grant, mcp_task=True)
+        return await service.submit(options.request, verified.principal, external_grant=verified.external_grant)
 
     async def task_get(request_id: UUID) -> tuple[ActionRequestView, ActionState | None, datetime | None]:
         return await service.get_mcp_task(request_id, _caller_token(get_access_token()).principal)

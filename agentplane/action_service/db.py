@@ -12,7 +12,6 @@ from uuid import UUID, uuid4
 
 from pydantic import JsonValue, TypeAdapter
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -189,9 +188,6 @@ class ActionRequestRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     history_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    mcp_task: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    mcp_terminal_state: Mapped[str | None] = mapped_column(Text)
-    mcp_terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ActionEventRow(Base):
@@ -479,7 +475,6 @@ class ActionStore:
         request_id: UUID,
         vote: ProviderVote | None,
         external_grant: ExternalGrantProvenance | None = None,
-        mcp_task: bool = False,
     ) -> ActionRequestView:
         """Persist an admitted request; ActionService resolves its group/action before calling here.
 
@@ -512,7 +507,6 @@ class ActionStore:
                     caller_name=principal.account.name,
                     external_grant=external_grant.model_dump(mode="json") if external_grant is not None else None,
                     state=ActionState.DECISION_PENDING.value,
-                    mcp_task=mcp_task,
                     version=1,
                     created_at=now,
                     updated_at=now,
@@ -598,16 +592,25 @@ class ActionStore:
     async def get_mcp_task(
         self, request_id: UUID, principal: CallerPrincipal
     ) -> tuple[ActionRequestView, ActionState | None, datetime | None]:
-        """Task identity and terminal latch are checked in the same owner-scoped read."""
+        """Read any caller-owned Action as a task; events preserve its first terminal outcome."""
         async with self._sessions() as session:
             row = await session.get(ActionRequestRow, request_id)
-            if row is None or not row.mcp_task or not _may_read(row, principal):
+            if row is None or not _may_read(row, principal):
                 raise ActionNotFoundError(str(request_id))
-            return (
-                await self._view(session, row, principal),
-                ActionState(row.mcp_terminal_state) if row.mcp_terminal_state else None,
-                row.mcp_terminal_at,
-            )
+            view = await self._view(session, row, principal)
+            # Query the append-only event stream after reading the receipt: a completion
+            # racing this read must not produce a 'completed' task with a stale result.
+            first = (
+                await session.execute(
+                    select(ActionEventRow.state, ActionEventRow.at)
+                    .where(ActionEventRow.request_id == request_id, ActionEventRow.state.in_(_MCP_TERMINAL_STATES))
+                    .order_by(ActionEventRow.sequence)
+                    .limit(1)
+                )
+            ).first()
+            if first is None or view.state.value not in _MCP_TERMINAL_STATES:
+                return view, None, None
+            return view, ActionState(first.state), first.at
 
     async def events(
         self, request_id: UUID, principal: ReadPrincipal, *, after_sequence: int = 0, limit: int | None = None
@@ -982,23 +985,21 @@ def _may_read(row: ActionRequestRow, principal: ReadPrincipal) -> bool:
     return isinstance(principal, (OperatorPrincipal, ServiceReaderPrincipal)) or _is_caller(row, principal)
 
 
+_MCP_TERMINAL_STATES = frozenset(
+    state.value
+    for state in (
+        ActionState.SUCCEEDED,
+        ActionState.FAILED,
+        ActionState.CANCELLED,
+        ActionState.DENIED,
+        ActionState.EXECUTION_UNKNOWN,
+    )
+)
+
+
 def _record_event(
     session: AsyncSession, row: ActionRequestRow, at: datetime, *, actor: Principal | None = None
 ) -> None:
-    if (
-        row.mcp_task
-        and row.mcp_terminal_state is None
-        and row.state
-        in {
-            ActionState.SUCCEEDED.value,
-            ActionState.FAILED.value,
-            ActionState.CANCELLED.value,
-            ActionState.DENIED.value,
-            ActionState.EXECUTION_UNKNOWN.value,
-        }
-    ):
-        row.mcp_terminal_state = row.state
-        row.mcp_terminal_at = at
     if row.state != ActionState.DECISION_PENDING.value and row.history_at is None:
         row.history_at = at
     session.add(
