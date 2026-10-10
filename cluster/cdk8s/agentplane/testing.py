@@ -159,6 +159,7 @@ ENV = Environment(
         sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     ),
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
+    sandbox_service_history_ingestion_enabled=True,
     db=DbProps(instances=1),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(

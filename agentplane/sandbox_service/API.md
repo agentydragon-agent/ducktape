@@ -73,11 +73,14 @@ contiguous Event prefix into the Service database under the existing canonical S
 ID. It verifies the current Sandbox UID/owner before connecting and never sends an Open
 spec or starts a harness. Copies from concurrent service replicas may overlap: the
 shared store serializes them, accepts exact duplicate bytes and refuses conflicts.
-Stopped or deleted Sandboxes retain their already-copied prefix. This shadow
-collection by itself does not switch the app's raw Event reads or folds to a new source.
-Deployment requires a previously backfilled and validated history database; legacy
-rows without a known Sandbox UID are retained but not polled. The app's raw read
-cutover and retiring its old writes remain separate steps.
+Stopped or deleted Sandboxes retain their already-copied prefix. The ingester always
+runs when the Service starts; there is no runtime feature gate. The app's projection
+consumes this archive independently. Legacy rows without a known Sandbox UID remain
+readable but are not polled until their binding is established by a verified handoff.
+
+During rolling configuration cleanup, `history_ingestion_enabled` is accepted but ignored.
+After this image is deployed, remove that compatibility field and its ConfigMap entries.
+Deleting the entries before replacing older default-off images would interrupt ingestion.
 
 - `ListSessions`: Sandbox destination; maps Service-created runner IDs to public Session IDs in
   the returned summaries. Legacy runner-owned sessions retain their existing IDs.
