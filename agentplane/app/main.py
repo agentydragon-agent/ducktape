@@ -158,18 +158,14 @@ async def async_main(settings: Settings) -> None:
         engine = connect(settings.database_url)
         database_updates = DatabaseUpdates(engine.url)
         store = ThreadStore(engine)
-        event_logs = EventLogStore(
-            engine,
-            history_reader=inventory if settings.history_reads_enabled else None,
-            history_creator=inventory if settings.history_projection_enabled else None,
-        )
+        event_logs = EventLogStore(engine, history_reader=inventory, history_creator=inventory)
         content = ContentStore(engine)
         runners = SandboxSessions(live, inventory)
         ingester = Ingester(
             runners=runners,
             event_logs=event_logs,
             ingestion=Ingestion(engine),
-            history_projector=HistoryProjector(engine, inventory) if settings.history_projection_enabled else None,
+            history_projector=HistoryProjector(engine, inventory),
         )
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
 

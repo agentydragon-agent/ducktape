@@ -7,17 +7,17 @@ hardening live in the [freezer](task_freezer.md), not the execution graph.
 
 ## Current state and scheduling
 
-**In flight: Session Event history migration from the app to Sandbox Service.** The operator
-reported a backfill log at `2026-10-09T01:28:42.837707193-07:00`: one session had
-`stored=925696/3568560 new=925696 rate=234.8 Events/s`. This is partial progress for one session,
-not a global completion estimate or a fresh observation by this documentation change. Coordinate
-with the agent already owning the migration; do not launch a second backfill or competing cutover.
+**In flight: Session history cutover cleanup.** On 2026-10-09 PDT the migration agent
+confirmed all 55 retained staging Sessions were fenced, with matching app/service inventories,
+service coverage of every final raw cursor, and app checkpoint coverage of every nonempty
+Session. The live canary's app projection advanced beyond its fixed raw fence. The operator
+explicitly excluded the six empty Sessions from further verification work. Do not launch
+another backfill, whole-history scan, or competing cutover.
 
-Source now contains service-owned history storage, resumable import, shadow ingestion and opt-in
-app raw-history reads. Placement is no longer an open choice. Source is not proof that the live
-write/read handoff is complete. See the [archive plan](session_archive_placement.md),
-[import runbook](../sandbox_service/session_history/BACKFILL.md) and
-[read handoff](session_history_read_cutover.md).
+Remaining work: remove temporary flags and legacy paths, verify ordinary new-Session/read
+behavior, remove migration jobs and temporary grants, and check testing before changing its
+runtime defaults. Retained data and runner storage must remain intact. Details and accepted
+bounded evidence belong in the [read handoff](session_history_read_cutover.md).
 
 **Sequencing hold:** finish `THREAD_ARCHIVE_OWNERSHIP` before unrelated additions to the Sandbox
 Service database or app database surgery. App raw-table removal and schema consolidation have
