@@ -32,6 +32,7 @@ from agentplane.action_service.catalog import (
 )
 from agentplane.action_service.db import ActionConflictError, ActionNotFoundError
 from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE, DirectToolProvider, refusal
+from agentplane.action_service.mcp_tasks import ActionTasksExtension
 from agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -353,8 +354,8 @@ def create_server(
         ),
         auth=verifier,
         mask_error_details=True,
-        # TODO: Implement durable, caller-scoped MCP tasks for request_action before
-        # advertising task support; see agentplane/plans/mcp_action_tasks.md.
+        # Do not task-enable other generic or direct tools by default. The Action
+        # task extension below opts request_action in explicitly.
         tasks=False,
     )
 
@@ -488,7 +489,7 @@ def create_server(
         data = view.model_dump(mode="json")
         return ToolResult(structured_content={key: value for key, value in data.items() if key in requested})
 
-    @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
+    @server.tool(task=True, annotations={"readOnlyHint": False, "idempotentHint": True})
     @_tool_errors
     async def request_action(
         request: ActionRequestInput,
@@ -595,5 +596,40 @@ def create_server(
             ),
             exclude_none=True,
         )
+
+    async def task_submit(arguments: dict[str, Any]) -> ActionRequestView:
+        if set(arguments) - {"request", "respond_with", "wait", "include_fields"} or "request" not in arguments:
+            raise ValueError("Task request must include only known arguments and a request")
+        if arguments.get("respond_with", "result") != "result":
+            raise ValueError("Task requests require respond_with=result")
+        wait = WaitOptions.model_validate(arguments.get("wait", {}))
+        if wait != WaitOptions():
+            raise ValueError("Task requests require default zero wait")
+        if set(arguments.get("include_fields", DEFAULT_RECEIPT_FIELDS)) != set(DEFAULT_RECEIPT_FIELDS):
+            raise ValueError("Task requests cannot customize receipt fields")
+        request = ActionRequestInput.model_validate(arguments["request"])
+        verified = _caller_token(get_access_token())
+        return await service.submit(request, verified.principal, external_grant=verified.external_grant, mcp_task=True)
+
+    async def task_get(request_id: UUID) -> tuple[ActionRequestView, ActionState | None, datetime | None]:
+        return await service.get_mcp_task(request_id, _caller_token(get_access_token()).principal)
+
+    async def task_cancel(request_id: UUID) -> CancellationOutcome:
+        return (await service.cancel(request_id, _caller_token(get_access_token()).principal)).outcome
+
+    def task_result(view: ActionRequestView) -> dict[str, Any]:
+        answer = tool_result(view, catalog.groups[view.action.group].executor, max_wait_seconds=max_wait_seconds)
+        wire = answer.to_mcp_result()
+        if isinstance(wire, tuple):
+            blocks, structured = wire
+            return {
+                "content": [block.model_dump(mode="json", by_alias=True) for block in blocks],
+                "structuredContent": structured,
+            }
+        if isinstance(wire, list):
+            return {"content": [block.model_dump(mode="json", by_alias=True) for block in wire]}
+        return wire.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    server.add_extension(ActionTasksExtension(task_submit, task_get, task_cancel, task_result))
 
     return server

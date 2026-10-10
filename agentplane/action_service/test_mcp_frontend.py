@@ -22,6 +22,7 @@ from fastmcp.exceptions import ToolError
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api
 from mcp.types import CallToolResult, ContentBlock, ImageContent, TextContent
+from mcp_types import CLIENT_CAPABILITIES_META_KEY, PROTOCOL_VERSION_META_KEY
 from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.types import Message, Scope
@@ -1070,3 +1071,87 @@ async def test_request_action_refuses_receipt_fields_without_a_receipt(results_f
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+async def _action_task_rpc(
+    http: httpx2.AsyncClient, method: str, params: dict[str, object], *, caller: str = "test-token-a"
+) -> dict[str, object]:
+    body = {
+        "jsonrpc": "2.0",
+        "id": 12,
+        "method": method,
+        "params": {
+            **params,
+            "_meta": {
+                PROTOCOL_VERSION_META_KEY: "2026-07-28",
+                CLIENT_CAPABILITIES_META_KEY: {"extensions": {"io.modelcontextprotocol/tasks": {}}},
+            },
+        },
+    }
+    headers = {**_bearer(caller), "Mcp-Protocol-Version": "2026-07-28", "Mcp-Method": method}
+    if method == "tools/call":
+        headers["Mcp-Name"] = str(params["name"])
+    response = await http.post("/mcp", headers=headers, json=body)
+    return response.json()
+
+
+async def test_action_tasks_use_canonical_request_and_owner_scoped_reads(frontend: Frontend) -> None:
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(frontend.app), base_url="http://actions.test") as http:
+        request = {
+            "idempotency_key": "task-pending",
+            "title": "Test pending task",
+            "action": {"group": "test-group", "name": "beta"},
+            "arguments": {"message": "hello"},
+        }
+        created = await _action_task_rpc(
+            http, "tools/call", {"name": "request_action", "arguments": {"request": request}}
+        )
+        assert "error" not in created, created
+        task = created["result"]
+        assert task["resultType"] == "task"
+        assert task["status"] == "working"
+        request_id = UUID(task["taskId"])
+        assert (await frontend.store.get_mcp_task(request_id, CallerPrincipal(account=workload("a"))))[
+            0
+        ].id == request_id
+
+        params = {"taskId": str(request_id)}
+        assert (await _action_task_rpc(http, "tasks/get", params))["result"]["status"] == "working"
+        assert "error" in await _action_task_rpc(http, "tasks/get", params, caller="test-token-b")
+        assert "error" not in await _action_task_rpc(http, "tasks/cancel", params)
+        cancelled = await _action_task_rpc(http, "tasks/get", params)
+        assert cancelled["result"]["status"] == "cancelled"
+        assert "error" in await _action_task_rpc(
+            http, "tasks/update", {**params, "inputResponses": {"unused": "response"}}
+        )
+
+
+async def test_action_task_completed_result_is_inlined(frontend: Frontend) -> None:
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(frontend.app), base_url="http://actions.test") as http:
+        created = await _action_task_rpc(
+            http,
+            "tools/call",
+            {
+                "name": "request_action",
+                "arguments": {
+                    "request": {
+                        "idempotency_key": "task-done",
+                        "title": "Test completed task",
+                        "action": {"group": "test-group", "name": "alpha"},
+                        "arguments": {"message": "task-result"},
+                    }
+                },
+            },
+        )
+        assert "error" not in created, created
+        task_id = created["result"]["taskId"]
+        for _ in range(100):
+            result = await _action_task_rpc(http, "tasks/get", {"taskId": task_id})
+            assert "error" not in result, result
+            if result["result"]["status"] == "completed":
+                break
+            await asyncio.sleep(0.05)
+        else:
+            pytest.fail("Action task did not complete")
+        assert "task-result" in json.dumps(result["result"]["result"])
+        assert (await _action_task_rpc(http, "tasks/cancel", {"taskId": task_id}))["error"]

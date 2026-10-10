@@ -285,8 +285,9 @@ class ActionService:
         principal: CallerPrincipal,
         *,
         external_grant: ExternalGrantProvenance | None = None,
+        mcp_task: bool = False,
     ) -> ActionRequestView:
-        return await self._submit(body, principal, external_grant=external_grant, decided_only=False)
+        return await self._submit(body, principal, external_grant=external_grant, decided_only=False, mcp_task=mcp_task)
 
     async def submit_decided(
         self,
@@ -297,7 +298,7 @@ class ActionService:
     ) -> ActionRequestView:
         """Submit only a request a policy decides at admission. Anything else raises
         `UndecidedRequestError` before a row exists, so no one is asked and nothing is left to cancel."""
-        return await self._submit(body, principal, external_grant=external_grant, decided_only=True)
+        return await self._submit(body, principal, external_grant=external_grant, decided_only=True, mcp_task=False)
 
     async def _submit(
         self,
@@ -306,6 +307,7 @@ class ActionService:
         *,
         external_grant: ExternalGrantProvenance | None,
         decided_only: bool,
+        mcp_task: bool,
     ) -> ActionRequestView:
         if self.draining:
             raise ServiceDrainingError("Action Service is draining")
@@ -324,7 +326,7 @@ class ActionService:
                 or "no decision provider is configured"
             )
         view = await self._store.submit(
-            body, principal, request_id=request_id, vote=vote, external_grant=external_grant
+            body, principal, request_id=request_id, vote=vote, external_grant=external_grant, mcp_task=mcp_task
         )
         if vote is not None and vote.outcome.verdict is ProviderVerdict.ALLOW:
             self._schedule(view.id)
@@ -403,6 +405,11 @@ class ActionService:
 
     async def get(self, request_id: UUID, principal: ReadPrincipal) -> ActionRequestView:
         return await self._store.get(request_id, principal)
+
+    async def get_mcp_task(
+        self, request_id: UUID, principal: CallerPrincipal
+    ) -> tuple[ActionRequestView, ActionState | None, datetime | None]:
+        return await self._store.get_mcp_task(request_id, principal)
 
     async def cancel(self, request_id: UUID, principal: Principal) -> CancellationResult:
         return await self._store.cancel(request_id, principal)

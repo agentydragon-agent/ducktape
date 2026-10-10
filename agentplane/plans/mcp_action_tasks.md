@@ -72,20 +72,21 @@ No task-worker process state or caller bearer is stored in the task record.
 Define task retention without expiring an active Action or encouraging
 another execution.
 
-| Action state                        | Task state              | Meaning                                                              |
-| ----------------------------------- | ----------------------- | -------------------------------------------------------------------- |
-| `decision_pending`                  | `working`               | Awaiting approval; nothing ran.                                      |
-| `allowed`, `dispatching`, `running` | `working`               | Approved / claimed / executing.                                      |
-| `succeeded`                         | `completed` or `failed` | Inline the final tool result; `isError=true` requires a failed task. |
-| `denied`, `failed`                  | `failed`                | Give a distinct safe diagnostic.                                     |
-| `cancelled`                         | `cancelled`             | Withdrawn before dispatch.                                           |
-| `execution_unknown`                 | `failed`                | May have run; never retry automatically.                             |
+| Action state                        | Task state  | Meaning                                             |
+| ----------------------------------- | ----------- | --------------------------------------------------- |
+| `decision_pending`                  | `working`   | Awaiting approval; nothing ran.                     |
+| `allowed`, `dispatching`, `running` | `working`   | Approved / claimed / executing.                     |
+| `succeeded`                         | `completed` | Inline the final tool result, preserving `isError`. |
+| `denied`, `failed`                  | `failed`    | Give a distinct safe diagnostic.                    |
+| `cancelled`                         | `cancelled` | Withdrawn before dispatch.                          |
+| `execution_unknown`                 | `failed`    | May have run; never retry automatically.            |
 
 For `tasks/get`, adapt the existing `tool_result` conversion to preserve
 MCP content blocks (including images), structured content and `isError`,
 and sandbox results. The upstream tool can return `isError=true` even
-though the Action execution state is `succeeded`; its task state must be
-`failed` while the inlined result remains that original error result.
+though the Action execution state is `succeeded`. FastMCP's SEP-2663
+backend reports a completed task with that original tool error result
+inlined; preserve that behavior.
 A status message may say "waiting for operator approval" or "running",
 but must not claim execution progress beyond those states.
 
