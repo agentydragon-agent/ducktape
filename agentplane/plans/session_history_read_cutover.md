@@ -54,23 +54,20 @@ models and compatibility fence remained until the explicit schema retirement bel
 Completed: runtime raw writers/read fallbacks and handoff tooling were retired;
 per-Session leases replaced Sandbox ownership; #9707/#9712 removed app locator
 lookups and the physical locator column. Authoritative bindings remain in Sandbox
-Service. #9723 removes the temporary locator-retirement rollout override/test.
+Service. #9723 removed the temporary rollout override/test.
 
-**In flight: explicit raw-table retirement.** Migration `0024_retire_app_raw_history`
-deletes retained app `event` and `feed_state` rows, their indexes/triggers, the obsolete
-`reject_fenced_app_ingestion()` function, and `raw_ingestion_fenced_at_cursor`.
-It removes the ORM models/compatibility writes; old-schema setup exists only in
-historical migration tests. Public identities, current projection tables/checkpoints,
-operator metadata, Sandbox Service history and runner storage are untouched.
+**Complete: explicit raw-table retirement (#9725).** Both primary app databases
+reached `0024_retire_app_raw_history`; retained app `event`/`feed_state`, their local
+indexes/triggers, the rejection function and fence column are retired. Their ORM
+models and compatibility writes are removed. Old-schema setup exists only in historical
+migration tests. Public identities, current projections/checkpoints, operator metadata,
+Sandbox Service history and runner storage remain outside this deletion's scope.
+See the [bounded rollout evidence and incident](#raw-history-retirement-evidence).
 
-This destructive retirement is not reversible by Alembic downgrade. Restore a
-pre-retirement backup for rollback rather than fabricating an empty archive. Do not
-merge until CI passes and the app-only Recreate strategy is verified live: older
-replicas still map the fence column. If #9723 has restored RollingUpdate, deploy a
-separate strategy prerequisite first. Do not bundle that prerequisite with the schema
-image. After a coordinated stop and migration, verify revision/table absence, readiness
-and bounded projection progress, then remove temporary strategy/test again. No scan
-or backfill is part of acceptance.
+The retirement is not reversible by Alembic downgrade. Restoring a pre-retirement
+backup is required for rollback; an empty replacement archive is not equivalent.
+No temporary rollout gate, further backfill or full-history verification remains for
+this migration. Future schema changes still require their own compatibility plan.
 
 Still unfinished:
 
@@ -100,8 +97,8 @@ Bounded live checks at 04:53–04:55 America/Los_Angeles verified:
   3,584 cursor positions. Bounded log samples from both staging replicas and testing
   had no matching error, exception or stalled lines. No archive scan was performed.
 
-The deployment-only follow-up restores `self.env.replicas.strategy` and removes the
-migration-specific Recreate regression test: staging returns to RollingUpdate;
+The deployment-only follow-up #9705 restored `self.env.replicas.strategy` and removed
+the migration-specific Recreate regression test: staging returned to RollingUpdate;
 testing retains its normal Recreate strategy. This is not a schema rollback.
 A binary rollback across the ownership-scope change still requires stopping the app
 and downgrading the lease schema first.
@@ -119,12 +116,45 @@ Bounded live checks at 07:06–07:07 America/Los_Angeles verified:
   positions. Bounded startup logs from all three app Pods had no matching error,
   exception or traceback lines. No full-history scan or backfill was performed.
 
-The deployment-only follow-up restores environment-specific strategy and removes
-#9715's temporary regression test: staging returns to RollingUpdate and testing
-retains Recreate. Public identities, checkpoints, service-owned locator bindings
+The deployment-only follow-up #9723 restored environment-specific strategy and removed
+#9715's temporary regression test: staging uses RollingUpdate and testing Recreate.
+It landed before raw-table retirement, causing the overlap described below. Public identities, checkpoints, service-owned locator bindings
 and retained history were not removed. Raw app archive-table retirement is separate.
 
 Downgrade still requires coordinated app shutdown. Migration downgrade recreates
 compatibility values from public UUIDs, not discarded private locator copies, and
 supports #9707-or-later public-ID readers only. Restoring deployment strategy is
 not a schema rollback.
+
+### Raw-history retirement evidence
+
+On 2026-10-10 at 07:49 America/Los_Angeles, bounded postflight checks confirmed:
+
+- Testing 1/1 and staging 2/2 updated/Ready on image
+  `devel-20261010144538-f7d256c`, with no old app replicas remaining.
+- Both primary app databases reported `0024_retire_app_raw_history`.
+- `event`, `feed_state`, `reject_fenced_app_ingestion()`, the old fence column and
+  the previously retired locator column were absent.
+- Two active staging checkpoints advanced between samples, by 384 and 10 cursor
+  positions. Bounded replacement-Pod startup log samples had no matching errors.
+- No backfill or full-history scan was repeated. The normal environment strategies
+  were already restored by #9723; no further strategy patch is needed.
+
+#### Staging rollout overlap incident
+
+#9723 merged before #9725's image deployed. GitOps restored staging's RollingUpdate
+strategy while the old app image still mapped `raw_ingestion_fenced_at_cursor`.
+The new Pod's migration dropped that column while an old replica was still running.
+The old replica's bounded logs contained `UndefinedColumnError` naming that column.
+Testing retained Recreate and did not have the same strategy overlap.
+
+The old staging replica subsequently exited. The final replica inventory, current
+replacement logs and advancing checkpoints establish recovery, not proof that no
+requests failed during the overlap. Request impact was not quantified. This was
+not a successfully coordinated stop, and must not be recorded as one.
+
+The emergency suggestion to patch staging back to Recreate was superseded when the
+migration and rollout completed; it is not a remaining operator action. For future
+breaking migrations, preserve the prerequisite strategy until schema rollout is
+verified, and gate its restoration on that evidence rather than merge or image-build
+completion. This record does not claim such automated gating has been implemented.
