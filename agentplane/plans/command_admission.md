@@ -1,8 +1,8 @@
 # Durable command admission through Sandbox Service
 
-Status: draft implementation, not deployed. The operator approved code and isolated tests while the
-Session Event migration runs; merge, schema application and deployment remain gated on archive
-ownership and compatibility verification. The [task DAG](task_dag.md) owns rollout dependencies.
+Status: the admission store, channel delivery and admission reconciliation are merged; the contract
+they implement is in the [Sandbox Service API](../sandbox_service/API.md#sessions-and-commands). The
+[task DAG](task_dag.md) owns the remaining work.
 
 ## Scope
 
@@ -10,7 +10,7 @@ One surface for routing **all supported runner Commands** through Sandbox Servic
 text input, model/reasoning changes, interrupts and session stop. This is not a text-only queue,
 a second execution authority, a background dispatcher, or permission to start a stopped harness.
 Notification attachments, notification-specific authorization, producer integration and presentation
-are separate follow-ups, after this admission contract settles. Do not add an untyped metadata bag
+are separate follow-ups. Do not add an untyped metadata bag
 in their place. Retain authenticated caller provenance for the submission itself.
 
 The current app path has a browser recovery outbox, not an app database command queue to retire.
@@ -107,8 +107,8 @@ cannot retract a command already sent; persist and reconcile late admission rece
 
 The admission store (`sandbox_service/commands/`) persists submissions in the `sandbox_commands`
 database with its own per-Session reconciliation cursor, since history lives in another database
-with no shared transaction. `SubmitCommand` records public-Session commands there and history
-ingestion reconciles their admissions. New inbound RPC prototypes are not a
+with no shared transaction. `SubmitCommand` records public-Session commands there, and admission
+reconciliation settles pending ones from the runner journal, independent of history ingestion. New inbound RPC prototypes are not a
 selected rollout prerequisite. This plans-only change neither applies schema nor changes traffic.
 
 Acceptance covers authenticated destination/retry authorization, immutable/concurrent retries,
