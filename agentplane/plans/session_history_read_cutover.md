@@ -347,6 +347,7 @@ After #9712 passes CI and this strategy is verified live, merge the schema chang
 Check migration exit status, revision/column removal, readiness and bounded
 projection progress. Then restore the environment strategy and remove the temporary
 rollout regression test. No full-history scan or backfill is required.
+
 ### App locator column retirement gate
 
 The follow-up to #9707 removes the ORM locator field and compatibility writes with
@@ -367,3 +368,10 @@ Downgrade requires the same coordinated stop. It recreates the compatibility col
 with public UUID strings, not the removed private copies, and supports rollback
 only to #9707 or later public-ID readers. Authoritative private mappings remain in
 Sandbox Service. Retained `event`/`feed_state` retirement remains separate.
+
+Prerequisite verified on 2026-10-10 at 06:50 America/Los_Angeles after #9715 merged:
+both live app Deployments use `Recreate` without a `rollingUpdate` field. Testing
+is 1/1 Ready (generation/observedGeneration 335); staging is 2/2 Ready
+(generation/observedGeneration 374). The strategy gate is satisfied. #9712 remains
+pending a fresh CI pass after rebasing onto the prerequisite, followed by schema
+rollout verification and removal of the temporary strategy/test.
