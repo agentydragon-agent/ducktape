@@ -46,3 +46,22 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_schema_baseline",
+    size = "medium",
+    srcs = ["test_schema_baseline.py"],
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//props:conftest",
+        "//props/db:config",
+        "//props/db:conftest",
+        "//props/db:setup",
+        "//util/testing:postgres",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
