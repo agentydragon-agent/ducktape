@@ -112,7 +112,10 @@ py_library(
 py_library(
     name = "alloy",
     srcs = ["alloy.py"],
-    data = ["config.alloy"],
+    data = [
+        "config.alloy",
+        "node.alloy",
+    ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":grafana_helmrepository",
