@@ -24,9 +24,9 @@ class Settings(BaseSettings):
 
     sandbox_namespace: str = Field(min_length=1)
     database_url: str | None = Field(default=None, min_length=1)
-    # Explicit shadow-mode gate. Enable only after the one-way existing-history
-    # import has been verified; the app remains the UI's raw Event authority.
-    history_ingestion_enabled: bool = False
+    # Accept the old ConfigMap key until this unconditional-ingestion image is live.
+    # The key no longer controls runtime behavior; remove it with the manifest key.
+    history_ingestion_enabled: bool = True
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
     history_reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     platform_instructions: str = Field(min_length=1)

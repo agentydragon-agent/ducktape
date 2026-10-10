@@ -68,18 +68,19 @@ namespaced annotations, not competing Sandbox status conditions.
 
 ## Sessions and commands
 
-The optional Sandbox Service raw-history ingester is **off by default**. When explicitly
-configured with `history_ingestion_enabled`, it copies only the runner's published,
+The Sandbox Service raw-history ingester copies only the runner's published,
 contiguous Event prefix into the Service database under the existing canonical Session
 ID. It verifies the current Sandbox UID/owner before connecting and never sends an Open
 spec or starts a harness. Copies from concurrent service replicas may overlap: the
 shared store serializes them, accepts exact duplicate bytes and refuses conflicts.
-Stopped or deleted Sandboxes retain their already-copied prefix. This is shadow
-collection only: it does not switch the app's raw archive or folds to a new source.
-Before enabling it for a deployment, backfill and validate existing mappings and
-Event prefixes (a one-off Flux-managed Job is a candidate), including the handoff
-window; a later, separate cutover must establish the single authority and retire app
-writes. Legacy rows without a known Sandbox UID are retained but not polled.
+Stopped or deleted Sandboxes retain their already-copied prefix. The ingester always
+runs when the Service starts; there is no runtime feature gate. The app's projection
+consumes this archive independently. Legacy rows without a known Sandbox UID remain
+readable but are not polled until their binding is established by a verified handoff.
+
+During rolling configuration cleanup, `history_ingestion_enabled` is accepted but ignored.
+After this image is deployed, remove that compatibility field and its ConfigMap entries.
+Deleting the entries before replacing older default-off images would interrupt ingestion.
 
 - `ListSessions`: Sandbox destination; maps Service-created runner IDs to public Session IDs in
   the returned summaries. Legacy runner-owned sessions retain their existing IDs.
