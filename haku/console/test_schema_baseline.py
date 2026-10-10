@@ -47,9 +47,9 @@ def test_schema_baseline(postgres_container: PostgresContainer, db_url: str) -> 
             ).all()
         assert revision == "0135"
         with engine.connect() as conn:
-            assert conn.execute(text("SELECT index_id, index_type FROM recall_index.indexes")).all() == [
-                ("haku-state", "git")
-            ]
+            assert [
+                tuple(row) for row in conn.execute(text("SELECT index_id, index_type FROM recall_index.indexes"))
+            ] == [("haku-state", "git")]
         apply_migrations(db_url)
         assert _schema(postgres_container, database) == before
         with engine.connect() as conn:
