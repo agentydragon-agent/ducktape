@@ -299,23 +299,26 @@ runner storage; use bounded checks, not another full-history scan.
   "app ingestion") as their contracts change. Leave durable rules in AGENTS.md;
   keep this temporary cleanup checklist here and in the DAG.
 
-### Session-lease deployment gate
+### Session-lease cutover evidence
 
-Before merging the per-Session lease schema change (#9692), land the deployment-only
-change selecting `Recreate` for **only** `agentplane-app` in testing and staging.
-Verify both live Deployments show `spec.strategy.type: Recreate`, without a
-`rollingUpdate` field. A strategy-only change does not itself change the Pod template.
-Also verify the public-Session routing image from #9691 is healthy before proceeding.
+The per-Session ownership cutover (#9692) completed on 2026-10-10. The temporary
+app-only Recreate prerequisite (#9698) stopped old owners before migration; Sandbox
+Service, runners and their storage were unchanged.
 
-The subsequent image rollout terminates old app Pods before starting replacements;
-the replacement Pods run the migration init container before starting the app. This
-intentionally causes a brief app outage. Sandbox Service, runners and their storage
-are unchanged, and projection resumes from retained checkpoints. Do not force-delete
-Pods or bypass graceful shutdown to accelerate this transition.
+Bounded live checks at 04:53–04:55 America/Los_Angeles verified:
 
-After the migration image is deployed, check app readiness, the Alembic revision,
-Session-keyed lease rows and advancing projection checkpoints with bounded queries.
-Then restore the app's environment-specific rolling-update strategy and remove the
-temporary Recreate regression test in a deployment-only follow-up. Reverting the
-strategy is not a schema rollback: a binary rollback across the ownership-scope
-change still requires stopping the app and downgrading the lease schema first.
+- Testing was 1/1 Ready and staging 2/2 Ready on the f5273a6 app image; all three
+  migration init containers exited zero.
+- Both app databases reported `0022_session_projection_lease`, with
+  `session_projection_lease` present and `sandbox_ingestion` absent.
+- Testing had 142 active leases; staging had 58. Multiple Sessions in one Sandbox
+  held independent leases.
+- Two active staging projection checkpoints advanced between samples, by 135 and
+  3,584 cursor positions. Bounded log samples from both staging replicas and testing
+  had no matching error, exception or stalled lines. No archive scan was performed.
+
+The deployment-only follow-up restores `self.env.replicas.strategy` and removes the
+migration-specific Recreate regression test: staging returns to RollingUpdate;
+testing retains its normal Recreate strategy. This is not a schema rollback.
+A binary rollback across the ownership-scope change still requires stopping the app
+and downgrading the lease schema first.

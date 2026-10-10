@@ -144,16 +144,6 @@ tables, rows and runner storage must not be deleted incidentally. Preserve the d
 legacy runner-locator mapping and fold associations. See the
 [cleanup acceptance evidence](session_history_read_cutover.md#runtime-cleanup-acceptance).
 
-### `APP_SESSION_PROJECTION_LEASE` — independent ownership per Session
-
-**In flight (migration agent, PR #9692):** replace the old Sandbox-wide projection
-lease with a lease keyed by public Session/Thread UUID. Keep Sandbox discovery separate;
-retain per-Session fencing on commits and deleted-Sandbox replay. Acceptance covers
-same-Sandbox independent owners, stale/wrong-Session rejection, coordinator isolation,
-process takeover and migration without changing retained history or checkpoints.
-Stop old app replicas for the ownership-scope migration; do not mix fence domains.
-See the [schema cleanup plan](session_history_read_cutover.md#post-cutover-schema-cleanup).
-
 ### `THREAD_IDENTITY_NEW` — service-owned identity for new histories
 
 **Blocked by the migration scheduling hold.** Finish the

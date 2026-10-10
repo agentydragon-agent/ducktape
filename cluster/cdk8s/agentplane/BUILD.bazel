@@ -813,16 +813,3 @@ py_library(
     name = "namespaces",
     srcs = ["namespaces.py"],
 )
-
-py_test(
-    name = "test_app_rollout",
-    size = "medium",
-    srcs = ["test_app_rollout.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)

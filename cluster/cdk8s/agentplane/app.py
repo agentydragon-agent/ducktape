@@ -42,7 +42,6 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     Deployment,
-    DeploymentStrategy,
     EnvValue,
     IApiResource,
     ImagePullPolicy,
@@ -272,10 +271,7 @@ class App(Construct):
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=self.env.replicas.count,
-            # Temporary for Session-lease migration (#9692): old app Pods must exit
-            # before any replacement runs its migration init container. Restore the
-            # environment strategy after both environments have completed the cutover.
-            strategy=DeploymentStrategy.recreate(),
+            strategy=self.env.replicas.strategy,
             min_ready=self.env.replicas.min_ready,
             # 5s HTTP/SSE drain (--shutdown-timeout), with room for the bridge's lease
             # release and the store's close.
