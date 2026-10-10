@@ -260,7 +260,7 @@ class LegacyIngester(Ingester):
             history_projector=history_projector or AsyncMock(spec=HistoryProjector),
         )
         self._legacy_projector = history_projector
-        self._ingestion = ingestion
+        self._ingestion: LegacyIngestion = ingestion
         self._feeds: dict[tuple[str, str], Feed] = {}
 
     async def reconcile(self) -> None:
