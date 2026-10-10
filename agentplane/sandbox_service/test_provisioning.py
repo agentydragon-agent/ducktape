@@ -155,7 +155,7 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
     assert not view.binding.session_defaults.HasField("cwd")
     stored = case.custom.objects[("sandboxes", view.name)]["metadata"]["annotations"]
     assert json.loads(stored[SANDBOX_BINDING_ANNOTATION]) == {
-        "thread_defaults": {"model": "test-model", "instructions": ""},
+        "session_defaults": {"model": "test-model", "instructions": ""},
         "bootstrap": "printf ready",
     }
     assert view.initializing
@@ -373,6 +373,27 @@ async def test_reconcile_after_final_resume_reply_is_lost(case: Case, monkeypatc
     current = await case.service.inventory.get(view.name)
     assert current.operating_mode == "Running"
     assert not current.initializing
+
+
+async def test_reconcile_rewrites_legacy_binding_spelling(case: Case) -> None:
+    sandbox = await case.service.create(
+        CreateSandboxRequest(
+            name="test-legacy",
+            template=TEMPLATE,
+            bootstrap="printf boot",
+            session_defaults=protocol_pb2.SessionDefaults(model="retained-model"),
+        ),
+        caller=ADMIN,
+    )
+    annotations = case.custom.objects[("sandboxes", sandbox.name)]["metadata"]["annotations"]
+    annotations[SANDBOX_BINDING_ANNOTATION] = '{"thread_defaults":{"model":"retained-model"},"bootstrap":"printf boot"}'
+    before = await case.service.inventory.binding(sandbox.name)
+    await case.service.reconcile_once()
+    assert json.loads(annotations[SANDBOX_BINDING_ANNOTATION]) == {
+        "session_defaults": {"model": "retained-model"},
+        "bootstrap": "printf boot",
+    }
+    assert await case.service.inventory.binding(sandbox.name) == before
 
 
 if __name__ == "__main__":

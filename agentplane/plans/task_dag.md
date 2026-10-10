@@ -949,7 +949,7 @@ flowchart TD
     HISTORY_PROTO_OWNERSHIP[Candidate: History Service owns its request messages]
     HISTORY_PROJECTION_NAMING[Decision: names of the History Service projection tables]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
-    SANDBOX_BINDING_ANNOTATION_RENAME[Candidate: write session_defaults, not thread_defaults]
+    SANDBOX_BINDING_ANNOTATION_RENAME[Candidate: stop reading thread_defaults]
     PROTO_DIRECTORY[Unscheduled: cross-component protos under one proto directory]
     RUNNER_OUTBOUND_CHANNEL[Outbound command delivery peers]
     HISTORY_WRITE_HANDOFF[History Service ingester takes over]
@@ -1058,9 +1058,9 @@ plain name if it carries a history-specific one.
 
 ### `SANDBOX_BINDING_ANNOTATION_RENAME` — write the current field name
 
-**Candidate.** `sandbox_service/binding_storage.py` still writes the Sandbox binding annotation
-with the pre-cutover `thread_defaults` key so an old app could roll back. Write `session_defaults`
-and keep reading both for one release, then delete the translation.
+**Candidate.** `sandbox_service/binding_storage.py` writes `session_defaults`, still reads the
+pre-cutover `thread_defaults` key, and reconcile rewrites stored legacy annotations. Once no Sandbox
+on testing or staging carries `thread_defaults`, delete the translation and the rewrite.
 
 ### `PROTO_DIRECTORY` — protocols in one place
 
