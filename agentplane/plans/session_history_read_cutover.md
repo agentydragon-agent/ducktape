@@ -329,49 +329,25 @@ testing retains its normal Recreate strategy. This is not a schema rollback.
 A binary rollback across the ownership-scope change still requires stopping the app
 and downgrading the lease schema first.
 
-### Locator-column deployment prerequisite
+### Locator-column retirement evidence
 
-Before merging #9712, deploy the app-only Recreate strategy and verify it in both
-environments. #9707 is deployed on image `devel-20261010132451-80294e6`: testing
-has one updated/Ready replica and staging two; all migration init containers exited
-zero. Bounded startup logs from all three app Pods had no error/exception matches.
-Those binaries still select/write the locator column, so rolling overlap with the
-column-drop migration is unsafe despite their public-ID routing.
+#9712 deployed on 2026-10-10 after the app-only Recreate prerequisite #9715.
+Bounded live checks at 07:06–07:07 America/Los_Angeles verified:
 
-The prerequisite changes only app deployment strategy, not its Pod template. The
-subsequent migration image rollout stops old app Pods normally before replacement
-init containers run. Expect brief app unavailability; Sandbox Service, runners and
-archive storage stay unchanged. Do not force-delete Pods.
+- Testing 1/1 and staging 2/2 updated/Ready on app image
+  `devel-20261010140400-9333ed3`; all migration init containers exited zero.
+- Both primary app databases reported `0023_drop_app_runner_locator`.
+- `event_log.session_id` and its local unique constraint were absent.
+- Two active staging checkpoints advanced between samples, by 384 and 13 cursor
+  positions. Bounded startup logs from all three app Pods had no matching error,
+  exception or traceback lines. No full-history scan or backfill was performed.
 
-After #9712 passes CI and this strategy is verified live, merge the schema change.
-Check migration exit status, revision/column removal, readiness and bounded
-projection progress. Then restore the environment strategy and remove the temporary
-rollout regression test. No full-history scan or backfill is required.
+The deployment-only follow-up restores environment-specific strategy and removes
+#9715's temporary regression test: staging returns to RollingUpdate and testing
+retains Recreate. Public identities, checkpoints, service-owned locator bindings
+and retained history were not removed. Raw app archive-table retirement is separate.
 
-### App locator column retirement gate
-
-The follow-up to #9707 removes the ORM locator field and compatibility writes with
-migration `0023_drop_app_runner_locator`. It drops only `event_log.session_id` and
-its local unique constraint; public IDs, checkpoints, archive tables and service
-runner bindings are unchanged. Regression coverage upgrades a retained identity
-with a private locator and verifies the public ID and projection checkpoint survive.
-
-**Do not merge the schema-removal image before a separately deployed app-only
-Recreate prerequisite is verified in both environments.** #9707's public-ID readers
-still select/write the compatibility column, so normal rolling overlap is unsafe.
-First verify #9707 deployed; then deploy the strategy prerequisite, then merge the
-schema change. Stop old app Pods normally before migration; do not force-delete.
-After readiness, revision/column checks and bounded checkpoint progress, restore
-environment-specific strategy. No history verification scan or backfill is needed.
-
-Downgrade requires the same coordinated stop. It recreates the compatibility column
-with public UUID strings, not the removed private copies, and supports rollback
-only to #9707 or later public-ID readers. Authoritative private mappings remain in
-Sandbox Service. Retained `event`/`feed_state` retirement remains separate.
-
-Prerequisite verified on 2026-10-10 at 06:50 America/Los_Angeles after #9715 merged:
-both live app Deployments use `Recreate` without a `rollingUpdate` field. Testing
-is 1/1 Ready (generation/observedGeneration 335); staging is 2/2 Ready
-(generation/observedGeneration 374). The strategy gate is satisfied. #9712 remains
-pending a fresh CI pass after rebasing onto the prerequisite, followed by schema
-rollout verification and removal of the temporary strategy/test.
+Downgrade still requires coordinated app shutdown. Migration downgrade recreates
+compatibility values from public UUIDs, not discarded private locator copies, and
+supports #9707-or-later public-ID readers only. Restoring deployment strategy is
+not a schema rollback.
