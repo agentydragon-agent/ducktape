@@ -250,3 +250,38 @@ uses the app projection checkpoint for its local cursor, and reads lifecycle/Thr
 metadata solely from ThreadHistorySummary. Retained-schema test setup moves to
 test-only helpers. This does not remove table models, historical migrations, retained
 records or the handoff tool; tooling and grant retirement remain separate work.
+
+## Post-cutover schema cleanup
+
+TODO(session-schema-cleanup): follow the runtime/test port in #9670 with an explicit
+schema-cleanup PR after the new readers are deployed. This is migration completion
+work, not an indefinitely deferred task. Preserve public Session/Thread UUIDs and
+runner storage; use bounded checks, not another full-history scan.
+
+- Rename app `EventLog` / `event_log` to reflect an app-side Session reference rather
+  than ownership of a raw archive. Choose the final name with the schema change and
+  update foreign keys, queries and documentation together.
+- **Sandbox Service is authoritative for the runner locator.** App command dispatch,
+  resume, discovery and reconciliation should use the public service Session UUID.
+  Remove the app's physical runner-locator copy (`event_log.session_id`) and its
+  `(sandbox, session_id)` uniqueness constraint after replacing current consumers.
+  Audit legacy HTTP filters/links and identifier translation explicitly; preserve
+  mappings in Sandbox Service, not by inventing another app-owned routing map.
+- Remove `raw_ingestion_fenced_at_cursor` together with active projector fence checks,
+  handoff commands, flags and migration-only tests. It is still used today; do not
+  drop the column ahead of its callers.
+- Drop retained app `event` and `feed_state` tables and their ORM classes only after
+  deployment verification shows no runtime dependencies and handoff tooling is retired.
+  Make retained-data deletion explicit in that PR rather than incidental to a rename.
+- Rename `SandboxIngestion` / `sandbox_ingestion` and lease-facing terminology to
+  describe app projection coordination. Keep its lease token and expiry semantics.
+- Audit app `sandbox`, `harness`, `model` and `cwd` fields: distinguish necessary UI
+  projections from redundant launch/routing metadata. They are not all proven dead.
+  Session identity, runner bindings and frozen launch configuration remain service-owned;
+  any app copies must be derived/read-side data, not competing sources of truth.
+- Audit `ThreadHistorySummary` attachment/end/resume fields and duplicate model/activity
+  metadata against actual consumers. Remove only demonstrated redundancy; projection
+  progress and operational UI state need not equal the service archive watermark.
+- Update misleading model/helper docstrings (`runner_session`, raw-reader wording,
+  "app ingestion") as their contracts change. Leave durable rules in AGENTS.md;
+  keep this temporary cleanup checklist here and in the DAG.
