@@ -353,6 +353,8 @@ def create_server(
         ),
         auth=verifier,
         mask_error_details=True,
+        # TODO: Implement durable, caller-scoped MCP tasks for request_action before
+        # advertising task support; see agentplane/plans/mcp_action_tasks.md.
         tasks=False,
     )
 
