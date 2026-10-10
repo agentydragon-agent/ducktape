@@ -87,15 +87,15 @@ class Ingester:
         """Renew ownership of the running sandboxes and discover sessions opened through any replica."""
         async with self._reconcile_lock:
             running = set(self._runners.running())
-            fenced = await self._event_logs.fenced_sessions()
-            running.update(locator.sandbox for locator in fenced.values())
+            projectable = await self._event_logs.projection_sessions()
+            running.update(locator.sandbox for locator in projectable.values())
             for sandbox in set(self._leases) - running:
                 await self._release(sandbox)
             async with asyncio.TaskGroup() as tasks:
                 for sandbox in sorted(running):
-                    tasks.create_task(self._reconcile_sandbox(sandbox, fenced))
+                    tasks.create_task(self._reconcile_sandbox(sandbox, projectable))
 
-    async def _reconcile_sandbox(self, sandbox: str, fenced: dict[UUID, RunnerSession]) -> None:
+    async def _reconcile_sandbox(self, sandbox: str, projectable: dict[UUID, RunnerSession]) -> None:
         try:
             async with asyncio.timeout(10):
                 lease = self._leases.get(sandbox)
@@ -107,7 +107,7 @@ class Ingester:
                     if lease is None:
                         return
                     self._leases[sandbox] = lease
-                selected = {thread: locator for thread, locator in fenced.items() if locator.sandbox == sandbox}
+                selected = {thread: locator for thread, locator in projectable.items() if locator.sandbox == sandbox}
                 async with asyncio.TaskGroup() as tasks:
                     for thread_id in selected:
                         tasks.create_task(self._project_history(thread_id, lease))

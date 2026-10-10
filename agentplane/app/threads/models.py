@@ -30,10 +30,9 @@ class EventLog(Base):
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     sandbox: Mapped[str] = mapped_column(Text)
-    # Durable per-Thread handoff barrier, independent of replaceable sandbox leases.
-    # NULL: runner-backed app ingestion; otherwise the immutable final app raw cursor.
-    # TODO(session-schema-cleanup): Remove this fence after removing projector/handoff
-    # checks; it is migration state, not an enduring property of a Thread.
+    # Retired migration state. Runtime projection no longer reads this barrier.
+    # TODO(session-schema-cleanup): Drop with the raw tables and their write-rejection
+    # triggers. New identities retain a zero value until that explicit schema change.
     raw_ingestion_fenced_at_cursor: Mapped[int | None] = mapped_column(BigInteger)
     # TODO(session-schema-cleanup): Stop routing by this retained runner locator.
     # Sandbox Service owns that binding. Route by the public Session UUID (id),

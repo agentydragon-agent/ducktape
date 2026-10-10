@@ -176,7 +176,6 @@ py_test(
     srcs = ["test_history_projector.py"],
     requires_docker = True,
     deps = [
-        ":history_handoff",
         ":history_projector",
         ":ingestion",
         ":models",
@@ -184,6 +183,7 @@ py_test(
         ":store",
         "//:conftest",
         "//agentplane/app:conftest",
+        "//agentplane/app/testing:history",
         "//agentplane/app/testing:retained_history",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/threads/events:event_log",
@@ -193,42 +193,6 @@ py_test(
         "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:protocol_pb2",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "history_handoff",
-    srcs = ["history_handoff.py"],
-    deps = [
-        ":models",
-        "//agentplane/app:database_updates",
-        "//agentplane/app/threads/events:event_log",
-        "//agentplane/protocol:event_log_pb2",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_history_handoff",
-    size = "medium",
-    srcs = ["test_history_handoff.py"],
-    requires_docker = True,
-    deps = [
-        ":history_handoff",
-        ":ingestion",
-        ":models",
-        "//:conftest",
-        "//agentplane/app:conftest",
-        "//agentplane/app/testing:retained_history",
-        "//agentplane/app/testing:thread_test_support",
-        "//agentplane/app/threads/events:projection_lease",
-        "//agentplane/protocol:event_pb2",
-        "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
