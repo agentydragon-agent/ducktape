@@ -1111,7 +1111,8 @@ async def test_action_tasks_use_canonical_request_and_owner_scoped_reads(fronten
         task = created["result"]
         assert task["resultType"] == "task"
         assert task["status"] == "working"
-        assert "ttlMs" in task and task["ttlMs"] is None
+        assert "ttlMs" in task
+        assert task["ttlMs"] is None
         request_id = UUID(task["taskId"])
         assert (await frontend.store.get_mcp_task(request_id, CallerPrincipal(account=workload("a"))))[
             0

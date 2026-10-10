@@ -92,12 +92,13 @@ but must not claim execution progress beyond those states.
 
 MCP terminal task states cannot change. An `execution_unknown` Action may
 later be reconciled by an authenticated late completion or authority
-lookup. Persist an immutable terminal _task_ state and result/diagnostic
-snapshot on first terminal transition, rather than deriving terminal
-status solely from the current Action row. The Action receipt may later
+lookup. Persist an immutable terminal _task_ state and timestamp on first terminal
+transition, rather than deriving terminal status solely from the current Action
+row. A successful Action cannot transition again, so its execution result is
+read from that same durable row; for a failed task the diagnostic derives from
+the latched state, not from a later reconciliation. The Action receipt may later
 reflect the reconciled truth; the task cannot change a published terminal
-answer. Store only task-specific metadata, never credentials. Test this
-race and any result-retention behavior explicitly.
+answer. Store only task-specific metadata, never credentials. Test this race.
 
 `tasks/cancel` delegates to `ActionService.cancel`, whose atomic store
 operation can only withdraw before execution is claimed. Only
