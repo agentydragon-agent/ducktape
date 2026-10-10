@@ -201,6 +201,7 @@ py_test(
         ":ingestion",
         ":models",
         ":sessions",
+        ":store",
         "//:conftest",
         "//agentplane/app:conftest",
         "//agentplane/app/testing:thread_test_support",
@@ -223,6 +224,8 @@ py_library(
         ":models",
         "//agentplane/app:database_updates",
         "//agentplane/app/threads/events:event_log",
+        "//agentplane/protocol:event_log_pb2",
+        "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
 )

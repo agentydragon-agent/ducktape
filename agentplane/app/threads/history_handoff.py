@@ -2,12 +2,16 @@
 
 from uuid import UUID
 
-from sqlalchemy import select
+from google.protobuf.json_format import ParseDict
+from sqlalchemy import literal_column, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
-from agentplane.app.threads.models import Event, EventLog
+from agentplane.app.threads.models import Event, EventLog, ThreadHistorySummary
+from agentplane.protocol import event_log_pb2
+
+# gazelle:include_dep @pypi//protobuf
 
 
 async def fence_raw_ingestion(engine: AsyncEngine, thread_id: UUID) -> int:
@@ -29,6 +33,27 @@ async def fence_raw_ingestion(engine: AsyncEngine, thread_id: UUID) -> int:
                 select(Event.cursor).where(Event.thread_id == thread_id).order_by(Event.cursor.desc()).limit(1)
             )
             or 0
+        )
+        # Each lookup uses a per-Thread index; never replay or scan the full archive.
+        last_at = await session.scalar(
+            select(Event.at).where(Event.thread_id == thread_id).order_by(Event.at.desc()).limit(1)
+        )
+        last_turn = await session.scalar(
+            select(Event.payload)
+            .where(Event.thread_id == thread_id, Event.kind == literal_column("'turn_completed'"))
+            .order_by(Event.cursor.desc())
+            .limit(1)
+        )
+        session.add(
+            ThreadHistorySummary(
+                thread_id=thread_id,
+                last_event_at=last_at,
+                last_turn_status=(
+                    ParseDict(last_turn, event_log_pb2.EventEntry()).event.turn_completed.status
+                    if last_turn is not None
+                    else None
+                ),
+            )
         )
         log.raw_ingestion_fenced_at_cursor = cursor
         await notify(session, Channel.THREADS)

@@ -17,6 +17,7 @@ from agentplane.app.threads.history_projector import HistoryProjector
 from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.models import Event, EventLog, ThreadCheckpoint
 from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
 from agentplane.protocol import event_pb2
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -189,6 +190,55 @@ async def test_projection_updates_activity_atomically_and_ignores_tool_output(
         assert await session.scalar(select(EventLog.last_model_activity_at)) == activity.event.at.ToDatetime(tzinfo=UTC)
         assert await session.scalar(select(ThreadCheckpoint.through_cursor)) == 4
         assert await session.scalar(select(func.count()).select_from(Event)) == 2
+
+
+async def test_thread_metadata_survives_handoff_and_projection_retry(
+    engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
+) -> None:
+    thread = await event_logs.open("sb-1", "summary", SPEC)
+    sibling = await event_logs.open("sb-1", "unfenced", SPEC)
+    first = [
+        event_entry(1, turn_started=event_pb2.TurnStarted(turn_id="one", model=SPEC.model)),
+        event_entry(2, turn_completed=event_pb2.TurnCompleted(turn_id="one", status=event_pb2.TURN_STATUS_COMPLETED)),
+    ]
+    await ingestion.record(thread, first, lease=lease)
+    await ingestion.record(sibling, first, lease=lease)
+    store = ThreadStore(engine)
+    before = await store.get_thread(thread)
+    assert before is not None
+    await fence_raw_ingestion(engine, thread)
+    assert await store.get_thread(thread) == before
+    assert (await store.list_threads())[0].last_cursor == 2
+    later = [
+        event_entry(3, turn_started=event_pb2.TurnStarted(turn_id="two", model=SPEC.model)),
+        event_entry(4, turn_completed=event_pb2.TurnCompleted(turn_id="two", status=event_pb2.TURN_STATUS_INTERRUPTED)),
+    ]
+    # Last-event time is max timestamp, while last-turn status is cursor ordered.
+    for entry in later:
+        entry.event.at.CopyFrom(first[0].event.at)
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=4, entries=later)
+    projector = HistoryProjector(engine, cast(SandboxServiceClient, reader))
+    with (
+        patch("agentplane.app.threads.history_projector.notify", side_effect=RuntimeError("interrupted")),
+        pytest.raises(RuntimeError, match="interrupted"),
+    ):
+        await projector.project_batch(thread, lease=lease)
+    assert await store.get_thread(thread) == before
+    await projector.project_batch(thread, lease=lease)
+    after = await store.get_thread(thread)
+    assert after is not None
+    assert after.last_cursor == 4
+    assert after.last_event_at == before.last_event_at
+    assert after.last_turn_status == "TURN_STATUS_INTERRUPTED"
+    views = {view.id: view for view in await store.list_threads()}
+    assert views[thread] == after
+    assert views[sibling].last_cursor == 2
+    assert views[sibling].last_turn_status == "TURN_STATUS_COMPLETED"
+    renamed = await store.rename(thread, "retained")
+    assert renamed.last_cursor == 4
+    assert renamed.last_turn_status == after.last_turn_status
+    assert await event_logs.last_cursor(thread) == 2
 
 
 if __name__ == "__main__":

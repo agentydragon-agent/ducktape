@@ -180,3 +180,9 @@ py_library(
     srcs = ["0019_app_raw_ingestion_fence.py"],
     deps = ["@pypi//alembic"],
 )
+
+py_library(
+    name = "0020_thread_history_summary",
+    srcs = ["0020_thread_history_summary.py"],
+    deps = ["@pypi//alembic"],
+)
