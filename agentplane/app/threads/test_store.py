@@ -6,11 +6,10 @@ from uuid import UUID
 import pytest
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.retained_history import seed_retained_session
-from agentplane.app.threads.models import Event, ThreadCheckpoint, ThreadHistorySummary
+from agentplane.app.threads.models import ThreadCheckpoint, ThreadHistorySummary
 from agentplane.app.threads.store import ThreadStore
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
@@ -61,8 +60,6 @@ async def test_thread_views_and_operator_edits_need_no_raw_events(engine: AsyncE
     assert [v.id for v in await store.list_threads()] == [other]
     assert {v.id for v in await store.list_threads(include_archived=True)} == {thread, other}
     assert not (await store.unarchive(thread)).archived
-    async with async_sessionmaker(engine)() as session:
-        assert await session.scalar(select(Event.cursor).limit(1)) is None
 
 
 @pytest.mark.parametrize(

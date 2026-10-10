@@ -229,13 +229,8 @@ async def test_existing_identity_winning_registration_race_is_not_reinitialized(
         assert await session.scalar(select(func.count()).select_from(ThreadHistorySummary)) == 0
 
 
-@pytest.mark.parametrize("fenced_at", [None, 1697])
-async def test_public_session_open_preserves_retained_identity(engine: AsyncEngine, fenced_at: int | None) -> None:
+async def test_public_session_open_preserves_retained_identity(engine: AsyncEngine) -> None:
     public_id = await seed_retained_session(engine)
-    async with async_sessionmaker(engine).begin() as session:
-        row = await session.get(EventLog, public_id)
-        assert row is not None
-        row.raw_ingestion_fenced_at_cursor = fenced_at
     reader = AsyncMock(spec=SandboxServiceClient)
     current = EventLogStore(
         engine, history_reader=cast(SandboxServiceClient, reader), history_creator=cast(SandboxServiceClient, reader)
@@ -245,7 +240,6 @@ async def test_public_session_open_preserves_retained_identity(engine: AsyncEngi
     async with async_sessionmaker(engine)() as session:
         row = await session.get(EventLog, public_id)
         assert row is not None
-        assert row.raw_ingestion_fenced_at_cursor == fenced_at
         assert await session.scalar(select(func.count()).select_from(EventLog)) == 1
 
 

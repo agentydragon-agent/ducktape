@@ -68,7 +68,6 @@ class SeededEventLogStore(EventLogStore):
                     harness=Harness(runner_pb2.Harness.Name(spec.harness)),
                     model=spec.model,
                     cwd=spec.cwd,
-                    raw_ingestion_fenced_at_cursor=0,
                 )
                 .on_conflict_do_nothing()
             )

@@ -9,7 +9,8 @@ import uuid
 
 import pytest
 import pytest_bazel
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import Connection, create_engine, inspect, text
+from sqlalchemy.exc import DBAPIError
 
 from agentplane.app.database_migrate import RUNNER
 
@@ -22,6 +23,122 @@ def _execute(db_url: str, statement: str) -> None:
     try:
         with engine.begin() as connection:
             connection.execute(text(statement))
+    finally:
+        engine.dispose()
+
+
+def _restore_raw_history_schema(connection: Connection) -> None:
+    """Only historical migration tests need the retired schema; never runtime fixtures."""
+    connection.execute(
+        text(
+            "CREATE TABLE event (thread_id uuid REFERENCES event_log(id), cursor bigint, "
+            "at timestamptz NOT NULL, kind text NOT NULL, payload json NOT NULL, "
+            "PRIMARY KEY (thread_id, cursor))"
+        )
+    )
+    connection.execute(
+        text(
+            "CREATE TABLE feed_state (thread_id uuid PRIMARY KEY REFERENCES event_log(id), "
+            "attached jsonb NOT NULL, end jsonb)"
+        )
+    )
+
+
+def test_raw_history_retirement_preserves_current_state(db_url: str) -> None:
+    engine = create_engine(RUNNER.sync_url(db_url))
+    thread, token = uuid.uuid4(), uuid.uuid4()
+    try:
+        with engine.begin() as connection:
+            _restore_raw_history_schema(connection)
+            connection.execute(text("ALTER TABLE event_log ADD COLUMN raw_ingestion_fenced_at_cursor bigint"))
+            connection.execute(
+                text(
+                    "CREATE FUNCTION reject_fenced_app_ingestion() RETURNS trigger "
+                    "LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$"
+                )
+            )
+            for table in ("event", "feed_state"):
+                connection.execute(
+                    text(
+                        f"CREATE TRIGGER reject_fenced_app_ingestion BEFORE INSERT ON {table} "
+                        "FOR EACH ROW EXECUTE FUNCTION reject_fenced_app_ingestion()"
+                    )
+                )
+            connection.execute(text("UPDATE alembic_version_app SET version_num = '0023_drop_app_runner_locator'"))
+            connection.execute(
+                text(
+                    "INSERT INTO event_log (id, sandbox, harness, model, cwd, created_at, "
+                    "raw_ingestion_fenced_at_cursor) VALUES "
+                    "(:id, 'retained', 'HARNESS_CODEX', 'model', '/', now(), 17)"
+                ),
+                {"id": thread},
+            )
+            connection.execute(
+                text("INSERT INTO event VALUES (:id, 17, now(), 'text_delta', '{}'::json)"), {"id": thread}
+            )
+            connection.execute(text("INSERT INTO feed_state VALUES (:id, '{}'::jsonb, NULL)"), {"id": thread})
+            connection.execute(
+                text("INSERT INTO thread_checkpoint VALUES (:id, 'source', 'epoch', 17)"), {"id": thread}
+            )
+            connection.execute(text("INSERT INTO thread (id, name) VALUES (:id, 'operator name')"), {"id": thread})
+            connection.execute(text("INSERT INTO thread_history_summary (thread_id) VALUES (:id)"), {"id": thread})
+            connection.execute(
+                text("INSERT INTO session_projection_lease VALUES (:id, :token, '2030-01-01T00:00:00Z')"),
+                {"id": thread, "token": token},
+            )
+        RUNNER.apply(db_url)
+        RUNNER.apply(db_url)
+        with engine.connect() as connection:
+            assert not inspect(connection).has_table("event")
+            assert not inspect(connection).has_table("feed_state")
+            assert "raw_ingestion_fenced_at_cursor" not in {
+                c["name"] for c in inspect(connection).get_columns("event_log")
+            }
+            assert connection.scalar(text("SELECT to_regprocedure('reject_fenced_app_ingestion()')")) is None
+            assert connection.scalar(text("SELECT id FROM event_log WHERE id = :id"), {"id": thread}) == thread
+            assert (
+                connection.scalar(
+                    text("SELECT through_cursor FROM thread_checkpoint WHERE thread_id = :id"), {"id": thread}
+                )
+                == 17
+            )
+            assert connection.scalar(text("SELECT name FROM thread WHERE id = :id"), {"id": thread}) == "operator name"
+            assert (
+                connection.scalar(
+                    text("SELECT thread_id FROM thread_history_summary WHERE thread_id = :id"), {"id": thread}
+                )
+                == thread
+            )
+            assert (
+                connection.scalar(
+                    text("SELECT token FROM session_projection_lease WHERE session_id = :id"), {"id": thread}
+                )
+                == token
+            )
+    finally:
+        engine.dispose()
+
+
+def test_raw_retirement_refuses_unexpected_dependencies(db_url: str) -> None:
+    engine = create_engine(RUNNER.sync_url(db_url))
+    try:
+        with engine.begin() as connection:
+            _restore_raw_history_schema(connection)
+            connection.execute(
+                text(
+                    "CREATE TABLE unexpected_raw_reader (thread_id uuid, cursor bigint, "
+                    "FOREIGN KEY (thread_id, cursor) REFERENCES event(thread_id, cursor))"
+                )
+            )
+            connection.execute(text("UPDATE alembic_version_app SET version_num = '0023_drop_app_runner_locator'"))
+        with pytest.raises(DBAPIError, match="depend"):
+            RUNNER.apply(db_url)
+        with engine.connect() as connection:
+            assert inspect(connection).has_table("event")
+            assert inspect(connection).has_table("unexpected_raw_reader")
+            assert (
+                connection.scalar(text("SELECT version_num FROM alembic_version_app")) == "0023_drop_app_runner_locator"
+            )
     finally:
         engine.dispose()
 
@@ -153,6 +270,7 @@ def test_model_activity_backfills_existing_threads_without_counting_tool_output(
     payload = json.dumps({"event": event, "native": {"line": "a\0b"}})
     try:
         with engine.begin() as connection:
+            _restore_raw_history_schema(connection)
             # Simulate the previous head with a retained Thread and historical event prefix.
             connection.execute(text("ALTER TABLE event_log DROP COLUMN last_model_activity_at"))
             connection.execute(text("UPDATE alembic_version_app SET version_num = '0017_event_turn_completed_index'"))
@@ -190,12 +308,6 @@ def test_model_activity_backfills_existing_threads_without_counting_tool_output(
                 ).isoformat()
                 == f"2026-09-01T12:00:0{2 if is_activity else 1}+00:00"
             )
-            assert (
-                connection.scalar(
-                    text("SELECT payload::text FROM event WHERE thread_id = :thread AND cursor = 2"), {"thread": thread}
-                )
-                == payload
-            )
     finally:
         engine.dispose()
 
@@ -207,6 +319,7 @@ def _migrate_from_0015(db_url: str, column_type: str, stored: list[str]) -> list
     thread = uuid.uuid4()
     try:
         with engine.begin() as connection:
+            _restore_raw_history_schema(connection)
             connection.execute(
                 text(
                     f'ALTER TABLE thread_payload_chunk ALTER COLUMN "text" TYPE {column_type} USING "text"::{column_type}'

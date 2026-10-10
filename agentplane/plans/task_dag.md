@@ -7,46 +7,21 @@ hardening live in the [freezer](task_freezer.md), not the execution graph.
 
 ## Current state and scheduling
 
-**In flight: Session history cutover cleanup.** On 2026-10-09 PDT the migration agent
-confirmed all 55 retained staging Sessions were fenced, with matching app/service inventories,
-service coverage of every final raw cursor, and app checkpoint coverage of every nonempty
-Session. The live canary's app projection advanced beyond its fixed raw fence. The operator
-explicitly excluded the six empty Sessions from further verification work. Do not launch
-another backfill, whole-history scan, or competing cutover.
+The archive ownership cutover is complete in testing and staging. Sandbox Service
+owns raw history; the app consumes it through gRPC and owns UI projections. Backfill,
+writer/read/UI handoff, runtime migration flags/tooling, per-Session leases and app
+locator retirement are completed work, with evidence in the
+[read-cutover record](session_history_read_cutover.md#runtime-cleanup-acceptance).
+The old archive-ownership scheduling hold is lifted; contract review, authorization,
+and task-specific dependencies below still apply. Do not repeat backfill or full-history
+verification. The six empty staging Sessions remain explicitly excluded from extra checks.
 
-**In flight (migration agent, 2026-10-10 PDT):** #9670's app test/runtime port and
-its split prerequisites #9677–#9679 are merged. Follow-up code cleanup renames the
-app projection lease API; it leaves the deployed schema and retained data unchanged.
-Post-merge deployment verification and explicit schema retirement remain separate.
-The next code-only PR retires app handoff tooling and selects projection work by
-summary metadata, keeping replica lease fencing and checkpoint validation. It does
-not drop raw tables or remove their database triggers.
-
-Schema retirement also includes the [post-cutover schema cleanup](session_history_read_cutover.md#post-cutover-schema-cleanup):
-rename stale archive/ingestion names, route app commands/resume by public Session ID,
-and remove legacy tables, locator copies and fence columns after their callers are retired.
-
-Remaining work: remove temporary flags and legacy paths, verify ordinary new-Session/read
-behavior, remove migration jobs and temporary grants, and check testing before changing its
-runtime defaults. Retained data and runner storage must remain intact. Details and accepted
-bounded evidence belong in the [read handoff](session_history_read_cutover.md).
-
-**Sequencing hold:** finish `THREAD_ARCHIVE_OWNERSHIP` before unrelated additions to the Sandbox
-Service database or app database surgery. App raw-table removal and schema consolidation have
-additional dependencies below. This is a start-work constraint, not just a gate on merging.
-Migration-owned changes continue; API/policy design and independent UI work can proceed without
-changing the migrating schema. Do not use a parallel command/metadata database to evade the hold.
-
-**Scoped drafting exception (operator discussion, 2026-10-09 PDT):** command-admission foundation
-and coordinated outbound-channel draft code/isolated tests may proceed before cutover, subject to
-their contract-review dependencies. Merge, schema application and deployment still wait for archive
-ownership and compatibility verification. This does not lift unrelated service/database holds or
-authorize notification metadata work. Keep the exception here and in component plans, not `AGENTS.md`.
-
-**Next useful parallel work:** prepare the command-admission/outbound-channel contracts and operator-reviewable
-multiagent/read-policy decisions. The previously requested scoped-read design remains useful now;
-its implementation waits for the archive and trust-boundary enforcement. No new multiagent transport,
-native-subagent integration, offline command queue, or extra worker service is selected here.
+**In flight (migration agent, 2026-10-10):** explicit app raw-table/fence retirement
+and plan cleanup. This intentionally deletes only redundant app raw copies, never
+Sandbox Service history, public identities, UI projections or runner storage.
+#9723 restores the temporary deployment strategy after the completed locator drop;
+raw-table retirement has its own coordinated-stop gate. See
+[schema cleanup](session_history_read_cutover.md#post-cutover-schema-cleanup).
 
 States: **in flight** means reported work is underway; **decision** needs a reviewed outcome;
 **blocked** names prerequisites; **candidate** is dispatchable when selected, not a priority claim.
@@ -58,95 +33,30 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 ```mermaid
 flowchart TD
-    THREAD_ARCHIVE_BACKFILL[In flight: import and check handoff boundaries]
-    THREAD_ARCHIVE_INGEST[Blocked: shadow parity and live writer handoff]
-    THREAD_ARCHIVE_READ_CUTOVER[Blocked: enable archive-backed raw reads]
-    THREAD_ARCHIVE_UI_CUTOVER[Blocked: app consumes archive for folds and metadata]
-    THREAD_ARCHIVE_OWNERSHIP[Capstone: service is sole durable raw archive]
     APP_RAW_HISTORY_RETIRE[Blocked: retire obsolete app raw tables and import tooling]
     THREAD_IDENTITY_NEW[Blocked: finish service-owned new Session identity cutover]
     THREAD_EVENT_CONTINUITY[Capstone: new and legacy identity continuity]
     APP_ALEMBIC_SQUASH[Blocked: baseline final app schema]
     SESSION_EVENT_RETENTION[Draft: settle redundant streamed deltas, flag off]
-    THREAD_ARCHIVE_BACKFILL --> THREAD_ARCHIVE_INGEST
-    THREAD_ARCHIVE_INGEST --> THREAD_ARCHIVE_READ_CUTOVER
-    THREAD_ARCHIVE_READ_CUTOVER --> THREAD_ARCHIVE_UI_CUTOVER
-    THREAD_ARCHIVE_UI_CUTOVER --> THREAD_ARCHIVE_OWNERSHIP
-    THREAD_ARCHIVE_OWNERSHIP --> APP_RAW_HISTORY_RETIRE
-    THREAD_ARCHIVE_OWNERSHIP -. migration hold .-> THREAD_IDENTITY_NEW
-    THREAD_ARCHIVE_OWNERSHIP --> THREAD_EVENT_CONTINUITY
     THREAD_IDENTITY_NEW --> THREAD_EVENT_CONTINUITY
     APP_RAW_HISTORY_RETIRE --> APP_ALEMBIC_SQUASH
     THREAD_EVENT_CONTINUITY --> APP_ALEMBIC_SQUASH
     APP_RAW_HISTORY_RETIRE --> SESSION_EVENT_RETENTION
 ```
 
-### `THREAD_ARCHIVE_BACKFILL` — one-way import and bounded handoff checks
-
-**In flight; existing migration owner.** Finish/resume import from committed cursors, including
-legacy and deleted-Sandbox histories. Retain public UUIDs, native locators and existing Thread URLs.
-The import's fast resume validates checkpoint boundaries, not every skipped Event. The operator
-chose import receipts, per-Session watermarks and bounded canonical-byte handoff samples rather
-than a full historical rescan, accepting residual interior-mismatch risk. Follow the runbook's
-bounded checks and close live-writing gaps before handoff. Resolve
-active legacy histories with unknown Sandbox UID using verified incarnation evidence, not name
-matching. Completion is all scoped histories accounted for, not a Job being Running or one session
-reaching its ceiling. Keep backups/high-water marks; do not rename native files or reset databases.
-Use the [bounded verification and handoff preflight](../sandbox_service/session_history/CUTOVER.md);
-its runner overlap result is evidence, not authorization to populate a legacy UID.
-
-### `THREAD_ARCHIVE_INGEST` — shadow parity and writer handoff
-
-**Blocked on backfill/identity verification for the affected logs.** Shadow-copy code exists; the
-remaining outcome is a caught-up, fenced live ingestion path independent of app folds. Finish any
-missing owner/claim behavior and reconcile final cursors while quiescing the old raw writer. Use
-existing duplicate/conflict and replica/reconnect tests; a bounded handoff comparison covers the
-actual migration. An incomplete source prefix or unresolved legacy locator is a real blocker.
-
-### `THREAD_ARCHIVE_READ_CUTOVER` — enable service-backed raw reads
-
-**Blocked on verified backfill and ingestion parity.** Deploy the service reader before enabling
-the app's opt-in history switch. Check raw paging, stream resume, old native evidence and denial to
-non-authorized service accounts. Lag must remain explicit, not fall back to stale app rows. This
-read-only step does not establish sole write ownership or permit deleting app tables. The draft reader captures a service watermark instead of chasing the app raw cursor; its
-projection primitive resumes the existing UI checkpoint without copying raw Events. The draft also adds a durable per-Thread raw fence and a default-off supervisor using existing
-leases; metadata/lifecycle handoff, UI lag/error reporting and end-to-end interruption tests remain gates;
-see the [handoff primitives](session_history_read_cutover.md#draft-app-consumer-handoff-primitives-not-a-rollout-switch).
-
-### `THREAD_ARCHIVE_UI_CUTOVER` — app becomes an archive consumer
-
-**Blocked on raw-read handoff.** Move remaining app raw observation metadata reads and fold input
-to archive replay with independent checkpoints. Stop app raw ingestion; keep app-owned UI folds
-and operator metadata. Preserve raw progress when a projector fails and expose fold lag/error.
-Remove direct SA transcript bypasses, not security checks. See the [read handoff plan](session_history_read_cutover.md).
-
-### `THREAD_ARCHIVE_OWNERSHIP` — archive cutover capstone
-
-**Blocked on all preceding migration phases.** One durable raw archive belongs to Sandbox Service;
-app readers/projectors consume it without backend-to-app queries. Record final checkpoint coverage and bounded handoff evidence,
-writer ownership and a bounded read/reconnect check, including a retained deleted-Sandbox history.
-Keep the runner journal as the source of execution facts. The migration owner records cutover and
-rollback evidence in the archive plan/runbook. Only then release the persistence expansion hold.
-This does not grant agent reads, make harness state portable, or move command admission.
-
 ### `APP_RAW_HISTORY_RETIRE` — remove obsolete storage
 
-**In flight (migration agent, 2026-10-09):** #9660 landed the reader and runner-copy
-retirements and is deployed in testing (1/1 Ready) and staging (2/2 Ready). Testing's
-142 retained histories remain fenced; the staging `haku` Session advanced with service
-and projection cursors at 54,132 and app raw cursor zero, with no feed error.
-
-The next single cleanup PR removes lower-level app raw writers, production raw cursor
-lookups and old FeedState/Thread view fallbacks. Old-schema regression setup stays
-in test-only fixtures. CI and rollout verification remain required for that change.
-One-off import/handoff tooling and temporary grants remain separate cleanup. Retained
-tables, rows and runner storage must not be deleted incidentally. Preserve the durable
-legacy runner-locator mapping and fold associations. See the
-[cleanup acceptance evidence](session_history_read_cutover.md#runtime-cleanup-acceptance).
+**In flight (migration agent, 2026-10-10):** remove retained app `event`/`feed_state`,
+the old ingestion fence column, trigger/function and ORM models. Runtime readers and
+writers have already retired; this is explicit schema/data deletion, not another
+handoff. Require migration preservation tests, a verified coordinated app stop before
+schema application, bounded rollout checks, and removal of temporary rollout settings.
+No full-history scan. Keep service history, public IDs, current projections and runner
+storage. Audit remaining one-off tools/grants separately rather than claiming they are gone.
 
 ### `THREAD_IDENTITY_NEW` — service-owned identity for new histories
 
-**Blocked by the migration scheduling hold.** Finish the
+**Candidate: reconcile remaining identity requirements with deployed CreateSession.** Audit the
 [app identity cutover](app_session_identity_cutover.md): use the service-reserved public UUID,
 resolve cwd after reservation, and recover a committed Open via authorized lookup. Preserve
 legacy private runner locators, native storage and existing URLs. This is not a new public-ID
@@ -154,7 +64,7 @@ placement decision. Coordinate any already-open implementation with the migratio
 
 ### `THREAD_EVENT_CONTINUITY` — identity cutover capstone
 
-**Blocked on ownership and new-ID cutovers.** Verify the retained legacy association and the new
+**Blocked on the remaining new-ID requirements.** Verify the retained legacy association and the new
 identity path through Open/resume/replay without inventing a second Event counter. Existing
 same-storage runner restart/resume tests remain evidence; do not demand copied-volume portability
 or a new native experiment. If this particular cutover changes a runner protocol/image, use a
@@ -169,7 +79,7 @@ Retain the data-preserving rollback procedure. No Action Service or other databa
 ### `SESSION_EVENT_RETENTION` — measure before changing history retention
 
 **Draft [#9713](https://github.com/agentydragon/ducktape/pull/9713) (2026-10-10 PDT); merge waits
-on old-copy retirement and the persistence hold unless the operator lifts them.** A bounded staging
+on old-copy retirement unless the operator lifts that dependency.** A bounded staging
 sample on 2026-10-10 put streamed deltas at ~85–90% of `session_event` bytes. The operator approved
 the policy the same day: behind a Sandbox Service default plus per-Session override (default off),
 the service removes an item's delta frames and derived deltas only when every frame matches an exact
@@ -184,7 +94,6 @@ staging and re-measure. A one-off compaction of existing history needs its own r
 flowchart LR
     SESSION_COMMAND_CONTRACT[Decision: generic command admission contract]
     SESSION_COMMAND_CORE[Draft: transport-independent admission foundation]
-    THREAD_ARCHIVE_OWNERSHIP[Archive ownership cutover]
     SESSION_COMMAND_SUBMISSION[Blocked: durable submission through existing relay]
     SESSION_COMMAND_STATUS_READ[Blocked: authorized admission status]
     SESSION_COMMAND_STATUS_UI[Blocked: show service-retained command status]
@@ -194,8 +103,6 @@ flowchart LR
     NOTIFICATION_PRESENTATION[Blocked: compact frontend presentation]
     SESSION_COMMAND_CONTRACT --> SESSION_COMMAND_CORE
     SESSION_COMMAND_CORE --> SESSION_COMMAND_SUBMISSION
-    THREAD_ARCHIVE_OWNERSHIP -. merge and deployment gate .-> SESSION_COMMAND_CORE
-    THREAD_ARCHIVE_OWNERSHIP -. merge and deployment gate .-> SESSION_COMMAND_SUBMISSION
     SESSION_COMMAND_SUBMISSION --> SESSION_COMMAND_STATUS_READ
     SESSION_COMMAND_STATUS_READ --> SESSION_COMMAND_STATUS_UI
     SESSION_COMMAND_SUBMISSION --> SESSION_INPUT_METADATA
@@ -233,7 +140,7 @@ rollback and interrupt responsiveness. The public handler remains a separate int
 
 ### `SESSION_COMMAND_SUBMISSION` — wire durable submission through the existing relay
 
-**Blocked on admission core, admission contract review and archive ownership; not on inversion.**
+**Blocked on admission core, admission contract review not on inversion.**
 Wire the authenticated public RPC to persistence and immediate dispatch through a narrow adapter
 around the existing `Attach`-based relay. Reusing this path does not require new inbound runner RPCs.
 Return OK only on durable runner admission; record explicit refusal and preserve uncertainty on
@@ -387,7 +294,6 @@ flowchart TD
     MULTIAGENT_MODEL[Decision: identities, relationships and native-child boundary]
     THREAD_READ_POLICY_DESIGN[Decision: history read grants]
     SANDBOX_COMPARTMENT_BOUNDARY[Blocked: enforce Sandbox placement boundary]
-    THREAD_ARCHIVE_OWNERSHIP[Archive ownership cutover]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     AGENT_MESSAGING_DESIGN[Decision: send/receive RBAC and inbox vs direct delivery]
     AGENT_MESSAGE_INGRESS[Blocked: authorized send API and durable receipts]
@@ -404,8 +310,6 @@ flowchart TD
     THREAD_READ_POLICY_DESIGN --> SANDBOX_COMPARTMENT_BOUNDARY
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
     SANDBOX_COMPARTMENT_BOUNDARY --> THREAD_READ_POLICY
-    THREAD_ARCHIVE_OWNERSHIP --> THREAD_READ_POLICY
-    THREAD_ARCHIVE_OWNERSHIP -. persistence hold if new policy tables .-> SANDBOX_COMPARTMENT_BOUNDARY
     AGENT_MESSAGING_DESIGN --> AGENT_MESSAGE_INGRESS
     SESSION_COMMAND_SUBMISSION[Service-owned command submission] -. if direct-input delivery selected .-> AGENT_MESSAGE_INGRESS
     SESSION_INPUT_METADATA_READ[Input provenance reads] -. if direct-input delivery selected .-> AGENT_MESSAGE_RECEPTION
@@ -414,7 +318,6 @@ flowchart TD
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     THREAD_IDENTITY_NEW[Service-owned Session identity] --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
-    THREAD_ARCHIVE_OWNERSHIP -. hold on new service persistence .-> AGENT_SANDBOX_LAUNCH
 ```
 
 ### `MULTIAGENT_MODEL` — shared identity and authority vocabulary
@@ -439,7 +342,7 @@ applies to live feeds, discovery and linked evidence. Do not block this on a mes
 
 ### `SANDBOX_COMPARTMENT_BOUNDARY` — enforce Sandbox placement boundary
 
-**Blocked on the reviewed scoped-read policy; new tables also wait for archive ownership.**
+**Blocked on the reviewed scoped-read policy.**
 The Sandbox is the security isolation boundary: co-resident Sessions share filesystem, credentials,
 and ServiceAccount authority, regardless of archive-read classifications. Enforce compatible
 placement for any proposed scoped-read policy at Open, adoption and replacement, rejecting
@@ -450,7 +353,7 @@ fictional fix for shared credentials inside one VM. See the
 
 ### `THREAD_READ_POLICY` — authorized retained-history access
 
-**Blocked on archive ownership, reviewed read policy and compartment enforcement.** Enforce at
+**Blocked on reviewed read policy and compartment enforcement.** Enforce at
 the owning backend across list, raw/native evidence, direct reads and feeds, including reconnect
 and revocation. Keep app-only UI folds separate. Test allowed/denied histories, two principals,
 deleted Sandboxes and revocation with deterministic service tests plus a bounded deployed auth check.
@@ -468,7 +371,7 @@ Output includes the selected owner/API and explicit conditional prerequisites: a
 implementation reuses `SESSION_COMMAND_SUBMISSION` and separately reviewed provenance reads; a notification source reuses
 inboxes without treating admission as acknowledgement. Neither branch is selected in this DAG.
 Before dispatch, add the chosen branch's edges; do not require implementing both. New Sandbox
-Service or app tables still wait for the migration hold. Pure Notification Service work need not
+Service or app tables require their task-specific contract review. Pure Notification Service work need not
 wait for unrelated archive schema once its contract is reviewed.
 
 ### `AGENT_MESSAGE_INGRESS` — authorized send and acceptance
@@ -543,11 +446,9 @@ flowchart LR
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    THREAD_ARCHIVE_OWNERSHIP[Archive ownership cutover] -. service-change scheduling hold .-> VM_PROVIDER
     RUNNER_TRANSPORT_DESIGN --> RUNNER_OUTBOUND_CHANNEL
     SERVICE_BOUNDARIES -. co-design .- RUNNER_TRANSPORT_DESIGN
     SESSION_COMMAND_CONTRACT[Decision: generic command admission contract] --> RUNNER_OUTBOUND_CHANNEL
-    THREAD_ARCHIVE_OWNERSHIP -. merge and deployment gate .-> RUNNER_OUTBOUND_CHANNEL
     RUNNER_TRANSPORT_DESIGN --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_CHANNEL --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_LIFECYCLE --> VM_CONTROL_NETWORKING
@@ -609,7 +510,7 @@ this does not reopen `SESSION_COMMAND_CONTRACT`.
 ### `RUNNER_OUTBOUND_CHANNEL` — implement outbound command delivery
 
 **Blocked on command-channel and admission contract review; draft code/isolated tests permitted,
-with merge/deployment gated on archive ownership.** Implement both WS peers, command/receipt
+with merge/deployment gated on those contract reviews.** Implement both WS peers, command/receipt
 correlation, authenticated incarnation binding, ownership/fencing and reconnect. Use durable command
 and outcome records with Postgres notifications to wake the connection owner and waiting caller.
 Define active dispatch attempts before routing; reconnect must not scan pending commands for delivery.
@@ -707,7 +608,7 @@ hosted builds do not authorize local Bazel in agent containers. Hosted build acc
 ## 5. Independent UI and narrowly scoped service work
 
 These candidates need no multiagent or VM decision. Any implementation that turns out to require
-app/Sandbox Service database changes inherits the migration hold; non-mutating UI work does not.
+app/Sandbox Service database changes requires its own migration safety review.
 
 ### `THREAD_NOTIFICATION_INDICATOR` — pending notice status in the sidebar
 
@@ -723,16 +624,16 @@ permissions rather than making the frontend load every Thread.
 
 ### `THREAD_SYNC_STOPPED_RECOVERY` — recover stopped UI synchronization
 
-**Candidate; coordinate with archive read cutover.** Recover stopped feeds from retained cursors
+**Candidate; preserve service-backed replay.** Recover stopped feeds from retained cursors
 without a manual refresh loop; show honest lag/failure and avoid duplicate rows. Follow the
 [Thread sync plan](thread_sync/README.md), including bounded paging and error visibility. Changes to
-archive ownership or app persistence wait for their migration nodes; client-only recovery can proceed.
+app persistence require their own safe rollout; client-only recovery can proceed.
 
 ## 6. Existing access and lifecycle follow-ups
 
 These are bounded existing work, not dependencies on the broader multiagent model. Confirm current
 source/deployment state with the relevant owner when dispatching; old acceptance notes are not live
-observations. New database work inherits the migration hold.
+observations. New database work follows the task-specific review and rollout requirements.
 
 ```mermaid
 flowchart LR
@@ -740,9 +641,8 @@ flowchart LR
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned Kubernetes grants]
     KUBERNETES_RBAC_POLICIES[Decision: reusable groups and update semantics] --> KUBERNETES_RBAC_POLICY_BINDINGS[Blocked: apply groups and one-SA changes]
     KUBERNETES_RBAC_POLICY_BINDINGS --> MANAGED_SA_RBAC
-    THREAD_ARCHIVE_OWNERSHIP[Archive ownership cutover] -. if new service/app DB persistence .-> KUBERNETES_RBAC_POLICY_BINDINGS
     BOOTSTRAP_ATTEMPT_RECEIPT[Candidate: one durable bootstrap attempt] --> BOOTSTRAP_PROGRESS_CONTRACT[Blocked: asynchronous progress API]
-    THREAD_ARCHIVE_OWNERSHIP[Archive ownership cutover] --> SANDBOX_LIFECYCLE_DURABILITY[Blocked: archive before managed storage deletion]
+    SANDBOX_LIFECYCLE_DURABILITY[Candidate: safe managed storage deletion]
 ```
 
 ### `PC_EGRESS_CREDENTIALS` — label public-coder's Action Service caller
@@ -830,7 +730,7 @@ unless the operator reviews a change. Separate Sandbox initialization from per-s
 
 ### `SANDBOX_LIFECYCLE_DURABILITY` — preserve archive before deleting storage
 
-**Blocked on archive ownership.** Quiesce/fence and archive the final prefix before managed storage
+**Candidate.** Quiesce/fence and archive the final prefix before managed storage
 removal. Explicitly handle an unreachable runner or incomplete state rather than claiming recovery.
 Use existing same-storage suspension tests; a bounded deletion/archive check validates the new
 boundary. No copied-volume portability or simultaneous multi-component crash requirement.
@@ -847,19 +747,9 @@ boundary. No copied-volume portability or simultaneous multi-component crash req
   has its own decision co-sequenced with VMs; neither that nor multiagent design unfreezes the broader
   runner-state redesign.
 - Archive placement/store were removed as future tasks because the selected service-owned store and
-  import/read code exist; this explicitly does **not** burn down backfill or writer/read cutover.
+  import/read code and the verified backfill/writer/read cutover are complete.
 - `CROSS_THREAD_DELIVERY` is consolidated into `AGENT_MESSAGING_DESIGN`; `THREAD_OPEN_RELOAD_RECOVERY` is part
   of the identity cutover. Do not dispatch duplicate work under the old names.
 - Existing security boundaries, data-preserving migration checks and representative deployment
   integration checks remain requirements. The freezer is not a waiver for a known data-loss or
   unauthorized-access bug; promote one when evidence makes it concrete.
-
-### `APP_LOCATOR_COLUMN_RETIREMENT` — remove the redundant app locator
-
-**In flight (migration agent, 2026-10-10):** #9707 public-ID readers are deployed.
-Schema cleanup #9712 is pending fresh CI after rebase. The app-only Recreate
-prerequisite #9715 is deployed and verified in both environments (06:50 PDT). This operational hold applies before merging the schema-removal image:
-old replicas still map the column. Verify the strategy live first, then schema
-rollout with bounded checks, then remove the temporary override/test. Preserve
-service locator bindings, public identities and retained history. See the
-[deployment prerequisite](session_history_read_cutover.md#locator-column-deployment-prerequisite).
