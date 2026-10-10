@@ -14,6 +14,10 @@ Session. The live canary's app projection advanced beyond its fixed raw fence. T
 explicitly excluded the six empty Sessions from further verification work. Do not launch
 another backfill, whole-history scan, or competing cutover.
 
+Schema retirement also includes the [post-cutover schema cleanup](session_history_read_cutover.md#post-cutover-schema-cleanup):
+rename stale archive/ingestion names, route app commands/resume by public Session ID,
+and remove legacy tables, locator copies and fence columns after their callers are retired.
+
 Remaining work: remove temporary flags and legacy paths, verify ordinary new-Session/read
 behavior, remove migration jobs and temporary grants, and check testing before changing its
 runtime defaults. Retained data and runner storage must remain intact. Details and accepted
