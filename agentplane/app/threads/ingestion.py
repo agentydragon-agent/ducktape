@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.threads.events import projection_lease
-from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, RunnerSession
+from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, ServiceSessionReference
 from agentplane.app.threads.events.projection_lease import ProjectionLease, ProjectionLeaseLostError
 from agentplane.app.threads.history_projector import HistoryProjector
 from agentplane.app.threads.sessions import SandboxNotReachableError, SandboxSessions
@@ -95,7 +95,7 @@ class Ingester:
                 for sandbox in sorted(running):
                     tasks.create_task(self._reconcile_sandbox(sandbox, projectable))
 
-    async def _reconcile_sandbox(self, sandbox: str, projectable: dict[UUID, RunnerSession]) -> None:
+    async def _reconcile_sandbox(self, sandbox: str, projectable: dict[UUID, ServiceSessionReference]) -> None:
         try:
             async with asyncio.timeout(10):
                 lease = self._leases.get(sandbox)

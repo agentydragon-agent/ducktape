@@ -250,6 +250,24 @@ async def test_public_session_alias_preserves_legacy_locator(engine: AsyncEngine
         assert await session.scalar(select(func.count()).select_from(EventLog)) == 1
 
 
+async def test_service_routes_ignore_retained_private_locator(engine: AsyncEngine) -> None:
+    public_id = await seed_retained_session(engine)
+    reader = AsyncMock(spec=SandboxServiceClient)
+    current = EventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
+    async with async_sessionmaker(engine).begin() as session:
+        session.add(ThreadHistorySummary(thread_id=public_id))
+    route = await current.service_session(public_id)
+    assert route is not None
+    assert route.sandbox == "sb-1"
+    assert route.session_id == str(public_id)
+    assert (await current.projection_sessions())[public_id] == route
+    assert await current.service_session(uuid4()) is None
+    async with async_sessionmaker(engine)() as session:
+        row = await session.get(EventLog, public_id)
+        assert row is not None
+        assert row.session_id == "s-retained"
+
+
 async def test_public_session_alias_cannot_cross_sandboxes(engine: AsyncEngine) -> None:
     public_id = await seed_retained_session(engine)
     reader = AsyncMock(spec=SandboxServiceClient)

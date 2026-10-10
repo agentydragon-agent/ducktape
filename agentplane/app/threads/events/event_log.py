@@ -53,8 +53,8 @@ class FeedSnapshot:
 
 
 @dataclass(frozen=True)
-class RunnerSession:
-    """The runner session a log copies, which is where its thread's commands go."""
+class ServiceSessionReference:
+    """A public Sandbox Service Session identity and its Sandbox route."""
 
     sandbox: str
     session_id: str
@@ -155,12 +155,12 @@ class EventLogStore:
                 )
             ).one_or_none()
 
-    async def runner_session(self, thread_id: UUID) -> RunnerSession | None:
+    async def service_session(self, thread_id: UUID) -> ServiceSessionReference | None:
         async with self._sessions() as session:
             log = (
-                await session.execute(select(EventLog.sandbox, EventLog.session_id).where(EventLog.id == thread_id))
+                await session.execute(select(EventLog.sandbox, EventLog.id).where(EventLog.id == thread_id))
             ).one_or_none()
-            return None if log is None else RunnerSession(log.sandbox, log.session_id)
+            return None if log is None else ServiceSessionReference(log.sandbox, str(log.id))
 
     async def last_cursor(self, thread_id: UUID) -> int:
         """The committed app projection cursor, independent of archive progress."""
@@ -171,15 +171,15 @@ class EventLogStore:
                 )
             ) or 0
 
-    async def projection_sessions(self) -> dict[UUID, RunnerSession]:
+    async def projection_sessions(self) -> dict[UUID, ServiceSessionReference]:
         """Sessions with app projection metadata, including deleted Sandboxes."""
         async with self._sessions() as session:
             rows = await session.execute(
-                select(EventLog.id, EventLog.sandbox, EventLog.session_id).join(
+                select(EventLog.id, EventLog.sandbox).join(
                     ThreadHistorySummary, ThreadHistorySummary.thread_id == EventLog.id
                 )
             )
-            return {row.id: RunnerSession(row.sandbox, row.session_id) for row in rows}
+            return {row.id: ServiceSessionReference(row.sandbox, str(row.id)) for row in rows}
 
     async def read_watermark(self, thread_id: UUID) -> int:
         """Return the selected archive's committed cursor, not the UI projection's cursor."""
