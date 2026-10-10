@@ -74,7 +74,7 @@ it("opens cached stream details without a reload and Back returns to the origina
   const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
   if (!disclosure) throw new Error("missing pending action disclosure");
   await act(async () => disclosure.click());
-  const detailsLink = container.querySelector<HTMLAnchorElement>('a[aria-label^="View details for ssh / exec"]');
+  const detailsLink = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${ROW.title}"]`);
   if (!detailsLink) throw new Error("missing action details link");
   await act(async () => detailsLink.click());
 
@@ -88,6 +88,19 @@ it("opens cached stream details without a reload and Back returns to the origina
   await act(async () => back.click());
   expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe("/threads/example-thread");
   expect(container.textContent).toContain("Thread contents remain open");
+});
+
+it("renders an Action's human-facing label on the full details page", async () => {
+  const row = {
+    ...ROW,
+    action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+    arguments: { namespace: "tofu-controller" },
+  };
+  vi.spyOn(actionService, "get").mockResolvedValue(row);
+  const container = await mount(<App initialPath={`/actions/${row.id}`} />);
+
+  await vi.waitFor(() => expect(container.textContent).toContain("List pods in namespace tofu-controller"));
+  expect(container.textContent).not.toContain("kubernetes_admin / pods_list_in_namespace");
 });
 
 it.each([
@@ -110,7 +123,7 @@ it.each([
     const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
     if (!disclosure) throw new Error("missing pending action disclosure");
     await act(async () => disclosure.click());
-    const detailsLink = container.querySelector<HTMLAnchorElement>('a[aria-label^="View details for ssh / exec"]');
+    const detailsLink = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${ROW.title}"]`);
     if (!detailsLink) throw new Error("missing action details link");
     await act(async () => detailsLink.click());
 
@@ -133,7 +146,7 @@ it("stays on action details when a decision fails", async () => {
   const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
   if (!disclosure) throw new Error("missing pending action disclosure");
   await act(async () => disclosure.click());
-  const detailsLink = container.querySelector<HTMLAnchorElement>('a[aria-label^="View details for ssh / exec"]');
+  const detailsLink = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${ROW.title}"]`);
   if (!detailsLink) throw new Error("missing action details link");
   await act(async () => detailsLink.click());
   const approve = container.querySelector<HTMLButtonElement>('button[aria-label="Approve"]');
@@ -201,7 +214,7 @@ it("refreshes the durable receipt when SSE removes an action that was pending", 
   const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
   if (!disclosure) throw new Error("missing pending action disclosure");
   await act(async () => disclosure.click());
-  const detailsLink = container.querySelector<HTMLAnchorElement>('a[aria-label^="View details for ssh / exec"]');
+  const detailsLink = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${ROW.title}"]`);
   if (!detailsLink) throw new Error("missing action details link");
   await act(async () => detailsLink.click());
   expect(get).not.toHaveBeenCalled();

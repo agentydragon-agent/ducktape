@@ -32,7 +32,7 @@ describe("action notification formatting", () => {
 
     expect(formatActionNotification(request)).toMatchInlineSnapshot(`
       {
-        "body": "Invoice 2026-04-18.",
+        "text": "Invoice 2026-04-18.",
         "title": "Transfer $400 to vendor · finance / transfer",
       }
     `);
@@ -48,10 +48,24 @@ describe("action notification formatting", () => {
 
     expect(formatActionNotification(request)).toMatchInlineSnapshot(`
       {
-        "body": "$ df -h · Timeout 30 s",
+        "text": "$ df -h · Timeout 30 s",
         "title": "Check disk space · SSH exec · deploy@build-01",
       }
     `);
+  });
+
+  it("uses the human-facing Action label instead of the technical identity", () => {
+    const request = actionRequest({
+      action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+      arguments: { namespace: "tofu-controller" },
+      title: "Check the controller pods",
+      description: "Confirm the controller is ready.",
+    });
+
+    expect(formatActionNotification(request)).toEqual({
+      title: "Check the controller pods · List pods in namespace tofu-controller",
+      text: "Confirm the controller is ready.",
+    });
   });
 
   it("falls back when SSH arguments contain fields the widget cannot show", () => {
@@ -64,7 +78,7 @@ describe("action notification formatting", () => {
 
     expect(formatActionNotification(request)).toMatchInlineSnapshot(`
       {
-        "body": "Run the disk usage check on the build host.",
+        "text": "Run the disk usage check on the build host.",
         "title": "Check disk space · ssh / exec",
       }
     `);

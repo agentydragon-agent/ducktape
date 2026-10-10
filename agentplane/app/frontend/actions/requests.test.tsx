@@ -77,6 +77,8 @@ describe("ActionRequests", () => {
     expect(container.textContent).not.toContain(stateLabel("decision_pending"));
     expect(button(container, "Approve").getAttribute("aria-label")).toBe("Approve");
     expect(button(container, "Deny").getAttribute("aria-label")).toBe("Deny");
+    expect(button(container, "Approve").querySelector("svg")).not.toBeNull();
+    expect(button(container, "Deny").querySelector("svg")).not.toBeNull();
     expect(container.textContent).toContain("Exact arguments (unredacted)");
     expect(container.textContent).toContain("test-exact-token");
     expect(container.textContent).toContain("test-exact-password");
@@ -94,6 +96,18 @@ describe("ActionRequests", () => {
     await act(async () => raw.click());
     expect(container.textContent).toContain('"command": "echo test-output"');
     expect(container.textContent).not.toContain("test-user@test-host.example");
+  });
+
+  it("uses a human-facing Action label instead of the technical group and name", async () => {
+    const row = {
+      ...request("decision_pending", 1),
+      action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+      arguments: { namespace: "tofu-controller" },
+    };
+    const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
+
+    expect(container.textContent).toContain("List pods in namespace tofu-controller");
+    expect(container.textContent).not.toContain("kubernetes_admin / pods_list_in_namespace");
   });
 
   it("offers no Raw switch where the arguments show only as their JSON", async () => {
