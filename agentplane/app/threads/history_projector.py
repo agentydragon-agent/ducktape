@@ -5,6 +5,7 @@ app lease and existing UI checkpoint; never acquire runner storage or copy raw E
 """
 
 from dataclasses import dataclass
+from datetime import UTC
 from uuid import UUID
 
 from sqlalchemy import select
@@ -15,7 +16,7 @@ from agentplane.app.threads.events import ingestion_lease
 from agentplane.app.threads.events.event_log import EventReplicationError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
 from agentplane.app.threads.model_activity import record_model_activity
-from agentplane.app.threads.models import EventLog, ThreadCheckpoint
+from agentplane.app.threads.models import EventLog, ThreadCheckpoint, ThreadHistorySummary
 from agentplane.app.threads.view.recording import record_thread_fold
 from agentplane.sandbox_service.client import SandboxServiceClient
 
@@ -78,6 +79,9 @@ class HistoryProjector:
             )
             if current != after:
                 raise ConnectionError("projection checkpoint advanced during fetch; retry from checkpoint")
+            summary = await session.get(ThreadHistorySummary, thread_id)
+            if summary is None:
+                raise EventReplicationError("missing service projection metadata at raw fence")
             if not page.entries:
                 return ProjectionProgress(after, page.last_cursor)
             source_id = page.entries[0].origin.source_id
@@ -85,5 +89,12 @@ class HistoryProjector:
                 raise EventReplicationError("mixed source identities in projection page")
             await record_thread_fold(session, thread_id, source_id, page.entries)
             await record_model_activity(session, thread_id, page.entries)
+            for entry in page.entries:
+                at = entry.event.at.ToDatetime(tzinfo=UTC)
+                if summary.last_event_at is None or at > summary.last_event_at:
+                    summary.last_event_at = at
+                if entry.event.HasField("turn_completed"):
+                    summary.last_turn_status = entry.event.turn_completed.status
+
             await notify(session, Channel.THREADS)
         return ProjectionProgress(page.entries[-1].cursor, page.last_cursor)

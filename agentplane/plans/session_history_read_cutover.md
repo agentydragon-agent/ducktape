@@ -75,3 +75,20 @@ Before wiring or enabling it:
    reviewed cutover with app raw tables retained. Never enable both competing projection paths.
 
 This draft is useful before shadow convergence, but does not satisfy the archive-ownership gate.
+
+## Thread metadata handoff and completion cleanup
+
+`ThreadHistorySummary` stores only last-event time and the last completed-turn enum number;
+the existing `ThreadCheckpoint` remains the cursor authority. The explicit writer fence seeds
+these fields from three per-Thread indexed lookups (tail cursor, latest timestamp, latest turn
+completion) while draining legacy writes. No startup historical backfill is introduced. Service
+projection updates this summary in the same transaction as the UI checkpoint, and fenced Thread
+list/get/rename reads no longer derive those fields from frozen raw rows. Unfenced Threads keep
+the old path during the mixed rollout. Feed attachment/lifecycle is still a separate remaining
+handoff: this summary does not make old `FeedState` authoritative after raw ingestion stops.
+
+Operator completion requirement: after verified cutover, delete temporary migration flags,
+configuration plumbing, legacy writer/read branches, backfill/catch-up Job declarations and
+rollout gates. Remove temporary preflight RBAC after final checks. Retain useful regression tests,
+schema migration history and a concise completion record. Keep old raw data, spools and PVCs;
+flag/code cleanup is not authority to delete retained history.

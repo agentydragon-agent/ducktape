@@ -126,6 +126,19 @@ class ThreadCheckpoint(Base):
     through_cursor: Mapped[int] = mapped_column(BigInteger)
 
 
+class ThreadHistorySummary(Base):
+    """Event-derived sidebar metadata for service-backed Thread projection."""
+
+    __tablename__ = "thread_history_summary"
+
+    thread_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("event_log.id", ondelete="CASCADE"), primary_key=True
+    )
+    last_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Preserve the protobuf enum number rather than a closed SQL enum.
+    last_turn_status: Mapped[int | None] = mapped_column(BigInteger)
+
+
 class ThreadEntity(Base):
     """The mutable, tagged current row consumed by the thread view shape."""
 
