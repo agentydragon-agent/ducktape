@@ -1278,21 +1278,13 @@ def _create_grading_tables() -> None:
 
 
 def _attach_sequences_to_columns() -> None:
-    op.execute(r"""
-ALTER SEQUENCE public.grading_edges_id_seq OWNED BY public.grading_edges.id;
-    """)
+    op.execute("ALTER SEQUENCE public.grading_edges_id_seq OWNED BY public.grading_edges.id")
 
-    op.execute(r"""
-ALTER SEQUENCE public.llm_requests_id_seq OWNED BY public.llm_requests.id;
-    """)
+    op.execute("ALTER SEQUENCE public.llm_requests_id_seq OWNED BY public.llm_requests.id")
 
-    op.execute(r"""
-ALTER SEQUENCE public.occurrence_ranges_id_seq OWNED BY public.occurrence_ranges.id;
-    """)
+    op.execute("ALTER SEQUENCE public.occurrence_ranges_id_seq OWNED BY public.occurrence_ranges.id")
 
-    op.execute(r"""
-ALTER SEQUENCE public.reported_issue_occurrences_id_seq OWNED BY public.reported_issue_occurrences.id;
-    """)
+    op.execute("ALTER SEQUENCE public.reported_issue_occurrences_id_seq OWNED BY public.reported_issue_occurrences.id")
 
 
 def _create_foreign_keys() -> None:
@@ -1987,61 +1979,61 @@ CREATE OR REPLACE VIEW public.tp_occurrence_credits AS
   GROUP BY cr.agent_run_id, s.split, ex.example_kind, ex.files_hash, tpo.snapshot_slug, tpo.tp_id, tpo.occurrence_id, cr.image_digest, cr.model;
     """)
 
-    op.execute(r"""
-CREATE TRIGGER enforce_edge_credit_sum BEFORE INSERT OR UPDATE ON public.grading_edges FOR EACH ROW EXECUTE FUNCTION public.check_edge_credit_sum();
-    """)
+    op.execute(
+        "CREATE TRIGGER enforce_edge_credit_sum BEFORE INSERT OR UPDATE ON public.grading_edges FOR EACH ROW EXECUTE FUNCTION public.check_edge_credit_sum()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER enforce_edge_filter_scope BEFORE INSERT OR UPDATE ON public.grading_edges FOR EACH ROW EXECUTE FUNCTION public.check_edge_matches_filter_scope();
-    """)
+    op.execute(
+        "CREATE TRIGGER enforce_edge_filter_scope BEFORE INSERT OR UPDATE ON public.grading_edges FOR EACH ROW EXECUTE FUNCTION public.check_edge_matches_filter_scope()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_check_cluster_member_no_positive_edges BEFORE INSERT OR UPDATE ON public.issue_cluster_members FOR EACH ROW EXECUTE FUNCTION public.check_cluster_member_no_positive_edges();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_check_cluster_member_no_positive_edges BEFORE INSERT OR UPDATE ON public.issue_cluster_members FOR EACH ROW EXECUTE FUNCTION public.check_cluster_member_no_positive_edges()"
+    )
 
-    op.execute(r"""
-CREATE CONSTRAINT TRIGGER trg_check_cluster_not_empty AFTER DELETE ON public.issue_cluster_members DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.check_cluster_not_empty();
-    """)
+    op.execute(
+        "CREATE CONSTRAINT TRIGGER trg_check_cluster_not_empty AFTER DELETE ON public.issue_cluster_members DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.check_cluster_not_empty()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_check_positive_edge_not_clustered BEFORE INSERT OR UPDATE ON public.grading_edges FOR EACH ROW EXECUTE FUNCTION public.check_positive_edge_not_clustered();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_check_positive_edge_not_clustered BEFORE INSERT OR UPDATE ON public.grading_edges FOR EACH ROW EXECUTE FUNCTION public.check_positive_edge_not_clustered()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_notify_false_positive_occurrences_changed AFTER INSERT OR DELETE ON public.false_positive_occurrences FOR EACH ROW EXECUTE FUNCTION public.notify_gt_changed();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_notify_false_positive_occurrences_changed AFTER INSERT OR DELETE ON public.false_positive_occurrences FOR EACH ROW EXECUTE FUNCTION public.notify_gt_changed()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_notify_false_positives_changed AFTER INSERT OR DELETE ON public.false_positives FOR EACH ROW EXECUTE FUNCTION public.notify_gt_changed();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_notify_false_positives_changed AFTER INSERT OR DELETE ON public.false_positives FOR EACH ROW EXECUTE FUNCTION public.notify_gt_changed()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_notify_reported_issue_occurrences_changed AFTER INSERT ON public.reported_issue_occurrences FOR EACH ROW EXECUTE FUNCTION public.notify_critique_changed();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_notify_reported_issue_occurrences_changed AFTER INSERT ON public.reported_issue_occurrences FOR EACH ROW EXECUTE FUNCTION public.notify_critique_changed()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_notify_reported_issues_changed AFTER INSERT ON public.reported_issues FOR EACH ROW EXECUTE FUNCTION public.notify_critique_changed();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_notify_reported_issues_changed AFTER INSERT ON public.reported_issues FOR EACH ROW EXECUTE FUNCTION public.notify_critique_changed()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_notify_snapshot_created AFTER INSERT ON public.snapshots FOR EACH ROW EXECUTE FUNCTION public.notify_snapshot_created();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_notify_snapshot_created AFTER INSERT ON public.snapshots FOR EACH ROW EXECUTE FUNCTION public.notify_snapshot_created()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_notify_true_positive_occurrences_changed AFTER INSERT OR DELETE ON public.true_positive_occurrences FOR EACH ROW EXECUTE FUNCTION public.notify_gt_changed();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_notify_true_positive_occurrences_changed AFTER INSERT OR DELETE ON public.true_positive_occurrences FOR EACH ROW EXECUTE FUNCTION public.notify_gt_changed()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER trg_notify_true_positives_changed AFTER INSERT OR DELETE ON public.true_positives FOR EACH ROW EXECUTE FUNCTION public.notify_gt_changed();
-    """)
+    op.execute(
+        "CREATE TRIGGER trg_notify_true_positives_changed AFTER INSERT OR DELETE ON public.true_positives FOR EACH ROW EXECUTE FUNCTION public.notify_gt_changed()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER validate_occurrence_range_bounds BEFORE INSERT OR UPDATE ON public.occurrence_ranges FOR EACH ROW EXECUTE FUNCTION public.validate_range_line_numbers();
-    """)
+    op.execute(
+        "CREATE TRIGGER validate_occurrence_range_bounds BEFORE INSERT OR UPDATE ON public.occurrence_ranges FOR EACH ROW EXECUTE FUNCTION public.validate_range_line_numbers()"
+    )
 
-    op.execute(r"""
-CREATE TRIGGER validate_reported_issue_occ_basic_line_numbers_trigger BEFORE INSERT OR UPDATE ON public.reported_issue_occurrences FOR EACH ROW EXECUTE FUNCTION public.validate_reported_issue_occ_basic_line_numbers();
-    """)
+    op.execute(
+        "CREATE TRIGGER validate_reported_issue_occ_basic_line_numbers_trigger BEFORE INSERT OR UPDATE ON public.reported_issue_occurrences FOR EACH ROW EXECUTE FUNCTION public.validate_reported_issue_occ_basic_line_numbers()"
+    )
 
 
 def _create_comments() -> None:
@@ -2081,9 +2073,9 @@ includes the files where the critique issue was reported. Prevents matching
 a critique to an occurrence that could not have been found from those files.';
     """)
 
-    op.execute(r"""
-COMMENT ON FUNCTION public.current_agent_run_id() IS 'Uses session_user (not current_user) so it works inside SECURITY DEFINER functions.';
-    """)
+    op.execute(
+        "COMMENT ON FUNCTION public.current_agent_run_id() IS 'Uses session_user (not current_user) so it works inside SECURITY DEFINER functions.'"
+    )
 
     op.execute(r"""
 COMMENT ON FUNCTION public.get_validation_full_snapshot_aggregates() IS 'Black-box validation metrics for whole-repo mode.
@@ -2111,13 +2103,13 @@ NULL match_file_restriction = unrestricted (any critique can match)
 Non-NULL = file-restricted (only critiques touching those files can match)';
     """)
 
-    op.execute(r"""
-COMMENT ON FUNCTION public.notify_critique_changed() IS 'Looks up snapshot_slug from agent_run type_config (critique tables don''t store it directly).';
-    """)
+    op.execute(
+        "COMMENT ON FUNCTION public.notify_critique_changed() IS 'Looks up snapshot_slug from agent_run type_config (critique tables don''t store it directly).'"
+    )
 
-    op.execute(r"""
-COMMENT ON FUNCTION public.notify_gt_changed() IS 'INSERT/DELETE only (not UPDATE — wording fixes don''t need re-grade).';
-    """)
+    op.execute(
+        "COMMENT ON FUNCTION public.notify_gt_changed() IS 'INSERT/DELETE only (not UPDATE \u2014 wording fixes don''t need re-grade).'"
+    )
 
     op.execute(r"""
 COMMENT ON FUNCTION public.occurrence_files_overlap(p_snapshot_slug character varying, p_files_hash character varying, p_files character varying[]) IS 'Canonical match_file_restriction matchability rule (OVERLAP).
@@ -2126,17 +2118,17 @@ restriction file set. Single source of truth shared by matchable_occurrences()
 (grading_pending view, workload estimation) and the enforce_edge_filter_scope trigger.';
     """)
 
-    op.execute(r"""
-COMMENT ON FUNCTION public.validate_range_line_numbers() IS 'Ensures end_line <= snapshot_files.line_count for ground truth ranges.';
-    """)
+    op.execute(
+        "COMMENT ON FUNCTION public.validate_range_line_numbers() IS 'Ensures end_line <= snapshot_files.line_count for ground truth ranges.'"
+    )
 
-    op.execute(r"""
-COMMENT ON FUNCTION public.validate_reported_issue_line_numbers() IS 'Line numbers are 1-based inclusive: for line_count=N, valid range is 1..N.';
-    """)
+    op.execute(
+        "COMMENT ON FUNCTION public.validate_reported_issue_line_numbers() IS 'Line numbers are 1-based inclusive: for line_count=N, valid range is 1..N.'"
+    )
 
-    op.execute(r"""
-COMMENT ON FUNCTION public.validate_reported_issue_occ_basic_line_numbers() IS 'Basic checks (>= 1, end >= start). Cross-file validation in validate_reported_issue_line_numbers().';
-    """)
+    op.execute(
+        "COMMENT ON FUNCTION public.validate_reported_issue_occ_basic_line_numbers() IS 'Basic checks (>= 1, end >= start). Cross-file validation in validate_reported_issue_line_numbers().'"
+    )
 
     op.create_table_comment(
         "agent_definitions",
@@ -2228,9 +2220,9 @@ COMMENT ON FUNCTION public.validate_reported_issue_occ_basic_line_numbers() IS '
         "llm_requests", "LLM API requests logged by the proxy. Replaces events table for LLM tracking.", schema="public"
     )
 
-    op.execute(r"""
-COMMENT ON VIEW public.agent_run_budget_status IS 'Per-agent-run budget status. own_spent_usd = direct LLM costs, tree_spent_usd = recursive subtree costs (including self). remaining_usd = budget - tree_spent.';
-    """)
+    op.execute(
+        "COMMENT ON VIEW public.agent_run_budget_status IS 'Per-agent-run budget status. own_spent_usd = direct LLM costs, tree_spent_usd = recursive subtree costs (including self). remaining_usd = budget - tree_spent.'"
+    )
 
     op.create_table_comment(
         "grading_edges",
@@ -2284,9 +2276,9 @@ recall_by_run.missing_grading_edges is derived from this view.';
         schema="public",
     )
 
-    op.execute(r"""
-COMMENT ON VIEW public.clustering_pending IS 'Critique issues fully graded with no positive match and not yet clustered. When empty for a snapshot, all unmatched issues have been assigned to clusters.';
-    """)
+    op.execute(
+        "COMMENT ON VIEW public.clustering_pending IS 'Critique issues fully graded with no positive match and not yet clustered. When empty for a snapshot, all unmatched issues have been assigned to clusters.'"
+    )
 
     op.create_table_comment(
         "critic_scopes_expected_to_recall",
@@ -2367,297 +2359,231 @@ COMMENT ON VIEW public.clustering_pending IS 'Critique issues fully graded with 
 
 
 def _create_permissions() -> None:
-    op.execute(r"""
-CREATE POLICY admin_all_cluster_members ON public.issue_cluster_members USING (true) WITH CHECK (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY admin_all_clusters ON public.issue_clusters USING (true) WITH CHECK (true);
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.agent_definitions ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY agent_definitions_insert ON public.agent_definitions FOR INSERT WITH CHECK ((public.current_agent_run_id() IS NULL));
-    """)
-
-    op.execute(r"""
-CREATE POLICY agent_definitions_select ON public.agent_definitions FOR SELECT USING (true);
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.agent_runs ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY agent_runs_agent_select ON public.agent_runs FOR SELECT USING ((((public.current_agent_type() = 'critic_dev_optimize'::text) AND ((((type_config ->> 'agent_type'::text) = 'critic'::text) AND public.is_train_snapshot(((type_config -> 'example'::text) ->> 'snapshot_slug'::text))) OR (((type_config ->> 'agent_type'::text) = 'grader'::text) AND public.is_train_snapshot((type_config ->> 'snapshot_slug'::text))))) OR (agent_run_id = public.current_agent_run_id()) OR ((public.current_agent_type() = 'grader'::text) AND ((type_config ->> 'agent_type'::text) = 'critic'::text) AND (((type_config -> 'example'::text) ->> 'snapshot_slug'::text) = public.current_grader_snapshot_slug())) OR ((public.current_agent_type() = 'critic_dev_improve'::text) AND ((type_config ->> 'agent_type'::text) = ANY (ARRAY['critic'::text, 'grader'::text])) AND public.is_improvement_example_allowed(((type_config -> 'example'::text) ->> 'snapshot_slug'::text), (((type_config -> 'example'::text) ->> 'kind'::text))::public.example_kind_enum, ((type_config -> 'example'::text) ->> 'files_hash'::text)))));
-    """)
-
-    op.execute(r"""
-CREATE POLICY agent_runs_select_descendants ON public.agent_runs FOR SELECT USING (public.is_agent_ancestor(public.current_agent_run_id(), agent_run_id));
-    """)
-
-    op.execute(r"""
-CREATE POLICY agent_runs_select_own ON public.agent_runs FOR SELECT USING ((agent_run_id = public.current_agent_run_id()));
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.critic_scopes_expected_to_recall ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY critic_scopes_expected_to_recall_agent_select ON public.critic_scopes_expected_to_recall FOR SELECT USING (public.can_access_snapshot_ground_truth(snapshot_slug));
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.agent_definitions FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.agent_runs FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.critic_scopes_expected_to_recall FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.false_positive_occurrences FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.false_positives FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.file_set_members FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.file_sets FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.fp_occurrence_relevant_files FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.grading_edges FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.issue_cluster_members FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.issue_clusters FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.llm_requests FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.occurrence_ranges FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.reported_issue_occurrences FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.reported_issues FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.snapshots FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.true_positive_occurrences FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-CREATE POLICY evaluator_select_all ON public.true_positives FOR SELECT TO evaluator USING (true);
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.false_positive_occurrences ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY false_positive_occurrences_agent_select ON public.false_positive_occurrences FOR SELECT USING (public.can_access_snapshot_ground_truth(snapshot_slug));
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.false_positives ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY false_positives_agent_select ON public.false_positives FOR SELECT USING (public.can_access_snapshot_ground_truth(snapshot_slug));
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.file_set_members ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY file_set_members_agent_select ON public.file_set_members FOR SELECT USING ((((public.current_agent_type() = 'critic_dev_optimize'::text) AND public.can_list_snapshot_examples(snapshot_slug)) OR ((public.current_agent_type() = 'critic'::text) AND ((snapshot_slug)::text = ((public.current_agent_type_config() -> 'example'::text) ->> 'snapshot_slug'::text))) OR ((public.current_agent_type() = 'grader'::text) AND ((snapshot_slug)::text = public.current_grader_snapshot_slug())) OR ((public.current_agent_type() = 'critic_dev_improve'::text) AND public.is_improvement_snapshot_allowed((snapshot_slug)::text))));
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.file_sets ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY file_sets_agent_select ON public.file_sets FOR SELECT USING ((((public.current_agent_type() = 'critic_dev_optimize'::text) AND public.can_list_snapshot_examples(snapshot_slug)) OR ((public.current_agent_type() = 'critic'::text) AND ((snapshot_slug)::text = ((public.current_agent_type_config() -> 'example'::text) ->> 'snapshot_slug'::text)) AND ((files_hash)::text = ((public.current_agent_type_config() -> 'example'::text) ->> 'files_hash'::text))) OR ((public.current_agent_type() = 'grader'::text) AND ((snapshot_slug)::text = public.current_grader_snapshot_slug())) OR ((public.current_agent_type() = 'critic_dev_improve'::text) AND public.is_improvement_snapshot_allowed((snapshot_slug)::text))));
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.fp_occurrence_relevant_files ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY fp_occurrence_relevant_files_agent_select ON public.fp_occurrence_relevant_files FOR SELECT USING (public.can_access_snapshot_ground_truth(snapshot_slug));
-    """)
-
-    op.execute(r"""
-CREATE POLICY grader_read_cluster_members ON public.issue_cluster_members FOR SELECT USING (((snapshot_slug)::text = current_setting('props.grader_snapshot_slug'::text, true)));
-    """)
-
-    op.execute(r"""
-CREATE POLICY grader_read_clusters ON public.issue_clusters FOR SELECT USING (((snapshot_slug)::text = current_setting('props.grader_snapshot_slug'::text, true)));
-    """)
-
-    op.execute(r"""
-CREATE POLICY grader_read_critique_occs ON public.reported_issue_occurrences FOR SELECT USING (((public.current_agent_type() = 'grader'::text) AND public.is_critique_on_grader_snapshot(agent_run_id)));
-    """)
-
-    op.execute(r"""
-CREATE POLICY grader_read_critiques ON public.reported_issues FOR SELECT USING (((public.current_agent_type() = 'grader'::text) AND public.is_critique_on_grader_snapshot(agent_run_id)));
-    """)
-
-    op.execute(r"""
-CREATE POLICY grader_write_cluster_members ON public.issue_cluster_members USING (((snapshot_slug)::text = current_setting('props.grader_snapshot_slug'::text, true))) WITH CHECK (((snapshot_slug)::text = current_setting('props.grader_snapshot_slug'::text, true)));
-    """)
-
-    op.execute(r"""
-CREATE POLICY grader_write_clusters ON public.issue_clusters USING (((snapshot_slug)::text = current_setting('props.grader_snapshot_slug'::text, true))) WITH CHECK (((snapshot_slug)::text = current_setting('props.grader_snapshot_slug'::text, true)));
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.grading_edges ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY grading_edges_agent_delete ON public.grading_edges FOR DELETE USING (public.is_own_run_as(grader_run_id, 'grader'::text));
-    """)
-
-    op.execute(r"""
-CREATE POLICY grading_edges_agent_insert ON public.grading_edges FOR INSERT WITH CHECK (public.is_own_run_as(grader_run_id, 'grader'::text));
-    """)
-
-    op.execute(r"""
-CREATE POLICY grading_edges_agent_select ON public.grading_edges FOR SELECT USING ((((public.current_agent_type() = 'grader'::text) AND public.is_critique_on_grader_snapshot(critique_run_id)) OR ((public.current_agent_type() = 'critic_dev_optimize'::text) AND public.is_train_agent_run(critique_run_id)) OR ((public.current_agent_type() = 'critic_dev_improve'::text) AND (critique_run_id IN ( SELECT public.get_improvement_allowed_agent_run_ids() AS get_improvement_allowed_agent_run_ids)))));
-    """)
-
-    op.execute(r"""
-CREATE POLICY grading_edges_agent_update ON public.grading_edges FOR UPDATE USING (public.is_own_run_as(grader_run_id, 'grader'::text));
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.issue_cluster_members ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.issue_clusters ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.llm_requests ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY llm_requests_insert ON public.llm_requests FOR INSERT WITH CHECK ((public.current_agent_run_id() IS NULL));
-    """)
-
-    op.execute(r"""
-CREATE POLICY llm_requests_select ON public.llm_requests FOR SELECT USING (((public.current_agent_run_id() IS NULL) OR public.is_agent_ancestor(public.current_agent_run_id(), agent_run_id) OR ((public.current_agent_type() = 'critic_dev_optimize'::text) AND public.is_train_agent_run(agent_run_id)) OR ((public.current_agent_type() = 'critic_dev_improve'::text) AND (agent_run_id IN ( SELECT public.get_improvement_allowed_agent_run_ids() AS get_improvement_allowed_agent_run_ids)))));
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.occurrence_ranges ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY occurrence_ranges_agent_select ON public.occurrence_ranges FOR SELECT USING (public.can_access_snapshot_ground_truth(snapshot_slug));
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.reported_issue_occurrences ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY reported_issue_occurrences_agent_delete ON public.reported_issue_occurrences FOR DELETE USING (public.is_own_run_as(agent_run_id, 'critic'::text));
-    """)
-
-    op.execute(r"""
-CREATE POLICY reported_issue_occurrences_agent_insert ON public.reported_issue_occurrences FOR INSERT WITH CHECK (public.is_own_run_as(agent_run_id, 'critic'::text));
-    """)
-
-    op.execute(r"""
-CREATE POLICY reported_issue_occurrences_agent_select ON public.reported_issue_occurrences FOR SELECT USING (public.can_read_agent_run_data(agent_run_id));
-    """)
-
-    op.execute(r"""
-CREATE POLICY reported_issue_occurrences_agent_update ON public.reported_issue_occurrences FOR UPDATE USING (public.is_own_run_as(agent_run_id, 'critic'::text));
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.reported_issues ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY reported_issues_agent_delete ON public.reported_issues FOR DELETE USING (public.is_own_run_as(agent_run_id, 'critic'::text));
-    """)
-
-    op.execute(r"""
-CREATE POLICY reported_issues_agent_insert ON public.reported_issues FOR INSERT WITH CHECK (public.is_own_run_as(agent_run_id, 'critic'::text));
-    """)
-
-    op.execute(r"""
-CREATE POLICY reported_issues_agent_select ON public.reported_issues FOR SELECT USING (public.can_read_agent_run_data(agent_run_id));
-    """)
-
-    op.execute(r"""
-CREATE POLICY reported_issues_agent_update ON public.reported_issues FOR UPDATE USING (public.is_own_run_as(agent_run_id, 'critic'::text));
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.snapshots ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY snapshots_agent_select ON public.snapshots FOR SELECT USING ((public.current_agent_run_id() IS NOT NULL));
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.true_positive_occurrences ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY true_positive_occurrences_agent_select ON public.true_positive_occurrences FOR SELECT USING (public.can_access_snapshot_ground_truth(snapshot_slug));
-    """)
-
-    op.execute(r"""
-ALTER TABLE public.true_positives ENABLE ROW LEVEL SECURITY;
-    """)
-
-    op.execute(r"""
-CREATE POLICY true_positives_agent_select ON public.true_positives FOR SELECT USING (public.can_access_snapshot_ground_truth(snapshot_slug));
-    """)
+    op.execute("CREATE POLICY admin_all_cluster_members ON public.issue_cluster_members USING (true) WITH CHECK (true)")
+
+    op.execute("CREATE POLICY admin_all_clusters ON public.issue_clusters USING (true) WITH CHECK (true)")
+
+    op.execute("ALTER TABLE public.agent_definitions ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY agent_definitions_insert ON public.agent_definitions FOR INSERT WITH CHECK ((public.current_agent_run_id() IS NULL))"
+    )
+
+    op.execute("CREATE POLICY agent_definitions_select ON public.agent_definitions FOR SELECT USING (true)")
+
+    op.execute("ALTER TABLE public.agent_runs ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY agent_runs_agent_select ON public.agent_runs FOR SELECT USING ((((public.current_agent_type() = 'critic_dev_optimize'::text) AND ((((type_config ->> 'agent_type'::text) = 'critic'::text) AND public.is_train_snapshot(((type_config -> 'example'::text) ->> 'snapshot_slug'::text))) OR (((type_config ->> 'agent_type'::text) = 'grader'::text) AND public.is_train_snapshot((type_config ->> 'snapshot_slug'::text))))) OR (agent_run_id = public.current_agent_run_id()) OR ((public.current_agent_type() = 'grader'::text) AND ((type_config ->> 'agent_type'::text) = 'critic'::text) AND (((type_config -> 'example'::text) ->> 'snapshot_slug'::text) = public.current_grader_snapshot_slug())) OR ((public.current_agent_type() = 'critic_dev_improve'::text) AND ((type_config ->> 'agent_type'::text) = ANY (ARRAY['critic'::text, 'grader'::text])) AND public.is_improvement_example_allowed(((type_config -> 'example'::text) ->> 'snapshot_slug'::text), (((type_config -> 'example'::text) ->> 'kind'::text))::public.example_kind_enum, ((type_config -> 'example'::text) ->> 'files_hash'::text)))))"
+    )
+
+    op.execute(
+        "CREATE POLICY agent_runs_select_descendants ON public.agent_runs FOR SELECT USING (public.is_agent_ancestor(public.current_agent_run_id(), agent_run_id))"
+    )
+
+    op.execute(
+        "CREATE POLICY agent_runs_select_own ON public.agent_runs FOR SELECT USING ((agent_run_id = public.current_agent_run_id()))"
+    )
+
+    op.execute("ALTER TABLE public.critic_scopes_expected_to_recall ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY critic_scopes_expected_to_recall_agent_select ON public.critic_scopes_expected_to_recall FOR SELECT USING (public.can_access_snapshot_ground_truth(snapshot_slug))"
+    )
+
+    op.execute("CREATE POLICY evaluator_select_all ON public.agent_definitions FOR SELECT TO evaluator USING (true)")
+
+    op.execute("CREATE POLICY evaluator_select_all ON public.agent_runs FOR SELECT TO evaluator USING (true)")
+
+    op.execute(
+        "CREATE POLICY evaluator_select_all ON public.critic_scopes_expected_to_recall FOR SELECT TO evaluator USING (true)"
+    )
+
+    op.execute(
+        "CREATE POLICY evaluator_select_all ON public.false_positive_occurrences FOR SELECT TO evaluator USING (true)"
+    )
+
+    op.execute("CREATE POLICY evaluator_select_all ON public.false_positives FOR SELECT TO evaluator USING (true)")
+
+    op.execute("CREATE POLICY evaluator_select_all ON public.file_set_members FOR SELECT TO evaluator USING (true)")
+
+    op.execute("CREATE POLICY evaluator_select_all ON public.file_sets FOR SELECT TO evaluator USING (true)")
+
+    op.execute(
+        "CREATE POLICY evaluator_select_all ON public.fp_occurrence_relevant_files FOR SELECT TO evaluator USING (true)"
+    )
+
+    op.execute("CREATE POLICY evaluator_select_all ON public.grading_edges FOR SELECT TO evaluator USING (true)")
+
+    op.execute(
+        "CREATE POLICY evaluator_select_all ON public.issue_cluster_members FOR SELECT TO evaluator USING (true)"
+    )
+
+    op.execute("CREATE POLICY evaluator_select_all ON public.issue_clusters FOR SELECT TO evaluator USING (true)")
+
+    op.execute("CREATE POLICY evaluator_select_all ON public.llm_requests FOR SELECT TO evaluator USING (true)")
+
+    op.execute("CREATE POLICY evaluator_select_all ON public.occurrence_ranges FOR SELECT TO evaluator USING (true)")
+
+    op.execute(
+        "CREATE POLICY evaluator_select_all ON public.reported_issue_occurrences FOR SELECT TO evaluator USING (true)"
+    )
+
+    op.execute("CREATE POLICY evaluator_select_all ON public.reported_issues FOR SELECT TO evaluator USING (true)")
+
+    op.execute("CREATE POLICY evaluator_select_all ON public.snapshots FOR SELECT TO evaluator USING (true)")
+
+    op.execute(
+        "CREATE POLICY evaluator_select_all ON public.true_positive_occurrences FOR SELECT TO evaluator USING (true)"
+    )
+
+    op.execute("CREATE POLICY evaluator_select_all ON public.true_positives FOR SELECT TO evaluator USING (true)")
+
+    op.execute("ALTER TABLE public.false_positive_occurrences ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY false_positive_occurrences_agent_select ON public.false_positive_occurrences FOR SELECT USING (public.can_access_snapshot_ground_truth(snapshot_slug))"
+    )
+
+    op.execute("ALTER TABLE public.false_positives ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY false_positives_agent_select ON public.false_positives FOR SELECT USING (public.can_access_snapshot_ground_truth(snapshot_slug))"
+    )
+
+    op.execute("ALTER TABLE public.file_set_members ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY file_set_members_agent_select ON public.file_set_members FOR SELECT USING ((((public.current_agent_type() = 'critic_dev_optimize'::text) AND public.can_list_snapshot_examples(snapshot_slug)) OR ((public.current_agent_type() = 'critic'::text) AND ((snapshot_slug)::text = ((public.current_agent_type_config() -> 'example'::text) ->> 'snapshot_slug'::text))) OR ((public.current_agent_type() = 'grader'::text) AND ((snapshot_slug)::text = public.current_grader_snapshot_slug())) OR ((public.current_agent_type() = 'critic_dev_improve'::text) AND public.is_improvement_snapshot_allowed((snapshot_slug)::text))))"
+    )
+
+    op.execute("ALTER TABLE public.file_sets ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY file_sets_agent_select ON public.file_sets FOR SELECT USING ((((public.current_agent_type() = 'critic_dev_optimize'::text) AND public.can_list_snapshot_examples(snapshot_slug)) OR ((public.current_agent_type() = 'critic'::text) AND ((snapshot_slug)::text = ((public.current_agent_type_config() -> 'example'::text) ->> 'snapshot_slug'::text)) AND ((files_hash)::text = ((public.current_agent_type_config() -> 'example'::text) ->> 'files_hash'::text))) OR ((public.current_agent_type() = 'grader'::text) AND ((snapshot_slug)::text = public.current_grader_snapshot_slug())) OR ((public.current_agent_type() = 'critic_dev_improve'::text) AND public.is_improvement_snapshot_allowed((snapshot_slug)::text))))"
+    )
+
+    op.execute("ALTER TABLE public.fp_occurrence_relevant_files ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY fp_occurrence_relevant_files_agent_select ON public.fp_occurrence_relevant_files FOR SELECT USING (public.can_access_snapshot_ground_truth(snapshot_slug))"
+    )
+
+    op.execute(
+        "CREATE POLICY grader_read_cluster_members ON public.issue_cluster_members FOR SELECT USING (((snapshot_slug)::text = current_setting('props.grader_snapshot_slug'::text, true)))"
+    )
+
+    op.execute(
+        "CREATE POLICY grader_read_clusters ON public.issue_clusters FOR SELECT USING (((snapshot_slug)::text = current_setting('props.grader_snapshot_slug'::text, true)))"
+    )
+
+    op.execute(
+        "CREATE POLICY grader_read_critique_occs ON public.reported_issue_occurrences FOR SELECT USING (((public.current_agent_type() = 'grader'::text) AND public.is_critique_on_grader_snapshot(agent_run_id)))"
+    )
+
+    op.execute(
+        "CREATE POLICY grader_read_critiques ON public.reported_issues FOR SELECT USING (((public.current_agent_type() = 'grader'::text) AND public.is_critique_on_grader_snapshot(agent_run_id)))"
+    )
+
+    op.execute(
+        "CREATE POLICY grader_write_cluster_members ON public.issue_cluster_members USING (((snapshot_slug)::text = current_setting('props.grader_snapshot_slug'::text, true))) WITH CHECK (((snapshot_slug)::text = current_setting('props.grader_snapshot_slug'::text, true)))"
+    )
+
+    op.execute(
+        "CREATE POLICY grader_write_clusters ON public.issue_clusters USING (((snapshot_slug)::text = current_setting('props.grader_snapshot_slug'::text, true))) WITH CHECK (((snapshot_slug)::text = current_setting('props.grader_snapshot_slug'::text, true)))"
+    )
+
+    op.execute("ALTER TABLE public.grading_edges ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY grading_edges_agent_delete ON public.grading_edges FOR DELETE USING (public.is_own_run_as(grader_run_id, 'grader'::text))"
+    )
+
+    op.execute(
+        "CREATE POLICY grading_edges_agent_insert ON public.grading_edges FOR INSERT WITH CHECK (public.is_own_run_as(grader_run_id, 'grader'::text))"
+    )
+
+    op.execute(
+        "CREATE POLICY grading_edges_agent_select ON public.grading_edges FOR SELECT USING ((((public.current_agent_type() = 'grader'::text) AND public.is_critique_on_grader_snapshot(critique_run_id)) OR ((public.current_agent_type() = 'critic_dev_optimize'::text) AND public.is_train_agent_run(critique_run_id)) OR ((public.current_agent_type() = 'critic_dev_improve'::text) AND (critique_run_id IN ( SELECT public.get_improvement_allowed_agent_run_ids() AS get_improvement_allowed_agent_run_ids)))))"
+    )
+
+    op.execute(
+        "CREATE POLICY grading_edges_agent_update ON public.grading_edges FOR UPDATE USING (public.is_own_run_as(grader_run_id, 'grader'::text))"
+    )
+
+    op.execute("ALTER TABLE public.issue_cluster_members ENABLE ROW LEVEL SECURITY")
+
+    op.execute("ALTER TABLE public.issue_clusters ENABLE ROW LEVEL SECURITY")
+
+    op.execute("ALTER TABLE public.llm_requests ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY llm_requests_insert ON public.llm_requests FOR INSERT WITH CHECK ((public.current_agent_run_id() IS NULL))"
+    )
+
+    op.execute(
+        "CREATE POLICY llm_requests_select ON public.llm_requests FOR SELECT USING (((public.current_agent_run_id() IS NULL) OR public.is_agent_ancestor(public.current_agent_run_id(), agent_run_id) OR ((public.current_agent_type() = 'critic_dev_optimize'::text) AND public.is_train_agent_run(agent_run_id)) OR ((public.current_agent_type() = 'critic_dev_improve'::text) AND (agent_run_id IN ( SELECT public.get_improvement_allowed_agent_run_ids() AS get_improvement_allowed_agent_run_ids)))))"
+    )
+
+    op.execute("ALTER TABLE public.occurrence_ranges ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY occurrence_ranges_agent_select ON public.occurrence_ranges FOR SELECT USING (public.can_access_snapshot_ground_truth(snapshot_slug))"
+    )
+
+    op.execute("ALTER TABLE public.reported_issue_occurrences ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY reported_issue_occurrences_agent_delete ON public.reported_issue_occurrences FOR DELETE USING (public.is_own_run_as(agent_run_id, 'critic'::text))"
+    )
+
+    op.execute(
+        "CREATE POLICY reported_issue_occurrences_agent_insert ON public.reported_issue_occurrences FOR INSERT WITH CHECK (public.is_own_run_as(agent_run_id, 'critic'::text))"
+    )
+
+    op.execute(
+        "CREATE POLICY reported_issue_occurrences_agent_select ON public.reported_issue_occurrences FOR SELECT USING (public.can_read_agent_run_data(agent_run_id))"
+    )
+
+    op.execute(
+        "CREATE POLICY reported_issue_occurrences_agent_update ON public.reported_issue_occurrences FOR UPDATE USING (public.is_own_run_as(agent_run_id, 'critic'::text))"
+    )
+
+    op.execute("ALTER TABLE public.reported_issues ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY reported_issues_agent_delete ON public.reported_issues FOR DELETE USING (public.is_own_run_as(agent_run_id, 'critic'::text))"
+    )
+
+    op.execute(
+        "CREATE POLICY reported_issues_agent_insert ON public.reported_issues FOR INSERT WITH CHECK (public.is_own_run_as(agent_run_id, 'critic'::text))"
+    )
+
+    op.execute(
+        "CREATE POLICY reported_issues_agent_select ON public.reported_issues FOR SELECT USING (public.can_read_agent_run_data(agent_run_id))"
+    )
+
+    op.execute(
+        "CREATE POLICY reported_issues_agent_update ON public.reported_issues FOR UPDATE USING (public.is_own_run_as(agent_run_id, 'critic'::text))"
+    )
+
+    op.execute("ALTER TABLE public.snapshots ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY snapshots_agent_select ON public.snapshots FOR SELECT USING ((public.current_agent_run_id() IS NOT NULL))"
+    )
+
+    op.execute("ALTER TABLE public.true_positive_occurrences ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY true_positive_occurrences_agent_select ON public.true_positive_occurrences FOR SELECT USING (public.can_access_snapshot_ground_truth(snapshot_slug))"
+    )
+
+    op.execute("ALTER TABLE public.true_positives ENABLE ROW LEVEL SECURITY")
+
+    op.execute(
+        "CREATE POLICY true_positives_agent_select ON public.true_positives FOR SELECT USING (public.can_access_snapshot_ground_truth(snapshot_slug))"
+    )
 
     op.execute(r"""
 GRANT USAGE ON SCHEMA public TO agent_base;
@@ -2674,9 +2600,7 @@ GRANT SELECT,INSERT ON TABLE public.agent_definitions TO agent_base;
 GRANT SELECT ON TABLE public.agent_definitions TO evaluator_base;
     """)
 
-    op.execute(r"""
-GRANT SELECT ON TABLE public.agent_role_salt TO evaluator_base;
-    """)
+    op.execute("GRANT SELECT ON TABLE public.agent_role_salt TO evaluator_base")
 
     op.execute(r"""
 GRANT SELECT ON TABLE public.agent_runs TO agent_base;
@@ -2788,18 +2712,14 @@ GRANT SELECT ON TABLE public.grading_edge_credit_sums TO agent_base;
 GRANT SELECT ON TABLE public.grading_edge_credit_sums TO evaluator_base;
     """)
 
-    op.execute(r"""
-GRANT USAGE ON SEQUENCE public.grading_edges_id_seq TO agent_base;
-    """)
+    op.execute("GRANT USAGE ON SEQUENCE public.grading_edges_id_seq TO agent_base")
 
     op.execute(r"""
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.issue_clusters TO agent_base;
 GRANT SELECT ON TABLE public.issue_clusters TO evaluator_base;
     """)
 
-    op.execute(r"""
-GRANT USAGE ON SEQUENCE public.llm_requests_id_seq TO agent_base;
-    """)
+    op.execute("GRANT USAGE ON SEQUENCE public.llm_requests_id_seq TO agent_base")
 
     op.execute(r"""
 GRANT SELECT ON TABLE public.llm_run_costs TO agent_base;
@@ -2811,9 +2731,7 @@ GRANT SELECT ON TABLE public.occurrence_ranges TO agent_base;
 GRANT SELECT ON TABLE public.occurrence_ranges TO evaluator_base;
     """)
 
-    op.execute(r"""
-GRANT USAGE ON SEQUENCE public.occurrence_ranges_id_seq TO agent_base;
-    """)
+    op.execute("GRANT USAGE ON SEQUENCE public.occurrence_ranges_id_seq TO agent_base")
 
     op.execute(r"""
 GRANT SELECT ON TABLE public.tp_occurrence_credits TO agent_base;
@@ -2850,9 +2768,7 @@ GRANT SELECT ON TABLE public.recall_by_example TO agent_base;
 GRANT SELECT ON TABLE public.recall_by_example TO evaluator_base;
     """)
 
-    op.execute(r"""
-GRANT USAGE ON SEQUENCE public.reported_issue_occurrences_id_seq TO agent_base;
-    """)
+    op.execute("GRANT USAGE ON SEQUENCE public.reported_issue_occurrences_id_seq TO agent_base")
 
     op.execute(r"""
 GRANT SELECT ON TABLE public.snapshot_files TO agent_base;
@@ -2864,6 +2780,4 @@ GRANT SELECT ON TABLE public.validation_recall_by_definition TO agent_base;
 GRANT SELECT ON TABLE public.validation_recall_by_definition TO evaluator_base;
     """)
 
-    op.execute(r"""
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO evaluator_base;
-    """)
+    op.execute("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO evaluator_base")
