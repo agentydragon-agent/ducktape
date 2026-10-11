@@ -1,4 +1,4 @@
-"""Authenticated gRPC boundary for Sandboxes, their grants and retention holds."""
+"""Authenticated gRPC boundary for Sandboxes and their grants."""
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -15,14 +15,8 @@ from agentplane.proto import sandbox_service_pb2, sandbox_service_pb2_grpc
 from agentplane.proto.sandbox_service_pb2 import Sandbox
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.egress_views import BindingNotFoundError, UnknownPolicyError
-from agentplane.sandbox_service.models import (
-    HoldNotFoundError,
-    InventoryError,
-    SandboxConflictError,
-    SandboxNotFoundError,
-)
+from agentplane.sandbox_service.models import InventoryError, SandboxConflictError, SandboxNotFoundError
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.retention_holds import MAX_HOLD_KEY_LENGTH
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.grpc_caller import authenticate
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
@@ -38,8 +32,8 @@ class Resources:
     principals: WorkloadPrincipalResolver
     provisioning: Provisioning
     caller_accounts: frozenset[ServiceAccountRef]
-    admission_timeout_s: float = 15
-    lifecycle_timeout_s: float = 300
+    admission_timeout_s: float
+    lifecycle_timeout_s: float
 
     def __post_init__(self) -> None:
         if min(self.admission_timeout_s, self.lifecycle_timeout_s) <= 0:
@@ -60,8 +54,6 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
     except SandboxNotFoundError, BindingNotFoundError:
         await context.abort(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
-    except HoldNotFoundError:
-        await context.abort(grpc.StatusCode.NOT_FOUND, "retention hold not found")
     except SandboxConflictError:
         await context.abort(grpc.StatusCode.ALREADY_EXISTS, "sandbox name or initialization conflicts")
     except ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError:
@@ -115,13 +107,7 @@ class SandboxService(sandbox_service_pb2_grpc.SandboxServiceServicer):
 
     async def checked_sandbox(self, request: sandbox_service_pb2.SandboxRequest) -> tuple[Provisioning, Sandbox]:
         provisioning = self.resources.provisioning
-        destination = request.destination
-        if not all((destination.sandbox, destination.sandbox_uid, destination.owner.namespace, destination.owner.name)):
-            raise ValueError("Sandbox name, UID, and owner are required")
-        view = await provisioning.inventory.get(destination.sandbox)
-        if view.uid != destination.sandbox_uid or view.service_account != destination.owner:
-            raise SandboxNotFoundError(destination.sandbox)
-        return provisioning, view
+        return provisioning, await provisioning.inventory.incarnation(request.destination)
 
     @override
     async def SuspendSandbox(
@@ -151,61 +137,6 @@ class SandboxService(sandbox_service_pb2_grpc.SandboxServiceServicer):
             provisioning, view = await self.checked_sandbox(request)
             await provisioning.inventory.begin_teardown(view.name, uid=view.uid)
             return Empty()
-
-    async def checked_hold_sandbox(
-        self, request: sandbox_service_pb2.HoldRequest | sandbox_service_pb2.ConfirmHoldRequest
-    ) -> Sandbox:
-        if not all(
-            1 <= len(value) <= MAX_HOLD_KEY_LENGTH for value in (request.destination.session_id, request.holder)
-        ):
-            raise ValueError("Session ID and holder are required and must not exceed 128 characters")
-        _, view = await self.checked_sandbox(
-            sandbox_service_pb2.SandboxRequest(destination=request.destination.sandbox)
-        )
-        return view
-
-    @override
-    async def PlaceHold(
-        self, request: sandbox_service_pb2.HoldRequest, context: grpc.aio.ServicerContext
-    ) -> sandbox_service_pb2.Hold:
-        async with self.request(context):
-            view = await self.checked_hold_sandbox(request)
-            return await self.resources.provisioning.inventory.place_hold(
-                view.name, uid=view.uid, session_id=request.destination.session_id, holder=request.holder
-            )
-
-    @override
-    async def ConfirmHold(
-        self, request: sandbox_service_pb2.ConfirmHoldRequest, context: grpc.aio.ServicerContext
-    ) -> sandbox_service_pb2.Hold:
-        async with self.request(context):
-            view = await self.checked_hold_sandbox(request)
-            return await self.resources.provisioning.inventory.confirm_hold(
-                view.name,
-                uid=view.uid,
-                session_id=request.destination.session_id,
-                holder=request.holder,
-                through_cursor=request.through_cursor,
-            )
-
-    @override
-    async def ReleaseHold(self, request: sandbox_service_pb2.HoldRequest, context: grpc.aio.ServicerContext) -> Empty:
-        async with self.request(context):
-            view = await self.checked_hold_sandbox(request)
-            await self.resources.provisioning.inventory.release_hold(
-                view.name, uid=view.uid, session_id=request.destination.session_id, holder=request.holder
-            )
-            return Empty()
-
-    @override
-    async def ListHolds(
-        self, request: sandbox_service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
-    ) -> sandbox_service_pb2.ListHoldsResponse:
-        async with self.request(context):
-            provisioning, view = await self.checked_sandbox(request)
-            return sandbox_service_pb2.ListHoldsResponse(
-                holds=await provisioning.inventory.list_holds(view.name, uid=view.uid)
-            )
 
     @override
     async def ListTemplates(

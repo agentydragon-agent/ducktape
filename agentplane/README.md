@@ -71,9 +71,6 @@ flowchart TB
     ss -->|SealSandbox| gw
     k8s -->|creates| sandbox
     gw -->|control Services, Leases| k8s
-    gw -->|gRPC Attach: event follow| runner
-    hs -->|WatchSessions, FollowSession| gw
-    hs -->|retention holds| ss
     hs -->|ingest, fold, read| hist_db
     notif -->|Sandbox lookups| ss
     notif -->|commands| gw
@@ -96,23 +93,21 @@ flowchart TB
 ```
 
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its
-  conversation view, folded by the History Service. Every new Sandbox's runner pushes its Events to
-  the History Service. The History Service also follows each Session through the Runner Gateway,
-  which reads it from the runner over `Attach`; for a Sandbox created before runners pushed, that
-  is the only path, and both write the same log.
+  conversation view, folded by the History Service. Every runner pushes its Events to the History
+  Service, the only way into retained history.
 - **Runner traffic is outbound.** Everything a runner sends goes through its Pod's egress
-  sidecar to the egress proxy, which authenticates the Pod and substitutes credentials. Commands
-  reach staging's runners over the `RunnerControl` stream they dial to the Runner Gateway, routed
-  per Sandbox by its `<sandbox>-control` Service and `<sandbox>-runner` Lease
-  ([runner control stream](docs/runner_control.md)).
+  sidecar to the egress proxy, which authenticates the Pod and substitutes credentials, and runner
+  Pods admit no connections. Commands and lifecycle requests reach runners over the `RunnerControl`
+  stream they dial to the Runner Gateway, routed per Sandbox by its `<sandbox>-control` Service and
+  `<sandbox>-runner` Lease ([runner control stream](docs/runner_control.md)).
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
   `sandbox_commands` (the Runner Gateway's Session registry and command admission),
   `sandbox_service` (Session history, written by the History Service), `actions`,
   `egress` and `notifications`; the Sandbox Service has none. Only the history database is drawn.
   A second Electric over the `app` database still runs, but the app reads Threads through the
   History Service and its Electric.
-- **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle, grants,
-  retention holds and teardown; the Runner Gateway owns everything that talks to a runner: Sessions,
+- **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle, grants
+  and teardown; the Runner Gateway owns everything that talks to a runner: Sessions,
   commands and the runner control stream. They run as separate Deployments with their own accounts,
   and the Sandbox Service seals a Sandbox through the gateway before deleting it.
 

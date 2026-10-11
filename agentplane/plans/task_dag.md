@@ -351,25 +351,13 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-### `RUNNER_INBOUND_RETIRE` — remove inbound runner access
+### `RUNNER_INBOUND_RETIRE` — remove the runner's inbound server
 
-**Blocked on `KUBEVIRT_GUEST_CONTROL`.** Remove
-`Attach` command submission, the pull ingester, the runner control port and its network policy.
-With no inbound route left, the `runner_connection` table goes (a drop migration the operator
-merges) together with the routing check on its operations in `SubmitCommand`. Capability
-negotiation goes on both sides: `ControlOperation`, the runner's `CAPABILITIES`,
-`Hello`/`Welcome.capabilities`, `ConnectionStore.record_operations`/`read_operations` and every
-`control_routed` or inbound branch in the gateway. The legacy
-caller-chosen runner Session ID path goes too, as does the client's fallback to the service when a
-Sandbox has no control Service (the `CLEANUP` tombstone in `sandbox_service/client.py`), as do the
-runner SPEC's and Sandbox Service README's notes on the unauthenticated inbound listener.
-
-Also inbound-only, so deleted here: teardown's inbound seal branch and `_stop_legacy` for runner
-images without `Seal`; `SubmitCommandRequest.follow` with the client's `command(after_cursor=...)`
-and the app's `last_cursor` lookup for it, read only by the relay; the `runner_grpc_channel_options`
-setting and `Environment` field; and the runner's own gRPC server, its `--listen` flag and the
-`Runner` service RPCs the channel duplicates. The Sandbox Service README, which still describes
-the relay as its foundation, is rewritten for the channel.
+**Blocked on `KUBEVIRT_GUEST_CONTROL`.** Hosted runners take every call over the control stream and
+admit no connections; the KubeVirt experiment's guest is the last caller of the runner's own gRPC
+server. Delete that server, its `--listen` flag, the `Runner` service RPCs the channel duplicates
+and `protocol.v1.Follow` with `Open.follow`, and its client `runner/client.py`, test-only now, with
+the app's `OpenTimeoutError` handler.
 
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 
@@ -528,8 +516,7 @@ unless the operator reviews a change. Separate Sandbox initialization from per-s
 **Candidate.** Draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
 expires idle Sandboxes (`TODO(sandbox-lifetime)` in `action_service/sandbox/inventory.py`). Deleting
 one goes through [teardown](../sandbox_service/API.md#teardown), which waits until history is
-archived through the seal (the ingress acknowledgement, or a retention hold for a runner that pushes
-to no ingress).
+archived through the seal (the ingress acknowledgement).
 
 ## 7. History Service extraction and delta settlement
 
@@ -687,7 +674,7 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 
 ```mermaid
 flowchart TD
-    HISTORY_SANDBOX_LOCATOR_DROP[Blocked: drop the Sandbox locator from the history database]
+    HISTORY_SANDBOX_LOCATOR_DROP[Candidate: drop the Sandbox locator from the history database]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Candidate: name the sandbox_commands database for the Runner Gateway]
     ELECTRIC_DEPLOYMENT_RENAME[Candidate: give Electric its plain name]
@@ -696,19 +683,18 @@ flowchart TD
     ACTION_SANDBOX_PROVISIONING[Blocked: the Action Service stops creating Sandboxes]
     ACTION_SANDBOX_DESIGN --> ACTION_SANDBOX_PROVISIONING
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
-    FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> HISTORY_SANDBOX_LOCATOR_DROP
     HISTORY_SANDBOX_LOCATOR_DROP --> HISTORY_DATABASE_RENAME
 ```
 
 ### `HISTORY_SANDBOX_LOCATOR_DROP` — rows name only their Session and writer
 
-**Blocked on the follow path's retirement**, because the followers address Sessions by Sandbox and
-`runner_session_id`. Under the ingress, a Session arrives under its client-minted public ID, which
+**Candidate.** Under the ingress, a Session arrives under its client-minted public ID, which
 is also the runner's, and its row names the writer that pushed it. The Sandbox locator columns
 (`sandbox_namespace`, `sandbox_name`, `sandbox_uid`) and `runner_session_id` then only describe
 rows the followers wrote, and `source_id` is never set. Rewrite feed snapshots stored under a
-runner session ID under the public ID, then drop those columns with `ux_history_runner_locator`.
-Stops for the operator.
+runner session ID under the public ID, then drop those columns with `ux_history_runner_locator`,
+and with them `SessionSummary`'s Sandbox fields, the summaries' Sandbox filter and
+`record_follower_session` in `history_service/testing`. Stops for the operator.
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
@@ -774,23 +760,12 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 
 ```mermaid
 flowchart TD
-    RUNNER_SESSION_RECORD_SHIMS[Candidate: drop runner session record compatibility]
     ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
-    FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> REFACTOR_COHERENCE_AUDIT
     RUNNER_INBOUND_RETIRE[Retire inbound runner access] --> REFACTOR_COHERENCE_AUDIT
     HISTORY_SERVICE_OWNERSHIP[History Service ownership] --> REFACTOR_COHERENCE_AUDIT
-    RUNNER_SESSION_RECORD_SHIMS --> REFACTOR_COHERENCE_AUDIT
     COHERENCE_REFACTORS[Section 12 coherence refactors] --> REFACTOR_COHERENCE_AUDIT
 ```
-
-### `RUNNER_SESSION_RECORD_SHIMS` — drop runner session record compatibility
-
-**Candidate; Runner dial-out lane.** The runner's `SessionRecord` reads `session.json` written by
-older images: `context_budget_resolved` (False only for records from before budget resolution,
-2026-10-10 PDT) re-resolves the budget at Open, and `instructions` and `event_source_id` have
-defaults that fill records predating them. No live Sandbox predates them. Delete the flag and its
-Open branch, make both fields required, and have `from_spec` set `event_source_id` explicitly.
 
 ### `ACTION_EXECUTION_AUDIT_TRIM` — execution reconciliation columns
 
@@ -833,59 +808,22 @@ nodes and section 9 are unaffected.
 
 ```mermaid
 flowchart TD
-    FOLLOW_PATH_RETIRE[Candidate: delete following, WatchSessions and holds]
     GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages and client move to the gateway]
     AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
     POD_INCARNATION[Decision: a Pod is the incarnation]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
-    SESSION_ID_MINT_RETIRE[Blocked: clients always name the Session ID]
-    LOOKUP_SESSION_RETIRE[Candidate: Session status from history, no Open reservation]
+    RESUME_BY_SESSION_ID[Unscheduled: resume a Session by its ID alone]
+    SESSION_OPEN_COLUMNS_DROP[Candidate: drop the gateway's Open reservation columns]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
 ```
 
-### `SESSION_ID_MINT_RETIRE` — clients always name the Session ID
+### `SESSION_OPEN_COLUMNS_DROP` — drop the gateway's Open reservation columns
 
-**Blocked on the deployed app sending `session_id` on every create.** `CreateSessionRequest.session_id` becomes required. The Runner Gateway stops
-minting IDs and handing the runner an `r-` locator (the `CLEANUP` tombstones in `grpc_api.py`'s
-`CreateSession` and `session_registry.py`), and the app stops sending the ID again as
-`idempotency_key` for older Sandbox Services. The gateway's `session.runner_session_id` then always
-equals the Session ID; drop it and its place in `ux_session_runner_locator` (stops for the operator).
-
-### `LOOKUP_SESSION_RETIRE` — Session status from history, no Open reservation
-
-**Candidate.** After a reload the browser keeps only the Session ID, so it asks `LookupSession`
-whether the runner started it, and the Runner Gateway keeps an Open reservation (spec frozen per
-key) for a retried create. The History Service's index records which Sessions a runner announced
-on ingress, so the browser reads that instead. `LookupSession`, its journal scan over the inbound
-API, the Open reservation and the Open key go, with the gateway `session` columns `open_key`,
-`open_request`, `launch_spec`, `caller_namespace`, `caller_name` and `ux_session_open_key` (stops for
-the operator before the drop).
-
-### `FOLLOW_PATH_RETIRE` — delete following, WatchSessions and holds
-
-**Candidate.** Delete `FollowSession`,
-`WatchSessions` and its change feed (the gateway's `session.change_position`, its index and the
-`session_change_position` sequence), the History Service follower ingester, and the hold API and
-`retention-holds` annotation. With the follower go `Store.record_session` and `SessionSummary`'s
-Sandbox fields; tests that copy history with the follower
-(`history_service.testing.backend.ingest`, used by the app and Notification Service acceptance
-tests) push through the ingress instead. The history columns the follower filled are dropped by
-`HISTORY_SANDBOX_LOCATOR_DROP`. Stops for the operator before dropping stored registry columns.
-
-Also follow-only, so deleted here: the History Service's `SandboxServiceSettings` and
-`IngesterSettings` (with the duplicate `ingester.settle_deltas`), its `sandbox_service` config block
-and token volume in cdk8s, and its caller account on the Sandbox Service; `follow_lease_s` and
-`SessionChanges`; the client's `follow_timeout_s` and `Attachment` with the app's
-`sandbox_service_follow_timeout_s` and the Notification Service's `follow_timeout_s`;
-`protocol.v1.Follow` once nothing sends `Open.follow`; `Store.read`; `SessionFeedState.ended` with
-its merge in `record_feed_state`, `FEED_STATUS_ENDED` and the app's `resume_pending` mask; and
-`register_attached_sessions` in `runner_gateway/testing`.
-
-With the holds goes teardown's path for a runner that pushes nothing: `SealResponse.pushes`,
-`TEARDOWN_PHASE_SEALED`, `SandboxInventory.record_seal` and `delete_if_released`. Every teardown
-then waits for every seal to be `flushed`.
+**Candidate.** No code reads or writes the Runner Gateway `session` columns `open_key`,
+`open_request`, `launch_spec`, `caller_namespace` and `caller_name`, nor the `ux_session_open_key`
+index. A migration drops them. Data drop: its own PR, which the operator merges.
 
 ### `GATEWAY_CLIENT_SPLIT` — Session messages and client move to the gateway
 
@@ -895,6 +833,13 @@ into the gateway's proto and give the gateway its own client. `FrozenLaunch` lea
 Sandbox Service proto for a gateway-private message, `sandbox_service/wire.py` splits between
 gateway and client, the client's `Runner` handle is renamed, its `command_admission_timeout_s`
 stops being nullable, and the Notification Service's `SandboxServiceSettings` splits too.
+
+### `RESUME_BY_SESSION_ID` — resume a Session by its ID alone
+
+**Unscheduled.** Commands reach the gateway by Session ID alone (operator, 2026-10-11).
+`ResumeSession` still names the Sandbox, because only the replica holding its runner connection
+serves it and the client reaches that replica through the Sandbox's control Service. Resume by
+Session ID needs the gateway to forward to the holder itself.
 
 ### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
 
@@ -957,10 +902,9 @@ flowchart TD
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
         GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
-        GATEWAY_SANDBOX_READS[Candidate: the gateway reads Sandboxes read-only]
-        SANDBOX_DEAD_CODE[Candidate: delete KubernetesBindings.run]
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
+        FEED_ENDED_RETIRE[Candidate: a feed ends where its harness stopped]
         APP_SERVICE_NAMES[Candidate: app names the right services]
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
@@ -992,18 +936,6 @@ say "Sandbox Service" for the gateway; History Service docstrings say it writes 
 history store. Also the stale `sealer_accounts` comment, the `serve_channel` test helper, and the
 `CLEANUP` in `sandbox_service/teardown.py` that cites this plan.
 
-### `GATEWAY_SANDBOX_READS` — the gateway reads Sandboxes read-only
-
-**Candidate.** The gateway builds the Sandbox Service's mutating `SandboxInventory` but only reads
-it, and alone uses `sandbox_service/destinations.py`, against service_boundaries.md § callers. Split
-a read-only Sandbox reader, move `destinations.py` into `runner_gateway/`, write the incarnation
-check (four copies) once, and drop the second `RunnerEndpoint` class name.
-
-### `SANDBOX_DEAD_CODE` — delete `KubernetesBindings.run`
-
-**Candidate.** Nothing calls it (`sandbox_service/kubernetes_bindings.py:295`); grant bindings
-reconcile through `Provisioning.reconcile_once`.
-
 ### `RUNNER_ERRORS_REHOME` — errors beside the client that raises them
 
 **Blocked on `GATEWAY_CLIENT_SPLIT`.** `agentplane.runner.errors` is now every service's "session
@@ -1011,12 +943,17 @@ refused" vocabulary: the gateway, the Sandbox Service client and the app's Threa
 raise it. Move it beside the gateway client, per grpc_services.md, and give the app's `bridge.py`
 its own error type.
 
+### `FEED_ENDED_RETIRE` — a feed ends where its harness stopped
+
+**Candidate.** `SessionFeedState.ended`, which only the retired follower set, goes with its merge in
+`Store.record_feed_state`, the fold's branch reading it, `FEED_STATUS_ENDED` and the app's
+`resume_pending` mask: the fold derives the end from a stopped harness.
+
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 
 **Unscheduled; operator, 2026-10-11 PDT: keep the flag for debugging for now, may retire it later.**
-Settlement is on by default; `ingester.settle_deltas` and `ingress.settle_deltas` turn it
-off. Retiring the flag makes settlement unconditional: delete the setting, `Environment.settle_deltas`
-and the `Store` flag (the ingester's copy goes with `FOLLOW_PATH_RETIRE`).
+Settlement is on by default; `ingress.settle_deltas` turns it off. Retiring the flag makes
+settlement unconditional: delete the setting, `Environment.settle_deltas` and the `Store` flag.
 
 ### `APP_SERVICE_NAMES` — the app names the right services
 

@@ -110,8 +110,8 @@ records, a rejection it shows as refused, and a command still pending admission 
 stored by the service but not yet seen admitted by the runner. That is neither proof the runner never
 saw it nor a promise it will, so the command keeps Retry and never Cancel.
 
-The app copies no runner events and folds none. The history ingester `history_writer` names archives
-each Session's events and the History Service folds them under per-Session leases
+The app copies no runner events and folds none. Each runner pushes its Sessions' events to the
+History ingress, and the History Service folds them under per-Session leases
 ([History Service](../history_service/README.md)); the app reads both through the History Service.
 
 Sandbox discovery and runner addresses use the existing Kubernetes list/watch cache, including
@@ -462,10 +462,8 @@ A new Thread's id is the public Session ID the browser mints and the Sandbox Ser
 `CreateSession` confirms; `{session_id}` in a cwd resolves server-side. The browser sends a fresh
 Session ID with the original overrides once and keeps only that ID in `sessionStorage`, never the
 spec or setup script, so it cannot retry the create. After a lost reply or a reload it never re-sends
-Open: **Check Open status** asks
-`GET /sandboxes/{name}/sessions/open`, which reports `absent`, `unconfirmed`, `failed` or `ready` and
-materializes the Thread only once the runner has confirmed a native start. Discovery through
-`ListSessions` may materialize the same Thread first; both key it by the same public ID.
+Open: **Check Open status** asks `GET /threads/{id}` for that ID, which exists once the runner has
+pushed the Session to the History Service. Until then the page offers only to discard the attempt.
 
 ## Action policy
 

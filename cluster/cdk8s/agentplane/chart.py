@@ -68,26 +68,17 @@ def environment_chart(app: App, env: Environment) -> Chart:
     notifications_caller = {
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
     }
-    # The ingester places retention holds and follows every Session (WatchSessions, FollowSession).
-    history_caller = {
-        ServiceAccountRef(namespace=env.namespace, name=history_service.NAME): history_service.service(
-            env.namespace
-        ).pods
-    }
-    sandbox_service.SandboxService(
-        chart, "sandbox-service", env, callers=app_caller | notifications_caller | history_caller
-    )
+    sandbox_service.SandboxService(chart, "sandbox-service", env, callers=app_caller | notifications_caller)
     runner_gateway.RunnerGateway(
         chart,
         "runner-gateway",
         env,
-        callers=app_caller | notifications_caller | history_caller,
+        callers=app_caller | notifications_caller,
         sealers={
             ServiceAccountRef(namespace=env.namespace, name=sandbox_service.NAME): sandbox_service.service(
                 env.namespace
             ).pods
         },
-        runners=runner_sandbox.pods(env.namespace),
     )
     history_service.HistoryService(
         chart,
@@ -95,10 +86,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
         env,
         # The app reads Threads; the Notification Service reads command receipts.
         callers=app_caller | notifications_caller,
-        sandboxes=sandbox_service.service(env.namespace),
-        sandboxes_audience=sandbox_service.TOKEN_AUDIENCE,
-        gateway=runner_gateway.service(env.namespace),
-        gateway_audience=runner_gateway.TOKEN_AUDIENCE,
     )
     if env.history_compaction is not None:
         history_compaction.HistoryCompaction(chart, "history-compaction", env, env.history_compaction)

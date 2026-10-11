@@ -16,7 +16,6 @@ from sqlalchemy.engine import URL
 
 from agentplane.postgres.listener import PostgresListener
 from agentplane.proto import event_log_pb2, runner_control_pb2 as control_pb2
-from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import (
     DISPATCH_CHANNEL,
     OUTCOME_CHANNEL,
@@ -27,7 +26,7 @@ from agentplane.runner_gateway.commands.dispatch import (
     parse_outcome,
 )
 from agentplane.runner_gateway.connection_records import ConnectionLeases
-from agentplane.sandbox_service.destinations import DestinationUnavailableError
+from agentplane.runner_gateway.destinations import DestinationUnavailableError
 
 # The generated message stubs import google.protobuf; mypy reads stubs only from direct deps.
 # gazelle:include_dep @pypi//protobuf
@@ -50,13 +49,11 @@ class CommandDelivery:
         database_url: URL,
         *,
         dispatches: DispatchStore,
-        connections: ConnectionStore,
         leases: ConnectionLeases,
         liveness_s: float,
         recheck_s: float = 2,
     ) -> None:
         self.dispatches = dispatches
-        self.connections = connections
         self.leases = leases
         self.liveness_s = liveness_s
         self.recheck_s = recheck_s

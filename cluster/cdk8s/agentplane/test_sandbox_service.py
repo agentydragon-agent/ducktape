@@ -93,7 +93,6 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     )
     assert backend_config["caller_accounts"] == [
         {"namespace": namespace, "name": app.NAME},
-        {"namespace": namespace, "name": history_service.NAME},
         {"namespace": namespace, "name": notifications.NAME},
     ]
     assert gateway_config["caller_accounts"] == backend_config["caller_accounts"]
@@ -115,19 +114,8 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     assert backend_config["gateway_target"] == f"{gateway.fqdn}:{gateway.pod_port}"
     assert gateway_config["token_audience"] != backend_config["token_audience"]
     runner_policy = resource("CiliumNetworkPolicy", "agentplane-runner")["spec"]
-    assert runner_policy["ingress"] == [
-        {
-            "fromEndpoints": [{"matchLabels": gateway.pods.cilium}],
-            "toPorts": [{"ports": [{"port": "7000", "protocol": "TCP"}]}],
-        }
-    ]
-    application_egress = resource("CiliumNetworkPolicy", app.NAME)["spec"]["egress"]
-    assert not any(
-        port["port"] == "7000"
-        for rule in application_egress
-        for ports in rule.get("toPorts", [])
-        for port in ports["ports"]
-    )
+    # Runners dial out; nothing connects to them.
+    assert runner_policy["ingress"] == [{}]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
@@ -156,12 +144,6 @@ def test_notifications_have_no_app_or_direct_runner_dependency(
         {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
     ]
     policy = resource("CiliumNetworkPolicy", notifications.NAME)["spec"]
-    assert not any(
-        port["port"] == "7000"
-        for rule in policy["egress"]
-        for ports in rule.get("toPorts", [])
-        for port in ports["ports"]
-    )
     assert not any(
         target["matchLabels"].get("k8s:app.kubernetes.io/name") == app.NAME
         for rule in policy["egress"]
@@ -211,12 +193,10 @@ def test_gateway_callers_send_the_gateway_audience(
         for arg in app_args
         if arg.startswith("--runner-gateway-token-file=")
     )
-    history = config(f"{history_service.NAME}-config", "config.yaml")["sandbox_service"]
     notices = config(f"{notifications.NAME}-settings", "settings.yaml")["sandbox_service"]
     sealer = config(f"{sandbox_service.NAME}-config", "config.yaml")
     assert {
         _token_audience(pod(app.NAME), "app", app_token),
-        _token_audience(pod(history_service.NAME), "history-service", history["gateway_token_file"]),
         _token_audience(pod(notifications.NAME), "notifications", notices["gateway_token_file"]),
         _token_audience(pod(sandbox_service.NAME), "sandbox-service", sealer["gateway_token_file"]),
     } == {accepted}

@@ -1689,8 +1689,6 @@ data:
       - namespace: agentplane-testing
         name: agentplane-app
       - namespace: agentplane-testing
-        name: agentplane-history-service
-      - namespace: agentplane-testing
         name: agentplane-notifications
     token_audience: agentplane-sandbox-service
     default_egress_policies:
@@ -2021,14 +2019,6 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-history-service
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -2041,8 +2031,6 @@ data:
     caller_accounts:
       - namespace: agentplane-testing
         name: agentplane-app
-      - namespace: agentplane-testing
-        name: agentplane-history-service
       - namespace: agentplane-testing
         name: agentplane-notifications
     sealer_accounts:
@@ -2258,12 +2246,9 @@ data:
       and wait for the decision and execution result via the Actions API/notifications as described
       in the shared platform instructions. Never impersonate an operator, bypass the egress proxy,
       or use admin Actions for unrelated work. Approval is not execution success.
-    runner_grpc_channel_options:
-      grpc.max_receive_message_length: 33554432
     runner_control_audience: agentplane-runner-control
     port: 8080
     runner_control_port: 8082
-    runner_port: 7000
 immutable: false
 ---
 apiVersion: v1
@@ -2537,14 +2522,6 @@ spec:
         - ports:
             - port: "5432"
               protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-runner
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "7000"
-              protocol: TCP
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: agentplane-runner-gateway
@@ -2560,14 +2537,6 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-notifications
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-history-service
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
         - ports:
@@ -2681,15 +2650,6 @@ data:
         name: agentplane-notifications
     token_audience: agentplane-history-service
     port: 8080
-    sandbox_service:
-      target: agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
-      gateway_target: agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8080
-      token_file: /var/run/secrets/history-service/sandboxes
-      gateway_token_file: /var/run/secrets/history-service/gateway
-      grpc_channel_options:
-        grpc.max_receive_message_length: 33554432
-    ingester:
-      settle_deltas: true
     ingress:
       token_audience: agentplane-runner-ingress
       writer_namespaces:
@@ -2778,9 +2738,6 @@ spec:
             - mountPath: /etc/agentplane-history-service
               name: configmap-agentplane-history-service-config
               readOnly: true
-            - mountPath: /var/run/secrets/history-service
-              name: service-tokens
-              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -2828,17 +2785,6 @@ spec:
         - configMap:
             name: agentplane-history-service-config
           name: configmap-agentplane-history-service-config
-        - name: service-tokens
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-sandbox-service
-                  expirationSeconds: 3600
-                  path: sandboxes
-              - serviceAccountToken:
-                  audience: agentplane-runner-gateway
-                  expirationSeconds: 3600
-                  path: gateway
 ---
 apiVersion: v1
 kind: Service
@@ -2881,22 +2827,6 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-sandbox-service
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
     - toEndpoints:
         - matchLabels:
             k8s:cnpg.io/cluster: postgres
@@ -3692,14 +3622,7 @@ spec:
     matchLabels:
       app.kubernetes.io/name: agentplane-runner
   ingress:
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "7000"
-              protocol: TCP
+    - {}
 ---
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
@@ -3720,8 +3643,6 @@ spec:
         - args:
             - --state-dir
             - /state
-            - --listen
-            - 0.0.0.0:7000
             - --claude-binary
             - /bin/claude
             - --anthropic-base-url
@@ -3797,9 +3718,6 @@ spec:
               value: America/Los_Angeles
           image: git.allegedly.works/ducktape-ci/runner:unset
           name: runner
-          ports:
-            - containerPort: 7000
-              name: runner
           resources:
             limits:
               cpu: "2"

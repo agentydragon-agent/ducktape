@@ -12,8 +12,6 @@ service RunnerGateway {
   rpc ListSessions(agentplane.proto.sandbox_service.SandboxRequest) returns (agentplane.proto.runner.ListSessionsResponse);
   // Opens the Session the client named. A retry with the same ID and inputs returns it again.
   rpc CreateSession(agentplane.proto.sandbox_service.CreateSessionRequest) returns (agentplane.proto.sandbox_service.CreateSessionResponse);
-  // Read-only reconciliation by the original caller, sandbox incarnation and Open key.
-  rpc LookupSession(agentplane.proto.sandbox_service.LookupSessionRequest) returns (agentplane.proto.sandbox_service.LookupSessionResponse);
   rpc ResumeSession(agentplane.proto.sandbox_service.SessionRequest) returns (agentplane.proto.runner.Attached);
   // Returns the original matching CommandAdmitted entry, not command completion.
   rpc SubmitCommand(agentplane.proto.sandbox_service.SubmitCommandRequest) returns (agentplane.proto.event_log.EventEntry);
@@ -21,15 +19,10 @@ service RunnerGateway {
   rpc GetCommand(agentplane.proto.sandbox_service.GetCommandRequest) returns (agentplane.proto.sandbox_service.CommandStatus);
   // The Session's submitted commands in acceptance order, as retained: never contacts the runner.
   rpc ListCommands(agentplane.proto.sandbox_service.ListCommandsRequest) returns (agentplane.proto.sandbox_service.ListCommandsResponse);
-  // Replays the runner journal after the caller's cursor, then continues live on the same stream.
-  // The gateway keeps no copy of these entries.
-  rpc FollowSession(agentplane.proto.sandbox_service.FollowSessionRequest) returns (stream agentplane.proto.sandbox_service.FollowSessionResponse);
-  // Any allowed service caller. Every Session, including those of deleted Sandboxes, in the
-  // order of each one's latest change, then each later change as it commits.
-  rpc WatchSessions(agentplane.proto.sandbox_service.WatchSessionsRequest) returns (stream agentplane.proto.sandbox_service.WatchSessionsResponse);
   // Teardown's seal, called by the Sandbox Service alone: fence and seal every Session of the
-  // incarnation, and return each one's final cursor keyed as holders name the Session (the public
-  // Session ID, or the runner's own ID for a Session opened with a caller-chosen one). Idempotent.
+  // incarnation, and return each one's final cursor and whether its ingress has acknowledged it,
+  // keyed by public Session ID (or the runner's own ID for a Session opened with a caller-chosen
+  // one). Idempotent.
   rpc SealSandbox(agentplane.proto.sandbox_service.SandboxRequest) returns (agentplane.proto.runner.SealResponse);
   // Any allowed service caller. Which Sandbox each named Session runs in; a Session the gateway
   // never registered is left out. Carries no transcript.

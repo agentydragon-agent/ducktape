@@ -25,7 +25,7 @@ class SandboxNotReachableError(Exception):
 class SandboxSessions:
     def __init__(self, index: LiveIndex, service: SandboxServiceClient) -> None:
         self._index = index
-        self._service = service
+        self.service = service
         self._clients: dict[str, Runner] = {}
 
     @property
@@ -37,7 +37,7 @@ class SandboxSessions:
 
     async def sandbox_of(self, thread_id: UUID) -> str:
         """The Sandbox the Runner Gateway routes the Thread's Session to."""
-        found = await self._service.session_sandboxes({str(thread_id)})
+        found = await self.service.session_sandboxes({str(thread_id)})
         if not found:
             raise SessionNotRegisteredError(thread_id)
         return found[0].sandbox
@@ -54,5 +54,5 @@ class SandboxSessions:
             sandbox_uid=str(view.uid),
         )
         if str(view.uid) not in self._clients:
-            self._clients[str(view.uid)] = self._service.runner(destination)
+            self._clients[str(view.uid)] = self.service.runner(destination)
         return self._clients[str(view.uid)]

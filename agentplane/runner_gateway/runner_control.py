@@ -7,10 +7,8 @@ Contract: `agentplane/docs/runner_control.md`.
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import override
 from uuid import UUID
 
@@ -20,13 +18,12 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc
 from agentplane.runner_gateway.command_delivery import CommandDelivery
-from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import CommandKey, ReceiptMismatchError
 from agentplane.runner_gateway.commands.store import SubmissionConflictError
 from agentplane.runner_gateway.connection_records import ConnectionRecords, ConnectionSupersededError, RecordOwner
 from agentplane.runner_gateway.lifecycle_control import ControlConnection, LifecycleControl
-from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.sandbox_service.reader import SandboxReader
 from agentplane.workload_auth.grpc_caller import resolve_caller
 from agentplane.workload_auth.principal import (
     WorkloadPrincipal,
@@ -41,11 +38,6 @@ logger = logging.getLogger(__name__)
 
 # Attempts sent on one stream without a receipt yet; past this, a claim waits for re-notification.
 MAX_UNRECEIPTED = 64
-
-
-class ControlOperation(StrEnum):
-    COMMANDS = "commands"
-    LIFECYCLE = "lifecycle"
 
 
 @dataclass(frozen=True)
@@ -81,13 +73,13 @@ class _StreamClosedError(Exception):
 
 
 async def resolve_peer(
-    principal: WorkloadPrincipal, *, inventory: SandboxInventory, core: k8s_client.CoreV1Api
+    principal: WorkloadPrincipal, *, sandboxes: SandboxReader, core: k8s_client.CoreV1Api
 ) -> ControlPeer:
     """Follow the token's Pod to the Sandbox controlling it, the reverse of destination resolution."""
-    if principal.namespace != inventory.namespace:
+    if principal.namespace != sandboxes.namespace:
         raise PeerRefusedError("workload is outside the Sandbox namespace")
     try:
-        pod = await core.read_namespaced_pod(principal.pod_name, inventory.namespace)
+        pod = await core.read_namespaced_pod(principal.pod_name, sandboxes.namespace)
     except k8s_client.ApiException as error:
         if error.status == 404:
             raise WorkloadPrincipalRejectedError("bearer Pod no longer exists") from error
@@ -104,7 +96,7 @@ async def resolve_peer(
         raise PeerRefusedError("Pod is not controlled by a Sandbox")
     owner = controllers[0]
     try:
-        sandbox = await inventory.get(owner.name)
+        sandbox = await sandboxes.get(owner.name)
     except SandboxNotFoundError as error:
         raise PeerRefusedError("Pod's Sandbox is not in this inventory") from error
     if sandbox.uid != owner.uid:
@@ -119,18 +111,16 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         self,
         *,
         principals: WorkloadPrincipalResolver,
-        inventory: SandboxInventory,
+        sandboxes: SandboxReader,
         core: k8s_client.CoreV1Api,
-        connections: ConnectionStore,
         records: ConnectionRecords,
         delivery: CommandDelivery,
         control: LifecycleControl,
         timing: ControlTiming,
     ) -> None:
         self.principals = principals
-        self.inventory = inventory
+        self.sandboxes = sandboxes
         self.core = core
-        self.connections = connections
         self.records = records
         self.delivery = delivery
         self.control = control
@@ -138,7 +128,7 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
 
     async def authenticate(self, context: grpc.aio.ServicerContext) -> tuple[WorkloadPrincipal, ControlPeer]:
         principal = await resolve_caller(self.principals, context)
-        return principal, await resolve_peer(principal, inventory=self.inventory, core=self.core)
+        return principal, await resolve_peer(principal, sandboxes=self.sandboxes, core=self.core)
 
     # mypy-protobuf types the handler as returning an iterator; explicit writes keep every send
     # inside the liveness bound.
@@ -156,19 +146,15 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
                 hello = runner_control_pb2.RunnerFrame()
             if hello.WhichOneof("frame") != "hello" or not hello.hello.runner_boot_id:
                 raise _StreamClosedError(grpc.StatusCode.INVALID_ARGUMENT, "the first frame must be Hello")
-            capabilities = set(hello.hello.capabilities) & set(ControlOperation)
             epoch = await self.records.accept(
                 peer.record_owner, pod_uid=peer.pod_uid, runner_boot_id=hello.hello.runner_boot_id
             )
-            await self.connections.record_operations(peer.sandbox_uid, capabilities)
             async with asyncio.timeout(self.timing.liveness_s):
                 await context.write(
-                    runner_control_pb2.ServiceFrame(
-                        welcome=runner_control_pb2.Welcome(connection_epoch=epoch, capabilities=sorted(capabilities))
-                    )
+                    runner_control_pb2.ServiceFrame(welcome=runner_control_pb2.Welcome(connection_epoch=epoch))
                 )
             with self.delivery.route(peer.sandbox_uid) as attempts:
-                await self.serve(principal, peer, epoch, capabilities, attempts, request_iterator, context)
+                await self.serve(principal, peer, epoch, attempts, request_iterator, context)
         except WorkloadPrincipalRejectedError:
             await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
         except PeerRefusedError:
@@ -186,7 +172,6 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         principal: WorkloadPrincipal,
         peer: ControlPeer,
         epoch: int,
-        capabilities: set[str],
         attempts: asyncio.Queue[CommandKey],
         frames: AsyncIterator[runner_control_pb2.RunnerFrame],
         context: grpc.aio.ServicerContext,
@@ -197,27 +182,25 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         last_frame_at = datetime.now(UTC)
         writing = asyncio.Lock()
         unreceipted: dict[tuple[str, str], datetime] = {}  # (runner session, command ID) -> deadline
-        commands = ControlOperation.COMMANDS in capabilities
-        lifecycle = ControlOperation.LIFECYCLE in capabilities
 
         async def send(frame: runner_control_pb2.ServiceFrame) -> None:
             async with writing, asyncio.timeout(self.timing.liveness_s):
                 await context.write(frame)
 
-        async def read(control: ControlConnection | None) -> None:
+        async def read(control: ControlConnection) -> None:
             nonlocal last_frame, last_frame_at
             async for frame in frames:
                 last_frame, last_frame_at = loop.time(), datetime.now(UTC)
                 match frame.WhichOneof("frame"):
                     case "heartbeat":
                         pass
-                    case "receipt" if commands:
+                    case "receipt":
                         try:
                             await self.delivery.dispatches.record(peer.sandbox_uid, frame.receipt)
                         except (ReceiptMismatchError, SubmissionConflictError) as error:
                             raise _StreamClosedError(grpc.StatusCode.INVALID_ARGUMENT, str(error)) from error
                         unreceipted.pop((frame.receipt.session_id, frame.receipt.command_id), None)
-                    case "control_result" if control is not None:
+                    case "control_result":
                         control.answer(frame.control_result)
                     case kind:
                         raise _StreamClosedError(grpc.StatusCode.INVALID_ARGUMENT, f"unexpected {kind} frame")
@@ -225,8 +208,6 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         async def deliver() -> None:
             while True:
                 key = await attempts.get()
-                if not commands:
-                    continue
                 now = datetime.now(UTC)
                 for expired in [attempt for attempt, deadline in unreceipted.items() if deadline <= now]:
                     del unreceipted[expired]
@@ -262,12 +243,12 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
                     except ConnectionSupersededError as error:
                         raise _StreamClosedError(grpc.StatusCode.ABORTED, "superseded by a newer connection") from error
                     # Revocation: the Pod or Sandbox behind this connection may have changed.
-                    if await resolve_peer(principal, inventory=self.inventory, core=self.core) != peer:
+                    if await resolve_peer(principal, sandboxes=self.sandboxes, core=self.core) != peer:
                         raise _StreamClosedError(grpc.StatusCode.PERMISSION_DENIED, "the Sandbox's routing changed")
                     last_touch = now
                 await send(runner_control_pb2.ServiceFrame(heartbeat=runner_control_pb2.Heartbeat()))
 
-        with self.control.connect(peer.sandbox_uid, epoch=epoch, send=send) if lifecycle else nullcontext() as control:
+        with self.control.connect(peer.sandbox_uid, epoch=epoch, send=send) as control:
             tasks = [
                 asyncio.create_task(read(control)),
                 asyncio.create_task(deliver()),

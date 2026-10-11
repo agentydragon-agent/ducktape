@@ -214,9 +214,10 @@ async def test_suspend_and_resume_patch_the_operating_mode(
 ) -> None:
     _populate_one_of_each_state(custom_objects, core_v1)
 
-    await inventory.suspend("live")
+    live = await inventory.get("live")
+    await inventory.suspend("live", uid=live.uid)
     suspended = await inventory.get("live")
-    await inventory.resume("live")
+    await inventory.resume("live", uid=live.uid)
     resumed = await inventory.get("live")
 
     assert custom_objects.patches == [
@@ -233,7 +234,7 @@ async def test_suspend_and_resume_patch_the_operating_mode(
     ]
     assert (suspended.operating_mode, resumed.operating_mode) == (OperatingMode.SUSPENDED, OperatingMode.RUNNING)
     with pytest.raises(SandboxNotFoundError):
-        await inventory.suspend("foreign")
+        await inventory.suspend("foreign", uid="test-foreign-uid")
 
 
 async def test_teardown_runs_a_suspended_sandbox_fenced_until_sealed(
@@ -249,15 +250,13 @@ async def test_teardown_runs_a_suspended_sandbox_fenced_until_sealed(
         assert (view.teardown, view.operating_mode) == (TeardownPhase.TEARDOWN_PHASE_SEALING, OperatingMode.RUNNING)
     for operation in (inventory.suspend, inventory.resume):
         with pytest.raises(SandboxTearingDownError):
-            await operation("paused")
-    # Nothing deletes an unsealed Sandbox.
+            await operation("paused", uid=paused.uid)
+    # Only teardown deletes a Sandbox.
     with pytest.raises(SandboxConflictError):
-        await inventory.delete_if_released("paused", uid=paused.uid)
-    await inventory.record_seal("paused", uid=paused.uid, cursors={"test-session": 3})
-    view = await inventory.get("paused")
-    assert (view.teardown, view.operating_mode) == (TeardownPhase.TEARDOWN_PHASE_SEALED, OperatingMode.RUNNING)
-    assert await inventory.list_holds("paused", uid=paused.uid) == []
-    assert await inventory.delete_if_released("paused", uid=paused.uid)
+        await inventory.delete_flushed("live", uid=live.uid)
+    await inventory.delete_flushed("paused", uid=paused.uid)
+    with pytest.raises(SandboxNotFoundError):
+        await inventory.get("paused")
 
 
 async def test_create_intent_conflicts_and_caller_cannot_adopt_name(inventory: SandboxInventory) -> None:
