@@ -27,6 +27,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.replication_source import Placements
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.history_watch import HistoryWatch
@@ -143,8 +144,15 @@ def summaries(engine: AsyncEngine, history_client: HistoryServiceClient) -> Summ
 
 
 @pytest.fixture
-def store(engine: AsyncEngine, summaries: Summaries) -> ThreadStore:
-    return ThreadStore(engine, summaries)
+def store(engine: AsyncEngine, summaries: Summaries, inventory: SandboxServiceClient) -> ThreadStore:
+    return ThreadStore(engine, summaries, gateway=inventory)
+
+
+@pytest.fixture
+def gateway_registry(history: History) -> AsyncEngine | Placements:
+    """Where fixture Sessions are registered with the Runner Gateway: the service database here, which
+    the gateway shares; browser tests answer from a fake gateway's map instead."""
+    return history.engine
 
 
 @pytest.fixture
@@ -154,10 +162,12 @@ def event_logs(
     history_client: HistoryServiceClient,
     summaries: Summaries,
     register_attached_sessions: bool,
+    gateway_registry: AsyncEngine | Placements,
 ) -> EventLogStore:
     return EventLogStore(
         engine,
         history=None if register_attached_sessions else history,
+        gateway=gateway_registry,
         history_reader=history_client,
         summaries=summaries,
     )
@@ -199,13 +209,19 @@ async def database_updates(
 
 @pytest.fixture
 async def replica(
-    db_url: str, event_logs: EventLogStore, history_client: HistoryServiceClient
+    db_url: str, event_logs: EventLogStore, history_client: HistoryServiceClient, inventory: SandboxServiceClient
 ) -> AsyncIterator[Replica]:
     async with managed_async_engine(connect(db_url)) as engine:
         summaries = Summaries(engine, history_client)
         yield Replica(
-            ThreadStore(engine, summaries),
-            EventLogStore(engine, history=event_logs.history, history_reader=history_client, summaries=summaries),
+            ThreadStore(engine, summaries, gateway=inventory),
+            EventLogStore(
+                engine,
+                history=event_logs.history,
+                gateway=event_logs.gateway,
+                history_reader=history_client,
+                summaries=summaries,
+            ),
             OperatorSessionStore(engine),
         )
 

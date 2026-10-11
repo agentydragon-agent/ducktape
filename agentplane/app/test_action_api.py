@@ -384,7 +384,7 @@ async def review(
         replica = create_app(
             inventory,
             bridge,
-            ThreadStore(replica_engine, replica_summaries),
+            ThreadStore(replica_engine, replica_summaries, gateway=inventory),
             ModelCatalog(
                 models=[
                     ModelOption(
@@ -403,7 +403,11 @@ async def review(
             if operator_connection == "disabled"
             else FederatedOperatorActions(federation, oidc, downstream_http),
             event_logs=EventLogStore(
-                replica_engine, history=history, history_reader=history_client, summaries=replica_summaries
+                replica_engine,
+                history=history,
+                gateway=history.engine,
+                history_reader=history_client,
+                summaries=replica_summaries,
             ),
             content=ContentStore(replica_engine, history_reader=history_client),
             # Never started: nothing served here listens; the replica shares only the operator sessions.

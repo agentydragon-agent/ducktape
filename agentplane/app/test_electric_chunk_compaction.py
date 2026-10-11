@@ -44,7 +44,7 @@ from agentplane.app.changes import Changes
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.electric_service import electric_service
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.fold.models import ThreadEntity, ThreadPayloadChunk
@@ -167,10 +167,15 @@ async def _followed_body(engine: AsyncEngine, token_file: Path) -> AsyncIterator
             forwarded.append(request)
 
         try:
+            placements = Placements()
             event_logs = EventLogStore(
-                engine, history=history, history_reader=history_client, summaries=Summaries(engine, history_client)
+                engine,
+                history=history,
+                gateway=placements,
+                history_reader=history_client,
+                summaries=Summaries(engine, history_client),
             )
-            source = ReplicationSource()
+            source = ReplicationSource(placements)
             thread = await event_logs.open(SANDBOX, SESSION)
             await history.set_attached(thread, source.attached)
             started = (
