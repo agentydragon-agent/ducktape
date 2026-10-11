@@ -1,8 +1,11 @@
-"""One service database for cross-service/native integration tests, and the Sessions a test attaches
-on a runner directly.
+"""Test-only History + Commands schema setup, and Sessions attached directly to a runner.
 
 A runner Session a test attaches directly, bypassing CreateSession, is registered here under its
 own UUID, so the History Service ingester under test follows it like any other.
+
+The History and Commands production Alembic runners use the same default ``alembic_version`` table,
+so a combined test database must not apply both runners. Build the test schema with SQLAlchemy
+metadata once in a PostgreSQL template instead; the template does not create migration stamps.
 """
 
 import asyncio
@@ -11,7 +14,7 @@ from contextlib import asynccontextmanager, suppress
 from uuid import UUID
 
 import grpc
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.history_service.storage.db import Base
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination
@@ -21,23 +24,18 @@ from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
 from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.thread_fold.models import Base as FoldBase
 
-# gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//protobuf
 
 
-@asynccontextmanager
-async def service_database(database_url: str) -> AsyncIterator[AsyncEngine]:
-    """One test database for the history and Sandbox Service commands schemas."""
-    engine = create_async_engine(database_url)
-    try:
-        async with engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
-            # Production keeps admission in its own database; one test database serves both here.
-            await connection.run_sync(commands_db.Base.metadata.create_all)
-        yield engine
-    finally:
-        await engine.dispose()
+async def initialize_service_database(engine: AsyncEngine) -> None:
+    """Create History, Commands, and fold test schemas on an empty template database."""
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+        # Production keeps admission in its own database; one test database serves both here.
+        await connection.run_sync(commands_db.Base.metadata.create_all)
+        await connection.run_sync(FoldBase.metadata.create_all)
 
 
 @asynccontextmanager

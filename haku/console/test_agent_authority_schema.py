@@ -7,9 +7,7 @@ schema objects, deferred constraints, triggers, and invalid rows rather than dom
 from __future__ import annotations
 
 import datetime
-import re
 from dataclasses import dataclass
-from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -35,21 +33,7 @@ from haku.console.identity.agent import (
 )
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.tool_calls import ToolCallStatus
-from third_party.containers import pgvector_pg18
-from util.testing.postgres import create_database_sync, force_drop_database_sync
-from util.testing.postgres_fixtures import start_postgres_container
-
-
-@pytest.fixture(scope="session")
-def postgres_container() -> Any:
-    """Postgres **with pgvector**: the baseline creates `vector` columns, and this file migrates
-    a fresh database to head. The deployed database gets the extension from CNPG's `Database` CR."""
-    container = start_postgres_container(pgvector_pg18.IMAGE)
-    try:
-        yield container
-    finally:
-        container.stop()
-
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 
 _UTC = datetime.UTC
 
@@ -80,23 +64,10 @@ class StaticAgent:
     binding_id: UUID
 
 
-@pytest.fixture(scope="session")
-def postgres_admin_url(postgres_container: Any) -> str:
-    host = postgres_container.get_container_host_ip()
-    port = int(postgres_container.get_exposed_port(5432))
-    return f"postgresql+psycopg://postgres:postgres@{host}:{port}/postgres"
-
-
 @pytest.fixture
-def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Any:
-    suffix = uuid4().hex[:8]
-    base = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:35].rstrip("_")
-    db_name = f"{base or 'agent_schema'}_{suffix}"
-    db_url = create_database_sync(postgres_admin_url, db_name, extensions=("vector",))
-
-    yield db_url
-
-    force_drop_database_sync(postgres_admin_url, db_name)
+def db_url(empty_vector_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+    """Clone the pristine schema with a sync driver for the physical migration checks."""
+    return database_clones.clone(empty_vector_database_template, drivername="postgresql+psycopg")
 
 
 def _now() -> datetime.datetime:

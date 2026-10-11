@@ -1,32 +1,51 @@
 """Shared Postgres testcontainer helper + session fixture.
 
-``postgres_container`` is the shared session fixture — packages pull it into their
-conftest with a bare ``from util.testing.postgres_fixtures import postgres_container``
-(no alias — pytest registers the fixture by the dict key, so an alias would register
-under the wrong name; and no ``# noqa`` needed in conftests, where F401 is ignored).
+``postgres_container`` and ``postgres_image`` are the shared session fixtures — packages
+pull both into their conftest with a bare import (no alias — pytest registers the fixture
+by the dict key, so an alias would register under the wrong name; and no ``# noqa`` needed
+in conftests, where F401 is ignored). Override ``postgres_image`` in a suite that needs a
+non-default image.
 ``start_postgres_container`` is the underlying preload+start helper for packages that
-wrap it (e.g. props, which adds a tracing span).
+need to wrap the shared container lifecycle.
 
 Both images are marked ``immutable`` upstream tags, so ``load_oci_image`` skips the
 push on a warm worker by itself — this module no longer checks.
 
-Packages keep their own ``postgres_admin_url(postgres_container)`` because the
-SQLAlchemy driver differs (``postgresql+psycopg://`` vs ``postgresql+asyncpg://``).
+The shared ``postgres_admin_url`` uses the sync psycopg driver. Tests that need asyncpg
+should change the driver explicitly on their per-test database URL. Suites that need a
+different PostgreSQL image can override ``postgres_image`` in their conftest.
 """
 
 import contextlib
 import logging
 import time
-from collections.abc import Generator, Iterator
+from collections.abc import AsyncIterator, Generator, Iterator
 
 import pytest
+from _pytest.fixtures import FixtureFunctionDefinition
+from opentelemetry import trace
+from sqlalchemy.engine import URL
+from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.postgres import PostgresContainer
 
 from third_party.containers import postgres_18, ryuk
+from util.db_migrations import MigrationRunner
 from util.oci import OciImage, load_oci_image
+from util.testing.postgres import (
+    DatabaseClones,
+    DatabaseNames,
+    PostgresDatabaseTemplate,
+    database_name_for_test,
+    migrated_database_template,
+)
+from util.testing.sqlalchemy_engines import postgres_async_engine
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+# SQLAlchemy loads the psycopg dialect from the URL scheme at runtime.
+# gazelle:include_dep @pypi//psycopg
+
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 @contextlib.contextmanager
@@ -79,9 +98,71 @@ def start_postgres_container(image: OciImage = postgres_18.IMAGE) -> PostgresCon
 
 
 @pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer]:
-    container = start_postgres_container()
+def postgres_image() -> OciImage:
+    """Default PostgreSQL image; suites can override this fixture for extensions or settings."""
+    return postgres_18.IMAGE
+
+
+@pytest.fixture(scope="session")
+def postgres_container(postgres_image: OciImage) -> Generator[PostgresContainer]:
+    with tracer.start_as_current_span("postgres_container fixture"):
+        container = start_postgres_container(postgres_image)
     try:
         yield container
     finally:
         container.stop()
+
+
+@pytest.fixture(scope="session")
+def postgres_admin_url(postgres_container: PostgresContainer) -> str:
+    """Build the sync psycopg admin URL for the shared Postgres container."""
+    return URL.create(
+        "postgresql+psycopg",
+        username="postgres",
+        password="postgres",
+        host=postgres_container.get_container_host_ip(),
+        port=int(postgres_container.get_exposed_port(5432)),
+        database="postgres",
+    ).render_as_string(hide_password=False)
+
+
+@pytest.fixture
+def database_names(request: pytest.FixtureRequest) -> DatabaseNames:
+    """Allocate safe unique PostgreSQL names scoped to the current pytest node."""
+    return DatabaseNames(request.node.nodeid)
+
+
+@pytest.fixture
+def database_clones(database_names: DatabaseNames) -> Iterator[DatabaseClones]:
+    """Own template clones for one test and drop them after dependent fixtures finish."""
+    with DatabaseClones(database_names) as clones:
+        yield clones
+
+
+def migrated_database_fixtures(
+    runner: MigrationRunner, *, drivername: str, template_name: str = "database_template", url_name: str = "db_url"
+) -> tuple[FixtureFunctionDefinition, FixtureFunctionDefinition]:
+    """Declare a session migration template and a function-scoped clone URL fixture.
+
+    Bind both returned fixtures in the suite's conftest. Explicit names let suites compose
+    several databases without the URL fixture resolving a different service's template.
+    """
+
+    @pytest.fixture(scope="session", name=template_name)
+    def template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
+        with migrated_database_template(postgres_admin_url, database_name_for_test(template_name), runner) as migrated:
+            yield migrated
+
+    @pytest.fixture(name=url_name)
+    def url(request: pytest.FixtureRequest, database_clones: DatabaseClones) -> str:
+        source = request.getfixturevalue(template_name)
+        return database_clones.clone(source, drivername=drivername)
+
+    return template, url
+
+
+@pytest.fixture
+async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
+    """Own a default asyncpg engine for the suite's per-test database clone."""
+    async with postgres_async_engine(db_url) as opened:
+        yield opened

@@ -109,14 +109,13 @@ py_library(
         ":models",
         ":oauth",
         ":store",
-        "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "//util/testing:sqlalchemy_engines",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
-        "@pypi//testcontainers",
     ],
 )
 
@@ -202,6 +201,7 @@ py_library(
     visibility = ["//devinfra/claude/session_export/migrations:__pkg__"],
     deps = [
         ":models",
+        "//util:db_url",
         "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],

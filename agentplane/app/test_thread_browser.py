@@ -32,7 +32,7 @@ from sqlalchemy import select, update
 
 from agentplane.app.database import connect
 from agentplane.app.testing import thread_view_marks
-from agentplane.app.testing.electric_service import ElectricService, electric_service
+from agentplane.app.testing.electric_service import BrowserPostgres, ElectricService, browser_electric_service
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
 from agentplane.app.testing.replication_process import app_process
@@ -62,6 +62,7 @@ from agentplane.thread_fold.models import (
 )
 from agentplane.thread_fold.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from util.bazel.runfiles import get_required_path
+from util.testing.postgres import DatabaseNames
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 from util.testing.visual_review import upsert_review_asset
@@ -465,7 +466,11 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
 
 
 async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily(
-    page: Page, certificate: BrowserCertificate, tmp_path: Path
+    page: Page,
+    certificate: BrowserCertificate,
+    tmp_path: Path,
+    database_names: DatabaseNames,
+    thread_browser_postgres: BrowserPostgres,
 ) -> None:
     source = ReplicationSource()
     source.attached.active_turn_id = "test-projected-turn"
@@ -518,7 +523,10 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
 
     page.on("request", observe)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
-    async with electric_service() as service, source.connect(tmp_path / "history-token") as history_client:
+    async with (
+        browser_electric_service(thread_browser_postgres, database_names()) as service,
+        source.connect(tmp_path / "history-token") as history_client,
+    ):
         engine = connect(service.database_url)
         event_logs, content = (
             EventLogStore(engine, peer=source, history_reader=history_client),

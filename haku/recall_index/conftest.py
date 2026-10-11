@@ -2,48 +2,49 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from testcontainers.postgres import PostgresContainer
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.recall_index.fake_embedder import FakeEmbedder
 from haku.recall_index.store import ensure_schema
 from third_party.containers import pgvector_pg18
-from util.testing.postgres_fixtures import start_postgres_container
+from util.oci import OciImage
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from util.testing.sqlalchemy_engines import postgres_async_engine
 
 # Fixtures build postgresql+asyncpg:// engines; SQLAlchemy loads the dialect's
 # driver at runtime, so gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//asyncpg
+# The template admin URL uses postgresql+psycopg://, also loaded dynamically by SQLAlchemy.
+# gazelle:include_dep @pypi//psycopg
 
 
 @pytest.fixture(scope="session")
-def pgvector_container() -> Generator[PostgresContainer]:
-    container = start_postgres_container(pgvector_pg18.IMAGE)
-    try:
-        yield container
-    finally:
-        container.stop()
+def postgres_image() -> OciImage:
+    return pgvector_pg18.IMAGE
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def recall_index_database_template(postgres_admin_url: str) -> AsyncGenerator[PostgresDatabaseTemplate]:
+    """Create the pgvector schema once; each test gets a writable database clone."""
+    with PostgresDatabaseTemplate(postgres_admin_url, "recall_index_template", extensions=("vector",)) as template:
+        async with postgres_async_engine(template.url) as engine:
+            await ensure_schema(engine)
+        yield template
 
 
 @pytest.fixture
-async def engine(pgvector_container: PostgresContainer) -> AsyncGenerator[AsyncEngine]:
-    """An engine on a schema created fresh for each test."""
-    host = pgvector_container.get_container_host_ip()
-    port = int(pgvector_container.get_exposed_port(5432))
-    opened = create_async_engine(f"postgresql+asyncpg://postgres:postgres@{host}:{port}/postgres")
-    try:
-        async with opened.begin() as connection:
-            await connection.exec_driver_sql("DROP SCHEMA IF EXISTS recall_index CASCADE")
-            # `public` holds the `vector` extension, reset here before `ensure_schema` puts it
-            # back — dropping it afterwards would take the vector columns with it.
-            await connection.exec_driver_sql("DROP SCHEMA IF EXISTS public CASCADE")
-            await connection.exec_driver_sql("CREATE SCHEMA public")
-        await ensure_schema(opened)
+async def engine(
+    recall_index_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones
+) -> AsyncGenerator[AsyncEngine]:
+    """An engine on a fresh, writable clone of the initialized schema."""
+    url = database_clones.clone(recall_index_database_template, drivername="postgresql+asyncpg")
+    async with postgres_async_engine(url) as opened:
         yield opened
-    finally:
-        await opened.dispose()
 
 
 @pytest.fixture

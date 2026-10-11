@@ -1,29 +1,35 @@
 import asyncio
 import json
 import re
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import httpx
 import pytest
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncEngine
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed, wait_none
-from testcontainers.postgres import PostgresContainer
 
 from devinfra.claude.session_export.api import SessionCookie, SessionsApi
 from devinfra.claude.session_export.database_migrate import RUNNER
 from devinfra.claude.session_export.models import DEFAULT_ATTESTATION_STATUS, SESSION_STATUS_ARCHIVED, SessionSummary
 from devinfra.claude.session_export.oauth import CredentialStore, OAuthCredential
 from devinfra.claude.session_export.store import SessionStore, make_engine
-from util.testing.postgres import create_database_sync, force_drop_database_sync
-from util.testing.postgres_fixtures import postgres_container
+from util.testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    migrated_database_fixtures,
+    postgres_admin_url,
+    postgres_container,
+    postgres_image,
+)
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 TEST_ORG_UUID = "test-org-uuid"
 TEST_COOKIE = SessionCookie(session_key=SecretStr("test-session-key"), org_uuid=TEST_ORG_UUID)
@@ -289,24 +295,15 @@ def credential_store(tmp_path: Path) -> Callable[..., CredentialStore]:
     return make
 
 
-@pytest.fixture
-def database_url(postgres_container: PostgresContainer) -> Iterator[str]:
-    admin_url = (
-        f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
-        f":{postgres_container.get_exposed_port(5432)}/postgres"
-    )
-    name = f"sessions_{uuid4().hex}"
-    url = create_database_sync(admin_url, name)
-    RUNNER.apply(url)
-    yield url
-    force_drop_database_sync(admin_url, name)
+database_template, database_url = migrated_database_fixtures(
+    RUNNER, drivername="postgresql+asyncpg", url_name="database_url"
+)
 
 
 @pytest.fixture
 async def engine(database_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = make_engine(database_url)
-    yield engine
-    await engine.dispose()
+    async with managed_async_engine(make_engine(database_url)) as engine:
+        yield engine
 
 
 @pytest.fixture

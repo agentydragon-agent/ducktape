@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from datetime import timedelta
 from typing import Any, cast
-from uuid import uuid4
 
 import pytest
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
-from sqlalchemy.engine import make_url
-from testcontainers.postgres import PostgresContainer
 
 from agentplane.egress.database_migrate import RUNNER
 from agentplane.egress.decision_log import DecisionLog
@@ -41,8 +38,14 @@ from agentplane.testing.fake_apiserver import (
     secret,
 )
 from util.kubernetes import CustomObjectsClient
-from util.testing.postgres import create_database_sync, force_drop_database_sync
-from util.testing.postgres_fixtures import postgres_container
+from util.testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    migrated_database_fixtures,
+    postgres_admin_url,
+    postgres_container,
+    postgres_image,
+)
 
 AUDIENCE = "agentplane-egress-test"
 UPSTREAM_HOST = "localhost"
@@ -158,17 +161,9 @@ async def api_client(fake: FakeApiServer) -> AsyncIterator[ApiClient]:
         yield api
 
 
-@pytest.fixture
-def history_db_url(postgres_container: PostgresContainer) -> Iterator[str]:
-    admin_url = (
-        f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
-        f":{postgres_container.get_exposed_port(5432)}/postgres"
-    )
-    name = f"history_{uuid4().hex}"
-    url = create_database_sync(admin_url, name)
-    RUNNER.apply(url)
-    yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-    force_drop_database_sync(admin_url, name)
+database_template, history_db_url = migrated_database_fixtures(
+    RUNNER, drivername="postgresql+asyncpg", url_name="history_db_url"
+)
 
 
 @pytest.fixture

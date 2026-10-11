@@ -22,12 +22,12 @@ from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
-from agentplane.sandbox_service.testing.history import service_database
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict, fake_apiserver, pod_for
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
+from util.testing.sqlalchemy_engines import postgres_async_engine
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -132,7 +132,7 @@ async def authenticated_service(
         pod_uid="test-app-pod-uid",
         audiences=(audience,),
     )
-    async with service_database(database_url) as engine:
+    async with postgres_async_engine(database_url) as engine:
         resources = replace(
             build_resources(
                 engine,

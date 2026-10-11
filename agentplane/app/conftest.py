@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import re
 import secrets
-from collections.abc import AsyncIterator, Generator, Iterator
+from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -13,10 +12,7 @@ from uuid import UUID
 import httpx
 import pytest
 from kubernetes_asyncio.client import CoreV1Api
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
-from testcontainers.postgres import PostgresContainer
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.database import connect
@@ -71,9 +67,19 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     close_fake_api_clients,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
+from agentplane.sandbox_service.testing.fixtures import service_database_template
+from agentplane.testing.electric_role import ensure_electric_role
+from agentplane.testing.failure_journal import pytest_runtest_makereport
 from agentplane.thread_fold.projection_lease import ProjectionLease
-from util.testing.postgres import create_database_sync, force_drop_database_sync
-from util.testing.postgres_fixtures import postgres_container
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
+from util.testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    postgres_admin_url,
+    postgres_container,
+    postgres_image,
+)
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 
 @pytest.fixture(autouse=True)
@@ -82,65 +88,22 @@ async def close_fake_clients() -> AsyncIterator[None]:
     await close_fake_api_clients()
 
 
-@pytest.hookimpl(wrapper=True)
-def pytest_runtest_makereport(
-    item: pytest.Item, call: pytest.CallInfo[object]
-) -> Generator[None, pytest.TestReport, pytest.TestReport]:
-    """Expose the call report to a fixture's teardown without changing test outcomes."""
-    report = yield
-    if call.when == "call":
-        item.stash[_CALL_REPORT] = report
-    return report
-
-
-_CALL_REPORT = pytest.StashKey[pytest.TestReport]()
-
-
-def migrated_database(postgres_container: PostgresContainer, name: str) -> Iterator[str]:
-    """A pristine, migrated database named `name` on the shared container, as an asyncpg URL.
-
-    Not a fixture: a module whose cases only read can override `db_url` at module scope and pay
-    the creation and migration once, which is most of what a database costs here.
-    """
-    admin_url = (
-        f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
-        f":{postgres_container.get_exposed_port(5432)}/postgres"
-    )
-    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-    try:
-        with admin_engine.connect() as connection:
-            connection.execute(
-                text(
-                    "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'electric') "
-                    "THEN CREATE ROLE electric LOGIN REPLICATION PASSWORD 'electric'; END IF; END $$"
-                )
-            )
-    finally:
-        admin_engine.dispose()
-    db_name = re.sub(r"[^a-z0-9_]", "_", name.lower())[:45].rstrip("_")
-    url = create_database_sync(admin_url, db_name)
-    async_url = make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-    RUNNER.apply(async_url)
-    yield async_url
-    force_drop_database_sync(admin_url, db_name)
+@pytest.fixture(scope="session")
+def app_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
+    """The app schema migrated once; each default `db_url` is a fresh clone of this template."""
+    ensure_electric_role(postgres_admin_url)
+    with migrated_database_template(postgres_admin_url, "agentplane_app_test_template", RUNNER) as template:
+        yield template
 
 
 @pytest.fixture
-def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest) -> Iterator[str]:
-    yield from migrated_database(postgres_container, request.node.name)
+def db_url(app_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+    return database_clones.clone(app_database_template, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture
-def service_history_db_url(db_url: str) -> Iterator[str]:
-    """A separate disposable database; its schema belongs to the service fixture."""
-    app_url = make_url(db_url)
-    admin = app_url.set(database="postgres", drivername="postgresql+psycopg").render_as_string(hide_password=False)
-    name = f"{app_url.database}_service"
-    created = create_database_sync(admin, name)
-    try:
-        yield make_url(created).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-    finally:
-        force_drop_database_sync(admin, name)
+def service_history_db_url(service_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+    return database_clones.clone(service_database_template, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture
@@ -150,11 +113,8 @@ def register_attached_sessions() -> bool:
 
 @pytest.fixture
 async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = connect(db_url)
-    try:
+    async with managed_async_engine(connect(db_url)) as engine:
         yield engine
-    finally:
-        await engine.dispose()
 
 
 @pytest.fixture
@@ -201,16 +161,13 @@ async def database_updates(engine: AsyncEngine) -> AsyncIterator[DatabaseUpdates
 async def replica(
     db_url: str, history_peer: HistoryService, history_client: HistoryServiceClient
 ) -> AsyncIterator[Replica]:
-    engine = connect(db_url)
-    try:
+    async with managed_async_engine(connect(db_url)) as engine:
         yield Replica(
             ThreadStore(engine, AppSummaries(engine)),
             EventLogStore(engine, peer=history_peer, history_reader=history_client),
             Ingestion(engine, peer=history_peer, history_reader=history_client),
             OperatorSessionStore(engine),
         )
-    finally:
-        await engine.dispose()
 
 
 @pytest.fixture

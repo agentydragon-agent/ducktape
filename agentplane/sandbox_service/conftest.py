@@ -1,4 +1,4 @@
-"""Fake Kubernetes fixtures and a caller bearer file, with no integration app or app database."""
+"""Fake Kubernetes fixtures, a caller bearer file, and the service schema for integration tests."""
 
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -15,9 +15,19 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     FakeCustomObjectsApi,
     close_fake_api_clients,
 )
+from agentplane.sandbox_service.testing.fixtures import service_database_template
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
 from agentplane.sandbox_service.testing.kubernetes import Cluster, kubernetes
 from util.kubernetes import CustomObjectsClient
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from util.testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    engine,
+    postgres_admin_url,
+    postgres_container,
+    postgres_image,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -61,3 +71,8 @@ def token_file(tmp_path: Path) -> Path:
     path = tmp_path / "caller-token"
     path.write_text(CALLER_TOKEN)
     return path
+
+
+@pytest.fixture
+def db_url(service_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+    return database_clones.clone(service_database_template, drivername="postgresql+asyncpg")

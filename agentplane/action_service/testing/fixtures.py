@@ -7,18 +7,15 @@ without importing this package's conftest.
 from __future__ import annotations
 
 import asyncio
-import re
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
 import httpx
 import pytest
 from fastmcp import FastMCP
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.applications import Starlette
-from testcontainers.postgres import PostgresContainer
 
 from agentplane.action_service.catalog import (
     ActionCatalog,
@@ -34,34 +31,23 @@ from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState, Executor
 from agentplane.action_service.testing.lifecycle import wait_available
 from mcp_infra.testing.remote_server import as_remote_server
-from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres_fixtures import migrated_database_fixtures
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 # SQLAlchemy loads these dialects from URLs; Gazelle cannot infer them.
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//psycopg
 
 
-@pytest.fixture
-def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest) -> Iterator[str]:
-    admin_url = (
-        f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
-        f":{postgres_container.get_exposed_port(5432)}/postgres"
-    )
-    db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_")
-    url = create_database_sync(admin_url, db_name)
-    async_url = make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-    RUNNER.apply(async_url)
-    yield async_url
-    force_drop_database_sync(admin_url, db_name)
+action_database_template, db_url = migrated_database_fixtures(
+    RUNNER, drivername="postgresql+asyncpg", template_name="action_database_template"
+)
 
 
 @pytest.fixture
 async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = make_engine(db_url)
-    try:
+    async with managed_async_engine(make_engine(db_url)) as engine:
         yield engine
-    finally:
-        await engine.dispose()
 
 
 @pytest.fixture

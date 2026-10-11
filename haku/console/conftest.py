@@ -3,8 +3,8 @@ over the console app wired to it.
 
 Postgres is required by the console (approval ledger + operator OAuth store), so every test that
 builds the app runs against a fresh per-test database. `db_url` is a pristine empty database (used by
-the migration tests, which drive alembic themselves); `migrated_db_url` is the same database upgraded
-to head (used by everything else, including `make_client`).
+the migration tests, which drive alembic themselves); `migrated_db_url` is a fresh clone of a
+session-scoped database upgraded to head (used by everything else, including `make_client`).
 
 This file is expensive to *import*, not just to use: `create_app` drags in the whole composition
 root, which pytest pays at collection for every test under `haku/console/` whose target depends on
@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import base64
 import json
-import re
 import textwrap
 import time
 from collections.abc import AsyncGenerator, Callable, Generator, Iterator
@@ -33,9 +32,7 @@ import yaml
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import select
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from testcontainers.postgres import PostgresContainer
 
 from haku.console.app import create_app
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, WebPushConfig
@@ -53,8 +50,10 @@ from haku.console.settings import Settings
 from haku.console.tool_call_actor import OperatorActor
 from haku.console.tool_calls import ToolCallStatus
 from third_party.containers import pgvector_pg18
-from util.testing.postgres import create_database_sync, force_drop_database_sync
-from util.testing.postgres_fixtures import start_postgres_container
+from util.oci import OciImage
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -176,17 +175,10 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
     )
 
 
-def console_sessions(db_url: str) -> async_sessionmaker[AsyncSession]:
-    """The shared async sessionmaker tests inject into stores, mirroring create_app's one-engine wiring
-    (production builds a single async engine/sessionmaker and passes it to every store)."""
-    async_url = make_url(db_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-    return async_sessionmaker(create_async_engine(async_url, pool_pre_ping=True), expire_on_commit=False)
-
-
-def operator_identity_store(db_url: str) -> PostgresOperatorIdentityStore:
+def operator_identity_store(sessions: async_sessionmaker[AsyncSession]) -> PostgresOperatorIdentityStore:
     """The `PostgresOperatorIdentityStore` tests need, trusting the app-owned test OIDC issuer."""
     return PostgresOperatorIdentityStore(
-        console_sessions(db_url),
+        sessions,
         OperatorIdentityTrust(
             trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
         ),
@@ -281,45 +273,38 @@ async def insert_approved_tool_call(
 
 
 @pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer]:
-    """Postgres **with pgvector**, overriding the shared stock-image fixture.
-
-    The baseline creates `vector` columns, so every test that migrates to head needs an image
-    that has the extension — the same capability production gets from the CNPG image.
-    """
-    container = start_postgres_container(pgvector_pg18.IMAGE)
-    try:
-        yield container
-    finally:
-        container.stop()
+def postgres_image() -> OciImage:
+    """Migrations create `vector` columns, so use the same pgvector capability as production."""
+    return pgvector_pg18.IMAGE
 
 
 @pytest.fixture(scope="session")
-def postgres_admin_url(postgres_container: PostgresContainer) -> str:
-    host = postgres_container.get_container_host_ip()
-    port = int(postgres_container.get_exposed_port(5432))
-    return f"postgresql+psycopg://postgres:postgres@{host}:{port}/postgres"
+def empty_vector_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
+    """Install pgvector once as superuser; migration tests clone this pristine empty database."""
+    with PostgresDatabaseTemplate(
+        postgres_admin_url, "haku_console_empty_vector_template", extensions=("vector",)
+    ) as template:
+        yield template
 
 
 @pytest.fixture
-def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Generator[str]:
+def db_url(empty_vector_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
     """A pristine, empty per-test database (no migrations)."""
-    db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_") or "haku_console_test"
-    # `vector` here rather than in a migration: pgvector is untrusted, so only a superuser can
-    # install it, which is why the deployed database gets it from CNPG's `Database` CR.
-    db_url = create_database_sync(postgres_admin_url, db_name, extensions=("vector",))
+    return database_clones.clone(empty_vector_database_template, drivername="postgresql+asyncpg")
 
-    yield make_url(db_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
 
-    force_drop_database_sync(postgres_admin_url, db_name)
+@pytest.fixture(scope="session")
+def migrated_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
+    """Install vector and migrate once, then provide isolated clones to runtime tests."""
+    with PostgresDatabaseTemplate(postgres_admin_url, "haku_console_template", extensions=("vector",)) as template:
+        apply_migrations(template.url)
+        yield template
 
 
 @pytest.fixture
-def migrated_db_url(db_url: str) -> str:
-    """The per-test database upgraded to head — what the app expects at runtime (migrations run as an
-    explicit startup step, not inside a store constructor)."""
-    apply_migrations(db_url)
-    return db_url
+def migrated_db_url(migrated_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+    """A fresh writable clone at head; the app still runs its normal startup schema check."""
+    return database_clones.clone(migrated_database_template, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture
@@ -329,11 +314,8 @@ async def migrated_engine(migrated_db_url: str) -> AsyncGenerator[AsyncEngine]:
     The fixture owns disposal so tests can share the same pool without leaking one engine per
     helper call.
     """
-    engine = create_async_engine(migrated_db_url, pool_pre_ping=True)
-    try:
+    async with managed_async_engine(create_async_engine(migrated_db_url, pool_pre_ping=True)) as engine:
         yield engine
-    finally:
-        await engine.dispose()
 
 
 @pytest.fixture

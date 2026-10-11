@@ -218,12 +218,11 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":store",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
-        "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )
 
@@ -374,7 +373,7 @@ py_test(
         "//util/bazel:runfiles",
         "//util/testing:asgi",
         "//util/testing:frontend_visual",
-        "//util/testing:postgres_fixtures",
+        "//util/testing:postgres",
         "//util/testing:undeclared_outputs",
         "//util/testing:visual_capture",
         "//util/testing:visual_fixtures",

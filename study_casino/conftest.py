@@ -1,42 +1,43 @@
-"""Shared pytest fixtures for the Study Casino test suite.
-
-Tests run against an ephemeral Postgres testcontainer (`postgres:18`,
-preloaded from Bazel runfiles). Each test gets its own database carved
-out of a session-scoped container so the per-test cost is just a
-`CREATE DATABASE` + alembic upgrade.
-"""
+"""Shared pytest fixtures for the Study Casino test suite."""
 
 from __future__ import annotations
 
-import re
-from collections.abc import Generator
+from collections.abc import Generator, Iterator
 
 import pytest
-from sqlalchemy import create_engine, text
-from testcontainers.postgres import PostgresContainer
+from sqlalchemy import create_engine
 
-from util.testing.postgres import force_drop_database_sync
-from util.testing.postgres_fixtures import postgres_container
+from study_casino.store import _run_alembic_migrations
+from util.testing.postgres import DatabaseClones, DatabaseNames, PostgresDatabaseTemplate, create_temporary_database
+from util.testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    postgres_admin_url,
+    postgres_container,
+    postgres_image,
+)
 
 
 @pytest.fixture(scope="session")
-def postgres_admin_url(postgres_container: PostgresContainer) -> str:
-    host = postgres_container.get_container_host_ip()
-    port = int(postgres_container.get_exposed_port(5432))
-    # gazelle:include_dep @pypi//psycopg
-    # (SQLAlchemy loads the psycopg dialect at runtime via this URL scheme;
-    # nothing imports it, so gazelle cannot see the dependency.)
-    return f"postgresql+psycopg://postgres:postgres@{host}:{port}/postgres"
+def casino_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
+    """Migrate one template; runtime stores retain their normal startup schema check on each clone."""
+    with PostgresDatabaseTemplate(postgres_admin_url, "casino_template") as template:
+        engine = create_engine(template.url)
+        try:
+            _run_alembic_migrations(engine)
+        finally:
+            engine.dispose()
+        yield template
 
 
 @pytest.fixture
-def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Generator[str]:
-    db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_") or "casino_test"
-    admin_engine = create_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
-    with admin_engine.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-    admin_engine.dispose()
+def db_url(casino_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+    """A fresh writable clone for ordinary store and app tests."""
+    return database_clones.clone(casino_database_template, drivername="postgresql+psycopg")
 
-    yield postgres_admin_url.rsplit("/", 1)[0] + f"/{db_name}"
 
-    force_drop_database_sync(postgres_admin_url, db_name)
+@pytest.fixture
+def empty_db_url(postgres_admin_url: str, database_names: DatabaseNames) -> Generator[str]:
+    """An empty database for the migration test that deliberately starts at revision 0004."""
+    with create_temporary_database(postgres_admin_url, database_names()) as url:
+        yield url

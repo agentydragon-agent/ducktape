@@ -7,7 +7,7 @@ database, for the package conftest's stores to follow.
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -18,7 +18,12 @@ import pytest
 from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
 
 from agentplane.app.testing import history_probe, thread_view_marks
-from agentplane.app.testing.electric_service import ElectricService, electric_service
+from agentplane.app.testing.electric_service import (
+    BrowserPostgres,
+    ElectricService,
+    browser_electric_service,
+    browser_postgres_server,
+)
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
@@ -35,6 +40,7 @@ from agentplane.grpc_serving import serving
 from agentplane.proto import event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
+from util.testing.postgres import DatabaseNames
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, Viewport
 
@@ -121,9 +127,17 @@ class ThreadBrowser:
         await expect_projected_cursor(self.page, self.source.entries[-1].cursor)
 
 
+@pytest.fixture(scope="session")
+def thread_browser_postgres() -> Iterator[BrowserPostgres]:
+    with browser_postgres_server() as postgres:
+        yield postgres
+
+
 @pytest.fixture
-async def electric() -> AsyncIterator[ElectricService]:
-    async with electric_service() as service:
+async def electric(
+    database_names: DatabaseNames, thread_browser_postgres: BrowserPostgres
+) -> AsyncIterator[ElectricService]:
+    async with browser_electric_service(thread_browser_postgres, database_names()) as service:
         yield service
 
 

@@ -33,11 +33,12 @@ from agentplane.sandbox_service.testing.fake_inventory import (
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.grpc_service import connect
-from agentplane.sandbox_service.testing.history import register_attached_sessions, service_database
+from agentplane.sandbox_service.testing.history import register_attached_sessions
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOX_API
 from util.kubernetes import CustomObjectsClient
+from util.testing.sqlalchemy_engines import postgres_async_engine
 
 TOKEN = "test-consumer-sandbox-service-token"
 AUDIENCE = "test-consumer-sandbox-service"
@@ -89,7 +90,10 @@ def backend(
     core_api = cast(k8s_client.CoreV1Api, core)
     inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core_api)
     bindings = KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, rbac or FakeRbac()))
-    with start_blocking_portal() as portal, portal.wrap_async_context_manager(service_database(database_url)) as engine:
+    with (
+        start_blocking_portal() as portal,
+        portal.wrap_async_context_manager(postgres_async_engine(database_url)) as engine,
+    ):
         provisioning = Provisioning(
             inventory,
             EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=default_policies),

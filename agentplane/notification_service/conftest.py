@@ -1,101 +1,56 @@
 """Real PostgreSQL, migrated by the same image-owned runner used in deployment."""
 
 import asyncio
-import json
 import logging
-from collections.abc import AsyncIterator, Generator, Iterator
-from uuid import uuid4
+from collections.abc import AsyncIterator
 
 import pytest
-from google.protobuf.json_format import MessageToDict
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from testcontainers.postgres import PostgresContainer
 
-# Both native harnesses, not an app-managed session or app database.
-from agentplane.action_service.database_migrate import RUNNER as ACTIONS_MIGRATIONS
-from agentplane.action_service.testing.fixtures import echo_catalog, echo_executor
+from agentplane.action_service.testing.fixtures import action_database_template, echo_catalog, echo_executor
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.store import Store
 from agentplane.runner.testing.fixtures import RunnerHandle, config, endpoint, harness, model, runner, spec, workspace
-from util.testing.postgres import create_database_sync, force_drop_database_sync
-from util.testing.postgres_fixtures import postgres_container
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from agentplane.sandbox_service.testing.fixtures import service_database_template
+from agentplane.testing.failure_journal import call_failed, capture_native_journal, pytest_runtest_makereport
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from util.testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    engine,
+    migrated_database_fixtures,
+    postgres_admin_url,
+    postgres_container,
+    postgres_image,
+)
+
+# Both native harnesses, not an app-managed session or app database.
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//psycopg
 
 logger = logging.getLogger(__name__)
-_CALL_REPORT = pytest.StashKey[pytest.TestReport]()
-
-
-@pytest.hookimpl(wrapper=True)
-def pytest_runtest_makereport(
-    item: pytest.Item, call: pytest.CallInfo[object]
-) -> Generator[None, pytest.TestReport, pytest.TestReport]:
-    report = yield
-    if call.when == "call":
-        item.stash[_CALL_REPORT] = report
-    return report
 
 
 @pytest.fixture
 async def failed_native_journal(request: pytest.FixtureRequest, runner: RunnerHandle) -> AsyncIterator[None]:
     yield
-    report = request.node.stash.get(_CALL_REPORT, None)
-    if report is None or not report.failed:
+    if not call_failed(request):
         return
     try:
         async with asyncio.timeout(3):
-            sessions: dict[str, list[dict[str, object]]] = {}
-            for session_id, session in runner.runner.sessions.items():
-                entries = await session.journal.since(0, limit=512)
-                sessions[session_id] = [MessageToDict(entry, preserving_proto_field_name=True) for entry in entries]
-            (undeclared_outputs_dir() / f"{request.node.name}-native-journal.json").write_text(
-                json.dumps(sessions, indent=2, sort_keys=True)
-            )
+            await capture_native_journal(request, runner)
     except Exception as error:
         logger.warning("native journal capture failed: %s", type(error).__name__)
 
 
-def admin_url(postgres_container: PostgresContainer) -> str:
-    return f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}:{postgres_container.get_exposed_port(5432)}/postgres"
+database_template, db_url = migrated_database_fixtures(RUNNER, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture
-def db_url(postgres_container: PostgresContainer) -> Iterator[str]:
-    admin = admin_url(postgres_container)
-    name = f"notifications_{uuid4().hex}"
-    url = (
-        make_url(create_database_sync(admin, name))
-        .set(drivername="postgresql+asyncpg")
-        .render_as_string(hide_password=False)
-    )
-    RUNNER.apply(url)
-    yield url
-    force_drop_database_sync(admin, name)
-
-
-@pytest.fixture
-def sandbox_service_db_url(postgres_container: PostgresContainer) -> Iterator[str]:
-    """The Sandbox Service's own database; its schema belongs to the service fixture."""
-    admin = admin_url(postgres_container)
-    name = f"sandbox_service_{uuid4().hex}"
-    yield (
-        make_url(create_database_sync(admin, name))
-        .set(drivername="postgresql+asyncpg")
-        .render_as_string(hide_password=False)
-    )
-    force_drop_database_sync(admin, name)
-
-
-@pytest.fixture
-async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = create_async_engine(db_url)
-    try:
-        yield engine
-    finally:
-        await engine.dispose()
+def sandbox_service_db_url(service_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+    return database_clones.clone(service_database_template, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture
@@ -104,18 +59,10 @@ async def store(engine: AsyncEngine) -> Store:
 
 
 @pytest.fixture
-async def action_engine(postgres_container: PostgresContainer) -> AsyncIterator[AsyncEngine]:
-    admin = admin_url(postgres_container)
-    name = f"actions_{uuid4().hex}"
-    url = (
-        make_url(create_database_sync(admin, name))
-        .set(drivername="postgresql+asyncpg")
-        .render_as_string(hide_password=False)
-    )
-    ACTIONS_MIGRATIONS.apply(url)
-    engine = create_async_engine(url)
-    try:
+async def action_engine(
+    action_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones
+) -> AsyncIterator[AsyncEngine]:
+    async with managed_async_engine(
+        create_async_engine(database_clones.clone(action_database_template, drivername="postgresql+asyncpg"))
+    ) as engine:
         yield engine
-    finally:
-        await engine.dispose()
-        force_drop_database_sync(admin, name)

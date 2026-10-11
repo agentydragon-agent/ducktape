@@ -23,9 +23,7 @@ from fastapi import FastAPI, Request
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.requests import ClientDisconnect
 from starlette.types import Message
-from testcontainers.postgres import PostgresContainer
 
-from agentplane.app.conftest import migrated_database
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.electric import SUBSET_BODY_LIMIT, SUBSET_ROW_LIMIT, ElectricProxy, router
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
@@ -34,6 +32,8 @@ from agentplane.app.threads.view.content import ContentStore, ThreadScope
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_pb2
 from agentplane.thread_fold.projection_lease import ProjectionLease
+from util.db_url import render_postgresql_url
+from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_test
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -50,8 +50,9 @@ class Seeded:
 # share one without a module-scoped event loop the async fixtures would then need. Each case seeds
 # its own sandbox, so they share no thread and no lease.
 @pytest.fixture(scope="module")
-def db_url(postgres_container: PostgresContainer) -> Iterator[str]:
-    yield from migrated_database(postgres_container, "test_electric")
+def db_url(app_database_template: PostgresDatabaseTemplate) -> Iterator[str]:
+    with app_database_template.clone(database_name_for_test("agentplane.app.test_electric")) as url:
+        yield render_postgresql_url(url, "postgresql+asyncpg")
 
 
 @dataclass(frozen=True)
