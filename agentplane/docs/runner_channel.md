@@ -9,8 +9,9 @@ and its commands travel over the channel. Every other runner is reached through 
 RPC, which Cilium admits only from the Sandbox Service, and every runner's Events still do. This is
 the contract the
 runner-initiated replacement implements. It covers command delivery, authentication, connection ownership and
-dispatch attempts. Event replay over the channel and the remaining lifecycle operations are added
-to it later as separate RPCs and do not change what is fixed here.
+dispatch attempts. A runner that agrees `lifecycle` is listed, opened, resumed and sealed over the
+channel too (§ Lifecycle operations). Event replay over the channel and the remaining lifecycle
+callers are added to it later and do not change what is fixed here.
 
 ## Shape
 
@@ -108,8 +109,10 @@ message Heartbeat {}
 
 ## Event following
 
-Status: **accepted (operator, 2026-10-10 PDT), not built.** Until it is, every runner's Events are read through
-`Attach`.
+Status: **superseded (operator, 2026-10-11 PDT), not built on the Sandbox Service.** Runner traffic
+splits into ingress, where the runner pushes its Events to the Sandbox's ingress, and control, which
+carries commands and lifecycle requests only. Until the ingress lands, every runner's Events are read
+through `Attach`. The runner side below (`Follow`) is built and goes with that cutover.
 
 A runner that lists `events` in `Hello` serves its journal over the channel, and the Sandbox Service
 then reads that Sandbox's journals only that way: `FollowSession` for every subscriber, and its own
@@ -246,10 +249,15 @@ Sandbox, hence `-control`.
 
 ## Lifecycle operations
 
-Status: **accepted (operator, 2026-10-10 PDT); the runner answers these requests, the Sandbox
-Service does not send them yet.** Until it does, every runner's lifecycle calls use the inbound API.
-A runner refuses `OpenSession` for a Session it created but could not start with `FAILED`; asked
-again, it confirms the stopped Session, so the Sandbox Service follows with `ResumeSession`.
+Status: **accepted (operator, 2026-10-10 PDT); built for the `ListSessions`, `CreateSession` and
+`ResumeSession` RPCs and teardown sealing.** The Sandbox Service agrees `lifecycle` and sends those
+callers' requests over the channel (`sandbox_service/channel_control.py`); `LookupSession` and
+`journal_reader` still list Sessions through the inbound API, and so does every Sandbox whose runner
+never agreed `lifecycle`. A runner refuses `OpenSession` for a Session it created but could not
+start with `FAILED`; asked again, it confirms the stopped Session, so `CreateSession` follows an
+`OpenSession` that confirms a stopped harness with `ResumeSession`. Clients reach the holder through
+the control Service once configured with its address (`control_target`); a client without it calls
+the Sandbox Service's own Service, where only the holder's replica serves a channel-routed Sandbox.
 
 A runner that lists `lifecycle` in `Hello` takes every remaining inbound call over `Connect` as a
 control request. Each request names an explicit verb; nothing is inferred from which fields are
@@ -297,12 +305,13 @@ calling RPC's deadline, like dispatch attempts, and a reconnect replays none of 
 
 | Inbound caller (Sandbox Service)                     | Channel operation                             |
 | ---------------------------------------------------- | --------------------------------------------- |
-| `ListSessions` RPC, `journal_reader`                 | `ListSessions`                                |
-| `CreateSession` (`Initialize`, then `Attach` + spec) | `Initialize`, then `OpenSession`              |
-| `ResumeSession` (`Attach` + retained spec)           | `ResumeSession`                               |
+| `ListSessions` RPC                                   | `ListSessions` (built)                        |
+| `journal_reader`                                     | `ListSessions`                                |
+| `CreateSession` (`Initialize`, then `Attach` + spec) | `Initialize`, then `OpenSession` (built)      |
+| `ResumeSession` (`Attach` + retained spec)           | `ResumeSession` (built)                       |
 | `LookupSession` (journal scan from cursor 0)         | `ListSessions`, then a follow from 0          |
 | `FollowSession`, `AdmissionReconciler`               | follows ([Event following](#event-following)) |
-| `Teardown` sealing (`Seal`)                          | `Seal`                                        |
+| `Teardown` sealing (`Seal`)                          | `Seal` (built)                                |
 | `SubmitCommand` relay                                | `DeliverCommand` (built)                      |
 
 The VM experiment's runtime acceptance drives the guest runner directly through a port-forward and
