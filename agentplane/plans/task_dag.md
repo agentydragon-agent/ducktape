@@ -1050,11 +1050,8 @@ flowchart TD
         APP_TEST_CLIENT_MOVE[Candidate: app test client out of production]
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
-        NATIVE_PROCESS_DEDUP[Candidate: one native process wrapper]
-        EGRESS_DECISIONS_CLIENT[Candidate: egress decisions client beside the server]
         LLM_INGRESS_MODEL_CONFIG_CONTRACT[Candidate: structural absent model config]
-        ACTION_PROTOCOLS_CONCRETE[Candidate: concrete types for Action protocols]
-        ACTION_OAUTH_REFERENCE_TYPE[Candidate: typed OAuth token reference]
+        ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         CDK8S_SERVICE_CONSTRUCT[Candidate: one cdk8s service construct]
         CDK8S_RUNNER_ENDPOINT_HELPER[Candidate: one runner-facing endpoint helper]
         GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: one gRPC channel options constant]
@@ -1175,36 +1172,17 @@ experiment instead also orphans the VM-only `RunnerConfig` fields and `cgroups.p
 lost-stream error and backoff, `IngressPusher` stops borrowing `ControlTiming`, and the unpassed
 `channel_options` parameters go.
 
-### `NATIVE_PROCESS_DEDUP` — one native process wrapper
-
-**Candidate.** `native/process.py` (sync, used only by capture), `native/async_process.py` (used
-only by test code, not `testonly`) and `runner/harness_process.py` wrap one process, with the 64 MiB
-line limit kept aligned by comment. Move capture onto `AsyncNativeProcess`, delete the sync wrapper,
-and make `async_process` test-only.
-
-### `EGRESS_DECISIONS_CLIENT` — egress decisions client beside the server
-
-**Candidate.** `app/decisions.py` mirrors egress `Outcome`/`Decision` and holds the client for the
-egress `/decisions` route. Move model and client into `agentplane/egress/`, drop the never-set
-`DecisionRecord.path`, and say at the model which written-but-unread columns operators query.
-
 ### `LLM_INGRESS_MODEL_CONFIG_CONTRACT` — structural absent model config
 
 **Candidate.** `llm_ingress/app.py` answers an absent model config with a 404 whose `detail` text
 `runner/model_config.py` string-matches. Carry the absent state structurally (204, or 200 with a
 nullable body).
 
-### `ACTION_PROTOCOLS_CONCRETE` — concrete types for Action protocols
+### `ACTION_PROTOCOLS_CONCRETE` — concrete external-grant authority
 
-**Candidate.** `AccessTokenProvider`, `ExternalGrantAuthority` (also a footgun `| None = None`),
-`DecisionProvider` and `ExecutionLease` each have one production implementation, and
-`OperatorAuthenticator` is a union of two. Name the concrete types or unions.
-
-### `ACTION_OAUTH_REFERENCE_TYPE` — typed OAuth token reference
-
-**Candidate.** `ActionsOAuthProxy._reference` returns an indexed `tuple[UUID, str, str]` and its
-callers catch `Exception`, so a bug looks like a revoked token (`action_service/oauth.py:282`). A
-dataclass, and catches narrowed to the JWT, `ValueError` and `KeyError` failures.
+**Candidate.** `ActionStore`'s `ExternalGrantAuthority` Protocol (also a footgun `| None = None`) has
+one production implementation, `ConnectionAuthority`. `db.py` cannot name it, because `connections.py`
+imports `db.py`'s rows: `ActionStore` first moves out of `db.py`, then takes a `ConnectionAuthority`.
 
 ### `CDK8S_SERVICE_CONSTRUCT` — one cdk8s service construct
 

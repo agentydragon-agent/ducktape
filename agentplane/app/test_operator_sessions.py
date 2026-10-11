@@ -24,7 +24,6 @@ from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.database_updates import DatabaseUpdates
-from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
@@ -36,6 +35,7 @@ from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 
@@ -78,9 +78,8 @@ class StubActions(FederatedOperatorActions):
         return self.client
 
 
-class Tokens:
-    async def token(self) -> str:
-        return "test-token"
+async def token() -> str:
+    return "test-token"
 
 
 class OpenStream(httpx.AsyncByteStream):
@@ -176,7 +175,7 @@ async def app(
     async with httpx.AsyncClient(
         base_url="https://test-actions.invalid", transport=httpx.MockTransport(answer)
     ) as http:
-        app.state.operator_actions = StubActions(OperatorActionServiceClient(http, Tokens()))
+        app.state.operator_actions = StubActions(OperatorActionServiceClient(http, token))
         yield app
         # Nothing a failed test left parked outlives it.
         gate.open()
