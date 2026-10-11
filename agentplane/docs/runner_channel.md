@@ -115,14 +115,19 @@ message Heartbeat {}
 Status: **accepted design (operator, 2026-10-10 PDT); built, not yet deployed.** The runner pushes
 when started with `--ingress-target` (`runner/ingress.py`), which the Sandbox Service passes to new
 runners from its `runner_ingress` setting, and reports `flushed` from what it recorded. The History
-Service serves the ingress (`history_service/ingress.py`), but no environment deploys it or sets
-`runner_ingress`, so every runner's Events are still read through `Attach`.
+Service serves the ingress (`history_service/ingress.py`) as its own Deployment, but no environment
+sets `runner_ingress`, so every runner's Events are still read through `Attach`.
 
 The runner pushes each Session's journal to one **ingress**, the endpoint its Sandbox names, and
 nothing else reads its journals. The History Service is the ingress when history is kept. A client
 that keeps no history implements the ingress itself and sends commands and lifecycle calls through
 the Sandbox Service like any other client. Fan-out to further readers is the ingress's concern, or
 a service's behind it, never a second destination on the runner.
+
+Rejected: following runners through the Sandbox Service, which made it fan out a journal it does
+not keep and needed retention holds for durability; and merging the raw log into the Sandbox
+Service, which makes a historyless client unlike any other and couples live delivery to the history
+database.
 
 ```protobuf
 // agentplane/proto/runner_ingress.proto
