@@ -14,19 +14,21 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import runner_pb2
-from agentplane.sandbox_service.channel_control import ChannelControl
-from agentplane.sandbox_service.commands import db as commands_db
-from agentplane.sandbox_service.commands.connections import ConnectionStore
-from agentplane.sandbox_service.connection_records import ConnectionLeases
+from agentplane.runner.testing.runner_server import serve_runner
+from agentplane.runner_gateway.channel_control import ChannelControl
+from agentplane.runner_gateway.commands import db as commands_db
+from agentplane.runner_gateway.commands.connections import ConnectionStore
+from agentplane.runner_gateway.connection_records import ConnectionLeases
+from agentplane.runner_gateway.sealing import Sealing
+from agentplane.runner_gateway.session_registry import SessionRegistry
+from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxTearingDownError
 from agentplane.sandbox_service.protocol_pb2 import Hold, Sandbox, SandboxDestination, TeardownPhase
-from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.teardown import SealNotFlushedError, Teardown
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
-from agentplane.sandbox_service.testing.sessions import register_session
 from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 
 # gazelle:include_dep //agentplane/history_service/storage:conftest
@@ -89,37 +91,9 @@ class ScriptedRunner:
 @pytest.fixture
 async def runner() -> AsyncIterator[ScriptedRunner]:
     runner = ScriptedRunner()
-    server = grpc.aio.server()
-    server.add_generic_rpc_handlers(
-        [
-            grpc.method_handlers_generic_handler(
-                "agentplane.proto.runner.Runner",
-                {
-                    "Seal": grpc.unary_unary_rpc_method_handler(
-                        runner.seal,
-                        request_deserializer=runner_pb2.SealRequest.FromString,
-                        response_serializer=runner_pb2.SealResponse.SerializeToString,
-                    ),
-                    "ListSessions": grpc.unary_unary_rpc_method_handler(
-                        runner.list_sessions,
-                        request_deserializer=runner_pb2.ListSessionsRequest.FromString,
-                        response_serializer=runner_pb2.ListSessionsResponse.SerializeToString,
-                    ),
-                    "Attach": grpc.stream_stream_rpc_method_handler(
-                        runner.attach,
-                        request_deserializer=runner_pb2.ClientMessage.FromString,
-                        response_serializer=runner_pb2.ServerMessage.SerializeToString,
-                    ),
-                },
-            )
-        ]
-    )
-    runner.port = server.add_insecure_port("127.0.0.1:0")
-    await server.start()
-    try:
+    async with serve_runner(attach=runner.attach, list_sessions=runner.list_sessions, seal=runner.seal) as port:
+        runner.port = port
         yield runner
-    finally:
-        await server.stop(0)
 
 
 @pytest.fixture
@@ -136,13 +110,14 @@ async def teardown(destinations: DestinationResolver, engine: AsyncEngine) -> Te
     # The registry tables share the history test database; production keeps them apart.
     async with engine.begin() as connection:
         await connection.run_sync(commands_db.Base.metadata.create_all)
-    return Teardown(
+    sealing = Sealing(
         destinations,
         SessionRegistry(engine),
         connections=ConnectionStore(engine),
         control=ChannelControl(ConnectionLeases()),
         runner_grpc_channel_options={},
     )
+    return Teardown(destinations.inventory, sealing.seal)
 
 
 @pytest.fixture
