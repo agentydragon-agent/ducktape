@@ -28,7 +28,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
@@ -48,6 +48,7 @@ from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
@@ -195,10 +196,11 @@ async def _serve(
 ) -> None:
     ingestion_module.RECONCILE_S = 0.05
     engine = connect(database_url)
-    database_updates = DatabaseUpdates(engine.url)
+    database_updates = create_database_updates(engine.url)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
     index = LiveIndex(
-        stale_after_seconds=90, core_v1=core, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)}
+        freshness=Freshness(stale_after_seconds=90, at={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)}),
+        core_v1=core,
     )
     if sandbox_present:
         raw, running = seed_runner(custom, core, SANDBOX)

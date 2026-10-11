@@ -158,20 +158,6 @@ def test_unsupported_executor_kind_is_rejected_by_settings(kind: str) -> None:
         )
 
 
-@pytest.mark.parametrize("path_kind", ["missing", "directory"])
-def test_explicit_config_file_must_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_kind: str) -> None:
-    path = tmp_path / "settings.yaml" if path_kind == "missing" else tmp_path
-    monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(path))
-    with pytest.raises(ValueError, match="configured Action Service settings file"):
-        Settings(
-            database_url="postgresql://unused",
-            token_audience=TOKEN_AUDIENCE,
-            policy_namespace=NAMESPACE,
-            caller_service_account_namespaces={NAMESPACE},
-            _cli_parse_args=False,
-        )
-
-
 def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -372,7 +358,7 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
         events.append("executed")
 
     with (
-        patch("agentplane.action_service.main.k8s_config.load_incluster_config"),
+        patch("agentplane.service_process.k8s_config.load_incluster_config"),
         patch.object(uvicorn.Server, "serve", serve),
         patch.object(ActionService, "close", close_service),
         patch.object(McpActionGroupExecutor, "close", close_adapter),
@@ -418,7 +404,7 @@ async def test_main_failure_disposes_engine_after_owned_resources(failure: str) 
     with (
         patch("agentplane.action_service.main.make_engine", return_value=engine),
         patch("agentplane.action_service.main.verify_schema", verify),
-        patch("agentplane.action_service.main.k8s_config.load_incluster_config"),
+        patch("agentplane.service_process.k8s_config.load_incluster_config"),
         patch.object(ActionService, "start", start),
         patch.object(ActionService, "close", close),
         patch.object(uvicorn.Server, "serve", serve),
@@ -534,7 +520,7 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
             client_configuration.host = f"http://127.0.0.1:{fake.port}"
 
         with (
-            patch("agentplane.action_service.main.k8s_config.load_incluster_config", side_effect=in_cluster),
+            patch("agentplane.service_process.k8s_config.load_incluster_config", side_effect=in_cluster),
             patch("agentplane.action_service.main.PolicyIndex", return_value=index),
             patch.object(uvicorn.Server, "serve", serve),
         ):
@@ -602,7 +588,7 @@ async def test_http_serves_before_optional_backend_connects(db_url: str, tmp_pat
             assert (await client.get("/readyz")).status_code == 503
 
     with (
-        patch("agentplane.action_service.main.k8s_config.load_incluster_config"),
+        patch("agentplane.service_process.k8s_config.load_incluster_config"),
         patch.object(uvicorn.Server, "serve", serve),
     ):
         await async_main(settings)

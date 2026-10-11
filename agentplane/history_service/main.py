@@ -1,28 +1,25 @@
 """History Service entry point: takes the journals runners push, follows the rest, and serves retained Session history."""
 
 import asyncio
-import contextlib
-import logging
 
 import grpc
-from kubernetes_asyncio import client as k8s_client, config as k8s_config
+from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.grpc_process import until_terminated
 from agentplane.grpc_serving import add_health, serving
 from agentplane.history_service import ingress
+from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.fold_runner import FoldRunner
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.ingester import HistoryIngester
 from agentplane.history_service.settings import Settings
-from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
-from agentplane.history_service.summary_changes import SummaryChanges
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.service_process import background, configure_logging, kubernetes_configuration, until_terminated
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.
@@ -30,11 +27,6 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 
 async def serve(settings: Settings) -> None:
-    configuration = k8s_client.Configuration()
-    if settings.kubeconfig is None:
-        k8s_config.load_incluster_config(client_configuration=configuration)
-    else:
-        await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
     url = make_url(settings.database_url).set(drivername="postgresql+asyncpg")
     # The migration init container creates these tables; the ingress, the ingester and the fold
     # write through their own engines, and reads never write.
@@ -44,26 +36,15 @@ async def serve(settings: Settings) -> None:
     # The fold writes only its own tables.
     fold_engine = create_async_engine(url, pool_size=2, max_overflow=2)
     ingress_engine = create_async_engine(url, pool_size=8, max_overflow=4)
-    history_changes = HistoryChanges(url)
-    summary_changes = SummaryChanges(url)
+    wakeups = create_wakeups(url)
     try:
         async with (
-            k8s_client.ApiClient(configuration) as api,
-            history_changes.listener.listen(),
-            summary_changes.listener.listen(),
+            k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
+            wakeups.listener.listen(),
         ):
             history = Store(engine)
             server = grpc.aio.server()
             health = add_health(server)
-            folding = asyncio.create_task(
-                FoldRunner(
-                    engine=fold_engine,
-                    history=history,
-                    concurrency=settings.fold_concurrency,
-                    page_size=settings.fold_page_size,
-                ).run(interval_s=settings.fold_interval_s, changes=history_changes, health=health),
-                name="thread-fold",
-            )
             resources = Resources(
                 principals=WorkloadPrincipalResolver(
                     authentication=k8s_client.AuthenticationV1Api(api),
@@ -76,7 +57,7 @@ async def serve(settings: Settings) -> None:
                 evidence=EvidenceReader(engine, history),
                 reader_accounts=settings.reader_accounts,
                 request_timeout_s=settings.request_timeout_s,
-                summary_changes=summary_changes,
+                summary_changes=wakeups.changes[Channel.SUMMARIES],
                 watch_lease_s=settings.watch_lease_s,
             )
             add_service(resources, server)
@@ -96,20 +77,24 @@ async def serve(settings: Settings) -> None:
                 ),
                 ingress_server,
             )
-            try:
-                # An ingester failure ends the process rather than leaving reads served with no writer.
-                async with (
-                    serving(ingress_server, f"{settings.host}:{settings.ingress.port}", grace_s=5),
-                    serving(server, f"{settings.host}:{settings.port}", grace_s=5),
-                    asyncio.TaskGroup() as tasks,
-                ):
-                    ingesting = tasks.create_task(ingest(settings, url), name="history-ingester")
-                    await until_terminated()
-                    ingesting.cancel()
-            finally:
-                folding.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await folding
+            # An ingester failure ends the process rather than leaving reads served with no writer.
+            async with (
+                background(
+                    FoldRunner(
+                        engine=fold_engine,
+                        history=history,
+                        concurrency=settings.fold_concurrency,
+                        page_size=settings.fold_page_size,
+                    ).run(interval_s=settings.fold_interval_s, changes=wakeups.changes[Channel.HISTORY], health=health),
+                    name="thread-fold",
+                ),
+                serving(ingress_server, f"{settings.host}:{settings.ingress.port}", grace_s=5),
+                serving(server, f"{settings.host}:{settings.port}", grace_s=5),
+                asyncio.TaskGroup() as tasks,
+            ):
+                ingesting = tasks.create_task(ingest(settings, url), name="history-ingester")
+                await until_terminated()
+                ingesting.cancel()
     finally:
         await ingress_engine.dispose()
         await fold_engine.dispose()
@@ -148,9 +133,7 @@ async def ingest(settings: Settings, url: URL) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-    # TokenReview responses echo their bearer. Do not log the generated client's wire bodies.
-    logging.getLogger("kubernetes_asyncio.client.rest").setLevel(logging.INFO)
+    configure_logging()
     asyncio.run(serve(Settings()))
 
 

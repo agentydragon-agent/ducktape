@@ -20,7 +20,7 @@ from pydantic import TypeAdapter
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
@@ -36,6 +36,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.views import ThreadEntityView
+from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
@@ -58,13 +59,13 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
     history = HistoryServiceClient("schema.invalid:8080", token_file=Path("/schema-unused-token"), request_timeout_s=1)
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
     engine = connect("postgresql+asyncpg://schema@localhost/schema")
-    database_updates = DatabaseUpdates(engine.url)
+    database_updates = create_database_updates(engine.url)
     summaries = Summaries(engine, history)
     event_logs, content = (
         EventLogStore(engine, summaries=summaries, history_reader=history),
         ContentStore(engine, history_reader=history),
     )
-    live = LiveIndex(stale_after_seconds=900, core_v1=CoreV1Api(api_client))
+    live = LiveIndex(freshness=Freshness(stale_after_seconds=900), core_v1=CoreV1Api(api_client))
     runners = SandboxSessions(live, inventory)
     document: dict[str, Any] = create_app(
         inventory,

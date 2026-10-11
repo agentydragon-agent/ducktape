@@ -38,6 +38,7 @@ py_library(
     deps = [
         ":model_test_data",
         ":replication_source",
+        "//agentplane:kubernetes_watch",
         "//agentplane/app:action_policy",
         "//agentplane/app:api",
         "//agentplane/app:database",
@@ -198,6 +199,7 @@ py_library(
         "//agentplane/app/threads/events:event_log",
         "//agentplane/history_service:client",
         "//agentplane/history_service/testing:history",
+        "//agentplane/postgres:wakeups",
         "//agentplane/runner_gateway:session_registry",
         "//agentplane/runner_gateway/commands:db",
         "@pypi//sqlalchemy",

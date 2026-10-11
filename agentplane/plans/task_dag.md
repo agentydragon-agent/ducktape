@@ -966,12 +966,8 @@ flowchart TD
     GATEWAY_CLIENT_SPLIT[Session messages and client move to the gateway]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     subgraph COHERENCE_REFACTORS[Coherence refactors]
-        SERVICE_SETTINGS_BASE[Candidate: one config-file settings base]
-        SERVICE_PROCESS_MODULE[Candidate: one service process module]
         REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
         GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
-        WATCH_FRESHNESS_DEDUPE[Candidate: one watch freshness]
-        POSTGRES_WAKEUPS_SHARED[Candidate: one PostgreSQL wakeup class]
         GATEWAY_SANDBOX_READS[Candidate: the gateway reads Sandboxes read-only]
         SANDBOX_DEAD_CODE[Candidate: delete KubernetesBindings.run]
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
@@ -991,20 +987,6 @@ flowchart TD
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
 ```
 
-### `SERVICE_SETTINGS_BASE` — one config-file settings base
-
-**Candidate.** `settings_customise_sources` is pasted into nine `Settings` classes and has drifted:
-four refuse a missing config file, the rest silently start on defaults. Move
-`homeassistant/provisioner/yaml_settings.py:YamlFileSettings` to `util/`, keep its missing-file
-check, subclass it in every service, and drop the no-op `__init__(self, **values)` overrides.
-
-### `SERVICE_PROCESS_MODULE` — one service process module
-
-**Candidate.** `grpc_process.py` holds no gRPC code since #9973 and #9977. Rename it for what
-it does, and have every main use its `kubernetes_configuration` (re-inlined in six mains),
-`background` (hand-rolled for the History Service fold task) and one `kubernetes_asyncio` log-level
-line; the History Service's two "ports must differ" checks go with it.
-
 ### `REQUIRED_SERVICE_WIRING` — no footgun defaults on service wiring
 
 **Candidate.** Both services' `Resources` default timeouts that copy the Settings defaults, and the
@@ -1021,18 +1003,6 @@ in `session_lifecycle.py`, and the runner's `control.py`, `main.py` flag help, `
 say "Sandbox Service" for the gateway; History Service docstrings say it writes and migrates the
 history store. Also the stale `sealer_accounts` comment, the `serve_channel` test helper, and the
 `CLEANUP` in `sandbox_service/teardown.py` that cites this plan.
-
-### `WATCH_FRESHNESS_DEDUPE` — one watch freshness
-
-**Candidate.** Only the Action Service uses `kubernetes_watch.Freshness`; `app/live.py` (without the
-clock-went-backwards guard) and egress `policy.py`/`admin.py` reimplement it. Both use `Freshness`.
-
-### `POSTGRES_WAKEUPS_SHARED` — one PostgreSQL wakeup class
-
-**Candidate.** `SummaryChanges`, `HistoryChanges`, `runner_gateway.SessionChanges` and
-`notification_service.Wakeups` are one payload-free listen-and-wake class with different channel
-names, and `app/changes.Changes` is its waiter set. One `agentplane/postgres/` class plus a
-`notify(session, channel)`, used by every site that outlives `FOLLOW_PATH_RETIRE`.
 
 ### `GATEWAY_SANDBOX_READS` — the gateway reads Sandboxes read-only
 

@@ -24,6 +24,7 @@ py_library(
     deps = [
         ":app",
         ":settings",
+        "//agentplane:service_process",
         "//agentplane/workload_auth:http",
         "//agentplane/workload_auth:principal",
         "@pypi//httpx",
@@ -52,9 +53,9 @@ py_library(
     deps = [
         ":models",
         "//util:urls",
+        "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
     ],
 )
 

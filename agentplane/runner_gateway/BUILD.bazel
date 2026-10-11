@@ -295,8 +295,8 @@ py_library(
         ":session_changes",
         ":session_registry",
         ":settings",
-        "//agentplane:grpc_process",
         "//agentplane:grpc_serving",
+        "//agentplane:service_process",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/runner_gateway/commands:connections",
@@ -341,9 +341,9 @@ py_library(
     ],
     deps = [
         "//agentplane:subjects",
+        "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
     ],
 )
 

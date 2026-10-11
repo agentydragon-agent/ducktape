@@ -25,7 +25,7 @@ from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnav
 from agentplane.app.api import create_app
 from agentplane.app.conftest import stored_login
 from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
@@ -63,6 +63,7 @@ from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
@@ -274,11 +275,11 @@ def test_nothing_watched_yet_reads_as_stale(live_index: LiveIndex) -> None:
 
 
 def test_one_kind_that_stopped_cycling_makes_the_whole_frame_stale(live_index: LiveIndex) -> None:
-    live_index.refreshed[SANDBOXES_PLURAL] = NOW - timedelta(seconds=5)
-    live_index.refreshed[PODS_PLURAL] = NOW - timedelta(seconds=5)
+    live_index.freshness.at[SANDBOXES_PLURAL] = NOW - timedelta(seconds=5)
+    live_index.freshness.at[PODS_PLURAL] = NOW - timedelta(seconds=5)
     assert live_index.health(NOW).fresh is True
 
-    live_index.refreshed[PODS_PLURAL] = NOW - timedelta(seconds=live_index.stale_after_seconds + 1)
+    live_index.freshness.at[PODS_PLURAL] = NOW - timedelta(seconds=live_index.freshness.stale_after_seconds + 1)
     health = live_index.health(NOW)
 
     assert health.fresh is False
@@ -288,7 +289,7 @@ def test_one_kind_that_stopped_cycling_makes_the_whole_frame_stale(live_index: L
 async def test_a_frame_goes_out_per_change_with_health_through_the_quiet(seeded: LiveIndex) -> None:
     """What a tab reads: the state on connect, the state again when it changes, and in between the
     freshness that tells a quiet stream from a wedged one."""
-    seeded.refreshed[SANDBOXES_PLURAL] = NOW
+    seeded.freshness.at[SANDBOXES_PLURAL] = NOW
     stream = frames(lambda: _snapshot(seeded), lambda: seeded.health(NOW), seeded.changes, interval_s=0.01).__aiter__()
 
     assert _read(await anext(stream)) == ("snapshot", ["runner-1", "shelved"])
@@ -321,7 +322,7 @@ def app(
         event_log.EventLogStore(engine, history_reader=history, summaries=summaries),
         ContentStore(engine, history_reader=history),
     )
-    database_updates = DatabaseUpdates(engine.url)
+    database_updates = create_database_updates(engine.url)
     runners = SandboxSessions(live_index, inventory)
     bridge = RunnerBridge(
         runners=runners,
@@ -367,11 +368,7 @@ async def _next_threads(stream: AsyncIterator[str | bytes | memoryview]) -> Thre
 
 
 async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_changes(
-    seeded: LiveIndex,
-    store: ThreadStore,
-    event_logs: EventLogStore,
-    replica: Replica,
-    database_updates: DatabaseUpdates,
+    seeded: LiveIndex, store: ThreadStore, event_logs: EventLogStore, replica: Replica, database_updates: Wakeups
 ) -> None:
     drain = Drain()
     response = await live_threads(
@@ -411,7 +408,7 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
 
 
 async def test_global_thread_stream_carries_its_window_and_the_open_thread(
-    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, database_updates: DatabaseUpdates
+    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, database_updates: Wakeups
 ) -> None:
     oldest, _, newest = [await event_logs.open("runner-1", f"test-window-thread-{n}") for n in range(3)]
     drain = Drain()
@@ -430,7 +427,7 @@ async def test_global_thread_stream_carries_its_window_and_the_open_thread(
 
 
 async def test_global_thread_stream_reports_listener_loss_then_rereads_after_reconnect(
-    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, database_updates: DatabaseUpdates, db_url: str
+    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, database_updates: Wakeups, db_url: str
 ) -> None:
     drain = Drain()
     response = await live_threads(index=seeded, store=replica.store, updates=database_updates, shutdown=drain)

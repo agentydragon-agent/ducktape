@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.api import authenticated_caller, create_app
+from agentplane.notification_service.channels import Channel
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.db import (
     GitHubDelivery,
@@ -47,7 +48,7 @@ from agentplane.notification_service.models import (
     SubscriptionUpdate,
 )
 from agentplane.notification_service.service import Service
-from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, NoticeDebounceSettings, Settings
+from agentplane.notification_service.settings import GitHubSettings, NoticeDebounceSettings, Settings
 from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.sources.github.client import (
     GitHubAccessError,
@@ -1113,8 +1114,9 @@ async def test_webhook_wakes_idle_source_and_fences_concurrent_ingress(
     await github.reconcile(store, claim, row, SOURCE)
     await store.release(claim, None)
     assert await store.get_next_work_at() is not None
+    changed = asyncio.Event()
     async with store.wakeups.listener.listen():
-        with store.wakeups.subscribe() as changed:
+        with store.wakeups.changes[Channel.WORK].subscribe(changed):
             await ingest(github, store, comment())
             async with asyncio.timeout(10):
                 await changed.wait()
@@ -1186,7 +1188,7 @@ history_service:
   token_file: /tokens/history
 github: null
 """)
-    monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
+    monkeypatch.setenv(Settings.config_file_env, str(config))
     settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
     assert str(settings.actions.url) == "http://actions/"
     assert settings.actions.token_file == Path("/tokens/actions")
@@ -1225,9 +1227,6 @@ github: null
     with pytest.raises(ValidationError) as failure:
         Settings(database_url="postgresql://unused", _cli_parse_args=False)
     assert "test-signing-ke" not in str(failure.value)
-    config.unlink()
-    with pytest.raises(ValueError, match="regular file"):
-        Settings(database_url="postgresql://unused", _cli_parse_args=False)
 
 
 async def test_subscriptions_share_normalized_github_entities(store: Store, provider: tuple[GitHub, Upstream]) -> None:

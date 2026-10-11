@@ -184,8 +184,8 @@ py_library(
         ":runner_endpoints",
         ":settings",
         ":teardown",
-        "//agentplane:grpc_process",
         "//agentplane:grpc_serving",
+        "//agentplane:service_process",
         "//agentplane/workload_auth:principal",
         "//util:kubernetes",
         "@pypi//grpcio",
@@ -561,9 +561,9 @@ py_library(
         ":kubernetes_grants",
         ":runner_endpoints",
         "//agentplane:subjects",
+        "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
     ],
 )
 
