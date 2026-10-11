@@ -1056,7 +1056,6 @@ flowchart TD
         LLM_INGRESS_MODEL_CONFIG_CONTRACT[Candidate: structural absent model config]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete types for Action protocols]
         ACTION_OAUTH_REFERENCE_TYPE[Candidate: typed OAuth token reference]
-        NOTIFICATION_GITHUB_PACKAGE[Candidate: one GitHub source package]
         CDK8S_SERVICE_CONSTRUCT[Candidate: one cdk8s service construct]
         CDK8S_RUNNER_ENDPOINT_HELPER[Candidate: one runner-facing endpoint helper]
         GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: one gRPC channel options constant]
@@ -1215,12 +1214,6 @@ nullable body).
 **Candidate.** `ActionsOAuthProxy._reference` returns an indexed `tuple[UUID, str, str]` and its
 callers catch `Exception`, so a bug looks like a revoked token (`action_service/oauth.py:282`). A
 dataclass, and catches narrowed to the JWT, `ValueError` and `KeyError` failures.
-
-### `NOTIFICATION_GITHUB_PACKAGE` — one GitHub source package
-
-**Candidate.** `github_state.py` at the package root beside `sources/github{,_client,_models}.py`
-becomes `sources/github/{source,client,models,state}.py`, and the Actions source's hard-coded
-`timeout=5` becomes a `request_timeout_s` setting like the other backends'.
 
 ### `CDK8S_SERVICE_CONSTRUCT` — one cdk8s service construct
 
