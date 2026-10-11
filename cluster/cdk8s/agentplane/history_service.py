@@ -7,44 +7,20 @@ bearer for the Pod's own token for the ingress audience. It takes untrusted inpu
 apart from the read API, and the network fence admits Sandboxes to it alone.
 """
 
-from agentplane_egresscredential_crds.works.allegedly.agentplane import (
-    EgressCredentialSpecTargets,
-    EgressCredentialSpecTargetsMethod,
-)
-from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
-    EgressPolicySpecRules,
-    EgressPolicySpecRulesCredentialRef,
-    EgressPolicySpecRulesMethods,
-)
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
-from cdk8s_plus_34 import (
-    ContainerResources,
-    ContainerSecurityContextProps,
-    Cpu,
-    CpuResources,
-    Deployment,
-    ImagePullPolicy,
-    MemoryResources,
-    PodSecurityContextProps,
-    Service,
-    ServiceAccount,
-    k8s,
-)
+from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
 
 from agentplane.egress.resources import placeholder_of
 from agentplane.history_service.settings import CONFIG_FILE_ENV, RUNNER_INGRESS_AUDIENCE, Settings
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.subjects import ServiceAccountRef
-from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import database, egress, notifications
+from cluster.cdk8s import cilium
+from cluster.cdk8s.agentplane import database, egress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
-from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
-from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
+from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.probes import grpc_probe
-from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
-from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -93,8 +69,7 @@ class HistoryService(Construct):
         id: str,
         env: Environment,
         *,
-        reader: ServiceAccountRef,
-        caller: ServiceRef,
+        callers: dict[ServiceAccountRef, Pods],
         sandboxes: ServiceRef,
         sandboxes_audience: str,
         gateway: ServiceRef,
@@ -103,9 +78,6 @@ class HistoryService(Construct):
         super().__init__(scope, id)
         endpoint = service(env.namespace)
         ingress = ingress_service(env.namespace)
-        account = ServiceAccount(
-            self, "account", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), automount_token=True
-        )
         # TokenReview proves readers' and runners' projected workload tokens.
         token_reviewer_cluster_rbac(
             self,
@@ -120,10 +92,9 @@ class HistoryService(Construct):
             metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace),
             model=Settings,
             content={
-                # The app reads Threads; the Notification Service reads command receipts.
                 "reader_accounts": [
-                    reader.model_dump(),
-                    ServiceAccountRef(namespace=env.namespace, name=notifications.NAME).model_dump(),
+                    reader.model_dump()
+                    for reader in sorted(callers, key=lambda reader: (reader.namespace, reader.name))
                 ],
                 "token_audience": TOKEN_AUDIENCE,
                 "port": endpoint.port.number,
@@ -151,33 +122,13 @@ class HistoryService(Construct):
         database_url = (
             SecretRef(namespace=env.namespace, name="postgres-sandbox-service").key("uri").env_value(self, "database")
         )
-        deployment = Deployment(
+        workload = add_service_workload(
             self,
-            "deployment",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
-            replicas=env.replicas.count,
-            strategy=env.replicas.strategy,
-            min_ready=env.replicas.min_ready,
-            termination_grace_period=Duration.seconds(30),
-            service_account=account,
-            automount_service_account_token=True,
-            docker_registry_auth=forgejo_images_creds_secret_ref(self, "images-creds"),
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-            # A migration failure blocks startup; the command has no retry loop.
-            init_containers=[
-                migrate_init_container(
-                    "git.allegedly.works/ducktape-ci/agentplane-history-migrate:unset",
-                    name="migrate",
-                    env_variables={"AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL": database_url},
-                )
-            ],
-        )
-        container = deployment.add_container(
-            name="history-service",
+            env,
+            serves=[endpoint, ingress],
+            container="history-service",
             image=f"{_IMAGE}:unset",
             env_variables={env_name(Settings, "database_url"): database_url},
-            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             ports=[endpoint.port.container_port(), ingress.port.container_port()],
             readiness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=20, period_seconds=30),
@@ -185,42 +136,17 @@ class HistoryService(Construct):
                 cpu=CpuResources(request=Cpu.millis(20)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
+            termination_grace=Duration.seconds(30),
+            migrate=migrate_init_container(
+                "git.allegedly.works/ducktape-ci/agentplane-history-migrate:unset",
+                name="migrate",
+                env_variables={"AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL": database_url},
+            ),
         )
-        config.mount_into(container, env=CONFIG_FILE_ENV)
-        # Rotating, audience-scoped workload tokens for the ingester's Sandbox Service and Runner Gateway calls.
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/volumes/-",
-                k8s.Volume(
-                    name="service-tokens",
-                    projected=k8s.ProjectedVolumeSource(
-                        sources=[
-                            k8s.VolumeProjection(
-                                service_account_token=k8s.ServiceAccountTokenProjection(
-                                    audience=audience, expiration_seconds=3600, path=path
-                                )
-                            )
-                            for path, audience in [("sandboxes", sandboxes_audience), ("gateway", gateway_audience)]
-                        ]
-                    ),
-                ),
-            )
-        )
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/containers/0/volumeMounts/-",
-                k8s.VolumeMount(name="service-tokens", mount_path=_SERVICE_TOKEN_DIR, read_only=True),
-            )
-        )
-        pod_policy.place(deployment, node_scheduling.HIL_OVH)
-        pod_policy.harden(deployment)
-        Service(
-            self,
-            "service",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
-            selector=deployment,
-            ports=[endpoint.port.service_port(), ingress.port.service_port()],
+        config.mount_into(workload.container, env=CONFIG_FILE_ENV)
+        # For the ingester's Sandbox Service and Runner Gateway calls.
+        workload.project_tokens(
+            "service-tokens", _SERVICE_TOKEN_DIR, {"sandboxes": sandboxes_audience, "gateway": gateway_audience}
         )
         proxy = egress.proxy(env.namespace)
         NetworkPolicy(
@@ -228,66 +154,21 @@ class HistoryService(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=endpoint.pods.selector,
-            ingress=[
-                caller.pods.admit(endpoint.pod_port),
-                notifications.service(env.namespace).pods.admit(endpoint.pod_port),
-                proxy.pods.admit(ingress.pod_port),
-            ],
+            ingress=[*(pods.admit(endpoint.pod_port) for pods in callers.values()), proxy.pods.admit(ingress.pod_port)],
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 sandboxes.egress(),
                 gateway.egress(),
-                EgressRule.to_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": env.namespace, "k8s:cnpg.io/cluster": "postgres"},
-                    database.POSTGRES_PORT,
-                ),
+                database.egress(env.namespace),
             ],
         )
-        EgressCredential(
+        egress.add_runner_egress(
             self,
-            "runner-ingress-credential",
-            metadata=ApiObjectMetadata(name=_CREDENTIAL, namespace=env.namespace),
-            description=(
-                "The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's "
-                "pushes to the History Service ingress. It conveys no other authority."
-            ),
-            source=Source.projected_workload_token(audience=RUNNER_INGRESS_AUDIENCE),
-            targets=[
-                EgressCredentialSpecTargets(
-                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-                )
-            ],
+            policy=EGRESS_POLICY,
+            credential=_CREDENTIAL,
+            endpoint=ingress,
+            path=_PUSH,
+            audience=RUNNER_INGRESS_AUDIENCE,
+            purpose="pushes to the History Service ingress",
         )
-        EgressPolicy(
-            self,
-            "runner-ingress-policy",
-            metadata=ApiObjectMetadata(name=EGRESS_POLICY, namespace=env.namespace),
-            rules=[
-                EgressPolicySpecRules(
-                    hosts=[ingress.fqdn],
-                    cluster_internal=True,
-                    methods=[EgressPolicySpecRulesMethods.POST],
-                    paths=[_PUSH],
-                    credential_ref=EgressPolicySpecRulesCredentialRef(name=_CREDENTIAL),
-                )
-            ],
-        )
-        # Additive to the proxy's own policy, which egress.py owns and which cannot name this
-        # module: this one imports that one.
-        NetworkPolicy(
-            self,
-            "runner-ingress-proxy-egress",
-            metadata=ApiObjectMetadata(name=f"{NAME}-runner-ingress-proxy", namespace=env.namespace),
-            endpoint_selector=proxy.pods.selector,
-            egress=[ingress.egress()],
-        )
-        if env.replicas.pdb_min_available is not None:
-            add_pod_disruption_budget(
-                self,
-                "pdb",
-                name=NAME,
-                namespace=env.namespace,
-                min_available=env.replicas.pdb_min_available,
-                selector=_LABELS,
-            )
