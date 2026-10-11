@@ -217,16 +217,16 @@
       "sha256": "Ykmm7p5+JP8DndK2z6O5AYGTRHBWmjybF5awL9ZqeHc="
     },
     "skill-grafana": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-9140e0a56344/grafana.skill",
-      "sha256": "kUDgpWNE9qVJMDWl7Mdc44N9f4KNvgWLWZ5gRi8/1lc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-b873108ded9b/grafana.skill",
+      "sha256": "uHMQje2bD5r+HhVd98IB9Iu7nG5YRzzlT+VjsJQqF6s="
     },
     "ducktape-claude-api": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-claude-api-eb20b431a4ea/ducktape_claude_api-0.1.0-py3-none-any.whl",
       "sha256": "6yC0MaTqNDzJh7BZ+lx5VH49MTUjhKjF/+Mu2Wt2ggc="
     },
     "agentplane-runner": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-6c4dd56e1b29/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
-      "sha256": "bE3VbhspY8IhLXy+o3NqSjMl0ZZFbHawJlrs+R66Da4="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-3b38d4a6ae8a/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
+      "sha256": "OzjUpq6KwgkAWOOhbYWTHfelum9Ti2vT7y5+oBRWAk8="
     },
     "skill-cdk8s_builders": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-7a1104aadfb6/cdk8s_builders.skill",
