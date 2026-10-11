@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import aclosing
+from contextlib import AsyncExitStack, aclosing
 
 import grpc
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception_type, wait_random_exponential
@@ -185,39 +185,42 @@ class IngressPusher:
         logger.log(level, "session %s: push to the ingress lost: %s", session_id, error)
 
     async def run(self) -> None:
-        # The ingress's own reconnects follow the control stream's backoff, not gRPC's default 120 s cap.
-        channel = grpc.aio.insecure_channel(
-            self.target,
-            options=grpc_channel_option_kvps(
-                self.channel_options,
-                required={
-                    "grpc.initial_reconnect_backoff_ms": int(self.timing.backoff_initial_s * 1000),
-                    "grpc.max_reconnect_backoff_ms": int(self.timing.backoff_max_s * 1000),
-                },
-            ),
-        )
-        stub = runner_ingress_pb2_grpc.RunnerIngressStub(channel)
+        async with AsyncExitStack() as stack:
+            # The ingress's own reconnects follow the control stream's backoff, not gRPC's default 120 s cap.
+            channel = await stack.enter_async_context(
+                grpc.aio.insecure_channel(
+                    self.target,
+                    options=grpc_channel_option_kvps(
+                        self.channel_options,
+                        required={
+                            "grpc.initial_reconnect_backoff_ms": int(self.timing.backoff_initial_s * 1000),
+                            "grpc.max_reconnect_backoff_ms": int(self.timing.backoff_max_s * 1000),
+                        },
+                    ),
+                )
+            )
+            stub = runner_ingress_pb2_grpc.RunnerIngressStub(channel)
 
-        def track(session: Session) -> None:
-            acknowledged = self.runner.store.read_acknowledgement(session.session_id)
-            if session.session_id in self.pushes or (acknowledged is not None and acknowledged.sealed):
-                return
-            task = asyncio.create_task(self.push(stub, session), name=f"push of session {session.session_id}")
-            task.add_done_callback(_report_push)
-            self.pushes[session.session_id] = task
+            def track(session: Session) -> None:
+                acknowledged = self.runner.store.read_acknowledgement(session.session_id)
+                if session.session_id in self.pushes or (acknowledged is not None and acknowledged.sealed):
+                    return
+                task = asyncio.create_task(self.push(stub, session), name=f"push of session {session.session_id}")
+                task.add_done_callback(_report_push)
+                self.pushes[session.session_id] = task
 
-        self.runner.session_loaded.append(track)
-        try:
+            stack.push_async_callback(self.cancel_pushes)
+            self.runner.session_loaded.append(track)
+            stack.callback(self.runner.session_loaded.remove, track)
             for session_id in self.runner.store.session_ids():
                 if (session := await self.runner.stored_session(session_id)) is not None:
                     track(session)
             await asyncio.Future()
-        finally:
-            self.runner.session_loaded.remove(track)
-            for task in self.pushes.values():
-                task.cancel()
-            await asyncio.gather(*self.pushes.values(), return_exceptions=True)
-            await channel.close()
+
+    async def cancel_pushes(self) -> None:
+        for task in self.pushes.values():
+            task.cancel()
+        await asyncio.gather(*self.pushes.values(), return_exceptions=True)
 
     async def push(self, stub: runner_ingress_pb2_grpc.RunnerIngressAsyncStub, session: Session) -> None:
         while True:
