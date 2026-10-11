@@ -11,7 +11,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-migrate
     newTag: devel-20261010191630-60c0442 # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261011031239-593308d # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20261011033725-66db3ee # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20261011025929-f1a15e4 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   # Initial publication on devel supplies the tag through Flux image automation.
@@ -39,4 +39,4 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
     newTag: devel-20261011033019-26a069a # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-ingress
-    newTag: devel-20261011032717-26a069a # {"$imagepolicy": "flux-system:agentplane-history-ingress:tag"}
+    newTag: devel-20261011033750-66db3ee # {"$imagepolicy": "flux-system:agentplane-history-ingress:tag"}
