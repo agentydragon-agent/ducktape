@@ -620,6 +620,11 @@ state that survives the Sandbox and is attached to the next one. Section 7 is wr
 preclude this: the History Service keys by Session, a Session records each Sandbox incarnation, and
 a teardown seal closes an incarnation, not the Session.
 
+A related direction (operator, 2026-10-11 PDT; later, with more planning, not scheduled): Sessions
+living in a long-running, often-suspended Sandbox whose runner image upgrades between incarnations.
+Runner dial-out, the ingress and per-incarnation seals make it more reachable; `POD_INCARNATION` is
+one shape it could take.
+
 ```mermaid
 flowchart TD
     DURABLE_SESSION_LIFECYCLE[Decision: Session lifetime beyond its Sandbox]
@@ -872,6 +877,8 @@ flowchart TD
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
     SESSION_ID_MINT_RETIRE[Blocked: clients always name the Session ID]
     LOOKUP_SESSION_RETIRE[Candidate: Session status from history, no Open reservation]
+    HISTORY_INGRESS_SAME_BINARY[Candidate: the History Service binary serves the ingress]
+    HISTORY_INGRESS_SAME_BINARY -. before runners point at the ingress .-> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE
     LEGACY_SANDBOX_RETIRE --> FOLLOW_PATH_RETIRE
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
@@ -886,6 +893,15 @@ retirement.** `CreateSessionRequest.session_id` becomes required. The Runner Gat
 minting IDs and handing the runner an `r-` locator (the `CLEANUP` tombstones in `grpc_api.py`'s
 `CreateSession` and `session_registry.py`), and the app stops sending the ID again as
 `idempotency_key` for older Sandbox Services.
+
+### `HISTORY_INGRESS_SAME_BINARY` — the History Service binary serves the ingress
+
+**Candidate; operator, 2026-10-11 PDT.** The ingress runs as its own binary, image, settings class
+and Deployment (`history_service/ingress_main.py`, `:ingress_image`, `IngressSettings`,
+`agentplane-history-ingress`); the operator wants it served by the History Service's own binary.
+Open: whether they also share one Deployment, or keep separate Deployments of the one image (the
+ingress takes untrusted input). Preferably lands before `RUNNER_OUTBOUND_ROLLOUT`, while no runner
+pushes to the ingress yet.
 
 ### `LOOKUP_SESSION_RETIRE` — Session status from history, no Open reservation
 
