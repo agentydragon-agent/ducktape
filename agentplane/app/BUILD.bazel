@@ -393,7 +393,6 @@ py_test(
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//util:net",
         "//util/testing:asgi",
-        "//util/testing:undeclared_outputs",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
