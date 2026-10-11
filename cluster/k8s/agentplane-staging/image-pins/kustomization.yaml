@@ -31,7 +31,7 @@ images:
     newTag: devel-20261011194921-cb44cff # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
   # Bootstrap only: keep rollout suspended until CI publishes and automation pins a real tag.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway
-    newTag: devel-20261011093549-5b906d0 # {"$imagepolicy": "flux-system:agentplane-runner-gateway:tag"}
+    newTag: devel-20261011195003-cb44cff # {"$imagepolicy": "flux-system:agentplane-runner-gateway:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-service
     newTag: devel-20261011091913-9a7f54e # {"$imagepolicy": "flux-system:agentplane-sandbox-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-migrate
