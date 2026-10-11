@@ -3,7 +3,7 @@ kind: Component
 images:
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-commands-migrate
-    newTag: devel-20261011081243-7df03e0 # {"$imagepolicy": "flux-system:agentplane-sandbox-commands-migrate:tag"}
+    newTag: devel-20261011093550-5b906d0 # {"$imagepolicy": "flux-system:agentplane-sandbox-commands-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
     newTag: devel-20261011034230-b2e4bec # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress
