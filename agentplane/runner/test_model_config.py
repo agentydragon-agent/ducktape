@@ -31,9 +31,7 @@ async def test_lookup_uses_ingress_route_and_preserves_workload_placeholder(base
 
 async def test_unknown_model_uses_harness_default() -> None:
     resolver = HttpModelConfigResolver(
-        transport=httpx.MockTransport(
-            lambda _request: httpx.Response(404, json={"detail": "no configuration for model"})
-        )
+        transport=httpx.MockTransport(lambda _request: httpx.Response(200, content=b"null"))
     )
     assert await resolver.resolve(base_url="http://ingress.test", token="workload", model="unknown") is None
 
@@ -41,7 +39,6 @@ async def test_unknown_model_uses_harness_default() -> None:
 @pytest.mark.parametrize(
     "payload",
     [
-        None,
         {"model": "m"},
         [],
         {"model": "m", "total_context_budget_tokens": True},

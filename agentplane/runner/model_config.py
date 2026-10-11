@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import httpx
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from agentplane.llm_ingress.models import ModelConfig
+
+# The ingress answers an unconfigured route with a JSON `null` body.
+_LOOKUP_RESULT: TypeAdapter[ModelConfig | None] = TypeAdapter(ModelConfig | None)
 
 
 class ModelConfigLookupError(RuntimeError):
@@ -32,20 +35,12 @@ class HttpModelConfigResolver:
                 )
         except httpx.HTTPError as error:
             raise ModelConfigLookupError("could not query the LLM proxy for model configuration") from error
-        if response.status_code == 404:
-            try:
-                detail = response.json().get("detail")
-            except ValueError, AttributeError:
-                detail = None
-            if detail == "no configuration for model":
-                return None
-            raise ModelConfigLookupError("LLM proxy model-config lookup endpoint is unavailable")
         if response.status_code != 200:
             raise ModelConfigLookupError(f"LLM proxy model-config lookup failed with HTTP {response.status_code}")
         try:
-            payload = ModelConfig.model_validate_json(response.content)
+            payload = _LOOKUP_RESULT.validate_json(response.content)
         except ValidationError as error:
             raise ModelConfigLookupError("LLM proxy returned malformed model configuration") from error
-        if payload.model != model:
+        if payload is not None and payload.model != model:
             raise ModelConfigLookupError("LLM proxy returned invalid model configuration")
         return payload
