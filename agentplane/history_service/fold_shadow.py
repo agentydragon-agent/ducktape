@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 # Distinct from the app's, so a reader holding rows of one projection sees a scope reset on the other.
 FOLD_EPOCH = "history-v1"
 LEASE_DURATION = timedelta(seconds=30)
-PAGE_SIZE = 128
 
 
 def history_pages(history: Store) -> PageReader:
@@ -55,11 +54,11 @@ class FoldBacklog:
 
 
 class FoldShadow:
-    def __init__(self, *, engine: AsyncEngine, history: Store, concurrency: int) -> None:
+    def __init__(self, *, engine: AsyncEngine, history: Store, concurrency: int, page_size: int) -> None:
         """`engine` writes the fold tables; `history` reads the raw log, which this never writes."""
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._projector = HistoryProjector(
-            engine, history_pages(history), projection_epoch=FOLD_EPOCH, notify=notify_summaries
+            engine, history_pages(history), projection_epoch=FOLD_EPOCH, page_size=page_size, notify=notify_summaries
         )
         self._slots = asyncio.Semaphore(concurrency)
         self._leases: dict[UUID, ProjectionLease] = {}
