@@ -95,7 +95,7 @@ message Heartbeat {}
   journaled with the same payload returns its existing `CommandAdmitted` entry, which the runner
   already guarantees by deduplicating on `command_id`. The service never infers admission from a
   stream write, a heartbeat or HTTP/2 flow-control progress. Which refusal reasons are terminal for
-  a submission is the [command admission](../sandbox_service/API.md#sessions-and-commands)
+  a submission is the [command admission](../runner_gateway/API.md#sessions-and-commands)
   contract's decision, not the control stream's; today none is, and a refusal leaves it pending.
 - **Status codes.** The service ends a stream with a gRPC status naming the cause:
   `UNAUTHENTICATED`, `PERMISSION_DENIED` (not a Sandbox Pod of this service), `ABORTED` (superseded by a
@@ -261,8 +261,7 @@ endpoints: [{ addresses: [<owning replica's Pod IP>] }]
 ports: [{ name: grpc, port: 8080 }]
 ```
 
-No routing record is kept: every runner dials out, as the operator decided for a clean cutover
-(2026-10-10 PDT), so nothing is routed inbound. Agent-sandbox already names a Service after the
+No routing record is kept: runners dial out, so nothing is routed inbound. Agent-sandbox already names a Service after the
 Sandbox, hence `-control`.
 
 - **Accepting a connection.** After authenticating `Hello`, the replica updates the Lease with the
@@ -280,7 +279,7 @@ Sandbox, hence `-control`.
   ownership.
 - **Costs.** One Lease renewal per connected Sandbox every 15 s and one EndpointSlice write per
   reconnect. The Runner Gateway has RBAC to write Leases, Services and EndpointSlices in the
-  Sandbox namespace. Network policy is unchanged: the endpoints are Runner Gateway Pods.
+  Sandbox namespace.
 
 ## Lifecycle operations
 
