@@ -13,7 +13,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.thread_fold.models import SessionProjectionLease
+from agentplane.history_service.fold.models import SessionProjectionLease
 
 
 @dataclass(frozen=True)
@@ -23,7 +23,7 @@ class ProjectionLease:
 
 
 class ProjectionLeaseLostError(Exception):
-    """The app replica no longer owns authority to commit projections for this Session."""
+    """This replica no longer owns authority to commit projections for this Session."""
 
 
 async def acquire(session: AsyncSession, session_id: UUID, duration: timedelta) -> ProjectionLease | None:

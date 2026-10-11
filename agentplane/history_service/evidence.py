@@ -6,10 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.history_service import protocol_pb2
+from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.thread_reads import ThreadScopeResetError
 from agentplane.sandbox_service.settled_cursors import next_stored, settled_ranges
-from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -92,8 +92,12 @@ class EvidenceReader:
                 )
             )
         response = protocol_pb2.ReadNativeFramesResponse()
+        retained = (await self._history.read_page(session_id, limit=1)).last_cursor
         for sequence in sequences[: request.limit]:
             frame = response.frames.add(source_sequence=sequence)
+            # A link may name a sequence beyond the retained prefix; that frame is unavailable.
+            if sequence > retained:
+                continue
             page = await self._history.read_page(session_id, after_cursor=sequence - 1, limit=1)
             # Settlement may remove a linked delta frame before the fold forgets the link.
             settled = settled_ranges(span for settlement in page.settlements for span in settlement.ranges)

@@ -11,10 +11,8 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.history_service import protocol_pb2 as history_pb2
-from agentplane.proto import event_log_pb2
-from agentplane.sandbox_service.settled_cursors import settled_ranges
-from agentplane.thread_fold import fold
-from agentplane.thread_fold.models import (
+from agentplane.history_service.fold import fold
+from agentplane.history_service.fold.models import (
     ThreadCheckpoint,
     ThreadEntity,
     ThreadEvidence,
@@ -22,25 +20,22 @@ from agentplane.thread_fold.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.thread_fold.payloads import write_payloads
-from agentplane.thread_fold.rows import command_summary, fold_item, ordered_entity_rows, payload_references
-from agentplane.thread_fold.views import (
+from agentplane.history_service.fold.payloads import write_payloads
+from agentplane.history_service.fold.rows import command_summary, fold_item, ordered_entity_rows, payload_references
+from agentplane.history_service.fold.views import (
     EntityKind,
+    PayloadField,
     ThreadCommandEntityView,
     ThreadFeedErrorState,
     ThreadItemEntityView,
     ThreadOperationalState,
     ThreadViewState,
 )
+from agentplane.proto import event_log_pb2
+from agentplane.sandbox_service.settled_cursors import settled_ranges
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
-
-
-# The epoch the app's projection was built in.
-THREAD_FOLD_EPOCH = "v1"
-# Entries the app projector folds per transaction.
-THREAD_FOLD_PAGE_SIZE = 128
 
 
 class EventReplicationError(ValueError):
@@ -330,7 +325,7 @@ async def _extents(
         )
     )
     return {
-        fold.PayloadRef(epoch, owner_cursor, owner_id, fold.PayloadField(field), revision_cursor, generation): count
+        fold.PayloadRef(epoch, owner_cursor, owner_id, PayloadField(field), revision_cursor, generation): count
         for epoch, owner_cursor, owner_id, field, revision_cursor, generation, count in rows
     }
 

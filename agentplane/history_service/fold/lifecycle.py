@@ -6,9 +6,9 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.history_service import protocol_pb2 as history_pb2
+from agentplane.history_service.fold.models import ThreadHistorySummary
+from agentplane.history_service.fold.recording import EventReplicationError, set_operational
 from agentplane.proto import event_log_pb2, runner_pb2
-from agentplane.thread_fold.models import ThreadHistorySummary
-from agentplane.thread_fold.recording import EventReplicationError, set_operational
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -21,16 +21,16 @@ async def project_lifecycle(
     *,
     through_cursor: int,
 ) -> bool:
-    previous = (summary.attached, summary.end, summary.resumed_after_cursor)
+    previous = (summary.attached, summary.end)
     attached = None if summary.attached is None else ParseDict(summary.attached, runner_pb2.Attached())
     end = summary.end
     if page.HasField("feed_state"):
         feed = page.feed_state
         if not feed.HasField("attached") or feed.attached.last_cursor > page.last_cursor:
-            raise EventReplicationError("service lifecycle is outside its committed prefix")
+            raise EventReplicationError("stored feed state is outside the committed prefix")
         cursor = feed.attached.last_cursor
-        # A page may carry the latest service snapshot while the app is still replaying.
-        # Wait until the fold covers it; never leap the UI over unprojected Events.
+        # A page may carry a feed snapshot past the entries folded so far. Wait until the fold
+        # covers it; never leap the view over unfolded Events.
         if cursor <= through_cursor and (attached is None or cursor >= attached.last_cursor):
             same_cursor = attached is not None and cursor == attached.last_cursor
             attached = runner_pb2.Attached()
@@ -46,11 +46,6 @@ async def project_lifecycle(
         project_attached(attached, entry)
         # Any suffix invalidates EOF at the old prefix, including failed setup/restart.
         end = None
-    if summary.resumed_after_cursor is not None:
-        if attached.last_cursor <= summary.resumed_after_cursor:
-            end = None
-        else:
-            summary.resumed_after_cursor = None
     summary.attached = MessageToDict(attached)
     summary.end = end
     operational_changed = await set_operational(
@@ -59,7 +54,7 @@ async def project_lifecycle(
         status="active" if end is None else "failed" if end else "ended",
         error=end.get("message") if end else None,
     )
-    return previous != (summary.attached, summary.end, summary.resumed_after_cursor) or operational_changed
+    return previous != (summary.attached, summary.end) or operational_changed
 
 
 def project_attached(attached: runner_pb2.Attached, entry: event_log_pb2.EventEntry) -> None:
