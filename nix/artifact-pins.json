@@ -45,8 +45,8 @@
       "sha256": "lj1e2F6EjCYEco4L9O1sTUo+AEp/x/uLZ4cCTrEcl3Y="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-e515045cb19f/debundle",
-      "sha256": "5RUEXLGf3BCFO7uCjmRlaKvj5fuQiaZgY8X2ow4HDbY="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-ff59ff79faa8/debundle",
+      "sha256": "/1n/efqo9B0bQQRd3TBoMcHs2OOI9VqYliL/gV5u234="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-dd6165877050/cluster_health.skill",
@@ -217,8 +217,8 @@
       "sha256": "Ykmm7p5+JP8DndK2z6O5AYGTRHBWmjybF5awL9ZqeHc="
     },
     "skill-grafana": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-b873108ded9b/grafana.skill",
-      "sha256": "uHMQje2bD5r+HhVd98IB9Iu7nG5YRzzlT+VjsJQqF6s="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-9d7515a755ba/grafana.skill",
+      "sha256": "nXUVp1W6MFcm2RYnH1dkRsnsY3P1Qo37qXAZrH2ItzU="
     },
     "ducktape-claude-api": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-claude-api-eb20b431a4ea/ducktape_claude_api-0.1.0-py3-none-any.whl",
