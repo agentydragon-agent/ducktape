@@ -444,21 +444,6 @@ hosted builds do not authorize local Bazel in agent containers.
 These candidates need no multiagent or VM decision. Any implementation that turns out to require
 app/Sandbox Service database changes requires its own migration safety review.
 
-### `THREAD_NOTIFICATION_INDICATOR` — pending notice status in the sidebar
-
-**Candidate.** The Notification Service streams each Session's notice state
-(`GET /operator/v1/notices/stream`); proxy it through the app and badge the sidebar, distinguishing
-queued, delivered and acknowledged states. Reconnect against backend state; any countdown is an
-estimate. Independent of compact delivered-message rendering. Never acknowledge from viewing the
-sidebar.
-
-### `THREAD_BROWSE_PAGINATE` — bounded history browsing
-
-**Candidate.** Paginate/search the Thread listing with authorized
-stable cursors, independent of deferred transcript full-text search. Verify ordering, navigation and
-permissions rather than making the frontend load every Thread. The paging cursors come from the History Service's
-list API (`ListSessionSummaries`).
-
 ## 6. Existing access and lifecycle follow-ups
 
 These are bounded existing work, not dependencies on the broader multiagent model. Confirm current

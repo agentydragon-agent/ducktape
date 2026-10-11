@@ -266,8 +266,12 @@ writer implements no `Flush()`.
 
 ## Sidebar inventory updates
 
-The sidebar subscribes to `/live/threads`: whole operational snapshots of all Sandboxes and
-Threads, including archived Threads and threadless Sandboxes. Kubernetes watch invalidations and
+The sidebar subscribes to `/live/threads`: whole operational snapshots of all Sandboxes and a
+window of the Thread list, newest first. The window holds a page of Threads and grows a page at a
+time on request; a search (name, Sandbox, or the start of the ID) and the archived switch narrow it
+on the server, and the Thread a page has open rides along wherever it falls, so every Thread on
+screen stays current without the browser holding the whole list. `GET /threads` pages the same list
+under opaque tokens bound to their filters. Kubernetes watch invalidations and
 the existing PostgreSQL thread notifications both refresh that snapshot. A listener reconnect
 rereads PostgreSQL, including writes whose notifications were missed while disconnected. There
 is no sidebar polling loop or new notification service.
@@ -633,3 +637,10 @@ acknowledgement (provider, cursor, time, and curated lifecycle/event summary), w
 indicator. It never sends that token or raw provider payloads to the browser, and requires a
 browser operator login, not merely a workload bearer admitted elsewhere in the app. No inspection acknowledges an entry or changes a subscription. The drawer refreshes
 only while open and labels an unavailable backend or retained snapshot explicitly.
+
+Each listed thread whose live inboxes hold entries the agent has not acknowledged gets a badge
+counting them, whether they still wait for a notice or a notice delivered them (the tooltip tells
+which, with the debounce's estimated due time). The badge is muted gray, soft red while delivery
+fails; an empty inbox shows none. `/threads/notices/stream` relays the Notification Service's `/operator/v1/notices/stream` for the listed thread IDs under the same
+operator-login and service-token rules; a disconnected stream dims the last badges. Following it
+acknowledges nothing.

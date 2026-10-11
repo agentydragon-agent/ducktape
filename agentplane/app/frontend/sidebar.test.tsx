@@ -6,10 +6,20 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { SandboxView, ThreadView } from "./client";
-import { type ThreadsSnapshot, ThreadsLiveProvider } from "./live";
+import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./live";
 import { Sidebar } from "./sidebar";
 import { scrollCapture } from "./threads/scroll_diagnostics";
 import { DEGRADED_AFTER_MS } from "./stream_status";
+import type { InboxNoticeState } from "./thread_notices";
+
+const NO_NOTICES: Omit<InboxNoticeState, "inbox_id" | "session_id"> = {
+  queued: 0,
+  unacknowledged: 0,
+  notice: null,
+  notice_wait_reason: null,
+  eligible_at: null,
+  error: null,
+};
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();
@@ -80,9 +90,27 @@ function LocationProbe(): JSX.Element {
   return <div data-testid="location">{location.pathname}</div>;
 }
 
-function snapshot(threads: ThreadView[], sandboxes: Record<string, SandboxView>): ThreadsSnapshot {
+/** What the server would push for this listing: the newest `limit` of the threads it matches, then
+ * the open thread if it is not among them. */
+function snapshot(
+  threads: ThreadView[],
+  sandboxes: Record<string, SandboxView>,
+  url = "/live/threads"
+): ThreadsSnapshot {
+  const query = new URL(url, "http://test").searchParams;
+  const search = query.get("search")?.toLowerCase();
+  const limit = Number(query.get("limit") ?? threads.length);
+  const matching = threads.filter(
+    (candidate) =>
+      (query.get("include_archived") === "true" || !candidate.archived) &&
+      (search === undefined || (candidate.name ?? "").toLowerCase().includes(search))
+  );
+  const listed = matching.slice(0, limit);
+  const open = threads.find((candidate) => candidate.id === query.get("open_thread"));
   return {
-    threads,
+    threads: open === undefined || listed.includes(open) ? listed : [...listed, open],
+    more: matching.length > limit,
+    archived_count: threads.filter((candidate) => candidate.archived).length,
     sandboxes: Object.values(sandboxes),
     updates_connected: true,
     watch: { fresh: true, stale_after_seconds: 90, refreshed_seconds_ago: { sandboxes: 0 } },
@@ -96,9 +124,20 @@ async function pushSnapshot(stream: EventTarget, value: ThreadsSnapshot): Promis
 async function render(
   threads: ThreadView[],
   sandboxes: Record<string, SandboxView>,
-  options: { initialPath?: string; settingsOpen?: boolean; open?: boolean } = {}
-): Promise<{ onOpenSettings: ReturnType<typeof vi.fn>; onClose: ReturnType<typeof vi.fn>; stream: EventTarget }> {
+  options: {
+    initialPath?: string;
+    settingsOpen?: boolean;
+    open?: boolean;
+    notices?: Record<string, Partial<InboxNoticeState>>;
+  } = {}
+): Promise<{
+  onOpenSettings: ReturnType<typeof vi.fn>;
+  onClose: ReturnType<typeof vi.fn>;
+  stream: EventTarget;
+  noticeUrls: string[];
+}> {
   const streams: EventTarget[] = [];
+  const noticeUrls: string[] = [];
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
@@ -106,10 +145,29 @@ async function render(
       readyState = 0;
       constructor(url: string) {
         super();
-        expect(url).toBe("/live/threads");
+        const { pathname, searchParams } = new URL(url, "http://test");
+        if (pathname === "/threads/notices/stream") {
+          noticeUrls.push(url);
+          const inboxes = searchParams
+            .getAll("thread_id")
+            .filter((session) => session in (options.notices ?? {}))
+            .map((session) => ({
+              ...NO_NOTICES,
+              inbox_id: session,
+              session_id: session,
+              ...options.notices?.[session],
+            }));
+          queueMicrotask(() =>
+            this.dispatchEvent(
+              new MessageEvent("snapshot", { data: JSON.stringify({ observed_at: "2026-01-01T00:00:00Z", inboxes }) })
+            )
+          );
+          return;
+        }
+        expect(pathname).toBe("/live/threads");
         streams.push(this);
         queueMicrotask(() =>
-          this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot(threads, sandboxes)) }))
+          this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot(threads, sandboxes, url)) }))
         );
       }
       close(): void {}
@@ -133,8 +191,8 @@ async function render(
   await act(async () =>
     root.render(
       <MantineProvider env="test">
-        <ThreadsLiveProvider>
-          <MemoryRouter initialEntries={[options.initialPath ?? "/"]}>
+        <MemoryRouter initialEntries={[options.initialPath ?? "/"]}>
+          <RoutedThreadsLiveProvider>
             <Sidebar
               settingsOpen={options.settingsOpen ?? false}
               onOpenSettings={onOpenSettings}
@@ -144,12 +202,12 @@ async function render(
             <Routes>
               <Route path="*" element={<LocationProbe />} />
             </Routes>
-          </MemoryRouter>
-        </ThreadsLiveProvider>
+          </RoutedThreadsLiveProvider>
+        </MemoryRouter>
       </MantineProvider>
     )
   );
-  return { onOpenSettings, onClose, stream: streams[0] };
+  return { onOpenSettings, onClose, stream: streams[0], noticeUrls };
 }
 
 function rows(): HTMLElement[] {
@@ -434,6 +492,31 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
   expect((archiveCall?.[0] as Request).method).toBe("POST");
 });
 
+it("grows the window a page at a time and narrows it to a search", async () => {
+  const threads = Array.from({ length: 51 }, (_, index) =>
+    thread({ id: `t-${index}`, sandbox: "demo", name: `Listed thread ${index}` })
+  );
+  await render(threads, { demo: sandbox("demo") });
+  expect(container.textContent).not.toContain("Listed thread 50");
+
+  const more = [...container.querySelectorAll("button")].find((button) => button.textContent === "Show more threads");
+  if (!more) throw new Error("missing show-more button");
+  await act(async () => more.click());
+  expect(container.textContent).toContain("Listed thread 50");
+  expect(container.textContent).not.toContain("Show more threads");
+
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const search = container.querySelector('input[aria-label="Search threads"]');
+  if (!(search instanceof HTMLInputElement)) throw new Error("missing search box");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, "thread 50");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => vi.runAllTimers());
+  expect(container.textContent).toContain("Listed thread 50");
+  expect(container.textContent).not.toContain("Listed thread 49");
+});
+
 it("keeps the open Thread in the list while it is archived and the archived switch is off", async () => {
   await render(
     [
@@ -661,4 +744,44 @@ it("keeps the scroll recorder in the lower-left sidebar across a threadless rout
   );
   await clickMenu("Stop and download recording");
   expect(stopRecording).toHaveBeenCalledOnce();
+});
+
+it("counts each listed thread's unprocessed notifications and flags failed delivery without acknowledging any", async () => {
+  const sandboxes = { box: sandbox("box") };
+  const threads = [
+    thread({ id: "00000000-0000-4000-8000-000000000001", sandbox: "box", name: "Three unprocessed thread" }),
+    thread({ id: "00000000-0000-4000-8000-000000000002", sandbox: "box", name: "One unprocessed thread" }),
+    thread({ id: "00000000-0000-4000-8000-000000000003", sandbox: "box", name: "Delivery-failed thread" }),
+    thread({
+      id: "00000000-0000-4000-8000-000000000004",
+      sandbox: "box",
+      name: "Empty-inbox thread",
+    }),
+  ];
+  const { noticeUrls } = await render(threads, sandboxes, {
+    notices: {
+      "00000000-0000-4000-8000-000000000001": {
+        queued: 2,
+        unacknowledged: 1,
+        notice_wait_reason: "debouncing",
+        eligible_at: "2026-01-01T00:05:00Z",
+      },
+      "00000000-0000-4000-8000-000000000002": { unacknowledged: 1, notice: "confirmed" },
+      "00000000-0000-4000-8000-000000000003": { queued: 1, notice: "attempted", error: "runner unreachable" },
+      "00000000-0000-4000-8000-000000000004": { notice: "confirmed" },
+    },
+  });
+  await act(async () => {});
+  expect(new URL(noticeUrls[0], "http://test").searchParams.getAll("thread_id")).toEqual(threads.map(({ id }) => id));
+  const badge = (name: string): [string | null, string | null] | undefined => {
+    const element = row(name).querySelector(".agentplane-sidebar-row-notices");
+    return element === null ? undefined : [element.getAttribute("data-state"), element.textContent];
+  };
+  // Queued and delivered-but-unacknowledged entries count alike: both still wait on the agent.
+  expect(badge("Three unprocessed thread")).toEqual(["pending", "3"]);
+  expect(badge("One unprocessed thread")).toEqual(["pending", "1"]);
+  expect(badge("Delivery-failed thread")).toEqual(["error", "1"]);
+  expect(badge("Empty-inbox thread")).toBeUndefined();
+  // Viewing the list sends nothing back: only the agent acknowledges its inbox.
+  expect(fetchMock.mock.calls.map(([request]) => request.method)).not.toContain("POST");
 });

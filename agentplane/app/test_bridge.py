@@ -352,7 +352,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
 
         # The store kept the whole thread, readable without the runner: both turns, the raw
         # frames, and the exit the shutdown caused.
-        (thread,) = (await http.get("/threads")).json()
+        (thread,) = (await http.get("/threads")).json()["threads"]
         assert thread["id"] == thread_id
         assert (thread["sandbox"], thread["model"]) == (SANDBOX, spec.model)
         stored = await _stored_events(http, thread["id"], until="harnessExited")
@@ -375,7 +375,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         assert resumed.json()["sessionId"] == thread_id
         assert resumed.json()["spec"]["harness"] == runner_pb2.Harness.Name(spec.harness)
         assert resumed.json()["harnessState"] == "HARNESS_STATE_RUNNING"
-        assert (await http.get("/threads")).json()[0]["id"] == thread_id
+        assert (await http.get("/threads")).json()["threads"][0]["id"] == thread_id
 
         # The Thread route resumes the session from the runner-owned stored spec. The event stream
         # continues after the previous shutdown and the native request still has both completed
@@ -925,7 +925,7 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
         request = await model.request()
         assert request.user_texts[-1] == "Reply with exactly: UNWATCHED_OK"
         await model.reply(request, Text("UNWATCHED_OK"))
-        (thread,) = (await http.get("/threads")).json()
+        (thread,) = (await http.get("/threads")).json()["threads"]
         stored = await _stored_events(http, thread["id"], until="turnCompleted")
         assert [entry["event"]["itemCompleted"]["text"] for entry in stored if "itemCompleted" in entry["event"]] == [
             "UNWATCHED_OK"
