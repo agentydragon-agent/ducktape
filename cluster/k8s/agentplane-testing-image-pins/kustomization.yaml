@@ -37,6 +37,6 @@ images:
     newTag: devel-20261010184911-c87ad85 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261011051935-912b988 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+    newTag: devel-20261011053207-c9742ed # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-ingress
     newTag: devel-20261011051937-912b988 # {"$imagepolicy": "flux-system:agentplane-history-ingress:tag"}
