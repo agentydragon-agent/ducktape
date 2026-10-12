@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, field_serializer, model_validator
 
-from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import PodExecutorBinding
 
 _KEY = r"^[a-z][a-z0-9_-]*$"
 Key = Annotated[str, StringConstraints(pattern=_KEY, min_length=1, max_length=200)]
@@ -99,8 +99,8 @@ class McpHealth(BaseModel):
     failures: int = 0
 
 
-type ExecutorBinding = Annotated[McpExecutorBinding | SandboxExecutorBinding, Field(discriminator="kind")]
-"""Where a group's Actions run. `mcp` reaches a reviewed upstream server; `sandbox` runs in this
+type ExecutorBinding = Annotated[McpExecutorBinding | PodExecutorBinding, Field(discriminator="kind")]
+"""Where a group's Actions run. `mcp` reaches a reviewed upstream server; `pod` runs in this
 service, because the caller's own identity is what it acts as and an MCP hop would have to carry
 that assertion over the wire.
 

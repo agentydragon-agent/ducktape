@@ -5,8 +5,7 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 py_library(
     name = "binding",
     srcs = ["binding.py"],
-    # The generator writes the annotation each offered template describes itself in, and its test
-    # reads the offered templates through the binding to check every one carries it.
+    # The generator writes the binding staging offers.
     visibility = [
         "//agentplane:__subpackages__",
         "//cluster/cdk8s/agentplane:__pkg__",
@@ -24,9 +23,8 @@ py_library(
         ":binding",
         ":models",
         "//agentplane:subjects",
+        "//agentplane/egress:sidecar",
         "//mcp_infra/exec:kubernetes",
-        "//util:agent_sandbox",
-        "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
     ],
 )
@@ -51,7 +49,6 @@ py_test(
         "//agentplane:subjects",
         "//agentplane/action_service:conftest",
         "//mcp_infra/exec:kubernetes",
-        "//util:agent_sandbox",
         "//util/exec:models",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",

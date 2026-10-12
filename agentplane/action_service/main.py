@@ -99,11 +99,7 @@ async def async_main(settings: Settings) -> None:
         )
         # Built unconditionally: a configured sandbox group must fail at startup rather than at the
         # first dispatch, and an API client this process already holds costs nothing when unused.
-        sandboxes = SandboxClients(
-            custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
-            core_v1=CoreV1Api(api),
-            exec_runner=KubernetesWebSocketExecRunner(configuration),
-        )
+        sandboxes = SandboxClients(api=api, exec_runner=KubernetesWebSocketExecRunner(configuration))
         updates = ActionUpdateBroker(settings.database_url)
         executors = await stack.enter_async_context(
             running_executor(catalog, mcp_linkage, sandboxes, on_health_change=updates.wake_mcp_health)

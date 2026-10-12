@@ -167,25 +167,20 @@ class Actions(Construct):
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"])
             )
 
-        # The sandbox ActionGroup stamps Sandboxes and runs commands in their Pods. This is
-        # namespace-wide and cannot say "only the boxes this Action made": that boundary is
-        # the executor's own label check (agentplane/action_service/sandbox/inventory.py), which
-        # is why it is an application rule tested as one rather than something RBAC states.
+        # The sandbox ActionGroup creates its boxes as plain Pods from its PodTemplates, running as
+        # their callers and owned by the caller's ServiceAccount, and runs commands in them. This is namespace-wide and cannot
+        # say "only the boxes this Action made": that boundary is the executor's own label check
+        # (agentplane/action_service/sandbox/inventory.py), which is why it is an application rule
+        # tested as one rather than something RBAC states.
         rules_by_namespace.setdefault(namespace, []).extend(
             [
-                RolePolicyRule(
-                    resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]
-                ),
-                RolePolicyRule(
-                    resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
-                    verbs=["create", "get", "list", "watch", "delete"],
-                ),
-                # `get` alone: the Pod backing a Sandbox is named by the controller's
-                # `agents.x-k8s.io/pod-name` annotation and read by name, never searched for.
-                RolePolicyRule(resources=[custom_resource("", "pods")], verbs=["get"]),
+                RolePolicyRule(resources=[custom_resource("", "podtemplates")], verbs=["get"]),
+                RolePolicyRule(resources=[custom_resource("", "pods")], verbs=["create", "get", "list", "delete"]),
                 # `get` and not `create`: kubernetes_asyncio opens exec as an HTTP GET upgrade,
                 # where kubectl POSTs.
                 RolePolicyRule(resources=[custom_resource("", "pods/exec")], verbs=["get", "create"]),
+                # The caller's account, for the owner reference that collects its boxes with it.
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
             ]
         )
         for target_namespace, rules in sorted(rules_by_namespace.items()):
