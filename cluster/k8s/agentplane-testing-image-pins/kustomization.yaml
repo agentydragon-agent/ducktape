@@ -11,7 +11,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-migrate
     newTag: devel-20261012015546-95a333c # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261012045851-dc2dda3 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20261012053117-3f201f7 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20261012045858-dc2dda3 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   # Initial publication on devel supplies the tag through Flux image automation.
