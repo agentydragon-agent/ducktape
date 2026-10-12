@@ -485,7 +485,6 @@ flowchart LR
     POLICY_SANDBOX_CUTOVER --> SANDBOX_RBAC
     POLICY_SANDBOX_CUTOVER --> OLD_POLICY_KINDS_DROP
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
-    SANDBOX_IDLE_EXPIRY[Candidate: delete idle Sandboxes]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
 ```
@@ -541,10 +540,15 @@ deletes expired bindings. cdk8s regenerates
 the static `ActionPolicySet`/`ActionPolicyBinding` objects as the generic kinds, and Sandbox Service
 writes action rules into the Sandbox's one `PolicyBinding`.
 
+The Action Service and egress proxy resolve subject, bindings, sets and rules of one type through
+one shared Python module, which the first of the two migrations to land adds; as in the Policy
+Controller, a missing set does not stop the binding's other sets from granting (operator,
+2026-10-11 PDT).
+
 ### `EGRESS_POLICY_MIGRATE` — egress policies move to PolicySet
 
 **Candidate.** The same move for egress rules: the proxy informer reads the generic
-kinds and writes `EgressReady`; cdk8s and Sandbox Service follow as
+kinds and writes `EgressReady` through the shared resolver; cdk8s and Sandbox Service follow as
 for Actions. An `EgressBinding` with several `subjects` becomes one `PolicyBinding` per subject,
 which replaces the closed singular-subject change (#9843).
 
@@ -587,13 +591,6 @@ Runner Gateway's `open_session` (`runner_gateway/session_lifecycle.py`) sends `I
 the first Open until the script exits, and nothing shows its output or progress. Start it when the
 Sandbox comes up and expose its progress and result, keeping successful bootstrap as the Open
 precondition unless the operator reviews a change.
-
-### `SANDBOX_IDLE_EXPIRY` — delete Sandboxes nobody uses
-
-**Candidate.** Draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
-expires idle Sandboxes (`TODO(sandbox-lifetime)` in `action_service/sandbox/inventory.py`). Deleting
-one goes through [teardown](../sandbox_service/API.md#teardown), which waits until history is
-archived through the seal (the ingress acknowledgement).
 
 ## 7. History Service ownership
 
@@ -651,6 +648,8 @@ flowchart TD
     POLICY_SANDBOX_CUTOVER[Sandboxes take policy sets, section 6] -. binding owner moves .-> AGENT_SANDBOX_RETIRE
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
+    SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes stop]
+    SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
     CLAUDE_PORTABLE_STATE -. per harness .-> SESSION_REVIVE
     CODEX_PORTABLE_STATE -. per harness .-> SESSION_REVIVE
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
@@ -665,7 +664,9 @@ back (native harness state only, or also its workspace files); which launch conf
 incarnation uses (the Sandbox's recorded one, or a current template, which also decides whether an
 image upgrade happens on revival); who may revive and how (an explicit API call, never implicitly
 on a read or a notification). Sessions that share a Sandbox revive together, since they share its
-state PVC.
+state PVC. Open since the operator asked for idle expiry (2026-10-11 PDT): whether a command
+arriving at the Runner Gateway for a stopped Sandbox starts it automatically, against the
+explicit-call lean above, and what the user sees while it starts.
 
 ### `SESSION_STATE_VOLUME_DESIGN` — what the state PVC holds
 
@@ -727,6 +728,17 @@ on a kept state PVC and resume, checking continuation and prompt-cache cost. The
 
 **Candidate after the volume design.** The same for Codex; neither harness waits for the other.
 
+### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes stop
+
+**Unscheduled; needs design; operator, 2026-10-11 PDT.** An idle runner Sandbox stops its
+current incarnation: the Pod or VM goes, and the Sandbox, its ServiceAccount, bindings and state
+PVC stay, so nothing is sealed or lost and `SESSION_REVIVE` resumes it on the same PVC. Decide what
+counts as idle (no turns or commands for a configured time, and nothing attached), and whether a
+stopped Sandbox is ever deleted outright, and when; deleting goes through
+[teardown](../sandbox_service/API.md#teardown) and the seal. Before our resource exists, a pod-only
+version could use agent-sandbox's `operatingMode`. Action Service boxes are
+`ACTION_BOX_IDLE_REAPER`'s, which only ever deletes.
+
 ### `SESSION_INCARNATIONS` — a Session records its incarnations
 
 **Blocked on the lifecycle decision and the resource.** The Sandbox resource's status lists its
@@ -766,6 +778,7 @@ flowchart TD
     SANDBOX_DATABASE_RENAME[Unscheduled: name the sandbox_commands database for the Runner Gateway]
     ACTION_SANDBOX_PODS[Candidate: Action Service boxes as plain Pods]
     ACTION_SANDBOX_PODS --> ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
+    ACTION_SANDBOX_PODS --> ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
 ```
 
@@ -803,6 +816,14 @@ Action Service keeps `pods/exec` there. Each box is owner-referenced to its call
 ServiceAccount, so deleting a runner Sandbox deletes the boxes its agent started (operator,
 2026-10-12 PDT). Independent of the policy migrations: a box creates no
 bindings and runs under the caller's standing ones, whatever their kind.
+
+### `ACTION_BOX_IDLE_REAPER` — delete Action boxes nobody uses
+
+**Unscheduled; operator, 2026-10-11 PDT.** A small controller deletes Action box Pods with no
+`exec` for a configured time. The Action Service stamps a last-exec time on the box at each `exec`;
+a plain Pod delete is enough, since boxes have no seal. It takes over `TODO(sandbox-lifetime)` in
+`action_service/sandbox/inventory.py`; draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
+expired agent-sandbox boxes the same way.
 
 ### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
