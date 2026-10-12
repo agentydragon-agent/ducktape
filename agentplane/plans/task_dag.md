@@ -933,7 +933,6 @@ flowchart TD
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         SERVICE_SETTING_NAMES[Candidate: settings name the service they configure]
         NOTIFICATION_WRITE_ONLY_COLUMNS[Decision: audit columns nothing reads]
-        EVENT_DRIVEN_WAKEUPS[Decision: which timed polls become event-driven]
     end
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
 ```
@@ -979,14 +978,6 @@ and render it, then drop the old one.
 `GitHubDelivery.received_at` (notifications) and the Action Service's
 `external_connection_binding_change` table are written and never read in production. Keep them as an
 audit trail, or drop them with a migration.
-
-### `EVENT_DRIVEN_WAKEUPS` — wake on events, not timers
-
-**Decision; operator, 2026-10-12 PDT: pull or push on events rather than polls.** Loops that still
-wake on a timer: the Action Service's pending-dispatch reconcile (`action_service/service.py`, every
-second), the indexer's source sync and idle embedding retry (`indexing/maintenance.py`), and the
-Notification Service's storage-error retry. Decide which wait on a `NOTIFY` or a stream instead,
-and which stay as retry backoff after an error, which is not a poll.
 
 ## Scope and retirement of stale gates
 

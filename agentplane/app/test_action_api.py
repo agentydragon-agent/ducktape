@@ -40,6 +40,7 @@ from agentplane.action_service.policies.resources import parse_binding, parse_po
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import PERSONAL, admitted_callers
+from agentplane.action_service.testing.lifecycle import wait_available
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_federation_settings import DirectFederationSettings, ExchangeFederationSettings
@@ -67,6 +68,7 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.changes import ChangeSignal
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
@@ -186,6 +188,7 @@ async def review(
         engine = make_engine(db_url)
         stack.push_async_callback(engine.dispose)
         executor = await stack.enter_async_context(McpActionGroupExecutor("test_review", group, server))
+        await wait_available(group)
         private_key, public_key = generate_rsa_keypair()
         idp_sock = bind_free_port()
         idp_origin, app_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}", "http://test-app.invalid"
@@ -198,7 +201,13 @@ async def review(
         )
         policies = admitted_callers(PERSONAL)
         service = await stack.enter_async_context(
-            ActionService(ActionStore(make_sessionmaker(engine)), catalog, {"test_review": executor}, policies=policies)
+            ActionService(
+                ActionStore(make_sessionmaker(engine)),
+                catalog,
+                {"test_review": executor},
+                policies=policies,
+                dispatches=ChangeSignal(),
+            )
         )
         connections = ConnectionAuthority(make_sessionmaker(engine), policies)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
