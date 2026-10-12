@@ -1,19 +1,21 @@
 import { Alert, Button, Group, Select, Stack, Table, Text } from "@mantine/core";
 import "./connections.css";
-import { followStream, type StreamConnection } from "../live_stream";
+import { useSnapshotStream } from "../live_stream";
 import { Fragment, type JSX, useCallback, useEffect, useState } from "react";
 
 import {
-  ConnectionRequestError,
-  connectionService,
+  connectionServiceAccounts,
   displayableError,
+  HttpError,
   isEligibleCaller,
+  listConnections,
+  rebindConnection,
   serviceAccountKey,
   type CallerServiceAccount,
   type CallerGrantReader,
   readCallerGrants,
   type Connection,
-  type ConnectionService,
+  unbindConnection,
 } from "../client";
 
 import { CallerGrants } from "../caller_grants";
@@ -28,29 +30,22 @@ function currentGrant(connection: Connection): Grant | undefined {
   );
 }
 
-export function Connections({
-  service = connectionService,
-  readGrants = readCallerGrants,
-}: {
-  service?: ConnectionService;
-  readGrants?: CallerGrantReader;
-}): JSX.Element {
+export function Connections({ readGrants = readCallerGrants }: { readGrants?: CallerGrantReader }): JSX.Element {
   const [expandedGrants, setExpandedGrants] = useState<string | null>(null);
-  const [rows, setRows] = useState<Connection[]>([]);
+  const { snapshot, setSnapshot: setRows, connection } = useSnapshotStream<Connection[]>("/connections/stream");
+  const rows = snapshot ?? [];
+  const loaded = snapshot !== null;
   const [accounts, setAccounts] = useState<CallerServiceAccount[]>([]);
-  const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unlinking, setUnlinking] = useState<Connection | null>(null);
   const [rebinding, setRebinding] = useState<{ row: Connection; target: string; confirm: boolean } | null>(null);
-  const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
 
   const load = useCallback(async (): Promise<void> => {
-    const [connections, callers] = await Promise.all([service.list(), service.callerServiceAccounts()]);
+    const [connections, callers] = await Promise.all([listConnections(), connectionServiceAccounts()]);
     setRows(connections);
     setAccounts(callers);
-    setLoaded(true);
-  }, [service]);
+  }, [setRows]);
 
   const refresh = useCallback(async (): Promise<void> => {
     setBusy(true);
@@ -69,18 +64,6 @@ export function Connections({
   useEffect(() => {
     void refresh();
   }, [refresh]);
-  useEffect(() => {
-    if (typeof EventSource === "undefined") return; // Non-browser unit test environment.
-    return followStream("/connections/stream", {
-      events: {
-        snapshot: (message) => {
-          setRows(JSON.parse(message.data) as Connection[]);
-          setLoaded(true);
-        },
-      },
-      onConnection: setConnection,
-    });
-  }, []);
 
   async function confirmRebind(): Promise<void> {
     if (rebinding === null) return;
@@ -91,12 +74,12 @@ export function Connections({
     }
     setBusy(true);
     try {
-      const updated = await service.rebind(rebinding.row, target);
-      setRows((current) => current.map((row) => (row.id === updated.id ? updated : row)));
+      const updated = await rebindConnection(rebinding.row, target);
+      setRows((current) => current?.map((row) => (row.id === updated.id ? updated : row)) ?? null);
       setRebinding(null);
       setError(null);
     } catch (failure) {
-      if (failure instanceof ConnectionRequestError && failure.status === 409) {
+      if (failure instanceof HttpError && failure.status === 409) {
         setRebinding(null);
         try {
           await load();
@@ -118,12 +101,12 @@ export function Connections({
     if (unlinking === null) return;
     setBusy(true);
     try {
-      const updated = await service.unbind(unlinking);
-      setRows((current) => current.map((row) => (row.id === updated.id ? updated : row)));
+      const updated = await unbindConnection(unlinking);
+      setRows((current) => current?.map((row) => (row.id === updated.id ? updated : row)) ?? null);
       setUnlinking(null);
       setError(null);
     } catch (failure) {
-      if (failure instanceof ConnectionRequestError && failure.status === 409) {
+      if (failure instanceof HttpError && failure.status === 409) {
         setUnlinking(null);
         try {
           await load();

@@ -1,6 +1,7 @@
 import { Button, Code, Group, Paper, Stack, Text } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState } from "react";
-import { followStream, type StreamConnection } from "../live_stream";
+import { displayableError } from "../client";
+import { useSnapshotStream } from "../live_stream";
 
 type Device = { endpoint: string; user_agent: string | null; created_at: string };
 
@@ -20,13 +21,16 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export function PushSettings(): JSX.Element {
-  const [devices, setDevices] = useState<Device[]>([]);
+  const {
+    snapshot: devices,
+    setSnapshot: setDevices,
+    connection,
+  } = useSnapshotStream<Device[]>("/push/subscriptions/stream");
   const [key, setKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [current, setCurrent] = useState<string | null>(null);
-  const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -43,19 +47,12 @@ export function PushSettings(): JSX.Element {
       }
       setError(null);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(displayableError(failure));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setDevices]);
   useEffect(() => void refresh(), [refresh]);
-  useEffect(() => {
-    if (typeof EventSource === "undefined") return; // Non-browser unit test environment.
-    return followStream("/push/subscriptions/stream", {
-      events: { snapshot: (message) => setDevices(JSON.parse(message.data) as Device[]) },
-      onConnection: setConnection,
-    });
-  }, []);
 
   async function enable(): Promise<void> {
     setBusy(true);
@@ -90,7 +87,7 @@ export function PushSettings(): JSX.Element {
       });
       await refresh();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(displayableError(failure));
     } finally {
       setBusy(false);
     }
@@ -107,7 +104,7 @@ export function PushSettings(): JSX.Element {
       }
       await refresh();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(displayableError(failure));
     } finally {
       setBusy(false);
     }
@@ -151,7 +148,7 @@ export function PushSettings(): JSX.Element {
           Connection lost; showing last registered browsers. Reconnecting…
         </Text>
       )}
-      {devices.map((device) => (
+      {devices?.map((device) => (
         <Paper withBorder p="sm" key={device.endpoint}>
           <Group justify="space-between">
             <Stack gap={2}>
