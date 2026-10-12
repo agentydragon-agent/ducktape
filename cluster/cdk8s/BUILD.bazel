@@ -54,6 +54,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":cnpg",
+        ":cnpg_backup",
         ":flux",
         ":generation",
         ":manifest_roots",
@@ -316,6 +317,20 @@ py_library(
         ":service_ref",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/cnpg:cnpg_cluster",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "cnpg_backup",
+    srcs = ["cnpg_backup.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":cnpg",
+        "//cluster/cdk8s/providers/cnpg:objectstore",
+        "//cluster/cdk8s/providers/cnpg:scheduledbackup",
+        "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],
@@ -1091,6 +1106,7 @@ py_library(
     deps = [
         ":artifact_generators",
         ":cnpg",
+        ":cnpg_backup",
         ":flux",
         ":gateway",
         ":manifest_roots",
