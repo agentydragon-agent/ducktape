@@ -75,7 +75,7 @@ flowchart TB
     electric -->|logical replication| hist_db
     hist_db -.->|staging: WAL archive, on-demand base backups| outside
 
-    ss -->|Sandbox CRs, grants| k8s
+    ss -->|Sandbox CRs, grants; testing creates ours| k8s
     ss -->|SealSandbox| gw
     k8s -->|creates| sandbox
     gw -->|control Services, Leases; SessionsSealed on our deleting Sandboxes| k8s
@@ -94,6 +94,8 @@ flowchart TB
     actions -->|MCP servers, GitHub, web push| outside
 
     runner --> sidecar -->|all outbound traffic| proxy
+    sidecar -.->|testing, our Sandboxes: platform routes, RunnerControl Connect| gw
+    sidecar -.->|testing, our Sandboxes: platform routes, RunnerIngress Push| hs
     proxy -->|policy watches, EgressReady| k8s
     proxy -->|RunnerControl Connect: commands, lifecycle| gw
     proxy -->|RunnerIngress Push: Events| hs
