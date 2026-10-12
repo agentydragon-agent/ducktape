@@ -3,11 +3,8 @@ syntax = "proto3";
 
 package agentplane.proto.sandbox_service;
 
-import "agentplane/proto/command.proto";
-import "agentplane/proto/event_log.proto";
 import "agentplane/proto/runner.proto";
 import "google/protobuf/empty.proto";
-import "google/protobuf/field_mask.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -49,40 +46,7 @@ message SessionDestination {
 }
 
 message SandboxRequest { SandboxDestination destination = 1; }
-message SessionRequest { SessionDestination destination = 1; }
 message GetSandboxRequest { string name = 1; }
-
-message CreateSessionRequest {
-  SandboxDestination sandbox = 1;
-  reserved 2;
-  reserved "idempotency_key";
-  agentplane.proto.runner.SessionSpec spec = 3;
-  // Which spec fields replace the Sandbox defaults (proto field names). Proto3 scalar
-  // fields cannot distinguish absent from explicitly empty; e.g. instructions=""
-  // with "instructions" in this mask clears inherited instructions. An empty mask
-  // inherits all defaults, regardless of spec's scalar default values.
-  google.protobuf.FieldMask override_mask = 4;
-  optional string setup_script = 5;
-  // Required: a fresh UUID the client minted, the public Session ID and the runner's Session ID.
-  // A retry with the same inputs returns the Session again; the runner refuses other inputs, and
-  // the Runner Gateway refuses another Sandbox.
-  string session_id = 6;
-}
-
-message CreateSessionResponse {
-  // Public Session ID (UUID): the request's session_id. Not the harness session ID.
-  string session_id = 1;
-  agentplane.proto.runner.Attached attached = 2;
-}
-
-// Commands name the public Session; the Runner Gateway checks that it runs in the Sandbox whose
-// control Service the call reached.
-message SubmitCommandRequest {
-  SessionDestination destination = 5;
-  agentplane.proto.command.Command command = 2;
-  reserved 1, 3, 4;
-  reserved "follow", "session_id";
-}
 
 message SessionDefaults {
   optional agentplane.proto.runner.Harness harness = 1;

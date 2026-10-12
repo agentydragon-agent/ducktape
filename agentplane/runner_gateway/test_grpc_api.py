@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.grpc_calls import ServiceError, dial
 from agentplane.proto import command_pb2, runner_control_pb2, runner_gateway_pb2, runner_pb2, sandbox_service_pb2
 from agentplane.proto.sandbox_service_pb2 import ResolvedGrant, SandboxDestination
+from agentplane.runner_gateway import wire
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.destinations import DestinationResolver
@@ -33,7 +34,6 @@ from agentplane.runner_gateway.testing.journal import admission
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.runner_gateway.testing.runner_control import REPLICA, RUNNER_TOKEN, serve_replica_control
 from agentplane.runner_gateway.testing.sessions import register_session
-from agentplane.sandbox_service import wire
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.kubernetes_views import (
     KUBERNETES_GRANTS_ANNOTATION,
@@ -298,7 +298,9 @@ async def test_missing_invalid_or_duplicate_bearer_is_rejected(
     remote: RunnerGatewayClient, metadata: tuple[tuple[str, str], ...]
 ) -> None:
     with pytest.raises(grpc.aio.AioRpcError) as rejected:
-        await remote.stub.ListSessions(sandbox_service_pb2.SandboxRequest(destination=DESTINATION), metadata=metadata)
+        await remote.stub.ListSessions(
+            runner_gateway_pb2.ListSessionsRequest(destination=DESTINATION), metadata=metadata
+        )
     assert rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
 
 
@@ -367,9 +369,9 @@ async def test_unlisted_callers_rejected_before_lookup(
                 await sandboxes.unary(call, request)
             assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
         for gateway_call, gateway_request in (
-            (remote.stub.ListSessions, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
-            (remote.stub.ResumeSession, sandbox_service_pb2.SessionRequest(destination=destination)),
-            (remote.stub.SubmitCommand, sandbox_service_pb2.SubmitCommandRequest(destination=destination)),
+            (remote.stub.ListSessions, runner_gateway_pb2.ListSessionsRequest(destination=DESTINATION)),
+            (remote.stub.ResumeSession, runner_gateway_pb2.ResumeSessionRequest(destination=destination)),
+            (remote.stub.SubmitCommand, runner_gateway_pb2.SubmitCommandRequest(destination=destination)),
         ):
             with pytest.raises(ServiceError) as rejected:
                 await remote.unary(gateway_call, gateway_request)

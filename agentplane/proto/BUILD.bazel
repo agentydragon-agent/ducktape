@@ -137,9 +137,11 @@ proto_library(
     name = "runner_gateway_proto",
     srcs = ["runner_gateway.proto"],
     deps = [
+        ":command_proto",
         ":event_log_proto",
         ":runner_proto",
         ":sandbox_service_proto",
+        "@protobuf//:field_mask_proto",
     ],
 )
 
@@ -158,11 +160,8 @@ proto_library(
     name = "sandbox_service_proto",
     srcs = ["sandbox_service.proto"],
     deps = [
-        ":command_proto",
-        ":event_log_proto",
         ":runner_proto",
         "@protobuf//:empty_proto",
-        "@protobuf//:field_mask_proto",
         "@protobuf//:struct_proto",
         "@protobuf//:timestamp_proto",
     ],
