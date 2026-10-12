@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from pydantic import AnyHttpUrl, SecretStr
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.app.action_federation import FederatedOperatorActions
@@ -35,10 +35,12 @@ from agentplane.app.live import (
     LiveIndex,
     SandboxesSnapshot,
     ThreadsSnapshot,
+    ThreadsUnavailable,
     WatchHealth,
     action_policy_frame,
     frames,
     live_threads,
+    threads_frame,
 )
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import OIDCSettings
@@ -61,10 +63,11 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
+from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner.harness import Harness
-from agentplane.runner_gateway.client import RunnerGatewayClient
+from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
@@ -261,6 +264,29 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
     )
 
     assert frame == ActionPolicyUnavailable(code=code)
+
+
+async def test_threads_the_gateway_cannot_list_are_said_so_in_the_frame(
+    engine: AsyncEngine, summaries: Summaries, tmp_path: Path
+) -> None:
+    """The sandbox stream still carries the sandbox, and so its lifecycle controls, when the Runner
+    Gateway cannot say which Sessions run in it."""
+    (token := tmp_path / "token").write_text("test-token")
+    port = pick_free_port()
+    async with dial(f"127.0.0.1:{port}") as channel:
+        unreachable = RunnerGatewayClient(
+            channel,
+            token_file=token,
+            command_admission_timeout_s=None,
+            request_timeout_s=5,
+            control=SandboxControlClient(
+                control_target=f"127.0.0.1:{port}", token_file=token, request_timeout_s=5, lifecycle_timeout_s=5
+            ),
+        )
+        frame = await threads_frame(
+            ThreadStore(engine, summaries, gateway=unreachable), "runner-1", include_archived=False
+        )
+    assert frame == ThreadsUnavailable(code="UNAVAILABLE")
 
 
 def test_a_sandbox_the_watch_has_dropped_is_gone_rather_than_missing(seeded: LiveIndex) -> None:
