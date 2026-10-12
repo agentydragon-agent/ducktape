@@ -21,14 +21,20 @@ they have one owner; never grant access just because an ExternalSecret requests 
 Done: synthetic cases catch denied namespaces and absent referent identities, while
 valid generated and hand-written consumers pass. No duplicate consumer/provider roster.
 
-## Fleet validation coverage and references
+## Fleet rule waivers
 
-`fleet_rules.py` is attached explicitly by selected charts. Establish which workload
-charts it covers, which checks apply to the rest, and which exceptions reflect real
-policy. Expanding hardening coverage can change workload behavior and belongs in its
-own reviewed change.
+Workloads and proxy policies that already broke a rule when the rules started covering every
+App carry `unhardened_pods` / `unpinned_https_egress` waivers at their write call, each under a
+`CLEANUP(added 2026-10-12)` comment. Fix them in small PRs: RuntimeDefault seccomp first, then
+resources sized from VPA recommendations. For each unpinned proxy, either pin `serverNames` or
+keep the waiver with a comment saying why it is exempt by design, as Agentplane's egress proxy does.
+Synth fails on a waiver whose object passes, so a fix includes deleting it.
 
-`resolved_references` is a same-chart kind-mismatch check, not missing-reference
+Done: no `CLEANUP(added 2026-10-12)` waiver remains except the documented by-design exemptions.
+
+## Fleet rule references
+
+`resolved_references` is a same-App kind-mismatch check, not missing-reference
 validation; it currently ignores namespace. Narrow its name/claims or strengthen its
 implementation. Whole-tree resolution must distinguish:
 

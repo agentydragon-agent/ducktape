@@ -1,18 +1,19 @@
-"""Rules every object this repo generates must hold, checked over a chart's rendered
-objects when it synthesizes (`App.synth`, `Chart.to_json`, `cdk8s.Testing.synth` all
-validate the construct tree first). A violation fails synth with the object named,
-instead of an admission denial or a CreateContainerConfigError on the cluster.
+"""Rules every object this repo generates must hold, checked over an App's rendered
+objects when it synthesizes (`App.synth`, `App.synth_yaml`, `Chart.to_json`,
+`cdk8s.Testing.synth` all validate the construct tree first). `generation.write_app` attaches
+them to every App it writes. A violation fails synth with the object named, instead of an
+admission denial or a CreateContainerConfigError on the cluster.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from itertools import combinations
 from typing import Any, cast
 
 import jsii
-from cdk8s import ApiObject, Chart
-from constructs import IValidation
+from cdk8s import ApiObject
+from constructs import Construct, IValidation
 
 from cluster.cdk8s.pod_policy import POD_SPEC_PATHS, pod_spec
 
@@ -32,12 +33,15 @@ def _pod_specs(objects: list[dict[str, Any]]) -> Iterator[tuple[str, dict[str, A
             yield f"{obj['kind']}/{obj['metadata']['name']}", pod_spec(obj)
 
 
-def pod_hardening(objects: list[dict[str, Any]]) -> list[str]:
+def pod_hardening(objects: list[dict[str, Any]], *, unhardened: frozenset[str]) -> list[str]:
     """Every container runs under the RuntimeDefault seccomp profile (its own or the
     Pod's) and declares cpu/memory requests and a memory limit. CPU limits are left to
-    the namespace LimitRange's default on purpose."""
+    the namespace LimitRange's default on purpose. `unhardened` names the workloads
+    (`Kind/name`) waived until they are fixed."""
     errors: list[str] = []
     for name, pod in _pod_specs(objects):
+        if name in unhardened:
+            continue
         pod_seccomp = pod.get("securityContext", {}).get("seccompProfile", {}).get("type")
         for container in [*pod.get("initContainers", []), *pod["containers"]]:
             own = f"{name} container {container['name']}"
@@ -198,10 +202,10 @@ def _references(pod: dict[str, Any]) -> Iterator[tuple[str, str]]:
 
 
 def resolved_references(objects: list[dict[str, Any]]) -> list[str]:
-    """Resolve Pod references against resources synthesized in this chart.
+    """Resolve Pod references against resources synthesized in the same App.
 
     Controllers can create resources named by an ExternalSecret, Certificate,
-    trust-manager Bundle, or CNPG Cluster. References not created in this chart may
+    trust-manager Bundle, or CNPG Cluster. References not created in the App may
     come from sibling files or other Kustomizations and are outside this rule's scope.
     A same-name resource of the other kind is still a local resolution error.
     """
@@ -227,27 +231,61 @@ def resolved_references(objects: list[dict[str, Any]]) -> list[str]:
         for kind, name in _references(pod):
             if name in created[kind] or name not in created[other_kind[kind]]:
                 continue
-            errors.append(f"{owner} reads {kind} {name!r}, but the chart creates a {other_kind[kind]} with that name")
+            errors.append(f"{owner} reads {kind} {name!r}, but the app creates a {other_kind[kind]} with that name")
     return errors
+
+
+def unused_waivers(objects: list[dict[str, Any]], *, unhardened: frozenset[str], unpinned: frozenset[str]) -> list[str]:
+    """Every waiver names an object in this App that still breaks its rule, so a fixed or
+    deleted object takes its waiver with it."""
+    failing_pods = {
+        f"{obj['kind']}/{obj['metadata']['name']}"
+        for obj in objects
+        if obj["kind"] in POD_SPEC_PATHS and pod_hardening([obj], unhardened=frozenset())
+    }
+    failing_policies = {
+        obj["metadata"]["name"]
+        for obj in objects
+        if obj["kind"] == _NETWORKPOLICY_KIND and pinned_https_egress([obj], unpinned=frozenset())
+    }
+    return [
+        *(
+            f"pod hardening waived for {name}, which is not in this App or passes"
+            for name in sorted(unhardened - failing_pods)
+        ),
+        *(
+            f"unpinned HTTPS egress waived for CiliumNetworkPolicy/{name}, which is not in this App or passes"
+            for name in sorted(unpinned - failing_policies)
+        ),
+    ]
 
 
 @jsii.implements(IValidation)
 class FleetRules:
-    def __init__(self, chart: Chart, *, unpinned_https_egress: frozenset[str] = frozenset()) -> None:
-        self._chart = chart
-        self._unpinned_https_egress = unpinned_https_egress
+    def __init__(
+        self, scope: Construct, *, unhardened_pods: Collection[str] = (), unpinned_https_egress: Collection[str] = ()
+    ) -> None:
+        self._scope = scope
+        self._unhardened_pods = frozenset(unhardened_pods)
+        self._unpinned_https_egress = frozenset(unpinned_https_egress)
 
     def validate(self) -> list[str]:
         objects = [
-            cast(ApiObject, node).to_json() for node in self._chart.node.find_all() if ApiObject.is_api_object(node)
+            cast(ApiObject, node).to_json() for node in self._scope.node.find_all() if ApiObject.is_api_object(node)
         ]
         return [
-            *pod_hardening(objects),
+            *pod_hardening(objects, unhardened=self._unhardened_pods),
             *pinned_https_egress(objects, unpinned=self._unpinned_https_egress),
             *https_egress_sni_conflicts(objects),
             *resolved_references(objects),
+            *unused_waivers(objects, unhardened=self._unhardened_pods, unpinned=self._unpinned_https_egress),
         ]
 
 
-def add_fleet_rules(chart: Chart, *, unpinned_https_egress: frozenset[str] = frozenset()) -> None:
-    chart.node.add_validation(FleetRules(chart, unpinned_https_egress=unpinned_https_egress))
+def add_fleet_rules(
+    scope: Construct, *, unhardened_pods: Collection[str] = (), unpinned_https_egress: Collection[str] = ()
+) -> None:
+    """Check every object under `scope` when it synthesizes; an App checks all its charts together."""
+    scope.node.add_validation(
+        FleetRules(scope, unhardened_pods=unhardened_pods, unpinned_https_egress=unpinned_https_egress)
+    )
