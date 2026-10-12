@@ -207,6 +207,10 @@ def _link_ssd_models_container() -> k8s.Container:
         name="link-ssd-models",
         image="ollama/ollama:0.34.4",
         command=["/bin/sh", f"{_SCRIPTS_DIR}/{_LINK_SCRIPT}"],
+        resources=k8s.ResourceRequirements(
+            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("16Mi")},
+            limits={"memory": k8s.Quantity.from_string("64Mi")},
+        ),
         volume_mounts=[
             k8s.VolumeMount(name="models", mount_path=_MODELS_DIR),
             k8s.VolumeMount(name="ssd-models", mount_path=_SSD_MODELS_DIR, read_only=True),
@@ -219,6 +223,11 @@ def _auth_proxy_container() -> k8s.Container:
     return k8s.Container(
         name="auth-proxy",
         image="nginx:1.31-alpine",
+        # activitywatch's nginx:alpine sidecar peaks at a 60Mi VPA upper bound.
+        resources=k8s.ResourceRequirements(
+            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
+            limits={"memory": k8s.Quantity.from_string("256Mi")},
+        ),
         ports=[AUTH_PROXY.port.k8s_container_port()],
         # nginx-auth-proxy.conf.template reads all three.
         env=[
@@ -343,12 +352,12 @@ def _setup_job(scope: Construct) -> None:
         scope,
         "setup-gpt-oss",
         # Explicit version bumps own reruns.
-        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v8", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v9", namespace=_NAMESPACE),
         spec=k8s.JobSpec(
             template=k8s.PodTemplateSpec(
-                # TODO: state automount_service_account_token=False with the next version bump;
-                # the live Job's pod template is immutable.
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
+                    automount_service_account_token=False,
                     restart_policy="OnFailure",
                     node_selector={"kubernetes.io/hostname": "wyrm2"},
                     volumes=[
@@ -401,6 +410,14 @@ def _setup_job(scope: Construct) -> None:
                             image="curlimages/curl:8.22.0",
                             command=[f"{_SCRIPTS_DIR}/{_SETUP_SCRIPT}"],
                             env=[k8s.EnvVar(name="OLLAMA_HOST", value="http://127.0.0.1:11434")],
+                            # curl calls against the local registration API.
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("10m"),
+                                    "memory": k8s.Quantity.from_string("16Mi"),
+                                },
+                                limits={"memory": k8s.Quantity.from_string("64Mi")},
+                            ),
                             volume_mounts=[k8s.VolumeMount(name="scripts", mount_path=_SCRIPTS_DIR, read_only=True)],
                         )
                     ],

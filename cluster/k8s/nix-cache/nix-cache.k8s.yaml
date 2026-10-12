@@ -168,6 +168,12 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
+          resources:
+            limits:
+              memory: 4Gi
+            requests:
+              cpu: 50m
+              memory: 1280Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
