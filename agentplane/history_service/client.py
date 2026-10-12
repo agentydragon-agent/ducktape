@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Collection
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Never, Self
+from uuid import UUID
 
 import grpc
 
@@ -18,16 +20,22 @@ from agentplane.proto import history_service_pb2, history_service_pb2_grpc
 
 
 class HistoryServiceError(ConnectionError):
-    def __init__(self, code: grpc.StatusCode) -> None:
-        super().__init__(f"History Service returned {code.name}")
+    def __init__(self, code: grpc.StatusCode, details: str | None) -> None:
+        super().__init__(f"{code.name}: {details}")
         self.code = code
 
 
 def _raise(error: grpc.aio.AioRpcError) -> Never:
-    # Do not include upstream details: they may contain credentials or event payloads.
     if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-        raise TimeoutError("History Service read deadline expired") from error
-    raise HistoryServiceError(error.code()) from error
+        raise TimeoutError(f"{error.code().name}: {error.details()}") from error
+    raise HistoryServiceError(error.code(), error.details()) from error
+
+
+@dataclass(frozen=True)
+class SessionOpened:
+    session_id: UUID
+    # Recording order; a watch resumed after it misses no later Session.
+    position: int
 
 
 class HistoryServiceClient:
@@ -154,11 +162,25 @@ class HistoryServiceClient:
 
     async def watch_session_summaries(self) -> AsyncIterator[None]:
         """Yield once per change notice until planned renewal, which returns; anything else raises."""
+        async for _ in self._watch(history_service_pb2.WatchSessionSummariesRequest()):
+            yield
+
+    async def watch_session_openings(self, *, after_position: int) -> AsyncIterator[SessionOpened]:
+        """Yield each Session recorded after `after_position`, in recording order, until planned renewal,
+        which returns; anything else raises."""
+        request = history_service_pb2.WatchSessionSummariesRequest(opened_after=after_position)
+        async for message in self._watch(request):
+            if message.HasField("session_opened"):
+                yield SessionOpened(
+                    session_id=UUID(message.session_opened.session_id), position=message.session_opened.position
+                )
+
+    async def _watch(
+        self, request: history_service_pb2.WatchSessionSummariesRequest
+    ) -> AsyncIterator[history_service_pb2.WatchSessionSummariesResponse]:
         # A long-lived stream: no call deadline. The server's opening notice bounds the handshake,
         # and its lease ends the stream with reconnect_required.
-        call = self.stub.WatchSessionSummaries(
-            history_service_pb2.WatchSessionSummariesRequest(), metadata=await self.metadata()
-        )
+        call = self.stub.WatchSessionSummaries(request, metadata=await self.metadata())
         handshake: float | None = self.request_timeout_s
         try:
             while True:
@@ -173,7 +195,7 @@ class HistoryServiceClient:
                 assert isinstance(message, history_service_pb2.WatchSessionSummariesResponse)
                 if message.HasField("reconnect_required"):
                     return
-                yield
+                yield message
         finally:
             call.cancel()
 

@@ -23,7 +23,6 @@ class EventLog(Base):
 
     # TODO(session-schema-cleanup): Rename EventLog/event_log to describe the app's
     # Session reference, not archive ownership; migrate referencing FKs together.
-    # See plans/task_dag.md#app_session_schema_rename--name-the-app-session-reference-accurately.
 
     __tablename__ = "event_log"
 
@@ -33,7 +32,7 @@ class EventLog(Base):
 
 class Thread(Base):
     """What an operator has set on an event log's thread, and the app's record of a confirmed resume.
-    No row means the defaults: unnamed, not archived and not resumed, so discovery never has to create one."""
+    No row means the defaults: unnamed, not archived and not resumed, so opening a Thread never has to create one."""
 
     __tablename__ = "thread"
 

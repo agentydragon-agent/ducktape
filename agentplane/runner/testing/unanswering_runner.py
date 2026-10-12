@@ -29,11 +29,3 @@ class UnansweringRunner(runner_pb2_grpc.RunnerServicer):
             self.cancelled.put_nowait(first.open.session_id)
             raise
         yield runner_pb2.ServerMessage()  # Never reached; makes this the streaming handler gRPC calls.
-
-    @override
-    async def ListSessions(
-        self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> runner_pb2.ListSessionsResponse:
-        """None, so an app ingester that discovers sessions here opens no feeds of its own."""
-        del request, context
-        return runner_pb2.ListSessionsResponse()

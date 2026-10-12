@@ -34,14 +34,16 @@ from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.settings import Settings
 from agentplane.app.shutdown import drain_of
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.history_watch import SessionOpenings
+from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.history_service.client import HistoryServiceClient
+from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
@@ -53,6 +55,7 @@ APP_ENVIRONMENT = {
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
     "AGENTPLANE_SANDBOX_SERVICE_TARGET": "sandbox-service.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_TARGET": "runner-gateway.test:8080",
+    "AGENTPLANE_SANDBOX_SERVICE_CONTROL_TARGET": "{sandbox}-control.{namespace}.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_TOKEN_FILE": "/tokens/runner-gateway",
     "AGENTPLANE_HISTORY_SERVICE_TARGET": "history-service.test:8080",
     "AGENTPLANE_DATABASE_URL": "postgresql+asyncpg://test@test.invalid/test",
@@ -179,7 +182,7 @@ def sigterm_is_survivable() -> Iterator[None]:
 
 
 @pytest.fixture
-def database_updates(engine: AsyncEngine) -> Wakeups:
+def database_updates(engine: AsyncEngine) -> WakeupListener:
     # Unlike the route-only fixtures, this test runs the production owner of the listener scope.
     return create_database_updates(engine.url)
 
@@ -206,11 +209,11 @@ async def _other_connections(database: AsyncEngine) -> int:
 
 
 @pytest.mark.usefixtures("sigterm_is_survivable")
-async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester_and_database(
+async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_openings_and_database(
     inventory: SandboxServiceClient,
-    bridge: RunnerBridge,
+    runners: SandboxSessions,
     store: ThreadStore,
-    database_updates: Wakeups,
+    database_updates: WakeupListener,
     engine: AsyncEngine,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
@@ -219,14 +222,14 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     database: AsyncEngine,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
-    ingester: Ingester,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
+    history_client: HistoryServiceClient,
 ) -> None:
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness
@@ -237,7 +240,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     await event_logs.seed(SANDBOX, "shutdown-session")
     app = create_app(
         inventory,
-        bridge,
+        RunnerBridge(runners=runners, event_logs=event_logs, content=content),
         store,
         MODELS,
         egress,
@@ -259,33 +262,39 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
         uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=60),
         drain_of(app),
     )
-    serving = asyncio.create_task(
-        serve_then_close(server, ingester=ingester, database_updates=database_updates, engine=engine)
-    )
-    while not server.started:
-        if serving.done():
-            serving.result()
-            raise RuntimeError("uvicorn exited before starting")
-        await asyncio.sleep(0.02)
-    assert await _other_connections(database) > 0
+    async with history_client.new_client() as openings_client:
+        serving = asyncio.create_task(
+            serve_then_close(
+                server,
+                session_openings=SessionOpenings(openings_client, event_logs, retry_interval_s=0.05),
+                database_updates=database_updates,
+                engine=engine,
+            )
+        )
+        while not server.started:
+            if serving.done():
+                serving.result()
+                raise RuntimeError("uvicorn exited before starting")
+            await asyncio.sleep(0.02)
+        assert await _other_connections(database) > 0
 
-    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=AGENT_AUTH) as client:
-        assert (await client.get("/readyz")).status_code == 204
-        async with client.stream("GET", "/live/sandboxes") as stream:
-            lines = stream.aiter_lines()
-            async for line in lines:
-                if line == "event: snapshot":
-                    break
-            signal.raise_signal(signal.SIGTERM)
-            # To the end of the body: a stream cancelled at the budget raises RemoteProtocolError here.
-            async for _line in lines:
-                pass
-    assert drain_of(app).draining
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app.test") as probes:
-        assert (await probes.get("/readyz")).status_code == 503
-        assert (await probes.get("/healthz")).status_code == 204
+        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=AGENT_AUTH) as client:
+            assert (await client.get("/readyz")).status_code == 204
+            async with client.stream("GET", "/live/sandboxes") as stream:
+                lines = stream.aiter_lines()
+                async for line in lines:
+                    if line == "event: snapshot":
+                        break
+                signal.raise_signal(signal.SIGTERM)
+                # To the end of the body: a stream cancelled at the budget raises RemoteProtocolError here.
+                async for _line in lines:
+                    pass
+        assert drain_of(app).draining
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app.test") as probes:
+            assert (await probes.get("/readyz")).status_code == 503
+            assert (await probes.get("/healthz")).status_code == 204
 
-    await serving
+        await serving
 
     # A closed connection's backend leaves pg_stat_activity a moment after the client let go of it.
     async for attempt in AsyncRetrying(
