@@ -5963,7 +5963,7 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - actionpolicysets
+      - policysets
     verbs:
       - create
       - get
@@ -5972,7 +5972,7 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - actionpolicybindings
+      - policybindings
     verbs:
       - create
       - get
