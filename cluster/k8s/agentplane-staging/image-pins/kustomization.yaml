@@ -5,7 +5,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
     newTag: devel-20261012062500-641eca5 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller
-    newTag: devel-20261013074707-83750f9 # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
+    newTag: devel-20261013130500-d6ab7d6 # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-migrate
     newTag: devel-20261012192940-487fa2a # {"$imagepolicy": "flux-system:agentplane-runner-gateway-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
