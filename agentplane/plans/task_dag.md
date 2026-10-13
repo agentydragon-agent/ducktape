@@ -572,7 +572,7 @@ flowchart LR
     POLICY_RUNTIME_GRANTS --> AGENT_PERMISSION_REQUESTS
     ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
     POLICY_RUNTIME_GRANTS -. verify afterwards .-> SANDBOX_RBAC
-    BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
+    BOOTSTRAP_PROGRESS_CONTRACT[Candidate: the Sandbox bootstrap runs when the runner starts]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
     NETWORK_WORKLOAD_IDENTITY[Unscheduled: network-level workload identity]
@@ -661,16 +661,21 @@ authorize by SPIFFE ID or workload label. Costs: SPIRE or a mesh to install, Cil
 authentication still in beta, and a second authentication scheme in every service beside projected
 tokens.
 
-### `BOOTSTRAP_PROGRESS_CONTRACT` — asynchronous start/status
+### `BOOTSTRAP_PROGRESS_CONTRACT` — the Sandbox bootstrap runs when the runner starts
 
-**Candidate.** Per-session setup is already asynchronous: the Session opens at once and its setup
-output and outcome reach history as `SetupStarted`/`SetupOutput`/`SetupFinished` Events. The
-Sandbox bootstrap is not. The runner runs it once and keeps its output in a durable log, but the
-runner runs it inside the first `OpenSession`, which the Runner Gateway's `open_session`
-(`runner_gateway/session_lifecycle.py`) holds until the script exits, and nothing shows its output or progress. Start it when the
-Sandbox comes up and expose its progress and result, keeping successful bootstrap as the Open
-precondition unless the operator reviews a change. The result reaches the Sandbox's
-conditions as a runner fact on the connection Lease (`RUNNER_FACTS_ON_LEASE`).
+**Candidate; operator, 2026-10-13 PDT: run the Sandbox's bootstrap before any Session opens, not
+inside the first one.** Per-Session setup is already asynchronous: the Session opens at once and
+its setup output and outcome reach history as `SetupStarted`/`SetupOutput`/`SetupFinished` Events.
+The Sandbox bootstrap (the launch file's, once per Sandbox) is not: the runner runs it inside the
+first `OpenSession`, which the Runner Gateway's `open_session` (`runner_gateway/session_lifecycle.py`)
+holds until the script exits, and nothing shows its output or progress. Start it when the runner
+starts, once, with its durable log and outcome as today, and expose its progress and result. A
+successful bootstrap stays the precondition of opening a Session: an `OpenSession` that meets a
+bootstrap still running is refused with a retryable code, and one that meets a failed or
+interrupted bootstrap is refused for good (use a new Sandbox). The result reaches the Sandbox's
+conditions as a runner fact on the connection Lease (`RUNNER_FACTS_ON_LEASE`) and may then be part
+of `Ready`; while the bootstrap runs inside the first `OpenSession`, `Ready` cannot wait on it,
+because the Session Dispatcher waits for `Ready` before it sends that call.
 
 ## 7. Our own Sandbox resource: Sessions that outlive their Pod
 
@@ -756,9 +761,10 @@ flowchart TD
     SEAL_RENAME -. rename before the next sealing node lands .-> QUIESCE_WITHOUT_POLLING
     QUIESCE_INTERRUPT -. interrupt precedes the seal .-> QUIESCE_WITHOUT_POLLING
     QUIESCE_INTERRUPT --> DISPATCHER_WAKE_ON_SEND
-    RUNNER_FACTS_ON_LEASE -. carries the boot result .-> BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap, section 6]
+    RUNNER_FACTS_ON_LEASE -. carries the boot result .-> BOOTSTRAP_PROGRESS_CONTRACT
     RUNNER_FACTS_ON_LEASE -. busyness is its input .-> SESSION_ACTIVITY_STREAM
     DISPATCHER_CORE --> DISPATCHER_SESSION_CREATE
+    BOOTSTRAP_PROGRESS_CONTRACT -. Ready may then include the bootstrap .-> DISPATCHER_SESSION_CREATE
     DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
     DISPATCHER_CORE --> APP_SENDS_VIA_DISPATCHER
     DISPATCHER_CORE --> NOTIFICATIONS_VIA_DISPATCHER
@@ -1087,8 +1093,9 @@ with the retryable code is redelivered after the resume. Which senders may wake:
 a notification, not an agent's message unless `AGENT_MESSAGE_RECEPTION` decides so. Also here:
 rate limits and per-sender quotas, since a resume starts a Pod or VM and every harness; resuming
 only the Sessions that have pending work; a bounded wait with a visible reason when the volume's
-node is down or full; a mark on the Sandbox while messages are pending so the controller does not
-suspend it (`SANDBOX_IDLE_EXPIRY`); and a way for an operator to hold a Sandbox suspended against
+node is down or full; a pending mark, a Dispatcher-owned Lease per Sandbox that the controller reads (the Dispatcher
+never edits the Sandbox), while messages are pending so the controller does not suspend it
+(`SANDBOX_IDLE_EXPIRY`); and a way for an operator to hold a Sandbox suspended against
 wake-on-send, so the next notification does not undo it. Deletion beats everything. Test a message
 to a suspended Sandbox, one arriving while it seals, a failed revival and a resume storm.
 
