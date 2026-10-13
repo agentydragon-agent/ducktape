@@ -178,6 +178,21 @@ async def test_only_the_sandbox_controller_seals(holder: Replica) -> None:
         assert [(seal.session_id, seal.cursor) for seal in (await sealing).sessions] == [("test-session", 3)]
 
 
+async def test_only_the_sandbox_controller_quiesces(holder: Replica) -> None:
+    async with runner_on(holder) as runner, runner_stub(holder) as stub:
+        with pytest.raises(grpc.aio.AioRpcError) as refused:
+            await stub.Quiesce(runner_pb2.QuiesceRequest(), metadata=metadata(CALLER))
+        assert refused.value.code() == grpc.StatusCode.PERMISSION_DENIED
+        assert not runner.received
+
+        quiescing = asyncio.ensure_future(stub.Quiesce(runner_pb2.QuiesceRequest(), metadata=metadata(CONTROLLER)))
+        quiesced = await runner.next(runner_pb2.QuiesceRequest)
+        quiesced.outcome.set_result(
+            runner_pb2.QuiesceResponse(sessions=[runner_pb2.SessionSeal(session_id="test-session", cursor=3)])
+        )
+        assert [(seal.session_id, seal.cursor) for seal in (await quiescing).sessions] == [("test-session", 3)]
+
+
 async def test_a_replica_without_the_connection_refuses_before_acting(holder: Replica, other: Replica) -> None:
     async with runner_on(holder) as runner, runner_stub(other) as stub:
         with pytest.raises(grpc.aio.AioRpcError) as refused:
