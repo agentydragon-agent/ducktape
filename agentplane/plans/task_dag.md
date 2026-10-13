@@ -921,11 +921,12 @@ and `CreateSessionRequest` loses its field mask.
 
 ### `CONTROLLER_SEALS` — the Sandbox controller seals
 
-**Candidate.** For a deleting Sandbox of our kind the Sandbox controller
-calls `Runner.Seal` through the gateway's `Runner` proxy, repeats it until every seal is flushed, and
-sets `SessionsSealed` itself. It authenticates with `token_audience` and names the Sandbox in
-`x-agentplane-sandbox`. The proxy refuses `Seal` until cdk8s sets `sandbox_controller_account` on the
-gateway, which waits for the rollout of an image that reads it. `runner_gateway/deletion_seals.py` and the gateway's write to Sandboxes go.
+**Candidate; the controller's sealer code has landed.** Two steps remain, each after the previous
+one's image is pinned in every environment. First, cdk8s passes the controller `--runner-gateway-target`
+and `--runner-gateway-token-file` (a projected token for audience `token_audience`), admits the
+controller to the gateway, and sets `sandbox_controller_account` on the gateway; the controller's
+`Sealer` and `Leases` become required. Then `runner_gateway/deletion_seals.py`, `sealing.py` and the
+gateway's write to Sandboxes go.
 
 ### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
 

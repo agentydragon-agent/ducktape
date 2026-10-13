@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -25,8 +27,9 @@ import (
 
 const (
 	Running = "Running"
-	// Set True by the Runner Gateway on a deleting Sandbox once its runner has sealed every Session
-	// and the ingress has acknowledged each seal; nothing of the Sandbox is deleted before.
+	// Set True on a deleting Sandbox, by this controller or the Runner Gateway, once its runner has
+	// sealed every Session and the ingress has acknowledged each seal; nothing of the Sandbox is
+	// deleted before, unless no runner ever connected.
 	SessionsSealed = "SessionsSealed"
 	// On the Pod or the VirtualMachine and its VMI and virt-launcher Pod, the state PVC, the
 	// ServiceAccount and the PolicyBinding: the Sandbox they belong to.
@@ -36,6 +39,8 @@ const (
 	// stateVolume once no state PVC lacks an owner reference (check `kubectl get pvc -l
 	// agentplane.allegedly.works/sandbox` on each cluster).
 	SandboxUIDAnnotation = "agentplane.allegedly.works/sandbox-uid"
+	// On the Runner Gateway's Lease for a Sandbox: the Pod UID of the runner that last connected.
+	PodUIDAnnotation = "agentplane.allegedly.works/pod-uid"
 	// Seals a deleted Sandbox's Sessions, then deletes its Pod or VM; the state PVC goes by garbage
 	// collection once the Sandbox does.
 	StateVolumeFinalizer = "agentplane.allegedly.works/state-volume"
@@ -45,6 +50,8 @@ const (
 	RenderedSpecAnnotation = "agentplane.allegedly.works/rendered-spec"
 
 	templateIndex = "spec.template"
+	// How soon a seal that failed or is not yet acknowledged is asked again.
+	sealRetry = 2 * time.Second
 )
 
 // Reconciler converges one Sandbox at a time: its state PVC, its Pod or VirtualMachine, and its
@@ -56,6 +63,14 @@ type Reconciler struct {
 	// Whether the cluster serves KubeVirt's API. Without it VM Sandboxes stay unready and Pod
 	// Sandboxes are unaffected.
 	KubeVirt bool
+	// Seals a deleting Sandbox's Sessions through its runner. Without one, deletion waits for the
+	// Runner Gateway to set SessionsSealed.
+	//
+	// CLEANUP(added 2026-10-13): Make Sealer and Leases required once the manifests pass the sealer
+	// flags in every environment and the Runner Gateway no longer sets SessionsSealed.
+	Sealer Sealer
+	// Reads the Lease the Runner Gateway writes for each connection, uncached.
+	Leases client.Reader
 }
 
 // StateVolumeName is the Sandbox's state PVC.
@@ -64,7 +79,18 @@ func StateVolumeName(sandbox string) string { return sandbox + "-state" }
 // unready is why the Sandbox cannot run; its reason and message go on the Running condition.
 //
 // +kubebuilder:object:generate=false
-type unready struct{ reason, message string }
+type unready struct {
+	reason, message string
+	// Nonzero where no watch event will end the wait.
+	retryAfter time.Duration
+}
+
+func (u *unready) retryAfterOrZero() time.Duration {
+	if u == nil {
+		return 0
+	}
+	return u.retryAfter
+}
 
 // workload is what runs the Sandbox, or ran it: its Pod, or its VirtualMachine with the VMI and
 // virt-launcher Pod of the VM's current run. A start deletes the other kind's first, so only one
@@ -103,7 +129,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		if err != nil || blocked == nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, r.updateStatus(ctx, &sandbox, w, blocked)
+		return ctrl.Result{RequeueAfter: blocked.retryAfterOrZero()}, r.updateStatus(ctx, &sandbox, w, blocked)
 	}
 	if controllerutil.AddFinalizer(&sandbox, StateVolumeFinalizer) {
 		if err := r.Update(ctx, &sandbox); err != nil {
@@ -123,12 +149,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 	} else if gate == nil {
 		gate = launchGate
 	}
+	if blocked == nil && !sandbox.Spec.Running {
+		if blocked, err = r.sealBeforeStop(ctx, &sandbox, w); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	if blocked == nil {
 		if w, blocked, err = r.converge(ctx, &sandbox, w, sandbox.Spec.Running, gate); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
-	return ctrl.Result{}, r.updateStatus(ctx, &sandbox, w, blocked)
+	return ctrl.Result{RequeueAfter: blocked.retryAfterOrZero()}, r.updateStatus(ctx, &sandbox, w, blocked)
 }
 
 func (r *Reconciler) workload(ctx context.Context, sandbox *Sandbox) (workload, error) {
@@ -173,36 +204,103 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 		return w, nil, err
 	}
 	own := pvc != nil && metav1.IsControlledBy(pvc, sandbox)
-	// Without a state PVC of its own the Sandbox never had a runner, so it has no Session to seal.
-	if own && !meta.IsStatusConditionTrue(sandbox.Status.Conditions, SessionsSealed) {
+	// Without a state PVC of its own the Sandbox never had a runner, so it has no Session to seal;
+	// nor has one whose runner never connected, which is not sealed, only has nothing to seal.
+	needsSeal := own && !meta.IsStatusConditionTrue(sandbox.Status.Conditions, SessionsSealed)
+	var runner string
+	if needsSeal && r.Sealer != nil {
+		var err error
+		if runner, err = r.unsealedRunner(ctx, sandbox); err != nil {
+			return w, nil, err
+		}
+		needsSeal = runner != ""
+	}
+	if needsSeal {
 		// Only a running runner seals, so a stopped Sandbox runs once more; the Runner Gateway
 		// refuses every new Session and command for a deleting Sandbox.
 		w, blocked, err := r.converge(ctx, sandbox, w, true, nil)
-		if blocked == nil {
-			blocked = &unready{"Sealing", "waiting for the Runner Gateway to seal every Session"}
+		if err != nil || blocked != nil {
+			return w, blocked, err
 		}
-		return w, blocked, err
+		if r.Sealer == nil {
+			return w, &unready{reason: "Sealing", message: "waiting for the Runner Gateway to seal every Session"}, nil
+		}
+		blocked = r.seal(ctx, sandbox, runner)
+		if blocked.retryAfter == 0 {
+			meta.SetStatusCondition(&sandbox.Status.Conditions, metav1.Condition{
+				Type: SessionsSealed, Status: metav1.ConditionTrue, Reason: "Sealed", Message: blocked.message, ObservedGeneration: sandbox.Generation,
+			})
+		}
+		return w, blocked, nil
 	}
 	if w.pod != nil {
 		if err := r.deleteIfLive(ctx, w.pod); err != nil {
 			return w, nil, err
 		}
-		return w, &unready{"Deleting", fmt.Sprintf("Pod %s is being deleted", w.pod.Name)}, nil
+		return w, &unready{reason: "Deleting", message: fmt.Sprintf("Pod %s is being deleted", w.pod.Name)}, nil
 	}
 	if w.vm != nil {
 		// The VM's DataVolumes, the VM-local workspace among them, go with it.
 		if err := r.deleteIfLive(ctx, w.vm); err != nil {
 			return w, nil, err
 		}
-		return w, &unready{"Deleting", fmt.Sprintf("VM %s is being deleted", w.vm.Name)}, nil
+		return w, &unready{reason: "Deleting", message: fmt.Sprintf("VM %s is being deleted", w.vm.Name)}, nil
 	}
 	if w.vmi != nil {
 		// KubeVirt removes a VMI only once its virt-launcher Pod is gone, so no guest still writes to
 		// the state PVC after this.
-		return w, &unready{"Deleting", fmt.Sprintf("VMI %s is being deleted", w.vmi.Name)}, nil
+		return w, &unready{reason: "Deleting", message: fmt.Sprintf("VMI %s is being deleted", w.vmi.Name)}, nil
 	}
 	controllerutil.RemoveFinalizer(sandbox, StateVolumeFinalizer)
 	return w, nil, r.Update(ctx, sandbox)
+}
+
+// connectedRunner is the Pod UID of the runner that last connected for the Sandbox, which the Runner
+// Gateway records on the Sandbox's Lease, or "" if none ever did.
+func (r *Reconciler) connectedRunner(ctx context.Context, sandbox *Sandbox) (string, error) {
+	var lease coordinationv1.Lease
+	err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + "-runner"}, &lease)
+	return lease.Annotations[PodUIDAnnotation], client.IgnoreNotFound(err)
+}
+
+// unsealedRunner is the Pod UID of the last connected runner if it still has Sessions to seal, or
+// "": none connected, or it is the one already sealed.
+func (r *Reconciler) unsealedRunner(ctx context.Context, sandbox *Sandbox) (string, error) {
+	runner, err := r.connectedRunner(ctx, sandbox)
+	if err != nil || (sandbox.Status.SealedIncarnation != nil && *sandbox.Status.SealedIncarnation == runner) {
+		return "", err
+	}
+	return runner, nil
+}
+
+// sealBeforeStop holds a Sandbox that is to stop while its current incarnation's runner has Sessions
+// to seal, and seals them. An incarnation whose runner never connected has none.
+func (r *Reconciler) sealBeforeStop(ctx context.Context, sandbox *Sandbox, w workload) (*unready, error) {
+	pod := w.incarnation()
+	if r.Sealer == nil || pod == nil {
+		return nil, nil
+	}
+	runner, err := r.unsealedRunner(ctx, sandbox)
+	if err != nil || runner == "" || runner != string(pod.UID) {
+		return nil, err
+	}
+	return r.seal(ctx, sandbox, runner), nil
+}
+
+// seal asks the runner of the Pod with this UID to seal every Session and, once the ingress has
+// acknowledged each seal, records it on the Sandbox's status for the caller to write. The returned
+// unready always says why the Sandbox is still held and has no retryAfter once the seal is recorded.
+// Seal is idempotent, so any failure is asked again.
+func (r *Reconciler) seal(ctx context.Context, sandbox *Sandbox, runner string) *unready {
+	result, err := r.Sealer.Seal(ctx, sandbox)
+	if err != nil {
+		return &unready{reason: "Sealing", message: err.Error(), retryAfter: sealRetry}
+	}
+	if len(result.Unflushed) > 0 {
+		return &unready{reason: "Sealing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: sealRetry}
+	}
+	sandbox.Status.SealedIncarnation = &runner
+	return &unready{reason: "Sealing", message: fmt.Sprintf("%d Sessions sealed", result.Sessions)}
 }
 
 // deleteIfLive deletes obj, that very object, unless its deletion has begun.
@@ -247,7 +345,7 @@ func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *Sandbox) (*
 	}
 	if pvc != nil {
 		if !metav1.IsControlledBy(pvc, sandbox) || !pvc.DeletionTimestamp.IsZero() {
-			return &unready{"StateVolumeConflict", fmt.Sprintf("PVC %s belongs to another Sandbox or is being deleted", pvc.Name)}, nil
+			return &unready{reason: "StateVolumeConflict", message: fmt.Sprintf("PVC %s belongs to another Sandbox or is being deleted", pvc.Name)}, nil
 		}
 		return nil, nil
 	}
@@ -278,12 +376,12 @@ func (r *Reconciler) template(ctx context.Context, sandbox *Sandbox) (*SandboxTe
 	key := types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Spec.Template}
 	if err := r.Get(ctx, key, &template); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, &unready{"TemplateNotFound", fmt.Sprintf("SandboxTemplate %s not found", sandbox.Spec.Template)}, nil
+			return nil, &unready{reason: "TemplateNotFound", message: fmt.Sprintf("SandboxTemplate %s not found", sandbox.Spec.Template)}, nil
 		}
 		return nil, nil, err
 	}
 	if (template.Spec.Pod == nil) == (template.Spec.VM == nil) {
-		return nil, &unready{"TemplateInvalid", fmt.Sprintf("SandboxTemplate %s must set exactly one of pod and vm", template.Name)}, nil
+		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s must set exactly one of pod and vm", template.Name)}, nil
 	}
 	return &template, nil, nil
 }
@@ -299,6 +397,13 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 			}
 		}
 		return w, nil, r.haltVM(ctx, w.vm)
+	}
+	// A runner that sealed its Sessions takes no new ones, so a Sandbox resumed meanwhile starts anew.
+	if pod := w.incarnation(); pod != nil && sandbox.Status.SealedIncarnation != nil && *sandbox.Status.SealedIncarnation == string(pod.UID) {
+		if err := r.deleteIfLive(ctx, pod); err != nil {
+			return w, nil, err
+		}
+		return w, &unready{reason: "Starting", message: fmt.Sprintf("Pod %s is sealed and is being replaced", pod.Name)}, nil
 	}
 	if w.pod != nil {
 		// An ended incarnation goes too, so a running Sandbox gets a new one. A Pod still terminating
@@ -325,7 +430,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 	}
 	if template.Spec.VM != nil {
 		if !r.KubeVirt {
-			return w, &unready{"KubeVirtMissing", "the cluster does not serve KubeVirt's API, so a VM Sandbox cannot run"}, nil
+			return w, &unready{reason: "KubeVirtMissing", message: "the cluster does not serve KubeVirt's API, so a VM Sandbox cannot run"}, nil
 		}
 		return r.startVM(ctx, sandbox, w, template)
 	}
@@ -335,7 +440,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 		if err := r.deleteIfLive(ctx, w.vm); err != nil {
 			return w, nil, err
 		}
-		return w, &unready{"Starting", fmt.Sprintf("VM %s is being deleted for the Pod template", w.vm.Name)}, nil
+		return w, &unready{reason: "Starting", message: fmt.Sprintf("VM %s is being deleted for the Pod template", w.vm.Name)}, nil
 	}
 	pod, blocked := render(sandbox, template)
 	if blocked != nil {
@@ -347,7 +452,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 	if err := r.Create(ctx, pod); err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			// A Pod this Sandbox does not control holds the name.
-			return w, &unready{"PodConflict", fmt.Sprintf("Pod %s exists and is not this Sandbox's", pod.Name)}, nil
+			return w, &unready{reason: "PodConflict", message: fmt.Sprintf("Pod %s exists and is not this Sandbox's", pod.Name)}, nil
 		}
 		return w, nil, err
 	}
@@ -370,7 +475,7 @@ func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready)
 	spec := template.Spec.Pod.Spec.DeepCopy()
 	volume := template.Spec.StateVolume.Name
 	if slices.ContainsFunc(spec.Volumes, func(v corev1.Volume) bool { return v.Name == volume }) {
-		return nil, &unready{"TemplateInvalid", fmt.Sprintf("SandboxTemplate %s defines the state volume %s itself", template.Name, volume)}
+		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the state volume %s itself", template.Name, volume)}
 	}
 	spec.ServiceAccountName = sandbox.Name
 	if blocked := withLaunch(sandbox, template, spec); blocked != nil {
