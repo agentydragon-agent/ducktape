@@ -2338,6 +2338,7 @@ routes.push(
         subjects: [{ namespace: match[1], name: match[2] }],
       })),
       action_policy: ACTION_POLICY,
+      bound_policy: null,
     }),
   ],
   ["GET", /^\/connection-service-accounts$/, () => [{ namespace: "agentplane-visual", name: "operator-assistant" }]],
@@ -2847,6 +2848,7 @@ class HarnessEventSource extends EventTarget {
         sandbox: SANDBOXES.find((row) => row.name === decodeURIComponent(sandbox)) ?? null,
         bindings: BINDINGS,
         action_policy: ACTION_POLICY,
+        bound_policy: null,
         threads: THREADS,
         watch: watch(),
       };
