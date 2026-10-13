@@ -34,6 +34,8 @@ Retain the data-preserving rollback procedure. No Action Service or other databa
 ```mermaid
 flowchart LR
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history]
+    COMMAND_DELIVERY_STATES[Decision: one vocabulary of delivery states for a command or message]
+    COMMAND_DELIVERY_STATES -. shares vocabulary .-> NOTIFICATION_COMMAND_OUTCOME_DESIGN
     SESSION_INPUT_METADATA[Typed input annotations and provenance]
     SESSION_INPUT_METADATA_READ[Blocked: metadata reads and message correlation]
     NOTIFICATION_NOTICE_METADATA[Blocked: attach notice metadata to submissions]
@@ -46,6 +48,17 @@ flowchart LR
 
 Details: [command admission](../runner_gateway/API.md#sessions-and-commands); later
 [notification presentation and input metadata](notification_presentation.md).
+
+### `COMMAND_DELIVERY_STATES` — one vocabulary of delivery states for a command or message
+
+**Decision; found by the DAG's own overlap audit, 2026-10-13 PDT.** Four nodes each need to say how
+far a command or message got: `NOTIFICATION_COMMAND_OUTCOME_DESIGN` (did the harness run it, did it
+reach the model's context), `AGENT_MESSAGING_DESIGN` (accepted, delivered, handled and acknowledged
+as separate states), `THREAD_SUCCESSOR_DELIVERY` (ambiguous across an incarnation) and
+`SESSION_QUEUE_DESIGN` (queued, delivered once the runner is up). Decide the states once, from
+submission to the model's context: what each means, which component records it, and which survive an
+incarnation ending. Today `CommandAdmitted` and `harness_user_message_confirmed` are the recorded
+points. The four nodes then cite it, instead of each defining its own.
 
 ### `NOTIFICATION_COMMAND_OUTCOME_DESIGN` — notice delivery without reading conversation history
 
@@ -202,6 +215,7 @@ flowchart TD
     THREAD_CREATE_AUTHORIZATION[Blocked: implement session-create grants]
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
+    COMMAND_DELIVERY_STATES[Decision: one vocabulary of delivery states, section 2] -. shares vocabulary .-> AGENT_MESSAGING_DESIGN
     MULTIAGENT_MODEL --> THREAD_READ_POLICY_DESIGN
     MULTIAGENT_MODEL --> AGENT_MESSAGING_DESIGN
     MULTIAGENT_MODEL --> THREAD_CREATE_POLICY
@@ -281,7 +295,8 @@ acceptance receipts in the chosen authority. Test denied pairs, spoofing and ret
 
 **Blocked on ingress contract/implementation.** Implement selected recipient read/delivery/ack
 operations, batching and recovery of unread work. Test revoked/deleted recipients, ordinary offline
-catch-up and duplicate delivery without leaking payloads. Do not start/resume a harness implicitly.
+catch-up and duplicate delivery without leaking payloads. Do not start/resume a harness implicitly
+unless `SESSION_QUEUE_DESIGN` decides that a sender may.
 
 ### `AGENT_MESSAGING` — integrated messaging capstone
 
@@ -296,7 +311,7 @@ creator visibility and revocation. Use the service-reserved Session identity, no
 public UUID. Opening in an existing Sandbox grants no isolation from its other Sessions; require a
 separate Sandbox when incompatible trust or credentials are needed. Decide whether launch-and-open
 is a composition of separate grants, never an implicit read/send/launch permission. This contract
-need not choose a durable offline command queue.
+need not choose a durable offline command queue; `SESSION_QUEUE_DESIGN` owns that.
 
 ### `THREAD_CREATE_AUTHORIZATION` — implement session-create grants
 
@@ -331,7 +346,8 @@ journal.
 Direction for stateful VMs (operator, 2026-10-12 PDT; not scheduled): our own Sandbox resource
 (`AGENTPLANE_SANDBOX_RESOURCE`, `kind: pod | vm`) carries both kinds, and both keep their
 state on one filesystem PVC per Sandbox that Agentplane owns (section 7). Pods mount it as a volume,
-KubeVirt guests through virtiofs, so a Session can move between kinds.
+KubeVirt guests through virtiofs, so a Session can move between kinds, until `STATE_VOLUME_BLOCK`
+moves both to block storage.
 
 ```mermaid
 flowchart LR
@@ -350,6 +366,8 @@ flowchart LR
     VM_PROVIDER --> VM_LIFECYCLE
     VM_PROVIDER --> VM_EGRESS
     VM_PROVIDER --> VM_RAM_SUSPEND
+    STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage, section 7] -. related .-> VM_PROCESS_ISOLATION
+    STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
     VM_EGRESS --> VM_LIFECYCLE
     VM_PROCESS_ISOLATION --> VM_LIFECYCLE
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
@@ -408,7 +426,8 @@ runner/control state survives and what needs durable recovery. This directly add
 accidentally killing their own harness; guest or container packaging alone is not that guarantee.
 
 Direction (operator, 2026-10-12 PDT): separate the runner and the harness by what each can see,
-not by uid, since every file on the virtiofs state PVC is `107:107` anyway. In VMs the runner runs
+not by uid, since every file on the virtiofs state PVC is `107:107` anyway (`STATE_VOLUME_BLOCK` would
+end that constraint; revisit the uid choice then). In VMs the runner runs
 as guest root under systemd and starts the harness with `systemd-run` as uid 107, in a scope with
 `InaccessiblePaths=/state/runner`, write access only to `/state/harness` and the workspace,
 `ProtectProc=invisible`, `NoNewPrivileges`, no capabilities, `MemoryMax` and `TasksMax`; the
@@ -442,7 +461,7 @@ absence of every imaginable failure, establishes the delivered contract.
 
 **Unscheduled; operator, 2026-10-13 PDT: nice to have.** A stopped VM Sandbox resumes with the memory
 it had, not a cold boot, so a quick resume loses no in-memory state. Find what KubeVirt offers (a
-memory dump or a snapshot with memory) and whether it works with the virtiofs state volume. The
+memory dump or a snapshot with memory) and whether it works with the state volume (virtiofs today, block under `STATE_VOLUME_BLOCK`). The
 [VM Sandboxes design](../docs/vm_sandboxes.md#guest-and-storage) records that a VM supports neither
 RAM suspension nor live migration today. Check what a resumed guest must redo: the runner's control stream and
 projected tokens (the relay reopens them per request, so rotation alone needs no restart), and the
@@ -467,6 +486,10 @@ flowchart LR
     SERVICE_LOG_FLAGS[Unscheduled: logging flags in the services]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
     ISOLATED_ACCEPTANCE_CI[Unscheduled: acceptance tests in their own CI workflow]
+    DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
+    ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
+    NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
+    ACTION_SURFACES_DESIGN -. related .-> NOTIFICATION_PRESENTATION
 ```
 
 ### `ACTION_SURFACES_DESIGN` — where and in what states Actions render
@@ -480,9 +503,29 @@ and a pretty toggle), history, the policy view, and the Web Push notification (f
 registry separate from the React one). Several of them choose independently what to render, whether
 to offer a decision, and how tall to let the card grow. Settle which surfaces exist, what each is
 for (a glance, a quick decision, full review, a record), and which states each has, so that one
-rule decides inline approval and height and each Action type is described once. The compact-card
+rule decides inline approval and height and each Action type is described once.
+Direction (operator, 2026-10-13 PDT): whether a card offers its decision buttons is not a per-kind
+allowlist (`QUICK_APPROVALS`); the Action type's own TypeScript implementation decides for each
+invocation from its content (for example a read-only call against a listed resource). Also give
+each representation and visual element one fixed name and use it everywhere (code, UI copy, docs),
+since "quick approve" could mean the buttons on a card or Approve/Deny on a desktop notification.
+Proposed vocabulary, to settle with the design: **compact card** (the glance form in the sidebar
+and the strip), **full card** (the detail view with the whole `ActionCall`), **card decision
+buttons** (Approve/Deny on a compact card), **notification buttons** (Approve/Deny on a Web Push
+notification), **attention strip** (the top "Actions waiting" count). `NOTIFICATION_PRESENTATION` (section 2) renders notices on the same surfaces and uses the same card
+names. The compact-card
 fixes under way (decision buttons on collapsed cards, a height cap, more Actions allowed inline)
 land first and need not wait for this.
+
+### `DOCKABLE_PANES` — dockable panes in the web app
+
+**Unscheduled; operator, 2026-10-13 PDT.** Let the operator arrange the app's panes (thread browser,
+Actions queue, several threads at once, Action detail) by dragging them into a layout of their own,
+with split resizing, a layout that persists, and one selected pane at a time on a phone. Open spike
+[#9721](https://github.com/agentydragon/ducktape/pull/9721) builds this as an experimental
+`/#/mosaic` shell on `react-mosaic-component`, split-only without tabs, beside the classic routes;
+it is stale and is the starting point. Settle whether docking replaces the classic routes or stays
+an alternative, and fold the Action tiles into the surfaces `ACTION_SURFACES_DESIGN` settles.
 
 ### `CLAUDE_CODE_WEB_BRIDGE` — Claude Code web sessions in Agentplane
 
@@ -521,8 +564,13 @@ flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     POLICY_RUNTIME_GRANTS[Candidate: web app affordances for bindings and sets]
-    AGENT_PERMISSION_REQUESTS[Unscheduled: agents ask the operator for time-limited permissions]
-    POLICY_RUNTIME_GRANTS -. related .-> AGENT_PERMISSION_REQUESTS
+    AGENT_PERMISSION_INSTRUCTIONS[Candidate: tell agents how and when to ask for a permission]
+    AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
+    ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
+    POLICY_RUNTIME_GRANTS --> AGENT_PERMISSION_REQUESTS
+    ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
+    AGENT_PERMISSION_INSTRUCTIONS -. related .-> AGENT_PERMISSION_REQUESTS
+    POLICY_RUNTIME_GRANTS -. verify afterwards .-> SANDBOX_RBAC
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
@@ -572,17 +620,24 @@ reference on the Sandbox) and gets the `policybindings` create/delete permission
 has today. One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry,
 so no reader handles expiry itself.
 
-### `AGENT_PERMISSION_REQUESTS` — agents ask the operator for time-limited permissions
+### `AGENT_PERMISSION_INSTRUCTIONS` — tell agents how and when to ask for a permission
 
-**Unscheduled; operator, 2026-10-13 PDT: eventually.** An agent running in Agentplane asks the
-operator in natural terms ("can I have permission X for two hours?") and the operator approves or
-denies. The operator says an agent can already do this by applying a custom resource through the
-Kubernetes admin Action. Two things are missing. First, instructions telling agents how and when to
-ask, so that asking is the normal route and not a surprise. Second, possibly a better experience: a
-specific Action type for the request instead of the Kubernetes MCP escape hatch, and an approval
-view that shows the operator the account, the sets and the duration rather than a blob of Kubernetes
-YAML. Related to `POLICY_RUNTIME_GRANTS`, which gives the operator the web app for creating the same
-bindings by hand; an approved request would create the same kind of `PolicyBinding`.
+**Candidate; operator, 2026-10-13 PDT.** An agent running in Agentplane should ask the operator in
+natural terms ("can I have permission X for two hours?") and the operator approves or denies. An
+agent can already do this by applying a `PolicyBinding` through the Kubernetes admin Action. Missing
+is the guidance that makes asking the normal route: how, with which sets and duration, and when to
+ask rather than work around a refusal. It needs nothing built, so it runs in parallel with the other
+nodes here; `AGENT_PERMISSION_REQUESTS` later replaces the Kubernetes route it describes.
+
+### `AGENT_PERMISSION_REQUESTS` — an Action type and approval view for permission requests
+
+**Blocked on `POLICY_RUNTIME_GRANTS` and `ACTION_SURFACES_DESIGN`; operator, 2026-10-13 PDT:
+eventually.** A specific Action type for the request instead of the Kubernetes MCP escape hatch, and
+an approval view that shows the operator the account, the sets and the duration rather than a blob of
+Kubernetes YAML. It shares with `POLICY_RUNTIME_GRANTS` the one path that writes a `PolicyBinding` for
+the operator, so that node lands first and an approved request creates the same kind of binding. How
+the request renders is the Action surfaces' decision: the approval view is one Action type described
+once there.
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 
@@ -593,7 +648,7 @@ public-coder until `PC_KUBERNETES_POLICY_SET`) stay Flux bindings. Test an allow
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
 
-**Candidate; security-relevant.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
+**Candidate; security-relevant; best after `POLICY_RUNTIME_GRANTS`, which moves who writes bindings.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
 and verify intended versus unrelated scope, including Role edits and credential-use boundaries,
 without recording credentials. Use [agent RBAC](../../cluster/docs/agent_rbac.md) and existing tests;
 only unresolved deployed wiring needs a live check, not a repeat of every already-covered operation.
@@ -642,52 +697,127 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 ```mermaid
 flowchart TD
     DURABLE_SESSION_LIFECYCLE[Decision: Session lifetime and revival]
-    SESSION_STATE_VOLUME_DESIGN[Decision: what the state PVC holds]
+    STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
+    NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
+    WORKSPACE_VOLUME[Blocked: a workspace volume tracked apart from the state PVC]
+    SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
+    WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
+    SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENTPLANE_SANDBOX_RESOURCE[In progress: our own Sandbox resource]
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
+    SESSION_QUEUE_DESIGN[Decision: where the Session message queue sits and what it owns]
+    SESSION_MESSAGE_QUEUE[Blocked: a durable queue that revives a Sandbox and delivers the message]
+    SUSPENDED_COMPOSER[Blocked: the composer stays enabled while a Session is suspended]
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
     HOSTED_THREAD_SURFACES[Blocked: show and revive stopped Sessions]
     VM_PROVIDER[VM provider, section 4]
-    DURABLE_SESSION_LIFECYCLE --> SESSION_STATE_VOLUME_DESIGN
     DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
-    SESSION_STATE_VOLUME_DESIGN --> AGENTPLANE_SANDBOX_RESOURCE
+    NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
+    NODE_LOCAL_BLOCK_STORAGE --> WORKSPACE_VOLUME
+    AGENTPLANE_SANDBOX_RESOURCE --> WORKSPACE_VOLUME
+    WORKSPACE_VOLUME --> WORKSPACE_NODE_PORTABILITY
+    WORKSPACE_VOLUME --> SANDBOX_ARCHIVE
+    WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
+    SANDBOX_SPEC_EDIT -. related .-> WORKSPACE_VOLUME
+    VM_PROVIDER -. related .-> SANDBOX_SPEC_EDIT
+    APP_SESSION_DEFAULTS[Candidate: the app sends complete Session specs, section 12] -. keeps the preset label true .-> SANDBOX_SPEC_EDIT
+    RUNNER_JOURNAL_TRIM[Unscheduled: runners stop keeping what the ingress committed, section 10] -. keeps what a revival reads back .-> SESSION_INCARNATIONS
+    STATE_VOLUME_BLOCK -. related .-> WORKSPACE_VOLUME
     AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
-    SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes stop]
+    SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes suspend]
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
+    SESSION_QUEUE_DESIGN --> SESSION_MESSAGE_QUEUE
+    SESSION_REVIVE --> SESSION_MESSAGE_QUEUE
+    SESSION_MESSAGE_QUEUE --> SUSPENDED_COMPOSER
+    HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
+    COMMAND_DELIVERY_STATES[Decision: one vocabulary of delivery states, section 2] --> SESSION_QUEUE_DESIGN
+    COMMAND_DELIVERY_STATES --> THREAD_SUCCESSOR_DELIVERY
+    MULTIAGENT_MODEL[Decision: identities and authority vocabulary, section 3] -. shares who-may vocabulary .-> SESSION_QUEUE_DESIGN
+    AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. shares offline behavior .-> SESSION_QUEUE_DESIGN
+    SESSION_QUEUE_DESIGN -. may own .-> SANDBOX_IDLE_EXPIRY
+    SESSION_QUEUE_DESIGN -. shares delivery semantics .-> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
 ```
 
 ### `DURABLE_SESSION_LIFECYCLE` — Session lifetime and revival
 
-**Decision.** Decide: what a revived Session gets
-back (native harness state only, or also its workspace files); who may revive. Each incarnation
+**Decision.** Decide: who may revive. A revived Session gets back its native harness state, and its workspace if
+the workspace volume still exists (`WORKSPACE_VOLUME`). Each incarnation
 uses the Sandbox's template as it is at that start (`AGENTPLANE_SANDBOX_RESOURCE`), so revival
 picks up template and image updates. Sessions that share a Sandbox revive together,
 since they share its state PVC. Direction (operator, 2026-10-11 PDT): a new user message or a
 notification resumes a stopped Sandbox, never a read. Both reach the Runner Gateway as commands, so
 one hook covers them: the gateway finds the Sandbox in its Session registry, sets the Sandbox
 resource's desired state to running and holds the command until the new incarnation's runner
-connects. Resuming by Session ID works while the Sandbox exists, stopped or not. Open: what the user sees while it starts.
+connects. A command held only while the sender waits is lost if the sender goes away;
+`SESSION_MESSAGE_QUEUE` is the durable version. Resuming by Session ID works while the Sandbox exists, stopped or not. Open: what the user sees while it starts.
 
-### `SESSION_STATE_VOLUME_DESIGN` — what the state PVC holds
+### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
 
-**Decision; direction set by the operator, 2026-10-10 and 2026-10-12 PDT.** One filesystem PVC per Sandbox holds the native harness files and the
-runner's state, separate from the workspace; each incarnation's runner continues the same journal
-on it. The Sandbox Controller creates it from the template's `stateVolume`, mounted as a volume in pods
-and through virtiofs in VMs (`agentplane/runner/vm.nix`). The runner's state and the harness files sit in
-separate `/state/runner` and `/state/harness` directories (`VM_PROCESS_ISOLATION`). For VMs, the operator's direction (2026-10-12 PDT) keeps the workspace
-VM-local rather than on a PVC, so it is dropped on a switch from VM to pod, and makes it a mounted
-PVC once the cluster has block storage that can move between kinds (OpenEBS or another
-provisioner); VM-local means a disk the VM keeps across stop and start, deleted only with the
-Sandbox, since a revived conversation refers to files the agent made (operator, 2026-10-12 PDT). Decide: storage class, since `local-path` pins a volume to one node and so pins every incarnation
-there; file ownership, since files a VM writes are `107:107` (`agentplane/runner/vm.nix`), so pods run the runner and harness as `107:107` and a Session moves between kinds with no `chown` (checked live); its quota (TODO, deferred by the
-operator 2026-10-12: `local-path` enforces no PVC size, and inside a guest `df` shows the node's
-whole disk; #4717 tracks a capacity-enforcing provisioner); and refusing an incompatible harness or
-runner version rather than attempting it.
+**Blocked on `NODE_LOCAL_BLOCK_STORAGE`; operator, 2026-10-13 PDT: the state volume need not be
+virtiofs, so switch both kinds to block storage once the cluster has it.** One PVC per Sandbox holds
+the runner's state and the harness's native files, not the workspace; each incarnation's runner
+continues the same journal on it. Today the Sandbox Controller creates it from the template's
+`stateVolume`, mounted as a volume in pods and through virtiofs in VMs (`agentplane/runner/vm.nix`),
+in separate `/state/runner` and `/state/harness` directories (`VM_PROCESS_ISOLATION`). Block storage
+would let a VM mount it as a disk with its own filesystem instead, which would end the virtiofs
+`107:107` constraint on who can write it (the uid choice in `vm.nix` and the pods' `107:107` exist
+for it; check what else relies on it before changing). Check that a Session can still move between
+kinds on it. The runner versions and migrates the contents and the controller has no version gate
+(`SANDBOX_IMAGE_REPLACE`). The workspace is `WORKSPACE_VOLUME`'s.
+
+### `NODE_LOCAL_BLOCK_STORAGE` — node-local block volumes on every node
+
+**Unscheduled; operator, 2026-10-13 PDT.** The cluster has no provisioner on every node that makes
+block volumes (a PVC with `volumeMode: Block`, or a filesystem PVC on a block device), so a VM
+cannot get a fast workspace that way. Install one that is node-local, since replicated filesystems
+were slow in the operator's experience, and capacity-enforcing, which is #4717
+(<https://github.com/agentydragon/ducktape/issues/4717>): `local-path` enforces no PVC size, and inside a
+guest `df` shows the node's whole disk. OpenEBS LVM already serves `llm-models` on one node.
+Node-local pins a volume, and so every incarnation, to its node; moving it is
+`WORKSPACE_NODE_PORTABILITY`.
+
+### `WORKSPACE_VOLUME` — a workspace volume tracked apart from the state PVC
+
+**Blocked on `NODE_LOCAL_BLOCK_STORAGE` and the Sandbox resource; operator, 2026-10-13 PDT.** Today,
+read from the code and not run: a pod's workspaces sit under `/state/workspaces` on the state PVC; a
+VM's workspace is a VM-local blank disk (a DataVolume) that survives stop and start, because stopping
+keeps the VM and its disks, and is deleted with the VM, that is, when the Sandbox is deleted or its
+template switches from VM to Pod. The pod's `/state/workspaces` content is not visible in a VM, whose
+disk mounts over that path. Track the workspace as its own volume in the Sandbox, apart from the state
+PVC, for both kinds, and when it is gone (dropped, or never made) resume reconciles by creating a
+fresh one, so losing a workspace never loses the runner's state. Workspaces can be large (tens of GB
+of build caches), so this is where the block storage matters. Pods and VMs use the same block storage
+(`STATE_VOLUME_BLOCK`), so a Sandbox switching between them keeps both volumes and needs no
+compatibility rules or conversion (operator, 2026-10-13 PDT).
+
+### `SANDBOX_SPEC_EDIT` — edit a suspended Sandbox's template or kind
+
+**Unscheduled; operator, 2026-10-13 PDT.** Let the operator change a Sandbox's template, including a
+switch between VM and Pod, from the app, only while the Sandbox is suspended. Each incarnation
+already reads the template as it is then (`SANDBOX_IMAGE_REPLACE`), and no spec is replaced
+automatically (`SANDBOX_LIFECYCLE`); this is the explicit, operator-driven edit. Needs `WORKSPACE_VOLUME`,
+so a kind switch keeps the workspace, and `VM_PROVIDER` for the VM side. The preset the app records
+on a Sandbox as a label (`APP_SESSION_DEFAULTS`) must stay true after the edit.
+
+### `WORKSPACE_NODE_PORTABILITY` — move a workspace between nodes
+
+**Unscheduled; operator, 2026-10-13 PDT: even later.** A reasonably fast, node-portable workspace, or
+node portability by copying: volsync from node to node, through S3 on SeaweedFS or directly, while the
+Sandbox is suspended. Node-local volumes stay the default; this only moves them.
+
+### `SANDBOX_ARCHIVE` — a suspended Sandbox archived to object storage
+
+**Unscheduled; operator, 2026-10-13 PDT: a thought that volsync suggests, not a plan.** Resource
+affordances for a Sandbox that still exists but whose volumes sit in restic or S3, so it must be
+rehydrated before it can start, freeing the node's disk meanwhile. Sandbox status would say that it
+is archived and where, and resuming one rehydrates first. Related to `WORKSPACE_NODE_PORTABILITY`,
+which shares the copy mechanism. Needs `WORKSPACE_VOLUME`; the runner's state PVC would archive the
+same way.
 
 ### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
 
@@ -747,7 +877,9 @@ and state-volume-owner PRs land, leaves this node.
 together. One is what Agent Sandbox did, plus VM support: a template, a Pod or VM per incarnation,
 and a state volume that stays. The other is specific to our runner running inside: sealing a
 Session's journal before the incarnation goes (`SANDBOX_LIFECYCLE`, `CONTROLLER_SEALS`). Separated,
-the first could be reused without the runner. Decide where the line falls (resource, controller or package) and what each side owns.
+the first could be reused without the runner. Decide where the line falls (resource, controller or package) and what each side owns. A
+layered pair, a Sandbox and a runner that runs inside one, is the direction `SESSION_QUEUE_DESIGN`
+points to, if the queue also owns suspension.
 
 ### `SANDBOX_RUNNER_LAYERING` — add the runner and harnesses to a platform user's image
 
@@ -760,15 +892,15 @@ Options the operator named, none chosen: mount a separate volume that carries th
 Codex into a Pod image that has none of them; or take a user root filesystem and run it under
 Firecracker with the runner as init.
 
-### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes stop
+### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes suspend
 
-**Unscheduled; needs design; operator, 2026-10-11 PDT.** An idle runner Sandbox stops its
-current incarnation: it is sealed (`SANDBOX_LIFECYCLE`), then the Pod or VM goes, and the Sandbox,
-its ServiceAccount, bindings and state PVC stay, so nothing is lost and `SESSION_REVIVE` resumes it
-on the same PVC. Decide what
-counts as idle (no turns or commands for a configured time, and nothing attached), and whether a
-stopped Sandbox is ever deleted outright, and when; deleting goes through
-[teardown](../sandbox_service/API.md#teardown) and the seal. Action Service boxes are
+**Unscheduled; needs design; operator, 2026-10-11 and 2026-10-13 PDT.** An idle runner Sandbox
+suspends: it is sealed (`SANDBOX_LIFECYCLE`), then the Pod or VM goes, freeing memory and compute,
+and the Sandbox, its ServiceAccount, bindings and state PVC stay, so `SESSION_REVIVE` resumes it on
+the same PVC. Nothing deletes a Sandbox on idleness or any timer (operator, 2026-10-13 PDT): only
+the operator deletes one, through [teardown](../sandbox_service/API.md#teardown) and the seal. What
+a resume gets back of the workspace depends on `WORKSPACE_VOLUME`. Decide what counts as idle (no
+turns or commands for a configured time, and nothing attached). Action Service boxes are
 `ACTION_BOX_IDLE_REAPER`'s, which only ever deletes.
 
 ### `SESSION_INCARNATIONS` — a Session records its incarnations
@@ -787,6 +919,36 @@ template as it is now, possibly on a new image, and resume each harness as
 a new incarnation of the same Session and history. Test
 revival after a long stop, a refused incompatible state PVC, and concurrent revive requests.
 
+### `SESSION_QUEUE_DESIGN` — where the Session message queue sits and what it owns
+
+**Decision; operator, 2026-10-13 PDT.** Now that Sandboxes are durable, sending a message to a
+Session in a specific Sandbox should restore the Sandbox if it is suspended and deliver the message
+once the runner is available. That needs a durable queue between the end user and the harness, which
+the operator accepts: "write a message, press Enter, close the window, come back three hours later
+and the agent has resumed and finished" is not possible without a controller and a queue. Working
+name "session egress controller", inside or above the Runner Gateway. Decide: where it sits and
+whether it is a new service or part of the gateway; what is durable and where, with the ordering,
+deduplication and acknowledgement `THREAD_SUCCESSOR_DELIVERY` needs, and the offline behavior
+`AGENT_MESSAGING_DESIGN` decides for agent messages; what happens to a message whose
+Session is deleted or whose revival fails; which senders may revive, since a notification or a user
+message resumes a Sandbox but an agent's message does not (`AGENT_MESSAGE_RECEPTION`) unless decided
+otherwise; and whether it also owns other lifecycle, for example deciding that nothing happened for
+an hour and suspending (`SANDBOX_IDLE_EXPIRY`). Delivery waits on the runner's bootstrap, which
+`BOOTSTRAP_PROGRESS_CONTRACT` makes visible. The delivery states are `COMMAND_DELIVERY_STATES`'s. Owning suspension points toward layered resources,
+a Sandbox and a runner that runs inside one (`SANDBOX_GENERIC_SPLIT`).
+
+### `SESSION_MESSAGE_QUEUE` — a durable queue that revives a Sandbox and delivers the message
+
+**Blocked on `SESSION_QUEUE_DESIGN` and `SESSION_REVIVE`.** Implement what the design chooses: accept
+a message for a Session whose Sandbox is suspended, set the Sandbox running, and deliver the message
+to the runner once it connects, surviving the sender going away. Test a message sent while
+suspended, the sender gone before the runner is up, a failed revival, and duplicate sends.
+
+### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
+
+**Blocked on `SESSION_MESSAGE_QUEUE`.** A suspended Session in the app has an enabled composer;
+sending queues the message and shows that the Sandbox is starting and the message waits.
+
 ### `THREAD_SUCCESSOR_DELIVERY` — commands unsettled across incarnations
 
 **Blocked on revival.** A command whose admission was ambiguous when an incarnation ended is not
@@ -795,7 +957,7 @@ replayed into the next one; it stays unknown and is shown as such. Moved from th
 ### `HOSTED_THREAD_SURFACES` — show and revive stopped Sessions
 
 **Blocked on revival.** The app lists Sessions whose Sandbox has no
-running incarnation, reads their history from the History Service, and offers an explicit revive.
+running incarnation, reads their history from the History Service, and offers an explicit revive,.
 Moved from the freezer.
 
 ## 8. Ownership and naming cleanup
@@ -811,6 +973,8 @@ flowchart TD
     SANDBOX_DATABASE_RENAME[Unscheduled: name the sandbox_commands database for the Runner Gateway]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
+    SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes suspend, section 7] -. same idleness question .-> ACTION_BOX_IDLE_REAPER
+    GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] -. makes moot .-> SANDBOX_DATABASE_RENAME
 ```
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
@@ -913,7 +1077,8 @@ flowchart TD
 journal entries its ingress has already acknowledged, behind a flag, with full persistence kept
 selectable; the freezer's
 [`RUNNER_JOURNAL_SETTLEMENT`](task_freezer.md#runner_journal_settlement--settle-deltas-in-the-runner-journal-too) is the same idea at the delta level. Not designed: what the runner still needs locally (cursors, seal state, entries a
-resumed harness or a lost push reads back) once acknowledged entries are gone.
+resumed harness or a lost push reads back) once acknowledged entries are gone, including what a revived incarnation reads back
+(`SESSION_INCARNATIONS`).
 
 ## 11. Coherence refactors
 
