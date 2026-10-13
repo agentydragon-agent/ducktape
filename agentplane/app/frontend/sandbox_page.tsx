@@ -14,6 +14,7 @@ import {
   TextInput,
   Textarea,
   Title,
+  Tooltip,
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
@@ -41,8 +42,10 @@ import { ActionPolicySection, BoundPolicySection } from "./actions/policy";
 import { Disclosure } from "./disclosure";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
+import { MarkGlyph } from "./mark_glyph";
+import { TimeAgo } from "./time_ago";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
-import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
+import { liveSandboxUrl, useLive, type SandboxSnapshot } from "./live";
 import { RawSwitch } from "./raw_switch";
 import {
   containerStatuses,
@@ -51,11 +54,11 @@ import {
   rawConditions,
   rawString,
   sandboxReady,
+  sandboxStatusDetail,
   sandboxSummary,
   type RawCondition,
 } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
-import { StaleNotice } from "./stream_status";
 import { TopbarTitle } from "./topbar";
 import { HarnessState, SessionSpecSchema, SetupState, type SessionSummary } from "../../proto/runner_pb";
 
@@ -148,7 +151,7 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
       ) : (
         <>
           <Text size="sm">
-            Sandbox {sandbox.operating_mode.toLowerCase()}, created {new Date(sandbox.created_at).toLocaleString()}
+            Sandbox {sandbox.operating_mode.toLowerCase()}, created <TimeAgo value={sandbox.created_at} />
             {sandbox.pod?.node_name ? `, Pod placed on ${sandbox.pod.node_name}` : ", Pod not placed"}
           </Text>
           {/* The account its Pod runs as is what every binding names, so the tabs below are its policy, not this
@@ -506,9 +509,16 @@ export function SandboxPage({
             {name}
           </Title>
           {sandbox && (
-            <Badge color={SANDBOX_STATUS_MARKS[sandboxSummary(sandbox).kind].color} style={{ flexShrink: 0 }}>
-              {sandboxSummary(sandbox).label}
-            </Badge>
+            <Tooltip label={sandboxStatusDetail(sandbox)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
+              <span
+                role="img"
+                tabIndex={0}
+                aria-label={`Sandbox status: ${sandboxSummary(sandbox).label}`}
+                style={{ display: "inline-flex", flexShrink: 0 }}
+              >
+                <MarkGlyph mark={SANDBOX_STATUS_MARKS[sandboxSummary(sandbox).kind]} size="small" />
+              </span>
+            </Tooltip>
           )}
         </Group>
       </TopbarTitle>
@@ -537,8 +547,6 @@ export function SandboxPage({
           </Group>
         )}
       </Group>
-      <StaleNotice streams={[live.stream]} />
-      <LiveStatus live={live} />
       {confirmingDelete && (
         <ConfirmDelete
           name={name}
@@ -551,7 +559,9 @@ export function SandboxPage({
       )}
       {error && <Text c="red">{error}</Text>}
       {live.snapshot !== null && sandbox === null && <Text c="red">There is no sandbox {name} any more.</Text>}
-      {sandbox && !ready && <Text>Sandbox status: {sandboxSummary(sandbox).label}. Sessions need a ready Pod.</Text>}
+      {sandbox && !ready && (
+        <Text>Sandbox status: {sandboxSummary(sandbox).label}. Sessions need a ready Sandbox.</Text>
+      )}
       <Tabs
         value={tab}
         onChange={(value) => {

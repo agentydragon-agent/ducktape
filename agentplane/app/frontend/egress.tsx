@@ -2,11 +2,12 @@ import { Badge, Button, Group, MultiSelect, SegmentedControl, Stack, Table, Text
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
+import { TimeAgo } from "./time_ago";
 import { api, displayableError, type BindingView, type Decision, type PolicyView } from "./client";
 import { type DecisionGroup, groupDecisions } from "./decision_groups";
 import { type DecisionsSnapshot, liveEgressDecisionsUrl } from "./live";
 import { followStream, type StreamConnection } from "./live_stream";
-import { StaleNotice, type StreamStatus, useStreamStatus } from "./stream_status";
+import { useStreamStatus } from "./stream_status";
 
 function provenance(binding: BindingView): string {
   return binding.from_git ? "from git" : "runtime";
@@ -18,7 +19,7 @@ export function expiry(expiresAt: string | null | undefined): JSX.Element {
   const at = new Date(expiresAt);
   return (
     <Text size="sm" c={at.getTime() < Date.now() ? "red" : undefined}>
-      {at.toLocaleString()}
+      <TimeAgo value={at} />
     </Text>
   );
 }
@@ -181,7 +182,7 @@ export function EgressBindings({
                   </Tooltip>
                   <Text size="xs" c="dimmed">
                     {provenance(binding)} · expires{" "}
-                    {binding.expires_at ? new Date(binding.expires_at).toLocaleString() : "never"}
+                    {binding.expires_at ? <TimeAgo value={binding.expires_at} /> : "never"}
                   </Text>
                   {policyNames}
                 </Stack>
@@ -279,7 +280,7 @@ function DecisionRow({ decision, nested }: { decision: Decision; nested: boolean
     <Table.Tr>
       <Table.Td pl={nested ? "xl" : undefined}>
         <Text size="sm" style={{ whiteSpace: "nowrap" }}>
-          {new Date(decision.at).toLocaleTimeString()}
+          <TimeAgo value={decision.at} />
         </Text>
       </Table.Td>
       <Table.Td>
@@ -325,9 +326,16 @@ function DecisionGroupRows({
     <>
       <Table.Tr>
         <Table.Td>
-          <Tooltip label={`First ${new Date(group.firstAt).toLocaleTimeString()}`} withArrow>
+          <Tooltip
+            label={
+              <>
+                First <TimeAgo value={group.firstAt} />
+              </>
+            }
+            withArrow
+          >
             <Text size="sm" style={{ whiteSpace: "nowrap" }}>
-              {new Date(group.lastAt).toLocaleTimeString()}
+              <TimeAgo value={group.lastAt} />
             </Text>
           </Tooltip>
         </Table.Td>
@@ -436,7 +444,7 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
 }
 
 /** The sandbox's decisions as the proxy reports them: a snapshot per change, none while it is quiet. */
-function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null; stream: StreamStatus } {
+function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null } {
   const [snapshot, setSnapshot] = useState<DecisionsSnapshot | null>(null);
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
   useEffect(() => {
@@ -450,7 +458,8 @@ function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null;
       onConnection: setConnection,
     });
   }, [name]);
-  return { snapshot, stream: useStreamStatus(`Egress decisions of ${name}`, connection) };
+  useStreamStatus(`Egress decisions of ${name}`, connection);
+  return { snapshot };
 }
 
 /** What may leave the sandbox and what recently did: its pushed bindings and the proxy's decisions. */
@@ -498,7 +507,6 @@ export function EgressSection({ name, bindings }: { name: string; bindings: Bind
       />
       {bindings && <EgressBindings bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}
       <Title order={5}>Recent decisions</Title>
-      <StaleNotice streams={[decisions.stream]} />
       {decisions.snapshot !== null && !decisions.snapshot.watching && (
         <Text size="sm" c="dimmed">
           Not hearing from the egress proxy about new decisions; this log may be behind.
