@@ -504,7 +504,7 @@ observations. New database work follows the task-specific review and rollout req
 flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
-    POLICY_RUNTIME_GRANTS[Candidate: time-limited grants of any rule type]
+    POLICY_RUNTIME_GRANTS[Candidate: web app affordances for bindings and sets]
     OLD_POLICY_KINDS_DROP[Candidate: drop the old policy kinds]
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
@@ -542,12 +542,18 @@ subjects or those grants move to the agent's ServiceAccount.
 Kubernetes scope and egress/Action grants. Record intended authority in generated configuration,
 not ad hoc grants. Test an allowed and denied operation; do not add privileges as part of this review.
 
-### `POLICY_RUNTIME_GRANTS` — time-limited grants
+### `POLICY_RUNTIME_GRANTS` — web app affordances for bindings and sets
 
-**Candidate.** An operator-only grant/revoke RPC with optional `expiresAt`
-for sets of any rule type, and UI chips showing each binding's set, expiry and ready conditions.
-One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry, so no reader
-handles expiry itself.
+**Candidate; operator, 2026-10-13 PDT: a friendlier UI for what the operator can already do with
+`kubectl`.** The web app lets the operator create a `PolicyBinding` of a ServiceAccount to existing
+PolicySets of any rule type, optionally with an `expiresAt`, delete one, and see each binding's set,
+expiry and ready conditions; possibly also create a new PolicySet. The app makes the Kubernetes call
+for the operator who asked, since the layers that execute on these CRs act on them without editing
+them, so the Sandbox Service's egress-only `GrantEgress`/`RevokeEgress` go with their callers. The
+app takes over what they enforce (refusing a Flux-applied or Sandbox-controlled binding, the owner
+reference on the Sandbox) and gets the `policybindings` create/delete permission the Sandbox Service
+has today. One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry,
+so no reader handles expiry itself.
 
 ### `OLD_POLICY_KINDS_DROP` — drop the old policy kinds
 
@@ -675,6 +681,9 @@ state, which the controller validates; it gets no resume RPC on the Sandbox Serv
 flowchart TD
     VM_PROVIDER[VM provider, section 4] --> SANDBOX_IMAGE_REPLACE[Blocked: replace a VM's runner image between incarnations]
     SANDBOX_LIFECYCLE[In progress: seal before suspend, PVC owned by the Sandbox]
+    SANDBOX_GENERIC_SPLIT[Unscheduled: split the generic Sandbox from the runner's sealing]
+    SANDBOX_RUNNER_LAYERING[Unscheduled: add the runner and harnesses to a platform user's image]
+    SANDBOX_GENERIC_SPLIT -. related .-> SANDBOX_RUNNER_LAYERING
 ```
 
 ### `SANDBOX_IMAGE_REPLACE` — replace a VM's runner image between incarnations
@@ -709,6 +718,25 @@ and state-volume-owner PRs land, leaves this node.
 - **Not done:** a force-seal operation (a stuck Sandbox has its finalizer removed by hand), and
   automatic or explicit replacement of a Sandbox's spec. Suspend then resume starts from the
   template as it is then; a stored rendered spec can feed a later diff.
+
+### `SANDBOX_GENERIC_SPLIT` — separate the generic Sandbox from the runner's sealing
+
+**Unscheduled; operator, 2026-10-13 PDT: a later TODO.** Our `Sandbox` resource binds two concerns
+together. One is what Agent Sandbox did, plus VM support: a template, a Pod or VM per incarnation,
+and a state volume that stays. The other is specific to our runner running inside: sealing a
+Session's journal before the incarnation goes (`SANDBOX_LIFECYCLE`, `CONTROLLER_SEALS`). Separated,
+the first could be reused without the runner. Decide where the line falls (resource, controller or package) and what each side owns.
+
+### `SANDBOX_RUNNER_LAYERING` — add the runner and harnesses to a platform user's image
+
+**Unscheduled; operator, 2026-10-13 PDT: very low priority unless easy.** Separate the runner's
+concerns (its version and binary, and the harness binaries) from the tools in the image, so a
+platform user supplies a Pod image or VM image or definition with no runner or harnesses and the
+runner side layers them in. Then they need not bump build versions or layer the runner themselves.
+Related to `SANDBOX_GENERIC_SPLIT`: that node separates the resource, this one separates the image.
+Options the operator named, none chosen: mount a separate volume that carries the runner, Claude and
+Codex into a Pod image that has none of them; or take a user root filesystem and run it under
+Firecracker with the runner as init.
 
 ### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes stop
 
