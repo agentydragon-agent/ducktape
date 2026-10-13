@@ -38,6 +38,7 @@ import {
   type ThreadView,
 } from "./client";
 import { ActionPolicySection } from "./actions/policy";
+import { Disclosure } from "./disclosure";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
@@ -201,7 +202,6 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
               No Sandbox conditions reported.
             </Text>
           )}
-          <KubernetesGrantStatus sandbox={sandbox} />
           {sandbox.pod ? (
             <>
               <Text size="sm">
@@ -226,26 +226,59 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
                   No Pod conditions reported.
                 </Text>
               )}
-              {containers.length > 0 && <Title order={5}>Containers</Title>}
-              {containers.map((container) => (
-                <Group key={`${container.role}/${container.name}`} gap="xs">
-                  <Text size="sm" fw={600}>
-                    {container.role === "container" ? container.name : `${container.role} ${container.name}`}
-                  </Text>
-                  <Badge color={container.state === "running" ? "green" : "orange"}>{container.state}</Badge>
-                  {container.ready && <Badge variant="light">ready</Badge>}
-                  {container.restartCount > 0 && <Badge color="red">{container.restartCount} restarts</Badge>}
-                  {container.reason && <Text size="sm">{container.reason}</Text>}
-                  {container.message && (
-                    <Text size="sm" c="dimmed">
-                      {container.message}
-                    </Text>
-                  )}
-                  {container.exitCode !== null && <Text size="sm">exit {container.exitCode}</Text>}
-                  {container.startedAt && <Text size="sm">started {container.startedAt}</Text>}
-                  {container.finishedAt && <Text size="sm">finished {container.finishedAt}</Text>}
-                </Group>
-              ))}
+              {containers.length > 0 && (
+                <Stack gap="xs">
+                  <Title order={5}>Containers</Title>
+                  <Table.ScrollContainer minWidth={620} type="native">
+                    <Table>
+                      <Table.Thead>
+                        <Table.Tr>
+                          <Table.Th>Container</Table.Th>
+                          <Table.Th>State</Table.Th>
+                          <Table.Th>Ready</Table.Th>
+                          <Table.Th>Restarts</Table.Th>
+                          <Table.Th>Detail</Table.Th>
+                          <Table.Th>Started</Table.Th>
+                          <Table.Th>Finished</Table.Th>
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {containers.map((container) => (
+                          <Table.Tr key={`${container.role}/${container.name}`}>
+                            <Table.Td>
+                              {container.role === "container" ? container.name : `${container.role} ${container.name}`}
+                            </Table.Td>
+                            <Table.Td>
+                              <Badge color={container.state === "running" ? "green" : "orange"}>
+                                {container.state}
+                              </Badge>
+                            </Table.Td>
+                            <Table.Td>{container.ready ? "yes" : "no"}</Table.Td>
+                            <Table.Td>
+                              {container.restartCount > 0 ? (
+                                <Badge color="red">{container.restartCount}</Badge>
+                              ) : (
+                                container.restartCount
+                              )}
+                            </Table.Td>
+                            <Table.Td>
+                              {[
+                                container.reason,
+                                container.message,
+                                container.exitCode !== null && `exit ${container.exitCode}`,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ") || "—"}
+                            </Table.Td>
+                            <Table.Td>{container.startedAt ?? "—"}</Table.Td>
+                            <Table.Td>{container.finishedAt ?? "—"}</Table.Td>
+                          </Table.Tr>
+                        ))}
+                      </Table.Tbody>
+                    </Table>
+                  </Table.ScrollContainer>
+                </Stack>
+              )}
             </>
           ) : (
             <Text size="sm">No Pod.</Text>
@@ -290,7 +323,7 @@ export function SandboxPage({
   const [instructions, setInstructions] = useState("");
   const [cwdTemplate, setCwdTemplate] = useState("/state/workspaces/{session_id}");
   const [setupScript, setSetupScript] = useState("");
-  const [defaultsLabel, setDefaultsLabel] = useState<string | null>(null);
+  const [inheritsDefaults, setInheritsDefaults] = useState(false);
   // Launch-form offerings; existing threads retain their harness and model.
   const [harness, setHarness] = useState<Harness>("HARNESS_CLAUDE");
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
@@ -386,13 +419,13 @@ export function SandboxPage({
   const applyBindingDefaults = useEffectEvent(() => {
     const binding = sandbox?.binding;
     if (!binding) {
-      setDefaultsLabel(null);
+      setInheritsDefaults(false);
       setCwdTemplate("/state/workspaces/{session_id}");
       setSetupScript("");
       return;
     }
     const defaults = binding.session_defaults;
-    setDefaultsLabel(defaults ? "Sandbox defaults" : null);
+    setInheritsDefaults(Boolean(defaults));
     if (!defaults) {
       setCwdTemplate("/state/workspaces/{session_id}");
       setSetupScript("");
@@ -512,11 +545,6 @@ export function SandboxPage({
               {sandboxSummary(sandbox).label}
             </Badge>
           )}
-          {defaultsLabel && (
-            <Badge variant="light" style={{ flexShrink: 0 }}>
-              {defaultsLabel}
-            </Badge>
-          )}
         </Group>
       </TopbarTitle>
       <Group>
@@ -562,7 +590,7 @@ export function SandboxPage({
         <Text>
           {sandbox.launch_grants_pending || !sandbox.kubernetes_grants_ready
             ? "Launch or Kubernetes grants are not ready; sessions cannot start yet."
-            : `Sandbox status: ${sandboxSummary(sandbox).label}. Sessions need a ready Pod.`}
+            : "Sessions need a ready Pod."}
         </Text>
       )}
       <Tabs
@@ -575,14 +603,17 @@ export function SandboxPage({
         <Tabs.List>
           <Tabs.Tab value="sessions">Sessions</Tabs.Tab>
           <Tabs.Tab value="egress">Egress</Tabs.Tab>
-          <Tabs.Tab value="policy">Action policy</Tabs.Tab>
+          <Tabs.Tab value="policy">Policies</Tabs.Tab>
           <Tabs.Tab value="status">Status</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="egress" pt="sm">
           <EgressSection name={name} bindings={live.snapshot?.bindings ?? null} />
         </Tabs.Panel>
         <Tabs.Panel value="policy" pt="sm">
-          <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
+          <Stack gap="md">
+            <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
+            {sandbox && <KubernetesGrantStatus sandbox={sandbox} />}
+          </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
           {sandbox && <StatusView sandbox={sandbox} />}
@@ -650,28 +681,32 @@ export function SandboxPage({
                 </Group>
               </Stack>
             )}
-            <Textarea
-              label="Standing instructions"
-              description={defaultsLabel ? "Inherited from this sandbox; editable for this thread" : undefined}
-              autosize
-              minRows={2}
-              value={instructions}
-              onChange={(event) => setInstructions(event.currentTarget.value)}
-            />
+            <Disclosure summary="Standing instructions" keepMounted>
+              <Textarea
+                aria-label="Standing instructions"
+                description={inheritsDefaults ? "Inherited from this sandbox; editable for this thread" : undefined}
+                autosize
+                minRows={2}
+                value={instructions}
+                onChange={(event) => setInstructions(event.currentTarget.value)}
+              />
+            </Disclosure>
             <TextInput
               label="Working directory"
               description="{session_id} is replaced with this Thread's ID"
               value={cwdTemplate}
               onChange={(event) => setCwdTemplate(event.currentTarget.value)}
             />
-            <Textarea
-              label="Thread setup script"
-              description="Runs once in the resolved working directory before the harness starts"
-              autosize
-              minRows={2}
-              value={setupScript}
-              onChange={(event) => setSetupScript(event.currentTarget.value)}
-            />
+            <Disclosure summary="Thread setup script" keepMounted>
+              <Textarea
+                aria-label="Thread setup script"
+                description="Runs once in the resolved working directory before the harness starts"
+                autosize
+                minRows={2}
+                value={setupScript}
+                onChange={(event) => setSetupScript(event.currentTarget.value)}
+              />
+            </Disclosure>
             <Table>
               <Table.Thead>
                 <Table.Tr>

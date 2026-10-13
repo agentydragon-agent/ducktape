@@ -34,11 +34,13 @@ import {
   type SessionDefaults,
 } from "./client";
 import type { ActionPolicySetView } from "./actions/client";
+import { Disclosure } from "./disclosure";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 import { podIp, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { StaleNotice } from "./stream_status";
+import { TopbarTitle } from "./topbar";
 
 const EMPTY_FORM: NewSandbox = {
   name: "",
@@ -215,7 +217,11 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   return (
     <Stack>
-      <Title order={2}>Sandboxes</Title>
+      <TopbarTitle>
+        <Title order={1} size="h4">
+          Sandboxes
+        </Title>
+      </TopbarTitle>
       <StaleNotice streams={[live.stream]} />
       <LiveStatus live={live} />
       {confirmingDelete !== null && (
@@ -387,22 +393,26 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           value={thread.cwd ?? ""}
           onChange={(event) => setThread({ ...thread, cwd: event.currentTarget.value })}
         />
-        <Textarea
-          label="Thread setup script"
-          description="Runs once in each new Thread's working directory, before its harness starts"
-          autosize
-          minRows={2}
-          value={thread.setup_script ?? ""}
-          onChange={(event) => setThread({ ...thread, setup_script: event.currentTarget.value })}
-        />
-        <Textarea
-          label="Standing instructions"
-          description="Edits apply to future threads in this sandbox"
-          autosize
-          minRows={3}
-          value={thread.instructions ?? ""}
-          onChange={(event) => setThread({ ...thread, instructions: event.currentTarget.value })}
-        />
+        <Disclosure summary="Thread setup script" keepMounted>
+          <Textarea
+            aria-label="Thread setup script"
+            description="Runs once in each new Thread's working directory, before its harness starts"
+            autosize
+            minRows={2}
+            value={thread.setup_script ?? ""}
+            onChange={(event) => setThread({ ...thread, setup_script: event.currentTarget.value })}
+          />
+        </Disclosure>
+        <Disclosure summary="Standing instructions" keepMounted>
+          <Textarea
+            aria-label="Standing instructions"
+            description="Edits apply to future threads in this sandbox"
+            autosize
+            minRows={3}
+            value={thread.instructions ?? ""}
+            onChange={(event) => setThread({ ...thread, instructions: event.currentTarget.value })}
+          />
+        </Disclosure>
       </Stack>
       <Table>
         <Table.Thead>
