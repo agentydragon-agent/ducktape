@@ -71,8 +71,7 @@ from agentplane.runner_gateway.client import RunnerGatewayClient
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
-from util.testing.visual_review import upsert_review_asset
-from util.visual_review import VisualReviewAsset
+from util.testing.visual_capture import VisualPage
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -100,9 +99,9 @@ async def route_once(page: Page, url: str, handler: Callable[[Route], Awaitable[
 
 
 async def _review_screenshot(page: Page, name: str, label: str) -> None:
-    output_dir = undeclared_outputs_dir()
-    await page.screenshot(path=output_dir / name)
-    upsert_review_asset(output_dir, title="Agentplane Thread browser", asset=VisualReviewAsset(path=name, label=label))
+    await VisualPage(page, output_dir=undeclared_outputs_dir(), title="Agentplane Thread browser").capture(
+        name.removesuffix(".png"), label=label
+    )
 
 
 @pytest.fixture
@@ -1348,7 +1347,7 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
         )
         assert await page.evaluate("() => window.getSelection()?.toString()") == line_text
 
-    for _ in range(2):
+    for repeat in range(2):
         await select_command_line("echo command line 0")
         await show_all.click()
         # Deliver layout/ResizeObserver callbacks: the old observer measured a detached node and
@@ -1363,9 +1362,10 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
         await read_at(page, command.locator(".cm-line").filter(has_text="echo command line 20"), 0.5)
         await expect(collapse).to_be_in_viewport()
         await select_command_line("echo command line 20")
-        await _review_screenshot(
-            page, f"thread-command-expanded-{viewport_name}.png", f"Expanded command on {viewport_name}"
-        )
+        if repeat == 0:  # review outputs are unique per name
+            await _review_screenshot(
+                page, f"thread-command-expanded-{viewport_name}.png", f"Expanded command on {viewport_name}"
+            )
         await collapse.click()
         await frames(page)
         assert await editor.evaluate("node => node.isConnected"), "collapsing remounted the CodeMirror editor"
@@ -1395,9 +1395,10 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
         )
         assert nested_heading_display == "flex", "collapsed ClampedBlock styles hid a nested disclosure heading"
         await expect(call.locator(".agentplane-disclosure-summary").first).to_have_attribute("aria-expanded", "true")
-        await _review_screenshot(
-            page, f"thread-command-collapsed-{viewport_name}.png", f"Collapsed command on {viewport_name}"
-        )
+        if repeat == 0:
+            await _review_screenshot(
+                page, f"thread-command-collapsed-{viewport_name}.png", f"Collapsed command on {viewport_name}"
+            )
 
 
 @pytest.mark.parametrize("following", [False, True], ids=["mid-thread", "following"])

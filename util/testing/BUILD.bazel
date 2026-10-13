@@ -128,7 +128,6 @@ py_library(
     srcs = ["visual_review.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":undeclared_outputs",
         "//util:visual_review",
     ],
 )
