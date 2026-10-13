@@ -47,6 +47,7 @@ import { TimeAgo } from "./time_ago";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, useLive, type SandboxSnapshot } from "./live";
 import { RawSwitch } from "./raw_switch";
+import { SandboxConsole } from "./sandbox_console";
 import {
   containerStatuses,
   podIp,
@@ -88,7 +89,7 @@ function setupLabel(state: SetupState): string {
 }
 
 // The page's tabs, named in the URL (`?tab=`) so a tab can be linked to and survives a reload.
-const TABS = ["sessions", "egress", "policy", "status"] as const;
+const TABS = ["sessions", "egress", "policy", "status", "console"] as const;
 type Tab = (typeof TABS)[number];
 const DEFAULT_TAB: Tab = "sessions";
 
@@ -574,6 +575,7 @@ export function SandboxPage({
           <Tabs.Tab value="egress">Egress</Tabs.Tab>
           <Tabs.Tab value="policy">Policies</Tabs.Tab>
           <Tabs.Tab value="status">Status</Tabs.Tab>
+          <Tabs.Tab value="console">Console</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="egress" pt="sm">
           <EgressSection name={name} bindings={live.snapshot?.bindings ?? null} />
@@ -586,6 +588,9 @@ export function SandboxPage({
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
           {sandbox && <StatusView sandbox={sandbox} />}
+        </Tabs.Panel>
+        <Tabs.Panel value="console" pt="sm">
+          {tab === "console" && <SandboxConsole sandbox={name} />}
         </Tabs.Panel>
         <Tabs.Panel value="sessions" pt="sm">
           <Stack>
