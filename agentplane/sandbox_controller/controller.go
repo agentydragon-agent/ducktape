@@ -17,9 +17,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
@@ -27,8 +30,14 @@ import (
 
 const (
 	Running = "Running"
-	// True while the incarnation Pod, a VM's virt-launcher Pod included, is Ready. The workload's own
+	// True while the incarnation Pod, a VM's virt-launcher Pod included, is Ready: the workload's own
 	// readiness, which says nothing of whether the runner has connected to the Runner Gateway.
+	WorkloadReady = "WorkloadReady"
+	// True while the incarnation's runner holds a live connection to the Runner Gateway, read from the
+	// Gateway's Lease for the Sandbox. Absent from a controller not configured with Leases.
+	RunnerConnected = "RunnerConnected"
+	// True when the Sandbox can take work: WorkloadReady and RunnerConnected. The lifecycle phase is
+	// separate.
 	Ready = "Ready"
 	// Set True on a deleting Sandbox, by this controller or the Runner Gateway, once its runner has
 	// sealed every Session and the ingress has acknowledged each seal; nothing of the Sandbox is
@@ -37,6 +46,8 @@ const (
 	// On the Pod or the VirtualMachine and its VMI and virt-launcher Pod, the state PVC, the
 	// ServiceAccount and the PolicyBinding: the Sandbox they belong to.
 	SandboxLabel = "agentplane.allegedly.works/sandbox"
+	// On the Runner Gateway's Lease for each Sandbox: selects the connection Leases among the namespace's.
+	ConnectionLabel = "agentplane.allegedly.works/runner-connection"
 	// On the Runner Gateway's Lease for a Sandbox: the Pod UID of the runner that last connected.
 	PodUIDAnnotation = "agentplane.allegedly.works/pod-uid"
 	// Seals a deleted Sandbox's Sessions, then deletes its Pod or VM; the state PVC goes by garbage
@@ -50,6 +61,12 @@ const (
 	templateIndex = "spec.template"
 	// How soon a seal that failed or is not yet acknowledged is asked again.
 	sealRetry = 2 * time.Second
+	// How soon a connection whose Lease has lapsed is looked at again: a renewal changes nothing the
+	// Lease watch enqueues on.
+	runnerLapsedPoll = 5 * time.Second
+	// How long past its Lease's expiry a runner still counts as connected. A Runner Gateway rollout
+	// drops every connection at once and the runners reconnect to the new replicas.
+	runnerDisconnectGrace = time.Minute
 )
 
 // Reconciler converges one Sandbox at a time: its state PVC, its Pod or VirtualMachine, and its
@@ -67,8 +84,11 @@ type Reconciler struct {
 	// CLEANUP(added 2026-10-13): Make Sealer and Leases required once the manifests pass the sealer
 	// flags in every environment and the Runner Gateway no longer sets SessionsSealed.
 	Sealer Sealer
-	// Reads the Lease the Runner Gateway writes for each connection, uncached.
+	// Reads the Lease the Runner Gateway writes for each connection, and, set up with a manager, watches
+	// them: a new connection, or a runner reconnecting, enqueues its Sandbox.
 	Leases client.Reader
+	// The current time, for the liveness of a connection Lease.
+	Now func() time.Time
 }
 
 // StateVolumeName is the Sandbox's state PVC.
@@ -127,7 +147,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		if err != nil || blocked == nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{RequeueAfter: blocked.retryAfterOrZero()}, r.updateStatus(ctx, &sandbox, w, blocked)
+		return r.updateStatus(ctx, &sandbox, w, blocked)
 	}
 	if controllerutil.AddFinalizer(&sandbox, StateVolumeFinalizer) {
 		if err := r.Update(ctx, &sandbox); err != nil {
@@ -157,7 +177,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 	}
-	return ctrl.Result{RequeueAfter: blocked.retryAfterOrZero()}, r.updateStatus(ctx, &sandbox, w, blocked)
+	return r.updateStatus(ctx, &sandbox, w, blocked)
 }
 
 func (r *Reconciler) workload(ctx context.Context, sandbox *Sandbox) (workload, error) {
@@ -495,7 +515,7 @@ func withSandboxLabel(labels map[string]string, sandbox *Sandbox) map[string]str
 	return labels
 }
 
-func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workload, blocked *unready) error {
+func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workload, blocked *unready) (ctrl.Result, error) {
 	status := sandbox.Status.DeepCopy()
 	status.Incarnation = nil
 	if pod := w.incarnation(); pod != nil {
@@ -517,18 +537,46 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workl
 		condition.Reason, condition.Message = "Stopped", "no Pod; the state PVC is kept"
 	}
 	meta.SetStatusCondition(&status.Conditions, condition)
-	meta.SetStatusCondition(&status.Conditions, readyCondition(sandbox, condition, w.incarnation()))
+	workloadReady := workloadReadyCondition(sandbox, condition, w.incarnation())
+	meta.SetStatusCondition(&status.Conditions, workloadReady)
+	ready := workloadReady
+	var recheck time.Duration
+	if r.Leases == nil {
+		meta.RemoveStatusCondition(&status.Conditions, RunnerConnected)
+	} else {
+		connected, after, err := r.runnerConnectedCondition(ctx, sandbox, workloadReady, w.incarnation())
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		meta.SetStatusCondition(&status.Conditions, connected)
+		recheck = after
+		if workloadReady.Status == metav1.ConditionTrue {
+			ready = connected
+		}
+	}
+	ready.Type = Ready
+	meta.SetStatusCondition(&status.Conditions, ready)
+	result := ctrl.Result{RequeueAfter: earliest(blocked.retryAfterOrZero(), recheck)}
 	if equality.Semantic.DeepEqual(status, &sandbox.Status) {
-		return nil
+		return result, nil
 	}
 	sandbox.Status = *status
-	return r.Status().Update(ctx, sandbox)
+	return result, r.Status().Update(ctx, sandbox)
 }
 
-// readyCondition is True only while the Sandbox runs and its incarnation Pod is Ready; otherwise it
-// carries the reason `running` gives, or `PodNotReady` when everything runs but the Pod is not Ready.
-func readyCondition(sandbox *Sandbox, running metav1.Condition, incarnation *corev1.Pod) metav1.Condition {
-	condition := metav1.Condition{Type: Ready, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation, Reason: running.Reason, Message: running.Message}
+// earliest is the shorter of two requeue delays, where zero is none.
+func earliest(a, b time.Duration) time.Duration {
+	if a == 0 || (b != 0 && b < a) {
+		return b
+	}
+	return a
+}
+
+// workloadReadyCondition is True only while the Sandbox runs and its incarnation Pod is Ready;
+// otherwise it carries the reason `running` gives, or `PodNotReady` when everything runs but the Pod
+// is not Ready.
+func workloadReadyCondition(sandbox *Sandbox, running metav1.Condition, incarnation *corev1.Pod) metav1.Condition {
+	condition := metav1.Condition{Type: WorkloadReady, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation, Reason: running.Reason, Message: running.Message}
 	if running.Status != metav1.ConditionTrue {
 		return condition
 	}
@@ -539,6 +587,42 @@ func readyCondition(sandbox *Sandbox, running metav1.Condition, incarnation *cor
 		condition.Reason, condition.Message = "PodNotReady", fmt.Sprintf("Pod %s is running but not Ready", incarnation.Name)
 	}
 	return condition
+}
+
+// runnerConnectedCondition is True while the Runner Gateway's Lease names this incarnation's Pod and
+// was renewed within its duration plus the grace, so a connection from an earlier incarnation never
+// counts and a brief drop does not. It also says when to look again, since no watch event marks time:
+// the moment a live connection would lapse, and a lapsed one, which a renewal revives silently.
+func (r *Reconciler) runnerConnectedCondition(ctx context.Context, sandbox *Sandbox, workload metav1.Condition, incarnation *corev1.Pod) (metav1.Condition, time.Duration, error) {
+	condition := metav1.Condition{Type: RunnerConnected, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
+	if workload.Status != metav1.ConditionTrue {
+		condition.Reason, condition.Message = "WorkloadNotReady", "the incarnation is not Ready"
+		return condition, 0, nil
+	}
+	var lease coordinationv1.Lease
+	if err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + "-runner"}, &lease); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return condition, 0, err
+		}
+		condition.Reason, condition.Message = "NeverConnected", "no runner has connected"
+		return condition, 0, nil
+	}
+	if runner := lease.Annotations[PodUIDAnnotation]; runner == "" || runner != string(incarnation.UID) {
+		condition.Reason, condition.Message = "AwaitingRunner", fmt.Sprintf("the runner that connected last is not Pod %s's", incarnation.Name)
+		return condition, 0, nil
+	}
+	if lease.Spec.RenewTime == nil || lease.Spec.LeaseDurationSeconds == nil {
+		condition.Reason, condition.Message = "ConnectionLost", "the connection Lease records no renewal"
+		return condition, runnerLapsedPoll, nil
+	}
+	lapse := lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second + runnerDisconnectGrace)
+	if remaining := lapse.Sub(r.Now()); remaining > 0 {
+		condition.Status, condition.Reason = metav1.ConditionTrue, "Connected"
+		condition.Message = fmt.Sprintf("Pod %s's runner is connected to the Runner Gateway", incarnation.Name)
+		return condition, remaining, nil
+	}
+	condition.Reason, condition.Message = "ConnectionLost", fmt.Sprintf("Pod %s's runner has not renewed its connection since %s", incarnation.Name, lease.Spec.RenewTime.Format(time.RFC3339))
+	return condition, runnerLapsedPoll, nil
 }
 
 func podReady(pod *corev1.Pod) bool {
@@ -588,7 +672,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: obj.GetNamespace(), Name: name}}}
 	})
-	builder := ctrl.NewControllerManagedBy(mgr).
+	setup := ctrl.NewControllerManagedBy(mgr).
 		For(&Sandbox{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.ConfigMap{}).
@@ -597,8 +681,27 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.Pod{}, bySandboxLabel).
 		Watches(&corev1.PersistentVolumeClaim{}, bySandboxLabel).
 		Watches(&SandboxTemplate{}, byTemplate)
-	if r.KubeVirt {
-		builder = builder.Owns(&kubevirtv1.VirtualMachine{}).Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel)
+	if r.Leases != nil {
+		// A connection's Lease is the Sandbox's by owner reference. Renewals only move the renew time,
+		// so only a different runner Pod or a new connection enqueues.
+		setup = setup.Watches(&coordinationv1.Lease{},
+			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &Sandbox{}),
+			builder.WithPredicates(predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+				previous, current := e.ObjectOld.(*coordinationv1.Lease), e.ObjectNew.(*coordinationv1.Lease)
+				return previous.Annotations[PodUIDAnnotation] != current.Annotations[PodUIDAnnotation] ||
+					leaseTransitions(previous) != leaseTransitions(current)
+			}}))
 	}
-	return builder.Complete(r)
+	if r.KubeVirt {
+		setup = setup.Owns(&kubevirtv1.VirtualMachine{}).Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel)
+	}
+	return setup.Complete(r)
+}
+
+// leaseTransitions is how many connections the Runner Gateway has accepted for the Sandbox.
+func leaseTransitions(lease *coordinationv1.Lease) int32 {
+	if lease.Spec.LeaseTransitions == nil {
+		return 0
+	}
+	return *lease.Spec.LeaseTransitions
 }

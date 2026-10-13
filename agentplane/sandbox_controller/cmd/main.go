@@ -5,7 +5,9 @@ import (
 	"errors"
 	"flag"
 	"os"
+	"time"
 
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -85,6 +87,14 @@ func run(namespace, metricsAddress, probeAddress string, sealer sandboxcontrolle
 	} else {
 		ctrl.Log.WithName("sandbox-controller").Info("KubeVirt's API is not served: VM Sandboxes stay unready")
 	}
+	if sealer.Target != "" {
+		// Only the Runner Gateway's connection Leases, not the leader election Lease.
+		connection, err := labels.NewRequirement(sandboxcontroller.ConnectionLabel, selection.Equals, []string{"true"})
+		if err != nil {
+			return err
+		}
+		byObject[&coordinationv1.Lease{}] = cache.ByObject{Label: labels.NewSelector().Add(*connection)}
+	}
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: metricsAddress},
@@ -101,9 +111,9 @@ func run(namespace, metricsAddress, probeAddress string, sealer sandboxcontrolle
 	if err != nil {
 		return err
 	}
-	reconciler := &sandboxcontroller.Reconciler{Client: mgr.GetClient(), KubeVirt: kubeVirt}
+	reconciler := &sandboxcontroller.Reconciler{Client: mgr.GetClient(), KubeVirt: kubeVirt, Now: time.Now}
 	if sealer.Target != "" {
-		reconciler.Sealer, reconciler.Leases = sealer, mgr.GetAPIReader()
+		reconciler.Sealer, reconciler.Leases = sealer, mgr.GetClient()
 	}
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return err
