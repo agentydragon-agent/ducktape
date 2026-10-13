@@ -150,7 +150,7 @@ function options(container: HTMLElement, label: string): HTMLElement[] {
 
 it("inherits the preset model and replaces incompatible choices when the harness changes", async () => {
   const { container } = await render();
-  expect(input(container, "Template").value).toBe("test-template");
+  expect(input(container, "Sandbox template").value).toBe("test-template");
   expect(input(container, "Model").value).toBe("Test Codex B");
   await choose(container, "Model", "Test Codex A");
   expect(input(container, "Model").value).toBe("Test Codex A");
@@ -236,7 +236,7 @@ it("allows an operator to remove the preset grant and sends an explicit empty gr
 
 it("lets an operator replace the preset template before creating the sandbox", async () => {
   const { container } = await render();
-  await choose(container, "Template", "other-template");
+  await choose(container, "Sandbox template", "other-template");
   const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
   await type(input(container, "Name"), "picked");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
@@ -282,4 +282,25 @@ it("distinguishes an initializing CR from a user-suspended sandbox", () => {
   const suspended: SandboxView = { ...initializing, initializing: false };
   expect(sandboxSummary(suspended)).toEqual({ label: "Suspended", kind: "suspended" });
   expect(deletable(suspended)).toBe(true);
+});
+
+it("creates under the preset-derived placeholder when the name is left empty", async () => {
+  const { container } = await render();
+  expect(input(container, "Name").placeholder).toBe("test-preset-1");
+  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  if (!button) throw new Error("Missing New sandbox button");
+  await act(async () => button.click());
+  expect(post).toHaveBeenCalledWith(
+    "/sandboxes",
+    expect.objectContaining({ body: expect.objectContaining({ name: "test-preset-1" }) })
+  );
+});
+
+it("flags an invalid typed name and refuses to create", async () => {
+  const { container } = await render();
+  await type(input(container, "Name"), "Bad_Name");
+  expect(input(container, "Name").getAttribute("aria-invalid")).toBe("true");
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  expect(button?.hasAttribute("disabled")).toBe(true);
 });

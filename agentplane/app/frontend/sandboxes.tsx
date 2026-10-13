@@ -37,6 +37,7 @@ import type { ActionPolicySetView } from "./actions/client";
 import { Disclosure } from "./disclosure";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
+import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
 import { podIp, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { StaleNotice } from "./stream_status";
@@ -102,6 +103,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const rows: SandboxView[] = live.snapshot?.sandboxes ?? [];
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedPreset = searchParams.get(PRESET_PARAM);
+  // An empty Name field creates the Sandbox under this free name, derived from the preset's.
+  const placeholderName = placeholderSandboxName(selectedPreset ?? "sandbox", new Set(rows.map((row) => row.name)));
+  const nameError = sandboxNameError(form.name || placeholderName);
 
   /** Fill the form from a preset, or clear what one filled; every launch field stays editable. */
   function pickPreset(preset: SandboxPresetView | null): void {
@@ -197,6 +201,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   async function create(): Promise<void> {
     const body = {
       ...form,
+      name: form.name || placeholderName,
       session_defaults: hasSessionDefaults(thread) ? thread : undefined,
     };
     const { data, error: failure } = await api.POST("/sandboxes", {
@@ -239,7 +244,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Select
           clearable
           label="Preset"
-          description="Fills editable launch defaults"
+          description="Fills the template, policies and session defaults below"
           data={presets.map((preset) => ({ value: preset.name, label: preset.title }))}
           value={selectedPreset}
           onChange={(name) => {
@@ -255,11 +260,14 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <TextInput
           label="Name"
           value={form.name}
+          placeholder={placeholderName}
+          error={form.name ? nameError : null}
           onChange={(e) => setForm({ ...form, name: e.currentTarget.value })}
           style={{ flex: "1 1 10rem" }}
         />
         <Select
-          label="Template"
+          label="Sandbox template"
+          description="The pod or VM shape it runs on"
           searchable
           clearable
           data={templates}
@@ -327,7 +335,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Button
           onClick={() => void create()}
           disabled={
-            !form.name ||
+            nameError !== null ||
             !form.template ||
             kubernetesGrantCatalogState !== "ready" ||
             Boolean(selectedPreset && (!thread.model || !modelOptions.some((option) => option.model === thread.model)))
