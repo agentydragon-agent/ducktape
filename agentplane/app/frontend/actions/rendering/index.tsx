@@ -9,7 +9,7 @@ import { type CallToolResult, CallToolResultView, toolValue } from "../call_tool
 import type { ActionRequestView } from "../client";
 import { renderPreview, type ArgumentsPreview, type CallPreview } from "./entry";
 import {
-  canApprovePullRequestInline,
+  offersCardDecisionButtonsPullRequest,
   createPullRequestLabel,
   createPullRequestPane,
 } from "./github/create_pull_request";
@@ -36,9 +36,9 @@ import {
   systemInfoArguments,
   systemInfoResult,
 } from "./grocy";
-import { canQuickApproveEventsList, eventsListLabel, eventsListPane } from "./kubernetes_admin/events_list";
+import { offersCardDecisionButtonsEventsList, eventsListLabel, eventsListPane } from "./kubernetes_admin/events_list";
 import {
-  canQuickApprovePodsInNamespace,
+  offersCardDecisionButtonsPodsInNamespace,
   podsInNamespaceCollapsed,
   podsInNamespaceDetails,
   podsInNamespaceLabel,
@@ -52,19 +52,27 @@ import {
   podsExecLabel,
   podsExecPane,
 } from "./kubernetes_admin/pods_exec";
-import { canQuickApprovePodsLog, podsLogLabel, podsLogPreview } from "./kubernetes_admin/pods_log";
+import { offersCardDecisionButtonsPodsLog, podsLogLabel, podsLogPreview } from "./kubernetes_admin/pods_log";
 import {
   resourcesApplyCollapsed,
   resourcesApplyLabel,
   resourcesApplyManifest,
 } from "./kubernetes_admin/resources_apply";
 import {
-  canQuickApproveResourcesDelete,
+  offersCardDecisionButtonsResourcesDelete,
   resourcesDeleteLabel,
   resourcesDeletePane,
 } from "./kubernetes_admin/resources_delete";
-import { canQuickApproveResourcesGet, resourcesGetLabel, resourcesGetPane } from "./kubernetes_admin/resources_get";
-import { canQuickApproveResourcesList, resourcesListLabel, resourcesListPane } from "./kubernetes_admin/resources_list";
+import {
+  offersCardDecisionButtonsResourcesGet,
+  resourcesGetLabel,
+  resourcesGetPane,
+} from "./kubernetes_admin/resources_get";
+import {
+  offersCardDecisionButtonsResourcesList,
+  resourcesListLabel,
+  resourcesListPane,
+} from "./kubernetes_admin/resources_list";
 import { renderResultPreview, type ResultPreview } from "./result_entry";
 import { execArgumentsPreview, execCollapsedPreview, execLabel, execResultPreview } from "./ssh/exec";
 import { calendarNodeArgumentsPreview, calendarNodeLabel } from "./tana";
@@ -245,21 +253,21 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
   ],
 ]);
 
-// Quick approval is deliberately a separate capability: a custom pane renderer does not grant an
-// inline decision. Each entry validates the complete Action arguments independently of its views.
-const QUICK_APPROVALS: ReadonlyMap<string, ReadonlyMap<string, (args: unknown) => boolean>> = new Map([
+// Card decision buttons are deliberately a separate capability: a custom pane renderer does not grant them.
+// Each entry validates the complete Action arguments independently of its views.
+const CARD_DECISION_BUTTONS: ReadonlyMap<string, ReadonlyMap<string, (args: unknown) => boolean>> = new Map([
   [
     "kubernetes_admin",
     new Map([
-      ["pods_list_in_namespace", canQuickApprovePodsInNamespace],
-      ["resources_get", canQuickApproveResourcesGet],
-      ["resources_list", canQuickApproveResourcesList],
-      ["resources_delete", canQuickApproveResourcesDelete],
-      ["pods_log", canQuickApprovePodsLog],
-      ["events_list", canQuickApproveEventsList],
+      ["pods_list_in_namespace", offersCardDecisionButtonsPodsInNamespace],
+      ["resources_get", offersCardDecisionButtonsResourcesGet],
+      ["resources_list", offersCardDecisionButtonsResourcesList],
+      ["resources_delete", offersCardDecisionButtonsResourcesDelete],
+      ["pods_log", offersCardDecisionButtonsPodsLog],
+      ["events_list", offersCardDecisionButtonsEventsList],
     ]),
   ],
-  ["github", new Map([["create_pull_request", canApprovePullRequestInline]])],
+  ["github", new Map([["create_pull_request", offersCardDecisionButtonsPullRequest]])],
 ]);
 
 function presentation(action: ActionIdentity): ActionPresentation | undefined {
@@ -332,7 +340,7 @@ export function renderDetailsResult(action: ActionIdentity, result: CallToolResu
   return drawn ?? <CallToolResultView result={result} />;
 }
 
-/** Inline approval is an explicit action capability, independent of the presentation chosen. */
-export function canApproveInline(action: ActionIdentity, args: unknown): boolean {
-  return QUICK_APPROVALS.get(action.group)?.get(action.name)?.(args) ?? false;
+/** Whether this invocation gets card decision buttons; independent of the presentation chosen. */
+export function actionOffersCardDecisionButtons(action: ActionIdentity, args: unknown): boolean {
+  return CARD_DECISION_BUTTONS.get(action.group)?.get(action.name)?.(args) ?? false;
 }

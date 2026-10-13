@@ -8,7 +8,7 @@ import { Link, useLocation } from "react-router";
 import { JsonView } from "../json_view";
 import { ResizeHandle, usePaneSize } from "../resize_handle";
 import {
-  canApproveInline,
+  actionOffersCardDecisionButtons,
   renderActionLabel,
   renderPaneCollapsed,
   renderPaneOpened,
@@ -49,7 +49,7 @@ function usePendingRequests(): ActionRequestView[] {
   );
 }
 
-/** One row per pending request: expandable preview, inline decision where eligible, details link. */
+/** One row per pending request: expandable preview, decision buttons where eligible, details link. */
 function PendingActionList({
   pending,
   onNavigate,
@@ -69,9 +69,14 @@ function PendingActionList({
         const collapsedPreview = renderPaneCollapsed(request.action, request.arguments);
         const openedPreview = renderPaneOpened(request.action, request.arguments);
         const showRequestTitle = shouldRenderPaneRequestTitle(request.action, request.arguments, request.title);
-        const canQuickApprove =
-          (request.external_grant === null || request.external_grant === undefined) &&
-          canApproveInline(request.action, request.arguments);
+        const decision = actionOffersCardDecisionButtons(request.action, request.arguments) ? (
+          <ActionDecisionButtons
+            size="xs"
+            deciding={actions.deciding === request.id}
+            title={request.title}
+            onDecide={(verdict) => actions.decide(request, verdict)}
+          />
+        ) : null;
         const detailsPath = `/actions/${encodeURIComponent(request.id)}`;
         const navigationState = {
           returnTo: {
@@ -117,6 +122,7 @@ function PendingActionList({
                 </Link>
               </Tooltip>
             </div>
+            {!expanded && decision !== null && <div className="agentplane-actions-sidebar-decision">{decision}</div>}
             {expanded && (
               <Stack className="agentplane-actions-sidebar-preview" gap="xs">
                 {request.external_grant && (
@@ -126,14 +132,7 @@ function PendingActionList({
                 )}
                 {openedPreview ?? <JsonView value={request.arguments} />}
                 <Group justify="space-between" wrap="nowrap" gap="xs">
-                  {canQuickApprove ? (
-                    <ActionDecisionButtons
-                      size="xs"
-                      deciding={actions.deciding === request.id}
-                      title={request.title}
-                      onDecide={(verdict) => actions.decide(request, verdict)}
-                    />
-                  ) : (
+                  {decision ?? (
                     <Text size="xs" c="dimmed">
                       Decisions require full review.
                     </Text>
