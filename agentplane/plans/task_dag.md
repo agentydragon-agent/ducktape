@@ -706,8 +706,8 @@ flowchart TD
     RUNNER_FACTS_ON_LEASE[Blocked: the runner publishes stage, busy and boot facts on the connection Lease]
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
-    CONTROL_SERVICE_OWNER[Blocked: the controller creates the Sandbox's control Service]
-    RUNNER_CONNECTED_READY[Blocked: the Sandbox's Ready condition includes the runner connection]
+    CONTROL_SERVICE_OWNER[Candidate: the controller creates the Sandbox's control Service]
+    RUNNER_CONNECTED_READY[Candidate: the Sandbox's Ready condition includes the runner connection]
     SESSION_ACTIVITY_STREAM[Decision: one derivation of folded Session activity for listeners]
     DISPATCHER_CORE[Blocked: the Session Dispatcher delivers to running Sandboxes]
     DISPATCHER_SESSION_CREATE[Blocked: dispatched Session creation]
@@ -744,8 +744,6 @@ flowchart TD
     AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. offline behavior .-> DISPATCHER_CORE
     SESSION_ACTIVITY_STREAM -. must not define a second idleness .-> SANDBOX_IDLE_EXPIRY
     SANDBOX_SESSION_CONTROL_DESIGN --> SESSION_ACTIVITY_STREAM
-    SANDBOX_SESSION_CONTROL_DESIGN --> RUNNER_CONNECTED_READY
-    SANDBOX_SESSION_CONTROL_DESIGN --> CONTROL_SERVICE_OWNER
     SANDBOX_SESSION_CONTROL_DESIGN --> DISPATCHER_WAKE_ON_SEND
     SANDBOX_SESSION_CONTROL_DESIGN -. decides the level of sealing .-> CONTROLLER_SEALS[Candidate: the Sandbox controller seals, section 12]
     QUIESCE_INCARNATION_KEY --> CONTROLLER_SEALS
@@ -836,7 +834,7 @@ compatibility rules or conversion (operator, 2026-10-13 PDT).
 **Unscheduled; operator, 2026-10-13 PDT.** Let the operator change a Sandbox's template, including a
 switch between VM and Pod, from the app, only while the Sandbox is suspended. Each incarnation
 already reads the template as it is then (`SANDBOX_IMAGE_REPLACE`), and no spec is replaced
-automatically (`SANDBOX_LIFECYCLE`); this is the explicit, operator-driven edit. Needs `WORKSPACE_VOLUME`,
+automatically; this is the explicit, operator-driven edit. Needs `WORKSPACE_VOLUME`,
 so a kind switch keeps the workspace, and `VM_PROVIDER` for the VM side. The preset the app records
 on a Sandbox as a label (`APP_SESSION_DEFAULTS`) must stay true after the edit.
 
@@ -868,7 +866,6 @@ state, which the controller validates; it gets no resume RPC on the Sandbox Serv
 ```mermaid
 flowchart TD
     VM_PROVIDER[VM provider, section 4] --> SANDBOX_IMAGE_REPLACE[Blocked: replace a VM's runner image between incarnations]
-    SANDBOX_LIFECYCLE[In progress: seal before suspend, PVC owned by the Sandbox]
     SANDBOX_GENERIC_SPLIT[Unscheduled: split the generic Sandbox from the runner's sealing]
     SANDBOX_RUNNER_LAYERING[Unscheduled: add the runner and harnesses to a platform user's image]
     SANDBOX_GENERIC_SPLIT -. related .-> SANDBOX_RUNNER_LAYERING
@@ -887,32 +884,12 @@ and the controller has no version gate. So of #8843's `ReplaceVmImage` (replaced
 the 2026-10-03 run) the Halted-only rewrite carries over,
 and the exact `VmTemplate.state_schema_version` match does not.
 
-### `SANDBOX_LIFECYCLE` — how a Sandbox suspends, seals and is deleted
-
-**In progress; the operator's target, 2026-10-13 PDT.** What is left of it, as the controller-seals
-and state-volume-owner PRs land, leaves this node.
-
-- **Seal before suspend.** Suspending seals the live incarnation first: the runner flushes, then
-  the Pod or VM goes. The Sandbox status records `sealedIncarnation`, the UID of the last sealed
-  incarnation. `CONTROLLER_SEALS` (section 12) is the sealing.
-- **No double seal.** A suspended Sandbox whose last incarnation is sealed is deleted without being
-  woken. Only an unsealed stopped Sandbox runs once more to seal.
-- **The Sandbox owns its state PVC.** `<sandbox>-state` has the Sandbox as controller owner with
-  `blockOwnerDeletion: false`, so foreground deletion cannot remove it before the seal. The
-  explicit PVC delete goes away.
-- **Conditions.** `Running`, and `Sealed` in place of `SessionsSealed`, with reasons `Sealed`,
-  `NeverRan`, `Unsealed` and `Sealing`. The Sandbox's phase is derived from `spec.running`, the
-  deletion timestamp, the live incarnation and `Sealed`, never stored.
-- **Not done:** a force-seal operation (a stuck Sandbox has its finalizer removed by hand), and
-  automatic or explicit replacement of a Sandbox's spec. Suspend then resume starts from the
-  template as it is then; a stored rendered spec can feed a later diff.
-
 ### `SANDBOX_GENERIC_SPLIT` — separate the generic Sandbox from the runner's sealing
 
 **Unscheduled; operator, 2026-10-13 PDT: a later TODO.** Our `Sandbox` resource binds two concerns
 together. One is what Agent Sandbox did, plus VM support: a template, a Pod or VM per incarnation,
 and a state volume that stays. The other is specific to our runner running inside: sealing a
-Session's journal before the incarnation goes (`SANDBOX_LIFECYCLE`, `CONTROLLER_SEALS`). Separated,
+Session's journal before the incarnation goes (`CONTROLLER_SEALS`). Separated,
 the first could be reused without the runner. Decide where the line falls (resource, controller or package) and what each side owns. A
 layered pair, a Sandbox and a runner that runs inside one, is the direction the control design
 (`docs/adr_sandbox_session_control.md`) points to: seal, runner connectivity and idle suspension
@@ -932,7 +909,7 @@ Firecracker with the runner as init.
 ### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes suspend
 
 **Blocked on `SESSION_INCARNATIONS`, `RUNNER_FACTS_ON_LEASE` and `QUIESCE_WITHOUT_POLLING`; operator,
-2026-10-11 and 2026-10-13 PDT.** An idle runner Sandbox suspends: it is sealed (`SANDBOX_LIFECYCLE`),
+2026-10-11 and 2026-10-13 PDT.** An idle runner Sandbox suspends: it is sealed,
 then the Pod or VM goes, freeing memory and compute, and the Sandbox, its ServiceAccount, bindings
 and state PVC stay, so `SESSION_REVIVE` resumes it on the same PVC. Nothing deletes a Sandbox on
 idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one, through
@@ -977,11 +954,6 @@ implement it, and the ones marked blocked on this node wait for one of these ans
 
 - **RPC names** of the Session Dispatcher. The service is the Session Dispatcher and the seal
   renames are settled (operator, 2026-10-13 PDT; `SEAL_RENAME`).
-- **Transport for runner facts:** the connection Lease's annotations, which the doc recommends,
-  against the gateway's gRPC health that the readiness node was first approved with
-  (`RUNNER_CONNECTED_READY`).
-- **Control Service owner:** the controller creates it, the gateway writes the Lease and
-  EndpointSlice (`CONTROL_SERVICE_OWNER`).
 - **Hold against wake-on-send:** whether an operator can keep a Sandbox suspended when a message or
   notification arrives (`DISPATCHER_WAKE_ON_SEND`).
 - **Idleness:** suspension reads the runner's busy state, so `SESSION_ACTIVITY_STREAM` shrinks to
@@ -999,15 +971,17 @@ the incarnation's UID (the Pod, or a VM's virt-launcher Pod); the runner writes 
 it last saw and removes it on a `Welcome` with a different one, before it accepts any call. A `Welcome`
 without a UID keeps today's behavior, so a runner pinned before the gateway keeps working. A runner
 restart inside an incarnation stays sealed; a new incarnation starts unsealed. The Lease's stage
-annotation carries the same UID. Order: the gateway image that sends the UID is pinned before the
-runner image that reads it. The sealer flags in the manifests (`CONTROLLER_SEALS`) wait for this,
+annotation carries the same UID. The gateway, the runner image and the VM guest's runner wheel pin
+independently, so pin order does not matter here; `INCARNATION_UID_REQUIRED` takes the tolerance out
+later. The sealer flags in the manifests (`CONTROLLER_SEALS`) wait for this,
 or a resumed Sandbox would refuse work. How a sealed journal is reopened is `SESSION_INCARNATIONS`'s.
 
 ### `INCARNATION_UID_REQUIRED` — the runner rejects a `Welcome` without the incarnation UID
 
 **Blocked on `QUIESCE_INCARNATION_KEY` landing and the gateway image that sends the UID pinned in
 every environment, and in the VM guest's runner wheel pin.** Removes the missing-UID tolerance: a
-`Welcome` without a UID ends the stream. Pin ordering is not relied on before this; afterwards a
+`Welcome` without a UID ends the stream, and the `None` path in the runner store's incarnation
+adoption (marked by its `CLEANUP` tombstone) goes. Pin ordering is not relied on before this; afterwards a
 runner too old to know the field cannot meet a gateway that no longer sends it.
 
 ### `QUIESCE_INTERRUPT` — refuse at entry and interrupt turns before sealing
@@ -1058,25 +1032,23 @@ a lost event.
 
 ### `CONTROL_SERVICE_OWNER` — the controller creates the Sandbox's control Service
 
-**Blocked on `SANDBOX_SESSION_CONTROL_DESIGN`; low stakes.** The gateway creates the Service, Lease
+**Candidate; operator, 2026-10-13 PDT: the controller creates it.** The gateway creates the Service, Lease
 and EndpointSlice on the first connection, so the Service name resolves only after a runner
-connects. The doc recommends the controller create the Service with the Sandbox, owned by it, so a
+connects. The controller creates the Service with the Sandbox, owned by it, so a
 caller sees no endpoints and not a DNS failure, and the gateway writes only the Lease and slice,
 with less Kubernetes access. One shared constant fixes the name and port. Order: the controller image
 that creates it is pinned, then the gateway stops creating it, then its permission goes.
 
 ### `RUNNER_CONNECTED_READY` — the Sandbox's Ready condition includes the runner connection
 
-**Blocked on `SANDBOX_SESSION_CONTROL_DESIGN`, which settles the transport; operator-approved
-2026-10-13 PDT.** `Ready` covers the Pod or VM, not whether the runner has connected, so a VM
+**Candidate; the transport is the connection Lease (operator, 2026-10-13 PDT).** `Ready` covers the Pod or VM, not whether the runner has connected, so a VM
 whose guest runner never reaches the gateway reads ready. The controller writes the conditions from
 facts others publish: `WorkloadReady` (today's `Ready`), `RunnerConnected` (the connection Lease's
 liveness for the current incarnation), and `Ready` as their AND, keyed to the incarnation UID so a
 connection from the last incarnation is never read as this one's. `Ready` means "can take work"
 only; the lifecycle phase stays separate. A gateway rollout drops every connection at once, so the
-controller debounces `RunnerConnected` and replaces or restarts nothing because of it. The doc
-recommends the Lease, which needs no new runner fact; the first approval named the gateway's gRPC
-health. The app reads `Ready` instead of inspecting the incarnation only once the controller image
+controller debounces `RunnerConnected` and replaces or restarts nothing because of it. The Lease
+already carries the Pod UID and liveness, so this does not wait for `RUNNER_FACTS_ON_LEASE`. The app reads `Ready` instead of inspecting the incarnation only once the controller image
 that publishes it is pinned. Test a runner that connects late, one that never connects, and a
 connection that drops while the Pod keeps running.
 
