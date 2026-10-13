@@ -720,8 +720,15 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
         seaweedfs_operator_kustomization,
     )
-    website_artifact = artifact("website", website.OUTPUT_DIR)
-    website.website(flux_chart, write_directory(root, website_artifact, website.chart), kyverno_kustomization)
+    website_artifact = artifact("website", website.OUTPUT_DIR, website.PINS_DIR)
+    website.website(
+        flux_chart,
+        write_directory(
+            root, website_artifact, website.chart, components=[posixpath.relpath(website.PINS_DIR, website.OUTPUT_DIR)]
+        ),
+        external_secrets_operator_kustomization,
+        kyverno_kustomization,
+    )
     proxmox_proxy_artifact = artifact("proxmox-proxy", proxmox_proxy.OUTPUT_DIR)
     proxmox_proxy_kustomization = proxmox_proxy.proxmox_proxy(
         flux_chart,

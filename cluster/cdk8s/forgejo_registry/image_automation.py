@@ -103,6 +103,7 @@ IMAGES = (
     "tana-litellm-proxy",
     "tana-mcp",
     "vm-image-restart",
+    "website",
     # keep-sorted end
 )
 

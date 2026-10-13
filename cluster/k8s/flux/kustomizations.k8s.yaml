@@ -1381,6 +1381,8 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
+    - name: external-secrets-operator
+      namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
