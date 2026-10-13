@@ -301,6 +301,19 @@ rec {
     propagatedBuildInputs = with python314Packages; [ pygit2 ];
   };
 
+  cpap-gateway-health = mkWheel {
+    pname = "cpap-gateway-health";
+    description = "Self-healing check for the CPAP gateway's USB WiFi adapter";
+    mainProgram = "cpap-gateway-health";
+    importsCheck = [ "cpap.gateway.health" ];
+    # SYNC: requires in //cpap/gateway:health_wheel. `modprobe` comes from the guest's
+    # service PATH (cpap/gateway/nixos.nix).
+    propagatedBuildInputs = with python314Packages; [
+      dbus-fast
+      pydantic
+    ];
+  };
+
   pr-visuals =
     (mkWheel {
       pname = "pr-visuals";
