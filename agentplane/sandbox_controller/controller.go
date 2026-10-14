@@ -36,8 +36,13 @@ const (
 	// True while the incarnation's runner holds a live connection to the Runner Gateway, read from the
 	// Gateway's Lease for the Sandbox.
 	RunnerConnected = "RunnerConnected"
-	// True when the Sandbox can take work: WorkloadReady and RunnerConnected. The lifecycle phase is
-	// separate.
+	// True once the Sandbox's bootstrap has run to success, or when it has none; a Sandbox-lifetime
+	// fact the connected runner republishes at each connect. False with `BootstrapFailed` when the
+	// bootstrap failed or was interrupted, which is terminal. Unknown while the runner reports none,
+	// which does not hold `Ready`. Absent from a controller not configured with Leases.
+	Bootstrapped = "Bootstrapped"
+	// True when the Sandbox can take work: WorkloadReady, RunnerConnected and no False Bootstrapped. The
+	// lifecycle phase is separate.
 	Ready = "Ready"
 	// Set True on a deleting Sandbox once its runner has sealed every Session and the ingress has
 	// acknowledged each seal; nothing of the Sandbox is deleted before, unless no runner ever connected.
@@ -577,8 +582,18 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workl
 		return ctrl.Result{}, err
 	}
 	meta.SetStatusCondition(&status.Conditions, connected)
+	bootstrapped, err := r.bootstrappedCondition(ctx, sandbox, w.incarnation())
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	meta.SetStatusCondition(&status.Conditions, bootstrapped)
 	if workloadReady.Status == metav1.ConditionTrue {
 		ready = connected
+		// CLEANUP(added 2026-10-14): Let an Unknown Bootstrapped hold Ready too once no live Sandbox runs a
+		// runner that predates the bootstrap fact (#10368): every live Sandbox's Lease carries the annotation.
+		if connected.Status == metav1.ConditionTrue && bootstrapped.Status == metav1.ConditionFalse {
+			ready = bootstrapped
+		}
 	}
 	ready.Type = Ready
 	meta.SetStatusCondition(&status.Conditions, ready)
@@ -649,6 +664,43 @@ func (r *Reconciler) runnerConnectedCondition(ctx context.Context, sandbox *Sand
 	}
 	condition.Reason, condition.Message = "ConnectionLost", fmt.Sprintf("Pod %s's runner has not renewed its connection since %s", incarnation.Name, lease.Spec.RenewTime.Format(time.RFC3339))
 	return condition, runnerLapsedPoll, nil
+}
+
+// bootstrappedCondition says how far the Sandbox's bootstrap has got, from the facts the incarnation's
+// runner published on its Lease. A Sandbox without one is bootstrapped. A runner that has reported
+// nothing leaves the condition Unknown, since one that predates the fact never will.
+func (r *Reconciler) bootstrappedCondition(ctx context.Context, sandbox *Sandbox, incarnation *corev1.Pod) (metav1.Condition, error) {
+	condition := metav1.Condition{Type: Bootstrapped, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
+	if sandbox.Spec.Bootstrap == "" {
+		condition.Status, condition.Reason, condition.Message = metav1.ConditionTrue, "NoBootstrap", "the Sandbox has no bootstrap"
+		return condition, nil
+	}
+	var facts RunnerFacts
+	if incarnation != nil {
+		lease, err := r.runnerLease(ctx, sandbox)
+		if err != nil {
+			return condition, err
+		}
+		if facts, err = readRunnerFacts(&lease, string(incarnation.UID)); err != nil {
+			return condition, err
+		}
+	}
+	switch facts.Bootstrap {
+	case BootstrapNone:
+		condition.Status = metav1.ConditionUnknown
+		condition.Reason, condition.Message = "BootstrapNotReported", "the runner has not reported its bootstrap"
+	case BootstrapRunning:
+		condition.Reason, condition.Message = "BootstrapRunning", "the bootstrap is running"
+	case BootstrapSucceeded:
+		condition.Status, condition.Reason, condition.Message = metav1.ConditionTrue, "BootstrapSucceeded", "the bootstrap ran to success"
+	case BootstrapFailed:
+		condition.Reason, condition.Message = "BootstrapFailed", "the bootstrap failed and never runs again; the Sandbox is to be replaced"
+	case BootstrapInterrupted:
+		condition.Reason, condition.Message = "BootstrapFailed", "the bootstrap was interrupted and never runs again; the Sandbox is to be replaced"
+	case BootstrapStateUnrecognised:
+		condition.Reason, condition.Message = "BootstrapStateUnrecognised", "the runner reports a bootstrap state this controller does not know"
+	}
+	return condition, nil
 }
 
 func podReady(pod *corev1.Pod) bool {
