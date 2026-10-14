@@ -884,7 +884,12 @@ function TransactionTitle({ row }: { row: TransactionRow }) {
     return (
       <Text size="sm" fw={650} lineClamp={1} title={suffix ? `${title} · ${suffix}` : title}>
         {title}
-        {suffix && <Text span fw={400} c="dimmed"> · {suffix}</Text>}
+        {suffix && (
+          <Text span fw={400} c="dimmed">
+            {" "}
+            · {suffix}
+          </Text>
+        )}
       </Text>
     );
   }
