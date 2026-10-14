@@ -50,7 +50,7 @@ images:
     newTag: devel-20261014044948-560236d # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # The runner VM SandboxTemplate's containerDisk, which `images:` reaches through kustomizeconfig.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-vm
-    newTag: devel-20261014042953-0064696 # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
+    newTag: devel-20261014045857-4e310e8 # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
   # Bootstrap only: no workload references these yet; Flux replaces the tag with the one it scans.
   - name: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher
     newTag: devel-20261014045323-311b9a1 # {"$imagepolicy": "flux-system:agentplane-session-dispatcher:tag"}
