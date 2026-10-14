@@ -5,6 +5,7 @@ manifest and reports, per Deployment, whether it became Available. It fails at t
 piece with the Pod states and logs of whatever did not start.
 """
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -17,11 +18,21 @@ import tempfile
 import time
 from pathlib import Path
 
+import httpx
 import pytest_bazel
 import yaml
 
+from agentplane.acceptance.agent import Agent
+from agentplane.acceptance.conftest import AUDIENCE, POD_TEMPLATE, TESTING_SERVICE_ACCOUNT, wait_until_running
+from agentplane.app.sandbox_models import NewSandbox
+from agentplane.app.testing.client import Client
+from agentplane.proto import runner_pb2
+from agentplane.runner.harness import Harness
 from agentplane.x.k3s_env import render
 from util.bazel.runfiles import get_required_path
+
+# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# gazelle:include_dep @pypi//protobuf
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +40,8 @@ K3S_VERSION = "v1.33.4+k3s1"
 CNPG_MANIFEST_URL = "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.0/cnpg-1.30.0.yaml"
 # Electric exits until history-service's migration has created its publication; its restart back-off reaches 5 min.
 DEPLOY_TIMEOUT_SECONDS = 480
+# k3s's default Pod CIDR.
+POD_CIDR = "10.42.0.0/16"
 
 
 def _run(*command: str, check: bool = True, input_text: str | None = None) -> str:
@@ -130,6 +143,9 @@ class K3s:
         if "condition met" not in ready:
             raise RuntimeError(f"k3s not ready (exit={process.poll()}): {ready}\n{self.log_path.read_text()[-6000:]}")
         self._serve_dns_and_api_on_node()
+        # host-gw routes Pod traffic but does not translate it: without this, Pods cannot reach the internet.
+        iptables = self.data_dir / "data/current/bin/aux/iptables"  # the copy k3s ships; the host has none
+        _run(str(iptables), "-t", "nat", "-A", "POSTROUTING", "-s", POD_CIDR, "!", "-d", POD_CIDR, "-j", "MASQUERADE")
         return process
 
     def _serve_dns_and_api_on_node(self) -> None:
@@ -243,6 +259,18 @@ class K3s:
         return "\n".join(parts)
 
 
+async def _run_turn(base_url: str, token: str) -> str:
+    """One real Qwen turn through the app, a Pod Sandbox and LiteLLM; returns the agent's answer."""
+    async with Client(base_url=base_url, token=token) as client:
+        catalog = await client.models()
+        model = catalog.harnesses[Harness.CLAUDE][0]
+        await client.create_sandbox(NewSandbox(name="smoke", template=POD_TEMPLATE))
+        await wait_until_running(client, "smoke")
+        agent = await Agent.open(client, sandbox="smoke", harness=runner_pb2.HARNESS_CLAUDE, model=model)
+        turn = await agent.run("Reply with the single word: pong")
+        return turn.answer
+
+
 def _openssl_ca(work: Path) -> tuple[str, str]:
     key, cert = work / "ca.key", work / "ca.crt"
     _run("openssl", "ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(key))
@@ -317,39 +345,48 @@ def test_stack_comes_up() -> None:
             )
             if "condition met" not in out:
                 failed.append(name)
-        sandbox_ready = ""
+        answer = ""
         if not failed:
-            k3s.kubectl(
-                "apply",
-                "-f",
-                "-",
-                input_text=yaml.safe_dump(
-                    {
-                        "apiVersion": "agentplane.allegedly.works/v1alpha1",
-                        "kind": "Sandbox",
-                        "metadata": {"name": "smoke", "namespace": render.NAMESPACE},
-                        "spec": {"template": "runner", "running": True},
-                    }
-                ),
-            )
-            sandbox_ready = k3s.kubectl(
-                "wait",
-                "--for=condition=Ready",
-                "pod",
-                "-l",
-                "agentplane.allegedly.works/sandbox=smoke",
-                "-n",
-                render.NAMESPACE,
-                "--timeout=240s",
-                check=False,
-            )
+            app_ip = k3s.kubectl(
+                "get", "pod", "-n", render.NAMESPACE, "-l", "app.kubernetes.io/name=agentplane-app",
+                "-o", "jsonpath={.items[0].status.podIP}",
+            )  # fmt: skip
+            token = k3s.kubectl(
+                "-n", render.NAMESPACE, "create", "token", TESTING_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
+            ).strip()
+            try:
+                answer = asyncio.run(_run_turn(f"http://{app_ip}:8080", token))
+            except httpx.HTTPStatusError, AssertionError:
+                # The error alone does not say which hop refused.
+                for selector in (
+                    "app.kubernetes.io/name=agentplane-app",
+                    "app.kubernetes.io/name=agentplane-runner-gateway",
+                    "app.kubernetes.io/name=agentplane-llm-ingress",
+                    "agentplane.allegedly.works/sandbox=smoke",
+                ):
+                    logs = k3s.kubectl(
+                        "logs", "-l", selector, "-n", render.NAMESPACE, "--all-containers", "--tail=60", check=False
+                    )
+                    print(f"--- {selector}\n{logs}")
+                print(
+                    "--- LiteLLM from the host\n",
+                    _run("curl", "-sS", "-m", "20", "-I", f"https://{render.LITELLM_EXTERNAL_HOST}/", check=False),
+                )
+                print(
+                    "--- LiteLLM from a Pod\n",
+                    k3s.kubectl(
+                        "exec", "-n", render.NAMESPACE, "postgres-1", "-c", "postgres", "--", "bash", "-c",
+                        f"getent hosts {render.LITELLM_EXTERNAL_HOST}; timeout 8 bash -c '</dev/tcp/{render.LITELLM_EXTERNAL_HOST}/443' && echo tcp-ok",
+                        check=False,
+                    ),
+                )  # fmt: skip
+                raise
         print("memory:", _run("free", "-m"))
-        print(
-            "sandbox:", sandbox_ready, k3s.kubectl("get", "sandbox", "-n", render.NAMESPACE, "-o", "yaml", check=False)
-        )
+        print("answer:", answer)
+        (Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", work)) / "answer.txt").write_text(answer)
         print(k3s.report())
         assert not failed, f"Deployments not Available: {failed}"
-        assert "condition met" in sandbox_ready, f"Sandbox Pod not Ready: {sandbox_ready}"
+        assert answer, "the Qwen turn returned no answer"
     finally:
         process.terminate()
         shutil.rmtree(work, ignore_errors=True)
