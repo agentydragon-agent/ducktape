@@ -96,6 +96,9 @@ type Reconciler struct {
 // StateVolumeName is the Sandbox's state PVC.
 func StateVolumeName(sandbox string) string { return sandbox + "-state" }
 
+// WorkspaceVolumeName is the Sandbox's retained workspace PVC.
+func WorkspaceVolumeName(sandbox string) string { return sandbox + "-workspace" }
+
 // unready is why the Sandbox cannot run; its reason and message go on the Running condition.
 //
 // +kubebuilder:object:generate=false
@@ -394,47 +397,61 @@ func (r *Reconciler) deleteIfLive(ctx context.Context, obj client.Object) error 
 }
 
 func (r *Reconciler) stateVolume(ctx context.Context, sandbox *Sandbox) (*corev1.PersistentVolumeClaim, error) {
+	return r.claim(ctx, sandbox, StateVolumeName(sandbox.Name))
+}
+
+// claim is the PVC of that name in the Sandbox's namespace, or nil.
+func (r *Reconciler) claim(ctx context.Context, sandbox *Sandbox, name string) (*corev1.PersistentVolumeClaim, error) {
 	var pvc corev1.PersistentVolumeClaim
-	key := types.NamespacedName{Namespace: sandbox.Namespace, Name: StateVolumeName(sandbox.Name)}
-	if err := r.Get(ctx, key, &pvc); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: name}, &pvc); err != nil {
 		return nil, client.IgnoreNotFound(err)
 	}
 	return &pvc, nil
 }
 
-// ensureStateVolume creates the state PVC from the template if it does not exist yet, owned by the
-// Sandbox, so nothing but the Sandbox's own deletion garbage-collects it.
+// createClaim creates the Sandbox's PVC of that name from spec, owned by the Sandbox, so nothing but
+// the Sandbox's own deletion garbage-collects it.
+func (r *Reconciler) createClaim(ctx context.Context, sandbox *Sandbox, name string, spec corev1.PersistentVolumeClaimSpec) error {
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: sandbox.Namespace,
+			Labels:    map[string]string{SandboxLabel: sandbox.Name},
+		},
+		Spec: *spec.DeepCopy(),
+	}
+	if err := controllerutil.SetControllerReference(sandbox, pvc, r.Scheme(), controllerutil.WithBlockOwnerDeletion(false)); err != nil {
+		return err
+	}
+	// An AlreadyExists is a concurrent create; the PVC's watch event runs the check of the caller.
+	return client.IgnoreAlreadyExists(r.Create(ctx, pvc))
+}
+
+// claimConflict is why the Sandbox cannot use a PVC of its name: it is another's, or going.
+func claimConflict(pvc *corev1.PersistentVolumeClaim, sandbox *Sandbox, reason string) *unready {
+	if metav1.IsControlledBy(pvc, sandbox) && pvc.DeletionTimestamp.IsZero() {
+		return nil
+	}
+	return &unready{reason: reason, message: fmt.Sprintf("PVC %s belongs to another Sandbox or is being deleted", pvc.Name)}
+}
+
+// ensureStateVolume creates the state PVC from the template if it does not exist yet.
 func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *Sandbox) (*unready, error) {
 	pvc, err := r.stateVolume(ctx, sandbox)
 	if err != nil {
 		return nil, err
 	}
 	if pvc != nil {
-		if !metav1.IsControlledBy(pvc, sandbox) || !pvc.DeletionTimestamp.IsZero() {
-			return &unready{reason: "StateVolumeConflict", message: fmt.Sprintf("PVC %s belongs to another Sandbox or is being deleted", pvc.Name)}, nil
+		if claimMode(pvc.Spec) != corev1.PersistentVolumeFilesystem {
+			return layoutMismatch("the state PVC must remain a DirectoryTree on a Filesystem claim"), nil
 		}
-		return nil, nil
+		return claimConflict(pvc, sandbox, "StateVolumeConflict"), nil
 	}
 	template, blocked, err := r.template(ctx, sandbox)
 	if template == nil {
 		return blocked, err
 	}
-	pvc = &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      StateVolumeName(sandbox.Name),
-			Namespace: sandbox.Namespace,
-			Labels:    map[string]string{SandboxLabel: sandbox.Name},
-		},
-		Spec: *template.Spec.StateVolume.Claim.DeepCopy(),
-	}
-	if err := controllerutil.SetControllerReference(sandbox, pvc, r.Scheme(), controllerutil.WithBlockOwnerDeletion(false)); err != nil {
-		return nil, err
-	}
-	if err := r.Create(ctx, pvc); err != nil && !apierrors.IsAlreadyExists(err) {
-		return nil, err
-	}
-	// An AlreadyExists is a concurrent create; the PVC's watch event runs the check above.
-	return nil, nil
+	return nil, r.createClaim(ctx, sandbox, StateVolumeName(sandbox.Name), template.Spec.StateVolume.Claim)
 }
 
 func (r *Reconciler) template(ctx context.Context, sandbox *Sandbox) (*SandboxTemplate, *unready, error) {
@@ -448,6 +465,12 @@ func (r *Reconciler) template(ctx context.Context, sandbox *Sandbox) (*SandboxTe
 	}
 	if (template.Spec.Pod == nil) == (template.Spec.VM == nil) {
 		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s must set exactly one of pod and vm", template.Name)}, nil
+	}
+	if claimMode(template.Spec.StateVolume.Claim) != corev1.PersistentVolumeFilesystem {
+		return nil, layoutMismatch("the state volume requires a Filesystem claim"), nil
+	}
+	if blocked := validateWorkspace(&template); blocked != nil {
+		return nil, blocked, nil
 	}
 	return &template, nil, nil
 }
@@ -463,6 +486,24 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 			}
 		}
 		return w, nil, r.haltVM(ctx, w.vm)
+	}
+	// Validate retained contents before replacing a sealed/ended incarnation or a halted VM.
+	ended := w.pod != nil && (w.pod.Status.Phase == corev1.PodSucceeded || w.pod.Status.Phase == corev1.PodFailed)
+	sealed := w.incarnation() != nil && sandbox.quiescedIncarnation(string(w.incarnation().UID))
+	if gate != nil && (sealed || ended) {
+		return w, gate, nil
+	}
+	var template *SandboxTemplate
+	if gate == nil && (sealed || ended || (w.pod == nil && !vmRunning(w.vm) && w.vmi == nil)) {
+		var blocked *unready
+		var err error
+		template, blocked, err = r.template(ctx, sandbox)
+		if template == nil {
+			return w, blocked, err
+		}
+		if blocked, err := r.ensureWorkspaceVolume(ctx, sandbox, template); blocked != nil || err != nil {
+			return w, blocked, err
+		}
 	}
 	// A runner that sealed its Sessions takes no new ones, so a Sandbox resumed meanwhile starts anew.
 	if pod := w.incarnation(); pod != nil && sandbox.quiescedIncarnation(string(pod.UID)) {
@@ -490,10 +531,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 	if gate != nil {
 		return w, gate, nil
 	}
-	template, blocked, err := r.template(ctx, sandbox)
-	if template == nil {
-		return w, blocked, err
-	}
+	// Render the same snapshot whose layout and binding passed the precheck.
 	if template.Spec.VM != nil {
 		if !r.KubeVirt {
 			return w, &unready{reason: "KubeVirtMissing", message: "the cluster does not serve KubeVirt's API, so a VM Sandbox cannot run"}, nil
@@ -501,8 +539,9 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 		return r.startVM(ctx, sandbox, w, template)
 	}
 	if w.vm != nil {
-		// A Pod cannot use the VM's disks, so switching to a Pod template drops the VM-local
-		// workspace; the state PVC stays.
+		if len(w.vm.Spec.DataVolumeTemplates) != 0 || slices.ContainsFunc(w.vm.Spec.Template.Spec.Volumes, func(v kubevirtv1.Volume) bool { return v.DataVolume != nil }) {
+			return w, layoutMismatch("a Pod transition cannot discard the retained VM's DataVolume disks"), nil
+		}
 		if err := r.deleteIfLive(ctx, w.vm); err != nil {
 			return w, nil, err
 		}
@@ -538,6 +577,9 @@ func renderedSpec(spec any) string {
 // render is the template's Pod for this Sandbox, running as the Sandbox's ServiceAccount, with the
 // state volume filled in.
 func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready) {
+	if blocked := validateWorkspace(template); blocked != nil {
+		return nil, blocked
+	}
 	spec := template.Spec.Pod.Spec.DeepCopy()
 	volume := template.Spec.StateVolume.Name
 	if slices.ContainsFunc(spec.Volumes, func(v corev1.Volume) bool { return v.Name == volume }) {
@@ -553,6 +595,14 @@ func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready)
 			ClaimName: StateVolumeName(sandbox.Name),
 		}},
 	})
+	if workspace := template.Spec.WorkspaceVolume; workspace != nil {
+		spec.Volumes = append(spec.Volumes, corev1.Volume{
+			Name: workspace.Name,
+			VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+				ClaimName: WorkspaceVolumeName(sandbox.Name),
+			}},
+		})
+	}
 	annotations := maps.Clone(template.Spec.Pod.Annotations)
 	if annotations == nil {
 		annotations = map[string]string{}

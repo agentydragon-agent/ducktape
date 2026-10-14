@@ -95,10 +95,14 @@ func (r *Reconciler) startVM(ctx context.Context, sandbox *Sandbox, w workload, 
 }
 
 // renderVM is the template's VM for this Sandbox, running, with the state PVC as a virtiofs
-// filesystem of the state volume's name. The launcher's ServiceAccount is not set here: KubeVirt
+// filesystem of the state volume's name and, where the template has a workspace volume, the
+// workspace PVC as the volume of its name. The launcher's ServiceAccount is not set here: KubeVirt
 // sets it only from a serviceAccount volume, which would hand the guest the token, so the
 // namespace's launcher admission sets the Sandbox's.
 func renderVM(sandbox *Sandbox, template *SandboxTemplate) (*kubevirtv1.VirtualMachine, *unready) {
+	if blocked := validateWorkspace(template); blocked != nil {
+		return nil, blocked
+	}
 	spec := template.Spec.VM.DeepCopy()
 	if spec.Template == nil {
 		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s has no VM template", template.Name)}
@@ -108,6 +112,11 @@ func renderVM(sandbox *Sandbox, template *SandboxTemplate) (*kubevirtv1.VirtualM
 	if slices.ContainsFunc(instance.Volumes, func(v kubevirtv1.Volume) bool { return v.Name == volume }) ||
 		slices.ContainsFunc(instance.Domain.Devices.Filesystems, func(f kubevirtv1.Filesystem) bool { return f.Name == volume }) {
 		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the state volume %s itself", template.Name, volume)}
+	}
+	workspace := template.Spec.WorkspaceVolume
+	if workspace != nil && (workspace.Name == volume ||
+		slices.ContainsFunc(instance.Volumes, func(v kubevirtv1.Volume) bool { return v.Name == workspace.Name })) {
+		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the workspace volume %s itself, or as the state volume", template.Name, workspace.Name)}
 	}
 	if blocked := withLaunchDisk(sandbox, template, instance); blocked != nil {
 		return nil, blocked
@@ -127,12 +136,15 @@ func renderVM(sandbox *Sandbox, template *SandboxTemplate) (*kubevirtv1.VirtualM
 			}
 		}
 	}
-	instance.Volumes = append(instance.Volumes, kubevirtv1.Volume{
-		Name: volume,
-		VolumeSource: kubevirtv1.VolumeSource{PersistentVolumeClaim: &kubevirtv1.PersistentVolumeClaimVolumeSource{
-			PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{ClaimName: StateVolumeName(sandbox.Name)},
-		}},
-	})
+	instance.Volumes = append(instance.Volumes, pvcVolume(volume, StateVolumeName(sandbox.Name)))
+	if workspace != nil {
+		instance.Volumes = append(instance.Volumes, pvcVolume(workspace.Name, WorkspaceVolumeName(sandbox.Name)))
+		if workspace.Layout.Type == DirectoryTree {
+			instance.Domain.Devices.Filesystems = append(instance.Domain.Devices.Filesystems, kubevirtv1.Filesystem{
+				Name: workspace.Name, Virtiofs: &kubevirtv1.FilesystemVirtiofs{},
+			})
+		}
+	}
 	instance.Domain.Devices.Filesystems = append(instance.Domain.Devices.Filesystems, kubevirtv1.Filesystem{
 		Name: volume, Virtiofs: &kubevirtv1.FilesystemVirtiofs{},
 	})
@@ -143,6 +155,15 @@ func renderVM(sandbox *Sandbox, template *SandboxTemplate) (*kubevirtv1.VirtualM
 	meta := owned(sandbox)
 	meta.Annotations = map[string]string{RenderedSpecAnnotation: renderedSpec(spec)}
 	return &kubevirtv1.VirtualMachine{ObjectMeta: meta, Spec: *spec}, nil
+}
+
+func pvcVolume(name, claim string) kubevirtv1.Volume {
+	return kubevirtv1.Volume{
+		Name: name,
+		VolumeSource: kubevirtv1.VolumeSource{PersistentVolumeClaim: &kubevirtv1.PersistentVolumeClaimVolumeSource{
+			PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{ClaimName: claim},
+		}},
+	}
 }
 
 func vmCondition(condition *metav1.Condition, sandbox *Sandbox, w workload) {
