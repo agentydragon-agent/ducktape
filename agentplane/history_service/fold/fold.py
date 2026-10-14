@@ -76,6 +76,8 @@ class Item:
     cursor: int
     revision_cursor: int
     kind: int = event_pb2.ITEM_KIND_UNSPECIFIED
+    # TODO: consider folding provider-specific names (`Bash`, `commandExecution`) into a
+    # harness-neutral shell-call type for thread readers.
     tool_name: str = ""
     turn_id: str | None = None
     text: PayloadRef | None = None
