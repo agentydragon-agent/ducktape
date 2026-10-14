@@ -3338,9 +3338,10 @@ data:
           namespace is the capability boundary. Ducktape owns the namespace and the
           ExternalSecret copy in `plaid-mcp`; Finance Flux has no write access there.
 
-          Coinbase is separate from the Plaid mirror. The finance preset grants `get` on the
-          view-only CDP credential `agentplane-staging/coinbase-api-credentials` and GET egress
-          to `api.coinbase.com`. The permitted `api.coinbase.com` GET route does not substitute a
+          Coinbase is separate from the Plaid mirror. The finance preset selects the `coinbase`
+          PolicySet, which grants `get` on the view-only CDP credential
+          `agentplane-staging/coinbase-api-credentials` and GET egress to `api.coinbase.com`. The
+          permitted `api.coinbase.com` GET route does not substitute a
           credential: CDP requires a fresh, request-bound ES256 JWT signed in memory by the view-only key.
           Use GET `/api/v3/brokerage/accounts` to list balances, paging with `has_next`/`cursor`; public
           GET `/v2/prices/<asset>-USD/spot` quotes are separate from personal holdings. Never log or persist
@@ -3461,9 +3462,7 @@ data:
           - google-readonly
           - activitywatch-read
           - aiquota-read
-          - coinbase
           - haku-mailbox
-          - plaid-pgweb
           - github-clone
           - github-agentydragon-agent
           - github-actions-logs
@@ -3482,7 +3481,8 @@ data:
           - testing-access
           - cluster-diagnostics
           - haku-sandbox-write
-          - coinbase-credentials
+          - coinbase
+          - plaid-diagnostics
         thread_preset: haku-codex
       finance-agent:
         title: Finance agent
@@ -3492,9 +3492,7 @@ data:
           - packages
           - aiquota-read
           - finance-aiquota-history
-          - coinbase
           - forgejo-finance-agent
-          - plaid-pgweb
           - github-agentydragon-agent
           - github-clone
           - github-actions-logs
@@ -3506,8 +3504,9 @@ data:
           - shared-diagnostics
           - testing-access
           - public-inventory
-          - coinbase-credentials
+          - coinbase
           - spend-policy-config
+          - plaid-diagnostics
           - ducktape-pr-failed-jobs
           - agentplane-testing
         thread_preset: finance-agent-codex
@@ -3958,6 +3957,12 @@ data:
         role_ref:
           kind: ClusterRole
           name: agent-readable-namespace-metadata
+      plaid-diagnostics:
+        kind: RoleBinding
+        namespace: plaid-mcp
+        role_ref:
+          kind: Role
+          name: plaid-finance-diagnostics-reader
       spend-policy-config:
         kind: RoleBinding
         namespace: plaid-mcp
@@ -7798,7 +7803,7 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
-  name: coinbase-credentials
+  name: coinbase
   namespace: agentplane-staging
 spec:
   rules:
@@ -7808,6 +7813,11 @@ spec:
         name: claude-ai-coinbase-reader
       namespaces:
         - agentplane-staging
+    - type: egress
+      hosts:
+        - api.coinbase.com
+      methods:
+        - GET
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -7822,6 +7832,45 @@ spec:
         name: haku-sandbox-admin
       namespaces:
         - haku-sandbox
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: plaid-diagnostics
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: plaid-finance-diagnostics-reader
+      namespaces:
+        - plaid-mcp
+    - type: egress
+      hosts:
+        - plaid-pgweb.plaid-mcp.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /api/connection
+        - /api/info
+        - /api/objects
+        - /api/query
+        - /api/schemas
+        - /api/tables/**
+      clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
+    - type: egress
+      hosts:
+        - plaid-pgweb.plaid-mcp.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /api/query
+      clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9006,7 +9055,7 @@ apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   annotations:
-    description: ESO copy of the view-only Coinbase CDP key from external-creds, read by claude-ai's sandboxes.
+    description: ESO copy of the view-only Coinbase CDP key from external-creds, read by explicitly authorized Haku, finance-agent, claude-ai, and haku-agent sandboxes.
   name: coinbase-api-credentials
   namespace: agentplane-staging
 spec:
@@ -9143,19 +9192,6 @@ subjects:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
-  name: coinbase
-  namespace: agentplane-staging
-spec:
-  rules:
-    - type: egress
-      hosts:
-        - api.coinbase.com
-      methods:
-        - GET
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
   name: agentplane-testing
   namespace: agentplane-staging
 spec:
@@ -9238,7 +9274,7 @@ spec:
     - aiquota-read
     - haku-mailbox
     - coinbase
-    - plaid-pgweb
+    - plaid-diagnostics
     - agentplane-testing
     - github-downloads
     - github-clone
@@ -9275,7 +9311,8 @@ spec:
     - activitywatch-read
     - aiquota-read
     - haku-mailbox
-    - plaid-pgweb
+    - coinbase
+    - plaid-diagnostics
     - agentplane-testing
     - github-downloads
     - github-clone
@@ -10496,7 +10533,7 @@ metadata:
   name: plaid-pgweb
   namespace: agentplane-staging
 spec:
-  description: The HTTP Basic password of pgweb's `plaid` user (cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by ESO. Send it as HTTP Basic under that username. pgweb runs SQL as `plaid_ro`, a Postgres role that can only SELECT from the Plaid mirror -- every linked account's balances, transactions and holdings -- and `plaid-pgweb`'s rules present the password only on pgweb's query API.
+  description: The HTTP Basic password of pgweb's `plaid` user (cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by ESO. Send it as HTTP Basic under that username. pgweb runs SQL as `plaid_ro`, a Postgres role that can only SELECT from the Plaid mirror -- every linked account's balances, transactions and holdings -- and Agentplane's egress rules present the password only on pgweb's query API.
   source:
     secretRef:
       name: plaid-pgweb-auth
@@ -10504,39 +10541,6 @@ spec:
   targets:
     - header: Authorization
       method: basicPassword
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  name: plaid-pgweb
-  namespace: agentplane-staging
-spec:
-  rules:
-    - type: egress
-      hosts:
-        - plaid-pgweb.plaid-mcp.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /api/connection
-        - /api/info
-        - /api/objects
-        - /api/query
-        - /api/schemas
-        - /api/tables/**
-      clusterInternal: true
-      credentialRef:
-        name: plaid-pgweb
-    - type: egress
-      hosts:
-        - plaid-pgweb.plaid-mcp.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /api/query
-      clusterInternal: true
-      credentialRef:
-        name: plaid-pgweb
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

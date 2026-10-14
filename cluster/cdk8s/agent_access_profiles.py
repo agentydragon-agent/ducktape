@@ -11,6 +11,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from agentplane_policyset_crds.works.allegedly.agentplane import (
+    PolicySetSpecRules,
+    PolicySetSpecRulesCredentialRef,
+    PolicySetSpecRulesMethods,
+)
 from cdk8s_plus_34 import Group, ISubject, ServiceAccount, k8s
 from constructs import Construct
 
@@ -22,9 +27,12 @@ from agentplane.sandboxes.kubernetes_grants import (
     RoleRef,
 )
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
-from cluster.cdk8s.plaid_mcp import spend
+from cluster.cdk8s.plaid_mcp import db, pgweb as plaid_pgweb, spend
+from cluster.cdk8s.providers.agentplane.policy_set import Rule
 
 RBAC_GROUP = "rbac.authorization.k8s.io"
+COINBASE_POLICY = "coinbase"
+PLAID_DIAGNOSTICS_POLICY = "plaid-diagnostics"
 
 
 @dataclass(frozen=True)
@@ -107,6 +115,11 @@ def catalog() -> dict[str, KubernetesGrant]:
             role_ref=RoleRef(kind="Role", name="agentplane-testing-operator"),
         ),
         **_namespace_read_grants(),
+        PLAID_DIAGNOSTICS_POLICY: RoleBindingGrant(
+            kind="RoleBinding",
+            namespace=db.NAMESPACE,
+            role_ref=RoleRef(kind="Role", name=db.FINANCE_DIAGNOSTICS_READER),
+        ),
         "spend-policy-config": RoleBindingGrant(
             kind="RoleBinding",
             namespace=spend.NAMESPACE,
@@ -170,17 +183,50 @@ TESTING_ACCESS = ("agentplane-testing-operator", "agentplane-testing-login")
 PUBLIC_INVENTORY = ("public-coder-node-read", "public-coder-cluster-metadata-read")
 HAKU_EXTRAS = ("cluster-diagnostics", "haku-sandbox-write")
 PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *PUBLIC_INVENTORY)
-# The Flux-owned PolicySets the Policy Controller expands, one per launch choice: a set's rules
-# are its catalog grants, with one RoleBinding rule per role across all its namespaces.
+# The Flux-owned PolicySets the Policy Controller expands, one per launch choice. Their Kubernetes
+# rules are catalog grants (one RoleBinding rule per role across its namespaces); staging may add
+# reviewed egress rules to a set when one selection should grant both capabilities.
 POLICY_SETS = {
     "shared-diagnostics": SHARED_DIAGNOSTICS,
     "testing-access": TESTING_ACCESS,
     "public-inventory": PUBLIC_INVENTORY,
     "cluster-diagnostics": ("cluster-diagnostics",),
     "haku-sandbox-write": ("haku-sandbox-write",),
-    "coinbase-credentials": ("coinbase-credentials",),
+    COINBASE_POLICY: ("coinbase-credentials",),
     "spend-policy-config": ("spend-policy-config",),
+    PLAID_DIAGNOSTICS_POLICY: (PLAID_DIAGNOSTICS_POLICY,),
 }
+
+
+def plaid_pgweb_egress_rules(*, credential: str) -> list[PolicySetSpecRules]:
+    """The egress half of the Plaid diagnostics PolicySet."""
+    host = plaid_pgweb.SERVICE.fqdn
+    # pgweb's other API routes and its web UI stay unreachable. Its session routes (`connect`,
+    # `disconnect`, `switchdb`) are POSTs, so POST is admitted on the query route alone.
+    reads = [
+        # keep-sorted start
+        "/api/connection",
+        "/api/info",
+        "/api/objects",
+        "/api/query",
+        "/api/schemas",
+        "/api/tables/**",
+        # keep-sorted end
+    ]
+
+    def egress_rule(method: PolicySetSpecRulesMethods, paths: Sequence[str]) -> PolicySetSpecRules:
+        return Rule.egress(
+            hosts=[host],
+            cluster_internal=True,
+            methods=[method],
+            paths=paths,
+            credential_ref=PolicySetSpecRulesCredentialRef(name=credential),
+        )
+
+    return [
+        egress_rule(PolicySetSpecRulesMethods.GET, reads),
+        egress_rule(PolicySetSpecRulesMethods.POST, ["/api/query"]),
+    ]
 
 
 def covering_policy_sets(grants: Sequence[str]) -> list[str]:
@@ -193,8 +239,8 @@ def covering_policy_sets(grants: Sequence[str]) -> list[str]:
 
 MANAGED_GRANTS = {
     "public-coder": PUBLIC_GRANTS,
-    "finance-agent": (*PUBLIC_GRANTS, "coinbase-credentials", "spend-policy-config"),
-    "haku": (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *HAKU_EXTRAS, "coinbase-credentials"),
+    "finance-agent": (*PUBLIC_GRANTS, "coinbase-credentials", "spend-policy-config", PLAID_DIAGNOSTICS_POLICY),
+    "haku": (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *HAKU_EXTRAS, "coinbase-credentials", PLAID_DIAGNOSTICS_POLICY),
 }
 STATIC_GRANTS = {
     # Independently scoped legacy OAuth identity, not an alias for the Haku profile. Widening it

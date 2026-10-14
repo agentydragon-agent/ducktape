@@ -66,7 +66,7 @@ GOOGLE_READONLY_POLICY = "google-readonly"
 ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
 AIQUOTA_READ_POLICY = "aiquota-read"
 FINANCE_AIQUOTA_HISTORY_POLICY = "finance-aiquota-history"
-PLAID_PGWEB_POLICY = "plaid-pgweb"
+PLAID_PGWEB_CREDENTIAL = "plaid-pgweb"
 # Credentials whose egress rules ride in the Action PolicySets that approve the same system's
 # reads (actions_staging_policies.py), so a binding to one set grants both.
 GROCY_SF_READONLY_CREDENTIAL = "grocy-sf-readonly"
@@ -646,39 +646,20 @@ def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, cr
         source=plaid_pgweb.AUTH.name,
         key=plaid_pgweb.AUTH_KEY,
     )
-    credential = "plaid-pgweb"
-    host = plaid_pgweb.SERVICE.fqdn
-    # pgweb's other API routes and its web UI stay unreachable. Its session routes (`connect`,
-    # `disconnect`, `switchdb`) are POSTs, so POST is admitted on the query route alone.
-    reads = [
-        # keep-sorted start
-        "/api/connection",
-        "/api/info",
-        "/api/objects",
-        "/api/query",
-        "/api/schemas",
-        "/api/tables/**",
-        # keep-sorted end
-    ]
-    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    _present(
+    _credential(
         scope,
-        PLAID_PGWEB_POLICY,
+        PLAID_PGWEB_CREDENTIAL,
         namespace=namespace,
-        credential=credential,
+        credential=PLAID_PGWEB_CREDENTIAL,
         description=(
             f"The HTTP Basic password of pgweb's `{plaid_pgweb.AUTH_USER}` user "
             "(cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by "
             "ESO. Send it as HTTP Basic under that username. pgweb runs SQL as `plaid_ro`, a Postgres "
             "role that can only SELECT from the Plaid mirror -- every linked account's balances, "
-            "transactions and holdings -- and `plaid-pgweb`'s rules present the password only on pgweb's "
-            "query API."
+            "transactions and holdings -- and Agentplane's egress rules present the password only on "
+            "pgweb's query API."
         ),
         secret=plaid_pgweb.AUTH.name,
         key=plaid_pgweb.AUTH_KEY,
         target=_BASIC_PASSWORD,
-        rules=[
-            _rule(credential, host, cluster_internal=True, method=PolicySetSpecRulesMethods.GET, paths=reads),
-            _rule(credential, host, cluster_internal=True, method=PolicySetSpecRulesMethods.POST, paths=["/api/query"]),
-        ],
     )

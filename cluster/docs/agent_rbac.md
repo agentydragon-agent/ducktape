@@ -161,11 +161,12 @@ every sandbox it stamps through the sandbox Action group runs as it
   `litellm/litellm-key-disposable-env` (the Qwen-only key for the disposable test environment).
   No general Secret enumeration or staging login access.
 
-These additions are explicit static profile selections in
-`cluster/cdk8s/agent_access_profiles.py`; they do not make `claude-ai` an alias for Haku.
-It has no Haku sandbox write authority or staging operator access. Its existing
-`AcceptanceToken` binding remains; the separate `haku-agent` ServiceAccount retains
-only that testing-token grant and does not receive these additions.
+The `coinbase` PolicySet combines GET egress to `api.coinbase.com` with the `get` grant on
+the named Coinbase Secret. The static `claude-ai` and `haku-agent` PolicyBindings both select it;
+the Haku and finance-agent presets select it for managed sandboxes. Static Haku identities keep
+their explicit RoleBinding to the same named Secret. These grants do not make `claude-ai` an alias
+for Haku: it has no Haku sandbox write authority or staging operator access. Its existing
+`AcceptanceToken` binding remains, and `haku-agent` still has no broader Haku profile grants.
 
 Agentplane-managed Haku runner Pods use per-Sandbox ServiceAccounts and their own
 preset selections, which an operator may replace. Kubernetes access is also distinct
@@ -210,16 +211,26 @@ readers migrate to Flux-owned bindings as described below.
 
 The logical profiles are distinct from the transport identities:
 
-| Access path                                    | Logical profile / contract                                                                                                                               |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `oidc-ksbx-groups:haku` group                  | Static Haku; checked independently                                                                                                                       |
-| `haku:access-profile:haku` group               | Static Haku Console; checked independently                                                                                                               |
-| `haku-sandbox/haku` ServiceAccount             | Static Haku compute; checked independently                                                                                                               |
-| Managed `haku` preset                          | Includes public coder; matches each static Haku path, including the exact Coinbase grant below                                                           |
-| Managed `finance-agent` preset                 | Public coder permissions plus the exact Coinbase grant below; no static finance identity is implied                                                      |
-| `agentplane-staging/claude-ai` ServiceAccount  | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, and testing acceptance-token minting         |
-| `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset                                                                  |
-| `public-coder-agent/openclaw` ServiceAccount   | Static OpenClaw Action caller; Action Service reads labeled ServiceAccount metadata here, while its policy binding and sets stay in `agentplane-staging` |
+| Access path                        | Logical profile / contract                                                                          |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `oidc-ksbx-groups:haku` group      | Static Haku; checked independently                                                                  |
+| `haku:access-profile:haku` group   | Static Haku Console; checked independently                                                          |
+| `haku-sandbox/haku` ServiceAccount | Static Haku compute; checked independently                                                          |
+| Managed `haku` preset              | Includes public coder; matches each static Haku path, including the exact Coinbase grant below      |
+| Managed `finance-agent` preset     | Public coder permissions plus the exact Coinbase grant below; no static finance identity is implied |
+
+| `agentplane-staging/claude-ai` ServiceAccount | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, and testing acceptance-token minting |
+| `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset |
+| `public-coder-agent/openclaw` ServiceAccount | Static OpenClaw Action caller; Action Service reads labeled ServiceAccount metadata here, while its policy binding and sets stay in `agentplane-staging` |
+
+The managed finance and Haku presets and the static `claude-ai` and `haku-agent` PolicyBindings
+select the `plaid-diagnostics` PolicySet. It combines the pgweb `plaid_ro` read-only egress path
+with a namespaced `plaid-mcp` RoleBinding for read-only control-plane metadata (Pods, Services,
+EndpointSlices, workloads, events, PVCs, and CNPG Cluster status). The Role excludes Secrets,
+ConfigMaps, Pod logs/exec and every mutation. This grant diagnoses sync and Postgres health without
+treating the sensitive `plaid-mcp` namespace as globally agent-readable. It is a new-sandbox preset
+grant for managed callers and a PolicyBinding grant for the static callers, not proof of current
+RBAC in an already-running sandbox.
 
 **Intended relationship between the Haku and finance-agent presets.** Haku is the executive
 agent that directs the finance agent (Rai's finances are the finance agent's, and Haku
@@ -229,10 +240,11 @@ its own Forgejo user, which owns `finance-agent/finance-agent` with Haku as a wr
 (`tf/gitops/finance-agent`). Any permission the finance preset has that Haku lacks is a gap to
 close or a named exception, not a design choice. Open work: [`haku/TODO.md`](../../haku/TODO.md).
 
-Static and managed Haku, plus managed finance, explicitly receive **`get` on
-`agentplane-staging/coinbase-api-credentials`**. Public coder does not. Tests name
-that scope, resource, verb, and object literally, not by a Role whose rules could
-grow. Finance differs from public coder by exactly this named Secret read.
+The `coinbase` PolicySet combines GET egress and **`get` on
+`agentplane-staging/coinbase-api-credentials`**. Managed Haku and finance-agent presets and the
+static `claude-ai` and `haku-agent` PolicyBindings select it; static Haku identities retain their
+direct RoleBinding. Public coder does not receive this access. Tests name the Secret scope,
+resource, verb, and object literally, not by a Role whose rules could grow.
 Static Haku retains redundant narrow inventory bindings; managed Haku's broader
 cluster reader covers those rules without selecting the same Role names.
 
@@ -352,10 +364,11 @@ a configured catalog or preset as proof that existing Sandboxes received binding
 
 The Haku preset currently selects `cluster-diagnostics-reader` cluster-wide,
 `haku-sandbox-admin` within `haku-sandbox`, the common metadata and pod-log readers
-within `agentplane-staging`, and `get` on exactly
-`agentplane-staging/coinbase-api-credentials` via the existing
-`claude-ai-coinbase-reader` Role. The latter Role's name predates managed grants; its
-rules are shared while its static RoleBinding (legacy `claude-ai` plus all three Haku identities) remains Flux-owned.
+within `agentplane-staging`, and the combined `coinbase` PolicySet, which grants GET egress and
+`get` on exactly `agentplane-staging/coinbase-api-credentials` via the existing
+`claude-ai-coinbase-reader` Role. The latter Role's name predates managed grants; its rules are
+shared while its static RoleBinding (legacy `claude-ai` plus all three Haku identities) remains
+Flux-owned. The static `claude-ai` and `haku-agent` PolicyBindings also select the combined set.
 The preset also selects the existing Haku Console metadata and ClickHouse
 diagnostics Roles in their respective namespaces. Their managed binding
 delegation lives in separate Flux Kustomizations dependent on those services.
