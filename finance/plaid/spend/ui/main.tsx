@@ -874,6 +874,20 @@ function CompactCounterparties({ counterparties }: { counterparties: Transaction
 
 function TransactionTitle({ row }: { row: TransactionRow }) {
   const title = row.merchant_name || row.name;
+  const counterparties = row.counterparties || [];
+  const merchants = counterparties.filter((party) => party.type?.toLowerCase() === "merchant");
+  // A single merchant with at most one other counterparty fits in the title line.
+  // Keep unusual/multi-party data in the original separate line rather than hiding it.
+  if (merchants.length === 1 && counterparties.length <= 2) {
+    const others = counterparties.filter((party) => party.name?.toLowerCase() !== title.toLowerCase());
+    const suffix = others.map((party) => party.name || "Unnamed").join(" · ");
+    return (
+      <Text size="sm" fw={650} lineClamp={1} title={suffix ? `${title} · ${suffix}` : title}>
+        {title}
+        {suffix && <Text span fw={400} c="dimmed"> · {suffix}</Text>}
+      </Text>
+    );
+  }
   return (
     <>
       <Text size="sm" fw={650} lineClamp={1} title={title}>
