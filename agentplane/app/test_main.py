@@ -142,6 +142,27 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
     assert oidc.cookie_name.startswith("__Host-")
 
 
+@pytest.mark.parametrize("default_policy_sets", [None, [], ["basic"]])
+def test_sandbox_service_target_is_required_only_for_legacy_lifecycle(
+    default_policy_sets: list[str] | None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    for name, value in APP_ENVIRONMENT.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv("AGENTPLANE_SANDBOX_SERVICE_TARGET")
+    # This value is deployed through the YAML ConfigMap, not an environment string.
+    config = tmp_path / "config.yaml"
+    config.write_text(f"default_policy_sets: {json.dumps(default_policy_sets)}\n")
+    monkeypatch.setenv("AGENTPLANE_CONFIG_FILE", str(config))
+
+    if default_policy_sets is None:
+        with pytest.raises(ValidationError, match="sandbox_service_target is required"):
+            Settings(_cli_parse_args=[])
+    else:
+        settings = Settings(_cli_parse_args=[])
+        assert settings.sandbox_service_target is None
+        assert settings.default_policy_sets == set(default_policy_sets)
+
+
 @pytest.mark.parametrize(
     "field", ["AGENTPLANE_EGRESS_ADMIN_URL", "AGENTPLANE_NOTIFICATIONS_URL", "AGENTPLANE_ELECTRIC_URL"]
 )
