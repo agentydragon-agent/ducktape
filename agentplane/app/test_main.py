@@ -51,7 +51,6 @@ from util.net import pick_free_port
 
 APP_ENVIRONMENT = {
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
-    "AGENTPLANE_SANDBOX_SERVICE_TARGET": "sandbox-service.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_TARGET": "runner-gateway.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET": "{sandbox}-control.{namespace}.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_TOKEN_FILE": "/tokens/runner-gateway",
@@ -96,6 +95,14 @@ OIDC_ENVIRONMENT = {
 }
 
 
+def set_app_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    for name, value in APP_ENVIRONMENT.items():
+        monkeypatch.setenv(name, value)
+    config = tmp_path / "config.yaml"
+    config.write_text("default_policy_sets: [basic]\n")
+    monkeypatch.setenv("AGENTPLANE_CONFIG_FILE", str(config))
+
+
 def test_spa_files_are_never_reused_from_a_browser_cache(tmp_path: Path) -> None:
     """Bazel's fixed mtimes would otherwise validate a stale bundle: no-store, and no 304."""
     (tmp_path / "index.html").write_text("<!doctype html>")
@@ -118,21 +125,24 @@ def test_spa_files_are_never_reused_from_a_browser_cache(tmp_path: Path) -> None
     )
 
 
-def test_the_two_settings_models_read_one_environment_without_colliding(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_two_settings_models_read_environment_and_config_without_colliding(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """`AGENTPLANE_OIDC_` sits inside `AGENTPLANE_`, and the staging Deployment sets both.
 
     A model that claimed the other's variables, or refused to parse alongside them, would take the
     app down at rollout rather than here.
     """
-    for name, value in (APP_ENVIRONMENT | OIDC_ENVIRONMENT).items():
+    set_app_environment(monkeypatch, tmp_path)
+    for name, value in OIDC_ENVIRONMENT.items():
         monkeypatch.setenv(name, value)
 
     settings = Settings(_cli_parse_args=[])
     oidc = OIDCSettings()
 
     assert settings.sandbox_namespace == "test-sandbox-namespace"
-    assert settings.sandbox_service_request_timeout_s == 20
-    assert settings.sandbox_service_lifecycle_timeout_s == 310
+    assert settings.runner_gateway_request_timeout_s == 20
+    assert settings.runner_gateway_lifecycle_timeout_s == 310
     assert (settings.port, settings.token_audience) == (8080, "agentplane")
     assert settings.session_dispatcher_target is None
     assert str(settings.session_dispatcher_token_file) == "/var/run/secrets/agentplane-session-dispatcher/token"
@@ -145,32 +155,32 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
 
 
 @pytest.mark.parametrize("default_policy_sets", [None, [], ["basic"]])
-def test_sandbox_service_target_is_required_only_for_legacy_lifecycle(
+def test_default_policy_sets_are_required_for_direct_lifecycle(
     default_policy_sets: list[str] | None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     for name, value in APP_ENVIRONMENT.items():
         monkeypatch.setenv(name, value)
-    monkeypatch.delenv("AGENTPLANE_SANDBOX_SERVICE_TARGET")
+    monkeypatch.delenv("AGENTPLANE_DEFAULT_POLICY_SETS", raising=False)
     # This value is deployed through the YAML ConfigMap, not an environment string.
     config = tmp_path / "config.yaml"
-    config.write_text(f"default_policy_sets: {json.dumps(default_policy_sets)}\n")
+    config.write_text(
+        "" if default_policy_sets is None else f"default_policy_sets: {json.dumps(default_policy_sets)}\n"
+    )
     monkeypatch.setenv("AGENTPLANE_CONFIG_FILE", str(config))
 
     if default_policy_sets is None:
-        with pytest.raises(ValidationError, match="sandbox_service_target is required"):
+        with pytest.raises(ValidationError, match="default_policy_sets"):
             Settings(_cli_parse_args=[])
     else:
         settings = Settings(_cli_parse_args=[])
-        assert settings.sandbox_service_target is None
         assert settings.default_policy_sets == set(default_policy_sets)
 
 
 @pytest.mark.parametrize(
     "field", ["AGENTPLANE_EGRESS_ADMIN_URL", "AGENTPLANE_NOTIFICATIONS_URL", "AGENTPLANE_ELECTRIC_URL"]
 )
-def test_endpoint_settings_reject_query_components(field: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    for name, value in APP_ENVIRONMENT.items():
-        monkeypatch.setenv(name, value)
+def test_endpoint_settings_reject_query_components(field: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    set_app_environment(monkeypatch, tmp_path)
     monkeypatch.setenv(field, "http://service.test.invalid/?tenant=one")
 
     with pytest.raises(ValidationError):
