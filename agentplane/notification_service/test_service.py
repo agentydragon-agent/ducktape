@@ -2,11 +2,13 @@
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, create_autospec
 from uuid import uuid4
 
 import aiohttp
+import grpc
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
@@ -14,14 +16,17 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.models import ActionEventView, ActionState
-from agentplane.notification_service.db import Entry, Inbox, Subscription
+from agentplane.grpc_calls import ServiceError
+from agentplane.notification_service.db import Entry, Inbox, Notice, Subscription
+from agentplane.notification_service.dispatcher_client import SessionDispatcherClient
 from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionView
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings, QuotaSettings
 from agentplane.notification_service.store import ConflictError, Store
 from agentplane.notification_service.testing.store import claimed
-from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.proto.sandboxes_pb2 import Sandbox, ServiceAccount
+from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.proto.sandboxes_pb2 import Sandbox, SandboxDestination, ServiceAccount
+from agentplane.runner_gateway.client import SandboxRunner
 from agentplane.sandboxes.errors import SandboxNotFoundError
 from agentplane.workload_auth.principal import WorkloadPrincipal
 
@@ -292,6 +297,123 @@ async def test_initial_lookup_failure_does_not_start_stale_confirmation(service:
         assert not inbox.retired
         assert source is not None
         assert not source.cancelled
+
+
+async def _dispatcher_notice(service: Service) -> tuple[Inbox, SubscriptionView, Notice]:
+    subscription = await service.store.subscribe(PRINCIPAL, BODY)
+    claim, source = await claimed(service.store)
+    await service.store.record(claim, source, events(1))
+    notice = await service.store.notice(claim, prepare=True)
+    assert notice is not None
+    service.dispatcher = create_autospec(SessionDispatcherClient, instance=True)
+    cast(AsyncMock, service.history.read_session_events).return_value = history_service_pb2.ReadSessionEventsResponse(
+        last_cursor=0
+    )
+    return claim, subscription, notice
+
+
+def _sandbox_runner(harness_state: str = "HARNESS_STATE_RUNNING") -> SandboxRunner:
+    destination = SandboxDestination(
+        sandbox=BODY.destination_ref.name,
+        sandbox_uid=BODY.destination_ref.uid,
+        owner=ServiceAccount(namespace=PRINCIPAL.namespace, name=PRINCIPAL.service_account_name),
+    )
+    return cast(
+        SandboxRunner,
+        SimpleNamespace(
+            destination=destination,
+            list_sessions=AsyncMock(
+                return_value=[runner_pb2.SessionSummary(session_id=BODY.session_id, harness_state=harness_state)]
+            ),
+        ),
+    )
+
+
+async def test_stopped_gateway_harness_leaves_notice_unattempted_for_ack_before_resume(service: Service) -> None:
+    subscription = await service.store.subscribe(PRINCIPAL, BODY)
+    claim, source = await claimed(service.store)
+    await service.store.record(claim, source, events(1))
+    notice = await service.store.notice(claim, prepare=True)
+    assert notice is not None
+    runner = _sandbox_runner("HARNESS_STATE_STOPPED")
+
+    await service.deliver(claim, runner, notice)
+
+    page = await service.store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
+    assert page.notice is not None
+    assert not page.notice.attempted
+    assert page.notice.error is None
+    cast(AsyncMock, runner.list_sessions).assert_awaited_once()
+
+    await service.store.acknowledge(PRINCIPAL.account, subscription.inbox_id, notice.through_cursor)
+    cast(AsyncMock, runner.list_sessions).return_value = [
+        runner_pb2.SessionSummary(session_id=BODY.session_id, harness_state="HARNESS_STATE_RUNNING")
+    ]
+    await service.deliver(claim, runner, notice)
+
+    page = await service.store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
+    assert page.notice is not None
+    assert not page.notice.attempted
+    assert page.notice.error == "suppressed: acknowledged before submission"
+    cast(AsyncMock, service.gateway.command).assert_not_awaited()
+
+
+async def test_dispatcher_retries_keep_the_notice_id_and_queued_is_not_admitted(service: Service) -> None:
+    claim, subscription, notice = await _dispatcher_notice(service)
+    dispatcher = cast(SessionDispatcherClient, service.dispatcher)
+    submit = cast(AsyncMock, dispatcher.submit_input)
+    runner = _sandbox_runner("HARNESS_STATE_STOPPED")
+    submit.return_value = session_dispatcher_pb2.Dispatch(
+        state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
+    )
+
+    await service.deliver(claim, runner, notice)
+    await service.deliver(claim, runner, notice)
+
+    assert submit.await_count == 2
+    cast(AsyncMock, runner.list_sessions).assert_not_awaited()
+    assert [call.kwargs for call in submit.await_args_list] == [
+        {
+            "sandbox": BODY.destination_ref.name,
+            "session_id": BODY.session_id,
+            "command_id": str(notice.command_id),
+            "text": notice.text,
+        }
+    ] * 2
+    page = await service.store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
+    assert page.notice is not None
+    assert page.notice.attempted
+    assert not page.notice.admitted
+    assert not page.notice.confirmed
+    assert page.notice.error is None
+    cast(AsyncMock, service.gateway.command).assert_not_awaited()
+
+
+async def test_dispatcher_terminal_outcome_is_persisted_without_gateway_fallback(service: Service) -> None:
+    claim, subscription, notice = await _dispatcher_notice(service)
+    dispatcher = cast(SessionDispatcherClient, service.dispatcher)
+    cast(AsyncMock, dispatcher.submit_input).return_value = session_dispatcher_pb2.Dispatch(
+        state=session_dispatcher_pb2.DELIVERY_STATE_FAILED, reason="sandbox_deleted"
+    )
+
+    await service.deliver(claim, _sandbox_runner(), notice)
+
+    page = await service.store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
+    assert page.notice is not None
+    assert page.notice.error == "Dispatcher DELIVERY_STATE_FAILED: sandbox_deleted"
+    cast(AsyncMock, service.gateway.command).assert_not_awaited()
+
+
+async def test_dispatcher_authentication_failure_never_falls_back_to_gateway(service: Service) -> None:
+    claim, _, notice = await _dispatcher_notice(service)
+    dispatcher = cast(SessionDispatcherClient, service.dispatcher)
+    cast(AsyncMock, dispatcher.submit_input).side_effect = ServiceError(
+        grpc.StatusCode.UNAUTHENTICATED, "unauthenticated"
+    )
+
+    with pytest.raises(ServiceError, match="unauthenticated"):
+        await service.deliver(claim, _sandbox_runner(), notice)
+    cast(AsyncMock, service.gateway.command).assert_not_awaited()
 
 
 if __name__ == "__main__":
