@@ -6,8 +6,10 @@ from typing import cast
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import aiohttp
 import pytest
 import pytest_bazel
+from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -143,7 +145,6 @@ def _matching_sandbox() -> Sandbox:
 
 async def _due_inbox(service: Service, *, prepare_notice: bool = False) -> tuple[Inbox, SubscriptionView]:
     service.notice_debounce = NoticeDebounceSettings(quiet_seconds=3600, max_wait_seconds=3600)
-    service.sandboxes.namespace = "test"
     cast(AsyncMock, service.actions.events).return_value = []
     subscription = await service.store.subscribe(PRINCIPAL, BODY)
     claim, source = await claimed(service.store)
@@ -165,12 +166,11 @@ async def test_stale_inbox_retires_after_persisted_recheck(
 ) -> None:
     claim, subscription = await _due_inbox(service, prepare_notice=prepare_notice)
     if reason == "not_found":
-        # Sandbox Service also returns NOT_FOUND when the managed label is removed.
-        cast(AsyncMock, service.sandboxes.get).side_effect = SandboxNotFoundError("sandbox")
+        cast(AsyncMock, service.sandboxes.get_without_pod).side_effect = SandboxNotFoundError("sandbox")
     else:
         replacement = _matching_sandbox()
         replacement.uid = "replacement-uid"
-        cast(AsyncMock, service.sandboxes.get).return_value = replacement
+        cast(AsyncMock, service.sandboxes.get_without_pod).return_value = replacement
     assert await service.step()
     async with service.store.sessions() as session:
         pending = await session.get(Inbox, claim.id)
@@ -213,11 +213,11 @@ async def test_stale_inbox_retires_after_persisted_recheck(
 
 async def test_transient_missing_destination_can_recover_without_retirement(service: Service) -> None:
     claim, subscription = await _due_inbox(service)
-    cast(AsyncMock, service.sandboxes.get).side_effect = SandboxNotFoundError("sandbox")
+    cast(AsyncMock, service.sandboxes.get_without_pod).side_effect = SandboxNotFoundError("sandbox")
     assert await service.step()
     # Retry after the persisted deadline sees the *same* UID (including suspension).
-    cast(AsyncMock, service.sandboxes.get).side_effect = None
-    cast(AsyncMock, service.sandboxes.get).return_value = _matching_sandbox()
+    cast(AsyncMock, service.sandboxes.get_without_pod).side_effect = None
+    cast(AsyncMock, service.sandboxes.get_without_pod).return_value = _matching_sandbox()
     async with service.store.sessions.begin() as session:
         await session.execute(
             update(Inbox).where(Inbox.id == claim.id).values(next_attempt=datetime.now(UTC) - timedelta(seconds=1))
@@ -236,7 +236,7 @@ async def test_transient_missing_destination_can_recover_without_retirement(serv
 
 async def test_transient_lookup_and_owner_mismatch_cannot_confirm_staleness(service: Service) -> None:
     claim, subscription = await _due_inbox(service)
-    cast(AsyncMock, service.sandboxes.get).side_effect = SandboxNotFoundError("sandbox")
+    cast(AsyncMock, service.sandboxes.get_without_pod).side_effect = SandboxNotFoundError("sandbox")
     assert await service.step()
     async with service.store.sessions.begin() as session:
         await session.execute(
@@ -247,7 +247,7 @@ async def test_transient_lookup_and_owner_mismatch_cannot_confirm_staleness(serv
                 next_attempt=datetime.now(UTC) - timedelta(seconds=1),
             )
         )
-    cast(AsyncMock, service.sandboxes.get).side_effect = TimeoutError("backend offline")
+    cast(AsyncMock, service.sandboxes.get_without_pod).side_effect = TimeoutError("backend offline")
     assert await service.step()
     async with service.store.sessions() as session:
         pending = await session.get(Inbox, claim.id)
@@ -256,10 +256,10 @@ async def test_transient_lookup_and_owner_mismatch_cannot_confirm_staleness(serv
         assert pending.stale_check_at is not None
         assert pending.next_attempt is not None
         assert pending.next_attempt > datetime.now(UTC)
-    cast(AsyncMock, service.sandboxes.get).side_effect = None
+    cast(AsyncMock, service.sandboxes.get_without_pod).side_effect = None
     wrong_owner = _matching_sandbox()
     wrong_owner.service_account.name = "different-owner"
-    cast(AsyncMock, service.sandboxes.get).return_value = wrong_owner
+    cast(AsyncMock, service.sandboxes.get_without_pod).return_value = wrong_owner
     async with service.store.sessions.begin() as session:
         await session.execute(
             update(Inbox).where(Inbox.id == claim.id).values(next_attempt=datetime.now(UTC) - timedelta(seconds=1))
@@ -276,9 +276,13 @@ async def test_transient_lookup_and_owner_mismatch_cannot_confirm_staleness(serv
         assert not source.cancelled
 
 
-async def test_initial_lookup_timeout_does_not_start_stale_confirmation(service: Service) -> None:
+@pytest.mark.parametrize(
+    "failure",
+    [TimeoutError("backend offline"), k8s_client.ApiException(status=503), aiohttp.ClientConnectionError("refused")],
+)
+async def test_initial_lookup_failure_does_not_start_stale_confirmation(service: Service, failure: Exception) -> None:
     claim, subscription = await _due_inbox(service)
-    cast(AsyncMock, service.sandboxes.get).side_effect = TimeoutError("backend offline")
+    cast(AsyncMock, service.sandboxes.get_without_pod).side_effect = failure
     assert await service.step()
     async with service.store.sessions() as session:
         inbox = await session.get(Inbox, claim.id)
