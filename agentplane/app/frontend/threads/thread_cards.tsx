@@ -717,6 +717,11 @@ interface StatusBadge {
   color?: MantineColor;
 }
 
+function isShellCall(toolName: string): boolean {
+  // Claude and Codex name the same kind of call differently in their native protocols.
+  return toolName === "Bash" || toolName === "commandExecution";
+}
+
 /** A badge says how items differ from the ordinary case -- ran to completion, still in the model's
  * context, no failure -- which wears none. */
 function statusBadges(items: ThreadEntity[], live: boolean, titleMarked: boolean): StatusBadge[] {
@@ -727,7 +732,8 @@ function statusBadges(items: ThreadEntity[], live: boolean, titleMarked: boolean
       : []),
     ...(states.some((state) => state.completion === null && state.recovery !== null) ? [{ label: "Interrupted" }] : []),
     ...states.flatMap((state) => (state.recovery === null ? [] : (recoveryBadge(state.recovery) ?? []))),
-    ...(!titleMarked && states.some((state) => state.tool_succeeded === false)
+    ...(!titleMarked &&
+    states.some((state) => state.tool_succeeded === false && !(items.length > 1 && isShellCall(state.tool_name)))
       ? [{ label: "Failed", color: "red" }]
       : []),
   ];

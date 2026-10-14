@@ -1139,6 +1139,23 @@ it("replaces locally known text with the service echo once that payload arrives"
   expect(onInputEchoLoaded).toHaveBeenCalledWith("local-input");
 });
 
+it.each(["Bash", "commandExecution"])(
+  "does not mark a failed %s shell call as a failed compacted run",
+  async (toolName) => {
+    const [run] = await renderHistory(
+      [
+        testItem(1, ItemKind.TOOL_CALL, { tool_name: toolName, completion: "tool", tool_succeeded: false }),
+        testItem(2, ItemKind.REASONING, {}, { textRef: reference("entity-2", "text") }),
+      ],
+      false,
+      { "entity-2:text": "A command may exit nonzero as part of normal investigation." }
+    );
+
+    const summary = run.querySelector(".agentplane-disclosure-summary")!;
+    expect(summary.querySelector('[role="img"][aria-label="Failed"]')).toBeNull();
+  }
+);
+
 it("folds a run of tool calls and reasoning behind its summary until it is opened", async () => {
   const [run] = await renderHistory(
     [
