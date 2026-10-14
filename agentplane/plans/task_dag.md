@@ -688,7 +688,7 @@ flowchart TD
     WORKSPACE_VOLUME[In flight: activate typed Sandbox-owned workspaces]
     WORKSPACE_DATAVOLUME_RETIRE[Blocked: retire the old DataVolume workspace path]
     STATE_VOLUME_LAYOUT[Candidate: declare the state volume layout explicitly]
-    VM_GUEST_DECLARATIVE_STORAGE[Candidate: declarative guest disk initialization]
+    VM_GUEST_DECLARATIVE_STORAGE[In flight: declarative guest disk setup]
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
@@ -852,15 +852,18 @@ the selected explicit layouts before retiring the path; data drops stay in a sep
 
 ### `VM_GUEST_DECLARATIVE_STORAGE` — declarative guest disk initialization
 
-**Candidate; assigned to `dag_burndown` after `WORKSPACE_VOLUME`; operator: the VM is running too much bash.**
-Inventory guest shell scripts and the
-NixOS module replacing each, then use declarative filesystem/disk initialization where supported.
-Preserve the explicit layout contract and refuse incompatible existing data. `autoFormat`'s
-recognizable-filesystem check is not equivalent to the existing zero-content scan; specify and
-test first-use formatting and remount behavior before removing the old scripts. This can proceed
-independently of workspace ownership. New guest configuration waits on the accepting VM image
-and, for runner changes, its embedded wheel pin. Finish by deleting the replaced shell scripts,
-units and packaging references; do not leave a second formatting path.
+**In flight (`dag_burndown`, 2026-10-14; draft [#10513](https://github.com/agentydragon/ducktape/pull/10513); follows `WORKSPACE_VOLUME`).** The workspace mount remains a NixOS `fileSystems`
+declaration; `systemd.tmpfiles` now owns directory mode, owner, default ACL and private home setup.
+The old formatting shell body is replaced by a small tested Python guard because NixOS
+`autoFormat` checks only for a recognizable filesystem, not that every byte is zero. Keep
+`autoFormat = false`: first use formats only a zero-filled disk with no signatures, remount accepts
+only the expected ext4 label/signature, and incompatible or unrecognized content refuses startup.
+`agentplane-config` still copies runtime config/credential disks and the console getty still selects
+autologin from runtime config; those shell paths read per-boot inputs and are outside disk setup.
+
+Build and pin the new VM image before a bounded staging first-format/remount acceptance; this lane
+does not change the embedded runner wheel. Do not apply the image or edit deployed templates in
+this PR. Do not add a second formatting path or raise the existing device-discovery wait.
 
 ### `VOLUME_LAYOUT_CONVERSION` — explicit offline volume conversion
 
