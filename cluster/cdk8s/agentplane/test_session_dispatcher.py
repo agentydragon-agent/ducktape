@@ -1,6 +1,6 @@
 """Dispatcher wake eligibility is enabled only for the approved testing senders."""
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import pytest_bazel
@@ -150,6 +150,21 @@ def test_dispatcher_deployment_and_sender_auth(
         for rule in gateway_policy["ingress"]
         for endpoint in rule.get("fromEndpoints", [])
     )
+
+
+def test_only_testing_app_config_enables_dispatcher_session_openings(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    def app_config(namespace: str) -> dict[str, Any]:
+        config = one(
+            doc
+            for doc in agentplane_manifests[namespace]
+            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
+        )
+        return cast(dict[str, Any], yaml.safe_load(config["data"]["config.yaml"]))
+
+    assert app_config(testing.ENV.namespace)["session_dispatcher_open_sessions"] is True
+    assert "session_dispatcher_open_sessions" not in app_config(staging.ENV.namespace)
 
 
 if __name__ == "__main__":
