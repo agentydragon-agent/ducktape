@@ -49,7 +49,8 @@ def stored(session_id: str) -> runner_pb2.SessionSpec:
     return spec
 
 
-TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=0.5, backoff_initial_s=0.01, backoff_max_s=0.05)
+# Long liveness: a test gateway and runner share one event loop, so a stall on a loaded runner must not expire the stream.
+TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=5, backoff_initial_s=0.01, backoff_max_s=0.05)
 
 type Service = runner_control_pb2_grpc.RunnerAsyncStub
 
@@ -454,6 +455,22 @@ async def test_a_delivery_under_way_makes_the_sandbox_busy_until_it_is_answered(
         await gateway.control.wait_for_idleness(idle=False)
     await gateway.control.wait_for_idleness(idle=True)
     assert runner.facts().idle_since.ToNanoseconds() > idle_since.ToNanoseconds()
+
+
+async def test_a_running_session_setup_is_published_even_while_the_sandbox_was_already_busy(
+    runner: Runner, gateway: Gateway, dial: Callable[[], Awaitable[Service]]
+) -> None:
+    await dial()
+    await gateway.control.wait_for_facts(Facts())
+    session = runner.sessions[RUNNING]
+    with runner.delivering():
+        await gateway.control.wait_for_idleness(idle=False)
+        session.setup_state = runner_pb2.SETUP_STATE_RUNNING
+        runner.note_activity()
+        await gateway.control.wait_for_facts(Facts(setups_running=True))
+        session.setup_state = runner_pb2.SETUP_STATE_SUCCEEDED
+        runner.note_activity()
+    assert not runner.facts().setups_running
 
 
 @pytest.mark.parametrize(
