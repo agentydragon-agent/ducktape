@@ -1,6 +1,7 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
@@ -80,26 +81,17 @@ _IMAGES = {
     "runner_gateway_migrate": "//agentplane/runner_gateway/commands:migration_image",
     "sandbox_controller": "//agentplane/sandbox_controller:image",
     "sandbox_service": "//agentplane/sandbox_service:image",
+    "session_dispatcher": "//agentplane/session_dispatcher:image",
+    "session_dispatcher_migrate": "//agentplane/session_dispatcher:migration_image",
 }
 
 [
-    oci_load(
-        name = name + "_load",
+    oci_layout_rloc(
+        name = name + "_layout",
         testonly = True,
         image = image,
-        repo_tags = ["git.allegedly.works/ducktape-ci/" + ("" if name == "runner" else "agentplane-") + name.replace("_", "-") + ":unset"],
     )
     for name, image in _IMAGES.items()
-]
-
-[
-    filegroup(
-        name = name + "_tarball",
-        testonly = True,
-        srcs = [":" + name + "_load"],
-        output_group = "tarball",
-    )
-    for name in _IMAGES
 ]
 
 _K3S_EXEC_PROPERTIES = {
@@ -129,7 +121,7 @@ py_library(
     data = [
         "//agentplane/crds",
         "//cluster:agentplane_testing_manifest",
-    ] + [":" + name + "_tarball" for name in _IMAGES],
+    ] + [":" + name + "_layout" for name in _IMAGES],
     deps = [
         ":render",
         "//agentplane/acceptance:conftest",
