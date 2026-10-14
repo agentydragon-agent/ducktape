@@ -117,16 +117,11 @@ function options(container: HTMLElement, label: string): HTMLElement[] {
   return [...list.querySelectorAll<HTMLElement>('[role="option"]')];
 }
 
-it("inherits the preset model and replaces incompatible choices when the harness changes", async () => {
+it("keeps session defaults in the app config instead of writing them onto a Sandbox", async () => {
   const { container } = await render();
   expect(input(container, "Sandbox template").value).toBe("test-template");
-  expect(input(container, "Model").value).toBe("Test Codex B");
-  await choose(container, "Model", "Test Codex A");
-  expect(input(container, "Model").value).toBe("Test Codex A");
-  await choose(container, "Harness", "Claude");
-  expect(input(container, "Model").value).toBe("Test Claude");
-  await act(async () => input(container, "Model").click());
-  expect(options(container, "Model").map((node) => node.textContent)).toEqual(["Test Claude"]);
+  expect(container.textContent).toContain("session defaults stay in app configuration");
+  expect(container.textContent).not.toContain("Session launch defaults");
 });
 
 it("pre-fills the preset's policy sets, hides picked sets, and sends the picks", async () => {
@@ -141,18 +136,15 @@ it("pre-fills the preset's policy sets, hides picked sets, and sends the picks",
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
   if (!button) throw new Error("Missing New sandbox button");
   await act(async () => button.click());
-  expect(post).toHaveBeenCalledWith(
-    "/sandboxes",
-    expect.objectContaining({
-      body: expect.objectContaining({
-        template: "test-template",
-        preset: "test-preset",
-        policy_sets: ["test-basic", "test-packages"],
-        bootstrap: "mkdir -p /state/workspaces",
-        session_defaults: expect.objectContaining({ harness: "HARNESS_CODEX", model: "test-codex-b" }),
-      }),
-    })
-  );
+  expect(post).toHaveBeenCalledWith("/sandboxes", {
+    body: {
+      name: "picked",
+      template: "test-template",
+      preset: "test-preset",
+      policy_sets: ["test-basic", "test-packages"],
+      bootstrap: "mkdir -p /state/workspaces",
+    },
+  });
   expect(onOpen).toHaveBeenCalledExactlyOnceWith(CREATED.name);
 });
 
@@ -190,17 +182,6 @@ it("lets an operator replace the preset template before creating the sandbox", a
     "/sandboxes",
     expect.objectContaining({ body: expect.objectContaining({ template: "other-template" }) })
   );
-});
-
-it("replaces an unavailable preset harness and disables its option", async () => {
-  const { container } = await render([]);
-  expect(input(container, "Harness").value).toBe("Claude");
-  expect(input(container, "Model").value).toBe("Test Claude");
-  await act(async () => input(container, "Harness").click());
-  const codex = options(container, "Harness").find((option) => option.textContent === "Codex (no models offered)");
-  expect(codex?.hasAttribute("data-combobox-disabled")).toBe(true);
-  await act(async () => codex!.click());
-  expect(input(container, "Harness").value).toBe("Claude");
 });
 
 it("keeps the creation form and reports rejection without navigating", async () => {

@@ -221,10 +221,6 @@ async def capture_paused_claude_harness_picker(view: VisualPage, app: Agentplane
     await view.capture(target=view.page.locator("#app"))
 
 
-async def test_paused_claude_in_sandbox_creation(view: VisualPage, app: AgentplaneFixture) -> None:
-    await capture_paused_claude_harness_picker(view, app, "/sandboxes?preset=public-coder")
-
-
 async def test_paused_claude_in_sandbox_details(view: VisualPage, app: AgentplaneFixture) -> None:
     await capture_paused_claude_harness_picker(view, app, "/sandboxes/ready-sandbox")
 
