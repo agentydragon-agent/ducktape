@@ -319,7 +319,7 @@ operation also opens a session; if so, depend on `THREAD_CREATE_AUTHORIZATION` f
 
 **Blocked on launch policy and idempotent create.** Enforce the reviewed
 effective spec and delegation server-side. Test allowed and forbidden launch parameters and
-concurrent retries. Reuse Sandbox Service creation, not harness-native agent tools. Launch alone
+concurrent retries. Reuse the app's create path (`SANDBOX_WRITE_HELPER`'s shared create), not harness-native agent tools. Launch alone
 does not grant history read, messaging, credentials or execution of another principal's Actions.
 
 ## 4. VM environment phases
@@ -542,7 +542,6 @@ observations. New database work follows the task-specific review and rollout req
 flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
-    SANDBOX_SERVICE_GRANT_RPC_DROP[Blocked: remove GrantEgress and RevokeEgress after the app image is pinned]
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
     ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
@@ -581,13 +580,6 @@ subjects or those grants move to the agent's ServiceAccount.
 **Decision.** Review the claude.ai account's Connection and arbitrary-shell Sandbox privileges,
 Kubernetes scope and egress/Action grants. Record intended authority in generated configuration,
 not ad hoc grants. Test an allowed and denied operation; do not add privileges as part of this review.
-
-### `SANDBOX_SERVICE_GRANT_RPC_DROP` — remove the Sandbox Service's grant RPCs
-
-**Blocked until the app image that writes `PolicyBinding`s itself is pinned on staging.** Remove
-`GrantEgress`, `RevokeEgress`, their messages, servicer, client methods, `sandbox_service/egress.py`
-and the `egresscredentials`/`policybindings` rules of the Sandbox Service Role (`CLEANUP` tombstones
-mark each). Code and manifests go together here, after the pin.
 
 ### `AGENT_PERMISSION_REQUESTS` — an Action type and approval view for permission requests
 
@@ -688,6 +680,11 @@ flowchart TD
     CONTROL_SERVICE_OWNER[Candidate: the gateway's permission to create Services goes]
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
     DISPATCHER_CORE[Blocked: the Session Dispatcher delivers to running Sandboxes]
+    SANDBOX_SHARED_CODE_MOVE[Candidate: what outlives the Sandbox Service leaves its package]
+    SANDBOX_WRITE_HELPER[Candidate: one shared library writes a Sandbox's spec]
+    APP_SANDBOX_WRITES[Blocked: the app creates, deletes, suspends and resumes Sandboxes itself]
+    NOTIFICATION_READS_SANDBOX_CR[Candidate: the Notification Service reads the Sandbox CR]
+    SANDBOX_SERVICE_REMOVE[Blocked: remove the Sandbox Service]
     DISPATCHER_SESSION_CREATE[Blocked: dispatched Session creation]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     DISPATCHER_WAKE_ON_SEND[Blocked: a send wakes a suspended Sandbox]
@@ -732,6 +729,12 @@ flowchart TD
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
     BOOTSTRAP_PROGRESS_CONTRACT -. Ready may then include the bootstrap .-> DISPATCHER_SESSION_CREATE
     DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
+    SANDBOX_WRITE_HELPER --> DISPATCHER_WAKE_ON_SEND
+    SANDBOX_WRITE_HELPER --> APP_SANDBOX_WRITES
+    SANDBOX_SHARED_CODE_MOVE --> SANDBOX_SERVICE_REMOVE
+    SANDBOX_SHARED_CODE_MOVE -. land first, then the helper is written once .-> SANDBOX_WRITE_HELPER
+    APP_SANDBOX_WRITES --> SANDBOX_SERVICE_REMOVE
+    NOTIFICATION_READS_SANDBOX_CR --> SANDBOX_SERVICE_REMOVE
     DISPATCHER_CORE --> APP_SENDS_VIA_DISPATCHER
     DISPATCHER_CORE --> NOTIFICATIONS_VIA_DISPATCHER
     SESSION_REVIVE --> DISPATCHER_WAKE_ON_SEND
@@ -761,7 +764,7 @@ notification resumes a stopped Sandbox, never a read. Both reach the Runner Gate
 one hook covers them: the gateway finds the Sandbox in its Session registry, sets the Sandbox
 resource's desired state to running and holds the command until the new incarnation's runner
 connects. A command held only while the sender waits is lost if the sender goes away;
-`DISPATCHER_WAKE_ON_SEND` is the durable version, and it wakes the Sandbox through the Sandbox Service rather than the gateway. Resuming by Session ID works while the Sandbox exists, stopped or not. Open: what the user sees while it starts.
+`DISPATCHER_WAKE_ON_SEND` is the durable version, and it wakes the Sandbox by patching the Sandbox CR with the shared wake helper (`SANDBOX_WRITE_HELPER`) rather than through the gateway. Resuming by Session ID works while the Sandbox exists, stopped or not. Open: what the user sees while it starts.
 
 ### `K3S_LIFECYCLE_SUITE` — a k3s lifecycle integration suite
 
@@ -850,11 +853,11 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 **In progress; operator, 2026-10-12 PDT: the shared base of this section and stateful VMs.** Our
 `Sandbox` and `SandboxTemplate` and the Sandbox Controller (`agentplane/sandbox_controller/SPEC.md`)
 reconcile a pod Sandbox into its state PVC and Pods. Sandboxes are created as ours, and
-what is left is the nodes below. The Sandbox Service then folds into the controller, which is renamed for it
-(operator, 2026-10-11 PDT), and stays separate from the Runner Gateway, so the provisioning
-permissions stay off the runner-facing service. The Sandbox Service writes a Sandbox's desired
-state and the controller validates it; layers that act on CRs, the controller's idle timer included, do
-not edit them (`docs/adr_sandbox_session_control.md`). Action Service boxes keep a catalog of their own ([ADR](../docs/adr_action_sandboxes.md)).
+what is left is the nodes below. The Sandbox Service goes away (`SANDBOX_SERVICE_REMOVE`; operator, 2026-10-13 PDT): requesters, the app and
+the Dispatcher, write a Sandbox's spec through the Kubernetes API as the operator who asked, and the
+controller writes status and validates the spec. The controller stays separate from the Runner Gateway, so
+the provisioning permissions stay off the runner-facing service. Layers that act on CRs, the controller's
+idle timer included, do not edit the spec (`docs/adr_sandbox_session_control.md`). Action Service boxes keep a catalog of their own ([ADR](../docs/adr_action_sandboxes.md)).
 
 ```mermaid
 flowchart TD
@@ -917,11 +920,11 @@ controller: `spec.idleSuspendAfter`, a timer the controller measures from the `i
 fact the runner publishes (`RUNNER_FACTS_ON_LEASE`), so it needs no History Service and
 survives a controller restart. Busy covers a turn, a command, a background or durable process and an
 attached terminal or console, or a Sandbox is suspended under a running job. The controller's idle timer does not edit the spec: it
-writes `status.suspendedBy: Idle` with the `spec.wakeGeneration` it suspended at, and `ResumeSandbox` sets
-`running = true` and bumps `wakeGeneration` for both causes (operator, 2026-10-14: the shape stays). The
+writes `status.suspendedBy: Idle` with the `spec.wakeGeneration` it suspended at, and the shared wake helper
+(`SANDBOX_WRITE_HELPER`) sets `running = true` and bumps `wakeGeneration` for both causes (operator, 2026-10-14: the shape stays). The
 controller publishes the effective mode once in status, and every reader of `spec.running` (controller
-reconcile and `vm.go`, `sandbox_resource.py`, `sandbox_service/kubernetes_views.py`, `begin_teardown`, the
-app's `sandbox_has_ready_pod`) reads that. Automatic suspension is
+reconcile and `vm.go`, `sandbox_resource.py`, the shared phase derivation of `SANDBOX_WRITE_HELPER`, the app's delete path,
+the app's `sandbox_has_ready_pod`) reads that. Automatic suspension is
 `Quiesce` with `if_idle_since`: the runner refuses it on a token mismatch or when busy (`ABORTED`, as
 for a Sandbox already in lameduck; `FAILED_PRECONDITION` is terminal), and there is
 no ingress-health gate. Suspension waits for the Sandbox bootstrap and every
@@ -947,7 +950,7 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 ### `SESSION_REVIVE` — start a stopped Sandbox again
 
 **Blocked on incarnations.** The controller schedules a new Pod or VM
-for a stopped Sandbox, set running by `ResumeSandbox` (the Dispatcher's wake, `DISPATCHER_WAKE_ON_SEND`, or an operator), from its
+for a stopped Sandbox, set running by the wake helper (`SANDBOX_WRITE_HELPER`: the Dispatcher's wake, `DISPATCHER_WAKE_ON_SEND`, or the app for an operator), from its
 template as it is now, possibly on a new image, and resume each harness as
 a new incarnation of the same Session and history. Incarnation N+1 is created only after N has fully
 terminated, and the runner treats an interrupted Session setup as resumable. Test
@@ -966,8 +969,10 @@ runner too old to know the field cannot meet a gateway that no longer sends it.
 ### `RUNNER_FACTS_ON_LEASE` — the runner publishes stage, idle and boot facts on the connection Lease
 
 **In progress; the gateway writes what a runner sends, the runner sends its quiesce stage and bootstrap result, and the controller reader is the Sandbox controller lane's.** The one
-transport several nodes share: the runner reports facts on the control stream in a runner-only `RunnerHeartbeat` on
-`RunnerFrame.heartbeat` (same field number as today), carrying optional `RunnerFacts`, sent on change and on the first `RunnerHeartbeat` after connect, and the gateway
+transport several nodes share: the runner reports facts on the control stream, as optional `facts` on the `Heartbeat` message
+shared by `RunnerFrame.heartbeat` and `ServiceFrame.heartbeat`, sent on change and on the first `Heartbeat` after
+connect; what is left is moving them to a runner-only `RunnerHeartbeat` on `RunnerFrame.heartbeat`
+(wire-compatible: same field numbers), and the gateway
 replica holding the connection writes them as annotations on the Sandbox-owned connection Lease,
 stamped with the incarnation UID, clearing them when a different incarnation connects. Facts: the
 seal stage (draining, flushing, sealed), when the Sandbox last went idle (`idleSince`, set only
@@ -985,15 +990,17 @@ terminal) and does not yet.
 
 ### `RUNNER_BUSY_TRACKING` — the runner knows whether the Sandbox is busy
 
-**Candidate; asked for by the Gateway runner proxy lane, 2026-10-13 PDT.** The `RunnerHeartbeat`'s
-`RunnerFacts` carries `idle_since`, but the runner tracks nothing that makes a Sandbox busy. The
+**Candidate; asked for by the Gateway runner proxy lane, 2026-10-13 PDT.** The `Heartbeat`'s
+`facts` carry `idle_since`, but the runner tracks nothing that makes a Sandbox busy. The
 runner computes the whole-Sandbox idle time: busy while any Session runs a turn or a command, a
 background or durable process runs, or a terminal or console is attached; `idle_since` is set only
 while idle, absent while busy, and published on each transition (`RUNNER_FACTS_ON_LEASE` carries it,
 `SANDBOX_IDLE_EXPIRY` reads it). A delivery under way counts as busy, marked at RPC entry before the first `await`
 (`RunnerService._admissions` is already that set), and the conditional `Quiesce` compare sits directly
 before `enter_lameduck()` with no `await` between, so a `SubmitInput` between RPC entry and the journal
-write is never admitted into a runner that is then torn down. Open: the runner's notion of a running turn or command today is a
+write is never admitted into a runner that is then torn down. The runner compares `if_idle_since` at the
+precision the Lease carries (the gateway writes `idle-since` via `Timestamp.ToDatetime(...).isoformat()`,
+microseconds at most), so a runner publishing finer values never matches its echoed token. Open: the runner's notion of a running turn or command today is a
 Session's `active_turn_id` and its pending commands; who owns terminals and background processes
 (the harness adapters, the VM console) is not decided. Test idleness across a turn that ends, a
 background process that outlives it, an attached terminal that detaches and a runner restart.
@@ -1053,6 +1060,58 @@ never this field. Per-Session idle times stay out of Kubernetes.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
+### `SANDBOX_SHARED_CODE_MOVE` — what outlives the Sandbox Service leaves its package
+
+**Candidate; a pure move with no behavior change; the Policy bindings lane has the first step open.**
+`SANDBOX_SERVICE_REMOVE` is not a deletion yet: 51 Python files outside `agentplane/sandbox_service/`
+import it (21 of them production code), and most of what they import survives the Service. The open
+step moves `reader.py` (`SandboxReader`), `inventory.py` with its create validation, `kubernetes_views.py`,
+`errors.py` and `console.py` into a shared `agentplane/sandboxes/` package. Left after it:
+`egress_views.py` and `action_policy_views.py` (the app), `kubernetes_grants.py` (`app/settings.py` and five
+cdk8s generators), `provisioning.py`, the test fakes under `sandbox_service/testing/` (13, 9, 6, 3 and 3 test
+files), the shared messages in `agentplane/proto/sandbox_service.proto` beside the `SandboxService` RPCs
+(`SandboxDestination`, `SessionDestination`, `SandboxBinding`, `SessionDefaults`, `ServiceAccount`,
+`Sandbox`, `SandboxPhase`), the proto renamed for what it holds, and the remaining importers. Then
+`SANDBOX_WRITE_HELPER` and the removal start from a package that holds only the Service, and the removal is a
+deletion.
+
+### `SANDBOX_WRITE_HELPER` — one shared library writes a Sandbox's spec
+
+**Candidate; operator, 2026-10-13 PDT: the Sandbox Service goes away and requesters write the spec.** A shared
+library for the two requesters, the app and the Dispatcher: the UID- and resourceVersion-guarded
+`spec.running` patch; the `wakeGeneration` bump; an advisory, retryable refusal while the Sandbox is
+quiescing (the controller enforces it) and of deleting a running Sandbox; create validation, the default
+policy sets on create and idempotent create (today `sandbox_service/provisioning.py` and `inventory.py`);
+and the phase derivation (today
+`sandbox_service/kubernetes_views.py`) as shared code. Cost: RBAC cannot narrow a patch to two fields, so
+the app and the Dispatcher can each write any field of any Sandbox, which no Service RPC allowed. The
+Dispatcher writes only `spec.running` and `spec.wakeGeneration`, by convention of the helper and not by
+enforcement; admission policy is undecided and the cost is accepted.
+
+### `APP_SANDBOX_WRITES` — the app creates, deletes, suspends and resumes Sandboxes itself
+
+**Blocked on `SANDBOX_WRITE_HELPER`.** The app does what it asks of the Sandbox Service through the
+Kubernetes API as the operator who asked, as it already does for `PolicyBinding`s: create, delete, suspend,
+resume, and it edits permissions (egress grants, policy views, templates) and reads the inventory with the
+derived phase. The VM serial console
+(`sandbox_service/console.py`) moves into the app (operator, 2026-10-13 PDT) through the KubeVirt console
+subresource. The app's Role gains `sandboxes` `create/patch/delete`, `sandboxtemplates` `list` and
+`virtualmachineinstances/console` `get` (it already has `policysets` and `pods`).
+
+### `NOTIFICATION_READS_SANDBOX_CR` — the Notification Service reads the Sandbox CR
+
+**Candidate; independent.** The Notification Service replaces its `GetSandbox` call with the shared
+`SandboxReader`, which reads the Sandbox CR (the helper's read side).
+
+### `SANDBOX_SERVICE_REMOVE` — remove the Sandbox Service
+
+**Blocked until the images of `APP_SANDBOX_WRITES` and `NOTIFICATION_READS_SANDBOX_CR`, and the app image
+that writes `PolicyBinding`s itself, are pinned on staging.** Remove the Deployment, Role and TokenReview,
+the protos and client, `StreamConsole`, the grant RPCs (`GrantEgress`, `RevokeEgress`, their messages,
+servicer, client methods, `sandbox_service/egress.py` and the `egresscredentials`/`policybindings` rules of
+the Role, each marked by a `CLEANUP` tombstone), and update the README services diagram (12 to 11
+services). Code and manifests go together here, after the pin.
+
 ### `DISPATCHER_CORE` — the Session Dispatcher delivers to running Sandboxes
 
 **Blocked on `RUNNER_COMMAND_RPCS`.** A new service with its own database and
@@ -1064,13 +1123,16 @@ command ID, a reply lost across an incarnation boundary is redelivered to the ne
 (`THREAD_SUCCESSOR_DELIVERY`), delivery is first-in first-out per Session, `InterruptTurn` bypasses the queue and
 `StopRunnerSession` goes ahead of it, cancelling the inputs queued before it; those end `CANCELLED_IN_DISPATCHER` with reason `stopped`. An `InterruptTurn`
 is not stored: its outcome is its RPC response. A message for a deleted Session or a failed delivery ends in a
-terminal state with a reason and a time to live; a command admitted but not dispatched when the
-Sandbox is torn down ends as `ended_by_teardown`. Replicas shard Sandboxes by a per-Sandbox Lease
+terminal state with a reason and a time to live; when the Sandbox CR's deletion arrives on the
+watch, queued commands end `FAILED` (reason `sandbox_deleted`) and delivering ones `UNKNOWN`. A queued command
+has no TTL; a Session holds at most about 1,000 queued commands, and a send past that fails
+`RESOURCE_EXHAUSTED`. The Dispatcher is a required door for senders. Replicas shard Sandboxes by a per-Sandbox Lease
 so each has one active owner. Authorization names which senders may send, and the sender kinds
 that may wake are `DISPATCHER_WAKE_ON_SEND`'s. It does not depend on the History Service to deliver. It learns a Sandbox's state from a watch on
 the Sandbox CR (`util.kubernetes_watch.ListWatch`, as the app and the gateway do), reading `Ready` with its
-reason and `status.incarnation`; its ServiceAccount gets one `get/list/watch` rule on `sandboxes`, and it asks
-the Sandbox Service only to resume. There is no `WatchSandboxes` RPC and no Service watch. This
+reason and `status.incarnation`; its Role gets `get/list/watch` on `sandboxes`, and `patch` beside them for the wake of
+`DISPATCHER_WAKE_ON_SEND`, which patches `spec.running` and `spec.wakeGeneration` itself. There is no
+`WatchSandboxes` RPC and no Service watch. This
 node moves no sender and wakes nothing, so it can land beside the direct path with no change for
 anyone. Test duplicate sends, a sender that leaves, a deleted target and a refused delivery.
 
@@ -1088,8 +1150,8 @@ its own record is authoritative.
 
 ### `DISPATCHER_WAKE_ON_SEND` — a send wakes a suspended Sandbox
 
-**Blocked on `DISPATCHER_CORE` and `SESSION_REVIVE`.** A message for a suspended Sandbox's
-Session resumes the Sandbox through the Sandbox Service, then delivers once `Ready` holds for the new
+**Blocked on `DISPATCHER_CORE`, `SESSION_REVIVE` and `SANDBOX_WRITE_HELPER`.** A message for a suspended Sandbox's
+Session resumes the Sandbox by patching the Sandbox CR with the shared wake helper, then delivers once `Ready` holds for the new
 incarnation, keying every attempt to the incarnation UID; a delivery refused by a sealing runner
 with `ABORTED` (the gateway flattens runner codes it does not list to `FAILED_PRECONDITION`, so it forwards this one) is redelivered after the resume. Which senders may wake: a user message and
 a notification, not an agent's message unless `AGENT_MESSAGE_RECEPTION` decides so. `InterruptTurn` and
@@ -1231,7 +1293,7 @@ drop both columns and the enum.
 **Blocked on the cutover's retirements and the split**, which remove the
 transitional pieces the other nodes name. Sweep devel for unused modules, functions, settings, proto
 fields, tables and columns; one name per concept across code, settings, manifests, protos and docs
-(Sandbox Service, Runner Gateway, History Service, ingress, control; Session for the raw stream,
+(Runner Gateway, History Service, ingress, control; Session for the raw stream,
 Thread for its projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.md` files and
 `docs/` describing the code as it is, without cutover narration; no compatibility branch,
 optional-with-fallback setting or `CLEANUP` tombstone whose condition is met; the system diagram in
@@ -1292,7 +1354,7 @@ flowchart TD
 
 **Candidate; a for-now choice.** The app records which preset a
 Sandbox was made from on the Sandbox (a label) and fills a complete `SessionSpec` and setup script
-from it. `session_defaults` leaves `CreateSandboxRequest`, `SandboxBinding` and our Sandbox's spec,
+from it. `session_defaults` leaves `SandboxBinding` and our Sandbox's spec (`CreateSandboxRequest` goes with `SANDBOX_SERVICE_REMOVE`),
 and `CreateSessionRequest` loses its field mask.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
