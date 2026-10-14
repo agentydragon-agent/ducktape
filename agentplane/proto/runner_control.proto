@@ -9,6 +9,7 @@ import "agentplane/proto/command.proto";
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/grpc_tunnel.proto";
 import "agentplane/proto/runner.proto";
+import "google/protobuf/timestamp.proto";
 
 // Served by the Runner Gateway; the runner opens one `Connect` stream and serves `Runner` on it.
 service RunnerControl {
@@ -86,7 +87,36 @@ message Welcome {
   reserved "capabilities";
 }
 
-message Heartbeat {}
+message Heartbeat {
+  // Only the runner sets it: sent at once when a fact changes and with its first heartbeat after every
+  // `Welcome`. Each carrying it replaces the gateway's record of all the facts.
+  optional RunnerFacts facts = 1;
+}
+
+// What the runner publishes about itself, for the Runner Gateway to record on the Sandbox's connection
+// Lease.
+message RunnerFacts {
+  enum QuiesceStage {
+    QUIESCE_STAGE_UNSPECIFIED = 0;  // not quiescing
+    QUIESCE_STAGE_DRAINING = 1;     // refusing new work, stopping harnesses
+    QUIESCE_STAGE_FLUSHING = 2;     // journals final, ingress acknowledgements pending
+    QUIESCE_STAGE_QUIESCED = 3;     // every final cursor acknowledged
+  }
+  enum Bootstrap {
+    BOOTSTRAP_UNSPECIFIED = 0;  // the Sandbox has none, or it has not started
+    BOOTSTRAP_RUNNING = 1;
+    BOOTSTRAP_SUCCEEDED = 2;
+    BOOTSTRAP_FAILED = 3;
+    BOOTSTRAP_INTERRUPTED = 4;
+  }
+
+  QuiesceStage quiesce_stage = 1;
+  // When the whole Sandbox became idle: any Session running a turn or command, or a background process
+  // or attached terminal running, makes it busy. Absent while busy, and from a runner that does not
+  // track it.
+  google.protobuf.Timestamp idle_since = 2;
+  Bootstrap bootstrap = 3;
+}
 
 message OpenSessionRequest {
   string session_id = 1;

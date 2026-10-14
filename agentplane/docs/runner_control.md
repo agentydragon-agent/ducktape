@@ -84,7 +84,16 @@ message DeliverCommandResponse {
 // above. A `command_id` is unique across all of them and `DeliverCommand`: the same id under
 // another operation or payload fails `ALREADY_EXISTS`.
 
-message Heartbeat {}
+message Heartbeat {
+  optional RunnerFacts facts = 1;     // runner only: on a change, and first after every Welcome
+}
+
+// Each Heartbeat carrying it replaces the gateway's record of all the facts.
+message RunnerFacts {
+  QuiesceStage quiesce_stage = 1;     // unspecified: not quiescing
+  google.protobuf.Timestamp idle_since = 2;  // absent while the Sandbox is busy
+  Bootstrap bootstrap = 3;            // running, succeeded, failed or interrupted
+}
 ```
 
 - **Versioning.** The proto is `agentplane/proto/runner_control.proto`, package
@@ -300,6 +309,10 @@ metadata:
   annotations:
     agentplane.allegedly.works/pod-uid: <the Pod the connection authenticated as>
     agentplane.allegedly.works/runner-boot-id: <from Hello>
+    # The runner's last RunnerFacts, each present only while the runner reports it:
+    agentplane.allegedly.works/quiesce-stage: draining | flushing | quiesced
+    agentplane.allegedly.works/idle-since: <RFC 3339 time the Sandbox became idle; absent while busy>
+    agentplane.allegedly.works/bootstrap: running | succeeded | failed | interrupted
 spec:
   holderIdentity: <replica Pod name>
   leaseTransitions: <connection epoch>
@@ -332,6 +345,13 @@ No routing record is kept: runners dial out, so nothing is routed inbound.
   A conflict means another replica won a race; it re-reads and retries, and the runner's own
   newest-connection rule decides which stream survives. It then writes the EndpointSlice with the new epoch, and only then sends `Welcome`.
   An EndpointSlice write carrying an older epoch than the one stored is skipped.
+- **Runner facts.** The holder writes the runner's latest `RunnerFacts`, which arrive on `Heartbeat`,
+  into the Lease annotations with the renewal that records liveness, so the idle time adds no write. A change of quiesce stage
+  or bootstrap result triggers that write at once. A new connection starts with none, since accepting
+  rewrites the annotations, and the runner republishes after `Welcome`; a runner gone quiet leaves
+  its last facts, which a reader trusts only while `pod-uid` names the incarnation it reads and the
+  Lease is live. A fact value the gateway does not know ends the stream with `INVALID_ARGUMENT`, so a
+  runner publishes a new value only after every gateway accepts it.
 - **Liveness.** The holder renews the Lease with each liveness write. A renew that finds another
   holder or a newer epoch means the connection was superseded, and the replica ends the stream with
   `ABORTED`.
