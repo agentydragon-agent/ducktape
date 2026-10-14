@@ -361,7 +361,8 @@ def dashboard_url() -> Iterator[str]:
                         confidence_level="HIGH",
                         entity_id="synthetic-merchant",
                         website="https://example.invalid/shipping",
-                    )
+                    ),
+                    PlaidCounterparty(name="Example Marketplace", type="marketplace"),
                 ],
                 details=PlaidTransactionDetails(
                     account_id="synthetic-account",
@@ -701,7 +702,8 @@ async def _open_transaction_details(page: Page, rows: Locator, width: int) -> No
     else:
         await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))
     await rows.get_by_text("Required document shipping for a synthetic example.").wait_for()
-    await expect(rows.get_by_text("Counterparties: Example Shipping", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("UPS · Example Shipping · Example Marketplace", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Counterparties:", exact=False)).to_have_count(0)
     await expect(rows.get_by_text("Example Shipping · merchant", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("Mandatory · outside allowance", exact=False)).to_have_count(1)
     await expect(rows.get_by_text("Card statement: Counted in card cycle", exact=False).first).to_be_attached()
