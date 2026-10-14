@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane import sandbox_resource
 from agentplane.grpc_calls import dial
 from agentplane.grpc_serving import serving
 from agentplane.proto import session_dispatcher_pb2, session_dispatcher_pb2_grpc
@@ -21,6 +22,7 @@ from agentplane.session_dispatcher.sandboxes import SandboxWatch
 from agentplane.session_dispatcher.store import DispatchStore
 from agentplane.session_dispatcher.testing.sandbox_status import set_sandbox
 from agentplane.session_dispatcher.testing.scripted_runner import ScriptedRunner
+from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import TokenVerdict
 
 # gazelle:include_dep @pypi//protobuf
@@ -28,6 +30,8 @@ from agentplane.testing.fake_apiserver import TokenVerdict
 
 AUDIENCE = "test-session-dispatcher"
 CALLER_TOKEN = "test-only-caller-token"
+OTHER_CALLER = ServiceAccountRef(namespace=OWNER.namespace, name="other-caller")
+OTHER_CALLER_TOKEN = "test-only-other-caller-token"
 QUEUE_CAP = 2
 SESSION = "test-session"
 pb = session_dispatcher_pb2
@@ -48,10 +52,17 @@ async def stub(
         pod_uid="test-caller-uid",
         audiences=(AUDIENCE,),
     )
+    cluster.fake.tokens[OTHER_CALLER_TOKEN] = TokenVerdict(
+        username=f"system:serviceaccount:{OTHER_CALLER.namespace}:{OTHER_CALLER.name}",
+        pod_name="test-other-caller",
+        pod_uid="test-other-caller-uid",
+        audiences=(AUDIENCE,),
+    )
     store = DispatchStore(engine, queue_cap=QUEUE_CAP)
     resources = Resources(
         principals=cluster.build_principal_resolver(AUDIENCE),
-        caller_accounts=frozenset({OWNER}),
+        caller_accounts=frozenset({OWNER, OTHER_CALLER}),
+        wake_caller_accounts=frozenset({OWNER}),
         store=store,
         sandboxes=sandboxes,
         runner=runner_client,
@@ -148,6 +159,22 @@ async def test_a_command_for_a_sandbox_that_does_not_exist_is_refused_and_stores
     assert not listed.dispatches
 
 
+async def test_only_authenticated_configured_callers_can_mark_work_wake_eligible(
+    stub: Dispatcher, engine: AsyncEngine
+) -> None:
+    # The flag is derived from TokenReview identity and server configuration, never from RPC input.
+    await stub.SubmitInput(
+        pb.SubmitInputRequest(command_id="app-send", session_id=SESSION, sandbox=SANDBOX, text="hello"), metadata=BEARER
+    )
+    await stub.SubmitInput(
+        pb.SubmitInputRequest(command_id="other-send", session_id="other-session", sandbox=SANDBOX, text="hello"),
+        metadata=(("authorization", f"Bearer {OTHER_CALLER_TOKEN}"),),
+    )
+    store = DispatchStore(engine, queue_cap=QUEUE_CAP)
+    assert (await store.get_dispatch("app-send")).wake_eligible
+    assert not (await store.get_dispatch("other-send")).wake_eligible
+
+
 async def test_an_interrupt_for_a_sandbox_that_does_not_exist_is_refused(stub: Dispatcher) -> None:
     with pytest.raises(grpc.aio.AioRpcError) as refused:
         await stub.InterruptTurn(
@@ -201,6 +228,12 @@ async def test_a_session_opening_is_stored_and_its_id_is_the_idempotency_key(stu
     assert refused.value.code() is grpc.StatusCode.ALREADY_EXISTS
 
 
+async def test_an_authenticated_app_opening_is_wake_eligible(stub: Dispatcher, engine: AsyncEngine) -> None:
+    await stub.OpenSession(pb.OpenSessionRequest(session_id=SESSION, sandbox=SANDBOX), metadata=BEARER)
+    store = DispatchStore(engine, queue_cap=QUEUE_CAP)
+    assert (await store.get_opening(SESSION)).wake_eligible
+
+
 async def test_a_session_cannot_be_opened_in_a_sandbox_that_does_not_exist(stub: Dispatcher) -> None:
     with pytest.raises(grpc.aio.AioRpcError) as refused:
         await stub.OpenSession(pb.OpenSessionRequest(session_id=SESSION, sandbox="missing-sandbox"), metadata=BEARER)
@@ -218,6 +251,12 @@ async def test_an_interrupt_is_delivered_to_a_ready_runner_and_otherwise_nothing
     await wait_for_sandbox(sandboxes, lambda sandbox: not sandbox.ready)
     unready = await stub.InterruptTurn(request, metadata=BEARER)
     assert (unready.state, unready.reason) == (pb.DELIVERY_STATE_NO_OP, "sandbox_not_ready")
+    set_sandbox(cluster, ready=False, running=False, wake_on_send=True)
+    await wait_for_sandbox(sandboxes, lambda sandbox: sandbox.suspended and sandbox.spec.wake_on_send)
+    suspended = await stub.InterruptTurn(request, metadata=BEARER)
+    assert (suspended.state, suspended.reason) == (pb.DELIVERY_STATE_NO_OP, "sandbox_suspended")
+    assert cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]["spec"]["running"] is False
+    assert runner[0].calls == []
     set_sandbox(cluster, ready=True)
     await wait_for_sandbox(sandboxes, lambda sandbox: sandbox.ready)
     delivered = await stub.InterruptTurn(request, metadata=BEARER)
