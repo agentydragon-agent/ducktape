@@ -53,7 +53,7 @@ images:
     newTag: devel-20261014052530-66a1b03 # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
   # Bootstrap only: no workload references these yet; Flux replaces the tag with the one it scans.
   - name: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher
-    newTag: devel-20261014052821-619da1c # {"$imagepolicy": "flux-system:agentplane-session-dispatcher:tag"}
+    newTag: devel-20261014053258-86568b5 # {"$imagepolicy": "flux-system:agentplane-session-dispatcher:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher-migrate
     newTag: devel-20261014050240-98c04c8 # {"$imagepolicy": "flux-system:agentplane-session-dispatcher-migrate:tag"}
 configurations:
