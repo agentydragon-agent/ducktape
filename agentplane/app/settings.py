@@ -6,7 +6,7 @@ from collections.abc import Set
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import Field
+from pydantic import Field, field_serializer
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
@@ -39,12 +39,22 @@ class AppSettingsConfig(YamlFileSettings):
     sandbox_presets: dict[str, SandboxPreset] = Field(
         default_factory=dict, description="App-owned Sandbox launch-form presets keyed by displayable name."
     )
+    default_policy_sets: Set[str] | None = Field(
+        default=None,
+        description="PolicySets every new Sandbox is bound to. When set, the app creates, suspends, resumes "
+        "and deletes Sandboxes through Kubernetes itself rather than through the Sandbox Service.",
+    )
     kubernetes_grants: dict[str, KubernetesGrant] = Field(
         default_factory=dict,
         description="The deployment's Kubernetes grant catalog, which the manifest generator expands into PolicySets.",
     )
     egress_admin_url: HttpEndpointUrl = Field(description="The egress proxy's admin port, serving /decisions.")
     action_federation: ActionFederationSettings
+
+    @field_serializer("default_policy_sets")
+    def serialize_default_policy_sets(self, value: Set[str] | None) -> list[str] | None:
+        """Keep the generated ConfigMap's list stable while Settings still parses it as a set."""
+        return None if value is None else sorted(value)
 
 
 class Settings(AppSettingsConfig):
@@ -58,11 +68,6 @@ class Settings(AppSettingsConfig):
     sandbox_namespace: str = Field(
         description="Namespace whose Sandbox inventory the app observes. Separate from the app's own "
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
-    )
-    default_policy_sets: Set[str] | None = Field(
-        default=None,
-        description="PolicySets every new Sandbox is bound to. When set, the app creates, suspends, resumes "
-        "and deletes Sandboxes through Kubernetes itself rather than through the Sandbox Service.",
     )
     sandbox_service_target: str = Field(min_length=1, description="The Sandbox Service's gRPC host:port.")
     runner_gateway_target: str = Field(

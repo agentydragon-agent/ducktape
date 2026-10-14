@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Set
 from pathlib import Path
 
 from pydantic import AnyHttpUrl
@@ -48,6 +49,7 @@ def settings(
     thread_preset_codex_model: Route,
     action_federation: ActionFederationSettings,
     public_coder_policy_sets: list[str],
+    default_policy_sets: Set[str],
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
 ) -> AppSettingsConfig:
     return AppSettingsConfig(
@@ -64,6 +66,7 @@ def settings(
             },
         ),
         kubernetes_grants=kubernetes_grants if kubernetes_grants is not None else {},
+        default_policy_sets=default_policy_sets,
         # App-owned launch-form presets. The browser expands one into editable concrete
         # template, policy, bootstrap, and SessionSpec fields; neither a Sandbox CR nor a
         # runner receives a preset name.
