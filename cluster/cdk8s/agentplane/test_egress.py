@@ -38,6 +38,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     PLAID_PGWEB_POLICY,
 )
 from cluster.cdk8s.clickhouse import client
+from cluster.cdk8s.plaid_mcp import db as plaid_db
 from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_128K, OLLAMA_QWEN_IQ4XS_256K
 
 # What a workload token may reach on the Actions service: the MCP endpoint, its schema and
@@ -261,7 +262,9 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
     catalog = config["kubernetes_grants"]
     selected = _kubernetes_grants(config["sandbox_presets"][preset]["policy_sets"])
-    credential_grants = {"coinbase-credentials", "spend-policy-config"} if preset == "finance-agent" else set()
+    credential_grants = (
+        {"coinbase-credentials", "spend-policy-config", "plaid-diagnostics"} if preset == "finance-agent" else set()
+    )
     # Coinbase egress follows the Secret grant; haku-agent's egress PolicyBinding carries none.
     assert (COINBASE_POLICY in config["sandbox_presets"][preset]["policy_sets"]) == (preset == "finance-agent")
     assert COINBASE_POLICY not in _by_name(docs, "PolicyBinding", "haku-agent")["spec"]["policySets"]
@@ -272,7 +275,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         == {"cluster-diagnostics", "haku-sandbox-write", "coinbase-credentials"} - credential_grants
     )
     assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"} | (
-        {"spend-policy-config"} if preset == "finance-agent" else set()
+        {"spend-policy-config", "plaid-diagnostics"} if preset == "finance-agent" else set()
     )
     assert {
         "agentplane-staging-metadata",
@@ -315,7 +318,11 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         ("public-coder-agent", "agentplane-testing-login-reader"),
         ("agentplane-testing", "agentplane-testing-operator"),
     } | (
-        {("agentplane-staging", "claude-ai-coinbase-reader"), ("plaid-mcp", "plaid-spend-finance-config-reader")}
+        {
+            ("agentplane-staging", "claude-ai-coinbase-reader"),
+            ("plaid-mcp", "plaid-spend-finance-config-reader"),
+            ("plaid-mcp", "plaid-finance-diagnostics-reader"),
+        }
         if preset == "finance-agent"
         else set()
     )
@@ -434,3 +441,24 @@ def test_finance_aiquota_history_is_read_only_and_finance_only(
         and rule["paths"] == ["/v1/quotas", "/v1/providers/*/raw"]
         for rule in quota["spec"]["rules"]
     )
+
+
+def test_finance_plaid_diagnostics_are_metadata_only() -> None:
+    """No logs, exec, config or credential access through the namespace diagnostic Role."""
+    docs = Cdk8sTesting.synth(plaid_db.chart(Cdk8sTesting.app()))
+    role = _by_name(docs, "Role", plaid_db.FINANCE_DIAGNOSTICS_READER)
+    rules = role["rules"]
+    assert all(set(rule["verbs"]) == {"get", "list"} for rule in rules)
+    assert {(group, resource) for rule in rules for group in rule["apiGroups"] for resource in rule["resources"]} == {
+        ("", "pods"),
+        ("", "services"),
+        ("", "endpoints"),
+        ("", "events"),
+        ("", "persistentvolumeclaims"),
+        ("discovery.k8s.io", "endpointslices"),
+        ("apps", "deployments"),
+        ("apps", "statefulsets"),
+        ("batch", "jobs"),
+        ("batch", "cronjobs"),
+        ("postgresql.cnpg.io", "clusters"),
+    }
