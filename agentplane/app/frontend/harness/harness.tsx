@@ -444,6 +444,7 @@ const SPEC: SessionSpec = create(SessionSpecSchema, {
 const IDLE_THREAD = "5f1c4a2e-0000-4000-8000-000000000001";
 const UNNAMED_STOPPED_THREAD = "5f1c4a2e-0000-4000-8000-000000000000";
 const RUNNING_THREAD = "5f1c4a2e-0000-4000-8000-000000000002";
+const SUSPENDED_THREAD = "5f1c4a2e-0000-4000-8000-000000000004";
 const THREE_UNPROCESSED_THREAD = "5f1c4a2e-0000-4000-8000-000000000007";
 const ONE_UNPROCESSED_THREAD = "5f1c4a2e-0000-4000-8000-000000000008";
 const DELIVERY_FAILED_THREAD = "5f1c4a2e-0000-4000-8000-000000000009";
@@ -573,7 +574,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     harness_state: "HARNESS_STATE_STOPPED",
   },
   {
-    id: "5f1c4a2e-0000-4000-8000-000000000004",
+    id: SUSPENDED_THREAD,
     sandbox: "suspended-sandbox",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
@@ -584,6 +585,8 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     last_cursor: 9,
     last_event_at: ago(46 * HOUR),
     harness_state: "HARNESS_STATE_STOPPED",
+    setup_state: "SETUP_STATE_SUCCEEDED",
+    launch_outcome: "LAUNCH_OUTCOME_STARTED",
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000005",
@@ -1128,8 +1131,9 @@ function standardRows(
   longReasoningPreview: boolean,
   longReasoningBody: boolean
 ): Record<string, unknown>[] {
+  const suspended = threadId === SUSPENDED_THREAD;
   const rows = [
-    viewState(34, "turn-visual"),
+    viewState(34, suspended ? null : "turn-visual", suspended ? { status: "ended" } : {}),
     entity(
       "confirmed_input",
       "user-1",
@@ -1319,8 +1323,9 @@ function pendingInputEchoRows(threadId: string): Record<string, unknown>[] {
  * capture is where every state here is visible.
  */
 function statesRows(threadId: string, outcomes = false): Record<string, unknown>[] {
+  const suspended = threadId === SUSPENDED_THREAD;
   const rows = [
-    viewState(28, "t2"),
+    viewState(28, suspended ? null : "t2", suspended ? { status: "ended" } : {}),
     item(7, "tool-0", ItemKind.TOOL_CALL, null, {
       threadId,
       tool: "Bash",
@@ -1846,7 +1851,13 @@ function rememberSettledCommands(): void {
   );
 }
 
-function rememberDispatch(): void {
+function enableSuspendedSandboxWakeOnMessage(): void {
+  const sandbox = SANDBOXES.find((candidate) => candidate.name === "suspended-sandbox");
+  if (!sandbox) throw new Error("Missing suspended Sandbox fixture");
+  sandbox.wake_on_send = true;
+}
+
+function rememberDispatch(threadId = RUNNING_THREAD): void {
   const command = create(CommandSchema, {
     commandId: "queued-dispatch",
     operation: {
@@ -1854,11 +1865,11 @@ function rememberDispatch(): void {
       value: { text: "Continue when the Sandbox is ready." },
     },
   });
-  const local = new LocalCommands(RUNNING_THREAD);
+  const local = new LocalCommands(threadId);
   local.remember(command);
   const dispatch: DispatchReceipt = {
     commandId: command.commandId,
-    sessionId: RUNNING_THREAD,
+    sessionId: threadId,
     state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
     reason: "sandbox_resuming",
     updatedAt: ago(1_000),
@@ -3115,6 +3126,7 @@ const visualHarness = {
   rememberPendingInput,
   rememberInputEcho,
   rememberSettledCommands,
+  enableSuspendedSandboxWakeOnMessage,
   rememberDispatch,
   rememberFailedDispatch,
   completedRollout(): void {
