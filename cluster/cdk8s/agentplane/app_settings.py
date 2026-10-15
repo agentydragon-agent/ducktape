@@ -28,7 +28,7 @@ from cluster.cdk8s.agentplane.egress import (
     PUBLIC_CODER_VISUALS_POLICY,
 )
 from cluster.cdk8s.model_selections import HarnessRoutes
-from model_catalog.catalog import Route
+from model_catalog.catalog import Provider, Route
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 
@@ -39,6 +39,14 @@ _PUBLIC_CODER_INSTRUCTIONS = "\n\n".join(
         DUCKTAPE_PR_INSTRUCTIONS,
     ]
 )
+
+_PICKER_PROVIDER_NAMES = {Provider.CHATGPT: "ChatGPT", Provider.OLLAMA: "cluster Ollama"}
+
+
+def _picker_model_name(route: Route) -> str:
+    """Append the serving provider to every Agentplane picker entry."""
+    provider = _PICKER_PROVIDER_NAMES[route.upstream.provider]
+    return f"{route.display_name} — {provider}"
 
 
 def settings(
@@ -54,7 +62,9 @@ def settings(
         models=ModelCatalog(
             models=[
                 ModelOption(
-                    model=route.id, display_name=route.display_name, reasoning_efforts=list(route.reasoning_efforts)
+                    model=route.id,
+                    display_name=_picker_model_name(route),
+                    reasoning_efforts=list(route.reasoning_efforts),
                 )
                 for route in models.all
             ],
