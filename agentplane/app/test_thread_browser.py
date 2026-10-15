@@ -8,7 +8,7 @@ import asyncio
 import json
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
@@ -172,6 +172,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         await expect(page.get_by_role("img", name="Incomplete", exact=True)).to_have_count(1)
         await page.reload()
         await expect(page).to_have_url(url)
+        await expect_projected_cursor(page, thread_source.entries[-1].cursor)
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
         await expect(
             page.get_by_text(
@@ -367,6 +368,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
         # A short viewport mounts few of the window's rows, whose bodies a reader's view reads on mounting.
         await page.set_viewport_size({**DESKTOP.size, "height": 300})
         await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
+        await expect_projected_cursor(page, sources[0].entries[-1].cursor)
         await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
         # Before the reader scrolls: the window reads the bodies of every row it holds (its 90 rows hold 89
         # messages), not only those the view mounted.
@@ -1154,9 +1156,8 @@ async def append_run_among_rows(thread_browser: ThreadBrowser, *, below: int) ->
 
 
 @asynccontextmanager
-async def output_streaming_in(thread_browser: ThreadBrowser) -> AsyncIterator[list[int]]:
-    """A call running at the tail whose output keeps arriving, each delta once the browser has it,
-    for the length of the block; yields the cursors delivered so far."""
+async def output_streaming_in(thread_browser: ThreadBrowser) -> AsyncIterator[tuple[list[int], asyncio.Event]]:
+    """Stream tail output while the block runs; yield projected cursors and a three-update event."""
     source, page = thread_browser.source, thread_browser.page
     source.append(
         event_pb2.Event(
@@ -1173,6 +1174,7 @@ async def output_streaming_in(thread_browser: ThreadBrowser) -> AsyncIterator[li
         )
     )
     delivered: list[int] = []
+    three_delivered = asyncio.Event()
 
     async def stream() -> None:
         while True:
@@ -1185,14 +1187,15 @@ async def output_streaming_in(thread_browser: ThreadBrowser) -> AsyncIterator[li
             )
             await expect_projected_cursor(page, entry.cursor)
             delivered.append(entry.cursor)
+            if len(delivered) >= 3:
+                three_delivered.set()
 
-    streaming = asyncio.create_task(stream())
-    try:
-        yield delivered
-    finally:
-        streaming.cancel()
-        with suppress(asyncio.CancelledError):
-            await streaming
+    async with asyncio.TaskGroup() as tasks:
+        streaming = tasks.create_task(stream(), name="thread-output-stream")
+        try:
+            yield delivered, three_delivered
+        finally:
+            streaming.cancel()
 
 
 async def wheel(page: Page, delta: float) -> None:
@@ -1535,13 +1538,14 @@ async def test_opening_a_call_while_output_streams_in_keeps_it_collapsible(threa
 
     call, card = tool_call_in(run, "a")
     show_all = call.get_by_role("button", name="Show all 60 lines")
-    async with output_streaming_in(thread_browser) as delivered:
+    async with output_streaming_in(thread_browser) as (delivered, three_delivered):
         async with holding_still(page, run, rest_first=False):
             await run.locator(".agentplane-disclosure-summary").first.click()
             await expect(call).to_be_visible()
         async with holding_still(page, card, rest_first=False):
             await call.locator(".agentplane-disclosure-summary").first.click()
             await expect(show_all).to_be_visible()
+        await three_delivered.wait()
         await read_at(page, show_all, 0.3)
         await show_all.click()
         collapse = call.locator(".agentplane-output-disclosure .agentplane-disclosure-summary")
