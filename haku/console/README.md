@@ -2,7 +2,7 @@
 
 A FastAPI service serving the trusted Haku console as a React single-page app backed by its REST API.
 The console is the operator-owned shell around Haku's cross-origin UI, the approval/audit ledger
-for privileged tool calls, and the home of Agent identity used by the Kubernetes proxy.
+for privileged tool calls, and the home of Agent identity.
 
 It runs in its own `haku-console` namespace, outside Haku's `haku-sandbox` authority and egress
 fence. That separation lets it hold credentials Haku may use only through reviewed, operator-gated
@@ -38,26 +38,28 @@ retire. There is no low-privilege console write tier: haku-ui writes its own sta
 
 The operator REST API (`/api/approvals/pending`, `/api/tool-calls`, and
 `POST /api/tool-calls/{tool_call_id}/decision`) remains active. It lists retained call records and
-allows already-pending work to be approved or denied; approved rows still execute through the
-configured in-process backend and record their result. The browser refreshes these views every 30
-seconds while the ledger drains.
+allows already-pending work to be approved or denied. Calls requiring the retired grants backend
+cannot execute; the call records and decisions stay in Postgres for audit. The browser refreshes
+these views every 30 seconds while the ledger drains.
 
 The Console's Agent-facing MCP endpoint, Operator browser MCP client, and OAuth discovery handlers
 are retired. New MCP calls cannot enter the ledger. Existing rows and their operator decisions stay
-in Postgres for audit and to let pending work drain safely.
+in Postgres for audit.
 
 ### Canonical Agent authority and enrollment
 
 The canonical contract is <docs/agent_authority.md>. In short: `Operator`, `Agent`, credential
-bindings, grants, names, profiles, and tool-call principals are durable local identities; every
+bindings, names, profiles, and tool-call principals are durable local identities; every
 Agent call record keeps exact binding provenance; and browser enrollment must converge with the
-upstream Agent OAuth principal before a binding becomes active. Access profiles own auto-approval
-and in-process-server grants; missing assignments fail closed.
+upstream Agent OAuth principal before a binding becomes active. Access profiles select auto-approval
+policy and any configured in-process server access; missing assignments fail closed.
 
 ### In-process execution backend
 
-`mcp/in_process_servers.py` still registers the `grants` backend so previously approved rows can
-finish while the ledger drains. The Console no longer reflects or refreshes server catalogs, serves
+No Console-owned MCP execution backend is currently configured. The grants package, Settings
+panel, grants MCP tools, and Console Kubernetes authorization endpoint are retired. Historical
+Kubernetes grant rows and MCP call records remain in Postgres; calls requiring the removed backend
+fail closed when dispatched. The Console no longer reflects or refreshes server catalogs, serves
 MCP requests, or makes browser-session reads through `/mcp`. The routine uses its separate audited
 `POST /api/capabilities/launch-routine` capability; its unused MCP wrapper was removed.
 
@@ -84,8 +86,8 @@ geolocation and screenshot grants, shell-owned kill switches, and residual exfil
 `frontend/tool_calls_page.tsx` renders the Operator's durable audit ledger at
 `/_console/tool-calls`. It pages newest-first by keyset cursor, defaults to 25 rows, and hides
 routine auto-approved traffic unless requested. The small page is deliberate: each row may carry
-whole argument/result payloads, so hundreds of rows make a multi-megabyte response. A live event
-refreshes only the newest page and merges it over older pages; result/argument editors initialize
+whole argument/result payloads, so hundreds of rows make a multi-megabyte response. Periodic refresh
+updates only the newest page and merges it over older pages; result/argument editors initialize
 near the viewport rather than for every retained row.
 
 ## Perimeter / deploy

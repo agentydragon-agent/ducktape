@@ -10,7 +10,6 @@ import {
   type AgentView,
   type DeploymentInfo,
 } from "./client";
-import { GrantsPanel } from "./grants_panel";
 import { ExternalLink } from "./link";
 import { POLL_REFRESH_INTERVAL_MS } from "./periodic_refresh";
 import { shortDate } from "./time";
@@ -200,7 +199,7 @@ function AgentRow({
   );
 }
 
-const SETTINGS_TABS = ["agents", "grants", "system"] as const;
+const SETTINGS_TABS = ["agents", "system"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export function settingsTabFromSearch(search: string): SettingsTab {
@@ -340,18 +339,12 @@ export function SettingsPanel(): JSX.Element {
       <header className="haku-page-header">
         <div className="haku-page-bar">
           <Text fw={700}>Settings</Text>
-          {activeTab !== "grants" && (
-            <Button size="xs" variant="light" color="gray" loading={loading} onClick={refreshActiveTab}>
-              Refresh
-            </Button>
-          )}
+          <Button size="xs" variant="light" color="gray" loading={loading} onClick={refreshActiveTab}>
+            Refresh
+          </Button>
         </div>
         <Tabs.List className="haku-settings-tabs-list" aria-label="Settings sections">
           <Tabs.Tab value="agents">Agents</Tabs.Tab>
-          <Tabs.Tab value="grants">
-            <span className="haku-settings-tab-long">Grants</span>
-            <span className="haku-settings-tab-short">Grants</span>
-          </Tabs.Tab>
           <Tabs.Tab value="system">System</Tabs.Tab>
         </Tabs.List>
       </header>
@@ -388,9 +381,6 @@ export function SettingsPanel(): JSX.Element {
               </DenseTable>
             )}
           </ResourcePanel>
-        </Tabs.Panel>
-        <Tabs.Panel value="grants">
-          <GrantsPanel />
         </Tabs.Panel>
         <Tabs.Panel value="system">
           <Stack gap="xs" className="haku-page-list">
