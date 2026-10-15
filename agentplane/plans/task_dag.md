@@ -237,6 +237,9 @@ flowchart TD
     AGENT_MESSAGE_RECEPTION --> AGENT_MESSAGING
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
+    NATIVE_SUBAGENT_EXPOSURE[Explore: expose native harness children as Sessions]
+    NATIVE_SUBAGENT_EXPOSURE -. the native-child boundary it informs .-> MULTIAGENT_MODEL
+    GATEWAY_SESSION_REGISTRY_RETIRE[Blocked: retire the registry, section 12] -. related .-> NATIVE_SUBAGENT_EXPOSURE
 ```
 
 ### `MULTIAGENT_MODEL` — shared identity and authority vocabulary
@@ -344,6 +347,31 @@ effective spec and delegation server-side. Test allowed and forbidden launch par
 concurrent retries. Reuse the app's create path (the shared Sandbox inventory), not harness-native agent tools. Launch alone
 does not grant history read, messaging, credentials or execution of another principal's Actions.
 
+### `NATIVE_SUBAGENT_EXPOSURE` — evaluate native harness children as Agentplane Sessions
+
+**Explore/plan; operator, 2026-10-15 UTC: no implementation implied.** Now that a Session is one the
+runner _declares_ over the [event ingress](../docs/runner_control.md#event-ingress) — the runner pushes
+roots and discovered children alike and the History Service index is the record of which exist —
+re-test whether Claude Code and Codex can use their own native subagent affordances, and what it takes
+to expose those children as Sessions, including **read-only ones an operator can open but cannot send
+into**. Deliverable: a written verdict on whether discovery removes the blocker that made
+[`NATIVE_SUBAGENT_THREADS`](task_freezer.md#native_subagent_threads--as-linked-agentplane-threads)
+deferred, the child states worth projecting, and the control surface that must stay unavailable. Feed
+the answer to `MULTIAGENT_MODEL`'s native-child boundary; it does not preempt it.
+
+Two things this must settle rather than assume: the characterization matrix in
+[Native discovery](native_session_discovery.md) is still mostly unmeasured (S5-S11 planned), and a
+discovered child has no Sandbox, so read-only addressability depends on `THREAD_READ_POLICY_DESIGN`
+and `THREAD_CREATE_POLICY` — a child is not "just another Session" for authorization purposes.
+
+**Also in scope: retire the remnants of the dictated model.** The refactor moved Session declaration to
+the runner, but the old shape is still load-bearing: `GATEWAY_SESSION_REGISTRY_RETIRE` records that
+`session_registry.py` and its rows survive because Gateway `ResumeSession` still reads them, and that
+production Dispatcher-opened Sessions are therefore refused by the app's direct-resume path. Treat that
+registry and any caller still asking something other than the runner which Sessions exist as this
+evaluation's cleanup list — find them as part of the exploration, not as a separate dispatch, and record
+each as its own node or as an exit criterion here.
+
 ## 4. VM environment phases
 
 The [VM Sandboxes design](../docs/vm_sandboxes.md) holds the provider constraints, and the
@@ -372,8 +400,13 @@ flowchart LR
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
     VM_EGRESS --> VM_LIFECYCLE
     VM_PROCESS_ISOLATION --> VM_LIFECYCLE
+    VM_GUEST_BUDGET_DERIVE --> VM_PROCESS_ISOLATION
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
+    VM_GUEST_MEMORY[Candidate: size the VM guest for real builds]
+    VM_GUEST_BUDGET_DERIVE[Blocked: guest budgets derive from the VM spec]
+    VM_GUEST_MEMORY -. the two numbers neither node should author alone .-> VM_GUEST_BUDGET_DERIVE
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
+    VM_GUEST_MEMORY --> LOCAL_BAZEL
     SANDBOX_VM_ISOLATION --> KUBEVIRT_EXPERIMENT_RETIRE[Blocked: delete the KubeVirt experiment]
 ```
 
@@ -459,7 +492,57 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 **Blocked on VM capstone.** Wire Bazelisk, storage and authenticated RBE/cache/BES; set CPU/memory/disk
 budgets and cleanup. Run a representative build/test with the client inside the VM and actions
 remote; check cancellation/cleanup while the harness stays responsive. Installed tools and working
-hosted builds do not authorize local Bazel in agent containers.
+hosted builds do not authorize local Bazel in agent containers. `VM_GUEST_MEMORY` is a second
+prerequisite: no client budget inside the guest is workable until the guest has RAM to budget.
+
+### `VM_GUEST_MEMORY` — size the VM guest for real builds
+
+**Candidate; operator, 2026-10-15 UTC: 8 GiB requested, and one VM per OVH node is acceptable.** Raise
+`runner-vm`'s guest RAM from 1536Mi (`cluster/cdk8s/agentplane/runner_vm.py`, still 1536Mi with
+`cores: 1` as of 2026-10-15) so a `bbr`/Bazelisk client inside the guest has room to compile.
+Acceptance is not "the template says 8 GiB": a Sandbox booted on the new template reports the larger
+`MemTotal` in the guest, and a representative `bbr build` and `bbr test` complete in it without the guest
+OOM killer firing.
+
+Know where the ceiling is before choosing the number. A guest of `N` costs the launcher Pod roughly
+`N + 240Mi` (guest RAM plus QEMU, disk helpers and the relay), so an 8 GiB guest needs about 8.25 Gi
+free on a `kubevirt.io/schedulable` node — the 8-core hosts fit one each, the largest host about five.
+Measure current free memory rather than trusting that; the operator accepts one VM per 8-core host.
+Staging carries **no** `ResourceQuota` or `LimitRange` (`TestingNamespaceResourceLimits` is testing-only,
+by design), so nothing refuses an oversized guest here — an unschedulable one just sits `Pending` on
+`Insufficient memory` rather than failing fast, which is also why testing's 4Gi container max and quota
+have to move with the template or the change fails there instead. The guest sees ~10% less than the
+domain is given (1536Mi yields 1383Mi). `cores: 1` is a separate deliberate choice: 8 GiB on one vCPU is
+memory-heavy and compute-starved, and `docs/vm_sandboxes.md` records a 1 vCPU guest reading a workspace
+disk at a fraction of the rate a build would like.
+
+### `VM_GUEST_BUDGET_DERIVE` — derive the guest's cgroup budgets from the VM's memory
+
+**Blocked on `VM_GUEST_MEMORY`; pair with `VM_PROCESS_ISOLATION`, which owns the boundary and already
+cites these files.** Two places set guest budgets as literals while guest RAM is a third number, and
+nothing connects them:
+
+- the unit in `agentplane/runner/vm.nix`: `MemoryHigh = "6G"`, `MemoryMax = "7G"`, `CPUQuota = "700%"`,
+  `TasksMax = 1024`;
+- the delegated groups in `agentplane/runner/cgroups.py`: aggregate `memory.max` 4 GiB with
+  `cpu.max` 400000/100000 (4 cores) and `pids.max` 768, per-process 3 GiB / 3 cores / 512.
+
+On this 1536Mi / 1 vCPU guest the unit is live — read `memory.max` 7516192768 and
+`cpu.max` 700000 100000 on `agentplane-runner.service`, about 4.5x the whole VM, with
+`memory.current` 1085681664 of it already used — so `VM_PROCESS_ISOLATION`'s "verify the existing limits"
+step will find that the aggregate group cannot reach its declared 4 GiB and the CPU shares are meaningless
+against one core. (The `workloads/` group itself is not readable from inside as the agent user; the 4 GiB
+figure is from the source, not observed. Reading it is part of this node.)
+
+Make the guest's own size the input: at boot or in the runner binary, read `MemTotal`/`memory.max` and
+the online CPU count, subtract a stated reserve for the guest kernel, journald and virtiofsd, and write
+the rest. `runner_vm.py` then carries one number and every budget follows it. Keep the reserve explicit
+and testable rather than a magic fraction, and fail loudly if the derived value would leave the runner
+less than it needs — the dangerous state is a cap so close to guest RAM that the first over-committed
+harness hits the **global** OOM instead of being killed as an identifiable subtree, which is exactly what
+`docs/vm_sandboxes.md`'s "Resource boundary" section says these groups exist to prevent. Exit evidence:
+one image booted at two guest sizes reports budgets that track it, and a harness that exhausts memory
+dies inside its own subtree with the runner still answering RPCs.
 
 ## 5. Independent UI and narrowly scoped service work
 
@@ -685,6 +768,8 @@ flowchart TD
     APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
+    SANDBOX_IDLE_EXPIRY --> IDLE_SUSPEND_UI_DRIVE[Operator: drive auto-suspend and send-to-resume in staging]
+    VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
@@ -759,8 +844,12 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 ```mermaid
 flowchart TD
     SANDBOX_GENERIC_SPLIT[Unscheduled: split the generic Sandbox from the runner's sealing]
-    SANDBOX_RUNNER_LAYERING[Unscheduled: add the runner and harnesses to a platform user's image]
-    SANDBOX_GENERIC_SPLIT -. related .-> SANDBOX_RUNNER_LAYERING
+    RUNNER_IMAGE_LAYERING_DESIGN[Decision: what carries the runner, harnesses and per-template tools]
+    SANDBOX_GENERIC_SPLIT -. related .-> RUNNER_IMAGE_LAYERING_DESIGN
+    RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_POD[Blocked: a Pod takes runner and tools from separate images]
+    RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[Blocked: a guest takes runner and tools from separate images]
+    RUNNER_LAYERING_VM --> K3S_VM_IMAGE[Blocked: build a lightweight guest disk in Bazel]
+    K3S_STARTUP_COST[k3s startup cost, section 5] -. related .-> K3S_VM_IMAGE
 ```
 
 ### `SANDBOX_GENERIC_SPLIT` — separate the generic Sandbox from the runner's sealing
@@ -776,16 +865,105 @@ are the runner-aware layer, and the Session Dispatcher sits outside both.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `SANDBOX_RUNNER_LAYERING` — add the runner and harnesses to a platform user's image
+### `RUNNER_IMAGE_LAYERING_DESIGN` — what carries the runner, the harnesses and the tools
 
-**Unscheduled; operator, 2026-10-13 PDT: very low priority unless easy.** Separate the runner's
-concerns (its version and binary, and the harness binaries) from the tools in the image, so a
-platform user supplies a Pod image or VM image or definition with no runner or harnesses and the
-runner side layers them in. Then they need not bump build versions or layer the runner themselves.
-Related to `SANDBOX_GENERIC_SPLIT`: that node separates the resource, this one separates the image.
-Options the operator named, none chosen: mount a separate volume that carries the runner, Claude and
-Codex into a Pod image that has none of them; or take a user root filesystem and run it under
-Firecracker with the runner as init.
+**Decision; operator, 2026-10-13 and 2026-10-15 PDT.** Supersedes `SANDBOX_RUNNER_LAYERING`, which the
+operator marked "very low priority unless easy" on 2026-10-13; the 2026-10-15 framing names the property
+wanted, so re-rank this node rather than inheriting that ranking. Today one artifact carries everything,
+so bumping the runner or a template's installed tools rebuilds and republishes the whole VM:
+`agentplane/runner/container-disk.nix` bakes the runner and both harnesses into the NixOS qcow2 that
+KubeVirt boots, and `agentplane/runner/image.nix` does the same for the Pod from a wheel pinned in
+`nix/artifact-pins.json`. Separate the concerns so a platform user supplies an image or definition with
+no runner and no harnesses and the runner side layers them in, and nobody bumps build versions to move a
+runner. State which of these the design must satisfy, in order:
+
+- **Independent updates.** Runner and per-template tools move without rebuilding what they sit in.
+- **The thing Pods genuinely cannot give** (operator, 2026-10-15): a workload may use a lot of RAM inside
+  itself, as a Bazel build does, without starving the host node. A VM reserves its guest RAM, so what the
+  guest does stays inside it; a Pod's burst is bounded by what the node has left. Say plainly whether
+  layering is meant to reach for that property or whether it stays a VM-only one, because it decides how
+  far to go.
+- **Additive.** New runtime types are added beside the existing ones, not swapped in, so a runtime can be
+  tried without retiring the one that works.
+
+Related to `SANDBOX_GENERIC_SPLIT`: that separates the resource, this separates the image.
+
+**Options worth costing, none chosen.** The operator named the first two; the rest are the field.
+
+- **Extra read-only filesystem image per stage.** Attach the runner and the tools as their own images or
+  disks; the base carries neither. Exactly the decoupling asked for, and Claude Code web already does it:
+  on its Firecracker guest `/opt/claude-code` and `/opt/env-runner` are separate squashfs disks
+  (`/dev/vdb`, `/dev/vdc`) mounted read-only beside a `/dev/vda` root —
+  [web container spec](../../devinfra/claude/web_env/docs/container_spec.md).
+- **Two-stage guest.** A lean stage 1 boots and runs the runner and mounts a stage 2 filesystem; the
+  runner jails a forked child into stage 2 and execs Claude or Codex there. Runner lifetime becomes
+  independent of the tool tree, at the cost of a pivot or chroot boundary and the work of trusting a
+  mounted image.
+- **Stay on KubeVirt, split the disks.** A `containerDisk` is already an OCI image carrying a disk, and
+  `runner_vm.py` already attaches `config` and `trust` as separate volumes, so a three-disk guest (root /
+  runner and harnesses / tools) needs no new mechanism — only the split. Halted image replacement already
+  exists, which is the update path.
+- **Kubernetes image volumes.** `imageVolumes` mounts an OCI image's filesystem into a Pod volume; the
+  cluster is v1.35, where the feature is GA. This is the direct answer to "this container should mount
+  these 2 images", and beats an init-container copy on every incarnation. Check it against the CRI and
+  storage class actually in use before relying on it.
+- **Init container into a shared volume.** Today's portable form: copy the runner and harnesses from image
+  X into an `emptyDir`. Works everywhere; pays copy time and disk each start.
+- **Firecracker instead of KubeVirt.** The runtime the operator raised as acceptable if it helps: fast
+  boot, small guest, squashfs-friendly, and the shape Claude Code web chose. The cost is a second VMM
+  stack beside KubeVirt with no cluster scheduler for it. The RE under `devinfra/claude/web_env/re/` —
+  including `process_api/src/firecracker_init.rs` — documents what that guest's init actually does and is
+  the closest worked example we hold.
+
+The disk split and Firecracker are not alternatives to each other: splitting disks is additive on the
+runtime we have, and Firecracker is a new runtime added beside it.
+
+### `RUNNER_LAYERING_POD` — a Pod takes the runner, harnesses and tools from separate images
+
+**Blocked on the layering decision; pursuable independently of the VM half; operator, 2026-10-15 PDT.**
+Give the Pod the same decoupling: the container runs the runner from image X, the harnesses come from X,
+and the binaries the agent runs come from a per-template image Y. Options are in the decision node; image
+volumes and the init-container copy are the two to try first. Exit evidence: bumping the runner pin
+publishes one image, and a Sandbox on the unchanged tools image starts on it.
+
+This does **not** deliver the RAM-headroom property by itself — a Pod still lives inside the node's
+allocatable. If the decision makes that property the priority, this node is convenience only and the VM
+half carries the requirement.
+
+### `RUNNER_LAYERING_VM` — a guest takes the runner, harnesses and tools from separate images
+
+**Blocked on the layering decision; pursuable independently of the Pod half; operator, 2026-10-15 PDT.**
+Split the guest so a runner bump or a template's tool list does not rebuild and repush the whole VM. The
+two-stage shape the operator named — lean stage 1 booting the runner and mounting a stage 2 filesystem,
+with the runner jailing a forked child into stage 2 to exec Claude/Codex — is one option, with the
+squashfs-disk and split-`containerDisk` shapes in the decision node beside it. KubeVirt is not assumed and
+Firecracker stays open; what must not change is that the state volume and its ownership rules survive
+(`STATE_VOLUME_BLOCK`, and the `107:107` virtiofs constraint). Halted containerDisk replacement already
+works, so the update path exists; today it moves a whole guest image, and after this it can move one disk.
+The in-guest budgets (`VM_GUEST_BUDGET_DERIVE`) are the other half of the same story — stage 1 owns the
+reserve, stage 2 gets the rest.
+
+### `K3S_VM_IMAGE` — build a lightweight guest disk in Bazel for the k3s integration test
+
+**Blocked on the VM split; operator, 2026-10-15 PDT.** The k3s spike cannot exercise a VM Sandbox at all:
+`agentplane/x/k3s_env/render.py` drops `("SandboxTemplate", "runner-vm")` because the template needs
+KubeVirt, and serves schemaless stub `VirtualMachine` kinds only so the controller's cache resolves. So
+the VM path has no integration coverage in the disposable environment, and pulling the real guest is
+unattractive because `agentplane/runner/container-disk.nix` builds it from a NixOS qcow2 — the heavy
+artifact the spike exists to avoid, and one that cannot carry the code under test.
+
+Make the test build a guest disk itself, so it runs the runner **from the tree under test** rather than a
+published image. The Pod-side pattern already exists there: `//agentplane/x/k3s_env:runner_image` is
+`debian_trixie_slim` plus a `pkg_tar` of the Bazel-pinned Codex and Claude binaries, built with no registry
+credential, and the spike's own note records that the Nix-built image is the full-toolbox one. Something of
+that shape as an image the test boots — with KubeVirt installed in the spike, or the VM path exercised
+against the host's KVM — is the deliverable, not a bigger image.
+
+Worth stating in the design, because it argues past the spike: a Bazel-built guest is worth more than the
+test. Once a guest root filesystem is an `oci_image` target, `RUNNER_LAYERING_VM` needs no Nix to build a
+candidate runtime, CI can build a guest without Attic, and a runtime experiment becomes an additive target
+rather than a second release pipeline. Check `K3S_STARTUP_COST` before adding image weight to that
+environment.
 
 ### `SANDBOX_IDLE_EXPIRY` — the controller suspends an idle Sandbox
 
@@ -809,6 +987,26 @@ Session's setup (running setups are a runner fact; the Sandbox is `Ready` False 
 only ever deletes.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
+### `IDLE_SUSPEND_UI_DRIVE` — drive auto-suspend and send-to-resume in staging
+
+**Operator, 2026-10-15 UTC: assigned to the operator, not dispatchable to a worker.** A human drives the
+whole loop through the staging web app on a real Session and reports what the UI actually does: the
+Sandbox goes idle, suspends on its own, and a message typed into the composer reaches that stopped
+Session and brings it back end to end. The idle trigger is `SANDBOX_IDLE_EXPIRY`; the suspended composer
+and per-Sandbox wake-on-message policy are recorded as implemented and deployed, so this is acceptance of
+the pair **as experienced**, not a re-run of their unit coverage or the composer's own rollout checks.
+
+Worth recording during the drive, because automated coverage does not produce it: how long the idle wait
+looks from the UI, what the Session and Sandbox render while suspended, whether the default-off wake
+policy is legible (queued versus "resume it yourself"), what the user is told afterward and what survived,
+and any point where the only way forward is `kubectl`. Log a deployment-specific gap as a node rather than
+fixing it mid-drive. Cover a VM Sandbox as well as a Pod one: a VM keeps its state PVC across stop/start
+and loses guest-local disks, so it is where a resume that looks successful can still lose something the
+user expected back.
+
+Related: [lifecycle coverage](../x/k3s_env/README.md#lifecycle-coverage), and `VM_RAM_SUSPEND` for the
+"resume with the memory it had" version of the same experience.
 
 ### `AGENT_RESUME_NOTICE` — tell agents when their Sandbox was suspended and resumed
 
