@@ -12,7 +12,7 @@ import grpc
 from google.protobuf.json_format import ParseError
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.grpc_servicer import Abort, ServicerResources, Status, status_mapping
+from agentplane.grpc.servicer import Abort, ServicerResources, Status, status_mapping
 from agentplane.proto import runner_control_pb2, runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2, sandboxes_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxBinding, SandboxDestination
 from agentplane.runner_gateway import session_lifecycle
@@ -38,15 +38,8 @@ class Resources(ServicerResources):
 
 
 def _runner_status(error: grpc.aio.AioRpcError) -> Status:
-    """A `Runner` call's failure: the runner's refusal, or the runner connection's loss or deadline."""
-    match code := error.code():
-        case grpc.StatusCode.UNAVAILABLE:
-            return code, "destination unavailable; no offline admission"
-        case grpc.StatusCode.DEADLINE_EXCEEDED:
-            return code, "service deadline expired"
-        case grpc.StatusCode.INVALID_ARGUMENT:
-            return code, f"runner refused the request: {code.name}"
-    return grpc.StatusCode.FAILED_PRECONDITION, f"runner refused the request: {code.name}"
+    """Preserve the Runner's status; this layer must not infer why the RPC failed."""
+    return error.code(), error.details() or ""
 
 
 # No Kubernetes wire responses or bearer data reach clients.

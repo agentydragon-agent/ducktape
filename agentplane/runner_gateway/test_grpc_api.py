@@ -13,7 +13,7 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.grpc_calls import ServiceError, dial
+from agentplane.grpc.calls import ServiceError, dial
 from agentplane.proto import command_pb2, runner_control_pb2, runner_gateway_pb2, runner_pb2, sandboxes_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
 from agentplane.runner_gateway import wire
@@ -170,6 +170,25 @@ async def test_complete_spec_still_needs_harness_cwd_and_model(remote: RunnerGat
     with pytest.raises(grpc.aio.AioRpcError) as refused:
         await remote.stub.CreateSession(request, metadata=await remote.metadata(), timeout=5)
     assert refused.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+
+
+@pytest.mark.parametrize("status", [grpc.StatusCode.INTERNAL, grpc.StatusCode.UNKNOWN, grpc.StatusCode.UNAVAILABLE])
+async def test_runner_status_and_detail_are_preserved(
+    remote: RunnerGatewayClient, peer: ScriptedRunner, engine: AsyncEngine, status: grpc.StatusCode
+) -> None:
+    session_id = uuid4()
+    await register_on_fake_sandbox(engine, session_id)
+    request = runner_gateway_pb2.ResumeSessionRequest(
+        destination=sandboxes_pb2.SessionDestination(sandbox=DESTINATION, session_id=str(session_id))
+    )
+    call = asyncio.ensure_future(remote.stub.ResumeSession(request, metadata=await remote.metadata(), timeout=5))
+    runner_call = await peer.next(runner_control_pb2.ResumeSessionRequest)
+    runner_call.outcome.set_result(status)
+
+    with pytest.raises(grpc.aio.AioRpcError) as rejected:
+        await call
+    assert rejected.value.code() == status
+    assert rejected.value.details() == "test runner refuses the call"
 
 
 async def test_command_uses_runner_ack_budget_not_unary_request_budget(

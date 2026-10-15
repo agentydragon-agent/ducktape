@@ -21,7 +21,7 @@ import grpc
 from google.protobuf import descriptor_pool, message_factory
 from google.protobuf.message import Message
 
-from agentplane.grpc_serving import serving
+from agentplane.grpc.serving import serving
 from agentplane.proto import grpc_tunnel_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -121,9 +121,14 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
         try:
             try:
                 await self._send(call)
+            except grpc.aio.AioRpcError as error:
+                raise _status(error.code(), error.details() or "") from error
             except (grpc.RpcError, asyncio.InvalidStateError) as error:
                 logger.warning("Runner control tunnel send failed", exc_info=error)
-                raise _status(grpc.StatusCode.UNAVAILABLE, "the tunnel ended before the call was sent") from error
+                raise _status(
+                    grpc.StatusCode.UNAVAILABLE,
+                    "the tunnel failed while sending the call; the callee outcome is unknown",
+                ) from error
             try:
                 async with asyncio.timeout(deadline_s):
                     reply = await waiting

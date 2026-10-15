@@ -17,7 +17,7 @@ from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncEngine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.grpc_calls import RefusedError, ServiceError
+from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.runner import Runner, follow_journal
@@ -146,10 +146,12 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         ).attached.spec == opened.spec
         assert (await destination.list_sessions())[0].spec == opened.spec
         # The runner refuses a retry whose spec differs from the one it recorded.
-        with pytest.raises(RefusedError):
+        with pytest.raises(ServiceError) as refused:
             await destination.create(
                 session_id=requested, spec=launch_spec | {"instructions": "Different task"}, setup_script=setup_script
             )
+        assert refused.value.code == grpc.StatusCode.ALREADY_EXISTS
+        assert str(refused.value) == f"ALREADY_EXISTS: session {session} exists with a different spec"
         assert bootstrap_marker.read_text() == "B"
         assert setup_marker.read_text() == "S"
         entries = await complete_turn(remote, runner, model, session, "grpc-notice")
@@ -180,10 +182,9 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         assert resumed.harness_state == runner_pb2.HARNESS_STATE_RUNNING
         await complete_turn(restarted, runner, model, session, "grpc-resumed")
         assert (await destination.list_sessions())[0].spec == opened.spec
-        with pytest.raises(RefusedError):
-            await destination.create(
-                session_id=uuid4(), spec={"harness": "HARNESS_CODEX", "cwd": "/workspace", "model": "test"}
-            )
+        with pytest.raises(ServiceError) as invalid:
+            await destination.create(session_id=uuid4(), spec=launch_spec | {"model": ""})
+        assert invalid.value.code == grpc.StatusCode.INVALID_ARGUMENT
     assert bootstrap_marker.read_text() == "B"
     assert setup_marker.read_text() == "S"
 
