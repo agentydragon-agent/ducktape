@@ -859,8 +859,13 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 flowchart TD
     VM_PROVIDER[VM provider, section 4] --> SANDBOX_IMAGE_REPLACE[Blocked: replace a VM's runner image between incarnations]
     SANDBOX_GENERIC_SPLIT[Unscheduled: split the generic Sandbox from the runner's sealing]
-    SANDBOX_RUNNER_LAYERING[Unscheduled: add the runner and harnesses to a platform user's image]
-    SANDBOX_GENERIC_SPLIT -. related .-> SANDBOX_RUNNER_LAYERING
+    RUNNER_IMAGE_LAYERING_DESIGN[Decision: what carries the runner, harnesses and per-template tools]
+    SANDBOX_GENERIC_SPLIT -. related .-> RUNNER_IMAGE_LAYERING_DESIGN
+    RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_POD[Blocked: a Pod takes runner and tools from separate images]
+    RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[Blocked: a guest takes runner and tools from separate images]
+    RUNNER_LAYERING_VM --> K3S_VM_IMAGE[Blocked: build a lightweight guest disk in Bazel]
+    SANDBOX_IMAGE_REPLACE -. the mechanism a layered VM updates through .-> RUNNER_LAYERING_VM
+    K3S_STARTUP_COST[k3s startup cost, section 5] -. related .-> K3S_VM_IMAGE
 ```
 
 ### `SANDBOX_IMAGE_REPLACE` — replace a VM's runner image between incarnations
@@ -891,16 +896,107 @@ are the runner-aware layer, and the Session Dispatcher sits outside both.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `SANDBOX_RUNNER_LAYERING` — add the runner and harnesses to a platform user's image
+### `RUNNER_IMAGE_LAYERING_DESIGN` — what carries the runner, the harnesses and the tools
 
-**Unscheduled; operator, 2026-10-13 PDT: very low priority unless easy.** Separate the runner's
-concerns (its version and binary, and the harness binaries) from the tools in the image, so a
-platform user supplies a Pod image or VM image or definition with no runner or harnesses and the
-runner side layers them in. Then they need not bump build versions or layer the runner themselves.
-Related to `SANDBOX_GENERIC_SPLIT`: that node separates the resource, this one separates the image.
-Options the operator named, none chosen: mount a separate volume that carries the runner, Claude and
-Codex into a Pod image that has none of them; or take a user root filesystem and run it under
-Firecracker with the runner as init.
+**Decision; operator, 2026-10-13 and 2026-10-15 PDT.** Supersedes `SANDBOX_RUNNER_LAYERING`, which
+the operator marked "very low priority unless easy" on 2026-10-13; the 2026-10-15 framing names the
+property wanted, so re-rank this node rather than inheriting that ranking. Today one artifact carries
+everything, so bumping the runner or a template's installed tools rebuilds and republishes the whole
+VM: `agentplane/runner/container-disk.nix` bakes the runner and both harnesses into the NixOS qcow2
+that KubeVirt boots, and `agentplane/runner/image.nix` does the same for the Pod from a wheel pinned
+in `nix/artifact-pins.json`. Separate the concerns so a platform user supplies an image or definition
+with no runner and no harnesses and the runner side layers them in, and nobody bumps build versions to
+move a runner. State which of these the design must satisfy, in order:
+
+- **Independent updates.** Runner and per-template tools move without rebuilding what they sit in.
+- **The thing Pods genuinely cannot give** (operator, 2026-10-15): a workload may use a lot of RAM
+  inside itself, as a Bazel build does, without starving the host node. A VM reserves its guest RAM,
+  so whatever the guest does stays inside it; a Pod's burst behavior is bounded by what the node has
+  left. Say plainly whether layering is meant to reach for that property or whether it stays a
+  VM-only property, because it decides how far to go.
+- **Additive.** New runtime types are added beside the existing ones, not swapped in, so a runtime can
+  be tried without retiring the one that works.
+
+Related to `SANDBOX_GENERIC_SPLIT`: that separates the resource, this separates the image.
+
+**Options worth costing, none chosen.** The operator named the first two; the rest are the field.
+
+- **Extra read-only filesystem image per stage.** Attach the runner and the tools as their own
+  images or disks; the base carries neither. Exactly the decoupling asked for, and Claude Code web
+  already does it: on its Firecracker guest `/opt/claude-code` and `/opt/env-runner` are separate
+  squashfs disks (`/dev/vdb`, `/dev/vdc`) mounted read-only beside a `/dev/vda` root —
+  [web container spec](../../devinfra/claude/web_env/docs/container_spec.md).
+- **Two-stage guest.** A lean stage 1 boots and runs the runner and mounts a stage 2 filesystem; the
+  runner jails a forked child into stage 2 and execs Claude or Codex there. Runner lifetime becomes
+  independent of the tool tree, at the cost of a pivot or chroot boundary and the work of trusting a
+  mounted image.
+- **Stay on KubeVirt, split the disks.** A `containerDisk` is already an OCI image carrying a disk,
+  and `runner_vm.py` already attaches `config` and `trust` as separate volumes, so a three-disk guest
+  (root / runner and harnesses / tools) needs no new mechanism — only the split.
+- **Kubernetes image volumes.** `imageVolumes` mounts an OCI image's filesystem into a Pod volume;
+  the cluster is v1.35, where the feature is GA. This is the direct answer to "this container should
+  mount these 2 images", and beats an init-container copy on every incarnation. Check it against the
+  CRI and storage class actually in use before relying on it.
+- **Init container into a shared volume.** Today's portable form: copy the runner and harnesses from
+  image X into an `emptyDir`. Works everywhere; pays copy time and disk each start.
+- **Firecracker instead of KubeVirt.** The runtime the operator raised as acceptable if it helps:
+  fast boot, small guest, squashfs-friendly, and the shape Claude Code web chose. The cost is a second
+  VMM stack beside KubeVirt with no cluster scheduler for it. The RE under
+  `devinfra/claude/web_env/re/` — including `process_api/src/firecracker_init.rs` — documents what
+  that guest's init actually does and is the closest thing we have to a worked example.
+
+The disk split and Firecracker are not alternatives to each other: splitting disks is additive on the
+runtime we have, and Firecracker is a new runtime added beside it.
+
+
+### `RUNNER_LAYERING_POD` — a Pod takes the runner, harnesses and tools from separate images
+
+**Blocked on the layering decision; pursuable independently of the VM half; operator, 2026-10-15 PDT.**
+Give the Pod the same decoupling: the container runs the runner from image X, the harnesses come from
+X, and the binaries the agent runs come from a per-template image Y. Options are in the decision node;
+image volumes and the init-container copy are the two to try first. Exit evidence: bumping the runner
+pin publishes one image, and a Sandbox on the unchanged tools image starts on it.
+
+This does **not** deliver the RAM-headroom property by itself — a Pod still lives inside the node's
+allocatable. If the decision makes that property the priority, this node is convenience only and the
+VM half carries the requirement.
+
+### `RUNNER_LAYERING_VM` — a guest takes the runner, harnesses and tools from separate images
+
+**Blocked on the layering decision; pursuable independently of the Pod half; operator, 2026-10-15 PDT.**
+Split the guest so a runner bump or a template's tool list does not rebuild and repush the whole VM.
+The two-stage shape the operator named — lean stage 1 booting the runner and mounting a stage 2
+filesystem, with the runner jailing a forked child into stage 2 to exec Claude/Codex — is one option,
+with the squashfs-disk and split-`containerDisk` shapes in the decision node beside it. KubeVirt is not
+assumed, and Firecracker stays open; what must not change is that the state volume and its ownership
+rules survive (`STATE_VOLUME_BLOCK`, and the `107:107` virtiofs constraint).
+
+`SANDBOX_IMAGE_REPLACE` is the update path this makes cheap: today replacing a VM's image means a whole
+new guest image, and after this it can mean swapping one disk while halted. The in-guest budgets
+(`VM_GUEST_BUDGET_DERIVE`) are the other half of the same story — stage 1 owns the reserve, stage 2
+gets the rest.
+
+### `K3S_VM_IMAGE` — build a lightweight guest disk in Bazel for the k3s integration test
+
+**Blocked on the VM split; operator, 2026-10-15 PDT.** The k3s spike cannot exercise a VM Sandbox at
+all: `agentplane/x/k3s_env/render.py` drops `("SandboxTemplate", "runner-vm")` because the template
+needs KubeVirt, and serves schemaless stub `VirtualMachine` kinds only so the controller's cache
+resolves. So the VM path has no integration coverage in the disposable environment, and pulling the
+real guest is unattractive because `agentplane/runner/container-disk.nix` builds it from a NixOS qcow2 —
+the heavy artifact the spike exists to avoid, and one that cannot carry the code under test.
+
+Make the test build a guest disk itself, so it runs the runner **from the tree under test** rather than
+a published image. The Pod-side pattern already exists there: `//agentplane/x/k3s_env:runner_image` is
+`debian_trixie_slim` plus a `pkg_tar` of the Bazel-pinned Codex and Claude binaries, built with no
+registry credential, and the spike's own note records that the Nix-built image is the full-toolbox one.
+Something of that shape as an image the test boots — with KubeVirt installed in the spike, or the VM
+path exercised against the host's KVM — is the deliverable, not a bigger image.
+
+Worth stating in the design, because it argues past the spike: a Bazel-built guest is worth more than
+the test. Once a guest root filesystem is an `oci_image` target, `RUNNER_LAYERING_VM` needs no Nix to
+build a candidate runtime, CI can build a guest without Attic, and a runtime experiment becomes an
+additive target rather than a second release pipeline. Check `K3S_STARTUP_COST` before adding image
+weight to that environment.
 
 ### `SANDBOX_IDLE_EXPIRY` — the controller suspends an idle Sandbox
 
