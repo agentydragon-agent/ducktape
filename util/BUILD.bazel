@@ -223,7 +223,6 @@ py_package(
     # outside Bazel and are needed by Nix-shipped wheels (Claude statusline,
     # ducktape-git-hooks).
     deps = [
-        ":agent_sandbox",
         ":env",
         ":fmt",
         ":fs",
@@ -305,12 +304,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
-)
-
-py_library(
-    name = "agent_sandbox",
-    srcs = ["agent_sandbox.py"],
-    visibility = ["//visibility:public"],
 )
 
 py_library(
