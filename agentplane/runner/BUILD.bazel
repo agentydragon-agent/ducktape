@@ -169,6 +169,7 @@ py_library(
         ":model_config",
         ":session",
         ":store",
+        ":workspace",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_pb2",
@@ -188,6 +189,7 @@ py_library(
         ":observation",
         ":recovery",
         ":store",
+        ":workspace",
         "//agentplane/native:transport",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
@@ -195,6 +197,15 @@ py_library(
         "//agentplane/proto:runner_pb2",
         "@pypi//protobuf",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "workspace",
+    srcs = ["workspace.py"],
+    deps = [
+        ":harness_process",
+        ":workspace_create",
     ],
 )
 
@@ -638,6 +649,19 @@ py_test(
 )
 
 py_test(
+    name = "test_workspace",
+    srcs = ["test_workspace.py"],
+    deps = [
+        ":conftest",
+        ":harness_process",
+        ":workspace",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_journal_memory",
     srcs = ["test_journal_memory.py"],
     deps = [
@@ -921,4 +945,9 @@ py_test(
 py_library(
     name = "workspace_disk",
     srcs = ["workspace_disk.py"],
+)
+
+py_library(
+    name = "workspace_create",
+    srcs = ["workspace_create.py"],
 )
