@@ -7,13 +7,13 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller
     newTag: devel-20261015201218-d9cacc1 # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-migrate
-    newTag: devel-20261015015927-721cab8 # {"$imagepolicy": "flux-system:agentplane-runner-gateway-migrate:tag"}
+    newTag: devel-20261015233633-b8b2ba1 # {"$imagepolicy": "flux-system:agentplane-runner-gateway-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
     newTag: devel-20261015015833-721cab8 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress
     newTag: devel-20261015233536-b8b2ba1 # {"$imagepolicy": "flux-system:agentplane-egress:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-migrate
-    newTag: devel-20261015015809-721cab8 # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
+    newTag: devel-20261015233623-b8b2ba1 # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
     newTag: devel-20261015233545-b8b2ba1 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
