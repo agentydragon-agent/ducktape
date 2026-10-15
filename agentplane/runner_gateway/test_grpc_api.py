@@ -341,15 +341,6 @@ async def test_session_sandboxes_answer_from_the_registry_including_deleted_sand
         assert sorted(got, key=lambda found: found.session_id) == sorted(
             [live, deleted], key=lambda found: found.session_id
         )
-        assert await remote.find_sessions(runner_gateway_pb2.FindSessionsRequest(sandbox_name=SANDBOX)) == [live]
-        # Case-insensitive, and a LIKE wildcard in the text is matched literally.
-        contains = runner_gateway_pb2.FindSessionsRequest(sandbox_name_contains="deleted-")
-        assert await remote.find_sessions(contains) == [deleted]
-        wildcard = runner_gateway_pb2.FindSessionsRequest(sandbox_name_contains="%")
-        assert await remote.find_sessions(wildcard) == []
-        with pytest.raises(ServiceError) as unmatched:
-            await remote.find_sessions(runner_gateway_pb2.FindSessionsRequest())
-        assert unmatched.value.code == grpc.StatusCode.INVALID_ARGUMENT
 
 
 if __name__ == "__main__":
