@@ -7,15 +7,15 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller
     newTag: devel-20261015015818-721cab8 # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-migrate
-    newTag: devel-20261012192940-487fa2a # {"$imagepolicy": "flux-system:agentplane-runner-gateway-migrate:tag"}
+    newTag: devel-20261015015927-721cab8 # {"$imagepolicy": "flux-system:agentplane-runner-gateway-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
     newTag: devel-20261015015833-721cab8 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress
-    newTag: devel-20261014034820-6a19495 # {"$imagepolicy": "flux-system:agentplane-egress:tag"}
+    newTag: devel-20261015015846-721cab8 # {"$imagepolicy": "flux-system:agentplane-egress:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-migrate
-    newTag: devel-20261013144315-5ae58ba # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
+    newTag: devel-20261015015809-721cab8 # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261015010310-6dc7dca # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20261015015900-721cab8 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20261015015852-721cab8 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   # Initial publication on devel supplies the tag through Flux image automation.
@@ -42,16 +42,16 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
     newTag: devel-20261015003850-e00e85e # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
-    newTag: devel-20261012083541-87be9f8 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
+    newTag: devel-20261015015906-721cab8 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261015003305-e00e85e # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+    newTag: devel-20261015015903-721cab8 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # The runner VM SandboxTemplate's containerDisk, which `images:` reaches through kustomizeconfig.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-vm
     newTag: devel-20261015000402-cc32a7c # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
   # Receiver rollout lands before the app and Notification Service sender cutovers.
   - name: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher
-    newTag: devel-20261015005951-e00e85e # {"$imagepolicy": "flux-system:agentplane-session-dispatcher:tag"}
+    newTag: devel-20261015015849-721cab8 # {"$imagepolicy": "flux-system:agentplane-session-dispatcher:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher-migrate
     newTag: devel-20261014211153-31e0b37 # {"$imagepolicy": "flux-system:agentplane-session-dispatcher-migrate:tag"}
 configurations:
