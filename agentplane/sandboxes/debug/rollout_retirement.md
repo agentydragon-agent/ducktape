@@ -1,6 +1,35 @@
 # Sandbox Service retirement and caller rollout inventory
 
-Read-only inventory on 2026-10-14 PDT, after #10524, #10525, #10529 and #10533 merged:
+## Quiesce retry coverage audit, 2026-10-15 UTC
+
+The retry implementation (#10580) and nonblocking writer (#10609) close the retry-code audit.
+Writer rollout and legacy-reader removal remain separate gates in the task DAG; idle suspension
+still waits for writer rollout verification. This audit made no cluster changes.
+
+- The controller persists the attempt before calling the runner and enforces the per-incarnation
+  retry deadline. `TestFailedQuiesceWaitsAcrossNoStageEventsAndControllerRestart` covers watch
+  events, restart, repeated suspend/resume intent, a stalled flush and prompt Lease-driven completion.
+  `TestFailedQuiesceAttemptStatusWriteDoesNotCallRunner` and
+  `TestQuiesceAttemptDoesNotThrottleANewRunnerIncarnationDuringDeletion` cover conflict and identity
+  boundaries in [controller tests](../../sandbox_controller/controller_test.go).
+- [Runner control tests](../../runner/test_control.py) hold ingress acknowledgement to prove that
+  sealing alone stays `Flushing`, acknowledge final cursors before `Quiesced`, and cover drain failure,
+  repeated requests and cancellation/reconnect. #10609's final CI passed all 92 test targets.
+- [Ingress tests](../../runner/test_ingress.py) cover refused-session backoff without blocking other
+  Sessions, replay from the acknowledged cursor, persisted seal acknowledgement across restart,
+  and an unreachable ingress that does not block journaling or sealing. The shared
+  [reconnect loop](../../runner/reconnect.py) applies capped jittered exponential backoff to failures
+  without progress; operator-only refusals wait the maximum. This is per-stream backoff, not a
+  global ingress circuit breaker.
+
+No additional global circuit breaker or live outage drill is required to establish this contract:
+the named failure boundaries have deterministic coverage. A future aggregate retry-load problem
+would justify separate measured work. This closes the old open-ended outage-audit gate, without
+waiving writer image/VM-wheel or live-incarnation compatibility checks.
+
+## Initial retirement inventory, 2026-10-14 PDT
+
+Read-only inventory after #10524, #10525, #10529 and #10533 merged:
 
 - Testing and staging have no Sandbox Service Deployment or Pods. #10529 removed deployment
   wiring; #10524 removed its source, proto and remaining clients. History Service's independently
@@ -34,7 +63,8 @@ app's direct native-resume path. Each remaining compatibility removal keeps its 
 - Both audited wheels still omit `QuiesceResponse.stage`; current source still awaits sealing before
   returning. Non-blocking response implementation and its rollout must precede legacy-reader removal.
 - #10593 adds explicit suspended markers to the sidebar, Thread, title and favicon. The retained
-  history/revival surfaces remain. Composer activation still follows wake-on-send acceptance.
+  history/revival surfaces remain. At that point, composer activation still followed wake-on-send
+  acceptance.
 - #10592 removed the opening flag from generated configuration. Both live app ConfigMaps omitted it
   before #10598 removed the accepted-unused field and its obsolete tests. #10598 merged with Bazel,
   Nix and pre-commit checks passing; the opening rollout flag is fully removed from source.
@@ -56,7 +86,7 @@ app's direct native-resume path. Each remaining compatibility removal keeps its 
   Sandbox UID `00a94aaf-8312-4e5c-a9a7-1381d45a451b` and its PVC were removed by scoped teardown.
   This was a model-free setup check on testing, not a new staging model-turn acceptance.
 
-## App wake policy and composer rollout, 2026-10-15 UTC
+## App wake policy and suspended composer rollout, 2026-10-15 UTC
 
 - #10600 (`e380e62`) adds the default-off `wakeOnSend` checkbox to new and existing Sandbox UI,
   retaining UID/resource-version checks and requiring an explicit user action to change a policy.
@@ -66,6 +96,23 @@ app's direct native-resume path. Each remaining compatibility removal keeps its 
   `devel-20261015060159-7eb6b79`. All three Ready app Pods use digest
   `ce44cd071dbc33e12000ed10a40f84c687a2135e4ce13f475ff62c80df47d366`; source ancestry includes
   #10600. This clears the app-image gate for the checkbox.
-- The staging Dispatcher caller allowlist and prior testing wake acceptance are already verified.
-  The suspended-composer change remains in review in #10608; its separate image rollout and staging
-  acceptance are still required. Do not treat the checkbox image gate as composer activation.
+- #10608 merged as `cd4b4352623f47ffa9a420bef035aabca7e04b08`. It keeps a retained Session's
+  composer usable after a normal stopped/ended seal when fresh Sandbox inventory confirms suspension
+  and setup succeeded. The existing authenticated Dispatcher route queues input; wake-on-message
+  requests a wake, while the default-off policy leaves the message queued and tells the user to resume
+  manually. Stale or missing inventory, archived Threads and failed/interrupted/unfinished setup
+  remain blocked. Focused UI tests cover the sealed projection, both wake policies and refusals; app
+  bridge tests cover Dispatcher queueing without a ready runner or Gateway session lookup. PR CI and
+  desktop/mobile visual review passed.
+- A read-only rollout audit found testing at generation/observed generation 521/521 and staging at
+  566/566. Testing's one app Pod and staging's two app Pods are Ready on
+  `devel-20261015063016-cd4b435`, all with digest
+  `sha256:689df9e143e769475992a64e6a02cf6836513636cdeb7b3a7747615cf79c8d31`. The image tag identifies
+  the merged #10608 commit.
+- The prior testing [Dispatcher wake acceptance](../../session_dispatcher/debug/deployment_acceptance.md#testing-send-triggered-wake)
+  passed the opted-in scenario: concurrent allowed app `OpenSession` and notification `SubmitInput`
+  produced one wake generation and both reached runner admission. Together with the deterministic
+  composer and app-bridge tests, this covers the changed contract; no separate live browser send is
+  required. No message was sent to a user Session for this rollout audit. This closes the composer
+  behavior only; a separate report that suspension hides the Thread list/table is tracked as
+  `SUSPENDED_SESSION_INVENTORY` in the task DAG.

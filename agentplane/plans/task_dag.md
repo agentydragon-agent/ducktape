@@ -18,20 +18,20 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
 
-| Worker                     | Assigned work and remaining gates                                                                      |
-| -------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `suspended_session_ui`     | Implement nonblocking runner Quiesce; deployed controllers already accept the optional response stage. |
-| `quiesce_progress`         | Implement suspended composer after merged #10600; verify checkbox app image rollout before activation. |
-| `session_defaults_cleanup` | Fresh VM workspace acceptance passed and fixture cleanup verified; publish evidence and metadata fix.  |
-| Coordinator                | Review and CI, DAG burn-down and deployment gate verification.                                         |
+| Worker                        | Assigned work and remaining gates                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `suspended_session_ui`        | Implement nonblocking runner Quiesce; deployed controllers already accept the optional response stage. |
+| `session_defaults_cleanup`    | Fresh VM workspace acceptance passed and fixture cleanup verified; publish evidence and metadata fix.  |
+| `suspended_session_inventory` | Replace the live Session-list union with History-only rows; preserve suspended Session visibility.     |
+| Coordinator                   | Review and CI, DAG burn-down and deployment gate verification.                                         |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
 user experience. Finish reported bugs and red PR checks first. The next dispatch order is
-verified runner compatibility cleanup and `SUSPENDED_COMPOSER`, then `ISOLATED_TEST_SPIKES_RETIRE`
-and `K3S_STARTUP_COST`. The app wake-on-message policy is implemented and deployed; the composer
-still needs its own rollout acceptance. The lifecycle coverage audit found the
-requested eventual outcomes already covered; see the [suite coverage](../x/k3s_env/README.md#lifecycle-coverage).
+verified runner compatibility cleanup, then `ISOLATED_TEST_SPIKES_RETIRE` and
+`K3S_STARTUP_COST`. The per-Sandbox wake-on-message policy and suspended composer are implemented
+and deployed. The lifecycle coverage audit found the requested eventual outcomes already covered;
+see the [suite coverage](../x/k3s_env/README.md#lifecycle-coverage).
 Audit assignment does not waive any image, embedded VM wheel, live-runner or retained-data gate.
 
 These are assignments, not claims that gated work has started. Independent config changes can
@@ -370,6 +370,7 @@ flowchart LR
     VM_PROVIDER[Candidate: production provider and API]
     VM_EGRESS[Blocked: live launcher relay checks]
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
+    VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
@@ -467,8 +468,17 @@ memory dump or a snapshot with memory) and whether it works with the state volum
 RAM suspension nor live migration today. Check what a resumed guest must redo: the runner's control stream and
 projected tokens (the relay reopens them per request, so rotation alone needs no restart), and the
 clock. Settle first what "seal before suspend" means when the harness keeps running across the suspend
-(`QUIESCE_WITHOUT_POLLING` assumes the Pod sequence). Where storage or the guest cannot carry it, stop/start from the state PVC stays the
+(the current quiesce stops harnesses and seals journals). Where storage or the guest cannot carry it, stop/start from the state PVC stays the
 lifecycle.
+
+### `VM_CONSOLE_DEFERRED_ATTACH` — attach after VM startup makes the console available
+
+**Unscheduled; lower priority, operator report 2026-10-15 PDT.** During VM startup the console tab
+can show `Kubernetes answered 400` and remain disconnected. Treat a not-yet-attachable VM as waiting
+and attach when its lifecycle signals readiness, without reopening the tab. Distinguish startup
+from authorization failure, deleted VM, and another attached client; clean up on tab exit and never
+open competing connections. Keep the existing read-only/no-replay contract. Test the unavailable
+→ attachable transition and cancellation; do not add a periodic polling loop or bigger timeout.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
@@ -690,25 +700,24 @@ flowchart TD
     RUNNER_QUIESCE_ROLLOUT[In flight: roll out nonblocking Quiesce implementation #10609]
     JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE[Blocked: writer rollout and retained-journal cutoff]
     RUNNER_QUIESCE_ROLLOUT --> QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: remove old response shape after runner rollout]
-    QUIESCE_WITHOUT_POLLING[In flight: recover stalled seal progress]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
-    SUSPENDED_COMPOSER[In flight: the composer stays enabled while a Session is suspended]
+    SUSPENDED_SESSION_INVENTORY[In flight: retain the Session list after Sandbox suspension]
     VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
     VM_PROVIDER -. related .-> SANDBOX_SPEC_EDIT
-    QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
+    RUNNER_QUIESCE_ROLLOUT --> SANDBOX_IDLE_EXPIRY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
-    QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
+    VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
     APP_NATIVE_RESUME_SURFACE[Decision: explicit native-resume UI] --> APP_NATIVE_RESUME_CUTOVER[Blocked: remove direct native resume]
     APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
-    STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE
+    STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
 ```
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
@@ -829,7 +838,7 @@ Firecracker with the runner as init.
 
 ### `SANDBOX_IDLE_EXPIRY` — the controller suspends an idle Sandbox
 
-**Blocked on the app image that reads `status.operatingMode` being pinned, `QUIESCE_WITHOUT_POLLING`; operator, 2026-10-11 and 2026-10-13 PDT.** An idle runner
+**Blocked on `RUNNER_QUIESCE_ROLLOUT`; operator, 2026-10-11 and 2026-10-13 PDT.** The app's effective-mode reader is deployed. Controller retry and runner outage coverage are complete; the nonblocking writer still needs its rollout verification. An idle runner
 Sandbox suspends: it is sealed, then the Pod or VM goes, freeing memory and compute, and the Sandbox, its
 ServiceAccount, bindings and state PVC stay, so a later resume uses the same PVC. Nothing deletes a
 Sandbox on idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one, through
@@ -904,22 +913,6 @@ snapshot pins, not a current inventory. Refresh the audit against every live/sel
 image, embedded VM wheel, and old incarnation. Delete the controller's legacy-shape read only after
 the compatible writer is deployed everywhere and testing/staging acceptance passes.
 
-### `QUIESCE_WITHOUT_POLLING` — a runner that never progresses is backed off, not hammered
-
-**Retry correction merged in #10580 after optional schema #10583 was verified served
-(2026-10-15 02:35 UTC).** The schema landed separately because plain Flux `dependsOn` is not an
-exact-revision barrier. The persisted per-incarnation attempt prevents watch
-events from bypassing the existing one-minute retry deadline, including absent/stalled stage reports
-and false-to-false condition updates. Focused controller tests cover status conflicts, completion,
-restarts and incarnation changes. Runner stage events still advance quiesce immediately. The immediate
-RPC response is implemented in #10609; its rollout is tracked in `RUNNER_QUIESCE_ROLLOUT`. Keep the
-controller reader until `QUIESCE_LEGACY_SHAPE_REMOVAL` clears its rollout and acceptance gates.
-
-This change does not establish ingress-wide backoff. Audit the remaining outage behavior before
-closing this node; preserve a bounded held-flush integration check only for an identified gap that
-focused tests do not cover. Keep the separate legacy-response removal gated on every runner image
-and the VM wheel pin. Do not turn missed-event recovery into periodic polling or extend timeouts.
-
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
 **Unscheduled.** The History Service folds `idle_since` into `SessionSummary` (the turn and harness
@@ -976,15 +969,13 @@ explicit operator re-grant flow. The audit distinguishes controller-driven expir
 post-deadline denial, and projected-token renewal from grant renewal. Add implementation work only
 for a reviewed contract that the code does not already satisfy; do not add an implicit Ready gate.
 
-### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
+### `SUSPENDED_SESSION_INVENTORY` — the Session list remains visible after Sandbox suspension
 
-**In flight in #10608; `quiesce_progress`, operator decision 2026-10-15 UTC.** A retained Session's
-composer stays usable while a fresh inventory snapshot confirms that its Sandbox is suspended.
-Sending queues through the Dispatcher; wake-on-message requests a wake, while the default-off policy
-leaves the Sandbox stopped and tells the user to resume it manually. Preserve normal access checks,
-deleted-Sandbox refusal, and setup/archive refusals. Focused tests cover the sealed stopped/ended
-Session projection and desktop/mobile visual fixtures. The app image and staging wake caller are
-deployed; this node remains in flight until the composer image rollout and staging acceptance pass.
+**In flight; `suspended_session_inventory`, operator dispatch 2026-10-15 UTC.** The user reports
+that suspending a Sandbox clears its Thread list/table after navigating back. Replace the live
+`Runner.ListSessions` table source with retained History rows so suspended Sessions remain visible.
+Preserve access and Sandbox-identity fences, and add a regression for returning to a suspended
+Sandbox. This is separate from the suspended composer behavior, which has its own rollout evidence.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
@@ -1113,13 +1104,65 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 ```mermaid
 flowchart TD
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
+    CONTROL_SURFACE_RETIREMENT_AUDIT[Candidate: audit RPCs, fields and arguments against the intended paths]
+    CONTROL_SURFACE_RETIREMENT_AUDIT --> RUNNER_LIST_SESSIONS_RETIRE[Blocked: resolve remaining live-inventory semantics, then remove ListSessions]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
+    SUSPENDED_SESSION_INVENTORY --> APP_SESSION_LIST_ROUTE_RETIRE[Blocked: remove the runner-backed table HTTP read]
+    APP_SESSION_LIST_ROUTE_RETIRE --> GATEWAY_WRAPPER_RETIRE
+    APP_SESSION_DESTINATION_HISTORY[Candidate: resolve Session destinations from History] --> GATEWAY_WRAPPER_RETIRE
+    APP_ARCHIVE_RUNNER_READ_MIGRATION[Candidate: move live archive checks to the runner proxy] --> GATEWAY_WRAPPER_RETIRE
+    NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION[Candidate: retire notification wrapper membership reads] --> GATEWAY_WRAPPER_RETIRE
+    APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
 ```
+
+### `CONTROL_SURFACE_RETIREMENT_AUDIT` — converge RPCs, fields and arguments on the intended paths
+
+**Candidate; operator request 2026-10-15 PDT.** Sweep Agentplane's protobuf services/messages,
+HTTP routes/client helpers, CLI arguments, settings/config keys and their producers/consumers.
+Start from the system overview: whenever two paths accomplish the same operation, ask why both
+exist. Trace their callers, authority and failure semantics; document a concrete reason for
+intentional coexistence, or identify the canonical path and the migration/removal of the other.
+Different transport names alone do not justify duplicate ways to perform the same work.
+Compare each with the decided owners: Dispatcher for starting/continuing Session work, History
+for retained inventory/history, controller for Sandbox reconciliation, and runner proxy only for
+operations that still belong at the runner. Include both `RunnerGateway.ListSessions` and
+`Runner.ListSessions`; migrating a wrapper call to the proxy is not proof that the underlying RPC
+should survive.
+
+Deliver an evidence-backed inventory in component docs: surface, purpose, real callers and writers,
+intended replacement, keep/migrate/delete/decision disposition, and removal prerequisites. Trace
+tests, generated schemas/clients, deployment config, templates and VM wheels as well as production
+code; distinguish real runtime callers from fixtures. Audit obsolete request/response fields,
+duplicated command envelopes, identity/default overrides and accepted-unused flags, not just RPC
+names. Do not infer that a field is dead merely because one client omits it or stale data still
+contains it.
+
+Create specific unfinished migration/retirement nodes for confirmed findings, through deletion of
+old clients, receiver methods, fields, settings, BUILD targets and obsolete tests. Keep pending
+contract decisions explicit. Receiver removal waits for all caller images; writer changes wait
+for compatible readers, including separately pinned guest wheels. Stored-data removal is separate
+and owner-approved, with authored data preserved. Batch straightforward dead-surface cleanup;
+separate behavior changes and data drops. This audit does not block already-specified independent
+migrations or authorize broad compatibility shims, language rewrites or speculative replacement RPCs.
+
+### `RUNNER_LIST_SESSIONS_RETIRE` — remove the live inventory RPC if its remaining purposes migrate
+
+**Blocked on the surface audit's disposition and migration of its real callers.** The Sandbox table
+is moving to retained History inventory. Explicitly assess whether the underlying runner
+`ListSessions` RPC can go too, not only its `RunnerGateway` wrapper. Remaining uses include app
+archive safety/native resume, notification membership and test-driver quiesce ordering. History's
+eventual harness state and namespace/name association do not by themselves preserve authoritative
+live-state or Sandbox UID/owner checks. Settle those requirements and their intended owner before
+replacing or deleting the read; do not invent a differently named inventory RPC just to claim removal.
+Migrate callers and tests, verify pinned caller images no longer send it, then remove the service
+method, request/response messages and unused fields/helpers via normal generation. The separate
+wrapper retirement remains valid even if the audit finds a narrowly justified runner read must stay;
+record that decision and remove this conditional node if so.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
@@ -1150,14 +1193,53 @@ migration and `Command` stays as that event's field type.
 
 ### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
 
-**Blocked on the Dispatcher-only app image rollout and `APP_NATIVE_RESUME_CUTOVER`.**
-Audit and migrate every remaining wrapper read caller (including notification `ListSessions`) to
-History Service or the runner proxy, then pin those caller images before deleting the RPC receiver.
+**Blocked on the read-caller migration and route-retirement nodes above, the Dispatcher-only app
+image rollout and `APP_NATIVE_RESUME_CUTOVER`.** These caller migrations can proceed independently;
+the native-resume decision does not block migrating reads. Pin all migrated caller images before
+deleting the RPC receiver, and search for remaining wrapper callers before removal.
 App and notification command sends go through Dispatcher; read-only calls may use the proxy. Delete the
 `RunnerGateway` service and proto, its client, `session_registry.py`, `destinations.py`,
 `session_lifecycle.py` and `wire.py`, obsolete client settings, projected tokens and network rules
 whose final callers are gone. Delete associated BUILD targets and tests; retain the control stream
 and runner proxy. This makes `SANDBOX_DATABASE_RENAME` moot; delete that deferred node here.
+
+### `APP_SESSION_LIST_ROUTE_RETIRE` — remove the runner-backed Sandbox table read
+
+**Blocked on `SUSPENDED_SESSION_INVENTORY` and its app image rollout.** The old browser path is
+`client.listSessions` → `GET /sandboxes/{name}/sessions` → `RunnerBridge.list_sessions` →
+`RunnerGateway.ListSessions` → tunneled `Runner.ListSessions`. Once the table uses the retained
+History inventory and its caller image is deployed, delete the unused HTTP GET route and its
+schema/client/test surface. Preserve the POST opening route and opening-status read. Generate
+OpenAPI/clients through `localgen/run.sh`; do not hand-edit generated files. The bridge method stays
+only until the separate archive and native-resume migrations remove its final callers.
+
+### `APP_SESSION_DESTINATION_HISTORY` — remove the app's registry lookup
+
+**Candidate.** `RunnerDirectory.sandbox_of` still calls wrapper `BatchGetSessionSandboxes` for
+command and native-resume routing. Resolve retained Session metadata through History instead,
+preserving missing-history refusals and existing authorization. History already carries the Sandbox
+namespace/name; verify deleted/recreated Sandbox behavior rather than treating the name as proof of
+incarnation identity. Remove the app's unused registry lookup client after the migration and track
+its deployed caller image before wrapper retirement.
+
+### `APP_ARCHIVE_RUNNER_READ_MIGRATION` — preserve live archive safety without the wrapper
+
+**Candidate.** `archive_thread` reads `RunnerBridge.list_sessions` to reject archiving a running
+harness while its Pod exists. History is eventually consistent and cannot alone prove that a
+harness has stopped. Preserve this check through the runner proxy, plus the existing refusal when
+a Pod exists but cannot be checked. A stopped/deleted Sandbox still allows retaining/archiving its
+history. Test stale History saying stopped while the live runner says running, and runner loss.
+Remove the wrapper call; do not weaken the guard to simplify the table migration.
+
+### `NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION` — retire the subscription wrapper read
+
+**Candidate.** `NotificationService.subscribe` uses wrapper `ListSessions` after checking the current
+Sandbox UID and owner. Move that read to the runner proxy while preserving those checks, or use
+History only if its retained association can prove the same identity boundary. History's current
+Sandbox reference has namespace/name, not UID/owner, so a matching name alone is insufficient.
+Test owner mismatch, replaced Sandbox UID and a Session belonging elsewhere. Remove the obsolete
+notification Gateway client/config once no callers remain; config removals precede settings-reader
+removals and receiver deletion waits for the new notification image.
 
 ### `GATEWAY_DATABASE_DROP` — drop the `sandbox_commands` database
 
