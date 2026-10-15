@@ -32,6 +32,9 @@ def automation_chart(app: App) -> Chart:
         # The automation reads only this source's URL, branch and credentials and clones on its own;
         # nothing reads the fetched artifact, so frequent polling just re-downloads the repo.
         source_interval="24h",
+        # Same ~519 MB clone as every other ducktape source, and `sparse_checkout` above does not
+        # shrink it. See ducktape_flux.CLONE_TIMEOUT.
+        source_timeout=ducktape_flux.CLONE_TIMEOUT,
     )
     return chart
 

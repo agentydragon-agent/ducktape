@@ -27,6 +27,13 @@ SOURCE_NAME = "ducktape"
 # This repository and the branch Flux deploys, for every GitRepository that checks it out.
 REPOSITORY_URL = "https://github.com/agentydragon/ducktape.git"
 BRANCH = "devel"
+# Clone timeout for the `GitRepository` objects this generator writes for this repository. A bare clone
+# is ~519 MB and takes ~60 seconds, which is exactly the `GitRepository.spec.timeout` default, so leaving
+# it unset makes every fetch a race the source usually loses. One value because all four sources of this
+# repository clone the same history; the full measurement and reasoning are on the `source`
+# GitRepository below, and the hand-written bootstrap source carries the same 5m in
+# cluster/k8s/flux/flux-system/gotk-sync.yaml.
+CLONE_TIMEOUT = "5m"
 TF_GITOPS_ROOT = "tf/gitops"  # tofu-controller Terraform modules (terraform.py)
 _READER = "ducktape-flux-reader"
 _FINANCE_READER_SECRET = "finance-agent-flux-read-credentials"
@@ -124,7 +131,7 @@ def chart(app: App) -> Chart:
         "source",
         metadata=ApiObjectMetadata(name=SOURCE_NAME, namespace=NAMESPACE),
         interval="1m",
-        # 5m, because a clone of this repository does not fit in the 60s that
+        # `CLONE_TIMEOUT`, because a clone of this repository does not fit in the 60s that
         # `GitRepository.spec.timeout` defaults to.
         #
         # Measured on 2026-10-15: a bare clone is ~519 MB and takes ~60 seconds, so under the
@@ -143,11 +150,11 @@ def chart(app: App) -> Chart:
         # fit until someone does.
         #
         # 5m is an order of magnitude over the measurement while still bounding one attempt --
-        # `interval` stays 1m, so this only lengthens the ceiling, not the polling. No
-        # `GitRepository` in this repository set a clone timeout before this one; the 2m-30m
-        # timeouts elsewhere are `Kustomization.spec.timeout`, how long an apply may take, which
-        # is a different knob answering a different question.
-        timeout="5m",
+        # `interval` stays 1m, so this only lengthens the ceiling, not the polling. Nothing set a
+        # clone timeout before this one; the 2m-30m timeouts elsewhere in the tree are
+        # `Kustomization.spec.timeout`, how long an apply may take, which is a different knob
+        # answering a different question.
+        timeout=CLONE_TIMEOUT,
         ref=GitRepositorySpecRef(branch=BRANCH),
         sparse_checkout=[
             f"{HAND_WRITTEN_ROOT}/",

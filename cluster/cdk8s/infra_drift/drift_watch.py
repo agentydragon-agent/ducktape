@@ -51,6 +51,11 @@ def chart(app: App) -> Chart:
         ),
         interval="10m",
         ref=GitRepositorySpecRef(branch=ducktape_flux.BRANCH),
+        # This source clones the whole repository history like any other ducktape source, so it
+        # races the same 60s default: it failed `unable to clone ... context deadline exceeded` on
+        # 2026-10-15. Its `ignore` pattern below does not help, because `ignore` filters the
+        # checkout after the fetch, not the transfer. Reasoning in ducktape_flux.CLONE_TIMEOUT.
+        timeout=ducktape_flux.CLONE_TIMEOUT,
         url=ducktape_flux.REPOSITORY_URL,
         # `ignore` rather than `sparseCheckout`: nebula.tf's locals read the repo-root
         # nebula-mesh.json, and sparseCheckout takes directories only. Exclude-all then

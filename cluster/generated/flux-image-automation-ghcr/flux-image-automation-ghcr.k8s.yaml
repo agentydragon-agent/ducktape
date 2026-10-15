@@ -14,6 +14,7 @@ spec:
     name: ducktape-automation-github-app
   sparseCheckout:
     - cluster/k8s/
+  timeout: 5m
   url: https://github.com/agentydragon/ducktape.git
 ---
 apiVersion: image.toolkit.fluxcd.io/v1
