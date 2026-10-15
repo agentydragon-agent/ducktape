@@ -1,6 +1,6 @@
-load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
-load("//devinfra/oci:py_image.bzl", "py_image_bytecode_layer", "py_image_entrypoint", "py_image_env")
+load("//devinfra/oci:py_image.bzl", "py_image_bytecode_layer", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = [
@@ -180,6 +180,7 @@ py_library(
         "//agentplane:grpc_calls",
         "//agentplane:kubernetes_watch",
         "//agentplane:subjects",
+        "//agentplane/app/testing:dispatcher",
         "//agentplane/app/testing:egress_proxy",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:replication_source",
@@ -309,21 +310,22 @@ py_test(
         "//agentplane:policy_sets",
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
+        "//agentplane/app/testing:dispatcher",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/testing:system_status",
         "//agentplane/app/threads:bridge",
+        "//agentplane/app/threads:dispatcher_client",
         "//agentplane/app/threads:runner_directory",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads/view:content",
         "//agentplane/egress:decisions_client",
         "//agentplane/postgres:wakeups",
-        "//agentplane/proto:runner_gateway_pb2",
-        "//agentplane/proto:runner_gateway_pb2_grpc",
+        "//agentplane/proto:command_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:session_dispatcher_pb2",
+        "//agentplane/proto:session_dispatcher_pb2_grpc",
         "//agentplane/runner:harness",
-        "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway/testing:backend",
         "//agentplane/sandboxes:inventory",
         "//agentplane/sandboxes/testing:fake_inventory",
@@ -379,6 +381,9 @@ py_test(
         "//:conftest",
         "//agentplane:changes",
         "//agentplane:grpc_calls",
+        "//agentplane:grpc_serving",
+        "//agentplane:subjects",
+        "//agentplane/app/testing:dispatcher",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/testing:system_status",
@@ -402,6 +407,7 @@ py_test(
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandboxes_pb2",
         "//agentplane/proto:session_dispatcher_pb2",
+        "//agentplane/proto:session_dispatcher_pb2_grpc",
         "//agentplane/runner",
         "//agentplane/runner:harness",
         "//agentplane/runner:session",
@@ -413,6 +419,7 @@ py_test(
         "//agentplane/sandboxes/testing:fake_inventory",
         "//util:net",
         "//util/testing:asgi",
+        "@pypi//grpcio",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -440,6 +447,7 @@ py_library(
         "//agentplane:grpc_calls",
         "//agentplane:kubernetes_watch",
         "//agentplane/app/threads:bridge",
+        "//agentplane/app/threads:dispatcher_client",
         "//agentplane/app/threads:runner_directory",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads:summaries",
@@ -466,7 +474,7 @@ aspect_py_binary(
     deps = [":main"],
 )
 
-py_image_layer(
+app_layers_oci_tars = shared_py_image_layers(
     name = "app_layers",
     binary = ":app_image_bin",
     group = "1000",
@@ -477,7 +485,7 @@ py_image_bytecode_layer(
     name = "app_bytecode",
     layers = [
         ":app_layers_default",
-        ":app_layers_interpreter",
+        "//devinfra/oci/python_runtime:runtime_interpreter_layer",
         ":app_layers_packages",
     ],
 )
@@ -491,8 +499,7 @@ oci_image(
         extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
     ),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [
-        ":app_layers",
+    tars = app_layers_oci_tars + [
         ":app_bytecode",
         "//third_party/debian_slim:cacerts",
     ],
@@ -527,7 +534,7 @@ aspect_py_binary(
     deps = [":database_migrate"],
 )
 
-py_image_layer(
+migration_layers_oci_tars = shared_py_image_layers(
     name = "migration_layers",
     binary = ":migration_image_bin",
     group = "1000",
@@ -540,7 +547,7 @@ oci_image(
     entrypoint = py_image_entrypoint("migration_image_bin"),
     env = py_image_env(binary_name = "migration_image_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":migration_layers"],
+    tars = migration_layers_oci_tars,
     user = "1000:1000",
     visibility = ["//agentplane/x/k3s_env:__pkg__"],
 )
@@ -565,6 +572,7 @@ py_test(
         ":settings",
         ":shutdown",
         "//:conftest",
+        "//agentplane/app/testing:dispatcher",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/testing:system_status",
@@ -723,10 +731,10 @@ py_test(
         ":sandbox_models",
         ":shutdown",
         "//:conftest",
-        "//agentplane:grpc_calls",
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/action_service:operator_oidc_settings",
+        "//agentplane/app/testing:dispatcher",
         "//agentplane/app/testing:egress_proxy",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:model_test_data",
@@ -993,6 +1001,7 @@ py_test(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/runner_gateway:client",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
@@ -1499,6 +1508,7 @@ py_test(
         "//:conftest",
         "//agentplane:grpc_calls",
         "//agentplane:sandbox_resource",
+        "//agentplane/app/testing:dispatcher",
         "//agentplane/app/testing:history",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:runner_directory",
@@ -1507,6 +1517,7 @@ py_test(
         "//agentplane/postgres:wakeups",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/runner",
         "//agentplane/runner/testing:launches",
         "//agentplane/runner/testing:scripted_model",

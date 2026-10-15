@@ -124,31 +124,31 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 ### Replica-safe command delivery
 
 Any app replica relays `POST /threads/{id}/commands` (generated `Command` payloads with stable
-command ids). While `session_dispatcher_target` is unset, the app relays commands to the Runner
-Gateway's `SubmitCommand` through the Thread's Sandbox control Service, which delivers over the
-runner control stream ([command admission](../runner_gateway/API.md#sessions-and-commands)). The
-runner serializes admission and deduplicates retries. HTTP success returns the runner's exact,
-durable `CommandAdmitted` receipt; it does not wait for the History Service to fold it or claim
-native execution. The Thread event stream and projected sync publish the archived entry and eventual
-outcome. After an unconfirmed delivery the browser keeps Retry and never Cancel, because the runner
-may have received it.
+command ids). The required `session_dispatcher_target` sends each command to the Session Dispatcher,
+which stores it and returns its durable `Dispatch`, or immediately delivers an interrupt. A Dispatcher
+failure is returned to the caller; the app has no direct Runner Gateway command path. An exact retry
+already present in the History archive returns its `CommandAdmitted` entry without another service
+call. Otherwise the browser keeps Retry and never Cancel after an unconfirmed result, because the
+Dispatcher may have stored the command despite a lost reply.
 
-With the Dispatcher target configured in testing and staging, the same endpoint stores the command
-in the Session Dispatcher and returns its durable `Dispatch`. A configured Dispatcher failure is
-returned to the caller; it never falls back to direct Gateway submission. The app reads later state
-at `GET /threads/{id}/commands/{command_id}/dispatch`; queued and delivering are distinct from runner
-admission, and neither admission nor `HARNESS_CONFIRMED` is presented as an effect. History remains
-the authority for command outcomes. The browser retains the command locally until History projects
-its admission or command row; the app adds no command queue. Deployments that leave the optional
-Dispatcher target unset retain the Runner Gateway command path during rollout.
+The app reads later state at `GET /threads/{id}/commands/{command_id}/dispatch`; queued and delivering
+are distinct from runner admission, and neither admission nor `HARNESS_CONFIRMED` is presented as an
+effect. History remains the authority for command outcomes. The browser retains the command locally
+until History projects its admission or command row; the app adds no command queue. Deploy the Session
+Dispatcher and authorize the app ServiceAccount before rolling out an app image that requires this
+setting.
 
 The app continues to list Sessions and explicitly resume retained native Sessions through the
-Runner Gateway. New Session openings have a separate default-off
-`session_dispatcher_open_sessions` gate: while it is off, the app opens through the Gateway; when it
-is on, it submits the complete Session spec to the Dispatcher. A `SessionOpening` reports queued,
-delivering, runner-admitted, or failed state, and `GET /sandboxes/{name}/sessions/{id}/opening`
-checks that durable result. Admission does not mean the History Service has projected a Thread yet.
-These paths have separate rollout and retirement gates.
+Runner Gateway. Every new Session opening is submitted to the Dispatcher with the complete Session
+spec. A `SessionOpening` reports queued, delivering, runner-admitted, or failed state, and
+`GET /sandboxes/{name}/sessions/{id}/opening` checks that durable result. Admission does not mean the
+History Service has projected a Thread yet. `session_dispatcher_open_sessions` remains accepted in
+app settings for rollout compatibility, but it is ignored: opening always uses the Dispatcher. Remove
+that key from generated ConfigMaps only after the unconditional app image is pinned in both
+environments; remove the accepted setting field only after both ConfigMaps reconcile without it.
+Both testing and staging activate queued openings when Flux pins this app image. The operator
+approved this combined rollout; bounded queued-opening and Thread-projection acceptance follow
+the image rollout in each environment.
 
 The app copies no runner events and folds none. Each runner pushes its Sessions' events to the
 History Service's ingress, and the History Service folds them under per-Session leases

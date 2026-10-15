@@ -21,13 +21,13 @@ from tenacity import retry, retry_if_exception, stop_after_attempt
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_SETS_PLURAL
-from agentplane.proto import runner_pb2
 from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest, Sandbox
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.sandboxes.console import stream_console
 from agentplane.sandboxes.errors import (
     InvalidSandboxError,
     SandboxConflictError,
+    SandboxModeUnknownError,
     SandboxNotFoundError,
     SandboxQuiescingError,
     SandboxRunningError,
@@ -123,13 +123,8 @@ class SandboxInventory(SandboxReader):
             raise InvalidSandboxError("valid name and template are required")
         if spec.HasField("preset") and not re.fullmatch(r"[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?", spec.preset):
             raise InvalidSandboxError("preset must be a valid label value")
-        if max(len(spec.bootstrap), len(spec.session_defaults.setup_script)) > 65_536:
+        if len(spec.bootstrap) > 65_536:
             raise InvalidSandboxError("script exceeds 65536 characters")
-        if spec.session_defaults.HasField("harness") and spec.session_defaults.harness not in (
-            runner_pb2.HARNESS_CLAUDE,
-            runner_pb2.HARNESS_CODEX,
-        ):
-            raise InvalidSandboxError("unsupported harness")
         existing = await self.retry(spec, caller=caller)
         if existing is not None:
             return existing
@@ -153,11 +148,6 @@ class SandboxInventory(SandboxReader):
                 "template": spec.template,
                 "running": True,
                 "policySets": sorted(policy_sets),
-                **(
-                    {"sessionDefaults": MessageToDict(spec.session_defaults)}
-                    if spec.HasField("session_defaults")
-                    else {}
-                ),
                 **({"bootstrap": spec.bootstrap} if spec.bootstrap else {}),
             },
         }
@@ -192,8 +182,9 @@ class SandboxInventory(SandboxReader):
     ) -> bool:
         """Request the shared guarded resume only when this Sandbox explicitly allows send wakes.
 
-        `False` means the durable command should stay queued. A true result can still be waiting for
-        the controller to create a Ready incarnation; callers must continue watching the Sandbox.
+        `False` means wake-on-send is disabled. A true result can still be waiting for the controller
+        to create a Ready incarnation; callers must continue watching the Sandbox. An unreported
+        controller mode raises `SandboxModeUnknownError` without marking a wake accepted.
         """
         sandbox = await self._incarnation(name, uid=uid)
         if sandbox.metadata.deletion_timestamp is not None:
@@ -202,6 +193,8 @@ class SandboxInventory(SandboxReader):
             return False
         if sandbox.running_reason() == "Quiescing":
             raise SandboxQuiescingError(name)
+        if sandbox.operating_mode is None:
+            raise SandboxModeUnknownError(name)
         if sandbox.operating_mode is OperatingMode.SUSPENDED:
             await self._request_resume(sandbox, name=name, uid=uid, before_resume=before_resume)
         return True
@@ -215,6 +208,8 @@ class SandboxInventory(SandboxReader):
         sandbox = await self._incarnation(name, uid=uid)
         if sandbox.metadata.deletion_timestamp is not None:
             return
+        if sandbox.operating_mode is None:
+            raise SandboxModeUnknownError(name)
         if sandbox.operating_mode is OperatingMode.RUNNING:
             raise SandboxRunningError(name)
         await self._custom_objects.delete_namespaced_custom_object(

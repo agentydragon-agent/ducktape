@@ -12,11 +12,11 @@ from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.policy_sets import POLICY_SETS_PLURAL
-from agentplane.proto.runner_pb2 import HARNESS_CODEX
-from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest, SandboxPhase, SessionDefaults
+from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest, SandboxPhase
 from agentplane.sandbox_resource import PRESET_LABEL, SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandboxes.errors import (
     SandboxConflictError,
+    SandboxModeUnknownError,
     SandboxNotFoundError,
     SandboxQuiescingError,
     SandboxRunningError,
@@ -76,6 +76,7 @@ async def test_list_keeps_each_resource_status_separate(
     assert MessageToDict(live.status) == {
         "conditions": [_READY],
         "incarnation": {"name": "live", "uid": "test-pod-live"},
+        "operatingMode": "Running",
     }
     pod_status = MessageToDict(live.pod.status)
     assert (pod_status["phase"], pod_status["podIP"]) == ("Running", "10.0.0.7")
@@ -105,15 +106,11 @@ async def test_get_reads_one_sandbox_and_refuses_missing_ones(
 async def test_create_writes_a_running_sandbox_of_the_template(
     inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    spec = CreateSandboxRequest(
-        name="my-task",
-        template=TEMPLATE,
-        session_defaults=SessionDefaults(harness=HARNESS_CODEX, model="test-model"),
-        bootstrap="printf boot",
-    )
+    spec = CreateSandboxRequest(name="my-task", template=TEMPLATE, bootstrap="printf boot")
     view = await inventory.create(spec, policy_sets={"test-b", "test-a"}, caller=CALLER)
 
-    assert (view.name, view.operating_mode) == ("my-task", OperatingMode.RUNNING)
+    assert view.name == "my-task"
+    assert not view.HasField("operating_mode")
     assert (view.service_account.name, view.binding.bootstrap) == ("my-task", "printf boot")
     stored = custom_objects.objects[(SANDBOXES_PLURAL, "my-task")]
     assert CREATE_INTENT in stored["metadata"]["annotations"]
@@ -121,7 +118,6 @@ async def test_create_writes_a_running_sandbox_of_the_template(
         "template": TEMPLATE,
         "running": True,
         "policySets": ["test-a", "test-b"],
-        "sessionDefaults": {"harness": "HARNESS_CODEX", "model": "test-model"},
         "bootstrap": "printf boot",
     }
 
@@ -166,9 +162,15 @@ async def test_suspend_and_resume_patch_running(
 
     live = await inventory.get("live")
     await inventory.suspend("live", uid=live.uid)
+    # The app changed desired state; only the controller changes effective mode.
+    suspended = await inventory.get("live")
+    assert suspended.operating_mode == OperatingMode.RUNNING
+    custom_objects.objects[(SANDBOXES_PLURAL, "live")]["status"]["operatingMode"] = "Suspended"
     suspended = await inventory.get("live")
     await inventory.resume("live", uid=live.uid)
     await inventory.resume("live", uid=live.uid)
+    assert (await inventory.get("live")).operating_mode == OperatingMode.SUSPENDED
+    custom_objects.objects[(SANDBOXES_PLURAL, "live")]["status"]["operatingMode"] = "Running"
     resumed = await inventory.get("live")
 
     assert custom_objects.patches == [
@@ -200,6 +202,29 @@ async def test_published_operating_mode_overrides_spec_running(
     assert live.operating_mode == OperatingMode.SUSPENDED
     await inventory.begin_teardown("live", uid=live.uid)
     assert custom_objects.deleted == [(SANDBOXES_PLURAL, "live")]
+
+
+async def test_unknown_mode_cannot_be_deleted_or_woken(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+) -> None:
+    _populate_one_of_each_state(custom_objects, core_v1)
+    fresh = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
+    fresh["status"].pop("operatingMode")
+    fresh["spec"]["wakeOnSend"] = True
+    view = await inventory.get("live")
+    before_resume_calls: list[int] = []
+
+    async def before_resume(generation: int) -> None:
+        before_resume_calls.append(generation)
+
+    assert not view.HasField("operating_mode")
+    with pytest.raises(SandboxModeUnknownError):
+        await inventory.begin_teardown("live", uid=view.uid)
+    with pytest.raises(SandboxModeUnknownError):
+        await inventory.wake_for_send("live", uid=view.uid, before_resume=before_resume)
+    assert before_resume_calls == []
+    assert custom_objects.deleted == []
+    assert custom_objects.patches == []
 
 
 async def test_resume_wakes_an_idle_suspended_sandbox_by_bumping_the_generation(
@@ -388,10 +413,15 @@ async def test_concurrent_creates_share_one_sandbox(
     assert len([key for key in custom_objects.objects if key[0] == SANDBOXES_PLURAL]) == 1
 
 
-async def test_deleted_name_is_reusable_but_not_the_old_uid(inventory: SandboxInventory) -> None:
+async def test_deleted_name_is_reusable_but_not_the_old_uid(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
     spec = CreateSandboxRequest(name="reused", template=TEMPLATE)
     previous = await inventory.create(spec, policy_sets=set(), caller=CALLER)
     await inventory.suspend(previous.name, uid=previous.uid)
+    # Only a controller report, not the app's desired-state patch, proves it is suspended.
+    stored = custom_objects.objects[(SANDBOXES_PLURAL, previous.name)]
+    stored["status"] = {"operatingMode": "Suspended"}
     await inventory.begin_teardown(previous.name, uid=previous.uid)
     assert await inventory.retry(spec, caller=CALLER) is None
     following = await inventory.create(spec, policy_sets=set(), caller=CALLER)

@@ -27,6 +27,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.sandbox_access import SandboxAccess
+from agentplane.app.testing.dispatcher import GatewayBackedDispatcher
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.replication_source import Placements
@@ -135,7 +136,7 @@ def summaries(history_client: HistoryServiceClient) -> Summaries:
 
 @pytest.fixture
 def store(engine: AsyncEngine, summaries: Summaries, gateway: RunnerGatewayClient) -> ThreadStore:
-    return ThreadStore(engine, summaries, gateway=gateway)
+    return ThreadStore(engine, summaries)
 
 
 @pytest.fixture
@@ -204,7 +205,7 @@ async def replica(
     async with managed_async_engine(connect(db_url)) as engine:
         summaries = Summaries(history_client)
         yield Replica(
-            ThreadStore(engine, summaries, gateway=gateway),
+            ThreadStore(engine, summaries),
             SeededEventLogStore(
                 engine,
                 history=event_logs.history,
@@ -261,10 +262,20 @@ def runners(live_index: LiveIndex, gateway: RunnerGatewayClient) -> RunnerDirect
 
 
 @pytest.fixture
+def dispatcher(runners: RunnerDirectory, event_logs: SeededEventLogStore) -> GatewayBackedDispatcher:
+    """The Dispatcher interface for app tests whose scenarios need a live local runner."""
+    return GatewayBackedDispatcher(runners, event_logs)
+
+
+@pytest.fixture
 def bridge(
-    runners: RunnerDirectory, event_logs: SeededEventLogStore, content: ContentStore, database_updates: WakeupListener
+    runners: RunnerDirectory,
+    dispatcher: GatewayBackedDispatcher,
+    event_logs: SeededEventLogStore,
+    content: ContentStore,
+    database_updates: WakeupListener,
 ) -> RunnerBridge:
-    return RunnerBridge(runners=runners, event_logs=event_logs, content=content)
+    return RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher)
 
 
 @pytest.fixture
