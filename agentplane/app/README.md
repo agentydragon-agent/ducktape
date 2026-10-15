@@ -1,10 +1,11 @@
 # Agentplane integration app
 
-The human-facing frontend over Agentplane's services: a FastAPI service that manages sandboxes
-through the Kubernetes API as the requesting operator, and runner sessions through the Runner Gateway, reads their archived
-Session history and Threads (each Session's conversation projection) from the History Service, and
-synchronizes selected rows and content to the browser through authenticated Electric endpoints. It also presents Actions, operator
-decisions and Connection consent.
+The human-facing frontend over Agentplane's services: a FastAPI service that manages Sandboxes
+through the Kubernetes API as the requesting operator, opens Sessions and submits commands through
+the Session Dispatcher, and uses the Runner Gateway for UID-fenced live checks and explicit native
+resume. It reads archived Session history and Threads (each Session's conversation projection) from
+the History Service and synchronizes selected rows and content to the browser through authenticated
+Electric endpoints. It also presents Actions, operator decisions and Connection consent.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
 ## Sandbox lifecycle ownership
@@ -23,9 +24,11 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
 app endpoint. The shared `agentplane/sandboxes` library owns Sandbox request construction; the app uses
-it directly as the requesting operator. The [Runner Gateway](../runner_gateway/README.md) owns runner Sessions and commands; the
-[History Service](../history_service/README.md) owns the Session Event archive and its Thread fold;
-the app is a client of all three.
+it directly as the requesting operator. The [Session Dispatcher](../session_dispatcher/README.md)
+owns opening and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
+runner control stream, a legacy partial placement registry and authorized live runner access; the
+[History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.
+The app is a client of each service for its distinct operation.
 Notifications depends on that backend and Actions, not this app. The app's own state is browser
 sessions and its `thread` table: each Thread, keyed by its Session's ID, with what an operator sets
 on it (name, archived); like any state the app holds, these are candidates to move into a dedicated
@@ -33,7 +36,7 @@ service ([principles](../docs/principles.md#composable-services-not-a-platform-y
 
 The current bridge's session-scoped runner attachment is implementation state, not
 the desired product model. [Thread, runner, and harness layering](../docs/thread_layering.md) is
-the authoritative design for submission durability, the app queue decision,
+the authoritative design for Dispatcher submission receipts, runner admission, native effects,
 multi-session Thread history, and folded/Raw projections.
 
 ```sh
@@ -56,8 +59,10 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   resolution. Preset names stop at the app boundary; Kubernetes and the runner receive resolved
   fields.
 - Sandbox provisioning uses the shared `agentplane/sandboxes` inventory directly as the requesting
-  operator; Sessions and commands are reached through `RunnerGatewayClient`. The app reads Kubernetes
-  projections for UI updates.
+  operator. Session openings and commands use `SessionDispatcherClient`; the Sandbox control client
+  reaches current-incarnation live checks and explicit native resume through the Runner Gateway.
+  The app reads Kubernetes projections for UI updates. Its Gateway placement API client has no
+  production caller after #10622, pending pinned-caller review.
 - `egress_access.py`: egress-policy/binding projections for the UI, and the operator's grants and
   revocations of `PolicyBinding`s, written through the Kubernetes API by the app itself. Bindings remain
   desired-state grants, with expiry/revocation per binding; Flux-owned and Sandbox-controlled bindings
@@ -343,8 +348,10 @@ the rest of the Deployments' 60-second grace period is for. No preStop delay con
 browser (OIDC session)  /  agent (Kubernetes token)
    |  REST + Electric sync + inventory SSE, through the cluster gateway
 integration app (Deployment, namespace agentplane-staging)
-   |  Kubernetes API              |  gRPC Session API
+   |  Kubernetes API              |  gRPC Dispatcher / live Gateway checks
 Sandbox -> Pod, PVC               v
+                    Session Dispatcher
+                         | runner proxy
                          Runner Gateway
                             |  RunnerControl stream
                     runner process, state dir on the PVC
