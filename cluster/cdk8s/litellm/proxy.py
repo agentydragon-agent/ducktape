@@ -62,6 +62,7 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.litellm import database
 from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.litellm.upstreams import (
+    RUGGED_LOCAL_LLM_ENABLED,
     RUGGED_LOCAL_LLM_KEY_ENV,
     RUGGED_LOCAL_LLM_PORT,
     RUGGED_LOCAL_LLM_SECRET,
@@ -199,8 +200,15 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                     SecretRef(namespace=_NAMESPACE, name="tana-firebase-refresh-token").key("refresh_token"),
                     optional=True,
                 ),
-                _SecretEnv(
-                    RUGGED_LOCAL_LLM_KEY_ENV, SecretRef(namespace=_NAMESPACE, name=RUGGED_LOCAL_LLM_SECRET).key("token")
+                *(
+                    (
+                        _SecretEnv(
+                            RUGGED_LOCAL_LLM_KEY_ENV,
+                            SecretRef(namespace=_NAMESPACE, name=RUGGED_LOCAL_LLM_SECRET).key("token"),
+                        ),
+                    )
+                    if RUGGED_LOCAL_LLM_ENABLED
+                    else ()
                 ),
             ),
             startup_failure_threshold=36,
@@ -420,7 +428,8 @@ class LiteLLMServiceMonitor(Construct):
 def _chart(app: App, mesh: Mesh) -> Chart:
     (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
     chart = Chart(app, spec.name, disable_resource_name_hashes=True)
-    _rugged_local_llm_endpoint(chart, mesh)
+    if RUGGED_LOCAL_LLM_ENABLED:
+        _rugged_local_llm_endpoint(chart, mesh)
     LiteLLMProxy(chart, "proxy", spec)
     LiteLLMServiceMonitor(chart, "monitoring", service(spec))
     return chart
