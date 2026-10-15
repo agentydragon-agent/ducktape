@@ -81,7 +81,7 @@ LLAMA = (
         "Qwen3.5 4B Q4_K_M",
         "qwen3-5-4b-non-reasoning",
         25.755646523068208,
-        "337 input; long-context check pending",
+        "337 input; short tool response",
         (15, 12),
         False,
     ),
@@ -107,6 +107,30 @@ LLAMA = (
         6.203453223815344,
         "131,907 input; recall 3/3; prefill 66.54 min",
         (-160, -32),
+        True,
+    ),
+    LlamaMeasurement(
+        "Qwen3.5 4B Q4_K_M",
+        "qwen3-5-4b-non-reasoning",
+        7.150897542288838,
+        "131,907 input; 3/3; prefill 67.47 min",
+        (-155, -6),
+        True,
+    ),
+    LlamaMeasurement(
+        "Qwen3.5 35B-A3B Q3_K_M",
+        "qwen3-5-35b-a3b-non-reasoning",
+        23.093910424494943,
+        "337 input; short tool response",
+        (-100, 55),
+        False,
+    ),
+    LlamaMeasurement(
+        "Qwen3.5 35B-A3B Q3_K_M",
+        "qwen3-5-35b-a3b-non-reasoning",
+        10.273727667978411,
+        "63,907 input; recall 3/3; prefill 25.12 min",
+        (-100, 20),
         True,
     ),
 )
@@ -214,7 +238,7 @@ def main() -> None:
     ax.set(
         xlabel="Artificial Analysis Intelligence Index v4.3.2 (rugged models: non-reasoning; references: as labeled)",
         ylabel="Measured decode tokens/second on rugged",
-        xlim=(4.8, 16.0),
+        xlim=(4.8, 17.0),
         ylim=(0, 60),
     )
     ax.set_title("Rugged: intelligence × decode speed, with demonstrated context", fontsize=15, pad=18)
@@ -255,7 +279,7 @@ def main() -> None:
                 markerfacecolor="white",
                 color="#8a3994",
                 linestyle="none",
-                label="llama.cpp Vulkan, long retrieval\n27 output tokens, AC, n=1 each",
+                label="llama.cpp Vulkan, long retrieval\n27-42 output tokens, AC, n=1 each",
             ),
         ],
         loc="upper left",
@@ -268,7 +292,7 @@ def main() -> None:
         "Vertical lines show external intelligence only, not local throughput or equivalent coding capability.\n"
         "Hollow markers: AA index is estimated. Scores were not reproduced locally or matched to our quantization.\n"
         "Ollama context labels describe separate tests; llama.cpp labels give the actual prompt sizes (139,264 allocation).\n"
-        "llama.cpp uses Q4_K_M weights / q4_0 KV; tiny output samples are smoke checks, not stable throughput estimates.\n"
+        "llama.cpp uses labelled weight quantization / q4_0 KV; tiny output samples are not stable throughput estimates.\n"
         "No Pareto frontier: power, prompt length, cache settings and workload conditions are not controlled across all points.",
         fontsize=9,
         va="top",
@@ -277,8 +301,8 @@ def main() -> None:
         0.08,
         0.07,
         "Not plotted: NPU TinyLlama ~38.65 tok/s and Qwen2.5-Coder 1.5B 45.76 tok/s lack matching AA rows.\n"
-        "Colibri Qwen3-Coder 30B-A3B lacks decode-phase timing. Qwen3.5 35B-A3B has no completed measurement yet.\n"
-        "Sources: rugged_local_llm.md (2026-10-13/14 runs); docs/artificial_analysis/cited_models_2026_10_14.csv.",
+        "Colibri Qwen3-Coder 30B-A3B lacks decode-phase timing. 35B-A3B passed 64k; 128k stopped at the memory guard.\n"
+        "Sources: rugged_local_llm.md (2026-10-13 through 15 runs); docs/artificial_analysis/cited_models_2026_10_14.csv.",
         fontsize=9,
         va="top",
     )

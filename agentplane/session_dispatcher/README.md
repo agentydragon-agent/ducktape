@@ -4,9 +4,11 @@ The durable queue between senders and a Sandbox's runner. A sender stores a comm
 `Dispatch` back at once; the Dispatcher delivers it through the Runner Gateway's runner proxy once the
 Sandbox is `Ready`, and the sender reads where it is. The manifests use the environment replica profile: two rolling replicas in staging and one
 replica in testing. Testing can temporarily run two replicas for failover acceptance. The delivery loop shards work by
-per-Sandbox Lease and fences claims and settlements with a PostgreSQL ownership generation. Notifications submit through Dispatcher; app commands are being cut over separately. Control design:
-[ADR](../docs/adr_sandbox_session_control.md). Deployment and production-startup acceptance evidence is in
-[the acceptance report](debug/deployment_acceptance.md). The [task DAG](../plans/task_dag.md) tracks rollout acceptance.
+per-Sandbox Lease and fences claims and settlements with a PostgreSQL ownership generation. The app and
+Notifications submit commands through Dispatcher; app lifecycle and live-state callers remain
+separate. Control design: [ADR](../docs/adr_sandbox_session_control.md). The manual queue, replica and
+wake probes are documented in the [acceptance suite](../acceptance/README.md#dispatcher-queue-and-replica-acceptance).
+The [task DAG](../plans/task_dag.md) tracks rollout acceptance.
 
 ## Contract
 
@@ -23,8 +25,10 @@ per-Sandbox Lease and fences claims and settlements with a PostgreSQL ownership 
 - **Opening a Session**: `OpenSession` stores the request keyed by the caller-minted `session_id` and answers
   with a `SessionOpening` in the same delivery states. A retry with the same Sandbox, spec and
   `setup_script` returns the stored record; anything else under that ID is `ALREADY_EXISTS`. Once the Sandbox
-  is `Ready` the runner's idempotent `OpenSession` is called before any of the Session's commands; the
-  runner's `ALREADY_EXISTS` counts as opened when `ListSessions` holds the Session and is `FAILED` otherwise.
+  is `Ready` the runner's idempotent `OpenSession` is called before any of the Session's commands. A
+  matching runner retry returns its existing attachment; `ALREADY_EXISTS` means the runner's retained
+  spec or setup conflicts. The current list-based fallback can misclassify that conflict and is tracked
+  for correction in the [task DAG](../plans/task_dag.md#dispatcher_open_already_exists).
   Openings follow the rules of commands below for deleted Sandboxes, runner statuses and retention.
 - **Queue**: no TTL; at most `max_queued_per_session` queued commands per Session, then
   `RESOURCE_EXHAUSTED`. A command for a Sandbox that does not exist is refused `NOT_FOUND` and stores nothing.

@@ -16,41 +16,38 @@ A **capstone** closes an integrated contract, not another implementation. Solid 
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
-Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
+Dispatch assignments (Rai authorized; Codex reported, 2026-10-15 UTC):
 
-| Worker                     | Assigned work and remaining gates                                                                      |
-| -------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `suspended_session_ui`     | Implement nonblocking runner Quiesce; deployed controllers already accept the optional response stage. |
-| `quiesce_progress`         | Implement suspended composer after merged #10600; verify checkbox app image rollout before activation. |
-| `session_defaults_cleanup` | Fresh VM workspace acceptance passed and fixture cleanup verified; publish evidence and metadata fix.  |
-| Coordinator                | Review and CI, DAG burn-down and deployment gate verification.                                         |
+| Worker                        | Assigned work and remaining gates                                                                                                |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `quiesce_progress`            | Remove Gateway `FindSessions` after reference and pin audit; preserve History `FindSessions` and its retained data.              |
+| `suspended_session_inventory` | Audit RPCs/fields/arguments and overlapping paths; then retire superseded isolated-test scaffolding with its coverage preserved. |
+| `suspended_session_ui`        | Migrate archive and notification wrapper reads; audit data-drop gates and prepare independently reviewable PRs where safe.       |
+| Coordinator                   | Integrate notes cleanup, burn down merged tasks and review rollout and CI evidence.                                              |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
 user experience. Finish reported bugs and red PR checks first. The next dispatch order is
-verified runner compatibility cleanup and `SUSPENDED_COMPOSER`, then `ISOLATED_TEST_SPIKES_RETIRE`
-and `K3S_STARTUP_COST`. The app wake-on-message policy is implemented and deployed; the composer
-still needs its own rollout acceptance. The lifecycle coverage audit found the
-requested eventual outcomes already covered; see the [suite coverage](../x/k3s_env/README.md#lifecycle-coverage).
+verified runner compatibility cleanup, then `ISOLATED_TEST_SPIKES_RETIRE` and
+`K3S_STARTUP_COST`. The per-Sandbox wake-on-message policy and suspended composer are implemented
+and deployed. The lifecycle coverage audit found the requested eventual outcomes already covered;
+see the [suite coverage](../x/k3s_env/README.md#lifecycle-coverage).
 Audit assignment does not waive any image, embedded VM wheel, live-runner or retained-data gate.
 
 These are assignments, not claims that gated work has started. Independent config changes can
 proceed while behavior PRs are under review. Publish drafts as soon as a branch has reviewable work,
 with remaining gates in the body; Rai merges each PR by hand.
 
-Completed rollout evidence: [retirement and activation inventory](../sandboxes/debug/rollout_retirement.md);
-bounded [resume coverage audit](../sandboxes/debug/resume_coverage.md).
-
 ## 1. Session schema and identity follow-up
 
 ```mermaid
 flowchart TD
-    APP_ALEMBIC_SQUASH[Candidate: baseline final app schema]
+    APP_ALEMBIC_SQUASH[Deferred: baseline final app schema]
 ```
 
 ### `APP_ALEMBIC_SQUASH` — consolidate the final app schema
 
-**Candidate.** Baseline only the settled schema,
+**Deferred by the operator; not dispatchable until selected.** Baseline only the settled schema,
 verify fresh and migrated databases and their deployed stamps before pruning old revisions.
 Retain the data-preserving rollback procedure. No Action Service or other database squash implied.
 
@@ -242,7 +239,7 @@ flowchart TD
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
     NATIVE_SUBAGENT_EXPOSURE[Explore: expose native harness children as Sessions]
     NATIVE_SUBAGENT_EXPOSURE -. the native-child boundary it informs .-> MULTIAGENT_MODEL
-    GATEWAY_WRAPPER_RETIRE[Session registry goes, section 12] -. related .-> NATIVE_SUBAGENT_EXPOSURE
+    GATEWAY_SESSION_REGISTRY_RETIRE[Blocked: retire the registry, section 12] -. related .-> NATIVE_SUBAGENT_EXPOSURE
 ```
 
 ### `MULTIAGENT_MODEL` — shared identity and authority vocabulary
@@ -368,10 +365,12 @@ discovered child has no Sandbox, so read-only addressability depends on `THREAD_
 and `THREAD_CREATE_POLICY` — a child is not "just another Session" for authorization purposes.
 
 **Also in scope: retire the remnants of the dictated model.** The refactor moved Session declaration to
-the runner, but the old model's shape is still visible in the gateway's Session registry
-(`session_registry.py`, deleted by `GATEWAY_WRAPPER_RETIRE` if it lands) and in callers that still ask
-a component other than the runner which Sessions exist. Hunt them as part of this evaluation — not
-now, and not as a separate dispatch — and record each as its own node or as an exit criterion here.
+the runner, but the old shape is still load-bearing: `GATEWAY_SESSION_REGISTRY_RETIRE` records that
+`session_registry.py` and its rows survive because Gateway `ResumeSession` still reads them, and that
+production Dispatcher-opened Sessions are therefore refused by the app's direct-resume path. Treat that
+registry and any caller still asking something other than the runner which Sessions exist as this
+evaluation's cleanup list — find them as part of the exploration, not as a separate dispatch, and record
+each as its own node or as an exit criterion here.
 
 ## 4. VM environment phases
 
@@ -392,59 +391,32 @@ a block StorageClass does not itself make Pod and VM layouts interchangeable. Se
 
 ```mermaid
 flowchart LR
-    VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
-    VM_PROVIDER[Candidate: production provider and API]
-    VM_EGRESS[Blocked: live launcher relay checks]
+    VM_EGRESS[Candidate: live launcher relay checks]
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
-    VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
+    VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
+    VM_PROCESS_ISOLATION[Candidate: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    VM_PROVIDER --> VM_CONTROL_NETWORKING
-    VM_CONTROL_NETWORKING --> VM_LIFECYCLE
-    VM_PROVIDER --> VM_PROCESS_ISOLATION
-    VM_PROVIDER --> VM_LIFECYCLE
-    VM_PROVIDER --> VM_EGRESS
-    VM_PROVIDER --> VM_RAM_SUSPEND
-    VM_GUEST_MEMORY[Candidate: size the VM guest for real builds]
-    VM_GUEST_BUDGET_DERIVE[Blocked: guest budgets derive from the VM spec]
-    VM_GUEST_MEMORY -. the two numbers neither node should author alone .-> VM_GUEST_BUDGET_DERIVE
-    VM_GUEST_MEMORY --> LOCAL_BAZEL
-    VM_GUEST_BUDGET_DERIVE --> VM_PROCESS_ISOLATION
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage, section 7] -. related .-> VM_PROCESS_ISOLATION
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
     VM_EGRESS --> VM_LIFECYCLE
     VM_PROCESS_ISOLATION --> VM_LIFECYCLE
+    VM_GUEST_BUDGET_DERIVE --> VM_PROCESS_ISOLATION
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
+    VM_GUEST_MEMORY[Candidate: size the VM guest for real builds]
+    VM_GUEST_BUDGET_DERIVE[Blocked: guest budgets derive from the VM spec]
+    VM_GUEST_MEMORY -. the two numbers neither node should author alone .-> VM_GUEST_BUDGET_DERIVE
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
+    VM_GUEST_MEMORY --> LOCAL_BAZEL
     SANDBOX_VM_ISOLATION --> KUBEVIRT_EXPERIMENT_RETIRE[Blocked: delete the KubeVirt experiment]
 ```
 
-### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
-
-**Blocked on the VM provider.** Wire
-VM control reachability/authentication to the chosen path. An outbound control stream may remove guest
-control-port exposure and endpoint discovery; retain the independently needed outbound API/credential
-proxy path. State which guest ports, endpoint discovery and network policies the chosen path
-replaces. Image packaging and process-isolation work need not wait for this decision. Verify the
-selected path on the actual VM network, not just a host-loopback transport test.
-The experiment's guest already dials out, but `runtime_acceptance` no longer runs Sessions, setup probes
-or recovery on it: those phases called the runner over a port-forward. They return driven through a
-Runner Gateway.
-
-### `VM_PROVIDER` — production provider API and lifecycle intent
-
-**Candidate.** The Sandbox Controller makes a `VirtualMachine` from a `SandboxTemplate`'s `vm`
-(`agentplane/sandbox_controller/SPEC.md` § VMs), the Runner Gateway accepts its virt-launcher Pod, and
-`agentplane-testing` has the `runner-vm` template (`cluster/cdk8s/agentplane/runner_vm.py`). Left:
-boot a Sandbox on `runner-vm` and open a Session on it. Re-type what is
-worth keeping from draft #8843 (`vm_view` status mapping, DataVolume validation, halted image
-replacement), then close it unmerged; it cannot be rebased.
-
 ### `VM_EGRESS` — check the launcher relay live
 
-**Blocked on the VM provider.** `agentplane-testing` deploys the launcher relay policy
+**Candidate.** `agentplane-testing` deploys the launcher relay policy
 (`cluster/cdk8s/agentplane/launcher_relay.py`), which copies a runner Pod's egress sidecar, routes and
-tokens into the virt-launcher of a VM controlled by one of our Sandboxes. Once the provider creates
-such a VM, check on it: no token reaches the guest; the proxy and each platform route answer the
+tokens into the virt-launcher of a VM controlled by one of our Sandboxes. Production VM creation
+and outbound control are implemented. Verify the remaining security boundaries: no token reaches
+the guest; the proxy and each platform route answer the
 guest at `10.0.2.1`; the relay is ready, which needs the VM's masquerade interface to list ports so
 kubelet's probe on 3129 is not forwarded to the guest; the runner fence admits the launcher and
 another Sandbox's guest cannot reach it; a forged launcher is refused. Do not repeat the entire
@@ -452,8 +424,9 @@ completed prototype matrix or require simultaneous cluster-wide disasters.
 
 ### `VM_PROCESS_ISOLATION` — protect control from harness processes
 
-**Blocked on the provider.** Enforce aggregate memory/process/disk budgets and process-control
-boundaries. Test representative tool/harness termination and bounded exhaustion to establish which
+**Candidate.** The guest already configures runner and harness cgroup budgets
+(`runner/vm.nix`, `runner/cgroups.py`). Finish the process-visibility and control boundaries below,
+and verify the existing limits before adding more mechanisms. Test representative tool/harness termination and bounded exhaustion to establish which
 runner/control state survives and what needs durable recovery. This directly addresses agents
 accidentally killing their own harness; guest or container packaging alone is not that guarantee.
 
@@ -470,11 +443,11 @@ until pods hit the problem. Disk exhaustion is not covered and waits on #4717.
 
 ### `VM_LIFECYCLE` — integrated lifecycle verification
 
-**Blocked on provider, selected control networking, egress and isolation.** Boot the published
-guest (`agentplane-runner-vm-image.yml`) and exercise both harnesses through real service
-routes with retained-state stop/start and a representative replacement; confirm identity, replay and
-cleanup. Automated tests cover restart/concurrency branches. Additional live faults need a concrete
-unresolved platform risk, not a Cartesian product of every component crash and lifecycle operation.
+**Blocked on the remaining egress and isolation checks.** Basic VM creation, Session execution,
+retained-state suspend/resume and replacement are covered by the [acceptance suite](../acceptance/README.md).
+Combine that coverage with the remaining security/isolation results; do not repeat completed live
+runs just to assemble a capstone. Additional live faults need a concrete unresolved platform risk,
+not a Cartesian product of every component crash and lifecycle operation.
 
 ### `SANDBOX_VM_ISOLATION` — VM integration capstone
 
@@ -487,7 +460,9 @@ absence of every imaginable failure, establishes the delivered contract.
 **Blocked on the VM capstone.** Once the production provider covers it, move anything still needed
 (the acceptance driver, if it becomes the VM lifecycle test) into production code, then delete
 `cluster/cdk8s/agentplane/kubevirt_experiment/`, its launcher policy (production's is
-`launcher_relay.py`) and the manifests it generates.
+`launcher_relay.py`) and the manifests it generates. Review stale draft #8843 for any still-useful
+status mapping or validation before closing it unmerged; production VM creation and halted image
+replacement already exist, so they are not prerequisites to implement again.
 
 ### `VM_RAM_SUSPEND` — suspend a VM to disk with its RAM
 
@@ -498,8 +473,17 @@ memory dump or a snapshot with memory) and whether it works with the state volum
 RAM suspension nor live migration today. Check what a resumed guest must redo: the runner's control stream and
 projected tokens (the relay reopens them per request, so rotation alone needs no restart), and the
 clock. Settle first what "seal before suspend" means when the harness keeps running across the suspend
-(`QUIESCE_WITHOUT_POLLING` assumes the Pod sequence). Where storage or the guest cannot carry it, stop/start from the state PVC stays the
+(the current quiesce stops harnesses and seals journals). Where storage or the guest cannot carry it, stop/start from the state PVC stays the
 lifecycle.
+
+### `VM_CONSOLE_DEFERRED_ATTACH` — attach after VM startup makes the console available
+
+**Unscheduled; lower priority, operator report 2026-10-15 PDT.** During VM startup the console tab
+can show `Kubernetes answered 400` and remain disconnected. Treat a not-yet-attachable VM as waiting
+and attach when its lifecycle signals readiness, without reopening the tab. Distinguish startup
+from authorization failure, deleted VM, and another attached client; clean up on tab exit and never
+open competing connections. Keep the existing read-only/no-replay contract. Test the unavailable
+→ attachable transition and cancellation; do not add a periodic polling loop or bigger timeout.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
@@ -508,48 +492,57 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 **Blocked on VM capstone.** Wire Bazelisk, storage and authenticated RBE/cache/BES; set CPU/memory/disk
 budgets and cleanup. Run a representative build/test with the client inside the VM and actions
 remote; check cancellation/cleanup while the harness stays responsive. Installed tools and working
-hosted builds do not authorize local Bazel in agent containers.
+hosted builds do not authorize local Bazel in agent containers. `VM_GUEST_MEMORY` is a second
+prerequisite: no client budget inside the guest is workable until the guest has RAM to budget.
 
 ### `VM_GUEST_MEMORY` — size the VM guest for real builds
 
 **Candidate; operator, 2026-10-15 UTC: 8 GiB requested, and one VM per OVH node is acceptable.** Raise
-`runner-vm`'s guest RAM from 1536Mi (`cluster/cdk8s/agentplane/runner_vm.py`) so a `bbr`/Bazelisk client
-inside the guest has room to compile. Acceptance is not "the template says 8 GiB": a Sandbox booted on
-the new template reports the larger `MemTotal` in the guest, and a representative `bbr build` and
-`bbr test` complete in it without the guest OOM killer firing. `LOCAL_BAZEL` is the intended consumer of
-that evidence and is blocked on it as well as on the capstone.
+`runner-vm`'s guest RAM from 1536Mi (`cluster/cdk8s/agentplane/runner_vm.py`, still 1536Mi with
+`cores: 1` as of 2026-10-15) so a `bbr`/Bazelisk client inside the guest has room to compile.
+Acceptance is not "the template says 8 GiB": a Sandbox booted on the new template reports the larger
+`MemTotal` in the guest, and a representative `bbr build` and `bbr test` complete in it without the guest
+OOM killer firing.
 
 Know where the ceiling is before choosing the number. A guest of `N` costs the launcher Pod roughly
 `N + 240Mi` (guest RAM plus QEMU, disk helpers and the relay), so an 8 GiB guest needs about 8.25 Gi
 free on a `kubevirt.io/schedulable` node — the 8-core hosts fit one each, the largest host about five.
-Check current free memory rather than trusting that; the operator accepts one VM per 8-core host.
+Measure current free memory rather than trusting that; the operator accepts one VM per 8-core host.
 Staging carries **no** `ResourceQuota` or `LimitRange` (`TestingNamespaceResourceLimits` is testing-only,
 by design), so nothing refuses an oversized guest here — an unschedulable one just sits `Pending` on
 `Insufficient memory` rather than failing fast, which is also why testing's 4Gi container max and quota
 have to move with the template or the change fails there instead. The guest sees ~10% less than the
-domain is given (1536Mi yields 1383Mi).
-`cores: 1` is a separate, deliberate choice: 8 GiB on one vCPU is memory-heavy and compute-starved, and
-`docs/vm_sandboxes.md` notes a 1 vCPU guest scans a workspace disk at a fraction of the rate a build
-would like.
+domain is given (1536Mi yields 1383Mi). `cores: 1` is a separate deliberate choice: 8 GiB on one vCPU is
+memory-heavy and compute-starved, and `docs/vm_sandboxes.md` records a 1 vCPU guest reading a workspace
+disk at a fraction of the rate a build would like.
 
 ### `VM_GUEST_BUDGET_DERIVE` — derive the guest's cgroup budgets from the VM's memory
 
-**Blocked on the guest being sized; pair with `VM_PROCESS_ISOLATION`, which owns the boundary.** The
-runner unit's budgets are literals in `agentplane/runner/vm.nix` (`MemoryHigh = "6G"`,
-`MemoryMax = "7G"`, `CPUQuota = "700%"`, `TasksMax = 1024`) while guest RAM is a number in
-`runner_vm.py`. Nothing connects them: today they exceed the whole VM (~4.5x), so the documented rule
-that the guest's cgroups protect the runner from its own harness never engages, and a template bump that
-overshoots them produces a runner unit capped below total guest RAM with nothing left for the kernel,
-journald and virtiofsd — the first over-committed harness then hits the **global** OOM instead of being
-killed as an identifiable subtree. Measured on a 1536Mi guest: `MemoryHigh=6442450944`,
-`MemoryMax=7516192768`, `CPUQuotaPerSecUSec=7s` against 1 vCPU.
+**Blocked on `VM_GUEST_MEMORY`; pair with `VM_PROCESS_ISOLATION`, which owns the boundary and already
+cites these files.** Two places set guest budgets as literals while guest RAM is a third number, and
+nothing connects them:
 
-Derive the budgets at boot or in the runner binary from what the guest actually has —
-`MemTotal`/`memory.max` and the online CPU count — reserving a stated amount for the guest itself, so
-`runner_vm.py` carries one number and the unit follows it. Keep the reserve explicit and testable rather
-than a magic fraction, and prefer failing loudly when the derived value would leave the runner less than
-it needs. Exit evidence: the same image booted at two guest sizes reports budgets that track it, and a
-harness that exhausts memory is killed inside its own subtree with the runner still answering RPCs.
+- the unit in `agentplane/runner/vm.nix`: `MemoryHigh = "6G"`, `MemoryMax = "7G"`, `CPUQuota = "700%"`,
+  `TasksMax = 1024`;
+- the delegated groups in `agentplane/runner/cgroups.py`: aggregate `memory.max` 4 GiB with
+  `cpu.max` 400000/100000 (4 cores) and `pids.max` 768, per-process 3 GiB / 3 cores / 512.
+
+On this 1536Mi / 1 vCPU guest the unit is live — read `memory.max` 7516192768 and
+`cpu.max` 700000 100000 on `agentplane-runner.service`, about 4.5x the whole VM, with
+`memory.current` 1085681664 of it already used — so `VM_PROCESS_ISOLATION`'s "verify the existing limits"
+step will find that the aggregate group cannot reach its declared 4 GiB and the CPU shares are meaningless
+against one core. (The `workloads/` group itself is not readable from inside as the agent user; the 4 GiB
+figure is from the source, not observed. Reading it is part of this node.)
+
+Make the guest's own size the input: at boot or in the runner binary, read `MemTotal`/`memory.max` and
+the online CPU count, subtract a stated reserve for the guest kernel, journald and virtiofsd, and write
+the rest. `runner_vm.py` then carries one number and every budget follows it. Keep the reserve explicit
+and testable rather than a magic fraction, and fail loudly if the derived value would leave the runner
+less than it needs — the dangerous state is a cap so close to guest RAM that the first over-committed
+harness hits the **global** OOM instead of being killed as an identifiable subtree, which is exactly what
+`docs/vm_sandboxes.md`'s "Resource boundary" section says these groups exist to prevent. Exit evidence:
+one image booted at two guest sizes reports budgets that track it, and a harness that exhausts memory
+dies inside its own subtree with the runner still answering RPCs.
 
 ## 5. Independent UI and narrowly scoped service work
 
@@ -620,7 +613,7 @@ automatic triggers require a separate reviewed change. Language rewrites require
 
 ### `ISOLATED_TEST_SPIKES_RETIRE` — remove superseded isolated-test scaffolding
 
-**Candidate; fixture migration and coverage review are the work.** The manual workflow depends on the
+**Assigned; `suspended_session_inventory`, after the surface audit.** The manual workflow depends on the
 maintained `agentplane/x/k3s_env` fixture and its `test_lifecycle` target; do not remove them while
 CI invokes them. Move the retained tests into their owning package and update the workflow first,
 then delete superseded `x/k3s_rbe_spike` or `x/k3s_env` entry points, image-loader paths, BUILD
@@ -640,7 +633,7 @@ immediate deletion of the testing namespace or its volumes.
 
 ```mermaid
 flowchart LR
-    ISOLATED_TEST_SPIKES_RETIRE[Candidate: migrate retained fixtures and remove superseded scaffolding]
+    ISOLATED_TEST_SPIKES_RETIRE[Assigned: migrate retained fixtures and remove superseded scaffolding]
     TESTING_ENVIRONMENT_RETIRE[Decision: coverage replacements before testing retirement]
 ```
 
@@ -652,20 +645,20 @@ observations. New database work follows the task-specific review and rollout req
 
 ```mermaid
 flowchart LR
-    PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
+    PC_EGRESS_CREDENTIALS[Deferred: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
     ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
-    SANDBOX_RBAC[Candidate: bounded deployed grant checks]
-    NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
+    SANDBOX_RBAC[Deferred: bounded deployed grant checks]
+    NOTIFICATION_INGRESS_BOUNDARY[Deferred: public-route security check]
     NETWORK_WORKLOAD_IDENTITY[Unscheduled: network-level workload identity]
     PC_KUBERNETES_POLICY_SET[Unscheduled: public-coder's Kubernetes access as one PolicySet]
 ```
 
 ### `PC_EGRESS_CREDENTIALS` — label public-coder's Action Service caller
 
-**Candidate; verify remaining configuration.** Admit the intended OpenClaw account to the dedicated
+**Deferred by the operator; not dispatchable until selected.** Admit the intended OpenClaw account to the dedicated
 Action Service using its configured namespace and policy bindings. A label alone is not an execution
 grant. Coordinate with the owner of the currently disabled/controlled workload before rollout.
 
@@ -711,14 +704,14 @@ public-coder until `PC_KUBERNETES_POLICY_SET`) stay Flux bindings. Test an allow
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
 
-**Candidate; security-relevant.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
+**Deferred by the operator; not dispatchable until selected.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
 and verify intended versus unrelated scope, including Role edits and credential-use boundaries,
 without recording credentials. Use [agent RBAC](../../cluster/docs/agent_rbac.md) and existing tests;
 only unresolved deployed wiring needs a live check, not a repeat of every already-covered operation.
 
 ### `NOTIFICATION_INGRESS_BOUNDARY` — bounded public-route security check
 
-**Candidate; security-relevant deployment check, not a provider failure drill.** Existing tests
+**Deferred by the operator; not dispatchable until selected.** Existing tests
 cover invalid signatures. Close the remaining route-wiring uncertainty with an unsigned webhook
 request and a private-API request through the public hostname: both must be refused, without
 creating subscriptions or inbox entries. Record the result once; no exhaustive provider matrix.
@@ -756,34 +749,27 @@ flowchart TD
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
-    SANDBOX_IDLE_EXPIRY -. related .-> AGENT_RESUME_NOTICE
+    SANDBOX_IDLE_EXPIRY[Candidate: suspend idle Sandboxes] -. related .-> AGENT_RESUME_NOTICE
+    QUIESCE_RESPONSE_FIELDS_RETIRE[Blocked: controller rollout before deleting obsolete response fields]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
-    RUNNER_QUIESCE_ROLLOUT[In flight: roll out nonblocking Quiesce implementation #10609]
     JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE[Blocked: writer rollout and retained-journal cutoff]
-    RUNNER_QUIESCE_ROLLOUT --> QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: remove old response shape after runner rollout]
-    QUIESCE_WITHOUT_POLLING[In flight: recover stalled seal progress]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
-    SUSPENDED_COMPOSER[In flight: the composer stays enabled while a Session is suspended]
-    VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
-    VM_PROVIDER -. related .-> SANDBOX_SPEC_EDIT
-    QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
-    QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
+    VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
     APP_NATIVE_RESUME_SURFACE[Decision: explicit native-resume UI] --> APP_NATIVE_RESUME_CUTOVER[Blocked: remove direct native resume]
     APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
-    STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE
+    STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
     SANDBOX_IDLE_EXPIRY --> IDLE_SUSPEND_UI_DRIVE[Operator: drive auto-suspend and send-to-resume in staging]
-    SUSPENDED_COMPOSER --> IDLE_SUSPEND_UI_DRIVE
-    VM_PROVIDER -. the VM half of the same drive .-> IDLE_SUSPEND_UI_DRIVE
+    VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
@@ -828,10 +814,10 @@ a generic conversion framework now.
 
 **Unscheduled; operator, 2026-10-13 PDT.** Let the operator change a Sandbox's template, including a
 switch between VM and Pod, from the app, only while the Sandbox is suspended. Each incarnation
-already reads the template as it is then (`SANDBOX_IMAGE_REPLACE`), and no spec is replaced
-automatically; this is the explicit, operator-driven edit. Use the deployed
+already reads the current template ([controller contract](../sandbox_controller/SPEC.md#vms)); no
+spec is replaced automatically; this is the explicit, operator-driven edit. Use the deployed
 [workspace layout contract](../docs/sandbox_storage.md) so a compatible kind switch keeps the
-workspace; `VM_PROVIDER` covers the VM side. Validate the
+workspace. Validate the
 retained state and workspace layouts before replacing a workload. Reject incompatible edits;
 `VOLUME_LAYOUT_CONVERSION` is a separate, much later task and does not block compatible edits. The
 preset the app records on a Sandbox as a label must stay true after the edit.
@@ -857,31 +843,14 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ```mermaid
 flowchart TD
-    VM_PROVIDER[VM provider, section 4] --> SANDBOX_IMAGE_REPLACE[Blocked: replace a VM's runner image between incarnations]
     SANDBOX_GENERIC_SPLIT[Unscheduled: split the generic Sandbox from the runner's sealing]
     RUNNER_IMAGE_LAYERING_DESIGN[Decision: what carries the runner, harnesses and per-template tools]
     SANDBOX_GENERIC_SPLIT -. related .-> RUNNER_IMAGE_LAYERING_DESIGN
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_POD[Blocked: a Pod takes runner and tools from separate images]
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[Blocked: a guest takes runner and tools from separate images]
     RUNNER_LAYERING_VM --> K3S_VM_IMAGE[Blocked: build a lightweight guest disk in Bazel]
-    SANDBOX_IMAGE_REPLACE -. the mechanism a layered VM updates through .-> RUNNER_LAYERING_VM
     K3S_STARTUP_COST[k3s startup cost, section 5] -. related .-> K3S_VM_IMAGE
 ```
-
-### `SANDBOX_IMAGE_REPLACE` — replace a VM's runner image between incarnations
-
-**Blocked on `VM_PROVIDER`; the operator's "pause, replace the image, resume" (2026-10-12 PDT).**
-Pods already behave so: each incarnation reads its `SandboxTemplate` as it starts, and a running Pod
-never changes (`agentplane/sandbox_controller/SPEC.md` § Incarnations), so a new image in the
-template, or a Sandbox switched to another template, applies at the next resume on the same state
-PVC. Left is the same for VMs once our Sandbox has them: the controller rewrites a VM's containerDisk
-only while `runStrategy: Halted`, keeping its state PVC. The state PVC's contents belong to the
-runner (operator, 2026-10-12 08:41 PDT): it versions and migrates them, or reports that it cannot,
-and the controller has no version gate. So of #8843's `ReplaceVmImage` (replaced live in
-the 2026-10-03 run) the Halted-only rewrite carries over,
-and the exact `VmTemplate.state_schema_version` match does not.
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `SANDBOX_GENERIC_SPLIT` — separate the generic Sandbox from the runner's sealing
 
@@ -898,109 +867,108 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `RUNNER_IMAGE_LAYERING_DESIGN` — what carries the runner, the harnesses and the tools
 
-**Decision; operator, 2026-10-13 and 2026-10-15 PDT.** Supersedes `SANDBOX_RUNNER_LAYERING`, which
-the operator marked "very low priority unless easy" on 2026-10-13; the 2026-10-15 framing names the
-property wanted, so re-rank this node rather than inheriting that ranking. Today one artifact carries
-everything, so bumping the runner or a template's installed tools rebuilds and republishes the whole
-VM: `agentplane/runner/container-disk.nix` bakes the runner and both harnesses into the NixOS qcow2
-that KubeVirt boots, and `agentplane/runner/image.nix` does the same for the Pod from a wheel pinned
-in `nix/artifact-pins.json`. Separate the concerns so a platform user supplies an image or definition
-with no runner and no harnesses and the runner side layers them in, and nobody bumps build versions to
-move a runner. State which of these the design must satisfy, in order:
+**Decision; operator, 2026-10-13 and 2026-10-15 PDT.** Supersedes `SANDBOX_RUNNER_LAYERING`, which the
+operator marked "very low priority unless easy" on 2026-10-13; the 2026-10-15 framing names the property
+wanted, so re-rank this node rather than inheriting that ranking. Today one artifact carries everything,
+so bumping the runner or a template's installed tools rebuilds and republishes the whole VM:
+`agentplane/runner/container-disk.nix` bakes the runner and both harnesses into the NixOS qcow2 that
+KubeVirt boots, and `agentplane/runner/image.nix` does the same for the Pod from a wheel pinned in
+`nix/artifact-pins.json`. Separate the concerns so a platform user supplies an image or definition with
+no runner and no harnesses and the runner side layers them in, and nobody bumps build versions to move a
+runner. State which of these the design must satisfy, in order:
 
 - **Independent updates.** Runner and per-template tools move without rebuilding what they sit in.
-- **The thing Pods genuinely cannot give** (operator, 2026-10-15): a workload may use a lot of RAM
-  inside itself, as a Bazel build does, without starving the host node. A VM reserves its guest RAM,
-  so whatever the guest does stays inside it; a Pod's burst behavior is bounded by what the node has
-  left. Say plainly whether layering is meant to reach for that property or whether it stays a
-  VM-only property, because it decides how far to go.
-- **Additive.** New runtime types are added beside the existing ones, not swapped in, so a runtime can
-  be tried without retiring the one that works.
+- **The thing Pods genuinely cannot give** (operator, 2026-10-15): a workload may use a lot of RAM inside
+  itself, as a Bazel build does, without starving the host node. A VM reserves its guest RAM, so what the
+  guest does stays inside it; a Pod's burst is bounded by what the node has left. Say plainly whether
+  layering is meant to reach for that property or whether it stays a VM-only one, because it decides how
+  far to go.
+- **Additive.** New runtime types are added beside the existing ones, not swapped in, so a runtime can be
+  tried without retiring the one that works.
 
 Related to `SANDBOX_GENERIC_SPLIT`: that separates the resource, this separates the image.
 
 **Options worth costing, none chosen.** The operator named the first two; the rest are the field.
 
-- **Extra read-only filesystem image per stage.** Attach the runner and the tools as their own
-  images or disks; the base carries neither. Exactly the decoupling asked for, and Claude Code web
-  already does it: on its Firecracker guest `/opt/claude-code` and `/opt/env-runner` are separate
-  squashfs disks (`/dev/vdb`, `/dev/vdc`) mounted read-only beside a `/dev/vda` root —
+- **Extra read-only filesystem image per stage.** Attach the runner and the tools as their own images or
+  disks; the base carries neither. Exactly the decoupling asked for, and Claude Code web already does it:
+  on its Firecracker guest `/opt/claude-code` and `/opt/env-runner` are separate squashfs disks
+  (`/dev/vdb`, `/dev/vdc`) mounted read-only beside a `/dev/vda` root —
   [web container spec](../../devinfra/claude/web_env/docs/container_spec.md).
 - **Two-stage guest.** A lean stage 1 boots and runs the runner and mounts a stage 2 filesystem; the
   runner jails a forked child into stage 2 and execs Claude or Codex there. Runner lifetime becomes
   independent of the tool tree, at the cost of a pivot or chroot boundary and the work of trusting a
   mounted image.
-- **Stay on KubeVirt, split the disks.** A `containerDisk` is already an OCI image carrying a disk,
-  and `runner_vm.py` already attaches `config` and `trust` as separate volumes, so a three-disk guest
-  (root / runner and harnesses / tools) needs no new mechanism — only the split.
-- **Kubernetes image volumes.** `imageVolumes` mounts an OCI image's filesystem into a Pod volume;
-  the cluster is v1.35, where the feature is GA. This is the direct answer to "this container should
-  mount these 2 images", and beats an init-container copy on every incarnation. Check it against the
-  CRI and storage class actually in use before relying on it.
-- **Init container into a shared volume.** Today's portable form: copy the runner and harnesses from
-  image X into an `emptyDir`. Works everywhere; pays copy time and disk each start.
-- **Firecracker instead of KubeVirt.** The runtime the operator raised as acceptable if it helps:
-  fast boot, small guest, squashfs-friendly, and the shape Claude Code web chose. The cost is a second
-  VMM stack beside KubeVirt with no cluster scheduler for it. The RE under
-  `devinfra/claude/web_env/re/` — including `process_api/src/firecracker_init.rs` — documents what
-  that guest's init actually does and is the closest thing we have to a worked example.
+- **Stay on KubeVirt, split the disks.** A `containerDisk` is already an OCI image carrying a disk, and
+  `runner_vm.py` already attaches `config` and `trust` as separate volumes, so a three-disk guest (root /
+  runner and harnesses / tools) needs no new mechanism — only the split. Halted image replacement already
+  exists, which is the update path.
+- **Kubernetes image volumes.** `imageVolumes` mounts an OCI image's filesystem into a Pod volume; the
+  cluster is v1.35, where the feature is GA. This is the direct answer to "this container should mount
+  these 2 images", and beats an init-container copy on every incarnation. Check it against the CRI and
+  storage class actually in use before relying on it.
+- **Init container into a shared volume.** Today's portable form: copy the runner and harnesses from image
+  X into an `emptyDir`. Works everywhere; pays copy time and disk each start.
+- **Firecracker instead of KubeVirt.** The runtime the operator raised as acceptable if it helps: fast
+  boot, small guest, squashfs-friendly, and the shape Claude Code web chose. The cost is a second VMM
+  stack beside KubeVirt with no cluster scheduler for it. The RE under `devinfra/claude/web_env/re/` —
+  including `process_api/src/firecracker_init.rs` — documents what that guest's init actually does and is
+  the closest worked example we hold.
 
 The disk split and Firecracker are not alternatives to each other: splitting disks is additive on the
 runtime we have, and Firecracker is a new runtime added beside it.
 
-
 ### `RUNNER_LAYERING_POD` — a Pod takes the runner, harnesses and tools from separate images
 
 **Blocked on the layering decision; pursuable independently of the VM half; operator, 2026-10-15 PDT.**
-Give the Pod the same decoupling: the container runs the runner from image X, the harnesses come from
-X, and the binaries the agent runs come from a per-template image Y. Options are in the decision node;
-image volumes and the init-container copy are the two to try first. Exit evidence: bumping the runner
-pin publishes one image, and a Sandbox on the unchanged tools image starts on it.
+Give the Pod the same decoupling: the container runs the runner from image X, the harnesses come from X,
+and the binaries the agent runs come from a per-template image Y. Options are in the decision node; image
+volumes and the init-container copy are the two to try first. Exit evidence: bumping the runner pin
+publishes one image, and a Sandbox on the unchanged tools image starts on it.
 
 This does **not** deliver the RAM-headroom property by itself — a Pod still lives inside the node's
-allocatable. If the decision makes that property the priority, this node is convenience only and the
-VM half carries the requirement.
+allocatable. If the decision makes that property the priority, this node is convenience only and the VM
+half carries the requirement.
 
 ### `RUNNER_LAYERING_VM` — a guest takes the runner, harnesses and tools from separate images
 
 **Blocked on the layering decision; pursuable independently of the Pod half; operator, 2026-10-15 PDT.**
-Split the guest so a runner bump or a template's tool list does not rebuild and repush the whole VM.
-The two-stage shape the operator named — lean stage 1 booting the runner and mounting a stage 2
-filesystem, with the runner jailing a forked child into stage 2 to exec Claude/Codex — is one option,
-with the squashfs-disk and split-`containerDisk` shapes in the decision node beside it. KubeVirt is not
-assumed, and Firecracker stays open; what must not change is that the state volume and its ownership
-rules survive (`STATE_VOLUME_BLOCK`, and the `107:107` virtiofs constraint).
-
-`SANDBOX_IMAGE_REPLACE` is the update path this makes cheap: today replacing a VM's image means a whole
-new guest image, and after this it can mean swapping one disk while halted. The in-guest budgets
-(`VM_GUEST_BUDGET_DERIVE`) are the other half of the same story — stage 1 owns the reserve, stage 2
-gets the rest.
+Split the guest so a runner bump or a template's tool list does not rebuild and repush the whole VM. The
+two-stage shape the operator named — lean stage 1 booting the runner and mounting a stage 2 filesystem,
+with the runner jailing a forked child into stage 2 to exec Claude/Codex — is one option, with the
+squashfs-disk and split-`containerDisk` shapes in the decision node beside it. KubeVirt is not assumed and
+Firecracker stays open; what must not change is that the state volume and its ownership rules survive
+(`STATE_VOLUME_BLOCK`, and the `107:107` virtiofs constraint). Halted containerDisk replacement already
+works, so the update path exists; today it moves a whole guest image, and after this it can move one disk.
+The in-guest budgets (`VM_GUEST_BUDGET_DERIVE`) are the other half of the same story — stage 1 owns the
+reserve, stage 2 gets the rest.
 
 ### `K3S_VM_IMAGE` — build a lightweight guest disk in Bazel for the k3s integration test
 
-**Blocked on the VM split; operator, 2026-10-15 PDT.** The k3s spike cannot exercise a VM Sandbox at
-all: `agentplane/x/k3s_env/render.py` drops `("SandboxTemplate", "runner-vm")` because the template
-needs KubeVirt, and serves schemaless stub `VirtualMachine` kinds only so the controller's cache
-resolves. So the VM path has no integration coverage in the disposable environment, and pulling the
-real guest is unattractive because `agentplane/runner/container-disk.nix` builds it from a NixOS qcow2 —
-the heavy artifact the spike exists to avoid, and one that cannot carry the code under test.
+**Blocked on the VM split; operator, 2026-10-15 PDT.** The k3s spike cannot exercise a VM Sandbox at all:
+`agentplane/x/k3s_env/render.py` drops `("SandboxTemplate", "runner-vm")` because the template needs
+KubeVirt, and serves schemaless stub `VirtualMachine` kinds only so the controller's cache resolves. So
+the VM path has no integration coverage in the disposable environment, and pulling the real guest is
+unattractive because `agentplane/runner/container-disk.nix` builds it from a NixOS qcow2 — the heavy
+artifact the spike exists to avoid, and one that cannot carry the code under test.
 
-Make the test build a guest disk itself, so it runs the runner **from the tree under test** rather than
-a published image. The Pod-side pattern already exists there: `//agentplane/x/k3s_env:runner_image` is
-`debian_trixie_slim` plus a `pkg_tar` of the Bazel-pinned Codex and Claude binaries, built with no
-registry credential, and the spike's own note records that the Nix-built image is the full-toolbox one.
-Something of that shape as an image the test boots — with KubeVirt installed in the spike, or the VM
-path exercised against the host's KVM — is the deliverable, not a bigger image.
+Make the test build a guest disk itself, so it runs the runner **from the tree under test** rather than a
+published image. The Pod-side pattern already exists there: `//agentplane/x/k3s_env:runner_image` is
+`debian_trixie_slim` plus a `pkg_tar` of the Bazel-pinned Codex and Claude binaries, built with no registry
+credential, and the spike's own note records that the Nix-built image is the full-toolbox one. Something of
+that shape as an image the test boots — with KubeVirt installed in the spike, or the VM path exercised
+against the host's KVM — is the deliverable, not a bigger image.
 
-Worth stating in the design, because it argues past the spike: a Bazel-built guest is worth more than
-the test. Once a guest root filesystem is an `oci_image` target, `RUNNER_LAYERING_VM` needs no Nix to
-build a candidate runtime, CI can build a guest without Attic, and a runtime experiment becomes an
-additive target rather than a second release pipeline. Check `K3S_STARTUP_COST` before adding image
-weight to that environment.
+Worth stating in the design, because it argues past the spike: a Bazel-built guest is worth more than the
+test. Once a guest root filesystem is an `oci_image` target, `RUNNER_LAYERING_VM` needs no Nix to build a
+candidate runtime, CI can build a guest without Attic, and a runtime experiment becomes an additive target
+rather than a second release pipeline. Check `K3S_STARTUP_COST` before adding image weight to that
+environment.
 
 ### `SANDBOX_IDLE_EXPIRY` — the controller suspends an idle Sandbox
 
-**Blocked on the app image that reads `status.operatingMode` being pinned, `QUIESCE_WITHOUT_POLLING`; operator, 2026-10-11 and 2026-10-13 PDT.** An idle runner
+**Candidate; later than cleanup in the operator priority.** The effective-mode reader and
+nonblocking Quiesce writer are deployed. Controller retry and runner outage coverage are complete. An idle runner
 Sandbox suspends: it is sealed, then the Pod or VM goes, freeing memory and compute, and the Sandbox, its
 ServiceAccount, bindings and state PVC stay, so a later resume uses the same PVC. Nothing deletes a
 Sandbox on idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one, through
@@ -1020,6 +988,26 @@ only ever deletes.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
+### `IDLE_SUSPEND_UI_DRIVE` — drive auto-suspend and send-to-resume in staging
+
+**Operator, 2026-10-15 UTC: assigned to the operator, not dispatchable to a worker.** A human drives the
+whole loop through the staging web app on a real Session and reports what the UI actually does: the
+Sandbox goes idle, suspends on its own, and a message typed into the composer reaches that stopped
+Session and brings it back end to end. The idle trigger is `SANDBOX_IDLE_EXPIRY`; the suspended composer
+and per-Sandbox wake-on-message policy are recorded as implemented and deployed, so this is acceptance of
+the pair **as experienced**, not a re-run of their unit coverage or the composer's own rollout checks.
+
+Worth recording during the drive, because automated coverage does not produce it: how long the idle wait
+looks from the UI, what the Session and Sandbox render while suspended, whether the default-off wake
+policy is legible (queued versus "resume it yourself"), what the user is told afterward and what survived,
+and any point where the only way forward is `kubectl`. Log a deployment-specific gap as a node rather than
+fixing it mid-drive. Cover a VM Sandbox as well as a Pod one: a VM keeps its state PVC across stop/start
+and loses guest-local disks, so it is where a resume that looks successful can still lose something the
+user expected back.
+
+Related: [lifecycle coverage](../x/k3s_env/README.md#lifecycle-coverage), and `VM_RAM_SUSPEND` for the
+"resume with the memory it had" version of the same experience.
+
 ### `AGENT_RESUME_NOTICE` — tell agents when their Sandbox was suspended and resumed
 
 **Unscheduled; operator, 2026-10-13 PDT: it would be good.** An agent whose Sandbox was suspended and
@@ -1035,7 +1023,7 @@ message through the Dispatcher; and the wording agents act on. Test a suspend an
 background process, a terminal and workspace files, and a crash restart (no suspend) that reads
 differently.
 
-Related: [resume coverage](../sandboxes/debug/resume_coverage.md), `SANDBOX_IDLE_EXPIRY`.
+Related: [lifecycle coverage](../x/k3s_env/README.md#lifecycle-coverage), `SANDBOX_IDLE_EXPIRY`.
 
 ### `JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE` — delete the pre-incarnation seal compatibility path
 
@@ -1057,39 +1045,16 @@ does not supervise these, so who would report them (the harness adapters, the VM
 Test an attached terminal that detaches, a background process that outlives a turn, and a runner
 restart. `AGENT_RESUME_NOTICE` tells the agent what a suspend ended.
 
-### `RUNNER_QUIESCE_ROLLOUT` — deploy nonblocking Quiesce; gate legacy-reader removal
+### `QUIESCE_RESPONSE_FIELDS_RETIRE` — delete the legacy wire seal list
 
-**Implementation complete in #10609; rollout remains in flight.** The runner returns the current
-stage immediately while one supervised drain continues per incarnation. The drain preserves
-conditional idle refusal, admission/setup ordering, and Lease-driven completion; deterministic tests
-cover repeated calls, cancellation/reconnect, delayed ingress acknowledgement, and admissions paused
-before durable Session creation. Track rollout until every live and selectable Pod runner image and
-the embedded VM wheel include the compatible writer, and verify that no old runner incarnations
-remain. Require testing/staging acceptance before retiring the controller's legacy response reader.
-
-### `QUIESCE_LEGACY_SHAPE_REMOVAL` — the controller stops reading the blocking `Quiesce` shape
-
-**Blocked on `RUNNER_QUIESCE_ROLLOUT`.** The 2026-10-15 audit found the then-live VM wheel
-`a13d9a7d58ff` and template wheel `0a0e1373f9c2` omitted the response stage; those are historical
-snapshot pins, not a current inventory. Refresh the audit against every live/selectable Pod runner
-image, embedded VM wheel, and old incarnation. Delete the controller's legacy-shape read only after
-the compatible writer is deployed everywhere and testing/staging acceptance passes.
-
-### `QUIESCE_WITHOUT_POLLING` — a runner that never progresses is backed off, not hammered
-
-**Retry correction merged in #10580 after optional schema #10583 was verified served
-(2026-10-15 02:35 UTC).** The schema landed separately because plain Flux `dependsOn` is not an
-exact-revision barrier. The persisted per-incarnation attempt prevents watch
-events from bypassing the existing one-minute retry deadline, including absent/stalled stage reports
-and false-to-false condition updates. Focused controller tests cover status conflicts, completion,
-restarts and incarnation changes. Runner stage events still advance quiesce immediately. The immediate
-RPC response is implemented in #10609; its rollout is tracked in `RUNNER_QUIESCE_ROLLOUT`. Keep the
-controller reader until `QUIESCE_LEGACY_SHAPE_REMOVAL` clears its rollout and acceptance gates.
-
-This change does not establish ingress-wide backoff. Audit the remaining outage behavior before
-closing this node; preserve a bounded held-flush integration check only for an identified gap that
-focused tests do not cover. Keep the separate legacy-response removal gated on every runner image
-and the VM wheel pin. Do not turn missed-event recovery into periodic polling or extend timeouts.
+**Blocked on the controller image containing merged #10615 in both environments.**
+The nonblocking runner sends only `QuiesceResponse.stage`, but `runner.proto` still declares the
+old `sessions` field and rollout-era optional-stage contract. After no deployed reader consumes
+that shape, remove the obsolete field and comments and reserve its field number. The runner's
+internal `quiesce()` result and ingress tests still use `SessionSeal`; give that internal result an
+appropriate non-wire representation before deleting the unused protobuf message. Update proxy and
+runner fixtures, preserve seal/cursor/flush assertions, and generate bindings normally. Verify all
+remaining references before deletion; do not remove journal seal evidence or its separate retained-data gate.
 
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
@@ -1147,38 +1112,6 @@ explicit operator re-grant flow. The audit distinguishes controller-driven expir
 post-deadline denial, and projected-token renewal from grant renewal. Add implementation work only
 for a reviewed contract that the code does not already satisfy; do not add an implicit Ready gate.
 
-### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
-
-**In flight in #10608; `quiesce_progress`, operator decision 2026-10-15 UTC.** A retained Session's
-composer stays usable while a fresh inventory snapshot confirms that its Sandbox is suspended.
-Sending queues through the Dispatcher; wake-on-message requests a wake, while the default-off policy
-leaves the Sandbox stopped and tells the user to resume it manually. Preserve normal access checks,
-deleted-Sandbox refusal, and setup/archive refusals. Focused tests cover the sealed stopped/ended
-Session projection and desktop/mobile visual fixtures. The app image and staging wake caller are
-deployed; this node remains in flight until the composer image rollout and staging acceptance pass.
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
-### `IDLE_SUSPEND_UI_DRIVE` — drive auto-suspend and send-to-resume in staging
-
-**Operator, 2026-10-15 UTC: assigned to the operator, not dispatchable to a worker.** A human drives
-the whole loop through the staging web app on a real Session and reports what the UI actually does:
-the Sandbox goes idle, suspends on its own, and a message typed into the composer reaches that stopped
-Session and brings it back end to end. `SANDBOX_IDLE_EXPIRY` supplies the automatic trigger and
-`SUSPENDED_COMPOSER` the enabled-while-suspended composer, so this is acceptance of the pair as
-experienced, not a re-run of their unit coverage.
-
-Worth recording during the drive, which automated coverage does not produce: how long the idle wait
-looks like from the UI, what the Session and Sandbox render while suspended, whether the default-off
-wake-on-message policy is legible (queued versus "resume it yourself"), what the user is told after the
-Sandbox returns and what survived, and any point where the only way forward is `kubectl`. Log a
-deployment-specific gap as a node rather than fixing it mid-drive. Cover a VM Sandbox as well as a Pod
-one — `VM_PROVIDER`'s lifecycle keeps the state PVC across stop/start, and a VM is where a resume that
-looks successful can still lose guest-local state.
-
-Related: [resume coverage](../sandboxes/debug/resume_coverage.md), and `VM_RAM_SUSPEND` for the
-"resume with the memory it had" version of the same user experience.
-
 ## 8. Ownership and naming cleanup
 
 Cleanups that leave one database per service and names that say what things are. Each node is one
@@ -1188,17 +1121,17 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 
 ```mermaid
 flowchart TD
-    HISTORY_DATABASE_RENAME[Candidate: rename the sandbox_service database and role]
+    HISTORY_DATABASE_RENAME[Deferred: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Unscheduled: name the sandbox_commands database for the Runner Gateway]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
-    SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes suspend, section 7] -. same idleness question .-> ACTION_BOX_IDLE_REAPER
+    SANDBOX_IDLE_EXPIRY[Candidate: idle runner Sandboxes suspend, section 7] -. same idleness question .-> ACTION_BOX_IDLE_REAPER
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] -. makes moot .-> SANDBOX_DATABASE_RENAME
 ```
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
-**Candidate.** Rename the `sandbox_service` database and role
+**Deferred by the operator; not dispatchable until selected.** Rename the `sandbox_service` database and role
 (and the `postgres-sandbox-service` Secret) for the History Service. Rename in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`)
 and have the CNPG `Database` and managed role adopt the new names; recreating the database under a
 new name would copy the log. Verify the History Service and Electric reconnect with no data movement.
@@ -1304,13 +1237,102 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 ```mermaid
 flowchart TD
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
+    CONTROL_SURFACE_RETIREMENT_AUDIT[Assigned: audit RPCs, fields and arguments against the intended paths]
+    CONTROL_SURFACE_RETIREMENT_AUDIT --> RUNNER_LIST_SESSIONS_RETIRE[Blocked: resolve remaining live-inventory semantics, then remove ListSessions]
+    CONTROL_SURFACE_RETIREMENT_AUDIT --> DISPATCHER_OPEN_ALREADY_EXISTS[Candidate: reconcile opening conflict semantics before removing its list fallback]
+    DISPATCHER_OPEN_ALREADY_EXISTS --> RUNNER_LIST_SESSIONS_RETIRE
+    CONTROL_SURFACE_RETIREMENT_AUDIT --> DISPATCHER_OPENING_ATTACHED_RETIRE[Candidate: remove the unused persisted opening snapshot]
+    CONTROL_SURFACE_RETIREMENT_AUDIT --> GATEWAY_FIND_SESSIONS_RETIRE[In flight: remove unused Gateway registry search after reference and pin audit]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
-    GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
-    GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
+    GATEWAY_WRAPPER_RETIRE[Blocked: retire redundant Gateway APIs; preserve registry for current resume checks]
+    APP_ARCHIVE_RUNNER_READ_MIGRATION[Assigned: move live archive checks to the runner proxy] --> GATEWAY_WRAPPER_RETIRE
+    NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION[Assigned: retire notification wrapper membership reads] --> GATEWAY_WRAPPER_RETIRE
+    APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
+    GATEWAY_DATABASE_DROP[Blocked: drop the Session registry database after identity migration]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
+    GATEWAY_SESSION_REGISTRY_RETIRE[Blocked: settle native-resume registry reader, then retire registry]
+    APP_NATIVE_RESUME_CUTOVER --> GATEWAY_SESSION_REGISTRY_RETIRE
+    GATEWAY_SESSION_REGISTRY_RETIRE --> GATEWAY_DATABASE_DROP
 ```
+
+### `CONTROL_SURFACE_RETIREMENT_AUDIT` — converge RPCs, fields and arguments on the intended paths
+
+**In flight; `suspended_session_inventory`, 2026-10-15 UTC.** Sweep Agentplane's protobuf services/messages,
+HTTP routes/client helpers, CLI arguments, settings/config keys and their producers/consumers.
+Start from the system overview: whenever two paths accomplish the same operation, ask why both
+exist. Trace their callers, authority and failure semantics; document a concrete reason for
+intentional coexistence, or identify the canonical path and the migration/removal of the other.
+Different transport names alone do not justify duplicate ways to perform the same work.
+Compare each with the decided owners: Dispatcher for starting/continuing Session work, History
+for retained inventory/history, controller for Sandbox reconciliation, and runner proxy only for
+operations that still belong at the runner. Include both `RunnerGateway.ListSessions` and
+`Runner.ListSessions`; migrating a wrapper call to the proxy is not proof that the underlying RPC
+should survive.
+
+Deliver an evidence-backed inventory in component docs: surface, purpose, real callers and writers,
+intended replacement, keep/migrate/delete/decision disposition, and removal prerequisites. Trace
+tests, generated schemas/clients, deployment config, templates and VM wheels as well as production
+code; distinguish real runtime callers from fixtures. Audit obsolete request/response fields,
+duplicated command envelopes, identity/default overrides and accepted-unused flags, not just RPC
+names. Do not infer that a field is dead merely because one client omits it or stale data still
+contains it.
+
+Create specific unfinished migration/retirement nodes for confirmed findings, through deletion of
+old clients, receiver methods, fields, settings, BUILD targets and obsolete tests. Keep pending
+contract decisions explicit. Receiver removal waits for all caller images; writer changes wait
+for compatible readers, including separately pinned guest wheels. Stored-data removal is separate
+and owner-approved, with authored data preserved. Batch straightforward dead-surface cleanup;
+separate behavior changes and data drops. This audit does not block already-specified independent
+migrations or authorize broad compatibility shims, language rewrites or speculative replacement RPCs.
+
+### `RUNNER_LIST_SESSIONS_RETIRE` — remove the live inventory RPC if its remaining purposes migrate
+
+**Blocked on the surface audit's disposition and migration of its real callers.** The Sandbox table
+uses retained History inventory. Remaining runtime uses include app archive safety/native resume,
+Notification membership, and the Dispatcher opening fallback; test drivers also use the read to
+order Quiesce assertions. History's retained harness state and namespace/name association do not
+preserve authoritative live state or Sandbox UID/owner checks. Migrate each caller with those
+requirements intact, including Notification's UID/owner checks, then migrate tests and verify pinned
+caller images before removing the runner method/messages and helpers via normal generation. The
+Dispatcher fallback has a separate contract flaw: matching `OpenSession` retries return the existing
+attachment, while `ALREADY_EXISTS` means spec/setup conflict; its current ID-only list check can
+accept a conflict. Correct that before removing this caller. The Gateway wrapper may retire even if a
+narrowly justified runner live read remains; record that decision and remove this conditional node if
+so.
+
+### `DISPATCHER_OPEN_ALREADY_EXISTS` — settle opening conflicts without live-list inference
+
+**Candidate; identified by `CONTROL_SURFACE_RETIREMENT_AUDIT`.** `Runner.OpenSession` returns the
+existing attachment on a retry with the same spec and setup script, and returns `ALREADY_EXISTS` for
+a conflicting spec or setup. The Dispatcher currently calls `Runner.ListSessions` after
+`ALREADY_EXISTS` and accepts any matching Session ID, which can mark conflicting work admitted. Make
+the opening result follow the runner's actual conflict contract, and replace the test that models a
+lost identical-open reply as `ALREADY_EXISTS` with a retry that receives the existing attachment.
+This removes the Dispatcher caller of `Runner.ListSessions`; keep conflict and response-loss behavior
+covered before the runner list RPC is considered removable.
+
+### `DISPATCHER_OPENING_ATTACHED_RETIRE` — remove the unused persisted opening snapshot
+
+**Candidate; identified by `CONTROL_SURFACE_RETIREMENT_AUDIT`.** `SessionOpening.attached` is written
+from the successful runner `OpenSession` response and persisted in the Dispatcher's
+`session_opening.attached` column. The app and frontend expose its shape, but no production reader
+uses it; the only app-side reader is the test helper `wait_for_session_admission`. The field is a
+last opening snapshot, not a live inventory or a source of retained Thread history. Confirm no
+external or pinned client depends on it, then remove the proto/OpenAPI shape and test-helper fallback
+together. Review whether any operational use justifies retaining the stored snapshot; if not, remove
+the column with a new migration after the reader rollout, preserving each opening's Session ID,
+Sandbox identity, state, reason and timestamps.
+
+### `GATEWAY_FIND_SESSIONS_RETIRE` — remove the unused Gateway registry search
+
+**In flight; assigned to `quiesce_progress` for the independent deletion draft.** Repository search
+finds no production caller of `RunnerGateway.FindSessions`; remaining references are the Gateway
+method, client helper and tests/fake support. History `FindSessions` is used by the app for retained
+Thread inventory and has different semantics; keep it and its data. Confirm no external client or
+pinned caller image uses the Gateway method, then remove only the Gateway RPC, request/response types,
+helper, fixture support and tests together.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
@@ -1339,20 +1361,68 @@ pinned caller image sends it (the VM guest's runner wheel is a reader of the new
 The journal's `CommandAdmitted` event keeps storing the `Command` message, so stored history needs no
 migration and `Command` stays as that event's field type.
 
-### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
+### `GATEWAY_WRAPPER_RETIRE` — retire redundant live operations; retain placement registry
 
-**Blocked on the Dispatcher-only app image rollout and `APP_NATIVE_RESUME_CUTOVER`.**
-Audit and migrate every remaining wrapper read caller (including notification `ListSessions`) to
-History Service or the runner proxy, then pin those caller images before deleting the RPC receiver.
-App and notification command sends go through Dispatcher; read-only calls may use the proxy. Delete the
-`RunnerGateway` service and proto, its client, `session_registry.py`, `destinations.py`,
-`session_lifecycle.py` and `wire.py`, obsolete client settings, projected tokens and network rules
-whose final callers are gone. Delete associated BUILD targets and tests; retain the control stream
-and runner proxy. This makes `SANDBOX_DATABASE_RENAME` moot; delete that deferred node here.
+**Blocked on the remaining read-caller migrations above, the Dispatcher-only app image rollout and
+`APP_NATIVE_RESUME_CUTOVER`.** These caller migrations can proceed independently;
+the native-resume decision does not block migrating reads. Pin all migrated caller images before
+deleting the RPC receiver, and search for remaining wrapper callers before removal.
+App and notification command sends go through Dispatcher. Move only reads whose current-state and
+incarnation checks are preserved by the proxy; the remaining caller-boundary decisions are explicit
+gates above. Retire Gateway `CreateSession`, `ResumeSession` and `SubmitCommand` only after their
+caller gates; remove Gateway `FindSessions` through its separate node. `BatchGetSessionSandboxes` has
+no production in-repo caller after #10622; remove it with the registry API only after external/pinned
+caller review. The separate Runner `ListSessions` proxy method remains under
+`RUNNER_LIST_SESSIONS_RETIRE` for archive, Notification and Dispatcher callers. Preserve
+`session_registry.py` and its database while `ResumeSession` still reads it: only Gateway
+`CreateSession` writes rows, so the app's current direct-resume path refuses Dispatcher-opened
+Sessions. Keep the runner control stream and proxy. Removing redundant Gateway APIs does not make
+`SANDBOX_DATABASE_RENAME` moot while the registry remains.
+Remove the `RunnerGatewayClient.command` helper and Notification's `command_admission_timeout_s` and
+`lifecycle_timeout_s` settings with the old command/resume methods after checking pinned callers;
+remove the app's `runner_gateway_lifecycle_timeout_s` only if the explicit resume path is removed.
+Retire the app's unused Gateway API channel/target after pinned-client review; its token and the
+separate Sandbox control target still serve live runner reads. Remove strict config keys from
+manifests before deleting their settings readers.
+
+### `GATEWAY_SESSION_REGISTRY_RETIRE` — retire registry consumers only after resume review
+
+**Blocked on `APP_NATIVE_RESUME_CUTOVER`, wrapper callers and external/pinned clients.** After
+#10622, the app no longer calls `BatchGetSessionSandboxes`: it routes resume using the History-backed
+Sandbox name and a live runner list. `SandboxRunner.resume` still calls Gateway `ResumeSession`, which
+requires a `session_registry` row for that Sandbox UID. Only Gateway `CreateSession` writes the
+registry; production openings use Dispatcher, so their direct-resume path is currently refused. If
+native resume remains, first review how its receiver can preserve UID and owner checks for
+Dispatcher-opened Sessions. Otherwise remove `ResumeSession` with the reviewed app cutover.
+`BatchGetSessionSandboxes` has no production in-repo caller after #10622; confirm external/pinned use
+before removing its method, client helper and `SessionSandbox` wire shape. The independent
+`GATEWAY_FIND_SESSIONS_RETIRE` node handles Gateway `FindSessions`; keep History `FindSessions` and
+its retained data. Retain the registry and its data until all live readers/writers are retired and
+the separate operator-approved `GATEWAY_DATABASE_DROP`; never infer a missing UID from a same-name
+Sandbox.
+
+### `APP_ARCHIVE_RUNNER_READ_MIGRATION` — preserve live archive safety without the wrapper
+
+**Assigned; `suspended_session_ui`, 2026-10-15 UTC.** `archive_thread` reads `RunnerBridge.list_sessions` to reject archiving a running
+harness while its Pod exists. History is eventually consistent and cannot alone prove that a
+harness has stopped. Preserve this check through the runner proxy, plus the existing refusal when
+a Pod exists but cannot be checked. A stopped/deleted Sandbox still allows retaining/archiving its
+history. Test stale History saying stopped while the live runner says running, and runner loss.
+Remove the wrapper call; do not weaken the guard to simplify the table migration.
+
+### `NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION` — retire the subscription wrapper read
+
+**Assigned; `suspended_session_ui`, 2026-10-15 UTC.** `NotificationService.subscribe` uses wrapper `ListSessions` after checking the current
+Sandbox UID and owner. Move that read to the runner proxy while preserving those checks, or use
+History only if its retained association can prove the same identity boundary. History's current
+Sandbox reference has namespace/name, not UID/owner, so a matching name alone is insufficient.
+Test owner mismatch, replaced Sandbox UID and a Session belonging elsewhere. Remove the obsolete
+notification Gateway client/config once no callers remain; config removals precede settings-reader
+removals and receiver deletion waits for the new notification image.
 
 ### `GATEWAY_DATABASE_DROP` — drop the `sandbox_commands` database
 
-**Blocked on `GATEWAY_WRAPPER_RETIRE`; a data drop, merged by the operator.** Drop the database,
+**Blocked on `GATEWAY_WRAPPER_RETIRE` and `GATEWAY_SESSION_REGISTRY_RETIRE`; a data drop, merged by the operator.** Drop the database,
 its role, Secret, migration init container, old models/migrations and image publication wiring once
 the History Service holds every Session's Sandbox and all pinned gateways have stopped reading or
 writing this database. First remove strict config keys from manifests with an accepting receiver;
@@ -1365,8 +1435,7 @@ only after that rollout delete their settings readers. This remains a separate d
 - Broad provider-matrix exploration is frozen; ordinary auth/signature denial regression coverage
   belongs with the implementation, not an unbounded production checklist.
 - Native subsessions and runner durability/thin-adapter redesign remain frozen. Neither the runner
-  channel nor multiagent design unfreezes the broader runner-state redesign. `NATIVE_SUBAGENT_EXPOSURE`
-  evaluates the first of those against event ingress without unfreezing it: a verdict, not a dispatch.
+  channel nor multiagent design unfreezes the broader runner-state redesign.
 - Existing security boundaries, data-preserving migration checks and representative deployment
   integration checks remain requirements. The freezer is not a waiver for a known data-loss or
   unauthorized-access bug; promote one when evidence makes it concrete.

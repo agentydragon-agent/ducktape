@@ -1,10 +1,11 @@
 # Agentplane integration app
 
-The human-facing frontend over Agentplane's services: a FastAPI service that manages sandboxes
-through the Kubernetes API as the requesting operator, and runner sessions through the Runner Gateway, reads their archived
-Session history and Threads (each Session's conversation projection) from the History Service, and
-synchronizes selected rows and content to the browser through authenticated Electric endpoints. It also presents Actions, operator
-decisions and Connection consent.
+The human-facing frontend over Agentplane's services: a FastAPI service that manages Sandboxes
+through the Kubernetes API as the requesting operator, opens Sessions and submits commands through
+the Session Dispatcher, and uses the Runner Gateway for UID-fenced live checks and explicit native
+resume. It reads archived Session history and Threads (each Session's conversation projection) from
+the History Service and synchronizes selected rows and content to the browser through authenticated
+Electric endpoints. It also presents Actions, operator decisions and Connection consent.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
 ## Sandbox lifecycle ownership
@@ -23,9 +24,11 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
 app endpoint. The shared `agentplane/sandboxes` library owns Sandbox request construction; the app uses
-it directly as the requesting operator. The [Runner Gateway](../runner_gateway/README.md) owns runner Sessions and commands; the
-[History Service](../history_service/README.md) owns the Session Event archive and its Thread fold;
-the app is a client of all three.
+it directly as the requesting operator. The [Session Dispatcher](../session_dispatcher/README.md)
+owns opening and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
+runner control stream, a legacy partial placement registry and authorized live runner access; the
+[History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.
+The app is a client of each service for its distinct operation.
 Notifications depends on that backend and Actions, not this app. The app's own state is browser
 sessions and its `thread` table: each Thread, keyed by its Session's ID, with what an operator sets
 on it (name, archived); like any state the app holds, these are candidates to move into a dedicated
@@ -33,7 +36,7 @@ service ([principles](../docs/principles.md#composable-services-not-a-platform-y
 
 The current bridge's session-scoped runner attachment is implementation state, not
 the desired product model. [Thread, runner, and harness layering](../docs/thread_layering.md) is
-the authoritative design for submission durability, the app queue decision,
+the authoritative design for Dispatcher submission receipts, runner admission, native effects,
 multi-session Thread history, and folded/Raw projections.
 
 ```sh
@@ -56,8 +59,10 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   resolution. Preset names stop at the app boundary; Kubernetes and the runner receive resolved
   fields.
 - Sandbox provisioning uses the shared `agentplane/sandboxes` inventory directly as the requesting
-  operator; Sessions and commands are reached through `RunnerGatewayClient`. The app reads Kubernetes
-  projections for UI updates.
+  operator. Session openings and commands use `SessionDispatcherClient`; the Sandbox control client
+  reaches current-incarnation live checks and explicit native resume through the Runner Gateway.
+  The app reads Kubernetes projections for UI updates. Its Gateway placement API client has no
+  production caller after #10622, pending pinned-caller review.
 - `egress_access.py`: egress-policy/binding projections for the UI, and the operator's grants and
   revocations of `PolicyBinding`s, written through the Kubernetes API by the app itself. Bindings remain
   desired-state grants, with expiry/revocation per binding; Flux-owned and Sandbox-controlled bindings
@@ -75,9 +80,9 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   (`ThreadStore`) composes the app database and the History Service; runners push their events to
   the History Service.
 - `threads/bridge.py`: browser-facing composition of session operations with archive synchronization.
-  `threads/runner_directory.py` selects ready Sandboxes from the app's live index and asks the Runner
-  Gateway for their UID-fenced live runner inventory, so Dispatcher-opened Sessions remain visible
-  even when they were not created through the Gateway's legacy Session registry.
+  `threads/runner_directory.py` resolves a Thread's Sandbox through the Runner Gateway and creates
+  UID-fenced clients for operations that need live runner state. The Sandbox page's retained Session
+  inventory comes from History Thread summaries, not a runner inventory RPC.
 - `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits for the frontend's
   generated client.
 - `threads/events/`: a Thread's archived events, read through the History Service. `event_log.py`
@@ -138,8 +143,10 @@ until History projects its admission or command row; the app adds no command que
 Dispatcher and authorize the app ServiceAccount before rolling out an app image that requires this
 setting.
 
-The app lists Sessions through the Runner Gateway's authenticated, UID-fenced `ListSessions` RPC and
-explicitly resumes retained Sessions through the Gateway's Session API. Every new Session opening is
+The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
+runner Pod does not clear the inventory. Harness state and turn IDs in that table are last observed
+History values; they do not assert that a harness is still running or can be resumed. Explicitly
+resuming a retained Session still uses the Runner Gateway's Session API. Every new Session opening is
 submitted to the Dispatcher with the complete Session spec. A `SessionOpening` reports queued,
 delivering, runner-admitted, or failed state, and
 `GET /sandboxes/{name}/sessions/{id}/opening` checks that durable result. Admission does not mean the
@@ -211,8 +218,8 @@ same-ID retries, and failed/noop outcomes after history eviction and explicit di
 Fault injection holds actual Electric responses while ingestion continues. A suffix the fold
 cannot apply preserves verified history, reports the verified cursor, and disables controls.
 Scrolling checks cover live growth, reader anchors, desktop/phone layouts, and returning to the
-bottom before a queued scroll event. Larger history-window, collection-retention and resource
-proofs are tracked in [the acceptance matrix](../debug/conversation_acceptance.md).
+bottom before a queued scroll event. The remaining server-memory, off-window traffic and Electric
+availability gates are listed in [the acceptance record](../debug/conversation_acceptance.md).
 
 Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavailable: 0`,
 `maxSurge: 1`) and a PodDisruptionBudget of one available; testing stays at one replica.
@@ -223,15 +230,17 @@ Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavai
 carries a whole `snapshot` of what it covers whenever that changes, and a `health` frame through
 the quiet in between. What is pushed: the sandbox rows, one sandbox's egress bindings, its action
 policy, and its threads, the last of these from the store rather than a watch, since the app is the
-only writer of a thread's name.
+only writer of a thread's name. The Sandbox page uses those History Thread summaries as its retained
+Session inventory; its harness and turn fields are last observed History values. Suspending or
+removing a runner Pod does not clear projected Threads, and the app does not claim their harnesses
+are still running. Archived Threads stay hidden unless the operator chooses **Show archived**.
 
 The egress tab's decisions are their own stream, `/live/sandboxes/{name}/egress/decisions`: the
 proxy announces each commit of decisions on its admin port's `/decisions/changes`, and every frame
-re-reads `/decisions` from it. The runner answers `ListSessions` per request, so the sandbox page
-re-reads the session table when the sandbox's Pod comes or goes and when a session opens (which
-reaches it as a new thread).
-An unavailable runner shows a waiting state and retries until it answers, without requiring a
-reload. Session creation displays progress and prevents duplicate clicks while the request runs.
+re-reads `/decisions` from it. Runner availability affects operations that need a live Session and
+whether the page can open a new one; it does not determine whether a retained History Thread appears
+in the table. Session creation displays progress and prevents duplicate clicks while the request
+runs.
 
 A snapshot is not a delta, and there is no resumable id: a relist replaces a kind wholesale and a
 `resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. That leaves
@@ -339,8 +348,10 @@ the rest of the Deployments' 60-second grace period is for. No preStop delay con
 browser (OIDC session)  /  agent (Kubernetes token)
    |  REST + Electric sync + inventory SSE, through the cluster gateway
 integration app (Deployment, namespace agentplane-staging)
-   |  Kubernetes API              |  gRPC Session API
+   |  Kubernetes API              |  gRPC Dispatcher / live Gateway checks
 Sandbox -> Pod, PVC               v
+                    Session Dispatcher
+                         | runner proxy
                          Runner Gateway
                             |  RunnerControl stream
                     runner process, state dir on the PVC

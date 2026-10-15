@@ -5,8 +5,8 @@ Status: **implemented; acceptance incomplete.** The server-side fold in
 transactional writer. The integration uses Electric through its published TypeScript client:
 one shape per thread and per payload field, with the browser's window loaded as subsets of them.
 See [app implementation notes](../app/README.md) for endpoints and storage details.
-The [conversation acceptance matrix](../debug/conversation_acceptance.md) records the evidence and
-remaining gates. Bounded browser-cache retention is the deferred D6 desire, not a gate; the current
+The [conversation acceptance record](../debug/conversation_acceptance.md) lists the remaining
+unverified gates. Bounded browser-cache retention is the deferred D6 desire, not a gate; the current
 store retains loaded rows and bodies until the Thread closes. Server-memory acceptance remains a
 separate gate.
 
@@ -111,17 +111,17 @@ completion facts. Reasoning and tool outputs can remain omitted until requested.
 These logical operations map to sync-engine queries or existing app HTTP calls. They do
 not mandate a second wire protocol beside the engine.
 
-| Operation                   | Meaning                                                                               |
-| --------------------------- | ------------------------------------------------------------------------------------- |
-| List segments, no direction | Latest N segments; return in conversation order.                                      |
-| List before cursor          | Closest N earlier segments, excluding the cursor.                                     |
-| List after cursor           | Closest N later segments, excluding the cursor.                                       |
-| Get segments by cursor      | Exact identities, even outside loaded windows.                                        |
-| Read payload                | Whole immutable selected content, or typed unavailability.                            |
-| List pending commands       | Keyset page by admission cursor.                                                      |
-| Get commands by ID          | Reconcile admitted and settled commands after a lost response.                        |
-| Follow selected commands    | Live authoritative rows for a bounded set of command IDs, including settled outcomes. |
-| Submit                      | Existing runner-first command admission; no app queue.                                |
+| Operation                   | Meaning                                                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| List segments, no direction | Latest N segments; return in conversation order.                                                                          |
+| List before cursor          | Closest N earlier segments, excluding the cursor.                                                                         |
+| List after cursor           | Closest N later segments, excluding the cursor.                                                                           |
+| Get segments by cursor      | Exact identities, even outside loaded windows.                                                                            |
+| Read payload                | Whole immutable selected content, or typed unavailability.                                                                |
+| List pending commands       | Keyset page by admission cursor.                                                                                          |
+| Get commands by ID          | Reconcile admitted and settled commands after a lost response.                                                            |
+| Follow selected commands    | Live authoritative rows for a bounded set of command IDs, including settled outcomes.                                     |
+| Submit                      | Session Dispatcher records the sender's durable result before runner admission; the app has no server-side command queue. |
 
 There is no `around` operation, offset pagination, query byte budget or truncated body.
 Counts have server maxima. `ContentSelection` explicitly chooses text, reasoning, tool

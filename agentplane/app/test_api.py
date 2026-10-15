@@ -27,7 +27,6 @@ from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.app.testing.dispatcher import GatewayBackedDispatcher
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
@@ -37,13 +36,12 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.grpc_calls import dial
+from agentplane.grpc_calls import ServiceError, dial
 from agentplane.grpc_serving import serving
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner.harness import Harness
-from agentplane.runner_gateway.testing.backend import backend
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.fake_inventory import (
@@ -532,6 +530,17 @@ async def test_session_opening_endpoint_returns_dispatcher_state(
     }
 
 
+async def test_runner_backed_sandbox_session_inventory_route_is_removed(
+    client: httpx.AsyncClient, app: FastAPI
+) -> None:
+    response = await client.get("/sandboxes/live/sessions")
+
+    assert response.status_code == 405
+    operations = app.openapi()["paths"]["/sandboxes/{name}/sessions"]
+    assert "get" not in operations
+    assert "post" in operations
+
+
 @pytest.mark.parametrize("model_catalog", [CODEX_ONLY], indirect=True)
 async def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
     client: httpx.AsyncClient, bridge: RunnerBridge, store: ThreadStore, monkeypatch: pytest.MonkeyPatch
@@ -545,8 +554,9 @@ async def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
     calls: list[tuple[UUID, Harness | None, str | None]] = []
 
     async def resume_thread(
-        thread: UUID, *, expected_harness: Harness | None, expected_cwd: str | None
+        thread: UUID, *, sandbox: str, expected_harness: Harness | None, expected_cwd: str | None
     ) -> runner_pb2.Attached:
+        assert sandbox == "live"
         calls.append((thread, expected_harness, expected_cwd))
         return runner_pb2.Attached(session_id="regular-session")
 
@@ -623,61 +633,6 @@ async def test_create_session_answers_the_service_id(
     assert created.json()["sessionId"] == str(requested)
     assert received == [("live", requested, runner_pb2.SessionSpec(cwd=f"/w/{requested}"), "bootstrap")]
     assert (await client.post(path, json={"session_id": "not-a-uuid", "spec": {}})).status_code == 422
-
-
-async def test_a_runner_that_has_not_connected_is_a_503(
-    tmp_path: Path,
-    custom_objects: FakeCustomObjectsApi,
-    core_v1: FakeCoreV1Api,
-    inventory: SandboxAccess,
-    store: ThreadStore,
-    database_updates: WakeupListener,
-    operator_sessions: OperatorSessionStore,
-    egress: EgressAccess,
-    decisions: DecisionsClient,
-    live_index: LiveIndex,
-    action_policy: ActionPolicyInventory,
-    reviewer: TokenReviewer,
-    event_logs: SeededEventLogStore,
-    content: ContentStore,
-    electric_proxy: ElectricProxy,
-    notifications_http: httpx.AsyncClient,
-    notifications_token_file: Path,
-    service_history_db_url: str,
-) -> None:
-    """A ready Pod whose runner has not dialed the gateway yet, as right after a resume."""
-    live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
-    with backend(custom_objects, core_v1, tmp_path / "failure-token", database_url=service_history_db_url) as endpoint:
-        async with dial(endpoint.target) as channel:
-            runners = RunnerDirectory(live_index, endpoint.gateway(channel))
-            app = create_app(
-                inventory,
-                RunnerBridge(
-                    runners=runners,
-                    event_logs=event_logs,
-                    content=content,
-                    dispatcher=GatewayBackedDispatcher(runners, event_logs),
-                ),
-                store,
-                TEST_MODELS,
-                egress,
-                decisions,
-                live_index,
-                action_policy,
-                reviewer=reviewer,
-                event_logs=event_logs,
-                content=content,
-                database_updates=database_updates,
-                operator_sessions=operator_sessions,
-                electric=electric_proxy,
-                notifications_http=notifications_http,
-                notifications_token_file=notifications_token_file,
-                system_status=answering_system_status(),
-            )
-            async with _agent_client(app) as client:
-                response = await client.get("/sandboxes/live/sessions")
-    assert response.status_code == 503
-    assert "UNAVAILABLE" in response.json()["detail"]
 
 
 @asynccontextmanager
@@ -999,6 +954,13 @@ async def test_a_running_thread_cannot_be_archived(
     )
     spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = await event_logs.seed("live", "s-1")
+    assert event_logs.history is not None
+    await event_logs.history.set_attached(
+        thread_id, runner_pb2.Attached(session_id=str(thread_id), harness_state=runner_pb2.HARNESS_STATE_STOPPED)
+    )
+    thread = await store.get_thread(thread_id)
+    assert thread is not None
+    assert thread.harness_state == "HARNESS_STATE_STOPPED"
 
     consulted: list[str] = []
 
@@ -1017,6 +979,33 @@ async def test_a_running_thread_cannot_be_archived(
     assert response.status_code == 409
     # Only the running-harness refusal lists sessions; the unverifiable-Pod 409 comes before that.
     assert consulted == ["live"]
+    thread = await store.get_thread(thread_id)
+    assert thread is not None
+    assert thread.archived is False
+
+
+async def test_a_thread_is_not_archived_when_its_live_runner_cannot_be_checked(
+    bare_app: FastAPI,
+    bridge: RunnerBridge,
+    store: ThreadStore,
+    event_logs: SeededEventLogStore,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    custom_objects.objects[(SANDBOXES_PLURAL, "live")], core_v1.pods["live"] = seed_runner(
+        custom_objects, core_v1, "live"
+    )
+    thread_id = await event_logs.seed("live", "runner-loss")
+
+    async def runner_unavailable(_sandbox: str) -> list[runner_pb2.SessionSummary]:
+        raise ServiceError(grpc.StatusCode.UNAVAILABLE, "runner connection unavailable")
+
+    monkeypatch.setattr(bridge, "list_sessions", runner_unavailable)
+    async with _agent_client(bare_app) as http:
+        response = await http.post(f"/threads/{thread_id}/archive")
+
+    assert response.status_code == 503
     thread = await store.get_thread(thread_id)
     assert thread is not None
     assert thread.archived is False
