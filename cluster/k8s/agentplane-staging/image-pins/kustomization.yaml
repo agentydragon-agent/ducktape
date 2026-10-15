@@ -51,7 +51,7 @@ images:
     newTag: devel-20261015231409-8dc80ed # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
   # Receiver rollout lands before the app and Notification Service sender cutovers.
   - name: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher
-    newTag: devel-20261015214937-e6bd2c3 # {"$imagepolicy": "flux-system:agentplane-session-dispatcher:tag"}
+    newTag: devel-20261015231651-8dc80ed # {"$imagepolicy": "flux-system:agentplane-session-dispatcher:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher-migrate
     newTag: devel-20261015201307-d9cacc1 # {"$imagepolicy": "flux-system:agentplane-session-dispatcher-migrate:tag"}
 configurations:
