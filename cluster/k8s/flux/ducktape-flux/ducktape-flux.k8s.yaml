@@ -175,6 +175,7 @@ spec:
     - loom/wayback/deploy/
     - props/deploy/
     - tf/gitops/
+  timeout: 5m
   url: https://github.com/agentydragon/ducktape.git
 ---
 apiVersion: rbac.authorization.k8s.io/v1
