@@ -695,11 +695,12 @@ def add_staging_action_policies(scope: Construct) -> None:
     # strict subset of `github-agentydragon-agent` below; kept bound so clone still works if
     # that credential is ever unbound again.
     # `github-agentydragon-agent` substitutes the same write-capable `agentydragon-agent` PAT
-    # `public-coder` already carries (egress.py): GET and POST to api.github.com, github.com,
-    # codeload.github.com and *.githubusercontent.com, no path limit. A sandbox of this
-    # caller's can therefore act as that bot across the whole GitHub REST API and git protocol
-    # -- not just clone/push -- by the operator's explicit choice, the same shape of tradeoff
-    # `forgejo-haku` above already accepts for Forgejo.
+    # `public-coder` already carries (egress.py): GET, POST, PUT, PATCH and DELETE to
+    # api.github.com, github.com, codeload.github.com and *.githubusercontent.com, no path limit.
+    # A sandbox of this caller's can therefore act as that bot across the whole GitHub REST API and
+    # git protocol -- not just clone/push, and not just create: it can edit and close what it
+    # opened -- by the operator's explicit choice, the same shape of tradeoff `forgejo-haku` above
+    # already accepts for Forgejo.
     # `github-actions-logs` presents nothing either: GET-only to the Azure Blob Storage hosts
     # a workflow run's job logs and artifacts 302 to, so a sandbox of this caller's can follow
     # that redirect and read its own PR's CI output (egress.py).

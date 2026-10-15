@@ -506,9 +506,28 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
         "egresspolicy-github-agentydragon-agent",
         metadata=ApiObjectMetadata(name=GITHUB_AGENTYDRAGON_AGENT_POLICY, namespace=namespace),
         rules=[
+            # The bot across GitHub's REST API and git protocol, including the verbs that let it
+            # finish a change it already opened: PATCH on a pull request's body, PUT on
+            # `update-branch` and `merge`, DELETE on a review comment or a head branch. GET and POST
+            # alone leave a sandbox that can file a PR and cannot correct one; the first time it
+            # mattered it worked around the refusal by commenting beside a stale description instead
+            # of editing it, which costs the reviewer more than the edit (#10625).
+            #
+            # DELETE deserves a look, because it is the verb that destroys. It is here deliberately:
+            # an unpathed rule that substitutes a write-capable PAT does not bound what the bot may
+            # do, only how it asks, so a verb list narrower than the Secret behind it is a second,
+            # weaker copy of that boundary rather than the boundary. A real limit here would be
+            # paths, which this rule has never carried; if one is wanted, add paths, do not trim
+            # verbs.
             Rule.egress(
                 hosts=["api.github.com", "github.com", "codeload.github.com", "*.githubusercontent.com"],
-                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
+                methods=[
+                    PolicySetSpecRulesMethods.GET,
+                    PolicySetSpecRulesMethods.POST,
+                    PolicySetSpecRulesMethods.PUT,
+                    PolicySetSpecRulesMethods.PATCH,
+                    PolicySetSpecRulesMethods.DELETE,
+                ],
                 credential_ref=PolicySetSpecRulesCredentialRef(name="github-pat"),
             )
         ],

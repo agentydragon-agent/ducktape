@@ -165,6 +165,25 @@ def test_notifications_use_their_own_projected_audience(
     assert notification_settings["token_audience"] == notifications.TOKEN_AUDIENCE
 
 
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    """The bot can finish a pull request, not only open one.
+
+    GitHub answers a PR description with PATCH and `update-branch`/`merge` with PUT; a review comment
+    or a merged head branch sits behind DELETE. POST alone leaves a sandbox able to file a change and
+    unable to correct it. Pinned in both directions so that trimming a verb stays a decision rather
+    than a side effect of tidying, and so the rule stays unpathed rather than narrowing quietly.
+    """
+    github = _by_name(agentplane_manifests[namespace], "PolicySet", GITHUB_AGENTYDRAGON_AGENT_POLICY)
+    rule = one(github["spec"]["rules"])
+    assert set(rule["methods"]) == {"GET", "POST", "PUT", "PATCH", "DELETE"}
+    assert rule["credentialRef"] == {"name": "github-pat"}
+    # Unpathed: the verb list bounds the method, while the PAT behind it stays whole (egress.py).
+    assert "paths" not in rule
+
+
 def test_testing_github_policy_has_its_credential_and_no_real_account_credentials(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:

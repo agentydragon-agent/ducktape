@@ -1675,6 +1675,9 @@ spec:
       methods:
         - GET
         - POST
+        - PUT
+        - PATCH
+        - DELETE
       credentialRef:
         name: github-pat
 ---
