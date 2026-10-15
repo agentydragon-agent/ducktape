@@ -111,6 +111,11 @@ class Runner:
         self._initialization_log: InitializationLog | None = None
         self._initialization_task: asyncio.Task[None] | None = None
         self._quiescing = False
+        self._work_admissions = 0
+        # Delivery and resume admissions must finish before the session inventory is sealed. An
+        # OpenSession blocked before its first durable record is instead refused by the final
+        # lameduck check in `_create`; waiting for its Sandbox bootstrap here would block deletion.
+        self._quiesce_admissions = 0
         # Set whenever `facts()` may have changed; the control stream clears it before reading.
         self.facts_changed = asyncio.Event()
         # Deliveries between RPC entry and their answer count as busy before the journal knows of them.
@@ -136,6 +141,21 @@ class Runner:
         return any(session.setup_state == runner_pb2.SETUP_STATE_RUNNING for session in self.sessions.values())
 
     @contextmanager
+    def admitting_work(self, *, quiesce_barrier: bool = True) -> Iterator[None]:
+        """Track accepted work, optionally holding the session-sealing barrier until it finishes."""
+        self._work_admissions += 1
+        if quiesce_barrier:
+            self._quiesce_admissions += 1
+        self.note_activity()
+        try:
+            yield
+        finally:
+            self._work_admissions -= 1
+            if quiesce_barrier:
+                self._quiesce_admissions -= 1
+            self.note_activity()
+
+    @contextmanager
     def delivering(self) -> Iterator[None]:
         """Marks the Sandbox busy from RPC entry until the answer, before the journal records anything."""
         self._deliveries += 1
@@ -151,7 +171,8 @@ class Runner:
         bootstrap running, or any Session with a turn, an unfinished command or a setup script. Terminals
         and background processes outside those are not tracked: the runner does not supervise them."""
         busy = (
-            self._deliveries > 0
+            self._work_admissions > 0
+            or self._deliveries > 0
             or (self._initialization_log is not None and not self._initialization_log.ended)
             or any(session.busy for session in self.sessions.values())
         )
@@ -168,8 +189,14 @@ class Runner:
             self.facts_changed.set()
 
     def _quiesce_stage(self) -> runner_control_pb2.RunnerFacts.QuiesceStage:
-        sessions = [self.sessions[session_id] for session_id in self.store.session_ids() if session_id in self.sessions]
-        if self._quiescing or any(session.journal.sealed_cursor is None for session in sessions):
+        session_ids = self.store.session_ids()
+        sessions = [self.sessions[session_id] for session_id in session_ids if session_id in self.sessions]
+        if (
+            self._quiescing
+            or self._quiesce_admissions > 0
+            or len(sessions) != len(session_ids)
+            or any(session.journal.sealed_cursor is None for session in sessions)
+        ):
             return runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
         if all(self._flushed(session.session_id, cast(int, session.journal.sealed_cursor)) for session in sessions):
             return runner_control_pb2.RunnerFacts.QUIESCE_STAGE_QUIESCED
@@ -340,6 +367,7 @@ class Runner:
         launched.instructions = self.config.launch.instructions(session_id, spec.instructions)
         if not self.store.exists(session_id):
             await self._bootstrap()
+            self.refuse_work()
         async with self._create_lock:
             if self.store.exists(session_id):
                 session = await self._confirm(session_id, launched, setup_script)
@@ -388,6 +416,7 @@ class Runner:
     def enter_lameduck(self) -> None:
         """Durably refuse everything but draining operations, across runner restarts."""
         self.store.enter_lameduck()
+        self.facts_changed.set()
 
     def enter_lameduck_if_idle_since(self, token: Timestamp) -> None:
         """Enter lameduck only if the runner is idle since `token`; a runner already in lameduck stays there.
@@ -443,9 +472,16 @@ class Runner:
             setup_script=script,
             total_context_budget_tokens=model_config.total_context_budget_tokens if model_config is not None else None,
         )
+        # The resolver above can await while Quiesce enters lameduck. There is no await between
+        # this final check and the durable write, so Quiesce either refuses this OpenSession or
+        # sees its record in the session inventory and seals it.
+        self.refuse_work()
         self.store.write(session_id, record)
         session = await self._load(session_id)
         if record.setup_script_sha256 is not None:
+            # Loading the just-written record can yield while Quiesce seals the inventory. Do not
+            # start setup afterward; it would otherwise begin work on an already-final journal.
+            self.refuse_work()
             session.start_setup(script)
         return session
 
@@ -490,15 +526,12 @@ class Runner:
 
     async def quiesce(self) -> runner_pb2.QuiesceResponse:
         """Sandbox teardown: refuse new work, interrupt running turns, stop every harness, seal every journal."""
-        self._quiescing = True
-        self.enter_lameduck()
-        self.facts_changed.set()
+        self.begin_quiesce()
         try:
             sessions = [await self._load(session_id) for session_id in self.store.session_ids()]
             cursors = await asyncio.gather(*(session.seal(self.store.incarnation_uid) for session in sessions))
         finally:
-            self._quiescing = False
-            self.facts_changed.set()
+            self.finish_quiesce()
         return runner_pb2.QuiesceResponse(
             sessions=[
                 runner_pb2.SessionSeal(
@@ -507,6 +540,17 @@ class Runner:
                 for session, cursor in zip(sessions, cursors, strict=True)
             ]
         )
+
+    def begin_quiesce(self) -> None:
+        """Publish a pending drain synchronously, before its supervised task first runs."""
+        self._quiescing = True
+        self.enter_lameduck()
+        self.facts_changed.set()
+
+    def finish_quiesce(self) -> None:
+        """Publish completion or failure of the current drain attempt."""
+        self._quiescing = False
+        self.facts_changed.set()
 
     def _flushed(self, session_id: str, cursor: int) -> bool:
         acknowledged = self.store.read_acknowledgement(session_id)
