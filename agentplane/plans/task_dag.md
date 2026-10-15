@@ -350,7 +350,7 @@ does not grant history read, messaging, credentials or execution of another prin
 ### `NATIVE_SUBAGENT_EXPOSURE` — evaluate native harness children as Agentplane Sessions
 
 **Explore/plan; operator, 2026-10-15 UTC: no implementation implied.** Now that a Session is one the
-runner *declares* over the [event ingress](../docs/runner_control.md#event-ingress) — the runner pushes
+runner _declares_ over the [event ingress](../docs/runner_control.md#event-ingress) — the runner pushes
 roots and discovered children alike and the History Service index is the record of which exist —
 re-test whether Claude Code and Codex can use their own native subagent affordances, and what it takes
 to expose those children as Sessions, including **read-only ones an operator can open but cannot send
