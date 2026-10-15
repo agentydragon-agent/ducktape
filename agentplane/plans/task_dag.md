@@ -240,6 +240,9 @@ flowchart TD
     AGENT_MESSAGE_RECEPTION --> AGENT_MESSAGING
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
+    NATIVE_SUBAGENT_EXPOSURE[Explore: expose native harness children as Sessions]
+    NATIVE_SUBAGENT_EXPOSURE -. the native-child boundary it informs .-> MULTIAGENT_MODEL
+    GATEWAY_WRAPPER_RETIRE[Session registry goes, section 12] -. related .-> NATIVE_SUBAGENT_EXPOSURE
 ```
 
 ### `MULTIAGENT_MODEL` — shared identity and authority vocabulary
@@ -347,6 +350,29 @@ effective spec and delegation server-side. Test allowed and forbidden launch par
 concurrent retries. Reuse the app's create path (the shared Sandbox inventory), not harness-native agent tools. Launch alone
 does not grant history read, messaging, credentials or execution of another principal's Actions.
 
+### `NATIVE_SUBAGENT_EXPOSURE` — evaluate native harness children as Agentplane Sessions
+
+**Explore/plan; operator, 2026-10-15 UTC: no implementation implied.** Now that a Session is one the
+runner *declares* over the [event ingress](../docs/runner_control.md#event-ingress) — the runner pushes
+roots and discovered children alike and the History Service index is the record of which exist —
+re-test whether Claude Code and Codex can use their own native subagent affordances, and what it takes
+to expose those children as Sessions, including **read-only ones an operator can open but cannot send
+into**. Deliverable: a written verdict on whether discovery removes the blocker that made
+[`NATIVE_SUBAGENT_THREADS`](task_freezer.md#native_subagent_threads--as-linked-agentplane-threads)
+deferred, the child states worth projecting, and the control surface that must stay unavailable. Feed
+the answer to `MULTIAGENT_MODEL`'s native-child boundary; it does not preempt it.
+
+Two things this must settle rather than assume: the characterization matrix in
+[Native discovery](native_session_discovery.md) is still mostly unmeasured (S5-S11 planned), and a
+discovered child has no Sandbox, so read-only addressability depends on `THREAD_READ_POLICY_DESIGN`
+and `THREAD_CREATE_POLICY` — a child is not "just another Session" for authorization purposes.
+
+**Also in scope: retire the remnants of the dictated model.** The refactor moved Session declaration to
+the runner, but the old model's shape is still visible in the gateway's Session registry
+(`session_registry.py`, deleted by `GATEWAY_WRAPPER_RETIRE` if it lands) and in callers that still ask
+a component other than the runner which Sessions exist. Hunt them as part of this evaluation — not
+now, and not as a separate dispatch — and record each as its own node or as an exit criterion here.
+
 ## 4. VM environment phases
 
 The [VM Sandboxes design](../docs/vm_sandboxes.md) holds the provider constraints, and the
@@ -378,6 +404,11 @@ flowchart LR
     VM_PROVIDER --> VM_LIFECYCLE
     VM_PROVIDER --> VM_EGRESS
     VM_PROVIDER --> VM_RAM_SUSPEND
+    VM_GUEST_MEMORY[Candidate: size the VM guest for real builds]
+    VM_GUEST_BUDGET_DERIVE[Blocked: guest budgets derive from the VM spec]
+    VM_GUEST_MEMORY -. the two numbers neither node should author alone .-> VM_GUEST_BUDGET_DERIVE
+    VM_GUEST_MEMORY --> LOCAL_BAZEL
+    VM_GUEST_BUDGET_DERIVE --> VM_PROCESS_ISOLATION
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage, section 7] -. related .-> VM_PROCESS_ISOLATION
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
     VM_EGRESS --> VM_LIFECYCLE
@@ -478,6 +509,47 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 budgets and cleanup. Run a representative build/test with the client inside the VM and actions
 remote; check cancellation/cleanup while the harness stays responsive. Installed tools and working
 hosted builds do not authorize local Bazel in agent containers.
+
+### `VM_GUEST_MEMORY` — size the VM guest for real builds
+
+**Candidate; operator, 2026-10-15 UTC: 8 GiB requested, and one VM per OVH node is acceptable.** Raise
+`runner-vm`'s guest RAM from 1536Mi (`cluster/cdk8s/agentplane/runner_vm.py`) so a `bbr`/Bazelisk client
+inside the guest has room to compile. Acceptance is not "the template says 8 GiB": a Sandbox booted on
+the new template reports the larger `MemTotal` in the guest, and a representative `bbr build` and
+`bbr test` complete in it without the guest OOM killer firing. `LOCAL_BAZEL` is the intended consumer of
+that evidence and is blocked on it as well as on the capstone.
+
+Know where the ceiling is before choosing the number. A guest of `N` costs the launcher Pod roughly
+`N + 240Mi` (guest RAM plus QEMU, disk helpers and the relay), so an 8 GiB guest needs about 8.25 Gi
+free on a `kubevirt.io/schedulable` node — the 8-core hosts fit one each, the largest host about five.
+Check current free memory rather than trusting that; the operator accepts one VM per 8-core host.
+Staging carries **no** `ResourceQuota` or `LimitRange` (`TestingNamespaceResourceLimits` is testing-only,
+by design), so nothing refuses an oversized guest here — an unschedulable one just sits `Pending` on
+`Insufficient memory` rather than failing fast, which is also why testing's 4Gi container max and quota
+have to move with the template or the change fails there instead. The guest sees ~10% less than the
+domain is given (1536Mi yields 1383Mi).
+`cores: 1` is a separate, deliberate choice: 8 GiB on one vCPU is memory-heavy and compute-starved, and
+`docs/vm_sandboxes.md` notes a 1 vCPU guest scans a workspace disk at a fraction of the rate a build
+would like.
+
+### `VM_GUEST_BUDGET_DERIVE` — derive the guest's cgroup budgets from the VM's memory
+
+**Blocked on the guest being sized; pair with `VM_PROCESS_ISOLATION`, which owns the boundary.** The
+runner unit's budgets are literals in `agentplane/runner/vm.nix` (`MemoryHigh = "6G"`,
+`MemoryMax = "7G"`, `CPUQuota = "700%"`, `TasksMax = 1024`) while guest RAM is a number in
+`runner_vm.py`. Nothing connects them: today they exceed the whole VM (~4.5x), so the documented rule
+that the guest's cgroups protect the runner from its own harness never engages, and a template bump that
+overshoots them produces a runner unit capped below total guest RAM with nothing left for the kernel,
+journald and virtiofsd — the first over-committed harness then hits the **global** OOM instead of being
+killed as an identifiable subtree. Measured on a 1536Mi guest: `MemoryHigh=6442450944`,
+`MemoryMax=7516192768`, `CPUQuotaPerSecUSec=7s` against 1 vCPU.
+
+Derive the budgets at boot or in the runner binary from what the guest actually has —
+`MemTotal`/`memory.max` and the online CPU count — reserving a stated amount for the guest itself, so
+`runner_vm.py` carries one number and the unit follows it. Keep the reserve explicit and testable rather
+than a magic fraction, and prefer failing loudly when the derived value would leave the runner less than
+it needs. Exit evidence: the same image booted at two guest sizes reports budgets that track it, and a
+harness that exhausts memory is killed inside its own subtree with the runner still answering RPCs.
 
 ## 5. Independent UI and narrowly scoped service work
 
@@ -709,6 +781,9 @@ flowchart TD
     APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE
+    SANDBOX_IDLE_EXPIRY --> IDLE_SUSPEND_UI_DRIVE[Operator: drive auto-suspend and send-to-resume in staging]
+    SUSPENDED_COMPOSER --> IDLE_SUSPEND_UI_DRIVE
+    VM_PROVIDER -. the VM half of the same drive .-> IDLE_SUSPEND_UI_DRIVE
 ```
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
@@ -988,6 +1063,26 @@ deployed; this node remains in flight until the composer image rollout and stagi
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
+### `IDLE_SUSPEND_UI_DRIVE` — drive auto-suspend and send-to-resume in staging
+
+**Operator, 2026-10-15 UTC: assigned to the operator, not dispatchable to a worker.** A human drives
+the whole loop through the staging web app on a real Session and reports what the UI actually does:
+the Sandbox goes idle, suspends on its own, and a message typed into the composer reaches that stopped
+Session and brings it back end to end. `SANDBOX_IDLE_EXPIRY` supplies the automatic trigger and
+`SUSPENDED_COMPOSER` the enabled-while-suspended composer, so this is acceptance of the pair as
+experienced, not a re-run of their unit coverage.
+
+Worth recording during the drive, which automated coverage does not produce: how long the idle wait
+looks like from the UI, what the Session and Sandbox render while suspended, whether the default-off
+wake-on-message policy is legible (queued versus "resume it yourself"), what the user is told after the
+Sandbox returns and what survived, and any point where the only way forward is `kubectl`. Log a
+deployment-specific gap as a node rather than fixing it mid-drive. Cover a VM Sandbox as well as a Pod
+one — `VM_PROVIDER`'s lifecycle keeps the state PVC across stop/start, and a VM is where a resume that
+looks successful can still lose guest-local state.
+
+Related: [resume coverage](../sandboxes/debug/resume_coverage.md), and `VM_RAM_SUSPEND` for the
+"resume with the memory it had" version of the same user experience.
+
 ## 8. Ownership and naming cleanup
 
 Cleanups that leave one database per service and names that say what things are. Each node is one
@@ -1174,7 +1269,8 @@ only after that rollout delete their settings readers. This remains a separate d
 - Broad provider-matrix exploration is frozen; ordinary auth/signature denial regression coverage
   belongs with the implementation, not an unbounded production checklist.
 - Native subsessions and runner durability/thin-adapter redesign remain frozen. Neither the runner
-  channel nor multiagent design unfreezes the broader runner-state redesign.
+  channel nor multiagent design unfreezes the broader runner-state redesign. `NATIVE_SUBAGENT_EXPOSURE`
+  evaluates the first of those against event ingress without unfreezing it: a verdict, not a dispatch.
 - Existing security boundaries, data-preserving migration checks and representative deployment
   integration checks remain requirements. The freezer is not a waiver for a known data-loss or
   unauthorized-access bug; promote one when evidence makes it concrete.
