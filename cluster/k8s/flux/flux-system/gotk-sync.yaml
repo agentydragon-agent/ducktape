@@ -15,6 +15,28 @@ spec:
     - loom/wayback/deploy/
     - props/deploy/
     - tf/gitops/
+  # 5m, because a clone of this repository does not fit the 60 seconds that
+  # `GitRepository.spec.timeout` defaults to. Measured 2026-10-15: a bare clone of ducktape is ~519 MB
+  # and takes ~60 seconds, so every pass races its own deadline, and a pass that loses stores nothing.
+  # This source has held `GitOperationFailed` across the whole retained event window -- 450 recorded
+  # failures since 2026-10-09, mostly `unable to clone '...ducktape.git': context deadline exceeded`,
+  # one TLS handshake timeout among them.
+  #
+  # Losing costs more here than anywhere else in the tree. This is the bootstrap root: the devel commit
+  # it stores is the commit every other source and Kustomization is eventually applied from, and a
+  # source serving a stale artifact after a failed fetch says so only in an event nobody watches.
+  #
+  # `ducktape-flux/ducktape`, the namespace-local source the app tree reads, carries the same 5m for
+  # the same clone; keep the two in step. cluster/cdk8s/ducktape_flux.py holds the shared reasoning,
+  # including why `sparseCheckout` above answers a different question from this one.
+  #
+  # Hand-written against the `DO NOT EDIT` header above, deliberately. That header records provenance,
+  # not ownership: `flux bootstrap` produced this file once and nothing re-runs it, while
+  # cluster/terraform/main/flux.tf names these committed manifests the source of truth and only seeds
+  # them into an empty cluster. The kustomization.yaml beside this file says root GitRepository fields
+  # live here for exactly that reason, and the cdk8s generator pins `cluster/k8s` one way -- it does
+  # not write this file, so nothing regenerates this field away.
+  timeout: 5m
   url: https://github.com/agentydragon/ducktape.git
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1

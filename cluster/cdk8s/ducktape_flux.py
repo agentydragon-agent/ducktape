@@ -124,6 +124,30 @@ def chart(app: App) -> Chart:
         "source",
         metadata=ApiObjectMetadata(name=SOURCE_NAME, namespace=NAMESPACE),
         interval="1m",
+        # 5m, because a clone of this repository does not fit in the 60s that
+        # `GitRepository.spec.timeout` defaults to.
+        #
+        # Measured on 2026-10-15: a bare clone is ~519 MB and takes ~60 seconds, so under the
+        # default this source raced its own deadline once a minute and usually lost. On the losing
+        # side `source-controller` reports `GitOperationFailed: failed to checkout and determine
+        # revision: ... context deadline exceeded` and keeps serving the last artifact it managed
+        # to store, which stops 164 generated artifacts and 74 direct Kustomizations from advancing
+        # with no PR at fault and nothing else saying so.
+        #
+        # Not fixed by narrowing `sparseCheckout`: that filters the checked-out working tree, not
+        # what git transfers, so the whole history crosses the wire whatever the list says. A
+        # partial/shallow clone is what would help and this CRD (source-controller v1.9.5) offers
+        # no field for it. The history is the cost, and most of it is paths no longer in the tree:
+        # ~233 MB `augur` and ~121 MB `adgn` are deleted, and 74 revisions of MODULE.bazel.lock
+        # alone are ~130 MB. Slimming that is the durable fix; this line is what makes the clone
+        # fit until someone does.
+        #
+        # 5m is an order of magnitude over the measurement while still bounding one attempt --
+        # `interval` stays 1m, so this only lengthens the ceiling, not the polling. No
+        # `GitRepository` in this repository set a clone timeout before this one; the 2m-30m
+        # timeouts elsewhere are `Kustomization.spec.timeout`, how long an apply may take, which
+        # is a different knob answering a different question.
+        timeout="5m",
         ref=GitRepositorySpecRef(branch=BRANCH),
         sparse_checkout=[
             f"{HAND_WRITTEN_ROOT}/",
