@@ -75,7 +75,8 @@ class ImageUpdatePush(Construct):
     GitHub repository at `url`, and the GitRepository, authenticated by the ducktape-automation
     GitHub App, that it checks out and pushes through. Both live in the App Secret's namespace:
     the automation's `sourceRef` is by name alone. The source polls every `source_interval`, the
-    automation every five minutes.
+    automation every five minutes. `source_timeout` bounds the source's clone/ls attempt, whose
+    default is 60s and which a large repository overruns; `None` leaves the default in place.
     """
 
     def __init__(
@@ -92,6 +93,7 @@ class ImageUpdatePush(Construct):
         source_interval: str,
         description: str | None = None,
         sparse_checkout: Sequence[str] | None = None,
+        source_timeout: str | None = None,
     ) -> None:
         super().__init__(scope, id)
         self.source = GitRepository(
@@ -105,6 +107,7 @@ class ImageUpdatePush(Construct):
             ref=GitRepositorySpecRef(branch=branch),
             secret_ref=GitRepositorySpecSecretRef(name=_GITHUB_APP_SECRET),
             sparse_checkout=sparse_checkout,
+            timeout=source_timeout,
             url=url,
         )
         self.automation = ImageUpdateAutomation(

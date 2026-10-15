@@ -35,6 +35,7 @@ spec:
   interval: 10m
   ref:
     branch: devel
+  timeout: 5m
   url: https://github.com/agentydragon/ducktape.git
 ---
 apiVersion: source.extensions.fluxcd.io/v1beta1
