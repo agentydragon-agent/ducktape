@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Playwright, expect
 
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.viewports import Viewport
 from util.testing.visual_capture import HarnessConfig, InlinePage, VisualHarness
 
@@ -93,6 +94,49 @@ async def test_trace_default_opt_out_selection_and_failure_retention(
     with pytest.raises(ValueError, match="VISUAL_TRACE must be 0 or 1"):
         async with harness.open("plain", capture_name="invalid"):
             pass
+
+
+async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(harness: VisualHarness) -> None:
+    async with harness.open("plain", viewport=Viewport(width=300, height=200, device_scale_factor=2)) as view:
+        fixture = get_required_path(own_repo_rlocation("util/testing/capture-diagnostics-fixture.js")).read_text(
+            encoding="utf-8"
+        )
+        await view.page.evaluate(fixture)
+        await view.capture("viewport", scale="css")
+        await view.capture("cropped", target=view.page.locator(".entry"), scale="css")
+
+    viewport = json.loads((harness.output_dir / "viewport.capture.json").read_text())
+    assert viewport["capture_name"] == "viewport"
+    assert viewport["sample"] == "before_screenshot"
+    assert viewport["scale"] == "css"
+    assert viewport["viewport"] == {"width": 300, "height": 200, "deviceScaleFactor": 2, "scrollX": 0, "scrollY": 50}
+    assert viewport["focus"]["inputSelection"] == {"start": 2, "end": 9, "direction": "forward"}
+    assert viewport["target"] is None
+    assert {
+        "rect": {"x": 110, "y": -30, "width": 80, "height": 40},
+        "computedCssWidth": "80px",
+        "computedCssHeight": "40px",
+        "bitmapWidth": 160,
+        "bitmapHeight": 80,
+    } in viewport["canvases"]
+
+    cropped = json.loads((harness.output_dir / "cropped.capture.json").read_text())
+    assert cropped["capture_name"] == "cropped"
+    assert cropped["full_page"] is False
+    assert cropped["target"]["rect"]["x"] == 10.25
+    assert cropped["target"]["scrollHeight"] == 300
+    history = cropped["targetScrollAncestors"][0]
+    assert history["classes"] == ["history"]
+    assert history["scrollTop"] == 17
+    assert history["scrollHeight"] > history["clientHeight"]
+    assert history["data-layout-settled"] == "true"
+    assert history["data-scroll-mode"] == "virtualized"
+    assert cropped["scrollables"][0]["data-scroll-mode"] == "virtualized"
+    assert "sensitive-selection" not in json.dumps([viewport, cropped])
+    assert json.loads((harness.output_dir / "visual-review.json").read_text())["assets"] == [
+        {"path": "viewport.png", "label": "viewport"},
+        {"path": "cropped.png", "label": "cropped"},
+    ]
 
 
 async def test_unnamed_capture_requires_case_identity(harness: VisualHarness) -> None:
