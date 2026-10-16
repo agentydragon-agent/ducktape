@@ -24,6 +24,7 @@ from cluster.cdk8s.agentplane.egress import (
     KUBERNETES_CREDENTIAL,
     KUBERNETES_HOST,
     PUBLIC_INTERNET_POLICY,
+    agent_api,
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import (
     ACTIVITYWATCH_READ_POLICY,
@@ -57,26 +58,6 @@ def _app_default_policies(docs: list[dict[str, Any]]) -> list[str]:
     config = _by_name(docs, "ConfigMap", "app-config")
     defaults: list[str] = yaml.safe_load(config["data"]["config.yaml"])["default_policy_sets"]
     return defaults
-
-
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_legacy_sandbox_service_names_still_target_the_current_workloads(
-    agentplane_manifests: dict[str, list[dict[str, Any]]], namespace: str
-) -> None:
-    """Existing runner specs keep their old DNS names until their Pods or VMs are replaced."""
-    docs = agentplane_manifests[namespace]
-    for canonical, legacy in (
-        ("actions", "agentplane-actions"),
-        ("egress", "agentplane-egress"),
-        ("history-service", "agentplane-history-service"),
-        ("llm-ingress", "agentplane-llm-ingress"),
-        ("notifications", "agentplane-notifications"),
-        ("runner-gateway", "agentplane-runner-gateway"),
-    ):
-        current = _by_name(docs, "Service", canonical)
-        compatibility = _by_name(docs, "Service", legacy)
-        assert compatibility["spec"]["selector"] == current["spec"]["selector"]
-        assert compatibility["spec"]["ports"] == current["spec"]["ports"]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
@@ -122,11 +103,26 @@ def test_workload_policy_grants_only_the_agent_facing_actions_api(
         if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == BASIC_POLICY
     )
     canonical_host = f"actions.{namespace}.svc.cluster.local"
-    legacy_host = f"agentplane-actions.{namespace}.svc.cluster.local"
     rule = one(rule for rule in policy["spec"]["rules"] if canonical_host in rule["hosts"])
-    assert legacy_host in rule["hosts"]
+    assert rule["hosts"] == [canonical_host]
     assert rule["paths"], "a rule without paths admits every path on the host"
     assert all(path.startswith(_AGENT_FACING_PREFIXES) for path in rule["paths"])
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_agent_egress_api_uses_its_canonical_service(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    policy = one(
+        doc
+        for doc in agentplane_manifests[namespace]
+        if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == BASIC_POLICY
+    )
+    canonical_host = agent_api(namespace).fqdn
+    rule = one(rule for rule in policy["spec"]["rules"] if canonical_host in rule["hosts"])
+    assert rule["hosts"] == [canonical_host]
+    assert rule["methods"] == ["GET"]
+    assert rule["paths"] == ["/openapi.json", "/v1/rules"]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)

@@ -1438,36 +1438,6 @@ the History Service holds every Session's Sandbox and all pinned gateways have s
 writing this database. First remove strict config keys from manifests with an accepting receiver;
 only after that rollout delete their settings readers. This remains a separate data-drop PR.
 
-## 13. Namespace-local Kubernetes object names
-
-```mermaid
-flowchart TD
-    AGENTPLANE_LEGACY_RUNTIME_ALIASES_RETIRE[Remove legacy Sandbox DNS and ConfigMap aliases after reader gate]
-```
-
-The stateless namespace-local naming cleanup is complete. Services, Deployments, ServiceAccounts,
-ConfigMaps, HTTPRoutes, monitors, PodDisruptionBudgets, and remaining safe local network and RBAC
-objects now use names that do not repeat their `agentplane-*` namespace. References and generated
-manifests moved with them. Secret and credential names, PolicySets, database resources, Flux
-Kustomization identities, token audiences, and other durable auth or data identities retain their
-established names.
-
-The rename keeps the prior DNS names as Service aliases and mirrors the runner platform-instructions,
-tool-config, and VM-config ConfigMaps at their old names. Persisted Sandbox specs and already-running
-Pods or VMs can retain those references after a template update; the aliases point at the current
-services and config data. Runner Pod labels also keep their prior value so existing incarnations
-remain covered by the network fences.
-
-### `AGENTPLANE_LEGACY_RUNTIME_ALIASES_RETIRE` — remove old Sandbox runtime references
-
-**Blocked on a read-only rollout inventory showing no running Sandbox Pod or VM, and no persisted
-Sandbox/template spec that can still start an incarnation, references the old Service DNS or
-ConfigMap names.** Do not delete or force-recreate Sandboxes to clear this gate. Once every old
-incarnation and stored spec has naturally moved or gone, remove the legacy Service aliases and the
-three ConfigMap mirrors together with their compatibility tests and reader permissions. Until then,
-they are required runtime compatibility for user-owned Sandbox state, not unfinished canonical
-naming.
-
 ## Scope and retirement of stale gates
 
 - Notifications keep workers in the HTTP service. Retention, worker extraction, idle-polling
@@ -1480,7 +1450,7 @@ naming.
   integration checks remain requirements. The freezer is not a waiver for a known data-loss or
   unauthorized-access bug; promote one when evidence makes it concrete.
 
-## 14. Delivery boundaries, APIs and harness identity
+## 13. Delivery boundaries, APIs and harness identity
 
 These are operator-reviewable design and characterization tasks. They do not authorize a queue,
 database, transport, identity or permission change. Detailed code paths and alternatives are in the
