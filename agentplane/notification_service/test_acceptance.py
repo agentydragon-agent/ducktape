@@ -1,10 +1,10 @@
-"""Real Actions → notification inbox → Session Dispatcher, Runner Gateway and History Service → both harnesses, no app."""
+"""Real Actions → notification inbox → Go Dispatcher/Runner Gateway and History → both harnesses, no app."""
 
 import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator, Callable
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,7 +31,6 @@ from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.grpc.calls import bearer, dial
-from agentplane.grpc.serving import serving
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.notification_service.api import create_app
@@ -48,83 +47,16 @@ from agentplane.runner.platform_instructions import render_platform_instructions
 from agentplane.runner.runner import Runner
 from agentplane.runner.sandbox_launch import SandboxIdentity
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
-from agentplane.runner_gateway.testing.connected_runner import authenticated_runner_gateway
-from agentplane.sandboxes.testing.kubernetes import (
-    ACCOUNT,
-    POD_UID,
-    SANDBOX,
-    SANDBOX_UID,
-    SandboxCluster,
-    sandbox_cluster,
-)
-from agentplane.session_dispatcher import main as dispatcher_main
-from agentplane.session_dispatcher.settings import Settings as DispatcherSettings
-from agentplane.session_dispatcher.testing.sandbox_status import set_sandbox
+from agentplane.runner_gateway.testing.go_service import go_service
+from agentplane.sandboxes.testing.api_server import NAMESPACE, SANDBOX, SandboxCluster, sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # gazelle:include_dep @pypi//protobuf
 
 
-@asynccontextmanager
-async def running_dispatcher(
-    cluster: SandboxCluster, *, settings: DispatcherSettings, monkeypatch: pytest.MonkeyPatch, caller_token_file: Path
-) -> AsyncIterator[SessionDispatcherClient]:
-    """Run the production Dispatcher against the fake cluster and connected Gateway fixture."""
-    set_sandbox(cluster, ready=True, incarnation=POD_UID, pod_name=SANDBOX)
-    synced = asyncio.Event()
-
-    class ObservedSandboxWatch(dispatcher_main.SandboxWatch):
-        async def run(self) -> None:
-            watcher = asyncio.create_task(super().run())
-            try:
-                await self.wait_synced()
-                synced.set()
-                await watcher
-            finally:
-                watcher.cancel()
-                await asyncio.gather(watcher, return_exceptions=True)
-
-    async def configuration(path: Path | None) -> k8s_client.Configuration:
-        del path
-        return cluster.api.configuration
-
-    listening: asyncio.Future[int] = asyncio.get_running_loop().create_future()
-
-    @asynccontextmanager
-    async def observed_serving(server: grpc.aio.Server, address: str, *, grace_s: float) -> AsyncIterator[int]:
-        # Observe the real server lifecycle, using an OS-assigned test port. Dialing a guessed
-        # port while serve() is still opening its database listeners incurs gRPC retry backoff.
-        del address, grace_s
-        async with serving(server, "127.0.0.1:0", grace_s=0) as port:
-            listening.set_result(port)
-            yield port
-
-    stopping = asyncio.Event()
-
-    async def until_stopped() -> None:
-        await stopping.wait()
-
-    monkeypatch.setattr(dispatcher_main, "SandboxWatch", ObservedSandboxWatch)
-    monkeypatch.setattr(dispatcher_main, "kubernetes_configuration", configuration)
-    monkeypatch.setattr(dispatcher_main, "serving", observed_serving)
-    monkeypatch.setattr(dispatcher_main, "until_terminated", until_stopped)
-    async with asyncio.TaskGroup() as tasks, AsyncExitStack() as stack:
-        tasks.create_task(dispatcher_main.serve(settings), name="notification-acceptance-dispatcher")
-        try:
-            async with asyncio.timeout(5):
-                port = await listening
-                channel = await stack.enter_async_context(dial(f"127.0.0.1:{port}"))
-                await channel.channel_ready()
-                await synced.wait()
-            yield SessionDispatcherClient(channel, token_file=caller_token_file, request_timeout_s=10)
-        finally:
-            stopping.set()
-
-
 @pytest.fixture
-def config(config: RunnerConfig) -> RunnerConfig:
+def config(config: RunnerConfig, cluster: SandboxCluster) -> RunnerConfig:
     """The runner starts every Session with the deployment's real platform instructions."""
     platform_instructions = render_platform_instructions(
         egress_api_url="http://egress.test",
@@ -135,16 +67,21 @@ def config(config: RunnerConfig) -> RunnerConfig:
         config,
         launch=replace(
             config.launch,
-            sandbox=SandboxIdentity(namespace=SANDBOX_NAMESPACE, name=SANDBOX, uid=str(SANDBOX_UID)),
+            sandbox=SandboxIdentity(namespace=NAMESPACE, name=SANDBOX, uid=cluster.uid),
             platform_instructions=platform_instructions,
         ),
     )
 
 
-@pytest.mark.parametrize("busy", [False, True])
-@pytest.mark.parametrize("failed_before_rpc", [False, True])
+@pytest.fixture
+async def cluster() -> AsyncIterator[SandboxCluster]:
+    async with sandbox_cluster() as cluster:
+        yield cluster
+
+
 async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     store: Store,
+    cluster: SandboxCluster,
     restart: Callable[[Service], Service],
     action_engine: AsyncEngine,
     echo_catalog: ActionCatalog,
@@ -153,35 +90,32 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     spec: runner_pb2.SessionSpec,
     model: ScriptedModel,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
     sandbox_service_db_url: str,
     dispatcher_db_url: str,
-    busy: bool,
-    failed_before_rpc: bool,
 ) -> None:
     caplog.set_level(logging.INFO, logger=__name__)
-    owner = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
-    delegate = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="notifications")
-    other = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="other")
+    owner = cluster.owner
+    delegate = ServiceAccountRef(namespace=NAMESPACE, name="notifications")
+    other = ServiceAccountRef(namespace=NAMESPACE, name="other")
     action_service = ActionService(
         action_store(make_sessionmaker(action_engine)),
         echo_catalog,
         {"agentplane": echo_executor},
         dispatches=ChangeSignal(),
     )
-    async with action_service, sandbox_cluster() as cluster, asyncio.timeout(60), AsyncExitStack() as stack:
-        for token, account in [("owner-token", owner), ("delegate-token", delegate), ("other-token", other)]:
-            cluster.fake.tokens[token] = TokenVerdict(
-                username=f"system:serviceaccount:{account.namespace}:{account.name}",
-                pod_name=f"{account.name}-pod",
-                pod_uid=f"{account.name}-pod-uid",
-                audiences=("test-notifications",),
-            )
+    async with action_service, asyncio.timeout(60), AsyncExitStack() as stack:
+        owner_token = await cluster.server.pod_token(NAMESPACE, SANDBOX, ["test-notifications"])
+        delegate_token = await cluster.server.pod_token(
+            NAMESPACE, "notifications", ["test-notifications", "test-dispatcher", "test-gateway"]
+        )
+        other_token = await cluster.server.pod_token(NAMESPACE, "other", ["test-notifications"])
+        runner_token = await cluster.server.pod_token(NAMESPACE, SANDBOX, ["test-runner-control"])
         resolver = WorkloadPrincipalResolver(
-            authentication=k8s_client.AuthenticationV1Api(cluster.api),
+            authentication=k8s_client.AuthenticationV1Api(cluster.server.api),
             audience="test-notifications",
-            allowed_service_account_namespaces={SANDBOX_NAMESPACE},
+            allowed_service_account_namespaces={NAMESPACE},
         )
         action_api = actions_app(
             action_service,
@@ -196,42 +130,46 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
         )
         history_wakeups = create_wakeups(make_url(sandbox_service_db_url))
         token_file = tmp_path / "delegate-token"
-        token_file.write_text("delegate-token")
+        token_file.write_text(delegate_token)
+        gateway = await stack.enter_async_context(
+            go_service(
+                cluster.server.kubeconfig,
+                database_url=dispatcher_db_url,
+                namespace=cluster.inventory.namespace,
+                dispatcher_callers=(delegate,),
+                gateway_callers=(delegate,),
+                dispatcher_audience="test-dispatcher",
+                gateway_audience="test-gateway",
+                runner_audience="test-runner-control",
+                runner_proxy_token_file=token_file,
+            )
+        )
+        remote = gateway.gateway_client(token_file, request_timeout_s=20, lifecycle_timeout_s=310)
+        destination = SandboxDestination(
+            owner=ServiceAccount(namespace=owner.namespace, name=owner.name), sandbox=SANDBOX, sandbox_uid=cluster.uid
+        )
+        runner_connections = await stack.enter_async_context(AsyncExitStack())
+        await runner_connections.enter_async_context(
+            gateway.connected_runner(runner, token=runner_token, proxy_client=remote, destination=destination)
+        )
+        dispatcher_channel = await stack.enter_async_context(dial(gateway.target))
+        dispatcher = SessionDispatcherClient(dispatcher_channel, token_file=token_file, request_timeout_s=10)
+        # Sharing a listener does not let a Runner-audience credential call Dispatcher methods.
+        with pytest.raises(grpc.aio.AioRpcError) as rejected:
+            await dispatcher.stub.ListDispatches(
+                session_dispatcher_pb2.ListDispatchesRequest(),
+                metadata=(("authorization", f"Bearer {runner_token}"),),
+                timeout=5,
+            )
+        assert rejected.value.code() is grpc.StatusCode.UNAUTHENTICATED
         async with (
             httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=action_api), base_url="http://actions.test"
             ) as action_http,
-            authenticated_runner_gateway(
-                cluster, runner, token_file, manager=delegate, token="delegate-token", audience="test-notifications"
-            ) as remote,
             ingest(sandbox_service_db_url, runner),
             history_service(sandbox_service_db_url, tmp_path / "history-token") as history,
             history_wakeups.listener.listen(),
         ):
-            runner_token_file = tmp_path / "dispatcher-runner-token"
-            runner_token_file.write_text("dispatcher-runner-token")
-            cluster.fake.tokens["dispatcher-runner-token"] = TokenVerdict(
-                username=f"system:serviceaccount:{delegate.namespace}:{delegate.name}",
-                pod_name="notifications-runner-client",
-                pod_uid="notifications-runner-client-uid",
-                audiences=("test-notifications",),
-            )
-            dispatcher_settings = DispatcherSettings(
-                database_url=dispatcher_db_url,
-                namespace=cluster.inventory.namespace,
-                caller_accounts=frozenset({delegate}),
-                token_audience="test-notifications",
-                runner_control_target=remote.control_target,
-                runner_token_file=runner_token_file,
-                request_timeout_s=10,
-                host="127.0.0.1",
-                _cli_parse_args=False,
-            )
-            dispatcher = await stack.enter_async_context(
-                running_dispatcher(
-                    cluster, settings=dispatcher_settings, monkeypatch=monkeypatch, caller_token_file=token_file
-                )
-            )
             source = ActionServiceClient(action_http, token_file)
             service = Service(
                 store,
@@ -249,29 +187,24 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=api),
                 base_url="http://notifications.test",
-                headers={"Authorization": "Bearer owner-token"},
+                headers={"Authorization": f"Bearer {owner_token}"},
             ) as agent:
-                destination = SandboxDestination(
-                    owner=ServiceAccount(namespace=owner.namespace, name=owner.name),
-                    sandbox=SANDBOX,
-                    sandbox_uid=SANDBOX_UID,
-                )
                 native = remote.runner(destination)
                 session_id = (await native.open_session(session_id=uuid4(), spec=spec)).session_id
                 native_session = runner.sessions[session_id]
 
                 async def history_caught_up() -> None:
-                    # Delivery reads entries from the History Service, which copies them behind the runner.
-                    (live,) = [session for session in await native.list_sessions() if session.session_id == session_id]
+                    # Delivery reads entries from History, which copies them behind the native journal.
+                    live_cursor = native_session.journal.last_cursor
                     changed = asyncio.Event()
                     with history_wakeups.changes[Channel.HISTORY].subscribe(changed):
-                        while (await history.read_session_events(session_id, limit=1)).last_cursor < live.last_cursor:
+                        while (await history.read_session_events(session_id, limit=1)).last_cursor < live_cursor:
                             await changed.wait()
                             changed.clear()
 
                 submitted = await action_http.post(
                     "/v1/action-requests",
-                    headers={"Authorization": "Bearer owner-token"},
+                    headers={"Authorization": f"Bearer {owner_token}"},
                     json={
                         "idempotency_key": "notification-test",
                         "title": "Notification test",
@@ -290,7 +223,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     OperatorPrincipal(issuer="test", subject="operator"),
                 )
                 body = {
-                    "destination_ref": {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX, "uid": SANDBOX_UID},
+                    "destination_ref": {"namespace": NAMESPACE, "name": SANDBOX, "uid": cluster.uid},
                     "session_id": session_id,
                     "source": {"provider": "actions", "request_id": request["id"]},
                     "idempotency_key": "listen",
@@ -299,11 +232,11 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     await agent.post("/v1/subscriptions", json=body | {"owner": owner.model_dump()})
                 ).status_code == 422
                 assert (
-                    await agent.post("/v1/subscriptions", json=body, headers={"Authorization": "Bearer other-token"})
+                    await agent.post("/v1/subscriptions", json=body, headers={"Authorization": f"Bearer {other_token}"})
                 ).status_code == 404
                 other_request = await action_http.post(
                     "/v1/action-requests",
-                    headers={"Authorization": "Bearer other-token"},
+                    headers={"Authorization": f"Bearer {other_token}"},
                     json={
                         "idempotency_key": "other",
                         "title": "Other owner",
@@ -342,51 +275,45 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     if history_cursor > 128:
                         break
                 assert history_cursor > 128
-                initial = None
-                if busy:
-                    await dispatcher.submit_input(
-                        sandbox=SANDBOX, session_id=session_id, command_id="initial", text="Do other work"
-                    )
-                    initial = await model.request()
+                # Subscription preflight requires the live Runner. Disconnect it only after that
+                # succeeds, so the committed notice remains queued during the uncertain retry.
+                await runner_connections.aclose()
                 original = SessionDispatcherClient.submit_input
-                lost = False
-                notice_sent = False
+                committed_responses: list[session_dispatcher_pb2.Dispatch] = []
+                attempted_ids: list[str] = []
                 attempted_id: str | None = None
 
                 async def lose_response(
                     self: SessionDispatcherClient, *, sandbox: str, session_id: str, command_id: str, text: str
                 ) -> session_dispatcher_pb2.Dispatch:
-                    nonlocal lost, notice_sent, attempted_id
+                    nonlocal attempted_id
                     if attempted_id is None:
                         attempted_id = command_id
                     else:
                         assert command_id == attempted_id
-                    if failed_before_rpc and not lost:
-                        lost = True
-                        raise ValueError("simulated local failure before SubmitInput")
+                    attempted_ids.append(command_id)
                     dispatch = await original(
                         self, sandbox=sandbox, session_id=session_id, command_id=command_id, text=text
                     )
-                    notice_sent = True
-                    if not lost:
-                        lost = True
+                    committed_responses.append(dispatch)
+                    if len(committed_responses) == 1:
                         raise ConnectionError("simulated lost Dispatcher response")
                     return dispatch
 
                 monkeypatch.setattr(SessionDispatcherClient, "submit_input", lose_response)
 
-                async def step_until_sent() -> None:
-                    # A step sends only once the History Service has every entry the runner had,
-                    # and the runner can append between the two reads, so steps repeat until it sends.
-                    while not notice_sent:
-                        async with store.sessions.begin() as session:
-                            await session.execute(
-                                update(Inbox)
-                                .where(Inbox.id == UUID(subscription["inbox_id"]))
-                                .values(next_attempt=datetime.now(UTC))
-                            )
-                        await history_caught_up()
-                        await service.step()
+                async def step_until_submit_count(target: int) -> None:
+                    # Retry the same durable notice ID after losing a committed RPC response.
+                    async with asyncio.timeout(20):
+                        while len(committed_responses) < target:
+                            async with store.sessions.begin() as session:
+                                await session.execute(
+                                    update(Inbox)
+                                    .where(Inbox.id == UUID(subscription["inbox_id"]))
+                                    .values(next_attempt=datetime.now(UTC))
+                                )
+                            await history_caught_up()
+                            await service.step()
 
                 async def wait_for_runner_admission() -> None:
                     assert attempted_id is not None
@@ -425,16 +352,24 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     finally:
                         watch.cancel()
 
-                if failed_before_rpc:
-                    with pytest.raises(ValueError, match="before SubmitInput"):
-                        await step_until_sent()
-                else:
-                    await step_until_sent()
-                assert lost
-                if initial is not None:
-                    await model.reply(initial, Text("Initial work complete"))
-                # The durable attempt marker exists, but the runner has not been called.
-                await step_until_sent()
+                await step_until_submit_count(1)
+                first_id = committed_responses[0].command_id
+                assert first_id == attempted_id
+                assert len(attempted_ids) == 1
+                # The Go RPC committed the first request, but the notification caller lost its response.
+                await step_until_submit_count(2)
+                assert len(attempted_ids) == 2
+                assert attempted_ids == [first_id, first_id]
+                assert [response.command_id for response in committed_responses] == [first_id, first_id]
+                assert committed_responses[1].state in {
+                    session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+                    session_dispatcher_pb2.DELIVERY_STATE_DELIVERING_TO_RUNNER,
+                    session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
+                }
+                assert committed_responses[1].created_at == committed_responses[0].created_at
+                await stack.enter_async_context(
+                    gateway.connected_runner(runner, token=runner_token, proxy_client=remote, destination=destination)
+                )
                 await wait_for_runner_admission()
                 notice_request = await model.request()
                 notices = [text for text in notice_request.user_texts if text.startswith("Agentplane inbox notice: ")]
@@ -474,7 +409,9 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     {"provider": "actions", "request_id": request["id"], "sequence": sequence} for sequence in [1, 2]
                 ]
                 assert (
-                    await agent.get(f"/v1/inboxes/{inbox_id}/entries", headers={"Authorization": "Bearer other-token"})
+                    await agent.get(
+                        f"/v1/inboxes/{inbox_id}/entries", headers={"Authorization": f"Bearer {other_token}"}
+                    )
                 ).status_code == 404
                 ack = await agent.put(
                     f"/v1/inboxes/{inbox_id}/acknowledgement", json={"through_cursor": page["entries"][0]["cursor"]}

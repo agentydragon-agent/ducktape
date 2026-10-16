@@ -1,0 +1,235 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/proto/session_dispatcher"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/dispatcher"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/go/gateway"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/go-logr/logr"
+	_ "github.com/lib/pq"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+func kubernetesConfig(c config) (*rest.Config, error) {
+	if c.Kubeconfig != "" {
+		return clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
+	}
+	return rest.InClusterConfig()
+}
+
+func accountSet(accounts []auth.Account) map[auth.Account]struct{} {
+	result := make(map[auth.Account]struct{}, len(accounts))
+	for _, account := range accounts {
+		result[account] = struct{}{}
+	}
+	return result
+}
+
+func accountNamespaces(accounts []auth.Account, extra *auth.Account) []string {
+	names := make(map[string]struct{}, len(accounts)+1)
+	for _, account := range accounts {
+		names[account.Namespace] = struct{}{}
+	}
+	if extra != nil {
+		names[extra.Namespace] = struct{}{}
+	}
+	result := make([]string, 0, len(names))
+	for name := range names {
+		result = append(result, name)
+	}
+	return result
+}
+
+func waitForListener(ctx context.Context, hub *dispatcher.WatchHub, failed <-chan error) error {
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for !hub.Connected() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-failed:
+			return fmt.Errorf("PostgreSQL listener failed before startup: %w", err)
+		case <-ticker.C:
+		}
+	}
+	return nil
+}
+
+func reportUnexpected(ctx context.Context, failed chan<- error, role string, err error) {
+	if ctx.Err() != nil {
+		return
+	}
+	if err == nil {
+		err = fmt.Errorf("%s stopped unexpectedly", role)
+	}
+	failed <- fmt.Errorf("%s: %w", role, err)
+}
+
+func serve(ctx context.Context, c config) error {
+	config, err := kubernetesConfig(c)
+	if err != nil {
+		return err
+	}
+	kube, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return err
+	}
+	scheme := runtime.NewScheme()
+	if err := sandboxapi.AddToScheme(scheme); err != nil {
+		return err
+	}
+	objects, err := client.New(config, client.Options{Scheme: scheme})
+	if err != nil {
+		return err
+	}
+	inventory, err := cache.New(config, cache.Options{
+		Scheme: scheme, Mapper: objects.RESTMapper(),
+		DefaultNamespaces: map[string]cache.Config{c.Namespace: {}},
+	})
+	if err != nil {
+		return err
+	}
+	db, err := sql.Open("postgres", c.DispatcherDatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(4)
+	if err := db.PingContext(ctx); err != nil {
+		return fmt.Errorf("Dispatcher PostgreSQL unavailable: %w", err)
+	}
+	store := dispatcher.NewStore(db, c.QueueCap)
+	catalog, err := dispatcher.NewKubernetesSandboxes(inventory, objects, c.Namespace)
+	if err != nil {
+		return err
+	}
+	dispatchAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.DispatcherAudience,
+		accountNamespaces(c.DispatcherCallers, nil))
+	if err != nil {
+		return err
+	}
+	gatewayAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.GatewayAudience,
+		accountNamespaces(c.GatewayCallers, c.ControllerAccount))
+	if err != nil {
+		return err
+	}
+	runnerAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.RunnerAudience, []string{c.Namespace})
+	if err != nil {
+		return err
+	}
+	g, err := gateway.New(gateway.Config{
+		Namespace: c.Namespace, CallerAccounts: c.GatewayCallers,
+		SandboxControllerAccount: c.ControllerAccount,
+		HolderName:               c.PodName, HolderIP: c.PodIP, ProxyPort: int32(c.ProxyPort),
+	}, gatewayAuth, runnerAuth, objects, kube.CoreV1(), kube.CoordinationV1(), kube.DiscoveryV1())
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	failed := make(chan error, 6)
+	go func() {
+		reportUnexpected(ctx, failed, "Sandbox cache", inventory.Start(ctx))
+	}()
+	if !catalog.WaitSynced(ctx) {
+		return errors.New("Sandbox inventory did not synchronize")
+	}
+	if err := g.WatchConnectionLeases(ctx, kube.CoordinationV1()); err != nil {
+		return err
+	}
+	hub := dispatcher.NewWatchHub(c.DispatcherDatabaseURL)
+	go func() { reportUnexpected(ctx, failed, "PostgreSQL listener", hub.Run(ctx)) }()
+	if err := waitForListener(ctx, hub, failed); err != nil {
+		return err
+	}
+	runner := &dispatcher.ProxyRunner{
+		Namespace: c.Namespace, TokenFile: c.RunnerTokenFile, Timeout: c.RunnerTimeout,
+		TargetTemplate: c.RunnerControlTargetTemplate,
+	}
+	ready := make(chan struct{})
+	worker := &dispatcher.DeliveryWorker{
+		Store: store, Catalog: catalog, Wake: catalog,
+		Leases: dispatcher.NewOwnershipLeases(kube.CoordinationV1().Leases(c.Namespace), store, c.Namespace),
+		Runner: runner, Hub: hub, Ready: ready,
+	}
+	go func() { reportUnexpected(ctx, failed, "Dispatcher delivery", worker.Run(ctx)) }()
+	select {
+	case <-ready:
+	case err := <-failed:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	service := &dispatcher.Service{
+		Store: store, Auth: dispatchAuth, Callers: accountSet(c.DispatcherCallers),
+		WakeCallers: accountSet(c.WakeCallers), Sandboxes: catalog, Runner: runner,
+		Hub: hub, WatchLease: c.WatchLease,
+	}
+	server := grpc.NewServer()
+	dispatcherpb.RegisterSessionDispatcherServer(server, service)
+	g.RegisterProxy(server)
+	g.RegisterRunnerControl(server)
+	healthServer := health.NewServer()
+	healthpb.RegisterHealthServer(server, healthServer)
+	listener, err := net.Listen("tcp", c.ListenAddress)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(listener)) }()
+	var result error
+	select {
+	case err := <-failed:
+		result = err
+	case <-ctx.Done():
+		result = ctx.Err()
+	}
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+	cancel()
+	stopped := make(chan struct{})
+	go func() { server.GracefulStop(); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		server.Stop()
+	}
+	return result
+}
+
+func main() {
+	ctrllog.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
+	c, err := loadConfig(os.Args[1:], os.Getenv)
+	if err != nil {
+		slog.Error("invalid Runner Gateway configuration", "error", err)
+		os.Exit(2)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if err := serve(ctx, c); err != nil && !errors.Is(err, context.Canceled) {
+		slog.Error("Runner Gateway stopped", "error", err)
+		os.Exit(1)
+	}
+}
