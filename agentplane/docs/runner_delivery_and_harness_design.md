@@ -542,8 +542,8 @@ durably register its native ID with store and parent public Session before publi
 a stable runner-chosen public ID on first discovery and reusing it on replay/restart. Parentage, visibility in History/UI and independent control
 are separate: a child may be visible and read-only even when the harness cannot accept direct input
 for it. A child's Sandbox/store lineage does not automatically grant the parent's send permission.
-The `NATIVE_SUBAGENT_EXPOSURE` lane decides which children to project and whether any are
-controllable; this identity contract does not presume Claude root multiplexing from the bounded
+Child Session projection is [deferred](../plans/native_session_discovery.md); the selected native
+delegation scope does not expose child Sessions or independent controls. This identity contract does not presume Claude root multiplexing from the bounded
 single-root stream-json evidence or select one versus several processes per store.
 
 When a runner is reachable, a missing public Session is a
