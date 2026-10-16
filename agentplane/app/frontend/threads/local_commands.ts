@@ -1,11 +1,28 @@
-import { equals, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
+import { create, equals, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
-import type { DispatchReceipt } from "../client";
+import type { DispatchReceipt, InterruptResult } from "../client";
+
+/** A typed operation retained for lost-response recovery; Command protobuf belongs to the journal. */
+type PlainOperation =
+  | { case: "submitInput"; value: { text: string } }
+  | { case: "changeModel"; value: { model: string } }
+  | { case: "changeReasoningEffort"; value: { effort: string } }
+  | { case: "stopRunnerSession"; value: object }
+  | { case: "interruptTurn"; value: { turnId: string } };
+
+export type PendingCommand = {
+  commandId: string;
+  operation: PlainOperation | Command["operation"];
+};
+
+function sameCommand(left: PendingCommand, right: PendingCommand): boolean {
+  return left.commandId === right.commandId && JSON.stringify(left.operation) === JSON.stringify(right.operation);
+}
 
 export interface LocalCommand {
-  command: Command;
+  command: PendingCommand;
   submittedAt: number;
   /** Persisted before an HTTP attempt; older records are conservatively treated as attempted. */
   attempted: boolean;
@@ -13,6 +30,8 @@ export interface LocalCommand {
   admission: EventEntry | null;
   /** Dispatcher state is durable queue evidence, not proof of a harness effect. */
   dispatch: DispatchReceipt | null;
+  /** Interrupt is an immediate RPC result, not a durable Dispatcher queue row. */
+  interruptResult?: InterruptResult | null;
 }
 
 export interface LocalCommandSnapshot {
@@ -29,7 +48,12 @@ function decode(text: string): LocalCommand {
   if (typeof value.submittedAt !== "number") {
     throw new Error("Invalid locally retained command submission time");
   }
-  const command = fromJson(CommandSchema, value.command as JsonValue);
+  const saved = value.command as Record<string, unknown>;
+  // Preserve locally authored, unconfirmed inputs saved by the previous protobuf-JSON format.
+  const command: PendingCommand =
+    saved.operation === undefined
+      ? (fromJson(CommandSchema, saved as JsonValue) as PendingCommand)
+      : (saved as PendingCommand);
   if (!command.commandId || !command.operation.case) throw new Error("Invalid locally retained Command");
   const admission = value.admission === null ? null : fromJson(EventEntrySchema, value.admission as JsonValue);
   if (admission) checkAdmission(command, admission);
@@ -65,14 +89,41 @@ function decode(text: string): LocalCommand {
   if (value.attempted !== undefined && typeof value.attempted !== "boolean") {
     throw new Error("Invalid locally retained delivery state");
   }
-  return { submittedAt: value.submittedAt, attempted: value.attempted ?? true, command, admission, dispatch };
+  let interruptResult: InterruptResult | null = null;
+  if (value.interruptResult !== undefined && value.interruptResult !== null) {
+    if (
+      command.operation.case !== "interruptTurn" ||
+      typeof value.interruptResult !== "object" ||
+      Array.isArray(value.interruptResult)
+    ) {
+      throw new Error("Invalid locally retained interrupt result");
+    }
+    const row = value.interruptResult as Record<string, unknown>;
+    if (typeof row.state !== "string" || (row.reason !== undefined && typeof row.reason !== "string")) {
+      throw new Error("Invalid locally retained interrupt state");
+    }
+    const resultAdmission =
+      row.admission === undefined || row.admission === null
+        ? null
+        : fromJson(EventEntrySchema, row.admission as JsonValue);
+    if (resultAdmission) checkAdmission(command, resultAdmission);
+    interruptResult = { state: row.state, reason: row.reason as string | undefined, admission: resultAdmission };
+  }
+  return {
+    submittedAt: value.submittedAt,
+    attempted: value.attempted ?? true,
+    command,
+    admission,
+    dispatch,
+    interruptResult,
+  };
 }
 
 function encode(value: LocalCommand): string {
   return JSON.stringify({
     submittedAt: value.submittedAt,
     attempted: value.attempted,
-    command: toJson(CommandSchema, value.command),
+    command: value.command,
     admission: value.admission ? toJson(EventEntrySchema, value.admission) : null,
     dispatch: value.dispatch
       ? {
@@ -84,10 +135,17 @@ function encode(value: LocalCommand): string {
           admission: value.dispatch.admission ? toJson(EventEntrySchema, value.dispatch.admission) : null,
         }
       : null,
+    interruptResult: value.interruptResult
+      ? {
+          state: value.interruptResult.state,
+          reason: value.interruptResult.reason,
+          admission: value.interruptResult.admission ? toJson(EventEntrySchema, value.interruptResult.admission) : null,
+        }
+      : null,
   });
 }
 
-export function checkAdmission(command: Command, admission: EventEntry): void {
+export function checkAdmission(command: PendingCommand, admission: EventEntry): void {
   const observation = admission.event?.observation;
   if (
     admission.cursor < 1n ||
@@ -95,7 +153,7 @@ export function checkAdmission(command: Command, admission: EventEntry): void {
     admission.origin.sequence !== admission.cursor ||
     observation?.case !== "commandAdmitted" ||
     !observation.value.command ||
-    !equals(CommandSchema, command, observation.value.command)
+    !equals(CommandSchema, create(CommandSchema, command), observation.value.command)
   ) {
     throw new Error(`Admission does not confirm command ${command.commandId}`);
   }
@@ -131,12 +189,12 @@ export class LocalCommands {
   };
 
   /** This must succeed before HTTP is attempted or the composer is cleared. */
-  remember(command: Command): LocalCommand {
+  remember(command: PendingCommand): LocalCommand {
     if (this.snapshot.error) throw new Error(this.snapshot.error);
     const stored = localStorage.getItem(this.key(command.commandId));
     if (stored !== null) {
       const existing = decode(stored);
-      if (!equals(CommandSchema, existing.command, command)) {
+      if (!sameCommand(existing.command, command)) {
         throw new Error("A local command id cannot be reused with a different payload");
       }
       return existing;
@@ -152,6 +210,7 @@ export class LocalCommands {
       attempted: false,
       admission: null,
       dispatch: null,
+      interruptResult: null,
     };
     localStorage.setItem(this.key(command.commandId), encode(value));
     this.reload();
@@ -164,7 +223,7 @@ export class LocalCommands {
     const raw = localStorage.getItem(key);
     if (raw === null) return false;
     const value = decode(raw);
-    if (value.admission || value.dispatch) return false;
+    if (value.admission || value.dispatch || value.interruptResult) return false;
     if (!value.attempted) {
       localStorage.setItem(key, encode({ ...value, attempted: true }));
       this.reload();
@@ -182,7 +241,7 @@ export class LocalCommands {
     return true;
   }
 
-  acknowledge(command: Command, admission: EventEntry): void {
+  acknowledge(command: PendingCommand, admission: EventEntry): void {
     checkAdmission(command, admission);
     this.checkKnownAdmission(command, admission);
     const stored = localStorage.getItem(this.key(command.commandId));
@@ -190,7 +249,7 @@ export class LocalCommands {
     // completion must not resurrect a command the Event projection now owns.
     if (stored === null) return;
     const existing = decode(stored);
-    if (!equals(CommandSchema, existing.command, command)) throw new Error("Local command payload changed");
+    if (!sameCommand(existing.command, command)) throw new Error("Local command payload changed");
     if (existing.admission && !equals(EventEntrySchema, existing.admission, admission)) {
       throw new Error("Conflicting command admission evidence");
     }
@@ -212,7 +271,7 @@ export class LocalCommands {
     this.reload();
   }
 
-  acknowledgeDispatch(command: Command, dispatch: DispatchReceipt): void {
+  acknowledgeDispatch(command: PendingCommand, dispatch: DispatchReceipt): void {
     if (dispatch.commandId !== command.commandId) throw new Error("Dispatcher receipt has a different command id");
     if (dispatch.admission) {
       checkAdmission(command, dispatch.admission);
@@ -222,7 +281,7 @@ export class LocalCommands {
     // A replayed server row may already own the command while an HTTP status read is in flight.
     if (stored === null) return;
     const existing = decode(stored);
-    if (!equals(CommandSchema, existing.command, command)) throw new Error("Local command payload changed");
+    if (!sameCommand(existing.command, command)) throw new Error("Local command payload changed");
     if (existing.dispatch?.updatedAt && dispatch.updatedAt) {
       const previousUpdate = Date.parse(existing.dispatch.updatedAt);
       const nextUpdate = Date.parse(dispatch.updatedAt);
@@ -235,6 +294,44 @@ export class LocalCommands {
       this.snapshot = {
         commands: this.snapshot.commands.map((value) =>
           value.command.commandId === command.commandId ? { ...value, admission, dispatch } : value
+        ),
+        inputEchoes: this.snapshot.inputEchoes,
+        error: String(error),
+      };
+      for (const listener of this.listeners) listener();
+      return;
+    }
+    this.reload();
+  }
+
+  acknowledgeInterrupt(command: PendingCommand, result: InterruptResult): void {
+    if (command.operation.case !== "interruptTurn") throw new Error("Interrupt result belongs to another operation");
+    if (result.admission) {
+      checkAdmission(command, result.admission);
+      this.checkKnownAdmission(command, result.admission);
+    }
+    const stored = localStorage.getItem(this.key(command.commandId));
+    if (stored === null) return;
+    const existing = decode(stored);
+    if (!sameCommand(existing.command, command)) throw new Error("Local command payload changed");
+    if (
+      existing.interruptResult &&
+      (existing.interruptResult.state !== result.state ||
+        existing.interruptResult.reason !== result.reason ||
+        (existing.interruptResult.admission === null) !== (result.admission === null) ||
+        (existing.interruptResult.admission !== null &&
+          result.admission !== null &&
+          !equals(EventEntrySchema, existing.interruptResult.admission, result.admission)))
+    ) {
+      throw new Error("Conflicting interrupt result evidence");
+    }
+    const admission = result.admission ?? existing.admission;
+    try {
+      localStorage.setItem(this.key(command.commandId), encode({ ...existing, admission, interruptResult: result }));
+    } catch (error) {
+      this.snapshot = {
+        commands: this.snapshot.commands.map((value) =>
+          value.command.commandId === command.commandId ? { ...value, admission, interruptResult: result } : value
         ),
         inputEchoes: this.snapshot.inputEchoes,
         error: String(error),
@@ -335,7 +432,7 @@ export class LocalCommands {
     }
   }
 
-  private checkKnownAdmission(command: Command, admission: EventEntry): void {
+  private checkKnownAdmission(command: PendingCommand, admission: EventEntry): void {
     const known = this.snapshot.commands.find((value) => value.command.commandId === command.commandId)?.admission;
     if (known && !equals(EventEntrySchema, known, admission)) {
       throw new Error("Conflicting command admission evidence");

@@ -44,7 +44,7 @@ it("retains the exact command and immutable Thread target across a new page owne
   store.remember(COMMAND);
   const restored = new LocalCommands("thread").getSnapshot().commands;
   expect(restored).toHaveLength(1);
-  expect(equals(CommandSchema, restored[0].command, COMMAND)).toBe(true);
+  expect(equals(CommandSchema, create(CommandSchema, restored[0].command), COMMAND)).toBe(true);
   expect(new LocalCommands("other-thread").getSnapshot().commands).toEqual([]);
 });
 
@@ -69,6 +69,29 @@ it("retains ahead-of-prefix HTTP admission evidence until matching replay takes 
     { commandId: COMMAND.commandId, text: "  exact text\nsecond line  " },
   ]);
   expect(new LocalCommands("thread").getSnapshot().commands).toEqual([]);
+});
+
+it("retains an immediate interrupt result without recording a durable Dispatch", () => {
+  const interrupted = create(CommandSchema, {
+    commandId: "interrupt-1",
+    operation: { case: "interruptTurn", value: { turnId: "turn-1" } },
+  });
+  const store = new LocalCommands("thread");
+  store.remember(interrupted);
+  store.acknowledgeInterrupt(interrupted, {
+    state: "DELIVERY_STATE_NO_OP",
+    reason: "turn already ended",
+    admission: null,
+  });
+
+  const retained = new LocalCommands("thread").getSnapshot().commands[0];
+  expect(retained.dispatch).toBeNull();
+  expect(retained.interruptResult).toEqual({
+    state: "DELIVERY_STATE_NO_OP",
+    reason: "turn already ended",
+    admission: null,
+  });
+  expect(store.markAttempted(interrupted.commandId)).toBe(false);
 });
 
 it("does not resurrect local input when replay wins the race with its HTTP response", () => {
@@ -109,7 +132,7 @@ it("rejects mismatched admission without removing the original input", () => {
     operation: { case: "submitInput", value: { text: "changed" } },
   });
   expect(() => store.acknowledge(COMMAND, admission(9n, changed))).toThrow("does not confirm");
-  expect(store.getSnapshot().commands[0].command).toEqual(COMMAND);
+  expect(create(CommandSchema, store.getSnapshot().commands[0].command)).toEqual(COMMAND);
   expect(store.getSnapshot().commands[0].admission).toBeNull();
 });
 

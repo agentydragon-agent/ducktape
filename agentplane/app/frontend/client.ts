@@ -4,7 +4,6 @@ import createClient from "openapi-fetch";
 import type { components, paths } from "./api/schema";
 import { redirectToLogin } from "./operator_login";
 import { AttachedSchema, SessionSpecSchema, type Attached, type SessionSpec } from "../../proto/runner_pb";
-import { CommandSchema, type Command } from "../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../proto/event_log_pb";
 
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
@@ -281,8 +280,16 @@ export interface DispatchReceipt {
   admission: EventEntry | null;
 }
 
+export interface InterruptResult {
+  state: string;
+  reason?: string;
+  admission: EventEntry | null;
+}
+
 export type CommandSubmission =
-  { kind: "archived_admission"; admission: EventEntry } | { kind: "dispatch"; dispatch: DispatchReceipt };
+  | { kind: "archived_admission"; admission: EventEntry }
+  | { kind: "dispatch"; dispatch: DispatchReceipt }
+  | { kind: "interrupt_result"; result: InterruptResult };
 
 function dispatchReceipt(value: unknown): DispatchReceipt {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -309,16 +316,33 @@ function dispatchReceipt(value: unknown): DispatchReceipt {
   };
 }
 
+function interruptResult(value: unknown): InterruptResult {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Session Dispatcher returned an invalid interrupt result");
+  }
+  const row = value as Record<string, unknown>;
+  if (typeof row.state !== "string" || (row.reason !== undefined && typeof row.reason !== "string")) {
+    throw new Error("Session Dispatcher returned an invalid interrupt state or reason");
+  }
+  return {
+    state: row.state,
+    reason: row.reason as string | undefined,
+    admission:
+      row.admission === undefined || row.admission === null
+        ? null
+        : fromJson(EventEntrySchema, row.admission as JsonValue),
+  };
+}
+
 /** The runner's exact durable CommandAdmitted receipt; the app archive may still be catching up.
  * Replaying the same immutable command id/payload is safe after a lost response.
  */
-export async function command(threadId: string, message: Command): Promise<CommandSubmission> {
+async function commandSubmission(
+  call: () => Promise<{ data?: unknown; error?: unknown; response: Response }>
+): Promise<CommandSubmission> {
   let result;
   try {
-    result = await api.POST("/threads/{thread_id}/commands", {
-      params: { path: { thread_id: threadId } },
-      body: toJson(CommandSchema, message) as JsonObject,
-    });
+    result = await call();
   } catch (cause) {
     // A transport failure gives no proof that the app or runner did not admit the command.
     throw new Error(`Command admission unconfirmed: ${displayableError(cause)}`, { cause });
@@ -334,13 +358,64 @@ export async function command(threadId: string, message: Command): Promise<Comma
     throw new Error(`Command admission unconfirmed: ${message}`);
   }
   try {
-    if (data.kind === "dispatch") return { kind: "dispatch", dispatch: dispatchReceipt(data.dispatch) };
-    if (data.kind === "archived_admission")
-      return { kind: "archived_admission", admission: fromJson(EventEntrySchema, data.admission as JsonValue) };
+    const value = data as Record<string, unknown>;
+    if (value.kind === "dispatch") return { kind: "dispatch", dispatch: dispatchReceipt(value.dispatch) };
+    if (value.kind === "interrupt_result") return { kind: "interrupt_result", result: interruptResult(value.result) };
+    if (value.kind === "archived_admission")
+      return { kind: "archived_admission", admission: fromJson(EventEntrySchema, value.admission as JsonValue) };
     throw new Error("App returned an unrecognized command submission kind");
   } catch (cause) {
     throw new Error(`Command receipt could not be verified: ${displayableError(cause)}`, { cause });
   }
+}
+
+export async function submitInput(threadId: string, commandId: string, text: string): Promise<CommandSubmission> {
+  return commandSubmission(() =>
+    api.POST("/threads/{thread_id}/submit-input", {
+      params: { path: { thread_id: threadId } },
+      body: { commandId, text },
+    })
+  );
+}
+
+export async function changeModel(threadId: string, commandId: string, model: string): Promise<CommandSubmission> {
+  return commandSubmission(() =>
+    api.POST("/threads/{thread_id}/change-model", {
+      params: { path: { thread_id: threadId } },
+      body: { commandId, model },
+    })
+  );
+}
+
+export async function changeReasoningEffort(
+  threadId: string,
+  commandId: string,
+  effort: string
+): Promise<CommandSubmission> {
+  return commandSubmission(() =>
+    api.POST("/threads/{thread_id}/change-reasoning-effort", {
+      params: { path: { thread_id: threadId } },
+      body: { commandId, effort },
+    })
+  );
+}
+
+export async function stopRunnerSession(threadId: string, commandId: string): Promise<CommandSubmission> {
+  return commandSubmission(() =>
+    api.POST("/threads/{thread_id}/stop-runner-session", {
+      params: { path: { thread_id: threadId } },
+      body: { commandId },
+    })
+  );
+}
+
+export async function interruptTurn(threadId: string, commandId: string, turnId: string): Promise<CommandSubmission> {
+  return commandSubmission(() =>
+    api.POST("/threads/{thread_id}/interrupt-turn", {
+      params: { path: { thread_id: threadId } },
+      body: { commandId, turnId },
+    })
+  );
 }
 
 /** Read a queued command's current durable state. A removed Sandbox has no retained dispatch row. */

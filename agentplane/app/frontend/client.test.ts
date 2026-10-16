@@ -1,10 +1,15 @@
 // @vitest-environment happy-dom
-import { create } from "@bufbuild/protobuf";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { CommandSchema } from "../../proto/command_pb";
-
-import { api, command, commandDispatch, CommandSubmissionRefused, HttpError, threadObservations } from "./client";
+import {
+  api,
+  commandDispatch,
+  interruptTurn,
+  submitInput,
+  CommandSubmissionRefused,
+  HttpError,
+  threadObservations,
+} from "./client";
 import { restoreRouteAfterLogin } from "./operator_login";
 
 afterEach(() => {
@@ -67,16 +72,13 @@ it("on a 401 sends the browser to log in once and never hands the response back 
   expect(afterLogin.hash).toBe("#/mcp-servers");
 });
 
-const input = create(CommandSchema, {
-  commandId: "immutable-command",
-  operation: { case: "submitInput", value: { text: "keep this input" } },
-});
+const input = { commandId: "immutable-command", text: "keep this input" };
 
 it.each([504, 502, 408])("treats HTTP %i without a command receipt as unconfirmed", async (status) => {
   const middleware = { onRequest: () => Response.json({ detail: "deadline" }, { status }) };
   api.use(middleware);
   try {
-    const failure: unknown = await command("thread", input).catch((error: unknown) => error);
+    const failure: unknown = await submitInput("thread", input.commandId, input.text).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(Error);
     expect(failure).not.toBeInstanceOf(CommandSubmissionRefused);
   } finally {
@@ -88,7 +90,7 @@ it.each([409, 422, 429, 403])("recognizes explicit HTTP %i command rejection", a
   const middleware = { onRequest: () => Response.json({ detail: "refused" }, { status }) };
   api.use(middleware);
   try {
-    await expect(command("thread", input)).rejects.toBeInstanceOf(CommandSubmissionRefused);
+    await expect(submitInput("thread", input.commandId, input.text)).rejects.toBeInstanceOf(CommandSubmissionRefused);
   } finally {
     api.eject(middleware);
   }
@@ -110,7 +112,7 @@ it("accepts a durable queued Dispatch separately from a runner admission receipt
   };
   api.use(middleware);
   try {
-    await expect(command("thread", input)).resolves.toEqual({
+    await expect(submitInput("thread", input.commandId, input.text)).resolves.toEqual({
       kind: "dispatch",
       dispatch: {
         commandId: input.commandId,
@@ -126,6 +128,29 @@ it("accepts a durable queued Dispatch separately from a runner admission receipt
   }
 });
 
+it("keeps a transient interrupt result distinct from a durable Dispatch", async () => {
+  const paths: string[] = [];
+  const middleware = {
+    onRequest({ request }: { request: Request }) {
+      paths.push(new URL(request.url, "https://app.invalid").pathname);
+      return Response.json({
+        kind: "interrupt_result",
+        result: { state: "DELIVERY_STATE_NO_OP", reason: "turn already ended" },
+      });
+    },
+  };
+  api.use(middleware);
+  try {
+    await expect(interruptTurn("thread", "interrupt-id", "turn-id")).resolves.toEqual({
+      kind: "interrupt_result",
+      result: { state: "DELIVERY_STATE_NO_OP", reason: "turn already ended", admission: null },
+    });
+    expect(paths).toEqual(["/threads/thread/interrupt-turn"]);
+  } finally {
+    api.eject(middleware);
+  }
+});
+
 it("accepts a tagged archived admission after a deleted Sandbox", async () => {
   const middleware = {
     onRequest: () =>
@@ -136,7 +161,7 @@ it("accepts a tagged archived admission after a deleted Sandbox", async () => {
   };
   api.use(middleware);
   try {
-    await expect(command("thread", input)).resolves.toMatchObject({
+    await expect(submitInput("thread", input.commandId, input.text)).resolves.toMatchObject({
       kind: "archived_admission",
       admission: {
         cursor: 1n,
@@ -174,7 +199,7 @@ it("treats a lost transport reply as unconfirmed without changing the submitted 
   };
   api.use(middleware);
   try {
-    const failure: unknown = await command("thread", input).catch((error: unknown) => error);
+    const failure: unknown = await submitInput("thread", input.commandId, input.text).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(Error);
     expect(failure).not.toBeInstanceOf(CommandSubmissionRefused);
     expect(requests).toHaveLength(1);
