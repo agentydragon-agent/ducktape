@@ -59,6 +59,28 @@ not express.
 
 ## Tests
 
+### Native subagents
+
+Both launches enable native delegation: Codex multi-agent tools and Claude's `Agent`,
+`SendMessage`, and `TaskOutput`. Children remain native harness conversations, not additional
+Agentplane Sessions. Discovery, attachment, independent child controls, and child transcript UI
+are not provided.
+
+All received native frames remain in the Session's raw event history. Normalized transcript and
+turn state belong only to the root conversation: Codex notifications are scoped by root thread ID;
+Claude child-attributed frames and task lifecycle notices are raw-only. Control requests and RPC
+responses still receive normal handling, without child output acknowledging pending root inputs.
+Root delegation calls and results remain visible, including Codex child-state summaries.
+
+Codex v2 `subAgentActivity` maps to an existing tool item. Its successful result means the reported
+activity was observed (including an interruption), not that the child succeeded. The result retains
+the native activity kind and child identity; unrecognized future activity kinds remain raw-only.
+
+`test_subagents.py` drives both real harnesses with mock model responses, checking background-child
+isolation while the parent is idle (Claude) or active (Codex), with only one Agentplane Session.
+
+### Test infrastructure
+
 Each test is one interaction script run against both harnesses, written against
 `testing/driver.py`: it plays the Runner Gateway's side of the control stream and reads each
 session's Events from the stand-in ingress in `testing/gateway.py`;

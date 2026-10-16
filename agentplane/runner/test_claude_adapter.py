@@ -455,5 +455,106 @@ async def test_a_resumed_conversation_is_unknown_where_the_transcript_cannot_say
     assert reconciled.items[0].reason
 
 
+@pytest.mark.parametrize(
+    "child_frame",
+    [
+        {
+            "type": "assistant",
+            "message": {"id": "child-message", "content": [{"type": "text", "text": "CHILD_ONLY"}]},
+            "session_id": NATIVE_SESSION,
+            "uuid": "child-assistant",
+            "parent_tool_use_id": "spawn",
+        },
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "child-tool", "content": "CHILD_ONLY"}],
+            },
+            "uuid": "child-tool-result",
+            "parent_tool_use_id": "spawn",
+        },
+        {**_message_start("child-input"), "parent_tool_use_id": "spawn"},
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": False,
+            "session_id": NATIVE_SESSION,
+            "num_turns": 1,
+            "duration_ms": 1,
+            "parent_tool_use_id": "spawn",
+        },
+        *[
+            {"type": "system", "subtype": subtype, "session_id": NATIVE_SESSION}
+            for subtype in ("task_started", "task_progress", "task_notification")
+        ],
+    ],
+    ids=["assistant", "tool-result", "stream", "result", "task-started", "task-progress", "task-notification"],
+)
+async def test_child_frames_do_not_split_parent_input_cohort(child_frame: dict[str, object]) -> None:
+    recorded = RecordedSession()
+    adapter = ClaudeAdapter(cast(Session, recorded), _launch())
+    await adapter.submit("first", "FIRST")
+    await adapter.submit("second", "SECOND")
+    first_uuid = cast(wire.UserInput, recorded.native[0]).uuid
+    second_uuid = cast(wire.UserInput, recorded.native[1]).uuid
+    await adapter.on_frame(
+        {
+            "type": "user",
+            "uuid": "root-tool-result",
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "root-tool", "content": "ROOT"}],
+            },
+        },
+        10,
+    )
+    emitted_before = list(recorded.emitted)
+    await adapter.on_frame(_lifecycle(first_uuid, wire.CommandState.STARTED), 11)
+    await adapter.on_frame(child_frame, 12)
+    assert recorded.confirmed == []
+    assert recorded.emitted == emitted_before
+    assert recorded.active_turn_id == "turn-1"
+    await adapter.on_frame(_lifecycle(second_uuid, wire.CommandState.STARTED), 13)
+    await adapter.on_frame(_lifecycle("unrelated", wire.CommandState.QUEUED), 14)
+    assert recorded.confirmed == [("root-tool-result", "FIRST\nSECOND", ["first", "second"], "turn-1")]
+    assert recorded.confirmed_sources == [[10, 11, 13]]
+
+
+async def test_child_permissions_are_answered_without_confirming_parent_inputs() -> None:
+    recorded = RecordedSession()
+    adapter = ClaudeAdapter(cast(Session, recorded), _launch())
+    await adapter.submit("pending", "PENDING")
+    uuid = cast(wire.UserInput, recorded.native[0]).uuid
+    await adapter.on_frame(
+        {
+            "type": "user",
+            "uuid": "root-tool-result",
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "root-tool", "content": "ROOT"}],
+            },
+        },
+        10,
+    )
+    await adapter.on_frame(_lifecycle(uuid, wire.CommandState.STARTED), 11)
+    await adapter.on_frame(
+        {
+            "type": "control_request",
+            "request_id": "child-permission",
+            "parent_tool_use_id": "spawn",
+            "request": {"subtype": "can_use_tool", "tool_name": "Bash", "input": {"command": "printf child"}},
+        },
+        12,
+    )
+    assert recorded.confirmed == []
+    response = recorded.native[-1]
+    assert isinstance(response, wire.ControlResponse)
+    assert response.response.request_id == "child-permission"
+    assert response.response.response == {"behavior": "allow", "updatedInput": {"command": "printf child"}}
+    await adapter.on_frame(_lifecycle("unrelated", wire.CommandState.QUEUED), 13)
+    assert recorded.confirmed_sources == [[10, 11]]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

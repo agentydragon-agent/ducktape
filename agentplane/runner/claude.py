@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 # The launch every Session gets; its standing instructions are added at initialize.
 SESSION_NAME = "agentplane"
-TOOLS = ("Bash", "Edit", "Read")
+TOOLS = ("Bash", "Edit", "Read", "Agent", "SendMessage", "TaskOutput")
 MAX_RETRIES = 2
 
 
@@ -214,6 +214,18 @@ class ClaudeAdapter(HarnessAdapter):
     async def on_frame(self, frame: Frame, source_sequence: int) -> None:
         sources = [source_sequence]
         parsed = wire.parse_frame(frame)
+        if isinstance(parsed, wire.ControlRequestFrame):
+            await self._answer_control_request(parsed)
+            return
+        if (
+            isinstance(
+                parsed, (wire.SystemFrame, wire.StreamEventFrame, wire.AssistantFrame, wire.UserFrame, wire.ResultFrame)
+            )
+            and parsed.parent_tool_use_id is not None
+        ):
+            return
+        if isinstance(parsed, wire.SystemFrame) and parsed.subtype.startswith("task_"):
+            return
         if (
             self._tool_result_message is not None
             and not (isinstance(parsed, wire.CommandLifecycleFrame) and parsed.state is wire.CommandState.STARTED)
@@ -242,8 +254,6 @@ class ClaudeAdapter(HarnessAdapter):
                     await self.session._fail(
                         command_id, f"Claude Code refused reasoning effort switch: {response.error}", sources=sources
                     )
-            case wire.ControlRequestFrame() as request:
-                await self._answer_control_request(request)
             case wire.CommandLifecycleFrame(state=wire.CommandState.STARTED, command_uuid=command_uuid):
                 if command_uuid in self._pending:
                     self._started_inputs.append((command_uuid, source_sequence))
