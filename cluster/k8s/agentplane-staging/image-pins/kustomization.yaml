@@ -13,7 +13,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-migrate
     newTag: devel-20261016024416-b40e501 # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261016080055-edeee7b # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20261016101742-4ce1d0c # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20261016024428-b40e501 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   # Initial publication on devel supplies the tag through Flux image automation.
@@ -51,6 +51,6 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher
     newTag: devel-20261016055246-c48a83e # {"$imagepolicy": "flux-system:agentplane-session-dispatcher:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher-migrate
-    newTag: devel-20261016043937-62b1fba # {"$imagepolicy": "flux-system:agentplane-session-dispatcher-migrate:tag"}
+    newTag: devel-20261016101730-4ce1d0c # {"$imagepolicy": "flux-system:agentplane-session-dispatcher-migrate:tag"}
 configurations:
   - kustomizeconfig
