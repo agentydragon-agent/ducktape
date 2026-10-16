@@ -25,8 +25,8 @@
       "sha256": "cXP0XB+3BKPHV1JhnXy14cdYtToJQVHwUZUc9nJqaw8="
     },
     "ducktape": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-3ee614e5fb6d/ducktape-0.1.0-py3-none-any.whl",
-      "sha256": "PuYU5fttrx+Z1YbHcULOSrnTOY4DduC17d3eJslUS98="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-ab8d32de755b/ducktape-0.1.0-py3-none-any.whl",
+      "sha256": "q40y3nVbIXWFOI7cNg46/0Qt1DfxVc8vtEP5nrQt2xc="
     },
     "gterm-theme": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-aef3119efae0/gterm_theme-0.1.0-py3-none-any.whl",
@@ -81,8 +81,8 @@
       "sha256": "55QJBDyPHn05biKAqe5WZWXws5PeC2SwZFX7YJkUk9g="
     },
     "skill-workspace-gc": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-workspace-gc-6a2597342a63/workspace-gc.skill",
-      "sha256": "aiWXNCpjplum1bgGpZibjN6svZr8tiPlbEOYCVIfVco="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-workspace-gc-fba0cef155d7/workspace-gc.skill",
+      "sha256": "+6DO8VXXpah/xHqj4C4ztkdc2LJePbRlQoArZD5LHoA="
     },
     "skill-debundle_architect": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_architect-bb3922ea9b9f/debundle_architect.skill",
@@ -225,8 +225,8 @@
       "sha256": "6yC0MaTqNDzJh7BZ+lx5VH49MTUjhKjF/+Mu2Wt2ggc="
     },
     "agentplane-runner": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-a47a589616e3/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
-      "sha256": "pHpYlhbjNR+BAFoRWbzdL5bU+2yfVzCOxem+1Pv1cuc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-cdc41bff1036/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
+      "sha256": "zcQb/xA2uDQq/TrNXr74AeU9eM715MyGg3K9dUHOz6Y="
     },
     "skill-cdk8s_builders": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-7a1104aadfb6/cdk8s_builders.skill",
