@@ -440,6 +440,23 @@ apt.install(
     ],
 )
 
+# Minimal Codex `exec_command` environment for the Agentplane runner-layering spike. Keep this
+# separate from the harness and boot artifacts so a shell update does not rebuild either one.
+apt.install(
+    dependency_set = "trixie_runner_tools",
+    # `mawk` is explicit because the shared apt resolver also sees forky's newer
+    # mawk metadata, which evicts trixie's `awk` provider while resolving Bash.
+    packages = [
+        "bash",
+        "mawk",
+    ],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+
 # CPAP sync: the Wi-Fi tooling cpap/sync.py runs (ip, iw, wpa_supplicant,
 # dhclient) + git (pushes to the cpap-data Forgejo repo) on debian:trixie-slim.
 apt.install(
@@ -526,7 +543,7 @@ apt.install(
         "trixie-security",
     ],
 )
-use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_wayback_cache")
+use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_runner_tools", "trixie_wayback_cache")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -854,6 +871,16 @@ filegroup(
         "codex-path/**",
         "codex-resources/**",
     ]) + ["codex-package.json"],
+    visibility = ["//visibility:public"],
+)
+filegroup(
+    name = "codex_binary",
+    srcs = ["bin/codex"],
+    visibility = ["//visibility:public"],
+)
+filegroup(
+    name = "codex_bwrap",
+    srcs = ["codex-resources/bwrap"],
     visibility = ["//visibility:public"],
 )
 """,
@@ -1530,6 +1557,14 @@ http_archive(
     build_file_content = 'exports_files(["release-v1.12.1-x86_64/firecracker-v1.12.1-x86_64"])',
     sha256 = "0a75e67ef6e4c540a2cf248b06822b0be9820cbba9fe19f9e0321200fe76ff6b",
     urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.12.1/firecracker-v1.12.1-x86_64.tgz"],
+)
+
+# Firecracker v1.12 CI's x86_64 ELF guest kernel, pinned for the local runner-layering VM probe.
+http_file(
+    name = "firecracker_vmlinux_6_1_128",
+    downloaded_file_path = "vmlinux-6.1.128",
+    sha256 = "27a8310b9a727517e9eb02044524b6ceb77de5728e3491b6974d5c846227ecc8",
+    urls = ["https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.12/x86_64/vmlinux-6.1.128"],
 )
 
 # Node.js v22.22.2 LTS linux-x64 — provides the hermetic Node runtime used by
