@@ -5,6 +5,19 @@ Session implementation. They use real harnesses and scripted loopback model resp
 inference credentials or recorded conversations. Child creation is proved by a child model request
 and native identity evidence, not by parent prose.
 
+## Product boundary
+
+The characterization landed in [#10776](https://github.com/agentydragon/ducktape/pull/10776).
+On 2026-10-16 the operator selected enabling native delegation without exposing child Sessions.
+The evidence establishes usable native execution and observation, not automatic Agentplane child
+identity, authorization, transcript reconciliation or independent control. Discovery therefore does
+not by itself remove the remaining product/authority decisions for child Session projection.
+
+The runner's [root-only normalization contract](../../runner/README.md#native-subagents) retains
+raw child frames and parent delegation results without letting children mutate root turn/input state.
+The [discovery proposal](../../plans/native_session_discovery.md) remains deferred; its unmeasured
+configurations and control experiments are not additional acceptance gates for native delegation.
+
 ## Claude stream-json (2.1.252)
 
 The child scenarios in [`test_tools.py`](../claude/test_tools.py) establish:

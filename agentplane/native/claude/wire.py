@@ -113,6 +113,7 @@ class SystemFrame(BaseModel):
     type: Literal["system"]
     subtype: str
     session_id: str | None = None
+    parent_tool_use_id: str | None = None
 
 
 # Streamed model output under `--include-partial-messages`.
@@ -205,6 +206,7 @@ class StreamEventFrame(BaseModel):
     event: StreamEvent
     session_id: str
     uuid: str
+    parent_tool_use_id: str | None = None
     # Present when the model request was caused by one normal user prompt. A continuation after a
     # tool result deliberately omits it, even when queued input was folded into that continuation.
     user_message_uuid: str | None = None
@@ -223,6 +225,7 @@ class AssistantFrame(BaseModel):
     message: AssistantMessage
     session_id: str
     uuid: str
+    parent_tool_use_id: str | None = None
 
 
 class UserMessage(BaseModel):
@@ -237,6 +240,7 @@ class UserFrame(BaseModel):
     message: UserMessage
     uuid: str
     session_id: str | None = None
+    parent_tool_use_id: str | None = None
     is_replay: bool = Field(default=False, alias="isReplay")
     # Structured for a built-in tool, a plain message for a failed one, and the MCP `content` array
     # verbatim for a driver-hosted or configured MCP tool's result.
@@ -251,6 +255,7 @@ class ResultFrame(BaseModel):
     terminal_reason: str | None = None
     stop_reason: str | None = None
     session_id: str
+    parent_tool_use_id: str | None = None
     user_message_uuid: str | None = None
     num_turns: int
     # The turn's wall time on Claude's own clock.

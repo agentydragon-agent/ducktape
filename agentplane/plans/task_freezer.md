@@ -167,7 +167,13 @@ Only if measured UX value justifies it. Optional and not a dependency for core m
 
 ### `NATIVE_SUBAGENT_THREADS` — as linked Agentplane Threads
 
-Explicitly deferred. [Native discovery plan](native_session_discovery.md) retains characterization and design. It builds on the event ingress: the runner pushes each discovered Session like a root, and the History Service's index lists it, so it needs no Sandbox Service work. Multiagent authority decisions compare this boundary without requiring native child ingestion.
+Deferred until the operator selects child transcript browsing or independent child addressability.
+The 2026-10-16 selection is native delegation with root-only normalized output, not child Sessions.
+[Completed native evidence](../native/docs/child_sessions.md) establishes visibility and recovery
+boundaries; it does not settle child authorization or independent control. The
+[native discovery plan](native_session_discovery.md) retains the proposed design. Event ingress can
+index runner-declared children if selected, but does not itself implement discovery, durable identity,
+or access policy. Multiagent authority decisions can use the evidence without requiring child ingestion.
 
 ### `CONTROL_STATE` — dynamic runtime control acceptance
 

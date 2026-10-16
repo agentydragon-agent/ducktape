@@ -31,7 +31,9 @@ CLIENT_NAME = "agentplane-capture"
 MAX_RETRIES = 2
 
 
-def config(*, endpoint: str, max_retries: int, model_context_window: int | None = None) -> dict[str, Any]:
+def config(
+    *, endpoint: str, max_retries: int, model_context_window: int | None = None, multi_agent: bool = False
+) -> dict[str, Any]:
     """Native app-server configuration; a direct setup, not a Haku adapter."""
     result: dict[str, Any] = {
         # The environment supplies OPENAI_API_KEY; the provider keeps the Responses endpoint explicit.
@@ -62,8 +64,7 @@ def config(*, endpoint: str, max_retries: int, model_context_window: int | None 
         "include_environment_context": False,
         "web_search": "disabled",
         "features": {
-            # The scenarios use only shell execution; these tools are prompt bulk otherwise.
-            "multi_agent": False,
+            "multi_agent": multi_agent,
             "view_image": False,
             # Retries are bounded by the provider's *_max_retries above.
             "unbounded_connection_retries": False,
@@ -94,10 +95,19 @@ def _overrides(config: dict[str, Any], prefix: str = "") -> list[str]:
     return result
 
 
-def command(binary: str, *, endpoint: str, max_retries: int, model_context_window: int | None = None) -> list[str]:
+def command(
+    binary: str, *, endpoint: str, max_retries: int, model_context_window: int | None = None, multi_agent: bool = False
+) -> list[str]:
     return [
         binary,
-        *_overrides(config(endpoint=endpoint, max_retries=max_retries, model_context_window=model_context_window)),
+        *_overrides(
+            config(
+                endpoint=endpoint,
+                max_retries=max_retries,
+                model_context_window=model_context_window,
+                multi_agent=multi_agent,
+            )
+        ),
         "app-server",
         "--listen",
         "stdio://",

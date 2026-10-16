@@ -42,7 +42,7 @@ _TURN_STATUSES: dict[wire.TurnStatus | str, event_pb2.TurnStatus] = {
     wire.TurnStatus.FAILED: event_pb2.TURN_STATUS_FAILED,
 }
 # Fields of an unmodeled tool item that describe its outcome rather than its arguments.
-_OUTCOME_FIELDS = frozenset({"status", "aggregatedOutput", "exitCode", "durationMs", "processId"})
+_OUTCOME_FIELDS = frozenset({"status", "aggregatedOutput", "exitCode", "durationMs", "processId", "agentsStates"})
 
 
 @dataclass(frozen=True)
@@ -80,6 +80,7 @@ class CodexAdapter(HarnessAdapter):
             endpoint=self.launch.base_url,
             max_retries=MAX_RETRIES,
             model_context_window=context_window,
+            multi_agent=True,
         )
 
     def environment(self) -> Mapping[str, str]:
@@ -189,7 +190,24 @@ class CodexAdapter(HarnessAdapter):
 
     async def on_frame(self, frame: Frame, source_sequence: int) -> None:
         sources = [source_sequence]
-        match wire.parse_frame(frame):
+        parsed = wire.parse_frame(frame)
+        if (
+            isinstance(
+                parsed,
+                (
+                    wire.TurnStarted,
+                    wire.TurnCompleted,
+                    wire.ItemStarted,
+                    wire.ItemCompleted,
+                    wire.AgentMessageDelta,
+                    wire.ReasoningSummaryTextDelta,
+                    wire.CommandExecutionOutputDelta,
+                ),
+            )
+            and parsed.params.thread_id != self._thread_id
+        ):
+            return
+        match parsed:
             case wire.Response() as response if response.id in self._turn_starts:
                 await self._turn_start_answered(self._turn_starts.pop(response.id), response, sources)
             case wire.ServerRequest(id=request_id, method=method):
@@ -264,6 +282,8 @@ class CodexAdapter(HarnessAdapter):
     async def _item_started(self, item: wire.Item, sources: list[int]) -> None:
         if isinstance(item, wire.UserMessageItem):
             return
+        if isinstance(item, wire.SubAgentActivityItem) and not isinstance(item.kind, wire.SubAgentActivityKind):
+            return
         if not await self.session.journal.remember_adapter_item(self._adapter_id, item.id):
             return
         match item:
@@ -284,6 +304,20 @@ class CodexAdapter(HarnessAdapter):
                 await self.session.emit(
                     event_pb2.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)), sources=sources
                 )
+            case wire.SubAgentActivityItem():
+                await self.session.emit(
+                    event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name=item.type),
+                    sources=sources,
+                )
+                await self.session.emit(
+                    event_pb2.ToolArguments(
+                        item_id=item.id,
+                        arguments_json=json.dumps(
+                            {"agentThreadId": item.agent_thread_id, "agentPath": item.agent_path}
+                        ),
+                    ),
+                    sources=sources,
+                )
             case wire.UnknownItem():
                 await self.session.emit(
                     event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name=item.type),
@@ -296,6 +330,8 @@ class CodexAdapter(HarnessAdapter):
 
     async def _item_completed(self, item: wire.Item, sources: list[int]) -> None:
         if isinstance(item, wire.UserMessageItem):
+            return
+        if isinstance(item, wire.SubAgentActivityItem) and not isinstance(item.kind, wire.SubAgentActivityKind):
             return
         await self._item_started(item, sources)
         match item:
@@ -313,6 +349,14 @@ class CodexAdapter(HarnessAdapter):
                             output=item.aggregated_output or "",
                             succeeded=item.status is wire.CommandExecutionStatus.COMPLETED,
                         ),
+                    ),
+                    sources=sources,
+                )
+            case wire.SubAgentActivityItem():
+                await self.session.emit(
+                    event_pb2.ItemCompleted(
+                        item_id=item.id,
+                        tool=event_pb2.ToolResult(output=item.model_dump_json(exclude={"type", "id"}), succeeded=True),
                     ),
                     sources=sources,
                 )

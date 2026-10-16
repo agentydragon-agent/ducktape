@@ -311,6 +311,15 @@ session and a new transcript.
 
 ## Harness-originated messages
 
+Native subagents are enabled but are not Agentplane Sessions. Their received frames stay in the
+root Session's raw log; they do not create normalized items, start or complete its turns, or
+acknowledge its pending inputs. Codex translated notifications must carry the root thread ID.
+Claude frames with `parent_tool_use_id` and `task_*` system notices are raw-only. Native control
+requests and RPC responses still get their normal handling. Root delegation items and results
+are normalized, including Codex `agentsStates`. A Codex v2 `subAgentActivity` tool result reports
+that the activity was observed, not child success; unknown activity kinds remain raw-only.
+There is no child discovery, attachment, or independent control in the Session protocol.
+
 A harness says things of its own: a hook's feedback, a compaction boundary, a status or warning
 notice, the `<system-reminder>` context Claude Code adds to a turn. Every one of them reaches the
 log as a `Native` event, verbatim — that is what "delivered in both directions" above means. None

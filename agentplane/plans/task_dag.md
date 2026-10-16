@@ -239,11 +239,9 @@ flowchart TD
     AGENT_MESSAGE_RECEPTION --> AGENT_MESSAGING
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
-    NATIVE_SUBAGENT_EXPOSURE[Explore: expose native harness children as Sessions]
+    NATIVE_SUBAGENT_ENABLE[In review: native delegation with root-only output]
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement]
     HARNESS_IDENTITY_DESIGN[Decision: process, store and native Session identity]
-    NATIVE_SUBAGENT_EXPOSURE -. if multiple Sessions share a harness .-> RUNNER_HARNESS_OBJECTS_DESIGN
-    NATIVE_SUBAGENT_EXPOSURE -. the native-child boundary it informs .-> MULTIAGENT_MODEL
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
 ```
 
@@ -358,7 +356,7 @@ does not grant history read, messaging, credentials or execution of another prin
 diagnostic objects with hosted Sessions and status, while the Session API owns public lifecycle
 (and a store API exists only if its public need is selected).
 Use the merged Codex multi-thread test and Claude's separate-store single-root characterization
-alongside `HARNESS_IDENTITY_DESIGN` and `NATIVE_SUBAGENT_EXPOSURE`; do
+alongside `HARNESS_IDENTITY_DESIGN` and the [pinned child evidence](../native/docs/child_sessions.md); do
 not assume one Agentplane Session is one process, one persisted store, or one native conversation, or
 that every discovered child is independently controllable.
 
@@ -383,29 +381,17 @@ Deliver a recommendation and proposed API shape for review; implementation and m
 nodes follow only if selected. This does not unfreeze the broader runner durability redesign or
 authorize native-subagent implementation.
 
-### `NATIVE_SUBAGENT_EXPOSURE` — evaluate native harness children as Agentplane Sessions
+### `NATIVE_SUBAGENT_ENABLE` — land native delegation with root-only output
 
-**Explore/plan; operator, 2026-10-15 UTC: no implementation implied.** Now that a Session is one the
-runner _declares_ over the [event ingress](../docs/runner_control.md#event-ingress) — the runner pushes
-roots and discovered children alike and the History Service index is the record of which exist —
-re-test whether Claude Code and Codex can use their own native subagent affordances, and what it takes
-to expose those children as Sessions, including **read-only ones an operator can open but cannot send
-into**. Deliverable: a written verdict on whether discovery removes the blocker that made
-[`NATIVE_SUBAGENT_THREADS`](task_freezer.md#native_subagent_threads--as-linked-agentplane-threads)
-deferred, the child states worth projecting, and the control surface that must stay unavailable. Feed
-the answer to `MULTIAGENT_MODEL`'s native-child boundary; it does not preempt it.
+**In review, 2026-10-16 UTC: [#10782](https://github.com/agentydragon/ducktape/pull/10782).**
+The operator selected native delegation without child Session discovery or controls. Implementation
+and real-harness/mock-LLM isolation tests are in the PR; adapter, turn, restart/recovery and native
+wire tests pass. Remaining gate: PR checks and review/merge. Remove this node when merged; do not
+redispatch its implementation or add a child-discovery acceptance gate.
 
-Two things this must settle rather than assume: the remaining configuration/transport boundaries in
-[Native discovery](native_session_discovery.md), informed by the
-[pinned child evidence](../native/docs/child_sessions.md), and the fact that a discovered child has
-no Sandbox. Read-only addressability depends on `THREAD_READ_POLICY_DESIGN` and `THREAD_CREATE_POLICY`
-— a child is not "just another Session" for authorization purposes. Forwarded text alone does not
-establish attachable Agentplane child Sessions; do not change runner flags until the desired
-projection is reviewed. Independent child control remains outside the new characterization tests.
-
-**Also in scope: keep Session identity runner-owned.** The app calls the runner's identity-fenced
-`ResumeSession` through the proxy. The old `session` table was removed with the Gateway database; it
-was not the source of live Session identity.
+The completed characterization and its limits live in the [native evidence](../native/docs/child_sessions.md).
+Child Session projection remains [deferred](task_freezer.md#native_subagent_threads--as-linked-agentplane-threads),
+not a prerequisite for this change or for the separate identity/authority decisions.
 
 ## 4. VM environment phases
 
@@ -1349,7 +1335,6 @@ flowchart LR
     DELIVERY_UNIFIED_CUTOVER --> DELIVERY_OLD_RUNTIME_RETIRE
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
-    NATIVE_SUBAGENT_EXPOSURE -. child identity evidence informs .-> HARNESS_IDENTITY_DESIGN
     HARNESS_IDENTITY_DESIGN --> RUNNER_STORE_SESSION_IDENTITY
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
@@ -1584,8 +1569,8 @@ requires a new binding and authorization. Until proven safe, prevent concurrent 
 A reachable runner returns a terminal missing-target outcome for the public Session; offline
 queued acceptance cannot prove membership. Native child IDs are harness-chosen: if exposed, register
 stable runner-chosen public mappings with store and parent identity before publication, and separate visibility
-from independent control. Use `NATIVE_SUBAGENT_EXPOSURE` for which children to project and the merged
-Claude characterization for process capability. The operator's private remote-control RE finding
+from independent control. Child projection remains [deferred](native_session_discovery.md); use the
+[merged child characterization](../native/docs/child_sessions.md) for process capability. The operator's private remote-control RE finding
 reports outbound HTTP session-start polling with one Claude process launched per Session speaking
 RemoteIO, characterized as essentially the existing stream-json stdio protocol. This is an
 attributed finding, not a runtime process-count test or proof that Claude can never multiplex by another

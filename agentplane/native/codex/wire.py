@@ -143,6 +143,21 @@ class CommandExecutionItem(Wire):
     duration_ms: int | None = None
 
 
+class SubAgentActivityKind(enum.StrEnum):
+    STARTED = "started"
+    INTERACTED = "interacted"
+    INTERRUPTED = "interrupted"
+    COMPLETED = "completed"
+
+
+class SubAgentActivityItem(Wire):
+    type: Literal["subAgentActivity"]
+    id: str
+    kind: SubAgentActivityKind | str = Field(union_mode="left_to_right")
+    agent_thread_id: str
+    agent_path: str
+
+
 class UnknownItem(Wire):
     """`fileChange`, `mcpToolCall`, `webSearch`, and the rest of the catalog."""
 
@@ -157,8 +172,11 @@ Item = Annotated[
     | Annotated[AgentMessageItem, Tag("agentMessage")]
     | Annotated[ReasoningItem, Tag("reasoning")]
     | Annotated[CommandExecutionItem, Tag("commandExecution")]
+    | Annotated[SubAgentActivityItem, Tag("subAgentActivity")]
     | Annotated[UnknownItem, Tag(UNKNOWN)],
-    Discriminator(tag_or_unknown("type", ("userMessage", "agentMessage", "reasoning", "commandExecution"))),
+    Discriminator(
+        tag_or_unknown("type", ("userMessage", "agentMessage", "reasoning", "commandExecution", "subAgentActivity"))
+    ),
 ]
 
 

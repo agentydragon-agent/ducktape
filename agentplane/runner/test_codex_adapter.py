@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
+import pytest
 import pytest_bazel
 from pydantic import BaseModel
 
@@ -38,12 +40,16 @@ class RecordedSession:
             reasoning_effort="low",
             instructions="",
             event_source_id=uuid4(),
+            native_session_id="test-thread",
         )
         self.active_turn_id = ""
         self.native: list[BaseModel] = []
         self.requested = asyncio.Event()
         self.reply: asyncio.Future[NativeReceipt] | None = None
         self.recorded: list[tuple[object, ...]] = []
+
+    async def send(self, frame: BaseModel) -> None:
+        self.native.append(frame)
 
     async def request(self, frame: BaseModel, *, matches: FrameMatcher, timeout_s: float = 60) -> NativeReceipt:
         self.native.append(frame)
@@ -229,6 +235,143 @@ async def test_reconcile_unknown_dispositions_name_their_own_cause(tmp_path: Pat
     assert {item.disposition for item in compacted.values()} == {event_pb2.RECOVERY_DISPOSITION_UNKNOWN}
     assert read[PATCH_ID].disposition == event_pb2.RECOVERY_DISPOSITION_UNKNOWN
     assert read[PATCH_ID].reason != compacted[PATCH_ID].reason
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "turn/started",
+        "turn/completed",
+        "item/started",
+        "item/completed",
+        "item/agentMessage/delta",
+        "item/reasoning/summaryTextDelta",
+        "item/commandExecution/outputDelta",
+    ],
+)
+async def test_child_notifications_do_not_change_parent_state(method: str) -> None:
+    recorded = RecordedSession()
+    recorded.active_turn_id = "parent-turn"
+    adapter = _adapter(recorded)
+    await adapter.on_frame(
+        {
+            "method": method,
+            "params": {
+                "threadId": "child-thread",
+                "turnId": "parent-turn",
+                "itemId": "shared-item",
+                "delta": "CHILD_ONLY",
+                "turn": {"id": "child-turn", "status": "completed"},
+                "item": {"id": "shared-item", "type": "agentMessage", "text": "CHILD_ONLY"},
+            },
+        },
+        1,
+    )
+    assert recorded.active_turn_id == "parent-turn"
+    assert recorded.recorded == []
+    assert recorded.native == []
+
+
+async def test_child_server_requests_are_answered_without_translating_child_events() -> None:
+    recorded = RecordedSession()
+    await _adapter(recorded).on_frame(
+        {
+            "id": "child-request",
+            "method": "item/commandExecution/requestApproval",
+            "params": {"threadId": "child-thread", "turnId": "child-turn"},
+        },
+        1,
+    )
+    (response,) = recorded.native
+    assert isinstance(response, wire.ErrorResponse)
+    assert response.id == "child-request"
+    assert response.error.code == -32601
+    assert recorded.recorded == []
+
+
+@pytest.mark.parametrize("kind", ["started", "interacted", "interrupted", "completed", "future-kind"])
+async def test_parent_subagent_activity_reports_the_activity_not_child_success(
+    journal: Journal, tmp_path: Path, kind: str
+) -> None:
+    recorded = JournaledSession(journal, tmp_path)
+    adapter = _adapter(recorded)
+    item = {
+        "type": "subAgentActivity",
+        "id": "delegate",
+        "kind": kind,
+        "agentThreadId": "child-thread",
+        "agentPath": "/root/probe",
+    }
+    for method in ("item/started", "item/completed"):
+        await adapter.on_frame(
+            {
+                "method": method,
+                "params": {"threadId": recorded.record.native_session_id, "turnId": "parent-turn", "item": item},
+            },
+            1,
+        )
+    if kind == "future-kind":
+        assert recorded.recorded == []
+        return
+    started, arguments, completed = [entry[0] for entry in recorded.recorded]
+    assert isinstance(started, event_pb2.ItemStarted)
+    assert started.tool_name == "subAgentActivity"
+    assert isinstance(arguments, event_pb2.ToolArguments)
+    assert json.loads(arguments.arguments_json) == {"agentThreadId": "child-thread", "agentPath": "/root/probe"}
+    assert isinstance(completed, event_pb2.ItemCompleted)
+    assert completed.tool.succeeded
+    assert json.loads(completed.tool.output) == {key: value for key, value in item.items() if key not in {"id", "type"}}
+
+
+@pytest.mark.parametrize("status", ["completed", "failed"])
+async def test_parent_v1_delegation_keeps_its_native_outcome(journal: Journal, tmp_path: Path, status: str) -> None:
+    recorded = JournaledSession(journal, tmp_path)
+    adapter = _adapter(recorded)
+    states = {"child-thread": {"status": "completed", "message": "CHILD_SUMMARY"}}
+    await adapter.on_frame(
+        {
+            "method": "item/completed",
+            "params": {
+                "threadId": recorded.record.native_session_id,
+                "turnId": "parent-turn",
+                "item": {
+                    "type": "collabAgentToolCall",
+                    "id": "wait-child",
+                    "tool": "wait",
+                    "status": status,
+                    "senderThreadId": recorded.record.native_session_id,
+                    "receiverThreadIds": ["child-thread"],
+                    "agentsStates": states,
+                },
+            },
+        },
+        1,
+    )
+    completed = recorded.recorded[-1][0]
+    assert isinstance(completed, event_pb2.ItemCompleted)
+    assert completed.tool.succeeded == (status == "completed")
+    assert json.loads(completed.tool.output) == {"status": status, "agentsStates": states}
+
+
+async def test_child_item_ids_do_not_reserve_parent_items(journal: Journal, tmp_path: Path) -> None:
+    recorded = JournaledSession(journal, tmp_path)
+    adapter = _adapter(recorded)
+    for thread_id in ("child-thread", recorded.record.native_session_id):
+        await adapter.on_frame(
+            {
+                "method": "item/completed",
+                "params": {
+                    "threadId": thread_id,
+                    "turnId": "parent-turn",
+                    "item": {"id": "shared-item", "type": "agentMessage", "text": thread_id},
+                },
+            },
+            1,
+        )
+    assert recorded.recorded == [
+        (event_pb2.ItemStarted(item_id="shared-item", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT), [1]),
+        (event_pb2.ItemCompleted(item_id="shared-item", text=recorded.record.native_session_id), [1]),
+    ]
 
 
 if __name__ == "__main__":
