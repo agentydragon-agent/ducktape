@@ -35,6 +35,7 @@ class ClaudeLauncher:
         initialize: bool = True,
         model: str = MODEL,
         subagents: bool = False,
+        forward_subagent_text: bool = False,
     ) -> async_run.ClaudeRun:
         # Launched as it ships: the RBE worker's glibc userland is the supported test environment.
         # `hooks` drops `--safe-mode` (which would otherwise disable them) for `--include-hook-events`.
@@ -50,6 +51,8 @@ class ClaudeLauncher:
             hooks=hooks,
             slash_commands=slash_commands,
         )
+        if forward_subagent_text:
+            command.append("--forward-subagent-text")
         environment = {
             **self.base_environment,
             **scenarios.environment(

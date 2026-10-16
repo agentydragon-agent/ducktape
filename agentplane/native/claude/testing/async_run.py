@@ -141,6 +141,9 @@ class ClaudeRun:
     def native_frames(self) -> list[dict[str, Any]]:
         return self._native().stdout_frames()
 
+    def frames(self) -> FrameCursor:
+        return self._native().frames()
+
     async def initialize(self) -> wire.ControlResponseFrame | wire.ResultFrame:
         receipt = await self._claude().initialize(
             hooks={event: [f"capture-{event}"] for event in HOOK_EVENTS} if self._hooks else None,
