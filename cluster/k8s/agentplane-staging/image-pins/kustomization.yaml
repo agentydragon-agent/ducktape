@@ -20,7 +20,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/runner
     newTag: devel-20261016202127-33c77ed # {"$imagepolicy": "flux-system:runner:tag"}
   - name: git.allegedly.works/ducktape-ci/runner-ducktape
-    newTag: devel-20261016085627-03709c1 # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
+    newTag: devel-20261016202635-33c77ed # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
     newTag: devel-20261013074809-8769052 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
