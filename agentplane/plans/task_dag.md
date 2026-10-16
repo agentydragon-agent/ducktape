@@ -1282,6 +1282,7 @@ with per-method authorization; commands use Dispatcher and typed Runner RPCs.
 flowchart TD
     RUNNER_COMMAND_RPCS[Candidate: remove unused DeliverCommand]
     GATEWAY_WRAPPER_RETIRE[In progress: remove legacy Gateway wrappers]
+    GATEWAY_DATABASE_DROP --> GATEWAY_DATABASE_DROP_CLEANUP[Blocked: remove migration artifacts after database drop]
     GATEWAY_DATABASE_DROP[Approved: drop Gateway database and its CNPG resources after rollout]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
@@ -1333,9 +1334,10 @@ Gateway image to all replicas in testing and staging before the separate databas
 
 ### `GATEWAY_DATABASE_DROP` — remove Gateway's database and CNPG-managed resources
 
-**Approved data-drop scope, 2026-10-16; blocked on the registry-free Gateway rollout in both
-environments. Separate PR, merged by the operator.** Drop the `session` table by dropping its
-`sandbox_commands` database once all readers/writers are gone. Remove its CNPG `Database` resource,
+**Approved data-drop scope, 2026-10-16. The operator accepts a brief outage while the
+registry-free Gateway image rolls out; its rollout no longer blocks this drop. Separate PR, merged
+by the operator.** Drop the `session` table by dropping its
+`sandbox_commands` database; old Gateway images may fail until replaced by the registry-free image. Remove its CNPG `Database` resource,
 managed role, generated credentials/Secret, migration init container, database URL manifest setting,
 and obsolete migration/image publication wiring. Verify the CNPG Database reclaim policy and actual
 SQL database/role deletion rather than assuming pruning the CR deletes the data. After manifests
@@ -1346,6 +1348,15 @@ Dispatcher (`cluster/cdk8s/agentplane/database.py`); retain that Cluster, operat
 This node removes Gateway's logical database and associated CNPG resources, not other services'
 data. No database rename is needed. `DELIVERY_GO_RETIREMENT_REBASE` then rebases the Go implementation
 onto this completed retirement before the unified Go PR may merge.
+
+### `GATEWAY_DATABASE_DROP_CLEANUP` — remove retired migration artifacts and role tombstone
+
+**Blocked on verified `GATEWAY_DATABASE_DROP` reconciliation in testing and staging.** Verify the
+SQL `sandbox_commands` database and role are absent, and no Gateway Pod still has a migration init
+container or database URL. Remove the `ensure: absent` role tombstone, optional legacy settings
+reader, `runner_gateway/commands` migration sources, migration image publication and automation,
+and stale database documentation. Preserve the shared PostgreSQL Cluster and Dispatcher migrations.
+Remove both retirement nodes once the drop and cleanup are complete.
 
 ## Scope and retirement of stale gates
 
