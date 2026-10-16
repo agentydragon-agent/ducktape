@@ -1246,25 +1246,18 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 
 ```mermaid
 flowchart TD
-    ACTION_EXECUTION_AUDIT_COLUMNS_READ_RETIRE[Candidate: stop selecting unused reconciliation columns]
     ACTION_EXECUTION_AUDIT_COLUMNS_DROP[Blocked: drop retired execution reconciliation columns]
-    ACTION_EXECUTION_AUDIT_COLUMNS_READ_RETIRE -->|Deferred-reader image Ready in testing and staging| ACTION_EXECUTION_AUDIT_COLUMNS_DROP
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
 ```
 
-### `ACTION_EXECUTION_AUDIT_COLUMNS_READ_RETIRE` — stop selecting unused reconciliation columns
-
-**Candidate; the writer-free Action Service image `devel-20261015233822-b8b2ba1` is Ready in testing
-(1/1) and staging (2/2), 2026-10-15 UTC.** The ORM still selects both unused columns by default.
-Mark them deferred while retaining their mappings, then wait for that image in both environments
-before dropping them. This read-removal rollout keeps existing replicas compatible while the
-migration runner still requires exact schema/model agreement.
-
 ### `ACTION_EXECUTION_AUDIT_COLUMNS_DROP` — drop retired reconciliation columns
 
-**Blocked on** `ACTION_EXECUTION_AUDIT_COLUMNS_READ_RETIRE` reaching both testing and staging. In a
-separate PR, add a new migration that drops `reconciliation_source` and `reconciled_by`, then remove
-their deferred ORM mappings. Preserve `reconciled_at` and the late-completion behavior.
+**Blocked on the ORM-unmapped Action Service image being Ready in testing and staging.** The
+writer-free Action Service image `devel-20261015233822-b8b2ba1` is Ready in testing (1/1) and
+staging (2/2), confirmed 2026-10-16 UTC. This PR removes the unused ORM mappings after that writer
+rollout. The physical columns remain untouched until the new reader-free image is Ready in both
+environments; then a separate migration may drop `reconciliation_source` and `reconciled_by`.
+Preserve `reconciled_at` and late-completion behavior.
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 
