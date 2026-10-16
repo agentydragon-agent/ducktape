@@ -6,6 +6,7 @@ objects (staging's policy sets, testing's MCP fixtures) come from `Environment.e
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -30,7 +31,7 @@ from agentplane.action_service.settings import Settings
 from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database, notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
@@ -62,6 +63,10 @@ _MCP_PATHS = (
 )
 
 
+_DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
+_DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
+
+
 def service(namespace: str) -> ServiceRef:
     """The Action Service in one environment's namespace."""
     return ServiceRef(
@@ -76,12 +81,37 @@ def mcp_oauth_secret(namespace: str) -> SecretRef:
 
 class Actions(Construct):
     """ServiceAccount, RBAC, ConfigMaps, Deployment (+ migrate initContainer), Service,
-    HTTPRoute, NetworkPolicy, and optional PodDisruptionBudget for the Action Service.
+    and optional PodDisruptionBudget for the Action Service. The fleet route and network
+    policy are added by `add_platform_resources`.
     """
 
-    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        database_url: EnvValue,
+        placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
+        registry_secret_name: str | None = "forgejo-images-creds",
+        service_cluster_ip: str | None = None,
+        container_env: Mapping[str, EnvValue] | None = None,
+        image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
+        memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
+        migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
+        migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
+    ) -> None:
         super().__init__(scope, id)
         self.env = env
+        self.database_url = database_url
+        self.placement = placement
+        self.registry_secret_name = registry_secret_name
+        self.service_cluster_ip = service_cluster_ip
+        self.container_env = container_env or {}
+        self.image_pull_policy = image_pull_policy
+        self.memory_limit = memory_limit
+        self.migrate_pull_policy = migrate_pull_policy
+        self.migrate_memory_limit = migrate_memory_limit
         self.service = service(env.namespace)
         self.mcp_oauth = mcp_oauth_secret(env.namespace)
 
@@ -122,6 +152,9 @@ class Actions(Construct):
         )
         workload = self._add_workload(settings)
         self._add_rbac(workload.account)
+
+    def add_platform_resources(self) -> None:
+        """Add the public route and Cilium policy used by fleet environments."""
         self._add_http_route()
         self._add_network_policy()
 
@@ -191,19 +224,7 @@ class Actions(Construct):
             binding.add_subjects(subject)
 
     def _database_env(self) -> dict[str, EnvValue]:
-        # The managed role's login, which database.py mints.
-        role = SecretRef(namespace=self.env.namespace, name="postgres-actions")
-        return {
-            "AGENTPLANE_ACTIONS_DB_USER": role.key("username").env_value(self, "postgres-actions-user-ref"),
-            "AGENTPLANE_ACTIONS_DB_PASSWORD": role.key("password").env_value(self, "postgres-actions-password-ref"),
-            "AGENTPLANE_ACTIONS_DB_HOST": role.key("host").env_value(self, "postgres-actions-host-ref"),
-            "AGENTPLANE_ACTIONS_DB_PORT": role.key("port").env_value(self, "postgres-actions-port-ref"),
-            "AGENTPLANE_ACTIONS_DB_NAME": role.key("dbname").env_value(self, "postgres-actions-dbname-ref"),
-            env_name(Settings, "database_url"): EnvValue.from_value(
-                "postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)"
-                "@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)"
-            ),
-        }
+        return {env_name(Settings, "database_url"): self.database_url}
 
     def _container_env(self) -> dict[str, EnvValue]:
         env = self._database_env()
@@ -224,7 +245,7 @@ class Actions(Construct):
                 .key("client_id")
                 .env_value(self, "github-mcp-client-secret-env")
             )
-        return env
+        return env | dict(self.container_env)
 
     def _add_workload(self, settings: SettingsFile) -> ServiceWorkload:
         env = self._container_env()
@@ -235,7 +256,7 @@ class Actions(Construct):
             serves=[self.service],
             container="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
-            image_pull_policy=ImagePullPolicy.ALWAYS,
+            image_pull_policy=self.image_pull_policy,
             args=cli_args(Settings, host="0.0.0.0", port=self.service.pod_port),
             env_variables=env,
             ports=[self.service.port.container_port()],
@@ -247,11 +268,20 @@ class Actions(Construct):
             ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
+                memory=MemoryResources(request=Size.mebibytes(128), limit=self.memory_limit),
             ),
             # 20s execution drain + 5s forced persistence, with room for HTTP/adapter teardown.
             termination_grace=Duration.seconds(60),
-            migrate=migrate_init_container(f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=env),
+            migrate=migrate_init_container(
+                f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}",
+                name="migrate",
+                env_variables=env,
+                image_pull_policy=self.migrate_pull_policy,
+                memory_limit=self.migrate_memory_limit,
+            ),
+            placement=self.placement,
+            registry_secret_name=self.registry_secret_name,
+            service_cluster_ip=self.service_cluster_ip,
             annotations={
                 "secret.reloader.stakater.com/reload": secret_reload,
                 # No configMapGenerator hash rolls the Deployment on settings changes

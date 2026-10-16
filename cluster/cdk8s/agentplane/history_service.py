@@ -7,20 +7,21 @@ bearer for the Pod's own token for the ingress audience. It takes untrusted inpu
 apart from the read API, and the network fence admits the egress proxy to it alone.
 """
 
+from collections.abc import Mapping
+
 from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
+from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, ImagePullPolicy, MemoryResources
 from constructs import Construct
 
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE, Settings
 from agentplane.subjects import ServiceAccountRef
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database, egress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
@@ -35,6 +36,10 @@ _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-history-service"
 EGRESS_POLICY = "runner-ingress"
 _CREDENTIAL = "agentplane-runner-ingress"
 _PUSH = "/agentplane.proto.runner_ingress.RunnerIngress/Push"
+
+
+_DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
+_DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
 
 
 def service(namespace: str) -> ServiceRef:
@@ -52,8 +57,25 @@ def ingress_service(namespace: str) -> ServiceRef:
 
 
 class HistoryService(Construct):
-    def __init__(self, scope: Construct, id: str, env: Environment, *, callers: dict[ServiceAccountRef, Pods]) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        database_url: EnvValue,
+        callers: dict[ServiceAccountRef, Pods],
+        placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
+        registry_secret_name: str | None = "forgejo-images-creds",
+        service_cluster_ip: str | None = None,
+        container_env: Mapping[str, EnvValue] | None = None,
+        memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
+        migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
+        migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
+    ) -> None:
         super().__init__(scope, id)
+        self.env = env
+        self.callers = callers
         endpoint = service(env.namespace)
         ingress = ingress_service(env.namespace)
         # TokenReview proves readers' and runners' projected workload tokens.
@@ -89,40 +111,33 @@ class HistoryService(Construct):
         )
         # The History Service writes the `sandbox_service` database, so it connects as that
         # database's owner; its read API's sessions are read-only (main.py).
-        database_url = (
-            SecretRef(namespace=env.namespace, name="postgres-sandbox-service").key("uri").env_value(self, "database")
-        )
         workload = add_service_workload(
             self,
             env,
             serves=[endpoint, ingress],
             container="history-service",
             image=f"{_IMAGE}:unset",
-            env_variables={env_name(Settings, "database_url"): database_url},
+            env_variables={env_name(Settings, "database_url"): database_url, **(container_env or {})},
             ports=[endpoint.port.container_port(), ingress.port.container_port()],
             readiness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(20)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
+                memory=MemoryResources(request=Size.mebibytes(128), limit=memory_limit),
             ),
             termination_grace=Duration.seconds(30),
             migrate=migrate_init_container(
                 "git.allegedly.works/ducktape-ci/agentplane-history-migrate:unset",
                 name="migrate",
                 env_variables={"AGENTPLANE_HISTORY_SERVICE_DATABASE_URL": database_url},
+                image_pull_policy=migrate_pull_policy,
+                memory_limit=migrate_memory_limit,
             ),
+            placement=placement,
+            registry_secret_name=registry_secret_name,
+            service_cluster_ip=service_cluster_ip,
         )
         config.mount_into(workload.container, env=Settings.config_file_env)
-        proxy = egress.proxy(env.namespace)
-        NetworkPolicy(
-            self,
-            "network-policy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
-            endpoint_selector=endpoint.pods.selector,
-            ingress=[*(pods.admit(endpoint.pod_port) for pods in callers.values()), proxy.pods.admit(ingress.pod_port)],
-            egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER), database.egress(env.namespace)],
-        )
         egress.add_runner_egress(
             self,
             policy=EGRESS_POLICY,
@@ -132,3 +147,22 @@ class HistoryService(Construct):
             audience=RUNNER_INGRESS_AUDIENCE,
             purpose="pushes to the History Service ingress",
         )
+
+    def add_platform_resources(self) -> None:
+        """Add fleet network admission."""
+        env = self.env
+        endpoint = service(env.namespace)
+        ingress = ingress_service(env.namespace)
+        proxy = egress.proxy(env.namespace)
+        NetworkPolicy(
+            self,
+            "network-policy",
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
+            endpoint_selector=endpoint.pods.selector,
+            ingress=[
+                *(pods.admit(endpoint.pod_port) for pods in self.callers.values()),
+                proxy.pods.admit(ingress.pod_port),
+            ],
+            egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER), database.egress(env.namespace)],
+        )
+        egress.add_runner_egress_network_policy(self, policy=EGRESS_POLICY, endpoint=ingress)

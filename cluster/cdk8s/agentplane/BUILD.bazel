@@ -2,7 +2,10 @@
 
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-package(default_visibility = ["//cluster/cdk8s:__pkg__"])
+package(default_visibility = [
+    "//agentplane/x/k3s_env:__pkg__",
+    "//cluster/cdk8s:__pkg__",
+])
 
 py_library(
     name = "db_backups",
@@ -44,7 +47,6 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:service_ref",
-        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -106,6 +108,7 @@ py_library(
     name = "egress",
     srcs = ["egress.py"],
     visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
@@ -392,6 +395,7 @@ py_library(
     name = "actions",
     srcs = ["actions.py"],
     visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
@@ -599,6 +603,7 @@ py_library(
         ":app",
         ":database",
         ":egress",
+        ":electric",
         ":environment",
         ":history_service",
         ":llm_ingress",
@@ -610,7 +615,11 @@ py_library(
         ":session_dispatcher",
         "//agentplane:subjects",
         "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )
@@ -653,6 +662,7 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/agentplane:policy_set",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
@@ -668,7 +678,10 @@ py_library(
 py_library(
     name = "testing",
     srcs = ["testing.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
+        "//cluster/cdk8s:__pkg__",
+    ],
     deps = [
         ":actions",
         ":actions_testing_fixtures",
@@ -697,6 +710,8 @@ py_library(
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:model_selections",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/agentplane:policy_set",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
@@ -792,6 +807,7 @@ py_library(
     name = "egress_credentials",
     srcs = ["egress_credentials.py"],
     visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
@@ -947,11 +963,13 @@ py_library(
         "//agentplane/runner_gateway:settings",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:settings_file",
         "//cluster/cdk8s:token_reviewer_rbac",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//util:settings_contract",
         "@pypi//cdk8s",
@@ -1005,6 +1023,7 @@ py_test(
         ":staging",
         "//:conftest",
         "//agentplane:subjects",
+        "//cluster/cdk8s:secret_ref",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -1025,11 +1044,13 @@ py_library(
         "//agentplane/session_dispatcher:settings",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:settings_file",
         "//cluster/cdk8s:token_reviewer_rbac",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//util:settings_contract",
         "@pypi//cdk8s",
@@ -1053,6 +1074,7 @@ py_test(
         ":runner_gateway",
         ":session_dispatcher",
         "//:conftest",
+        "//util:settings_contract",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

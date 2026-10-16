@@ -1,4 +1,4 @@
-"""The staged Go cutover keeps the old addresses and authenticates each service."""
+"""The staged Go cutover keeps stable Service addresses for one authenticated gRPC listener."""
 
 from typing import Any, cast
 
@@ -17,6 +17,7 @@ from cluster.cdk8s.agentplane import (
     session_dispatcher,
     staging,
 )
+from cluster.cdk8s.secret_ref import SecretRef
 
 
 def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -30,6 +31,9 @@ def _go_objects() -> list[dict[str, Any]]:
         ServiceAccountRef(namespace=env.namespace, name=app.NAME): app.service(env.namespace).pods,
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods,
     }
+    database_url = (
+        SecretRef(namespace=env.namespace, name="postgres-session-dispatcher").key("uri").env_value(chart, "database")
+    )
     runner_gateway_go.GoRunnerGateway(
         chart,
         "runner-gateway",
@@ -37,15 +41,16 @@ def _go_objects() -> list[dict[str, Any]]:
         dispatcher_callers=callers,
         gateway_callers=callers,
         wake_callers=frozenset(callers),
+        database_url=database_url,
         sandbox_controller=(
             ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME),
             sandbox_controller.pods(env.namespace),
         ),
-    )
+    ).add_platform_resources()
     return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
 
 
-def test_go_gateway_preserves_services_and_fences_service_ingress() -> None:
+def test_go_gateway_preserves_services_and_fences_listener_ingress() -> None:
     docs = _go_objects()
     root = Chart(Cdk8sTesting.app(), "root-services", disable_resource_name_hashes=True)
     runner_gateway_go.add_stable_services(root, staging.ENV)
@@ -58,6 +63,7 @@ def test_go_gateway_preserves_services_and_fences_service_ingress() -> None:
     assert pod["serviceAccountName"] == runner_gateway.NAME
     assert deployment["spec"]["strategy"] == {"type": "Recreate"}
     assert {p["containerPort"] for p in container["ports"]} == {8080}
+    assert "--listen-address=0.0.0.0:8080" in container["args"]
     assert f"--dispatcher-audience={session_dispatcher.TOKEN_AUDIENCE}" in container["args"]
     assert f"--gateway-audience={runner_gateway.TOKEN_AUDIENCE}" in container["args"]
     assert f"--dispatcher-caller={staging.ENV.namespace}/{app.NAME}" in container["args"]
@@ -86,7 +92,7 @@ def test_go_gateway_preserves_services_and_fences_service_ingress() -> None:
     assert (notifications.NAME, "8080") in ingress
     assert (runner_gateway.NAME, "8080") in ingress
     assert (sandbox_controller.NAME, "8080") in ingress
-    assert (sandbox_controller.NAME, "8081") not in ingress
+    assert (sandbox_controller.NAME, "8080") in ingress
     role = _resource(docs, "Role", runner_gateway.NAME.removeprefix("agentplane-"))
     assert {rule["resources"][0] for rule in role["rules"]} == {"pods", "sandboxes", "leases", "endpointslices"}
     assert "patch" in one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]
@@ -96,7 +102,14 @@ def test_goose_job_name_follows_pinned_image_digest() -> None:
     digest = "a" * 64
     image = f"git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate@sha256:{digest}"
     chart = Chart(Cdk8sTesting.app(), "migration", disable_resource_name_hashes=True)
-    migration = runner_gateway_go.QueueMigration(chart, "migration", staging.ENV, image=image)
+    database_url = (
+        SecretRef(namespace=staging.ENV.namespace, name="postgres-session-dispatcher")
+        .key("uri")
+        .env_value(chart, "database")
+    )
+    migration = runner_gateway_go.QueueMigration(
+        chart, "migration", staging.ENV, image=image, database_url=database_url
+    )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     job = _resource(docs, "Job", "runner-gateway-queue-migrate-aaaaaaaaaaaa")
     assert migration.name == job["metadata"]["name"]
@@ -114,6 +127,7 @@ def test_goose_job_name_follows_pinned_image_digest() -> None:
             "migration",
             staging.ENV,
             image=image.replace("@sha256:" + digest, ":latest"),
+            database_url=database_url,
         )
 
 
