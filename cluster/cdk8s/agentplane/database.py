@@ -30,7 +30,7 @@ _CLUSTER_NAME = "postgres"
 
 # The logical databases services own on the shared Cluster; the initdb-owned
 # "app"/trajectory database needs no Database/role of its own.
-# `sandbox_commands` holds the Runner Gateway's legacy Session registry; `sandbox_service` is the
+# `sandbox_commands` holds the Runner Gateway's command admission; `sandbox_service` is the
 # History Service's database, still under its old name: renaming it moves the data.
 _ROLE_NAMES = ["actions", "egress", "notifications", "sandbox_commands", "sandbox_service", "session_dispatcher"]
 _ELECTRIC_ROLE = "electric"
