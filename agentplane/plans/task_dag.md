@@ -395,16 +395,13 @@ into**. Deliverable: a written verdict on whether discovery removes the blocker 
 deferred, the child states worth projecting, and the control surface that must stay unavailable. Feed
 the answer to `MULTIAGENT_MODEL`'s native-child boundary; it does not preempt it.
 
-Two things this must settle rather than assume: the characterization matrix in
-[Native discovery](native_session_discovery.md) is still mostly unmeasured (S5-S11 planned), and a
-discovered child has no Sandbox, so read-only addressability depends on `THREAD_READ_POLICY_DESIGN`
-and `THREAD_CREATE_POLICY` — a child is not "just another Session" for authorization purposes.
-
-**Evidence TODO:** Characterize the pinned Claude CLI's reported `--forward-subagent-text` flag:
-whether it is accepted, what text/events it forwards and to which stream, whether stable native
-child IDs and parent links accompany them, and whether any child can be addressed or controlled
-independently. Forwarded text alone does not establish attachable Agentplane child Sessions; do not
-enable the flag in the runner until its actual behavior and the desired projection are reviewed.
+Two things this must settle rather than assume: the remaining configuration/transport boundaries in
+[Native discovery](native_session_discovery.md), informed by the
+[pinned child evidence](../native/docs/child_sessions.md), and the fact that a discovered child has
+no Sandbox. Read-only addressability depends on `THREAD_READ_POLICY_DESIGN` and `THREAD_CREATE_POLICY`
+— a child is not "just another Session" for authorization purposes. Forwarded text alone does not
+establish attachable Agentplane child Sessions; do not change runner flags until the desired
+projection is reviewed. Independent child control remains outside the new characterization tests.
 
 **Also in scope: keep Session identity runner-owned.** The app calls the runner's identity-fenced
 `ResumeSession` through the proxy. The old `session` table was removed with the Gateway database; it

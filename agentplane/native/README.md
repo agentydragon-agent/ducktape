@@ -40,6 +40,10 @@ Shared workspace and trace fixtures live in `native/conftest.py`, and the model 
 
 ### Behavioral coverage
 
+Child discovery, live-item attribution and recovery findings are summarized in
+[Native child Session evidence](docs/child_sessions.md), with explicit transport and configuration
+boundaries. These tests do not implement public child Sessions or child control.
+
 Each test module documents its assertions. The main scenarios covered are:
 
 | Scenario                        | Claude Code                                                                                               | Codex app-server                                                                                                 |
