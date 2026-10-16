@@ -39,7 +39,6 @@ from cluster.cdk8s.agentplane.egress import (
 from cluster.cdk8s.agentplane.egress_staging_credentials import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
-    FINANCE_AIQUOTA_HISTORY_POLICY,
     FORGEJO_FINANCE_AGENT_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
@@ -174,7 +173,6 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
             BASIC_POLICY,
             PACKAGES_POLICY,
             AIQUOTA_READ_POLICY,
-            FINANCE_AIQUOTA_HISTORY_POLICY,
             FORGEJO_FINANCE_AGENT_POLICY,
             GITHUB_AGENTYDRAGON_AGENT_POLICY,
             GITHUB_CLONE_POLICY,
