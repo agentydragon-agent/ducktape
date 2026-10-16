@@ -23,6 +23,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/workqueue"
 )
 
 const sandboxUID = "00000000-0000-4000-8000-000000000001"
@@ -419,13 +420,134 @@ func (l testLease) StillOwns(ctx context.Context, owner Owner) (bool, error) {
 	return l.store.IsCurrentOwner(ctx, owner)
 }
 
-type retryRunner struct {
-	mu    sync.Mutex
+type countingLease struct {
+	testLease
 	calls int
 }
 
+type unreliableLease struct {
+	testLease
+	failRenew bool
+	live      bool
+}
+
+func (l *unreliableLease) Acquire(ctx context.Context, name, uid string) (*Owner, error) {
+	if l.failRenew {
+		return nil, errors.New("Lease API unavailable")
+	}
+	return l.testLease.Acquire(ctx, name, uid)
+}
+
+func (l *unreliableLease) StillOwns(ctx context.Context, owner Owner) (bool, error) {
+	if !l.live {
+		return false, nil
+	}
+	return l.testLease.StillOwns(ctx, owner)
+}
+
+func (l *countingLease) Acquire(ctx context.Context, name, uid string) (*Owner, error) {
+	l.calls++
+	return l.testLease.Acquire(ctx, name, uid)
+}
+
+type retryRunner struct {
+	mu        sync.Mutex
+	calls     int
+	commandID string
+}
+
+type recordingDelayQueue struct {
+	workqueue.TypedRateLimitingInterface[string]
+	delays []time.Duration
+}
+
+func (q *recordingDelayQueue) AddAfter(_ string, delay time.Duration) {
+	q.delays = append(q.delays, delay)
+}
+
+func TestWorkerRetainsBackoffAcrossUncertainReplies(t *testing.T) {
+	worker := &DeliveryWorker{}
+	worker.init()
+	defer worker.queue.ShutDown()
+	recorded := &recordingDelayQueue{TypedRateLimitingInterface: worker.queue}
+	worker.queue = recorded
+	for attempt, delay := range []time.Duration{500 * time.Millisecond, time.Second, 2 * time.Second} {
+		state, reason := worker.deliveryFailure("session", "command", sandboxUID, "pod-1", "submit_input",
+			status.Error(codes.Unavailable, "uncertain reply"))
+		if state != QueueState || reason != "delivery_unavailable" {
+			t.Fatalf("attempt %d: %s %s", attempt+1, state, reason)
+		}
+		if got := worker.limiter.NumRequeues("session"); got != attempt+1 {
+			t.Fatalf("attempt %d: limiter count %d", attempt+1, got)
+		}
+		if got := recorded.delays[attempt]; got != delay {
+			t.Fatalf("attempt %d: queued delay %s, want %s", attempt+1, got, delay)
+		}
+	}
+	worker.clearRetry("session")
+	if got := worker.limiter.NumRequeues("session"); got != 0 {
+		t.Fatalf("terminal settlement retained %d attempts", got)
+	}
+}
+
+func TestWorkerRequiresFreshLeaseBeforeDelivery(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, 3)
+	if _, err := store.Enqueue(ctx, "fenced-session", "sandbox-fenced", sandboxUID, input("fenced-input", "hello"), nil); err != nil {
+		t.Fatal(err)
+	}
+	runner := &retryRunner{commandID: "fenced-input"}
+	leases := &unreliableLease{testLease: testLease{store: store}, live: true}
+	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
+		Name: "sandbox-fenced", Namespace: "agentplane", UID: sandboxUID, Incarnation: "pod-1",
+	}}, Wake: testWake{}, Leases: leases, Runner: runner}
+	worker.init()
+	defer worker.queue.ShutDown()
+	if err := worker.reconcile(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	leases.failRenew = true
+	if err := worker.reconcile(ctx, true); err == nil {
+		t.Fatal("renewal should fail")
+	}
+	if err := worker.processSession(ctx, "fenced-session"); err != nil {
+		t.Fatal(err)
+	}
+	leases.failRenew = false
+	if err := worker.reconcile(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	leases.live = false
+	if err := worker.processSession(ctx, "fenced-session"); err != nil {
+		t.Fatal(err)
+	}
+	runner.mu.Lock()
+	calls := runner.calls
+	runner.mu.Unlock()
+	if calls != 0 {
+		t.Fatalf("stale Lease allowed %d Runner calls", calls)
+	}
+	leases.live = true
+	if err := worker.reconcile(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.processSession(ctx, "fenced-session"); err != nil {
+		t.Fatal(err)
+	}
+	runner.mu.Lock()
+	calls = runner.calls
+	runner.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("fresh Lease made %d Runner calls, want 1", calls)
+	}
+}
+
 func (r *retryRunner) Deliver(_ context.Context, sandbox SandboxSnapshot, _ string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
-	if sandbox.UID != sandboxUID || command.GetCommandId() != "worker-input" {
+	wantID := r.commandID
+	if wantID == "" {
+		wantID = "worker-input"
+	}
+	if sandbox.UID != sandboxUID || command.GetCommandId() != wantID {
 		return nil, errors.New("wrong delivery identity")
 	}
 	r.mu.Lock()
@@ -452,38 +574,117 @@ func TestWorkerRetriesUncertainRunnerReplyUnderCurrentOwner(t *testing.T) {
 		Name: "sandbox-worker", Namespace: "agentplane", UID: sandboxUID, Incarnation: "pod-1",
 	}}, Wake: testWake{}, Leases: testLease{store}, Runner: runner}
 	worker.init()
-	if err := worker.reconcile(ctx); err != nil {
+	workerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	defer worker.queue.ShutDown()
+	go worker.runQueue(workerCtx)
+	if err := worker.reconcile(ctx, true); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-worker.done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("first runner attempt did not settle")
+	waitState := func(state string) *Dispatch {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			row, err := store.GetDispatch(ctx, "worker-input")
+			if err == nil && row.State == state && (state != QueueState || row.Reason == "delivery_unavailable") {
+				return row
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("dispatch did not reach %s", state)
+		return nil
 	}
-	queued, err := store.GetDispatch(ctx, "worker-input")
-	if err != nil || queued.State != QueueState || queued.Reason != "delivery_unavailable" {
-		t.Fatalf("uncertain reply should retry: %+v %v", queued, err)
+	queued := waitState(QueueState)
+	if queued.Reason != "delivery_unavailable" {
+		t.Fatalf("uncertain reply should retry: %+v", queued)
 	}
-	if !worker.retryPending("worker-input") {
+	if worker.retryRemaining("worker-session") <= 0 {
 		t.Fatal("missing retry backoff")
 	}
-	worker.setRetry("worker-input", 0)
-	if err := worker.reconcile(ctx); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-worker.done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("retry did not settle")
-	}
-	admitted, err := store.GetDispatch(ctx, "worker-input")
-	if err != nil || admitted.State != AdmittedState || admitted.Admission == nil {
-		t.Fatalf("retry was not admitted: %+v %v", admitted, err)
+	admitted := waitState(AdmittedState)
+	if admitted.Admission == nil {
+		t.Fatalf("retry was not admitted: %+v", admitted)
 	}
 	runner.mu.Lock()
 	calls := runner.calls
 	runner.mu.Unlock()
 	if calls != 2 {
 		t.Fatalf("runner calls = %d, want 2", calls)
+	}
+}
+
+type orderedRunner struct {
+	entered chan string
+	release chan struct{}
+	mu      sync.Mutex
+	active  int
+	peak    int
+}
+
+func (r *orderedRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
+	r.mu.Lock()
+	r.active++
+	if r.active > r.peak {
+		r.peak = r.active
+	}
+	r.mu.Unlock()
+	r.entered <- command.GetCommandId()
+	<-r.release
+	r.mu.Lock()
+	r.active--
+	r.mu.Unlock()
+	return &eventlogpb.EventEntry{Cursor: 1}, nil
+}
+
+func (*orderedRunner) OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string) error {
+	return errors.New("unexpected opening")
+}
+
+func TestWorkerSerializesCommandsPerSession(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store := testStore(t, 3)
+	for _, id := range []string{"ordered-1", "ordered-2"} {
+		if _, err := store.Enqueue(ctx, "ordered-session", "sandbox-ordered", sandboxUID, input(id, id), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runner := &orderedRunner{entered: make(chan string, 2), release: make(chan struct{}, 2)}
+	leases := &countingLease{testLease: testLease{store: store}}
+	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
+		Name: "sandbox-ordered", Namespace: "agentplane", UID: sandboxUID, Incarnation: "pod-1",
+	}}, Wake: testWake{}, Leases: leases, Runner: runner}
+	worker.init()
+	defer worker.queue.ShutDown()
+	go worker.runQueue(ctx)
+	go worker.runQueue(ctx)
+	if err := worker.reconcile(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if leases.calls != 1 {
+		t.Fatalf("initial lease acquisitions = %d", leases.calls)
+	}
+	for _, want := range []string{"ordered-1", "ordered-2"} {
+		select {
+		case got := <-runner.entered:
+			if got != want {
+				t.Fatalf("delivery order = %s, want %s", got, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("missing %s delivery", want)
+		}
+		if err := worker.reconcile(ctx, false); err != nil {
+			t.Fatal(err)
+		}
+		if leases.calls != 1 {
+			t.Fatalf("delivery notification renewed lease %d times", leases.calls)
+		}
+		runner.release <- struct{}{}
+	}
+	runner.mu.Lock()
+	peak := runner.peak
+	runner.mu.Unlock()
+	if peak != 1 {
+		t.Fatalf("parallel deliveries for one Session: %d", peak)
 	}
 }
