@@ -1,7 +1,6 @@
 """Agentplane history visual behavior tests."""
 
 import re
-from textwrap import dedent
 
 import pytest
 import pytest_asyncio
@@ -78,7 +77,8 @@ async def test_reported_rollout_run(reported_rollout: VisualPage, position: str)
     [(False, DESKTOP), (False, MOBILE), (True, DESKTOP), (True, MOBILE)],
     ids=["false-desktop", "false-mobile", "true-desktop", "true-mobile"],
 )
-async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_output: bool) -> None:
+@pytest.mark.parametrize("color_scheme", ["light", "dark"])
+async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_output: bool, viewport: Viewport) -> None:
     page = completed_rollout.page
     await _rollout_start(completed_rollout)
     await _open_run(page)
@@ -93,27 +93,116 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
     heading = call.locator(
         ".agentplane-output-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-heading"
     )
-    divider_edges = await heading.evaluate(
-        dedent(
-            "element => {\n                const heading = element.getBoundingClientRect();\n                const divider = getComputedStyle(element, '::after');\n                const card = element.closest('.agentplane-collapsible-card').getBoundingClientRect();\n                return [heading.left + parseFloat(divider.left) - card.left,\n                        card.right - heading.right + parseFloat(divider.right)];\n            }"
-        )
-    )
-    assert all(abs(edge) <= 1 for edge in divider_edges), f"output divider escaped its card: {divider_edges}"
+    heading_box = await heading.bounding_box()
+    card_box = await call.locator("xpath=ancestor::*[@data-open][1]").bounding_box()
+    assert heading_box is not None
+    assert card_box is not None
+    assert heading_box["x"] >= card_box["x"] - 1
+    assert heading_box["x"] + heading_box["width"] <= card_box["x"] + card_box["width"] + 1
     if expanded_output:
         await _focus(page, output)
         await output.get_by_role("button", name=re.compile("^Show all")).click()
         await expect(output).to_have_attribute("data-expanded", "true")
-        await output.evaluate(
-            dedent(
-                "element => {\n                  const history = element.closest('[aria-label=\"Thread history\"]');\n                  history.scrollTop += element.getBoundingClientRect().top - history.getBoundingClientRect().top + 300;\n                }"
-            )
+        history = page.get_by_role("region", name="Thread history")
+        run_steps = page.locator(".agentplane-run-steps").first
+        run_anchor = await run_steps.evaluate("element => element.closest('[data-thread-anchor]').dataset.threadAnchor")
+        run_card = history.locator(f'[data-thread-anchor="{run_anchor}"] > .agentplane-collapsible-card')
+        run_heading = run_card.locator(
+            ":scope > .agentplane-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-heading"
+        )
+        call_heading = call.locator(":scope > .agentplane-disclosure-item > .agentplane-disclosure-heading")
+        output_heading = call.locator(
+            ".agentplane-output-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-heading"
+        )
+        history_box = await history.bounding_box()
+        run_box = await run_heading.bounding_box()
+        call_box = await call_heading.bounding_box()
+        output_box = await output_heading.bounding_box()
+        assert history_box is not None
+        assert run_box is not None
+        assert call_box is not None
+        assert output_box is not None
+        output_stack_top = run_box["height"] + call_box["height"]
+        await history.evaluate(
+            "(element, delta) => { element.scrollTop += delta; }",
+            output_box["y"] - history_box["y"] - output_stack_top + 12,
         )
         await wait_for_stable(page)
-        await expect(call.locator(".agentplane-output-label")).to_be_in_viewport()
+        history_box = await history.bounding_box()
+        assert history_box is not None
+        for heading, expected_top in (
+            (run_heading, 0),
+            (call_heading, run_box["height"]),
+            (output_heading, output_stack_top),
+        ):
+            heading_box = await heading.bounding_box()
+            assert heading_box is not None
+            actual_top = heading_box["y"] - history_box["y"]
+            assert abs(actual_top - expected_top) <= 4, (
+                f"{await heading.inner_text()} at {actual_top}px; expected sticky slot at {expected_top}px"
+            )
+        geometry = [
+            await heading.evaluate(
+                """element => {
+                    const bounds = element.getBoundingClientRect();
+                    const control = element.querySelector('.agentplane-disclosure-summary');
+                    const label = element.querySelector('.agentplane-disclosure-summary-content');
+                    const chevron = element.querySelector('.mantine-Accordion-chevron');
+                    const controlBounds = control.getBoundingClientRect();
+                    const labelBounds = label.getBoundingClientRect();
+                    return {
+                        left: labelBounds.left,
+                        right: chevron.getBoundingClientRect().right,
+                        headingLeft: bounds.left,
+                        headingRight: bounds.right,
+                        headingHeight: bounds.height,
+                        controlHeight: controlBounds.height,
+                        labelCenterOffset: labelBounds.top + labelBounds.height / 2 - (bounds.top + bounds.height / 2),
+                        size: getComputedStyle(label).fontSize
+                    };
+                }"""
+            )
+            for heading in (run_heading, call_heading, output_heading)
+        ]
+        assert len({item["size"] for item in geometry}) == 1, geometry
+        assert max(item["right"] for item in geometry) - min(item["right"] for item in geometry) <= 1, geometry
+        assert max(item["headingLeft"] for item in geometry) - min(item["headingLeft"] for item in geometry) <= 1, (
+            geometry
+        )
+        assert max(item["headingRight"] for item in geometry) - min(item["headingRight"] for item in geometry) <= 1, (
+            geometry
+        )
+        expected_header_height = 44 if viewport.width < 768 else 28
+        assert max(item["headingHeight"] for item in geometry) - min(item["headingHeight"] for item in geometry) <= 1, (
+            geometry
+        )
+        assert all(abs(item["headingHeight"] - expected_header_height) <= 1 for item in geometry), geometry
+        assert all(abs(item["controlHeight"] - item["headingHeight"]) <= 1 for item in geometry), geometry
+        assert all(abs(item["labelCenterOffset"]) <= 1 for item in geometry), geometry
+        indents = [geometry[index + 1]["left"] - geometry[index]["left"] for index in range(2)]
+        assert all(abs(indent - 5) <= 1 for indent in indents), indents
     else:
         await _focus(page, call.locator(".agentplane-clamped-block[data-label='Command']"))
     await page.mouse.move(0, 0)
     await completed_rollout.capture()
+    if expanded_output:
+        # The user can shorten output, close the call, and close the run from the
+        # current reading position. Assert visibility before clicks can auto-scroll.
+        show_less = output_heading.get_by_role("button", name="Show less Output")
+        await expect(show_less).to_be_in_viewport(ratio=1)
+        await show_less.click()
+        await expect(output).to_have_attribute("data-expanded", "false")
+        await expect(output.get_by_role("button", name=re.compile("^Show all"))).to_be_visible()
+        await page.mouse.move(0, 0)
+        await completed_rollout.capture(name=f"{completed_rollout.capture_name}_output_preview")
+        shell_control = call_heading.get_by_role("button").first
+        await expect(shell_control).to_be_in_viewport(ratio=1)
+        await shell_control.click()
+        await expect(shell_control).to_have_attribute("aria-expanded", "false")
+        run_control = run_heading.get_by_role("button").first
+        await expect(run_control).to_be_in_viewport(ratio=1)
+        await run_control.click()
+        await expect(run_control).to_have_attribute("aria-expanded", "false")
 
 
 async def _open_discarded_recovery(page: Page) -> None:
@@ -428,6 +517,7 @@ async def test_revised_recovery_tool_output(recovery_tools: VisualPage) -> None:
 
 
 @DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("color_scheme", ["light", "dark"])
 async def test_reasoning_inside_tool_run(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.standard_history(long_preview=True)
     await app.mount_thread(IDLE_THREAD)
@@ -437,12 +527,18 @@ async def test_reasoning_inside_tool_run(view: VisualPage, app: AgentplaneFixtur
     reasoning = page.locator(".agentplane-step-details").filter(
         has=page.locator(".agentplane-step-title:text-is('Reasoning')")
     )
+    title_size = await reasoning.locator(".agentplane-step-title").evaluate("el => getComputedStyle(el).fontSize")
+    preview_size = await reasoning.locator(".agentplane-markdown--single-line").evaluate(
+        "el => getComputedStyle(el).fontSize"
+    )
+    assert title_size == preview_size
     await reasoning.locator(".agentplane-disclosure-summary").first.click()
     await expect(reasoning.locator(".agentplane-disclosure-panel .agentplane-markdown")).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
 
 
 @DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("color_scheme", ["light", "dark"])
 async def test_reasoning_heading_sticks_at_history_bottom(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.standalone_reasoning(long_body=True)
     await app.mount_thread(IDLE_THREAD)
@@ -453,8 +549,20 @@ async def test_reasoning_heading_sticks_at_history_bottom(view: VisualPage, app:
     await expect(history).to_have_attribute("data-layout-settled", "true")
     await history.evaluate("element => { element.scrollTop = element.scrollHeight; }")
     await wait_for_stable(page)
-    await expect(reasoning.locator(".agentplane-disclosure-summary").first).to_have_attribute("aria-expanded", "true")
+    control = reasoning.locator(".agentplane-disclosure-summary").first
+    await expect(control).to_have_attribute("aria-expanded", "true")
+    title_size = await reasoning.locator(".agentplane-step-title").evaluate("el => getComputedStyle(el).fontSize")
+    preview_size = await reasoning.locator(".agentplane-markdown--single-line").evaluate(
+        "el => getComputedStyle(el).fontSize"
+    )
+    assert title_size == preview_size
+    await page.mouse.move(0, 0)
     await view.capture(target=view.page.locator("#app"))
+    await expect(control).to_be_in_viewport(ratio=1)
+    await control.click()
+    await expect(control).to_have_attribute("aria-expanded", "false")
+    await page.mouse.move(0, 0)
+    await view.capture(name=f"{view.capture_name}_collapsed", target=page.locator("#app"))
 
 
 async def test_standalone_reasoning_opens_session_standalone_reasoning_open(
@@ -491,7 +599,9 @@ async def test_shell_call_run_previews(shell_calls: VisualPage) -> None:
     await view.capture()
 
 
-@pytest.mark.parametrize(("anchor", "viewport"), [("4", DESKTOP), ("34", MOBILE)], ids=["4-desktop", "34-mobile"])
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("color_scheme", ["light", "dark"])
+@pytest.mark.parametrize("anchor", ["4", "34"], ids=["user-message", "assistant-text"])
 async def test_thread_evidence_panel(view: VisualPage, app: AgentplaneFixture, anchor: str) -> None:
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
@@ -503,8 +613,93 @@ async def test_thread_evidence_panel(view: VisualPage, app: AgentplaneFixture, a
     await button.press("Enter")
     await expect(button).to_have_attribute("aria-expanded", "true")
     await expect(owner.locator("[data-evidence-observation]").first).to_be_visible()
+    if anchor == "4":
+        bubble = owner.locator(".agentplane-user-bubble")
+        panel = owner.locator(".agentplane-disclosure").first
+        await expect(bubble.locator(".agentplane-disclosure")).to_have_count(0)
+        bubble_box = await bubble.bounding_box()
+        panel_box = await panel.bounding_box()
+        owner_box = await owner.bounding_box()
+        assert bubble_box is not None
+        assert panel_box is not None
+        assert owner_box is not None
+        assert panel_box["y"] >= bubble_box["y"] + bubble_box["height"]
+        assert abs(panel_box["x"] - owner_box["x"]) <= 1
+        assert abs(panel_box["width"] - owner_box["width"]) <= 1
     await button.blur()
     await page.mouse.move(0, 0)
+    await view.capture()
+    frames = owner.locator("[data-evidence-observation]").first
+    await frames.get_by_role("button", name=re.compile("Observation .* raw frames")).click()
+    await expect(frames.locator(".agentplane-code-block")).to_be_visible()
+    await page.mouse.move(0, 0)
+    await view.capture(name=f"{view.capture_name}_raw_frames")
+
+
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("color_scheme", ["light", "dark"])
+async def test_bash_evidence_panel(shell_calls: VisualPage) -> None:
+    view = shell_calls
+    page = view.page
+    await _open_run(page)
+    owner = (
+        page.locator(".agentplane-collapsible-card.agentplane-evidence-owner")
+        .filter(has=page.locator(".agentplane-step-title:text-is('Bash')"))
+        .first
+    )
+    await expect(owner.locator(".agentplane-step-title")).to_have_text("Bash")
+    await owner.locator(".agentplane-step-details .agentplane-disclosure-summary").click()
+    await expect(owner.locator(".agentplane-step-details .agentplane-code-block .cm-content").first).to_be_attached()
+    button = owner.locator(".agentplane-step-inspect > .agentplane-evidence-toggle")
+    await expect(button).to_be_attached()
+
+    # Keyboard and pointer activation both reach the separate action beside the chevron.
+    await button.focus()
+    await button.press("Enter")
+    await expect(button).to_have_attribute("aria-expanded", "true")
+    await button.press("Enter")
+    await button.blur()
+    await page.mouse.move(0, 0)
+    await owner.hover()
+    await expect(button).to_have_css("opacity", "1")
+    heading = owner.locator(".agentplane-step-details .agentplane-disclosure-heading").first
+    button_box = await button.bounding_box()
+    heading_box = await heading.bounding_box()
+    assert button_box is not None
+    assert heading_box is not None
+    assert button_box["x"] >= heading_box["x"] - 1
+    assert button_box["x"] + button_box["width"] <= heading_box["x"] + heading_box["width"] + 1
+
+    await button.click()
+    await expect(button).to_have_attribute("aria-expanded", "true")
+    frames = owner.locator("[data-evidence-observation]").first
+    await expect(frames).to_be_visible()
+    await page.mouse.move(0, 0)
+    await view.capture()
+    await frames.get_by_role("button", name=re.compile("Observation .* raw frames")).click()
+    await expect(frames.locator(".agentplane-code-block")).to_be_visible()
+    await page.mouse.move(0, 0)
+    await view.capture(name=f"{view.capture_name}_raw_frames")
+
+
+@pytest.mark.parametrize("viewport", [MOBILE_TOUCH], ids=["mobile-touch"])
+async def test_bash_evidence_button_reveals_on_tap(shell_calls: VisualPage) -> None:
+    view = shell_calls
+    page = view.page
+    await _open_run(page)
+    owner = (
+        page.locator(".agentplane-collapsible-card.agentplane-evidence-owner")
+        .filter(has=page.locator(".agentplane-step-title:text-is('Bash')"))
+        .first
+    )
+    await expect(owner.locator(".agentplane-step-title")).to_have_text("Bash")
+    await owner.locator(".agentplane-step-details .agentplane-disclosure-summary").tap()
+    await expect(owner).to_have_attribute("data-evidence-revealed", "")
+    button = owner.locator(".agentplane-step-inspect > .agentplane-evidence-toggle")
+    await expect(button).to_have_css("opacity", "1")
+    await button.tap()
+    await expect(button).to_have_attribute("aria-expanded", "true")
+    await expect(owner.locator("[data-evidence-observation]").first).to_be_visible()
     await view.capture()
 
 
@@ -585,6 +780,33 @@ async def test_shell_call_command_and_output(shell_calls: VisualPage, call_text:
     await _focus(page, call.locator(".agentplane-clamped-block[data-label='Command']"))
     await _in_viewport(call.locator(".agentplane-output-label"))
     await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_shell_call_raw_arguments_and_json_output(shell_calls: VisualPage) -> None:
+    view = shell_calls
+    page = view.page
+    await _open_run(page)
+    call = (
+        page.locator(".agentplane-step-details")
+        .filter(has=page.locator(".agentplane-step-title:text-is('Shell')"))
+        .first
+    )
+    await call.locator(".agentplane-disclosure-summary").first.click()
+    await _focus(page, call.locator(".agentplane-step-controls"))
+    await call.locator("label").filter(has_text=re.compile(r"^Raw$")).click()
+    await expect(call.get_by_role("switch", name="Show raw arguments and output")).to_be_checked()
+    arguments = call.locator(".agentplane-clamped-block[data-label='Arguments']")
+    await expect(arguments).to_be_visible()
+    await expect(call.locator(".agentplane-clamped-block[data-label='Command']")).to_have_count(0)
+    await expect(call.locator(".agentplane-output-disclosure .agentplane-code-block")).to_contain_text(
+        '"institution_name"'
+    )
+    await _focus(page, arguments)
+    await expect(call.locator(".agentplane-step-controls")).to_be_in_viewport(ratio=1)
+    await expect(call.locator(".agentplane-output-label")).to_be_in_viewport(ratio=1)
+    await page.mouse.move(0, 0)
+    await view.capture(target=page.locator("#app"))
 
 
 @DESKTOP_AND_MOBILE

@@ -1,14 +1,15 @@
 import { Alert, Badge, Box, Button, Group, Paper, Stack, Text, type MantineColor } from "@mantine/core";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
-import { type JSX, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, type JSX, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { ClampedBlock, lineCount } from "../clamped_block";
 import { InlineCode } from "../code_block";
+import { DisclosureBody, DisclosureCard } from "../disclosure";
 import { COMMAND_MAX_HEIGHT_REM, CommandCallView, OutputBlock } from "../command_view";
 import { HighlightedText } from "../json_view";
 import { Markdown } from "../markdown";
 import { RawSwitch } from "../raw_switch";
-import { oneLine, parseCommandCall } from "./command_calls";
+import { oneLine, parseCommandCall, type CommandCall } from "./command_calls";
 import { CommandProgress } from "./command_progress";
 import { lifecyclePresentation } from "./history_rows";
 import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
@@ -192,47 +193,49 @@ export function UserInputBubble({
   action?: { label: string; onClick: () => void };
 }): JSX.Element {
   return (
-    <Group
-      className="agentplane-user-message-row"
-      justify="flex-end"
-      align="flex-start"
-      gap="xs"
-      wrap="nowrap"
-      style={{ width: "100%" }}
-      data-command-id={commandId ?? entity?.entityId}
-    >
-      {(progress || action) && (
-        <Stack className="agentplane-user-message-aside" gap={2} align="flex-end">
-          {progress}
-          {action && (
-            <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
-              {action.label}
-            </Button>
-          )}
-        </Stack>
-      )}
-      <Paper
-        className="agentplane-user-bubble agentplane-evidence-owner"
-        data-message-phase={phase}
-        data-has-action={action ? "true" : undefined}
-        data-has-aside={progress || action ? "true" : undefined}
-        p="sm"
-        style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
+    <Stack gap="xs" style={{ width: "100%" }}>
+      <Group
+        className="agentplane-user-message-row"
+        justify="flex-end"
+        align="flex-start"
+        gap="xs"
+        wrap="nowrap"
+        style={{ width: "100%" }}
+        data-command-id={commandId ?? entity?.entityId}
       >
-        {entity && <EvidenceToggle entity={entity} />}
-        {entity ? (
-          <Body
-            reference={entity.inputRef}
-            format="text"
-            fallbackText={fallbackText}
-            onBodyLoaded={fallbackText === undefined ? undefined : onFallbackLoaded}
-          />
-        ) : text !== undefined ? (
-          <VerbatimText text={text} />
-        ) : null}
-        {entity && threadId && <EvidencePanel threadId={threadId} entity={entity} />}
-      </Paper>
-    </Group>
+        {(progress || action) && (
+          <Stack className="agentplane-user-message-aside" gap={2} align="flex-end">
+            {progress}
+            {action && (
+              <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
+                {action.label}
+              </Button>
+            )}
+          </Stack>
+        )}
+        <Paper
+          className="agentplane-user-bubble agentplane-evidence-owner"
+          data-message-phase={phase}
+          data-has-action={action ? "true" : undefined}
+          data-has-aside={progress || action ? "true" : undefined}
+          p="sm"
+          style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
+        >
+          {entity && <EvidenceToggle entity={entity} placement={progress || action ? "overlay" : "bubble"} />}
+          {entity ? (
+            <Body
+              reference={entity.inputRef}
+              format="text"
+              fallbackText={fallbackText}
+              onBodyLoaded={fallbackText === undefined ? undefined : onFallbackLoaded}
+            />
+          ) : text !== undefined ? (
+            <VerbatimText text={text} />
+          ) : null}
+        </Paper>
+      </Group>
+      {entity && threadId && <EvidencePanel threadId={threadId} entity={entity} />}
+    </Stack>
   );
 }
 
@@ -244,7 +247,9 @@ function LazyBody({ label, ...body }: { label: string; reference: PayloadRef; fo
   const id = payloadDisclosureId(body.reference);
   return (
     <RetainedDisclosure id={id} summary={label}>
-      <Body {...body} />
+      <DisclosureBody>
+        <Body {...body} />
+      </DisclosureBody>
     </RetainedDisclosure>
   );
 }
@@ -257,6 +262,7 @@ function ReasoningPreview({
   overflows,
   setOpen,
   onOverflowChange,
+  summaryAside,
 }: {
   reference: PayloadRef;
   /** How the step stands, shown on its title while it is folded. */
@@ -267,6 +273,7 @@ function ReasoningPreview({
   overflows: boolean;
   setOpen: (open: boolean) => void;
   onOverflowChange: (overflows: boolean) => void;
+  summaryAside?: ReactNode;
 }): JSX.Element {
   const { body, error, retry } = useThreadSync().usePayload(reference);
   const preview = useRef<HTMLDivElement>(null);
@@ -323,14 +330,15 @@ function ReasoningPreview({
       trailing={open && expandable ? status : undefined}
       preview={
         body === null ? (
-          <Text component="span" c="dimmed" aria-busy={!error}>
+          <Text component="span" size="sm" c="dimmed" aria-busy={!error}>
             {error ? "Preview unavailable" : "Loading preview…"}
           </Text>
         ) : (
-          <Markdown source={body} singleLine />
+          <Markdown source={body} singleLine size="sm" />
         )
       }
       previewRef={preview}
+      summaryAside={summaryAside}
       aside={
         error && (
           <button className="agentplane-step-retry" onClick={retry} type="button">
@@ -342,7 +350,11 @@ function ReasoningPreview({
       open={open}
       onOpenChange={setOpen}
     >
-      {body !== null && <Markdown source={body} />}
+      {body !== null && (
+        <DisclosureBody>
+          <Markdown source={body} />
+        </DisclosureBody>
+      )}
     </StepLine>
   );
 }
@@ -384,10 +396,9 @@ function RecoveryNotes({ state, tool }: { state: ItemState; tool: boolean }): JS
 function DiscardedCard({ id, summary, children }: { id: string; summary: string; children: ReactNode }): JSX.Element {
   const [open] = useRetainedDisclosure(id);
   return (
-    <CollapsibleCard open={open}>
+    <DisclosureCard open={open}>
       <RetainedDisclosure
         id={id}
-        dividerBoundary
         summary={
           <Text component="span" size="sm" c="dimmed">
             {summary}
@@ -395,17 +406,71 @@ function DiscardedCard({ id, summary, children }: { id: string; summary: string;
           </Text>
         }
       >
-        <Stack gap="xs" mt="xs" className="agentplane-evidence-owner">
+        <Stack gap={0} className="agentplane-evidence-owner">
           {children}
         </Stack>
       </RetainedDisclosure>
-    </CollapsibleCard>
+    </DisclosureCard>
+  );
+}
+
+function CommandExecutionMetadata({ call }: { call: CommandCall }): JSX.Element | null {
+  if (!call.invocation && !call.cwd) return null;
+  return (
+    <Text size="xs" c="dimmed" style={{ flex: "1 1 12rem", minWidth: 0, overflowWrap: "anywhere" }}>
+      {call.invocation && (
+        <>
+          Run with <InlineCode text={call.invocation} />
+        </>
+      )}
+      {call.cwd && (
+        <>
+          {call.invocation ? " · " : ""}cwd <InlineCode text={call.cwd} />
+        </>
+      )}
+    </Text>
+  );
+}
+
+function CommandCallControls({
+  call,
+  raw,
+  onRawChange,
+  hasOutput,
+  fullWidth = true,
+  children,
+}: {
+  call: CommandCall;
+  raw: boolean;
+  onRawChange: (raw: boolean) => void;
+  hasOutput: boolean;
+  fullWidth?: boolean;
+  children?: ReactNode;
+}): JSX.Element {
+  return (
+    <Group
+      gap="xs"
+      justify="space-between"
+      align="center"
+      wrap="wrap"
+      style={fullWidth ? { width: "100%" } : undefined}
+    >
+      <CommandExecutionMetadata call={call} />
+      <Group gap="xs" wrap="nowrap" style={{ marginInlineStart: "auto" }}>
+        <RawSwitch
+          raw={raw}
+          onChange={onRawChange}
+          ariaLabel={hasOutput ? "Show raw arguments and output" : "Show raw arguments"}
+        />
+        {children}
+      </Group>
+    </Group>
   );
 }
 
 /** A tool call as one line, like a reasoning step, opening to its arguments and output: a shell
  * command as highlighted shell, and anything else as the JSON it holds. Each is capped in height,
- * and a command's Raw switch shows its JSON in place of the shell. All of it is kept where it is
+ * and a command's Raw switch shows the recorded arguments and output. All of it is kept where it is
  * left, since rows leave the DOM as the history scrolls. */
 function ToolCard({
   threadId,
@@ -446,24 +511,25 @@ function ToolCard({
       {(args) => {
         const argumentsBody = args?.body ?? null;
         const call = argumentsBody === null ? null : parseCommandCall(state.tool_name, argumentsBody);
-        const rawSwitch = call && <RawSwitch raw={raw} onChange={setRaw} />;
         const detail = (
-          <Stack gap="xs">
-            <RecoveryNotes state={state} tool />
-            {entity.textRef && <Body reference={entity.textRef} format="markdown" />}
-            {args && argumentsBody === null && (
-              <Text c="dimmed" aria-busy={!args.error}>
-                Loading complete revision…
-              </Text>
+          <Stack gap={0}>
+            {(state.recovery === RecoveryDisposition.UNKNOWN ||
+              state.recovery === RecoveryDisposition.REVISED ||
+              entity.textRef ||
+              (args && argumentsBody === null)) && (
+              <DisclosureBody>
+                <RecoveryNotes state={state} tool />
+                {entity.textRef && <Body reference={entity.textRef} format="markdown" />}
+                {args && argumentsBody === null && (
+                  <Text c="dimmed" aria-busy={!args.error}>
+                    Loading complete revision…
+                  </Text>
+                )}
+              </DisclosureBody>
             )}
             {argumentsBody !== null &&
               (call && !raw ? (
-                <CommandCallView
-                  description={call.description}
-                  command={call.command}
-                  notes={call.notes}
-                  expansion={input}
-                />
+                <CommandCallView command={call.command} notes={call.notes} expansion={input} />
               ) : (
                 <div>
                   <ClampedBlock
@@ -471,7 +537,7 @@ function ToolCard({
                     lines={lineCount(argumentsBody)}
                     label="Arguments"
                     header={
-                      <Text size="xs" c="dimmed" mb={4}>
+                      <Text size="sm" c="dimmed">
                         Arguments
                       </Text>
                     }
@@ -487,6 +553,7 @@ function ToolCard({
                   <OutputBlock
                     name={state.recovery === RecoveryDisposition.REVISED ? "Continuation output" : "Output"}
                     text={text}
+                    raw={raw}
                     expansion={output}
                     disclosure={outputDisclosure}
                   />
@@ -498,36 +565,49 @@ function ToolCard({
         if (discardedId !== null) {
           return (
             <DiscardedCard id={discardedId} summary={`${state.tool_name || "Tool"}: discarded context`}>
-              <Text size="sm" c="dimmed">
-                Discarded context does not undo tool side effects or change its recorded execution outcome.
-              </Text>
-              <Group justify="space-between" wrap="nowrap">
-                <Group gap="xs">{itemStatus([entity], live)}</Group>
-                <Group gap="xs" wrap="nowrap">
-                  {rawSwitch}
-                  <EvidenceToggle entity={entity} />
+              <DisclosureBody>
+                <Text size="sm" c="dimmed">
+                  Discarded context does not undo tool side effects or change its recorded execution outcome.
+                </Text>
+                <Group justify="space-between" wrap="wrap">
+                  <Group gap="xs">{itemStatus([entity], live)}</Group>
+                  {call ? (
+                    <CommandCallControls
+                      call={call}
+                      raw={raw}
+                      onRawChange={setRaw}
+                      hasOutput={entity.outputRef !== null}
+                      fullWidth={false}
+                    >
+                      <EvidenceToggle entity={entity} placement="inline" />
+                    </CommandCallControls>
+                  ) : (
+                    <Group gap="xs" wrap="nowrap">
+                      <EvidenceToggle entity={entity} placement="inline" />
+                    </Group>
+                  )}
                 </Group>
-              </Group>
+              </DisclosureBody>
               {detail}
               <EvidencePanel threadId={threadId} entity={entity} />
             </DiscardedCard>
           );
         }
         return (
-          <CollapsibleCard open={opened} stableInlineSize className="agentplane-evidence-owner">
+          <DisclosureCard open={opened} className="agentplane-evidence-owner">
             <StepLine
               title={call?.label ?? (state.tool_name || "tool")}
               mark={opened ? undefined : mark}
               preview={
                 args &&
                 (argumentsBody === null ? (
-                  <Text component="span" c="dimmed" aria-busy={!args.error}>
+                  <Text component="span" size="sm" c="dimmed" aria-busy={!args.error}>
                     {args.error ? "Preview unavailable" : "Loading preview…"}
                   </Text>
                 ) : call && !call.description ? (
                   <InlineCode text={call.summary} language="bash" />
                 ) : (
-                  <Text component="span" ff={call ? undefined : "monospace"}>
+                  <Text component="span" size="sm" ff={call ? undefined : "monospace"}>
                     {call?.summary ?? oneLine(argumentsBody)}
                   </Text>
                 ))
@@ -540,16 +620,25 @@ function ToolCard({
                   </button>
                 )
               }
-              controls={rawSwitch}
+              controls={
+                call && (
+                  <CommandCallControls
+                    call={call}
+                    raw={raw}
+                    onRawChange={setRaw}
+                    hasOutput={entity.outputRef !== null}
+                  />
+                )
+              }
+              summaryAside={<EvidenceToggle entity={entity} placement="inline" />}
               expandable={disclosable}
               open={open}
               onOpenChange={setOpen}
             >
-              <Box mt="xs">{detail}</Box>
+              {detail}
             </StepLine>
-            <EvidenceToggle entity={entity} />
             <EvidencePanel threadId={threadId} entity={entity} />
-          </CollapsibleCard>
+          </DisclosureCard>
         );
       }}
     </OptionalPayload>
@@ -611,7 +700,11 @@ export function EntityCard({
       return (
         <Stack gap={0} className="agentplane-evidence-owner">
           <Text c="dimmed">{label}</Text>
-          <EvidenceToggle entity={entity} style={{ top: 0, right: 0 }} />
+          <EvidenceToggle
+            entity={entity}
+            placement="overlay"
+            style={{ "--agentplane-evidence-overlay-inset": "0px" } as CSSProperties}
+          />
           {diagnostic && (
             <Text c="dimmed" style={wrapped}>
               {diagnostic}
@@ -623,7 +716,11 @@ export function EntityCard({
     }
     return (
       <Alert color="red" role="alert" className="agentplane-evidence-owner">
-        <EvidenceToggle entity={entity} style={{ top: 8, right: 8 }} />
+        <EvidenceToggle
+          entity={entity}
+          placement="overlay"
+          style={{ "--agentplane-evidence-overlay-inset": "var(--mantine-spacing-xs)" } as CSSProperties}
+        />
         <Text size="sm" style={wrapped}>
           <Text span fw={700} c="var(--alert-color)">
             {label}
@@ -654,9 +751,9 @@ export function EntityCard({
     entity.state.recovery === null &&
     live;
   const status = itemStatus([entity], live);
-  const body = (
+  const evidenceToggleInReasoningStep = reasoningTextRef !== null && discardedId === null;
+  const recoveryDetails = (
     <>
-      <EvidenceToggle entity={entity} />
       {status &&
         ((!reasoning && entity.state.completion === null && !streamingText) || entity.state.recovery !== null) && (
           <Group gap="xs" mb="xs">
@@ -664,6 +761,12 @@ export function EntityCard({
           </Group>
         )}
       <RecoveryNotes state={entity.state} tool={false} />
+    </>
+  );
+  const body = (
+    <>
+      {!evidenceToggleInReasoningStep && <EvidenceToggle entity={entity} placement="overlay" />}
+      {discardedId !== null ? <DisclosureBody>{recoveryDetails}</DisclosureBody> : recoveryDetails}
       {reasoning ? (
         entity.textRef ? (
           discardedId === null ? (
@@ -675,15 +778,27 @@ export function EntityCard({
               overflows={reasoningOverflows}
               setOpen={setReasoningOpen}
               onOverflowChange={setReasoningOverflows}
+              summaryAside={
+                evidenceToggleInReasoningStep ? <EvidenceToggle entity={entity} placement="inline" /> : undefined
+              }
             />
           ) : (
             <LazyBody label="Reasoning" reference={entity.textRef} format="markdown" />
           )
         ) : (
-          <Text c="dimmed">Reasoning</Text>
+          <Text size="sm" c="dimmed">
+            Reasoning
+          </Text>
         )
       ) : (
-        entity.textRef && <Body reference={entity.textRef} format="markdown" streaming={streamingText} />
+        entity.textRef &&
+        (discardedId !== null ? (
+          <DisclosureBody>
+            <Body reference={entity.textRef} format="markdown" streaming={streamingText} />
+          </DisclosureBody>
+        ) : (
+          <Body reference={entity.textRef} format="markdown" streaming={streamingText} />
+        ))
       )}
       <EvidencePanel threadId={threadId} entity={entity} />
     </>
@@ -701,13 +816,9 @@ export function EntityCard({
   // line.
   if (reasoning)
     return (
-      <CollapsibleCard
-        open={reasoningOpen && reasoningOverflows}
-        stableInlineSize
-        className="agentplane-evidence-owner"
-      >
+      <DisclosureCard open={reasoningOpen && reasoningOverflows} className="agentplane-evidence-owner">
         {body}
-      </CollapsibleCard>
+      </DisclosureCard>
     );
   return <Box className="agentplane-evidence-owner">{body}</Box>;
 }
@@ -786,31 +897,4 @@ function recoveryBadge(recovery: number): StatusBadge | null {
     default:
       return { label: "Retention unknown", color: "yellow" };
   }
-}
-
-/** The collapsible shell a run, a lifecycle group, or a standalone reasoning step shares: collapsed,
- * it shows nothing but its one line -- a run/group's `summary`, or reasoning's own "Reasoning"
- * disclosure -- so the full card padding and border its opened content warrants would only pad out
- * that one line. */
-export function CollapsibleCard({
-  open,
-  children,
-  stableInlineSize = false,
-  className,
-}: {
-  open: boolean;
-  children: ReactNode;
-  stableInlineSize?: boolean;
-  className?: string;
-}): JSX.Element {
-  return (
-    <Paper
-      className={`agentplane-collapsible-card${className ? ` ${className}` : ""}`}
-      data-open={open}
-      data-stable-inline-size={stableInlineSize || undefined}
-      withBorder={open && !stableInlineSize}
-    >
-      {children}
-    </Paper>
-  );
 }

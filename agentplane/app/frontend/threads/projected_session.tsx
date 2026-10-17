@@ -44,7 +44,7 @@ import {
 import { useRequiredSandboxesLive, useRequiredThreadsLive } from "../live";
 import { useOptionalStreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
-import { CollapsibleCard, EntityCard, itemStatus, pendingSentMessage } from "./thread_cards";
+import { EntityCard, itemStatus, pendingSentMessage } from "./thread_cards";
 import {
   PendingInputMessages,
   ProjectedControlCommand,
@@ -57,7 +57,7 @@ import { markThreadViewEvent, LayoutSettle, type FollowReason } from "./thread_v
 import { rememberRowHeight, rememberedRowHeight } from "./history_sizes";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "../thread_status_indicator";
-import { DISCLOSURE_STICKY_Z_INDEX } from "../disclosure";
+import { DISCLOSURE_STICKY_Z_INDEX, DisclosureCard } from "../disclosure";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
 import { sandboxReady, sandboxSummary, suspensionReason } from "../sandbox_status";
 import { isoTime } from "../format_time";
@@ -94,7 +94,7 @@ function CollapsibleRows({
 }): JSX.Element {
   const [open] = useRetainedDisclosure(id);
   return (
-    <CollapsibleCard open={open}>
+    <DisclosureCard open={open}>
       <RetainedDisclosure id={id} summary={summary}>
         <Stack gap={steps ? 0 : "xs"} className={steps ? "agentplane-run-steps" : undefined}>
           {entities.map((entity) => (
@@ -102,7 +102,7 @@ function CollapsibleRows({
           ))}
         </Stack>
       </RetainedDisclosure>
-    </CollapsibleCard>
+    </DisclosureCard>
   );
 }
 
@@ -121,7 +121,7 @@ function RunView({
       id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:run`}
       summary={
         <Flex component="span" display="inline-flex" gap="xs" align="center" wrap="wrap">
-          <Text size="xs" c="dimmed">
+          <Text size="sm" c="dimmed">
             {summarizeRun(entities)}
           </Text>
           {itemStatus(entities, entities.some(live))}
@@ -942,7 +942,7 @@ function VirtualizedHistory({
                 top: item.start,
                 left: 0,
                 width: "100%",
-                paddingBottom: 4,
+                paddingBottom: "var(--mantine-spacing-xs)",
               }}
             >
               <HistoryRowView

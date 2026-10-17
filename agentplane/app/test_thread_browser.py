@@ -10,6 +10,7 @@ import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from typing import Literal
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
@@ -1313,11 +1314,18 @@ async def test_the_history_is_not_settled_while_a_row_is_still_loading_its_text(
         await page.unroute("**/sync/chunks/**", hold_text)
 
 
+@pytest.mark.parametrize("color_scheme", ["light", "dark"], ids=["light", "dark"])
 @pytest.mark.parametrize(
     ("viewport", "viewport_name"), [(DESKTOP, "desktop"), (MOBILE, "phone")], ids=["desktop", "phone"]
 )
-async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser, viewport_name: str) -> None:
+async def test_expanded_command_stays_collapsible(
+    thread_browser: ThreadBrowser, viewport: Viewport, viewport_name: str, color_scheme: Literal["light", "dark"]
+) -> None:
     page = thread_browser.page
+    await page.emulate_media(color_scheme=color_scheme)
+    await expect(page.locator("html")).to_have_attribute("data-mantine-color-scheme", color_scheme)
+    await frames(page)
+    color_suffix = "" if color_scheme == "light" else f"-{color_scheme}"
     # The footer includes relative activity text; keep timers and replication running.
     await page.clock.set_fixed_time("2026-10-15T00:00:00Z")
     await append_run_among_rows(thread_browser, below=8)
@@ -1336,11 +1344,13 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
     await wheel(page, 10_000)
     await expect(history).to_have_attribute("data-layout-settled", "true", timeout=30_000)
     run = history.locator("[data-thread-anchor]").filter(has_text="3 tool calls")
+    run_card = run.locator(":scope > .agentplane-collapsible-card")
     await read_at(page, run, 0.1)
     await run.locator(".agentplane-disclosure-summary").first.click()
     call, _ = tool_call_in(run, "a")
     await call.locator(".agentplane-disclosure-summary").first.click()
     command = call.locator('.agentplane-clamped-block[data-label="Command"]')
+    output = call.locator('.agentplane-clamped-block[data-label="Output"]')
     show_all = command.get_by_role("button", name="Show all 24 lines", exact=True)
     collapse = command.get_by_role("button", name="Command", exact=True)
     await read_at(page, show_all, 0.3)
@@ -1362,8 +1372,35 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
         )
         assert await page.evaluate("() => window.getSelection()?.toString()") == line_text
 
+    async def first_character_left(block: Locator) -> float:
+        line = block.locator(".cm-line").first
+        await expect(line).to_be_visible()
+        return float(
+            await line.evaluate(
+                """line => {
+                const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+                let text = walker.nextNode();
+                while (text && !text.textContent) text = walker.nextNode();
+                if (!text) throw new Error('code block has no text to measure');
+                const range = document.createRange();
+                range.setStart(text, 0);
+                range.setEnd(text, 1);
+                return range.getBoundingClientRect().left;
+            }"""
+            )
+        )
+
+    async def summary_label_left(heading: Locator) -> float:
+        label = heading.locator(".agentplane-disclosure-summary-content")
+        await expect(label).to_be_visible()
+        bounds = await label.bounding_box()
+        assert bounds is not None
+        return bounds["x"]
+
     for repeat in range(2):
         await select_command_line("echo command line 0")
+        command_text_before = await first_character_left(command)
+        output_text_before = await first_character_left(output)
         await show_all.click()
         # Deliver layout/ResizeObserver callbacks: the old observer measured a detached node and
         # removed the collapse control after the first render of the expanded block.
@@ -1374,12 +1411,30 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
         ).to_have_count(1)
         assert await editor.evaluate("node => node.isConnected"), "expanding remounted the CodeMirror editor"
         assert await page.evaluate("() => window.getSelection()?.toString()") == "echo command line 0"
+        command_text_after = await first_character_left(command)
+        output_text_after = await first_character_left(output)
+        assert abs(command_text_after - command_text_before) <= 1, (command_text_before, command_text_after)
+        assert abs(output_text_after - output_text_before) <= 1, (output_text_before, output_text_after)
+
+        command_heading = command.locator(".agentplane-disclosure-heading").first
+        output_heading = call.locator(".agentplane-output-disclosure .agentplane-disclosure-heading").first
+        call_heading = call.locator(":scope > .agentplane-disclosure-item > .agentplane-disclosure-heading")
+        command_label_left = await summary_label_left(command_heading)
+        output_label_left = await summary_label_left(output_heading)
+        call_label_left = await summary_label_left(call_heading)
+        assert abs(command_text_after - command_label_left) <= 1, (command_text_after, command_label_left)
+        assert abs(output_text_after - output_label_left) <= 1, (output_text_after, output_label_left)
+        command_inset = command_text_after - call_label_left
+        output_inset = output_text_after - call_label_left
+        assert abs(command_inset - output_inset) <= 1, (command_inset, output_inset)
         await read_at(page, command.locator(".cm-line").filter(has_text="echo command line 20"), 0.5)
         await expect(collapse).to_be_in_viewport()
         await select_command_line("echo command line 20")
         if repeat == 0:  # review outputs are unique per name
             await _review_screenshot(
-                page, f"thread-command-expanded-{viewport_name}.png", f"Expanded command on {viewport_name}"
+                page,
+                f"thread-command-expanded-{viewport_name}{color_suffix}.png",
+                f"Expanded command on {viewport_name} ({color_scheme})",
             )
         await collapse.click()
         await frames(page)
@@ -1388,6 +1443,77 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
         await expect(command.locator('[data-clamped="true"]')).to_have_count(1)
         await expect(show_all).to_be_visible()
         await expect(collapse).to_have_count(0)
+
+        run_heading = run_card.locator(
+            ":scope > .agentplane-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-heading"
+        )
+        call_heading = call.locator(":scope > .agentplane-disclosure-item > .agentplane-disclosure-heading")
+        output_heading = call.locator(
+            ".agentplane-output-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-heading"
+        )
+        headings = [run_heading, call_heading, output_heading]
+        heading_boxes = [await heading.bounding_box() for heading in headings]
+        frame_box = await run_card.bounding_box()
+        assert all(box is not None for box in heading_boxes), heading_boxes
+        assert frame_box is not None
+        boxes = [box for box in heading_boxes if box is not None]
+
+        # The row headings own the separators: nested rows fill the shared card frame even though
+        # their labels and terminal content indent independently.
+        assert abs(boxes[0]["x"] - (frame_box["x"] + 1)) <= 1, (boxes[0], frame_box)
+        assert abs(boxes[0]["x"] + boxes[0]["width"] - (frame_box["x"] + frame_box["width"] - 1)) <= 1, (
+            boxes[0],
+            frame_box,
+        )
+        left_edges = [box["x"] for box in boxes]
+        right_edges = [box["x"] + box["width"] for box in boxes]
+        assert max(left_edges) - min(left_edges) <= 1, boxes
+        assert max(right_edges) - min(right_edges) <= 1, boxes
+        assert abs(boxes[1]["y"] - (boxes[0]["y"] + boxes[0]["height"])) <= 1, boxes
+
+        expected_header_height = 44 if viewport.width < 768 else 28
+        assert max(box["height"] for box in boxes) - min(box["height"] for box in boxes) <= 1, boxes
+        for heading, heading_box in zip(headings, boxes, strict=True):
+            assert abs(heading_box["height"] - expected_header_height) <= 1, (heading_box, viewport)
+            label_box = await heading.locator(".agentplane-disclosure-summary-content").bounding_box()
+            control_box = await heading.locator(".agentplane-disclosure-summary").bounding_box()
+            assert label_box is not None
+            assert control_box is not None
+            label_center = label_box["y"] + label_box["height"] / 2
+            heading_center = heading_box["y"] + heading_box["height"] / 2
+            assert abs(label_center - heading_center) <= 1, (label_box, heading_box)
+            assert abs(control_box["height"] - heading_box["height"]) <= 1, (control_box, heading_box)
+            text_box = await heading.locator(".mantine-Text-root").first.bounding_box()
+            assert text_box is not None
+            text_center = text_box["y"] + text_box["height"] / 2
+            assert abs(text_center - heading_center) <= 1, (text_box, heading_box)
+
+        preview_box = await call_heading.locator(".agentplane-step-preview").bounding_box()
+        assert preview_box is not None
+        call_center = boxes[1]["y"] + boxes[1]["height"] / 2
+        preview_center = preview_box["y"] + preview_box["height"] / 2
+        assert abs(preview_center - call_center) <= 1, (preview_box, boxes[1])
+
+        raw_root = call.locator(".agentplane-step-controls .mantine-Switch-root")
+        raw_box = await raw_root.bounding_box()
+        assert raw_box is not None
+        call_right = boxes[1]["x"] + boxes[1]["width"]
+        assert call_right - (raw_box["x"] + raw_box["width"]) >= 8, (raw_box, boxes[1])
+
+        command_editor = command.locator(".cm-editor").first
+        await expect(command_editor).to_be_visible()
+        editor_box = await command_editor.bounding_box()
+        assert editor_box is not None
+        editor_borders = await command_editor.evaluate(
+            """element => {
+                const style = getComputedStyle(element);
+                return [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth];
+            }"""
+        )
+        assert editor_borders == ["0px", "0px", "0px", "0px"], editor_borders
+        frame_right = boxes[0]["x"] + boxes[0]["width"]
+        assert frame_right - (editor_box["x"] + editor_box["width"]) >= 8, (editor_box, boxes[0])
+
         nested_heading_display = await command.evaluate(
             """block => {
                 const panel = block.querySelector(
@@ -1399,7 +1525,7 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
                 const item = document.createElement("div");
                 item.className = "agentplane-disclosure-item";
                 const heading = document.createElement("div");
-                heading.className = "agentplane-disclosure-heading";
+                heading.className = "agentplane-disclosure-header agentplane-disclosure-heading";
                 item.append(heading);
                 nested.append(item);
                 panel.append(nested);
@@ -1408,11 +1534,13 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
                 return display;
             }"""
         )
-        assert nested_heading_display == "flex", "collapsed ClampedBlock styles hid a nested disclosure heading"
+        assert nested_heading_display != "none", "collapsed ClampedBlock styles hid a nested disclosure heading"
         await expect(call.locator(".agentplane-disclosure-summary").first).to_have_attribute("aria-expanded", "true")
         if repeat == 0:
             await _review_screenshot(
-                page, f"thread-command-collapsed-{viewport_name}.png", f"Collapsed command on {viewport_name}"
+                page,
+                f"thread-command-collapsed-{viewport_name}{color_suffix}.png",
+                f"Collapsed command on {viewport_name} ({color_scheme})",
             )
 
 
@@ -1431,7 +1559,7 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     else:
         await read_at(page, run, 0.1)
 
-    # A card gains border and padding as it opens, which moves its label; its top edge is the place.
+    # Expanding a row preserves its place in the reader's viewport.
     summary = run.locator(".agentplane-disclosure-summary").first
     async with holding_still(page, run):
         await summary.click()
@@ -1475,21 +1603,10 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
             ("output", output_heading_box),
         ):
             assert heading_box["height"] <= 30, f"desktop {heading_name} heading is too tall: {heading_box}"
-    divider_box = await output_heading.evaluate(
-        """heading => {
-          const box = heading.getBoundingClientRect();
-          const divider = getComputedStyle(heading, "::after");
-          return { left: box.left + parseFloat(divider.left), right: box.right - parseFloat(divider.right) };
-        }"""
-    )
     card_box = await card.bounding_box()
     assert card_box is not None
-    assert abs(divider_box["left"] - card_box["x"]) <= 2, (
-        f"the output divider should reach the card's left edge: {divider_box=} {card_box=}"
-    )
-    assert abs(divider_box["right"] - (card_box["x"] + card_box["width"])) <= 2, (
-        f"the output divider should reach the card's right edge: {divider_box=} {card_box=}"
-    )
+    assert output_heading_box["x"] >= card_box["x"] - 1
+    assert output_heading_box["x"] + output_heading_box["width"] <= card_box["x"] + card_box["width"] + 1
     assert abs(run_heading_box["y"] - history_box["y"]) <= 2, (
         f"the run heading should use the history's top sticky slot: {run_heading_box=} {history_box=}"
     )
@@ -1509,6 +1626,18 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     assert active_sticky_action == "true", (
         f"a parent heading obscured the output Disclosure control: {active_sticky_action}"
     )
+    show_less = output_heading.get_by_role("button", name="Show less Output")
+    await expect(show_less).to_be_in_viewport(ratio=1)
+    await show_less.click()
+    await expect(call.locator('.agentplane-clamped-block[data-label="Output"]')).to_have_attribute(
+        "data-expanded", "false"
+    )
+    await expect(output_line).not_to_be_in_viewport()
+    await expect(show_all).to_be_visible()
+    await show_all.click()
+    await read_at(page, output_line, 0.5)
+    await expect(collapse).to_be_in_viewport()
+
     # At the true tail, collapsing a long block can shorten the history below its current scrollTop.
     # The browser must clamp to the new bottom; pixel-stable anchoring is asserted mid-thread, where
     # the history has room to preserve the clicked heading's position.

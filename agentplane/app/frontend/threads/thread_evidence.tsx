@@ -9,6 +9,7 @@ import {
   type EvidencePage,
   type NativeFramePage,
 } from "../client";
+import { DisclosureBody } from "../disclosure";
 import { JsonView } from "../json_view";
 import { ChronologicalDebugIcon } from "./chronological_debug";
 import { RetainedDisclosure, useRetainedDisclosure } from "./retained_disclosures";
@@ -62,33 +63,35 @@ function EvidenceFramesPage({
       });
   };
   return (
-    <Stack gap="xs">
-      {error && <Text c="red">{error}</Text>}
-      {page?.frames.map((frame) =>
-        frame.availability === "present" ? (
-          <JsonView key={frame.source_sequence} value={frame.entry} />
-        ) : (
-          <Text size="xs" key={frame.source_sequence}>
-            Raw frame {frame.source_sequence} unavailable
-          </Text>
-        )
-      )}
-      {!page && error && (
-        <Button loading={loading} onClick={() => load()}>
-          Retry raw frames
-        </Button>
-      )}
-      {afterSequence !== "0" && (
-        <Button variant="subtle" disabled={loading} onClick={() => load()}>
-          First frames
-        </Button>
-      )}
-      {page?.next_after_sequence && (
-        <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_sequence ?? "0")}>
-          Load more frames
-        </Button>
-      )}
-    </Stack>
+    <DisclosureBody>
+      <Stack gap="xs">
+        {error && <Text c="red">{error}</Text>}
+        {page?.frames.map((frame) =>
+          frame.availability === "present" ? (
+            <JsonView key={frame.source_sequence} value={frame.entry} />
+          ) : (
+            <Text size="xs" key={frame.source_sequence}>
+              Raw frame {frame.source_sequence} unavailable
+            </Text>
+          )
+        )}
+        {!page && error && (
+          <Button loading={loading} onClick={() => load()}>
+            Retry raw frames
+          </Button>
+        )}
+        {afterSequence !== "0" && (
+          <Button variant="subtle" disabled={loading} onClick={() => load()}>
+            First frames
+          </Button>
+        )}
+        {page?.next_after_sequence && (
+          <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_sequence ?? "0")}>
+            Load more frames
+          </Button>
+        )}
+      </Stack>
+    </DisclosureBody>
   );
 }
 
@@ -150,7 +153,11 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
   };
   return (
     <Stack gap="xs">
-      {error && <Text c="red">{error}</Text>}
+      {error && (
+        <DisclosureBody>
+          <Text c="red">{error}</Text>
+        </DisclosureBody>
+      )}
       {page?.observations.map((observation) => (
         <Stack gap="xs" key={observation.observation_cursor} data-evidence-observation={observation.observation_cursor}>
           {observation.has_native ? (
@@ -161,22 +168,30 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
               observationCursor={observation.observation_cursor}
             />
           ) : (
-            <Group key={observation.observation_cursor} justify="space-between" wrap="nowrap" gap="xs">
-              <Text size="xs">Observation {observation.observation_cursor} has no native frame</Text>
-              <ChronologicalDebugIcon observationCursor={observation.observation_cursor} />
-            </Group>
+            <DisclosureBody key={observation.observation_cursor}>
+              <Group justify="space-between" wrap="nowrap" gap="xs">
+                <Text size="xs">Observation {observation.observation_cursor} has no native frame</Text>
+                <ChronologicalDebugIcon observationCursor={observation.observation_cursor} />
+              </Group>
+            </DisclosureBody>
           )}
         </Stack>
       ))}
-      {page?.next_after_cursor && (
-        <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_cursor ?? "0")}>
-          Load more evidence
-        </Button>
-      )}
-      {afterCursor !== "0" && (
-        <Button variant="subtle" disabled={loading} onClick={() => load()}>
-          First evidence
-        </Button>
+      {(page?.next_after_cursor || afterCursor !== "0") && (
+        <DisclosureBody>
+          <Stack gap="xs">
+            {page?.next_after_cursor && (
+              <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_cursor ?? "0")}>
+                Load more evidence
+              </Button>
+            )}
+            {afterCursor !== "0" && (
+              <Button variant="subtle" disabled={loading} onClick={() => load()}>
+                First evidence
+              </Button>
+            )}
+          </Stack>
+        </DisclosureBody>
       )}
     </Stack>
   );
@@ -192,7 +207,15 @@ function evidenceDisclosure(entity: ThreadEntity): string {
  * Labelled by a native `title`, not a Mantine `Tooltip`: rows move under a resting pointer while the
  * thread streams, and a Tooltip opening then positions itself with `flushSync` from a ResizeObserver
  * callback, committing the whole list's pending re-render mid-delivery (a "ResizeObserver loop"). */
-export function EvidenceToggle({ entity, style }: { entity: ThreadEntity; style?: CSSProperties }): JSX.Element {
+export function EvidenceToggle({
+  entity,
+  placement = "overlay",
+  style,
+}: {
+  entity: ThreadEntity;
+  placement?: "overlay" | "inline" | "bubble";
+  style?: CSSProperties;
+}): JSX.Element {
   const [open, setOpen] = useRetainedDisclosure(evidenceDisclosure(entity));
   return (
     <ActionIcon
@@ -200,6 +223,7 @@ export function EvidenceToggle({ entity, style }: { entity: ThreadEntity; style?
       variant={open ? "light" : "subtle"}
       color="gray"
       className="agentplane-evidence-toggle"
+      data-placement={placement}
       aria-label="Evidence"
       title="Evidence"
       aria-expanded={open}
@@ -219,7 +243,11 @@ const EVIDENCE_REVEALED = "data-evidence-revealed";
  * mark is set on every device, but only a touch screen's stylesheet reads it. */
 export function revealEvidenceOnTap(event: MouseEvent<HTMLElement>): void {
   const { target } = event;
-  if (!(target instanceof Element) || target.closest("a, button, summary, input, textarea, select")) return;
+  if (!(target instanceof Element)) return;
+  // A StepLine is itself a disclosure button on touch screens. Let that tap both open the
+  // tool/reasoning row and reveal its separate Evidence action; all other controls stay excluded.
+  const stepSummary = target.closest(".agentplane-step-details .agentplane-disclosure-summary");
+  if (target.closest("a, button, summary, input, textarea, select") && !stepSummary) return;
   if (window.getSelection()?.isCollapsed === false) return;
   event.currentTarget.querySelector(`[${EVIDENCE_REVEALED}]`)?.removeAttribute(EVIDENCE_REVEALED);
   // An input's status lives beside its bubble, not inside the evidence owner. Tapping
@@ -237,7 +265,7 @@ export function EvidencePanel({ threadId, entity }: { threadId: string; entity: 
     <RetainedDisclosure
       id={id}
       summary={
-        <Text size="xs" c="dimmed">
+        <Text size="sm" c="dimmed">
           Evidence
         </Text>
       }

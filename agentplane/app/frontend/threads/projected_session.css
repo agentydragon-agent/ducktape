@@ -62,30 +62,18 @@
 /* A step of a run (a reasoning step, a tool call) as one line, opening to its content below -- see
    step_line.tsx. */
 .agentplane-step-row {
+  font-size: var(--mantine-font-size-sm);
   position: relative;
   display: flex;
   min-width: 0;
   align-items: baseline;
   gap: var(--mantine-spacing-xs);
-  line-height: 1.4;
+  line-height: var(--mantine-line-height-sm);
 }
 
-/* Disclosure's general 2.75rem touch target and label padding are right for a standalone
-   heading, but add a blank band around every folded step in an already expanded run.
-   Keep the opened step's normal heading size, and only tighten these nested closed controls. */
-.agentplane-run-steps
-  .agentplane-step-details
-  .agentplane-disclosure-heading[data-expanded="false"]
-  > .agentplane-disclosure-summary {
-  min-height: 1.5rem;
-  padding-block: 0;
-}
-
-.agentplane-run-steps
-  .agentplane-step-details
-  .agentplane-disclosure-heading[data-expanded="false"]
-  .agentplane-disclosure-summary-content {
-  padding-block: 0;
+/* The run chooses a compact folded-row policy; the shared header owns its geometry. */
+.agentplane-run-steps {
+  --agentplane-disclosure-collapsed-height: var(--agentplane-disclosure-compact-height);
 }
 
 /* A run packs its one-line steps together, but an opened one is a card, and keeps the room between
@@ -100,12 +88,6 @@
   flex: 1;
 }
 
-.agentplane-step-details .agentplane-disclosure-summary {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-}
-
 .agentplane-step-summary {
   display: flex;
   min-width: 0;
@@ -117,6 +99,7 @@
 
 .agentplane-step-title {
   flex: none;
+  font-size: inherit;
 }
 
 .agentplane-step-preview {
@@ -128,28 +111,12 @@
   white-space: nowrap;
 }
 
-.agentplane-step-details .agentplane-disclosure-summary[aria-expanded="true"] .agentplane-step-preview {
-  display: none;
-}
-
 /* Controls change the displayed details; keep them with that content so the sticky disclosure
    button keeps the full row for its title and chevron. */
 .agentplane-step-controls {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-}
-
-.agentplane-step-details .agentplane-disclosure-summary[aria-expanded="true"] .agentplane-step-summary {
-  flex-wrap: nowrap;
-  white-space: nowrap;
-}
-
-/* The row's evidence icon is pinned to its card's corner, so the line stops short of it rather than
-   running under it. The disclosed content below keeps the full width. */
-.agentplane-step-details .agentplane-disclosure-summary,
-.agentplane-step-static {
-  padding-inline-end: 1.5rem;
 }
 
 /* A streaming step breathes, as its status in the line; one that stopped short is blue and still. */
@@ -457,4 +424,8 @@
   max-width: min(85%, 34rem);
   min-width: 0;
   background: var(--mantine-color-default-hover);
+}
+
+.agentplane-step-inspect {
+  display: inline-flex;
 }
