@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import ClassVar
 
 from pydantic import Field
-from pydantic_settings import SettingsConfigDict
 
 from agentplane.egress.platform_routes import PlatformRoute
 from util.yaml_file_settings import YamlFileSettings
@@ -18,11 +17,10 @@ READINESS_PORT = 3129
 
 
 class Settings(YamlFileSettings):
-    """The Go runtime reads the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE`, then the
-    matching `AGENTPLANE_EGRESS_SIDECAR_*` values, then the `--flags`, each over the one before."""
+    """The Go runtime reads the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE` and nothing
+    else: no per-setting env variables and no flags."""
 
     config_file_env: ClassVar[str] = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_EGRESS_SIDECAR_", cli_parse_args=True, cli_kebab_case=True)
 
     proxy_host: str = Field(description="Host of the central egress proxy every request is relayed to.")
     proxy_port: int = Field(default=8888, description="The central proxy's listener port.")
