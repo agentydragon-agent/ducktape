@@ -1,6 +1,6 @@
-"""MCP server providing ember's tools via compositor.
+"""FastMCP clients providing Ember's tools.
 
-This module creates an EmberCompositor that mounts:
+This module creates a ClientGroup containing:
 - ember-tools: sleep_until_user_message tool
 - exec: DirectExecServer (exec, read_image tools)
 """
@@ -12,13 +12,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
-from pydantic import ConfigDict
+from fastmcp import ClientGroup
+from fastmcp.client import Client
+from fastmcp.server import FastMCP
 
-from mcp_infra.compositor.compositor import Compositor
-from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.exec.direct import DirectExecServer
-from mcp_infra.mounted import Mounted
-from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from x.ember.config import (
     EnforcedSleepUntilUserMessagePolicy,
@@ -32,12 +30,6 @@ class ConversationStatusProvider(Protocol):
     """Protocol for getting conversation status from Matrix client."""
 
     async def get_conversation_status(self) -> ConversationStatus: ...
-
-
-class SleepUntilUserMessageInput(OpenAIStrictModeBaseModel):
-    """Input for sleep_until_user_message tool (no arguments)."""
-
-    model_config = ConfigDict(extra="forbid")
 
 
 class SleepUntilUserMessageResult(OpenAIStrictModeBaseModel):
@@ -75,39 +67,23 @@ def _build_sleep_description(policy: SleepUntilUserMessagePolicy) -> str:
     )
 
 
-class EmberCompositor(Compositor):
-    """Compositor with ember's MCP servers pre-mounted.
+def make_ember_client_group(
+    *,
+    workspace_path: Path,
+    sleep_callback: Callable[[], None],
+    status_provider: ConversationStatusProvider | None,
+    sleep_policy: SleepUntilUserMessagePolicy,
+) -> ClientGroup:
+    """Create namespaced clients for Ember's sleep and exec tools.
 
-    Mounts:
-    - ember: sleep_until_user_message tool
-    - exec: DirectExecServer (exec, read_image tools)
+    The group keeps one direct FastMCP client per server and prefixes tool names
+    with ``ember_`` and ``exec_``.
     """
-
-    ember: Mounted[FlatModelMixin]
-    exec: Mounted[DirectExecServer]
-
-    def __init__(
-        self,
-        *,
-        workspace_path: Path,
-        sleep_callback: Callable[[], None],
-        status_provider: ConversationStatusProvider | None,
-        sleep_policy: SleepUntilUserMessagePolicy,
-    ) -> None:
-        super().__init__()
-        self._workspace_path = workspace_path
-        self._sleep_callback = sleep_callback
-        self._status_provider = status_provider
-        self._sleep_policy = sleep_policy
-
-    async def __aenter__(self) -> EmberCompositor:
-        await super().__aenter__()
-        ember_server = _create_ember_sleep_server(
-            sleep_callback=self._sleep_callback, status_provider=self._status_provider, sleep_policy=self._sleep_policy
-        )
-        self.ember = await self.mount_inproc(MCPMountPrefix("ember"), ember_server)
-        self.exec = await self.mount_inproc(MCPMountPrefix("exec"), DirectExecServer(default_cwd=self._workspace_path))
-        return self
+    ember_server = _create_ember_sleep_server(
+        sleep_callback=sleep_callback, status_provider=status_provider, sleep_policy=sleep_policy
+    )
+    exec_server = DirectExecServer(default_cwd=workspace_path)
+    return ClientGroup({"ember": Client(ember_server), "exec": Client(exec_server)})
 
 
 def _create_ember_sleep_server(
@@ -115,14 +91,14 @@ def _create_ember_sleep_server(
     sleep_callback: Callable[[], None],
     status_provider: ConversationStatusProvider | None,
     sleep_policy: SleepUntilUserMessagePolicy,
-) -> FlatModelMixin:
+) -> FastMCP:
     """Create MCP server with ember's sleep tool."""
-    server = FlatModelMixin("ember-tools")
+    server = FastMCP("ember-tools")
 
     sleep_description = _build_sleep_description(sleep_policy)
 
-    @server.flat_model(name="sleep_until_user_message", description=sleep_description)
-    async def sleep_until_user_message(input: SleepUntilUserMessageInput) -> SleepUntilUserMessageResult:
+    @server.tool(name="sleep_until_user_message", description=sleep_description, output_schema=None)
+    async def sleep_until_user_message() -> SleepUntilUserMessageResult:
         if isinstance(sleep_policy, EnforcedSleepUntilUserMessagePolicy):
             if status_provider is None:
                 return SleepUntilUserMessageResult(

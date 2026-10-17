@@ -1,5 +1,20 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+py_test(
+    name = "test_fastmcp_native_tools",
+    srcs = ["test_fastmcp_native_tools.py"],
+    deps = [
+        ":conftest",
+        ":prefix",
+        ":tool_schemas",
+        "//:conftest",
+        "//mcp_infra/stubs:typed_stubs",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "persistence",
     srcs = ["persistence.py"],
@@ -47,17 +62,6 @@ py_library(
     srcs = ["constants.py"],
     visibility = ["//:__subpackages__"],
     deps = [":prefix"],
-)
-
-py_library(
-    name = "flat_tool",
-    srcs = ["flat_tool.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//agent_core:pydantic_utils",
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
-    ],
 )
 
 py_library(
@@ -175,7 +179,6 @@ py_library(
     srcs = ["tool_schemas.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":flat_tool",
         ":prefix",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",

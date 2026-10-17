@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import urlparse
 
 import httpx
+from fastmcp.server import FastMCP
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-
-from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.flat_tool import FlatTool
 
 
 @dataclass
@@ -37,20 +36,9 @@ class MirrorError(RuntimeError):
     pass
 
 
-class TriggerMirrorSyncArgs(BaseModel):
-    url: str
-    model_config = ConfigDict(extra="forbid")
-
-
 class TriggerMirrorSyncResponse(BaseModel):
     """Response matching Gitea's mirror-sync behavior (returns nothing)."""
 
-    model_config = ConfigDict(extra="forbid")
-
-
-class GetRepoInfoArgs(BaseModel):
-    owner: str
-    repo: str
     model_config = ConfigDict(extra="forbid")
 
 
@@ -220,15 +208,15 @@ def _resolve_owner(base_url: str, token: str) -> str:
     return data.login
 
 
-class GiteaMirrorServer(EnhancedFastMCP):
+class GiteaMirrorServer(FastMCP):
     """Gitea mirror MCP server with typed tool access.
 
     Provides async pull mirror syncing for Gitea repositories.
     """
 
     # Tool references (assigned in __init__ after tool registration)
-    trigger_mirror_sync_tool: FlatTool[Any, Any]
-    get_repo_info_tool: FlatTool[Any, Any]
+    trigger_mirror_sync_tool: Callable[[str], TriggerMirrorSyncResponse]
+    get_repo_info_tool: Callable[[str, str], GiteaRepoInfo]
 
     def __init__(self, *, base_url: str | None = None, token: str | None = None):
         """Create a Gitea mirror MCP server.
@@ -255,7 +243,7 @@ class GiteaMirrorServer(EnhancedFastMCP):
         )
 
         # Register tools using clean pattern: tool name derived from function name
-        def trigger_mirror_sync(input: TriggerMirrorSyncArgs) -> TriggerMirrorSyncResponse:
+        def trigger_mirror_sync(url: str) -> TriggerMirrorSyncResponse:
             """Ensure mirror exists and trigger async sync. Returns immediately.
 
             Matches Gitea's POST /repos/{owner}/{repo}/mirror-sync endpoint behavior.
@@ -268,15 +256,15 @@ class GiteaMirrorServer(EnhancedFastMCP):
             Returns: Empty response (matching Gitea API).
             """
             owner = _resolve_owner(cfg.base_url, cfg.token)
-            repo = _derive_repo_name(input.url)
-            _ensure_mirror(cfg, input.url, owner, repo)
+            repo = _derive_repo_name(url)
+            _ensure_mirror(cfg, url, owner, repo)
             _trigger_sync(cfg, owner, repo)
 
             return TriggerMirrorSyncResponse()
 
-        self.trigger_mirror_sync_tool = self.flat_model()(trigger_mirror_sync)
+        self.trigger_mirror_sync_tool = self.tool(output_schema=None)(trigger_mirror_sync)
 
-        def get_repo_info(input: GetRepoInfoArgs) -> GiteaRepoInfo:
+        def get_repo_info(owner: str, repo: str) -> GiteaRepoInfo:
             """Get repository information including mirror status.
 
             Matches Gitea's GET /repos/{owner}/{repo} endpoint (returns all fields).
@@ -287,12 +275,12 @@ class GiteaMirrorServer(EnhancedFastMCP):
 
             Recommended polling: Every 2-5 seconds until mirror_updated changes.
             """
-            repo_data = _get_repo_info(cfg, input.owner, input.repo)
+            repo_data = _get_repo_info(cfg, owner, repo)
 
             if not repo_data.mirror:
-                raise MirrorError(f"repository {input.owner}/{input.repo} is not a mirror")
+                raise MirrorError(f"repository {owner}/{repo} is not a mirror")
 
             # Pass through all fields from Gitea API response
             return repo_data
 
-        self.get_repo_info_tool = self.flat_model()(get_repo_info)
+        self.get_repo_info_tool = self.tool(output_schema=None)(get_repo_info)
