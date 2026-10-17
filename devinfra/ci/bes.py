@@ -163,24 +163,6 @@ def _full_path(file: dict) -> str:
     return "/".join([*(file.get("pathPrefix") or []), file["name"]])
 
 
-def _dedup(outputs: Iterable[Output]) -> list[Output]:
-    """The same output, listed twice, is one output. Order is preserved.
-
-    Duplicates arise two ways and neither means anything: one target can reach a
-    file through two branches of the file-set DAG (proto virtual imports do this),
-    and `bazel-ci`'s test and build invocations both report every non-test target
-    they built. `by_path` collapsed them for free by being a dict; `by_label`
-    groups into lists and would otherwise hand a caller one file twice.
-    """
-    seen: set[Output] = set()
-    unique = []
-    for output in outputs:
-        if output not in seen:
-            seen.add(output)
-            unique.append(output)
-    return unique
-
-
 def parse(raw: bytes) -> Invocation:
     try:
         events = json.loads(raw)
@@ -229,7 +211,8 @@ def parse(raw: bytes) -> Invocation:
                 )
                 for file in files_in(group.get("fileSets") or [])
             )
-    return Invocation(outputs=_dedup(outputs), test_status=test_status)
+    # The file-set DAG can list the same output through multiple branches.
+    return Invocation(outputs=list(dict.fromkeys(outputs)), test_status=test_status)
 
 
 def merge(invocations: Iterable[Invocation]) -> Invocation | None:
@@ -246,7 +229,7 @@ def merge(invocations: Iterable[Invocation]) -> Invocation | None:
         empty = False
         outputs.extend(invocation.outputs)
         test_status.update(invocation.test_status)
-    return None if empty else Invocation(outputs=_dedup(outputs), test_status=test_status)
+    return None if empty else Invocation(outputs=list(dict.fromkeys(outputs)), test_status=test_status)
 
 
 def read(invocation_id: str, **kwargs) -> Invocation:
