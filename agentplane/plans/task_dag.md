@@ -1180,7 +1180,7 @@ flowchart TD
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
-    APP_NATIVE_RESUME_SURFACE[Approved: retain explicit resume UI; clarify wake-off affordance] --> APP_NATIVE_RESUME_CONTRACT[Decision: durable explicit resume]
+    APP_NATIVE_RESUME_CONTRACT[Decision: durable explicit resume]
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
     IDLE_SUSPEND_UI_DRIVE[Operator: drive auto-suspend and send-to-resume in staging]
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
@@ -1537,22 +1537,6 @@ general senders are admitted. Consider RBAC-backed permissions, but choose the a
 multiagent model. Include authorization before wake and any required execution-time recheck. The
 mandatory Sandbox UID fence is part of `DELIVERY_DESTINATION_CONTRACT`, independent of sender policy.
 
-### `APP_NATIVE_RESUME_SURFACE` — retain explicit resume and distinguish the two controls
-
-**Explicit native-resume action retained; exact wake-off affordance needs review.** The Thread page
-currently shows **Resume harness** only for a Ready Sandbox with a stopped harness. It calls the
-Gateway directly. A submitted input always makes Dispatcher call runner `ResumeSession` before
-delivery, independent of the `wake_on_send` setting. That opt-in setting controls waking a
-**suspended Sandbox**, not whether a command resumes a stopped native harness. The composer can
-queue a message while the Sandbox is suspended even when wake on message is off; the queue then
-waits for explicit Sandbox resume. The suspended indicator remains visible.
-
-The operator wants an explicit button when automatic resume on send is off. Decide whether this
-means a Thread-page **Resume Sandbox** affordance when `wake_on_send` is off, the existing **Resume
-harness** action once the Sandbox is Ready, or both. The native button cannot itself wake a
-suspended Sandbox because its current Gateway path requires a live runner. Keep explicit Sandbox
-resume available and do not erase the suspended indicator or turn on wake permission implicitly.
-
 ### `APP_NATIVE_RESUME_CONTRACT` — specify durable explicit native resume
 
 **Separate future decision; does not block the approved direct Runner resume migration.** Its later canonicalization makes Dispatcher the sole starter
@@ -1725,6 +1709,10 @@ flowchart LR
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     RUNNER_STORE_SESSION_IDENTITY[Candidate: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
+    HARNESS_LIFECYCLE_OWNERSHIP[Decision: the runner owns harness start]
+    APP_NATIVE_RESUME_CONTRACT[Decision: durable explicit resume, section 7]
+    PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
+    RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement, section 3]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
     AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a PostgreSQL-free K3s tier]
@@ -1733,6 +1721,10 @@ flowchart LR
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
     HARNESS_IDENTITY_DESIGN --> RUNNER_STORE_SESSION_IDENTITY
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
+    HARNESS_LIFECYCLE_OWNERSHIP -. would supersede .-> APP_NATIVE_RESUME_CONTRACT
+    HARNESS_LIFECYCLE_OWNERSHIP -. would drop the app ResumeSession carve-out .-> PROXY_START_METHODS_DISPATCHER_ONLY
+    HARNESS_LIFECYCLE_OWNERSHIP -. folds open, resume and stop into .-> HARNESS_IDENTITY_DESIGN
+    HARNESS_LIFECYCLE_OWNERSHIP -. gives the process lifecycle to .-> RUNNER_HARNESS_OBJECTS_DESIGN
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
     K3S_VM_IMAGE -. real VM path prerequisite .-> CNPG_FREE_K3S_INTEGRATION_TIER
 ```
@@ -1923,6 +1915,30 @@ reviewed; private runner mapping can be implemented independently. This decision
 Dispatcher/Gateway Go unification planning. A unified service may preserve today's wire first and
 consume the approved public address later. Neither
 design node authorizes runtime changes.
+
+### `HARNESS_LIFECYCLE_OWNERSHIP` — who owns a Session's harness process lifecycle
+
+**Decision; needs Rai's call (operator, 2026-10-17 UTC, in the idle-suspend discussion).** Resume-on-send
+interacts badly with harness shutdown and resume being commands: a message to a stopped Session must
+make the Dispatcher issue a resume before the input, and a harness the runner could start on its own is
+instead started by whoever sends the right command. Rai asks whether these should still be commands
+at all. The question is who owns the harness process's lifecycle; it also bears on the runner managing
+more of its own lifecycle and on capturing harness-native agents.
+
+**Proposal to review.** The runner starts a Session's harness itself when input arrives, since it alone
+knows the store, the native id and the setup state. A command is admitted once the harness is up, and a
+failed start becomes that command's failure reason. Resume stops being a command. Stop and interrupt
+stay commands, because they carry user intent that must be ordered with input.
+
+**If adopted:** it supersedes `APP_NATIVE_RESUME_CONTRACT` and the app `ResumeSession` carve-out in
+`PROXY_START_METHODS_DISPATCHER_ONLY`; the Thread page's **Resume harness** button shrinks to a retry
+after a failed start; Session open, resume and stop fold into `HARNESS_IDENTITY_DESIGN` and
+`RUNNER_STORE_SESSION_IDENTITY`; and `RUNNER_HARNESS_OBJECTS_DESIGN` takes its process lifecycle from
+the outcome. `DISPATCHER_PERSISTENCE_MODEL_DESIGN` is unaffected.
+
+**Open:** concurrent inputs racing to start a stopped Session; how a start failure reaches commands
+already admitted; and the link to harness-native agents. Until decided, the identity, resume and proxy
+nodes above proceed as written.
 
 ### `RUNNER_STORE_SESSION_IDENTITY` — implement durable store and public Session mapping
 
