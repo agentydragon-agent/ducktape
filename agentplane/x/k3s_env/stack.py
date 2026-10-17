@@ -39,7 +39,9 @@ POD_CIDR = "10.42.0.0/16"
 def run(*command: str, check: bool = True, input_text: str | None = None) -> str:
     result = subprocess.run(command, capture_output=True, text=True, input=input_text, check=False)
     if check and result.returncode:
-        raise RuntimeError(f"{command[:3]} exited {result.returncode}: {result.stderr[-2000:]}{result.stdout[-1000:]}")
+        raise RuntimeError(
+            f"{command[:3]} exited {result.returncode}\nstderr:\n{result.stderr}\nstdout:\n{result.stdout}"
+        )
     return result.stdout + result.stderr
 
 
@@ -327,7 +329,7 @@ def running_stack(*, litellm_key: str | None) -> Iterator[Stack]:
         namespaces = [d for d in everything if d["kind"] == "Namespace"]
         rest = [d for d in everything if d["kind"] != "Namespace"]
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
-        print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest), check=False)[-3000:])
+        print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
         logger.info("applied %s objects", len(rest))
 
         failed: list[str] = []
