@@ -10,7 +10,11 @@ from pathlib import Path
 
 def release_content_hash(artifacts: Sequence[Path]) -> str:
     """Return a stable digest that changes when any release asset changes."""
-    return _assets_hash([(artifact.name, _file_hash(artifact)) for artifact in artifacts])
+    assets = []
+    for artifact in artifacts:
+        with artifact.open("rb") as stream:
+            assets.append((artifact.name, hashlib.file_digest(stream, "sha256").digest()))
+    return _assets_hash(assets)
 
 
 def release_content_hash_from_digests(assets: Sequence[tuple[str, str]]) -> str:
@@ -44,14 +48,6 @@ def _assets_hash(assets: Sequence[tuple[str, bytes]]) -> str:
         digest.update(encoded_name)
         digest.update(content_hash)
     return digest.hexdigest()
-
-
-def _file_hash(path: Path) -> bytes:
-    digest = hashlib.sha256()
-    with path.open("rb") as artifact:
-        for chunk in iter(lambda: artifact.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.digest()
 
 
 def main() -> None:
