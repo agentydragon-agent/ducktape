@@ -22,6 +22,48 @@ once every Sandbox Pod started after that release.
 
 Revisit on a concrete latency, cost, delivery or new-source need; not a release checklist.
 
+### `EXTERNAL_AGENT_INBOXES` — inboxes for externally running agents
+
+Explicitly deferred by the operator, 2026-10-16; revisit only when the operator prioritizes a
+concrete external-client receiving workflow. V1 OAuth clients can make permitted calls as their
+bound SAs, but recipients are Sandbox-hosted Sessions. A future external inbox would need its own
+address and delivery/read mechanism; it does not imply moving Connection storage to Kubernetes.
+
+### `DELEGATED_INBOX_ACCESS` — delegated inbox reading and acknowledgement
+
+Explicitly deferred by the operator, 2026-10-16. Revisit on an operator-prioritized need for another
+SA to inspect or acknowledge a Sandbox's inbox entries. V1 keeps read/ack owner-SA-scoped and
+defines no delegable operations for either. If promoted, evaluate reading and acknowledgement as
+independent grants at Sandbox granularity, separate from send and transcript-read authority.
+
+### `NOTIFICATION_DISPATCHER_OWNERSHIP` — review notification and Dispatcher ownership
+
+Operator-requested future consideration, 2026-10-16; revisit when explicitly prioritized or a
+concrete coordination/maintenance need justifies changing the boundary. Compare moving Notification
+Service responsibilities into Session Dispatcher with retaining independent services. Distinguish
+source observation, durable inbox/message storage, read/ack, notice batching and command admission.
+Preserve provenance, retention, retry/receipt semantics and independent backend use; do not create a
+second command queue. V1 retains today's ownership and does not depend on this review.
+
+### `SANDBOX_EVENT_WAKE_POLICY` — event-specific automatic wake
+
+Revisit when wake cost or a concrete source/event distinction warrants it. V1 retains the
+Sandbox's wake-on-any-message versus explicit-resume policy. A notice can batch inbox entries from
+multiple sources, and Notifications decides when to send it; Dispatcher sees the notice and owns
+wake/delivery. A future design might add switches to Sandbox spec, but must define mixed-batch
+semantics, trusted event attribution, decision placement and how unannounced entries make progress.
+No per-event switches, per-peer wake grants or owner move are selected or required for v1.
+
+### `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` — delegated lifecycle controls
+
+Revisit on a concrete need for agents to manage lifecycle or explicit operator prioritization.
+V1 keeps explicit suspend/resume and wake-setting edits as operator controls while preserving
+trusted backend automation. If delegation is needed, compare native Kubernetes RBAC with narrow
+backend operations on Sandbox targets/collections; general Sandbox patch access can edit unrelated
+spec fields. Define grant administration and preserve lifecycle guards. The longer-term direction
+is wake-on-message by default and transparent suspension/resume, not routine granular lifecycle
+management. Current defaults are unchanged; this review does not block v1 messaging.
+
 ### `NOTIFICATION_WORKER_ISOLATION` — separate notification API and delivery workers
 
 Only if worker deaths cause actual operational trouble. Keep workers in-process; first address the specific failure with current supervision/claims/retries.

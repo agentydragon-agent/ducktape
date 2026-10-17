@@ -74,6 +74,11 @@ flowchart LR
 Details: [command admission](../session_dispatcher/README.md#contract); later
 [notification presentation and input metadata](notification_presentation.md).
 
+Future ownership and wake-policy questions are recorded in the
+[freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership):
+consider moving Notification Service responsibilities into Dispatcher, and event/source-specific
+auto-wake policy. Neither is selected or a prerequisite for v1 inbox messaging.
+
 ### `NOTIFICATION_COMMAND_OUTCOME_DESIGN` — notice delivery without reading conversation history
 
 **Unscheduled; operator, 2026-10-11 PDT: not a priority, needs more thought.** The Notification
@@ -213,20 +218,26 @@ These are operator-reviewable decisions, not permission to implement every possi
 be developed together, but publish a coherent shared identity/authority vocabulary before downstream
 APIs. Do not equate creating a resource, reading history, sending a message or receiving/acking it.
 
-[The design-space inventory](multiagent_communication.md) records the open alternatives, including
-static/GitOps manager-to-contributor rules and replacing the authorization machinery across services.
+[The cross-agent plan](multiagent_communication.md#tentative-implementation-direction) tentatively
+selects service-enforced Session-access `PolicySet` rules assigned through existing `PolicyBinding`s.
+Resource-owning backends share evaluation code and enforce their own APIs. Native RBAC variants
+remain alternatives if implementation reveals a poor fit; comparing or building them is not a gate.
+SA-level caller attribution, configurable topology and live shared bundles are agreed constraints.
+Replacing the authorization machinery across services is a separate deferred evaluation, not a
+multiagent prerequisite. Preserve existing auth semantics; a concrete limitation must justify any
+separately reviewed broader proposal.
 Send and transcript-read permissions are independent in both directions. A2A is open at this
 communication boundary; its harness/thread-protocol rejection has a different scope. Transport
-facades are not prerequisite decisions, and content classification is outside v1. No implementation
-branch or new dependency is selected by that inventory.
+facades are not prerequisite decisions, and content classification is outside v1. Exact schemas and
+the remaining contracts below still require review before implementation.
 
 ```mermaid
 flowchart TD
     MULTIAGENT_MODEL[Decision: identities, relationships and native-child boundary]
-    THREAD_READ_POLICY_DESIGN[Decision: history read grants]
-    SANDBOX_COMPARTMENT_BOUNDARY[Blocked: enforce Sandbox placement boundary]
+    SESSION_ACCESS_RULES[Blocked: shared Session-access rules]
+    THREAD_READ_POLICY_DESIGN[Decision: remaining history read contract]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
-    AGENT_MESSAGING_DESIGN[Decision: send/receive RBAC and inbox vs direct delivery]
+    AGENT_MESSAGING_DESIGN[Decision: remaining inbox messaging and permission contracts]
     AGENT_MESSAGE_INGRESS[Blocked: authorized send API and durable receipts]
     AGENT_MESSAGE_RECEPTION[Blocked: receiving, recovery and acknowledgement]
     AGENT_MESSAGING[Capstone: end-to-end agent messaging]
@@ -235,14 +246,14 @@ flowchart TD
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
     MULTIAGENT_MODEL --> THREAD_READ_POLICY_DESIGN
+    MULTIAGENT_MODEL --> SESSION_ACCESS_RULES
     MULTIAGENT_MODEL --> AGENT_MESSAGING_DESIGN
     MULTIAGENT_MODEL --> THREAD_CREATE_POLICY
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
-    THREAD_READ_POLICY_DESIGN --> SANDBOX_COMPARTMENT_BOUNDARY
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
-    SANDBOX_COMPARTMENT_BOUNDARY --> THREAD_READ_POLICY
+    SESSION_ACCESS_RULES --> THREAD_READ_POLICY
+    SESSION_ACCESS_RULES --> AGENT_MESSAGE_INGRESS
     AGENT_MESSAGING_DESIGN --> AGENT_MESSAGE_INGRESS
-    SESSION_INPUT_METADATA_READ[Input provenance reads] -. if direct-input delivery selected .-> AGENT_MESSAGE_RECEPTION
     AGENT_MESSAGE_INGRESS --> AGENT_MESSAGE_RECEPTION
     AGENT_MESSAGE_RECEPTION --> AGENT_MESSAGING
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
@@ -257,68 +268,128 @@ flowchart TD
 
 **Decision; no runtime work implied.** Present concrete API examples for independent agents,
 Sandboxes and Sessions, with creator, manager and parent/provenance represented separately. Ask
-the operator to choose addressing/ownership and delegation semantics. No permission inheritance
-from an organizational edge or preset. Review how native harness children could later be ingested:
+the operator to choose remaining addressing/ownership and delegation semantics. Use the agreed
+SA-level caller attribution and the [tentative Session-access rule direction](multiagent_communication.md#tentative-implementation-direction).
+Finalize the common rule/member-reference schema, concrete administrative RBAC and freshness
+settings under the agreed [policy propagation contract](multiagent_communication.md#policy-propagation-and-freshness),
+without choosing a mandatory topology or requiring an auth-engine migration. No permission
+inheritance from an organizational edge or preset. Prefer Kubernetes resources for grants and explicit collection
+membership, with separate CRs for individual Sandbox-to-collection enrollments so Flux and the app
+can own different memberships independently. Support name-based Sandbox references that follow
+recreation and UID-pinned references for a single instance; app launches default to UID pinning,
+while GitOps-managed named Sandboxes may use name-based membership. Other storage remains allowed
+if concrete implementation friction warrants it. Storage is separate from the selected
+service-enforced evaluator direction. Review how native harness children could later be ingested:
 linked execution in the same Sandbox trust boundary versus independently provisioned Sandboxes,
 addressability, observability and which controls must remain unavailable. Native integration itself
 stays frozen; this decision must allow explicit exclusion rather than require its implementation.
 
+Membership CR writes use ordinary Kubernetes RBAC, initially granted to operator/GitOps and trusted
+provisioning. Read/send grants confer no membership administration; explicit administrative grants
+remain possible without introducing agent categories. V1 requires no new collection-specific agent
+enrollment-delegation mechanism. Finalize the concrete RBAC and provisioning checks within this boundary.
+
+Include OAuth-bound static SAs as subjects by namespace/name for permitted sends and reads.
+Define trusted OAuth caller admission to the relevant APIs; sharing SA assignment does not
+automatically add that authentication path to other backends. Keep this integration independent of
+the app. V1 recipients are Sandbox-hosted Sessions; external inboxes are deferred, and Connection
+representation/storage changes are outside this work.
+
+The app's existing auth path may remain a special case for v1. Reducing that special handling is
+optional, separately reviewed follow-up work and does not gate multiagent implementation.
+
+### `SESSION_ACCESS_RULES` — shared Session-access rule support
+
+**Blocked on the reviewed common contract in `MULTIAGENT_MODEL`.** Extend PolicySet schemas with the
+tentative Session-access rule family and implement shared rule-reading/evaluation code for API owners.
+Reuse existing SA authentication and PolicyBindings. Match independently grantable listing,
+transcript-read and Session-inbox append operations against direct Sandbox targets or current
+explicit collection memberships represented by separate enrollment CRs.
+Honor both name-based and UID-pinned Sandbox member references without changing recorded Session
+associations when a Sandbox name is reused.
+Implement independent watched policy views, initial-sync and configurable freshness checks, and
+asynchronous revocation under the agreed contract; no global replica acknowledgement is required.
+Preserve live bundle updates, existing binding lifecycle and additive overlapping grants. Cover mixed
+static/runtime SAs, allowed/denied operations and targets, empty collections, membership removal,
+overlap, initial sync, stale watches, independently advancing replicas and both reference modes
+across Sandbox recreation. Backend enforcement and retained-history semantics remain in their
+respective nodes.
+
 ### `THREAD_READ_POLICY_DESIGN` — scoped history read policy
 
-**Decision; draft in parallel with the shared model.** Review compartments versus exact-session
-grants, who classifies/reclassifies histories and grants/revokes access, and caller replacement
-semantics. Neither grant model isolates Sessions sharing a Sandbox (see the
-[isolation boundary](../docs/thread_layering.md#sandbox-isolation-boundary)). Defaults expose
-no existing histories to workloads. Select raw read/list/follow scope; read does not imply
-send/create, and no folded-read API is required for v1. Decide how revocation
-applies to live feeds, discovery and linked evidence. Do not block this on a messaging transport.
-
-### `SANDBOX_COMPARTMENT_BOUNDARY` — enforce Sandbox placement boundary
-
-**Blocked on the reviewed scoped-read policy.**
-The Sandbox is the security isolation boundary: co-resident Sessions share filesystem, credentials,
-and ServiceAccount authority, regardless of archive-read classifications. Enforce compatible
-placement for any proposed scoped-read policy at Open, adoption and replacement, rejecting
-placements whose claimed isolation depends on separating co-resident Sessions. Test shared
-filesystem/SA cases and denied placements. Keep VM isolation a separate capability, not a
-fictional fix for shared credentials inside one VM. See the
-[Sandbox boundary](../docs/thread_layering.md#sandbox-isolation-boundary).
+**Decision; tentative Session-access rules, Sandbox minimum and explicit collections selected.**
+Finalize read-specific grant administration within the agreed membership RBAC boundary, caller
+replacement semantics and access to retained histories after Sandbox deletion. V1 has no
+individual-Session grants or computed collection selection. Presets
+may seed authorized launch enrollment; subsequent removals persist. Reading a Session resolves its
+recorded Sandbox identity, and all Sessions in that Sandbox use the same scope. Defaults expose
+no existing histories to workloads. Session listing is a distinct, weaker read-type permission,
+independent from send; select its metadata fields and raw history read/follow behavior. Read does not
+imply send/create, and no folded-read API is required for v1. Cover discovery, linked evidence, live-feed
+revocation and unknown historical associations. Do not block this on a messaging transport.
 
 ### `THREAD_READ_POLICY` — authorized retained-history access
 
-**Blocked on reviewed read policy and compartment enforcement.** Enforce at
-the owning backend across list, raw/native evidence, direct reads and feeds, including reconnect
-and revocation. Keep app-only UI folds separate. Test allowed/denied histories, two principals,
+**Blocked on reviewed read policy.** Enforce the immutable Session-to-Sandbox association and
+Sandbox-scoped grants through shared Session-access rules at the owning backend across list,
+raw/native evidence, direct reads and feeds, including reconnect and revocation. Keep app-only UI
+folds separate. Test allowed/denied histories, two principals,
 deleted Sandboxes and revocation with deterministic service tests plus a bounded deployed auth check.
+Cover a listing-only caller separately from transcript/evidence reads and follows. Recheck stream
+authorization/freshness and stop Event emission on observed grant loss or stale required policy state.
 
-### `AGENT_MESSAGING_DESIGN` — send and receive contract
+### `AGENT_MESSAGING_DESIGN` — inbox messaging and notice contract
 
-**Decision.** Present examples of sender authentication, recipient discovery/opt-in, send grants,
-recipient read/ack grants and administration. Compare Notification Service inbox delivery with
-direct session input and an existing messaging channel; recommend the smallest fit. Define
-accepted, delivered, handled and acknowledged separately; decide offline behavior, retention,
-batching, abuse limits and mailbox ownership after Sandbox deletion. Reading a transcript does not
-authorize sending or acking.
+**Decision; v1 inbox delivery selected.** Address Sandbox-hosted recipients by Session, authorize sends
+at Sandbox granularity using the tentative shared Session-access rules, and reuse the existing
+durable inbox/read/ack and batched-notice machinery. The send operation appends to a Session inbox;
+its payload is separate from transcript reads and the platform-generated notice.
+The sender's append grant supplies the authorization for acceptance; v1 requires no separate
+recipient opt-in, allowlist or approval.
+Peer sends do not require source subscriptions. Generalize the current service around inbox/messaging in one
+deployment initially, with optional subscription/source integrations; leave Dispatcher separate.
+Use `subscription` for source-following and `notice` for the batched inbox prompt. The exact service
+name, send API and discovery metadata fields remain open. Inbox read/ack retains the receiving
+Sandbox's owner-SA boundary; v1 adds no delegable inbox-read or acknowledgement permissions.
+The [sender-facing receipt contract](multiagent_communication.md#sender-facing-receipts-open)
+remains open: acceptance-only plus explicit replies versus additional system read/handled receipts.
+Acceptance-only is a recommendation, not a selected v1 scope.
+OAuth-bound SAs can be senders; v1 does not provide inboxes for externally running agents.
+Distinguish accepted, noticed, admitted, handled and task-success evidence. Define retention, limits,
+deduplication and offline/deleted-recipient behavior. Reading a transcript grants neither send nor ack.
 
-Output includes the selected owner/API and explicit conditional prerequisites: a direct-input
-implementation reuses the durable Dispatcher command path and separately reviewed provenance reads; a notification source reuses
-inboxes without treating admission as acknowledgement. Neither branch is selected in this DAG.
-Before dispatch, add the chosen branch's edges; do not require implementing both. New Sandbox
-Service or app tables require their task-specific contract review. Pure Notification Service work need not
-wait for unrelated archive schema once its contract is reviewed.
+V1 retains notice batching in Notifications and wake/delivery in Dispatcher. A Sandbox's existing
+`spec.wakeOnSend` policy applies to any admitted message, including mixed-source notices; a suspended
+Sandbox with it disabled requires an explicit resume. Retain the existing trusted service-caller/wake allowlist. Add no
+per-peer or per-source wake grant in v1. Agent receive/read/ack behavior needs actual harness
+validation before the selected approach is claimed effective. Moving responsibilities into
+Dispatcher or adding selective event wake is future work, not a prerequisite.
 
 ### `AGENT_MESSAGE_INGRESS` — authorized send and acceptance
 
-**Blocked on messaging decision and its selected prerequisites.** Implement bounded payloads,
-server-authenticated sender provenance, per-recipient send policy, idempotent message IDs and honest
-acceptance receipts in the chosen authority. Test denied pairs, spoofing and retry/conflict behavior.
+**Blocked on messaging decision and its selected prerequisites.** Implement a configurable inbox-service
+message-body byte limit backed by a database ceiling; reject oversized messages before acceptance
+without truncation and reject configurations above the ceiling. Select the default and ceiling.
+Implement server-authenticated sender provenance, shared Session-access rule enforcement, idempotent
+message IDs and honest acceptance receipts in the chosen authority. Check send permission at durable
+acceptance against a fresh local policy view; observed revocation blocks new sends without retracting
+accepted messages. Require no separate recipient opt-in or source subscription. Test authorized
+acceptance without either, denied pairs, spoofing, retry/conflict behavior, size bounds and this
+revocation boundary.
 
 ### `AGENT_MESSAGE_RECEPTION` — delivery, recovery and acknowledgement
 
 **Blocked on ingress contract/implementation.** Implement selected recipient read/delivery/ack
-operations, batching and recovery of unread work. Test revoked/deleted recipients, ordinary offline
-catch-up and duplicate delivery without leaking payloads. Do not start/resume a harness implicitly
-unless the reviewed caller allowlist and per-Sandbox wake policy allow that sender to wake it.
+operations under the receiving Sandbox's owner-SA checks, batching and recovery of unread work.
+Delegated inbox reading and acknowledgement remain frozen. Test owner-scoped read/ack,
+recipient-access revocation, deleted recipients,
+ordinary offline catch-up and duplicate delivery without leaking payloads. Accepted correspondence
+survives sender send-permission revocation, subject to recipient inbox permissions and retention;
+cover unread messages across that boundary. Notices use the current trusted
+Notifications-to-Dispatcher path and per-Sandbox wake-on-message policy; do not require a separate
+peer/source wake grant. Deletion never retargets mail to a replacement Sandbox.
+Explain suspended-recipient and wake behavior to agents; support scoped destination-Sandbox CR
+reads where configured, independently of send permission.
 
 ### `AGENT_MESSAGING` — integrated messaging capstone
 
@@ -327,6 +398,11 @@ the selected API, with correct provenance and distinct receipt/ack states. Secur
 multi-replica retry cases belong in automated tests; no real provider outage requirement.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
+V1 keeps explicit suspend/resume and wake-setting edits as operator controls, preserving existing
+trusted backend automation. Agent lifecycle delegation is
+[deferred](task_freezer.md#sandbox_lifecycle_authorization_design--delegated-lifecycle-controls),
+not a messaging prerequisite; see the [agreed scope](multiagent_communication.md#batching-and-wake-behavior).
 
 ### `THREAD_CREATE_POLICY` — authorize session creation separately
 

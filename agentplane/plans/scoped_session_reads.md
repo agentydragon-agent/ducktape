@@ -6,10 +6,15 @@ Review the choices below before implementing the policy. The durable raw Session
 history and its Thread fold live in the [History Service](../history_service/README.md),
 which today serves only its configured reader accounts.
 
-Exactly-one-compartment and SA-only grants below are candidate choices, not selected constraints.
-Compare them with the [cross-agent design space](multiagent_communication.md), including exact-Session
-grants, project/role relationships and a shared authorization system. Sending to a Session and
-reading either participant's transcript remain independent permissions.
+SA-level caller attribution and Sandbox-level authorization are agreed. Reads may request an
+individual Session, but the permission covers its Sandbox's histories. V1 supports explicit target
+collections with separate membership CRs, the agreed [Sandbox reference modes and launch defaults](multiagent_communication.md#target-collections-and-launch-enrollment),
+and no individual-Session grants or computed collection selection.
+The [tentative implementation direction](multiagent_communication.md#tentative-implementation-direction)
+is service-enforced Session-access `PolicySet` rules assigned through existing `PolicyBinding`s,
+with shared evaluation code and enforcement by History on its own API. Exact schemas remain open;
+the representation may be revisited if implementation does not work well. No broader auth-engine
+replacement is a prerequisite. Sending and reading remain independent.
 
 ## What is protected
 
@@ -22,88 +27,80 @@ Thread. Day one requires only retained raw reads and follows; folded reads, when
 come from the same History Service.
 
 Retained history must be readable when the original Pod, Sandbox CR and PVC are gone.
-The history authority, not live Kubernetes inventory, owns the durable Session ID,
-its classification and grants.
+History owns the durable Session ID and its recorded Sandbox association. The chosen policy
+representation must keep the facts needed for authorized historical reads after live Kubernetes
+objects disappear. Follow the [Kubernetes-resource storage preference](multiagent_communication.md#target-collections-and-launch-enrollment),
+with alternatives allowed on concrete implementation friction; historical membership and policy
+resource lifetime after Sandbox deletion remain explicit design questions.
 
-## Proposed scope and principal
+## Scope, identity and enforcement
 
-- A Session has **at most one** operator-defined compartment. Compartments are opaque,
-  independent names: no hierarchy, prefix inheritance, implicit ownership or
-  persistent Agent type. An unclassified Session has no ServiceAccount-readable
-  history. Existing histories are unclassified until an authorized operator assigns
-  them; no grant is inferred from a former launch preset or Sandbox name.
-- An operator grants `read` on explicitly named compartments to a Kubernetes
-  ServiceAccount; presets may suggest a new Session's initial classification but are
-  not grant authorities. A Thread and its logical Session share classification.
-  The grant is evaluated on **every** list/read/follow, not stamped into a token or
-  inherited from the caller's own Thread. Exact-Session exceptions can be added
-  later if a concrete need appears; avoid multiple labels and OR semantics initially.
-- Continue to authenticate Pod-bound workload bearers by TokenReview, but scope
-  grants to the exact ServiceAccount incarnation as well as namespace/name: deleting
-  and recreating an account of the same name must not inherit its predecessor's
-  access. `WorkloadPrincipal.service_account_uid` (TokenReview's user UID) is the
-  verified incarnation; a grant pins it, token/SA replacement is tested, and a grant
-  that cannot be verified is refused. Never trust a forwarded principal header.
-- Operator authentication remains separate; operator history reads and management
-  do not acquire an SA grant by accident. App and history service identities used
-  for ingestion/projecting folds are service-to-service privileges, not an all-history
-  grant reusable by a hosted agent.
+- Associate every history with its recorded Sandbox identity, including the UID; all its Sessions
+  use that Sandbox's authorization scope. A Session ID is a lookup address, not a permission
+  exception. Do not infer a missing historical association from a reused Sandbox name. Histories
+  whose association is unknown remain operator-only until explicitly resolved.
+- Grant SAs `read` on specific Sandboxes or explicit collections. Presets can supply initial
+  enrollment at authorized launch; later membership removal persists independently. Collection
+  membership and permission bundles are separate configurable facts, not a compulsory compartment,
+  role hierarchy or agent type. Membership writes follow the
+  [agreed administration boundary](multiagent_communication.md#target-collections-and-launch-enrollment).
+  Grants remain additive and are checked on every list/read/follow.
+- Authenticate workload bearers through TokenReview, retaining verified SA/Pod incarnation evidence.
+  Define grant carryover on same-name SA replacement in the chosen policy representation; do not
+  assume a caller-supplied name proves an incarnation or trust a forwarded principal header.
+- Operator authentication may remain separate for v1; app-auth simplification is optional follow-up
+  work. Ingestion/projecting service privileges must not become
+  a reusable all-history grant for a hosted agent.
 
-Authorization lives with the history's Session record and read API, in the History
-Service. Do not broaden its reader allowlist wholesale: a listed reader reads every
-Session. Add narrowly scoped read authorization, separate from Runner open/resume and operator policy
-mutations. Command send authority belongs to Session Dispatcher. A `read` grant does not
-imply eventual `send` or `create` authority.
+History enforces scoped authorization on its own API regardless of policy representation. Do not
+broaden its reader allowlist wholesale: a listed reader reads every Session. Keep read authority
+separate from message ingress, Session open/control, Sandbox lifecycle and grant administration.
+A read grant does not imply send or create authority.
 
 ## Sandbox trust boundary
 
-The Sandbox is the security isolation boundary; it is not a choice left open by this
-scoped-read proposal. Sessions in one Sandbox share its filesystem, ServiceAccount,
-working directories and potentially secrets. Do not assume co-resident Sessions can
-be kept separate, regardless of compartment labels or filtered history APIs. Work
-requiring incompatible trust or credentials must use separate Sandboxes. A finer
-boundary would need a separately designed and reviewed isolation mechanism inside
-the Sandbox, which is not planned here.
-
-For this proposed scoped-read policy, assign a Sandbox trust domain before opening its
-first classified Session and refuse incompatible Opens from _any_ caller, including
-direct Runner Gateway callers and races on different gateway replicas. A Sandbox may
-contain multiple Sessions within that domain, but matching compartments alone do not
-prove that differently privileged work can safely share credentials or files.
-Classification limits external history reads; it does not confer intra-Sandbox isolation.
-
-Do not expose scoped SA reads as a confidentiality guarantee until the admission
-boundary is enforced. Existing mixed or unknown co-resident Sessions remain
-operator-only until reviewed/reclassified or split into separately isolated
-Sandboxes; never silently coalesce their audiences. Deleting the Sandbox does not
-delete the durable compartment assignment or enlarge the historical read set.
+Sessions sharing a Sandbox share its filesystem, credentials and SA authority. The selected policy
+uses one Sandbox scope for all of them; compartment labels do not establish confidentiality inside
+it. Work needing incompatible trust or credentials requires separate Sandboxes. Each history path
+must resolve the recorded Sandbox association, including Open/adoption and retained historical
+reads, so a caller cannot relabel a Session into a differently authorized target. Deleting the
+Sandbox never makes its old histories belong to a newly created same-name Sandbox.
 
 ## Read and revocation behavior
 
-List/discovery, direct Event/history fetch, evidence/frame lookup, retained follow,
-and (if later implemented) folded reads all check the **same** scope. Filter before
+Session listing is a distinct, weaker read-type permission, independently grantable from sending;
+it exposes bounded metadata without transcript content or evidence. Its exact fields remain open.
+Enumeration and transcript access use the **same Sandbox scope**, with their respective permissions.
+Direct Event/history fetch, evidence/frame lookup, retained follow and (if later implemented) folded
+reads require history-read permission. Filter before
 pagination and totals; an unauthorized ID responds as not found, without existence,
-cursor, native payload, or count leaks. Classify and audit changes atomically in the
-authoritative store. A reclassification that broadens access to prior history is an
-explicit, auditable operator action, not a preset update.
+cursor, native payload, or count leaks. Record scope and grant changes in their authoritative owner with audit evidence. Broadening
+access to retained history requires an authorized policy or membership edit, not an incidental
+preset update.
 
-Revocation takes effect on new requests and reconnects; active streams must stop
-before delivering further unauthorized Events. Use a durable policy version/epoch or
-per-entry authorization check rather than process-local cached grants or a one-time
-stream-open check. A revoked reader cannot undo bytes already delivered; the audit
-must record assignments, widening and revocation. History lag may be visible to an
-authorized reader but must not make a fold claim to cover Events beyond its cursor.
+Use the agreed [policy propagation contract](multiagent_communication.md#policy-propagation-and-freshness):
+requests and reconnects evaluate the replica's current watched policy view. Changes propagate
+asynchronously, so replicas can briefly disagree. Refuse protected reads until initial sync and
+when the required view exceeds its configured freshness limit. Active streams must recheck
+authorization and freshness throughout their lifetime, stopping further Event emission when the
+replica observes loss of the required grant or its policy view becomes too stale. Authorizing only
+at stream-open is insufficient; no global replica-acknowledgement barrier is required for v1.
+A revoked reader cannot undo bytes already delivered; the audit must record assignments, widening
+and revocation. History lag may be visible to an authorized reader but must not make a fold claim
+to cover Events beyond its cursor.
 
 ## Implementation readiness and acceptance
 
-Before granting SA reads, land and verify: (1) Sandbox trust-domain enforcement;
-(2) operator-managed grants/classification, enforced by the History Service on every
-read path. Test a director SA reading explicitly granted compartments but not
-unrelated histories, and an SA with no grants discovering none. Cover deleted
-Sandboxes, same-name replacement, unclassified Sessions, raw/native paths, list
-pagination, two history replicas, reclassification, and revocation while following a
-stream.
+Before exposing scoped reads, finalize the tentative rule/membership schemas, concrete administrative RBAC,
+freshness settings, historical membership behavior and replacement semantics. Enforce the
+reviewed policy and immutable Sandbox association on every history path. Test two Sessions in one authorized
+Sandbox, an unrelated denied Sandbox, explicit collection enrollment/removal and an ungranted SA
+that discovers nothing. Cover deleted Sandboxes, same-name replacement, unknown associations,
+raw/native paths, filtering before pagination, initial sync, stale watches, replicas observing
+changes at different times and revocation during a follow. Include
+a listing-only SA that can enumerate the granted Sandbox's Sessions but cannot read their histories
+or evidence, follow Events or send without the respective additional grants.
 
-Open design review: whether exactly-one compartment plus no exact-ID exceptions on
-day one matches the intended delegation workflows. It must be decided before an
-implementation is marked ready to expose reads.
+Sandbox-wide scope removes the proposed per-Session compartment distinction. No separate
+compartment-placement implementation is required for this read policy; association correctness and
+the existing Sandbox isolation boundary remain acceptance requirements.
