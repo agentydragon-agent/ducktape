@@ -136,6 +136,7 @@ py_library(
         _K3S_BINARY,
     ] + [":" + name + "_layout" for name in _IMAGES],
     deps = [
+        ":bootstrap",
         ":fixture_chart",
         "//agentplane/acceptance:conftest",
         "//util/bazel:runfiles",
@@ -256,4 +257,9 @@ py_library(
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
+)
+
+py_library(
+    name = "bootstrap",
+    srcs = ["bootstrap.py"],
 )
