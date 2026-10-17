@@ -20,7 +20,8 @@ The decisions still open are summarized under [cases to resolve before implement
   reference confers no permission. A named role may explicitly bundle grants without making those
   implications intrinsic to messaging.
 - OAuth-connected clients can be callers for permitted sends and reads through their verified bound
-  Kubernetes SA; preserve namespace/name assignment for static Flux-managed SAs. V1 recipients are
+  Kubernetes SA, from an Action-box Sandbox ([OAuth callers](#oauth-callers)); preserve
+  namespace/name assignment for static Flux-managed SAs. V1 recipients are
   Sandbox-hosted Sessions. Externally running clients have no receiving mechanism; external inboxes
   are [explicitly deferred](task_freezer.md#external_agent_inboxes--inboxes-for-externally-running-agents).
 - Communication should be an additive, optional capability. Running a harness, using Actions or
@@ -80,8 +81,10 @@ independent overlapping grants remain.
 
 **V1 membership storage choice:** use separate membership CRs, each representing one Sandbox's
 enrollment in one collection. Flux and the app can own different enrollment objects independently,
-rather than sharing a member list embedded in the collection CR. Exact kinds and field schemas
-remain open.
+rather than sharing a member list embedded in a collection CR. A collection is only the name its
+rules and memberships share; it has no CR of its own, because one would have no field for a reader.
+A membership's Sandbox reference carries an optional UID, whose absence means name-based. Exact
+kind and field names remain open.
 
 **Sandbox reference modes agreed:** support namespace/name references, which follow that name
 across Sandbox deletion and recreation, and namespace/name plus UID references, which identify
@@ -103,9 +106,10 @@ of agent: explicit administrative grants remain possible. V1 requires no new mec
 to administer membership in selected collections. Launch enrollment remains subject to provisioning
 authorization.
 
-Finalize reference fields, concrete administrative RBAC and GitOps/runtime removal ownership before
-implementation. Separate object ownership does not authorize writes or establish a runtime override
-of GitOps desired state. Collections select Sandbox targets; supporting OAuth caller SAs through
+Finalize reference field names and concrete administrative RBAC before implementation. Flux owns
+the memberships authored in git, so revoking one is a git change that Flux reconciles; the app owns
+the memberships it creates. Separate object ownership does not authorize writes or establish a
+runtime override of GitOps desired state. Collections select Sandbox targets; supporting OAuth caller SAs through
 PolicyBindings does not require SA collection members.
 
 **Storage preference agreed:** start with Kubernetes resources for grants and explicit collection
@@ -280,7 +284,8 @@ targets:
 ```
 
 Support direct Sandbox targets as well as explicit collections. For Sandbox-hosted Session operations,
-the backend authenticates the SA, resolves the Session to its recorded Sandbox, and allows the operation if any current
+the backend authenticates the SA, takes the Sandbox from the request (or, in History, which owns the
+record of the Sandbox that wrote each Session, from that record), and allows the operation if any current
 bound rule matches that operation and Sandbox, directly or through current collection membership.
 Share rule-reading and evaluation code while enforcing each backend's own API, including paths
 that bypass Dispatcher. Preserve live bundle edits, membership changes, expiry and additive
@@ -308,8 +313,9 @@ Refuse protected operations before initial sync or when required policy data exc
 freshness limit. A watch outage must not permit indefinite use of old grants. Re-evaluate
 authorization and freshness throughout transcript streams, and stop further Event emission when
 the replica observes loss of the required permission or its policy view becomes too stale.
-Independent overlapping grants still apply. Select concrete freshness/resync settings during
-implementation; no global replica-acknowledgement barrier is required for v1.
+Independent overlapping grants still apply. Reuse the shared watch `Freshness` helper, which refuses
+a view after three missed resync cycles as Actions and egress do, and select the resync period
+during implementation; no global replica-acknowledgement barrier is required for v1.
 
 ### Alternatives if the tentative direction needs revision
 
@@ -385,8 +391,9 @@ or queues.
 messaging responsibilities, with subscriptions/source integrations as optional producers. Keep
 one deployment initially and leave Dispatcher separate. Peer messaging must work with Actions and
 GitHub integrations disabled. A service rename should reflect its inbox/messaging responsibility;
-the exact component name and code/deployment rename are not selected here. References to
-Notification Service elsewhere in this plan describe the existing component being generalized.
+the service keeps the Notification service name for now, and a rename is a separate mechanical
+change. References to Notification Service elsewhere in this plan describe the existing component
+being generalized.
 
 ### Peer message path
 
@@ -396,6 +403,19 @@ peer sends do not require a source subscription. Subscriptions can produce other
 is sufficient; no separate recipient-side opt-in, allowlist or approval is required. Evaluate the
 grant at the agreed Sandbox granularity against the current fresh policy view. Acceptance does
 not imply the receiving agent has read or handled the message.
+
+**Addressing agreed with the operator, 2026-10-17:** a send names the destination Sandbox
+(namespace and name; the UID is optional and pinned at acceptance from the Sandbox resource) and the
+Session ID within it, as the Dispatcher and the subscription API do. The inbox/messaging service keeps
+and queries no Session-to-Sandbox mapping, and wake-on-send uses the named Sandbox. The sender's rule is
+matched against that Sandbox. The inbox is owned by the named Sandbox's SA, so a wrong pairing can
+only reach an inbox the sender is authorized to send into. To stop a sender from using up the
+recipient's inbox quota with invented Session IDs, creating an inbox for a message first confirms the
+pair against the Sandbox History recorded for that Session. This is an existence check, not routing
+state. Sends to an existing inbox skip it, and a Session History has not yet recorded is refused until
+its first push. History reads resolve a Session to its recorded Sandbox because History owns that
+record. The operator accepts this for v1 and may revisit addressing with the planned Notification
+Service refactors.
 
 Store the peer message with authenticated sender-SA provenance and the qualified destination.
 The inbox/messaging service prepares a platform-generated
@@ -476,15 +496,22 @@ is deferred.
 
 An envelope could retain an idempotent message ID, authenticated sender, resolved destination,
 correlation/reply reference and content. V1 authenticates the caller at Sandbox/SA level; any
-originating-Session label is metadata. Who may inspect provenance remains open. Do not trust sender
-identity in the body or launder a sender into a
-Notification/Messaging service's broader authority. Forwarded actor/delegation proof needs its own
+originating-Session label is metadata. The recipient sees the verified sender SA, which names the
+Sandbox for a Sandbox-hosted sender and is the Connection's SA for an OAuth caller, and an unverified
+`from_session` label; no other account reads the message. Do not trust sender identity in the body or
+launder a sender into a Notification/Messaging service's broader authority. Forwarded actor/delegation proof needs its own
 audience, scope, lifetime and revocation contract.
 
 Distinguish durable acceptance, runner admission, harness confirmation, explicit handling
 acknowledgement and task success. The current Dispatcher has no writer for `HARNESS_CONFIRMED`.
 Reading an inbox is not acknowledgement, and an acknowledgement does not prove task success.
-Choose offline behavior, ordering, duplicate handling, batching, retention and abuse limits.
+Offline delivery, ordering, duplicates, batching and retention follow the existing inbox: the notice
+is a durable Dispatcher command, entries take contiguous cursors in acceptance order, a sender's
+idempotency key (unique per sender and destination inbox) deduplicates retries, and payloads expire
+after 30 days. Peer messages do not count toward the inbox's 10000-cursor lifetime limit, because
+reaching it forces the inbox to be retired, which cancels its subscriptions. Instead each sender may
+have at most 128 unacknowledged messages in an inbox, and a send beyond that is refused with HTTP 429,
+never dropped.
 Sending and explicit lifecycle controls remain different operations; v1 notice-triggered wake
 follows the Sandbox policy above, without a separate peer-wake grant.
 
@@ -499,13 +526,14 @@ be revoked. A retry must not silently retarget a replacement Sandbox or new role
 **V1 message-size bounds agreed:** the inbox/messaging service owns an operator-configurable
 maximum message-body size, measured in UTF-8 bytes. Reject oversized messages before durable
 acceptance with an explicit error; do not truncate. Enforce an absolute ceiling in the database
-as well, and reject service configurations exceeding that ceiling. The default and absolute
-ceiling values remain to be selected.
+as well, and reject service configurations exceeding that ceiling. The default is 32 KiB and the
+absolute ceiling 256 KiB.
 
 Illustrative tool operations are finding recipients, sending, checking delivery, reading/acking an
 inbox and opening a Session. Control operations stay explicit, with target and parameter constraints
-such as the expected turn ID. HTTP/gRPC/MCP/CLI facades can expose the selected contract later;
-their names and schemas are not settled here. File exchange can later use authorized retained
+such as the expected turn ID. V1 exposes the send, receipt and inbox operations as HTTP JSON in the
+Notification service, like its existing agent API; A2A, MCP and other facades can expose the selected
+contract later, and their names and schemas are not settled here. File exchange can later use authorized retained
 object references without requiring shared filesystems; storage, retention and read rights remain
 separate questions.
 
@@ -513,19 +541,26 @@ separate questions.
 
 ### OAuth callers
 
-OAuth clients act as their verified bound SA, using the same PolicySet/Binding assignment model
-as workload callers for permitted sends and reads. The existing inbox API authenticates workload
-tokens, so admitting OAuth callers to the relevant APIs still requires trusted authentication;
-sharing SA assignment alone does not provide that path. Keep it independent of the app and do not
-fabricate Pod identity for external clients. Their agent loops run outside the cluster and have no
-receiving mechanism in v1. External inboxes are deferred; Connection representation or storage
-changes are outside this multiagent work.
+**V1 route agreed with the operator, 2026-10-17:** OAuth clients act as the SA their Action Service
+Connection is bound to, using the same PolicySet/Binding assignment model as workload callers. They
+open an Action-box Sandbox through the Sandbox Action group and send the messaging and history
+requests from it as an ordinary workload, with the egress proxy substituting that SA's projected
+token for the destination. Notifications and History therefore gain no OAuth admission path and keep
+authenticating workload tokens only. Projecting the Notifications and History audiences into the box,
+and the matching egress rules on the SA's PolicySet, are deployment configuration for the build nodes
+where not yet present. Such a sender's verified identity is the SA shared by the Connection's boxes,
+not a Sandbox of its own, which SA-level attribution accepts. Their agent loops run outside the
+cluster and have no receiving mechanism in v1. External inboxes are deferred; Connection
+representation or storage changes are outside this multiagent work.
 
 ### Sandbox Session discovery and provisioning
 
 **V1 discovery direction agreed:** listing a Sandbox's Sessions is a distinct read-type permission,
 weaker than reading their transcripts and independently grantable from sending. Enumeration exposes
-bounded metadata, not transcript content or evidence; its exact fields remain to be selected.
+bounded metadata, not transcript content or evidence. The fields are the Session ID, the Sandbox that
+wrote it, harness kind, feed state, idle and last-turn state, and first and last event times. The
+listing is not `SessionSummary` as it stands: that message embeds the Session spec, whose `instructions`
+and `cwd` are content.
 It uses the same Sandbox authorization granularity as other multiagent permissions. A sender with
 a known Session address need not have enumeration permission. Keep live runner state, retained
 Session identity/history and a standing recipient directory distinct; listing Sessions does not
@@ -567,7 +602,8 @@ Define that grant authority, further delegation, expiry and parent-termination b
   prior art for correspondence versus controls and receipts, without selecting a workflow platform.
 - **Native harness delegation** can remain useful inside a Sandbox. It does not by itself supply
   Agentplane's cross-Sandbox identity and authority; exposing native children as independent
-  Agentplane Sessions remains a separate [discovery design](native_session_discovery.md).
+  Agentplane Sessions remains a separate [discovery design](native_session_discovery.md). V1
+  excludes native children from the messaging and access model.
 
 ## Information transfer and v1 scope
 

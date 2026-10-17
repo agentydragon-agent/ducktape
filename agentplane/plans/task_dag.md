@@ -257,18 +257,18 @@ if concrete implementation friction warrants it. Storage is separate from the se
 service-enforced evaluator direction. Review how native harness children could later be ingested:
 linked execution in the same Sandbox trust boundary versus independently provisioned Sandboxes,
 addressability, observability and which controls must remain unavailable. Native integration itself
-stays frozen; this decision must allow explicit exclusion rather than require its implementation.
+stays frozen, and v1 excludes native children from the messaging and access model.
 
 Membership CR writes use ordinary Kubernetes RBAC, initially granted to operator/GitOps and trusted
 provisioning. Read/send grants confer no membership administration; explicit administrative grants
 remain possible without introducing agent categories. V1 requires no new collection-specific agent
 enrollment-delegation mechanism. Finalize the concrete RBAC and provisioning checks within this boundary.
 
-Include OAuth-bound static SAs as subjects by namespace/name for permitted sends and reads.
-Define trusted OAuth caller admission to the relevant APIs; sharing SA assignment does not
-automatically add that authentication path to other backends. Keep this integration independent of
-the app. V1 recipients are Sandbox-hosted Sessions; external inboxes are deferred, and Connection
-representation/storage changes are outside this work.
+Include OAuth-bound static SAs as subjects by namespace/name for permitted sends and reads. OAuth
+callers reach the backends from an Action-box Sandbox whose egress substitutes the SA's projected
+token ([agreed route](multiagent_communication.md#oauth-callers)); no OAuth admission path is added to
+other backends. V1 recipients are Sandbox-hosted Sessions; external inboxes are deferred, and
+Connection representation/storage changes are outside this work.
 
 The app's existing auth path may remain a special case for v1. Reducing that special handling is
 optional, separately reviewed follow-up work and does not gate multiagent implementation.
@@ -299,7 +299,7 @@ individual-Session grants or computed collection selection. Presets
 may seed authorized launch enrollment; subsequent removals persist. Reading a Session resolves its
 recorded Sandbox identity, and all Sessions in that Sandbox use the same scope. Defaults expose
 no existing histories to workloads. Session listing is a distinct, weaker read-type permission,
-independent from send; select its metadata fields and raw history read/follow behavior. Read does not
+independent from send; its metadata fields are selected, and raw history read/follow behavior remains to design. Read does not
 imply send/create, and no folded-read API is required for v1. Cover discovery, linked evidence, live-feed
 revocation and unknown historical associations. Do not block this on a messaging transport.
 
@@ -315,16 +315,18 @@ authorization/freshness and stop Event emission on observed grant loss or stale 
 
 ### `AGENT_MESSAGING_DESIGN` — inbox messaging and notice contract
 
-**Decision; v1 inbox delivery selected.** Address Sandbox-hosted recipients by Session, authorize sends
-at Sandbox granularity using the tentative shared Session-access rules, and reuse the existing
+**Decision; v1 inbox delivery selected.** Address Sandbox-hosted recipients by destination Sandbox plus
+Session ID ([agreed addressing](multiagent_communication.md#peer-message-path)), authorize sends at
+Sandbox granularity using the tentative shared Session-access rules, and reuse the existing
 durable inbox/read/ack and batched-notice machinery. The send operation appends to a Session inbox;
 its payload is separate from transcript reads and the platform-generated notice.
 The sender's append grant supplies the authorization for acceptance; v1 requires no separate
 recipient opt-in, allowlist or approval.
 Peer sends do not require source subscriptions. Generalize the current service around inbox/messaging in one
 deployment initially, with optional subscription/source integrations; leave Dispatcher separate.
-Use `subscription` for source-following and `notice` for the batched inbox prompt. The exact service
-name, send API and discovery metadata fields remain open. Inbox read/ack retains the receiving
+Use `subscription` for source-following and `notice` for the batched inbox prompt. The service keeps
+its name for now, the send API is HTTP JSON, and the [discovery fields](multiagent_communication.md#sandbox-session-discovery-and-provisioning)
+are selected. Inbox read/ack retains the receiving
 Sandbox's owner-SA boundary; v1 adds no delegable inbox-read or acknowledgement permissions.
 The [sender-facing receipt contract](multiagent_communication.md#sender-facing-receipts) is
 selected: the sender queries a message it sent for notice coverage and acknowledgement, and not found
@@ -344,11 +346,13 @@ Dispatcher or adding selective event wake is future work, not a prerequisite.
 
 **Blocked on messaging decision and its selected prerequisites.** Implement a configurable inbox-service
 message-body byte limit backed by a database ceiling; reject oversized messages before acceptance
-without truncation and reject configurations above the ceiling. Select the default and ceiling.
+without truncation and reject configurations above the ceiling. Default 32 KiB, ceiling 256 KiB.
 Implement server-authenticated sender provenance, shared Session-access rule enforcement, idempotent
 message IDs and honest acceptance receipts in the chosen authority. Implement the sender's receipt
 query from the inbox coverage and acknowledgement cursors, visible only to the authenticated sender.
-Check send permission at durable
+Create an inbox for a message only after confirming the named Session against the Sandbox History
+recorded for it, so invented Session IDs cannot use up the recipient's inbox quota; sends to an
+existing inbox skip the check. Check send permission at durable
 acceptance against a fresh local policy view; observed revocation blocks new sends without retracting
 accepted messages. Require no separate recipient opt-in or source subscription. Test authorized
 acceptance without either, denied pairs, spoofing, retry/conflict behavior, size bounds and this
