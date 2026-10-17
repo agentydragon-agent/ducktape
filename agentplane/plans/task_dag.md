@@ -295,6 +295,7 @@ flowchart TD
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement]
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
+    HARNESS_LIFECYCLE_OWNERSHIP[Decision: the runner owns harness start, section 13] --> RUNNER_HARNESS_OBJECTS_DESIGN
 ```
 
 ### `MULTIAGENT_MODEL` — shared identity and authority vocabulary
@@ -598,7 +599,7 @@ does not grant history read, messaging, credentials or execution of another prin
 
 ### `RUNNER_HARNESS_OBJECTS_DESIGN` — decide process diagnostics and placement policy
 
-**Conditional design decision; operator, 2026-10-15 PDT.** Evaluate exposing process incarnations as
+**Conditional design decision; operator, 2026-10-15 PDT. Blocked on `HARNESS_LIFECYCLE_OWNERSHIP` (2026-10-17 UTC): the lifecycle model is shared with idle suspend and resume. The operator's recalled direction is that the runner alone owns every harness process, with no caller-visible kill or restart RPCs, only Session-level actions and a status or info endpoint.** Evaluate exposing process incarnations as
 diagnostic objects with hosted Sessions and status, while the Session API owns public lifecycle
 (and a store API exists only if its public need is selected).
 Use the merged Codex multi-thread test and Claude's separate-store single-root characterization
@@ -1160,6 +1161,8 @@ flowchart TD
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
+    RUNNER_IDLE_HARNESS_REAP[Blocked: the runner reaps and restarts idle harness processes]
+    HARNESS_LIFECYCLE_OWNERSHIP --> RUNNER_IDLE_HARNESS_REAP
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
@@ -1172,7 +1175,8 @@ flowchart TD
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
     APP_NATIVE_RESUME_CONTRACT[Decision: durable explicit resume]
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
-    IDLE_SUSPEND_UI_DRIVE[Operator: drive auto-suspend and send-to-resume in staging]
+    IDLE_SUSPEND_UI_DRIVE[Blocked: drive auto-suspend and send-to-resume in staging, after the harness lifecycle decision]
+    HARNESS_LIFECYCLE_OWNERSHIP[Decision: the runner owns harness start, section 13] --> IDLE_SUSPEND_UI_DRIVE
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
 
@@ -1451,6 +1455,10 @@ rather than a second release pipeline. Check `RUNNER_HARNESS_DELIVERY_DESIGN` be
 
 ### `IDLE_SUSPEND_UI_DRIVE` — drive auto-suspend and send-to-resume in staging
 
+**Blocked on `HARNESS_LIFECYCLE_OWNERSHIP` (operator, 2026-10-17 UTC).** How suspend, resume and wake on send interact with
+harness shutdown and resume, and whether those stay commands at all, decides what the drive exercises; drive
+it after that decision. The rest of this node stands.
+
 **Operator, 2026-10-15 UTC: assigned to the operator, not dispatchable to a worker.** A human drives the
 whole loop through the staging web app on a real Session and reports what the UI actually does: the
 Sandbox goes idle, suspends on its own, and a message typed into the composer reaches that stopped
@@ -1485,6 +1493,16 @@ background process, a terminal and workspace files, and a crash restart (no susp
 differently.
 
 Related: [lifecycle coverage](../x/k3s_env/README.md#lifecycle-coverage).
+
+### `RUNNER_IDLE_HARNESS_REAP` — the runner reaps and restarts idle harness processes
+
+**Blocked on `HARNESS_LIFECYCLE_OWNERSHIP`; unscheduled (operator, 2026-10-17 UTC: "would be nice").** An idle
+Claude process, one per main Session, can hold more RAM than an idle Codex app server that hosts many
+agents. If the runner owns every harness process and callers act only per Session, it can reap an idle
+process and start it again when input arrives, with no caller-visible kill or restart. Open: what counts
+as idle for a process (not `idle_since` alone, which is display and delivery timing), the threshold, and
+that a reap must not end a turn, a background process or a Session another caller is waiting on. Measure
+idle RAM per harness first.
 
 ### `RUNNER_BUSY_TRACKING` — the runner counts terminals and background processes as busy
 
@@ -1558,7 +1576,19 @@ flowchart TD
     HISTORY_DATABASE_RENAME[Deferred: rename the sandbox_service database and role]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
+    RUNNER_RENAME[Decision, unscheduled: a better name than runner]
 ```
+
+### `RUNNER_RENAME` — a better name than "runner"
+
+**Decision, then rename; unscheduled, low priority (operator, 2026-10-17 UTC: "for later").** The operator
+finds "runner" a poor name for the process that supervises a Sandbox's Sessions and harnesses.
+Candidates: "sandbox manager", "environment manager" (Claude Code web's term) and "supervisor". Choose the
+name first; the rename follows as its own change. It would reach the `Runner` and `RunnerControl` protos
+and services (`runner.proto`, `runner_control.proto`, `runner_ingress.proto`), token audiences, the
+Gateway's runner proxy and control tunnel, images and the `agentplane/runner` package, Leases and
+Services named for it, and docs. Audiences and wire names are a coordinated wire change, not a find and
+replace.
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
@@ -1697,6 +1727,8 @@ flowchart LR
     RUNNER_STORE_SESSION_IDENTITY[Candidate: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
     HARNESS_LIFECYCLE_OWNERSHIP[Decision: the runner owns harness start]
+    RUNNER_IDLE_HARNESS_REAP[Blocked: the runner reaps and restarts idle harness processes, section 7]
+    IDLE_SUSPEND_UI_DRIVE[Blocked: drive auto-suspend and send-to-resume in staging, section 7]
     APP_NATIVE_RESUME_CONTRACT[Decision: durable explicit resume, section 7]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement, section 3]
@@ -1708,10 +1740,12 @@ flowchart LR
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
     HARNESS_IDENTITY_DESIGN --> RUNNER_STORE_SESSION_IDENTITY
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
+    HARNESS_LIFECYCLE_OWNERSHIP -. sequences the idle-suspend drive after it, section 7 .-> IDLE_SUSPEND_UI_DRIVE
     HARNESS_LIFECYCLE_OWNERSHIP -. would supersede .-> APP_NATIVE_RESUME_CONTRACT
     HARNESS_LIFECYCLE_OWNERSHIP -. would drop the app ResumeSession carve-out .-> PROXY_START_METHODS_DISPATCHER_ONLY
     HARNESS_LIFECYCLE_OWNERSHIP -. folds open, resume and stop into .-> HARNESS_IDENTITY_DESIGN
-    HARNESS_LIFECYCLE_OWNERSHIP -. gives the process lifecycle to .-> RUNNER_HARNESS_OBJECTS_DESIGN
+    HARNESS_LIFECYCLE_OWNERSHIP --> RUNNER_HARNESS_OBJECTS_DESIGN
+    HARNESS_LIFECYCLE_OWNERSHIP --> RUNNER_IDLE_HARNESS_REAP
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
     K3S_VM_IMAGE -. real VM path prerequisite .-> CNPG_FREE_K3S_INTEGRATION_TIER
 ```
