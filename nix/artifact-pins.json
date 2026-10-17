@@ -49,8 +49,8 @@
       "sha256": "4MMKLXU8qlpcdWVHLCFMiY9N/2oHI1pbgu0zTlJJRG0="
     },
     "skill-cluster_health": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-dd6165877050/cluster_health.skill",
-      "sha256": "3WFlh3BQ/Ug7a/nKaOnsu9r43tB9Wi5gFawd7NCUEPo="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-fe760eac7e67/cluster_health.skill",
+      "sha256": "/nYOrH5nhsis1bABE6B5HP5tOZGBwBlWYxMQ0X6ciNQ="
     },
     "skill-cnpg_region_switch": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cnpg_region_switch-eb41e4b4bbb3/cnpg_region_switch.skill",
@@ -77,8 +77,8 @@
       "sha256": "7qKAhNImdqfKEtkkjwaozgat7sMV1Q7W9nXI2ajIuYc="
     },
     "skill-web_selfcheck": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-web_selfcheck-e79409043c8f/web_selfcheck.skill",
-      "sha256": "55QJBDyPHn05biKAqe5WZWXws5PeC2SwZFX7YJkUk9g="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-web_selfcheck-ab628a54690f/web_selfcheck.skill",
+      "sha256": "q2KKVGkPSF8/IxH+FoJlYg8Lyh/L9WUura4KwO5J7vM="
     },
     "skill-workspace-gc": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-workspace-gc-fba0cef155d7/workspace-gc.skill",
@@ -213,8 +213,8 @@
       "sha256": "0y01PafVT/rkELxSUd+cXbGbDQEA2nINYRq/VWcTSCU="
     },
     "skill-seaweed_operator": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-6249a6ee9e7e/seaweed_operator.skill",
-      "sha256": "Ykmm7p5+JP8DndK2z6O5AYGTRHBWmjybF5awL9ZqeHc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-64e2b5617599/seaweed_operator.skill",
+      "sha256": "ZOK1YXWZHuWDqm2IRbzwA9WL2fet3Es0CZSi1TgUlKI="
     },
     "skill-grafana": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-9d7515a755ba/grafana.skill",
