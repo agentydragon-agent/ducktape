@@ -407,6 +407,11 @@ RoleBinding remain Flux-owned. This is a
 Pod exec and port-forward sessions, create/patch/delete PolicySets and
 PolicyBindings, and mint the `agentplane-agent` ServiceAccount token used
 by the testing app. It also reads testing SandboxTemplates, Pods, and Pod logs.
+For the Dispatcher acceptance probes it mints tokens for exactly the `app` and
+`notifications` ServiceAccounts (the Gateway's wake callers, so a token bound to a
+live Pod authenticates as that caller to the Dispatcher), patches and scales only the
+`runner-gateway` Deployment, and deletes Pods, which cannot be named ahead of time
+and so covers every testing Pod.
 It grants no write access in `agentplane-staging` and no direct Kubernetes
 Secret read. Pod exec can expose data mounted in testing Pods, and a holder can
 operate every Sandbox in the testing namespace and use that environment's

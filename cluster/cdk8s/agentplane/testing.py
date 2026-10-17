@@ -49,6 +49,7 @@ from cluster.cdk8s.agentplane import (
     notifications,
     policy_controller,
     policy_controller_rbac,
+    runner_gateway,
     sandbox_pod,
 )
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
@@ -302,6 +303,26 @@ _TOKEN_RULE = RolePolicyRule(
     resources=[named_resource("", "serviceaccounts/token", "agentplane-agent")], verbs=["create"]
 )
 
+# `//agentplane/acceptance:test_dispatcher_deployed` calls the Dispatcher as the app and notifications
+# and fails the Runner Gateway over between replicas. A token bound to a live Pod is that Pod's account
+# toward the Gateway, so the token rule names exactly the Gateway's two wake callers rather than
+# `serviceaccounts/token` in general. Pod `delete` cannot name the Gateway's Pod ahead of time and covers
+# every Pod here; their owners recreate them.
+_DISPATCHER_ACCEPTANCE_RULES = [
+    RolePolicyRule(
+        resources=[
+            named_resource("", "serviceaccounts/token", app_component.NAME),
+            named_resource("", "serviceaccounts/token", notifications.NAME),
+        ],
+        verbs=["create"],
+    ),
+    RolePolicyRule(resources=[named_resource("apps", "deployments", runner_gateway.NAME)], verbs=["patch"]),
+    RolePolicyRule(
+        resources=[named_resource("apps", "deployments/scale", runner_gateway.NAME)], verbs=["get", "patch", "update"]
+    ),
+    RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["delete"]),
+]
+
 # testing's MCP acceptance scenario additionally creates, expires, and deletes the
 # PolicySet/PolicyBinding its Sandbox is auto-approved under, reading the binding's
 # ActionsReady condition to know the Action Service has seen it.
@@ -313,8 +334,8 @@ _ACTION_POLICY_RULE = RolePolicyRule(
 
 class AgentRbac(Construct):
     """The operator Role/RoleBinding an agent needs to drive Agentplane **testing**
-    without a human: Sandbox lifecycle, exec/port-forward into runner Pods, and the
-    token used to call the app's own API.
+    without a human: Sandbox lifecycle, exec/port-forward into runner Pods, the
+    token used to call the app's own API, and what the Dispatcher acceptance probes need.
 
     **Testing only, deliberately.** `agentplane-testing` runs Dex-backed fake OAuth and
     credentialless MCP fixtures -- nothing here reaches a real account. `agentplane-staging`
@@ -333,7 +354,7 @@ class AgentRbac(Construct):
             self,
             "role",
             metadata=ApiObjectMetadata(name=TESTING_OPERATOR_ROLE_NAME, namespace=env.namespace),
-            rules=[*_SANDBOX_RULES, _ACTION_POLICY_RULE, _TOKEN_RULE],
+            rules=[*_SANDBOX_RULES, _ACTION_POLICY_RULE, _TOKEN_RULE, *_DISPATCHER_ACCEPTANCE_RULES],
         )
 
         RoleBinding(

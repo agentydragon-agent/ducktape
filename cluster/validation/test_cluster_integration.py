@@ -644,6 +644,11 @@ def test_agent_permission_denials(
         for verb in ("create", "patch", "delete")
     }
     denied |= {
+        Permission("agentplane-testing", "", "serviceaccounts/token", "create", "sandbox-controller"),
+        Permission("agentplane-testing", "apps", "deployments", "patch", "app"),
+        Permission("agentplane-staging", "apps", "deployments/scale", "patch", "runner-gateway"),
+    }
+    denied |= {
         Permission(namespace, "kustomize.toolkit.fluxcd.io", "kustomizations", "patch")
         for namespace in ("flux-system", "ducktape-flux", "agentplane-testing", "agentplane-staging")
     }
