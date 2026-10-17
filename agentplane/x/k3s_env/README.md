@@ -73,6 +73,118 @@ constructs, one plain PostgreSQL instance, and a pinned K3s binary. Electric and
 frontend remain outside this test. Earlier snapshots below use different source revisions;
 only each explicitly paired experiment supports its own comparison.
 
+### Go LLM ingress comparison, 2026-10-17
+
+Two fresh lifecycle actions per variant used source `b67c382141da29f1474f3468c87fb5839b26a0ed`.
+The Go variant used that source unchanged. The Python control restored only `agentplane/llm_ingress/`
+from before #10848 (`5b3d9a1d2cda2b36650a64d7d7930c1503512bcc`); the Go Gateway, shared workload
+authentication and relay remained unchanged. Both ran
+`bbr test --nocache_test_results --runs_per_test=2 --test_output=errors //agentplane/x/k3s_env:test_lifecycle`.
+Assertions, timeouts and the lifecycle test source were unchanged. All four actions passed all four cases.
+
+| Mean of two runs (seconds)                                      | Python ingress | Go ingress |
+| --------------------------------------------------------------- | -------------: | ---------: |
+| TestRunner execution                                            |        218.700 |    228.266 |
+| Create and wait for Sandbox Ready, including shared stack setup |        146.747 |    156.843 |
+| Bootstrap check                                                 |          8.320 |      8.346 |
+| Suspend and resume                                              |         14.650 |     14.670 |
+| Delete                                                          |         12.945 |     11.903 |
+
+The action ranges overlap: Python **207.279–230.122 s**, Go **219.744–236.788 s**. Both variants
+used the same two workers, with opposite directions per worker: Python/Go were 207.279/236.788 s
+on `5ac56964-24d3-492a-9ea0-d1af3ecf75d1` and 230.122/219.744 s on
+`1e09c634-7833-4073-8376-aee72b0db4fc`. Go ran first, then Python, without alternating variants.
+
+**No lifecycle speedup is established.** Go averaged 9.565 s (4.4%) slower in this sample, but two
+runs per variant and uncontrolled order/cache/scheduling effects do not establish a regression.
+This model-free test measures stack startup and Sandbox lifecycle, not LLM throughput or model latency.
+The earlier post-relay Go mean was 232.966 s; the current 228.266 s is 2.0% lower, but that historical
+comparison includes other source/environment changes and cannot isolate the ingress rewrite.
+
+Execution metadata and test XML are in the [Go invocation](https://app.buildbuddy.io/invocation/4f62d23a-3847-4a2d-8f86-78114fb5f0e2)
+and [Python control invocation](https://app.buildbuddy.io/invocation/503ae967-96c4-4d1a-b64e-d7cd170d0f46).
+[Raw measurements](llm-ingress-go-comparison-2026-10-17.json) retain per-case timings, workers,
+source and the control patch digest. The control can be reproduced by restoring `agentplane/llm_ingress/` from the parent of #10848
+on the stated base. These unprofiled runs do not separate import/unpack from service startup.
+
+### Startup profile, 2026-10-17
+
+A fresh [profiled lifecycle run](https://app.buildbuddy.io/invocation/22cdbd11-6ee9-4bbf-b25c-6b811e3e4021)
+passed all four cases on source `c8f0df8c77b2b843308e1f9855f07e8562111c31`, after the Go directory
+collapse. A temporary cProfile wrapper around `pytest_bazel.main()` and its output-helper dependency
+were removed before publication; the instrumentation patch SHA-256 is
+`14250f41980de275234be16317bfb4ef9f643088802b03aa7ebd03ccc60867fa`.
+The invocation retains `lifecycle.prof`, `lifecycle-pstats.txt`, `k3s.log` and test XML;
+[extracted measurements](startup-profile-2026-10-17.json) retain the source, worker and timings.
+
+| Measurement                                                 | Seconds |
+| ----------------------------------------------------------- | ------: |
+| TestRunner execution                                        | 243.448 |
+| cProfile total                                              | 210.493 |
+| `running_stack` setup and teardown                          | 167.849 |
+| `K3s.start`                                                 |  18.642 |
+| `K3s.import_images`                                         | 101.475 |
+| ↳ `tarfile.add`                                             |  30.881 |
+| ↳ importer process exit wait after streaming                |  70.561 |
+| `running_stack` calls to kubectl for apply and availability |  43.686 |
+
+These are inclusive function times: the import subrows are inside `import_images`, and startup,
+import, apply/availability and teardown are inside `running_stack`. Do not sum every row. The
+profile begins inside the test entry point; the action additionally includes launcher/venv setup,
+imports before the profiler, and profile-output work.
+
+Image import is the largest measured fixture phase: **41.7% of action time**. Most import time
+is the **70.6 s wait after the full tar stream is sent**; tar streaming takes 30.9 s and includes
+pipe backpressure. This does not identify containerd's CPU work or distinguish decompression,
+content ingestion and snapshot unpacking. The 43.7 s kubectl aggregate includes resource application
+and Deployment availability checks, not only process initialization; it does not assign a startup
+cost to each service.
+
+#### Containerd import tail
+
+A [follow-up diagnostic run](https://app.buildbuddy.io/invocation/5604804f-51fd-4abf-ac66-dc579abcf8ff)
+on `44298d8645d25ecb8d3914d35b8608f0c2ef55f9` passed all four lifecycle cases in 243.614 s.
+Temporary configuration enabled a Unix debug socket in the pinned containerd `v2.0.5-k3s2`.
+Immediately after closing the tar input stream, concurrent requests collected a 45-second CPU
+profile, a 10-second Go execution trace and goroutine stacks. The invocation retains the raw
+profiles and `ctr-import-help.txt`; [extracted measurements](containerd-tail-profile-2026-10-17.json)
+include artifact hashes, instrumentation hash and analysis commands. No instrumentation or debug
+socket configuration remains in the test. Waiting for capture completion can extend the import
+phase, so this diagnostic action is not a new uninstrumented timing sample.
+
+| Containerd CPU profile, 45.18 s window | CPU-seconds | Share of samples |
+| -------------------------------------- | ----------: | ---------------: |
+| Total sampled CPU                      |      132.11 |             100% |
+| Unpacker → filesystem apply            |      114.08 |           86.35% |
+| `os.File.Write`, cumulative            |       89.55 |           67.78% |
+| SHA-256 block hashing, flat            |        6.25 |            4.73% |
+
+The cumulative rows overlap: writes occur inside filesystem apply. The captured tail is doing
+parallel layer extraction, averaging about 2.9 containerd CPU cores during the sample. This identifies
+substantial filesystem-write work in the unpacker; it does not establish that more concurrency helps.
+The pinned `ctr images import` defaults to the transfer API (`--local=false`), consistent with the
+profile's `localTransferService.importStream` and `Unpacker.unpack` stacks.
+
+The 10-second trace also contains aggregate syscall delays of 65.02 s in writes, 10.67 s in
+`openat` and 2.15 s in `fdatasync`. Its 154.81 s in child-process waits comes from
+`archive/compression.cmdStream`, so decompressor children are active too. These are summed across
+parallel goroutines, not additional wall seconds or independent phases. The parent CPU profile
+excludes those child processes; their waits can include decompression and pipe backpressure from
+extraction, so they do not prove decompression is the limiting CPU cost.
+
+**Pinned-runtime constraint:** the [v2.0.5-k3s2 transfer plugin configuration](https://github.com/k3s-io/containerd/blob/v2.0.5-k3s2/plugins/transfer/plugin.go)
+exposes download/upload limits, not `max_concurrent_unpacks`. Its [import path](https://github.com/k3s-io/containerd/blob/v2.0.5-k3s2/core/transfer/local/import.go)
+constructs the unpacker without `WithLimiter`; the [unpacker](https://github.com/k3s-io/containerd/blob/v2.0.5-k3s2/core/unpack/unpacker.go)
+treats a nil limiter as unrestricted. A current-version concurrency setting cannot be assumed to
+exist on this pin, and changing download limits does not bound this archive-import unpack work.
+
+**Next experiment:** shared Python package layers (`K3S_SHARED_PACKAGE_LAYERS`) directly target
+repeated file extraction. For `K3S_IMPORT_CONCURRENCY`, a bounded-tuning comparison first needs a
+runtime exposing that control; the pinned CLI's supported `--local` import mode is a separate native
+pipeline comparison, not a concurrency knob. Keep inputs, lifecycle assertions and timeouts fixed
+for any importer comparison, and count deferred unpack through Pod readiness. No runtime upgrade,
+import-mode change, scheduler or measured saving is selected by this profile.
+
 ### Harness-specific runner comparison, 2026-10-16
 
 Base source: `3fba7794f4278bc66d41d9ceb11dd2ee08656ac3`, including the Service-networking revert.
@@ -190,10 +302,9 @@ rest of the net stack reduction is in other image layers. Do not report the side
 size as removed bytes. Raw inventories record every image and layer digest for the [Python control](image-sizes-2026-10-16-egress-sidecar-python.json)
 and [exact-head Go action](image-sizes-2026-10-16-egress-sidecar-go.json).
 
-The Go model-free lifecycle passes; the separate real Qwen/Claude model smoke has not yet run for
-this PR. The local BuildBuddy client could not resolve `remote.buildbuddy.io` before dispatch, so no
-credential was sent through another path. Keep that smoke pending until it can run through the
-authorized BuildBuddy route.
+The [real Qwen/Claude model smoke](https://app.buildbuddy.io/invocation/2e0a2213-a09d-48fa-ab47-95f3fa70c63b)
+passed on rebased relay revision `b2b339d243`: one fresh test, 268.7 s TestRunner execution,
+with `answer.txt` containing `pong`. This is end-to-end functional evidence, not a matched latency comparison.
 
 `import_images` includes tar streaming, pipe backpressure and containerd import/unpack work;
 it is not Python CPU time. `running_stack` measures its executing setup/teardown generator,

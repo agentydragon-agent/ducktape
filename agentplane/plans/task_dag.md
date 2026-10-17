@@ -985,6 +985,12 @@ the expected saving from rewriting the streamer. Exit: a matched comparison of i
 resource use and total lifecycle time with unchanged lifecycle assertions, and a recommendation
 to adopt or discard the concurrency change.
 
+The [native containerd profile](../x/k3s_env/README.md#containerd-import-tail) identifies parallel
+layer extraction and filesystem writes. The pinned `v2.0.5-k3s2` transfer importer has no unpack-limit
+configuration and constructs an unrestricted unpacker. A bounded-tuning experiment needs a runtime
+with that control; supported `--local` mode would instead compare native pipelines. The experiment
+and adopt/discard decision remain open; no upgrade or import-mode change is selected.
+
 ### `RUNNER_HARNESS_DELIVERY_DESIGN` — choose how runners obtain harness binaries
 
 **Decision; operator, 2026-10-16 PDT: investigate for k3s test latency.** Decide how a runner obtains
