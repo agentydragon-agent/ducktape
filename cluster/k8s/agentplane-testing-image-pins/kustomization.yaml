@@ -22,7 +22,7 @@ images:
     newTag: devel-20261017123847-b5783f3 # {"$imagepolicy": "flux-system:agentplane-runner-gateway-queue-migrate:tag"}
   # Initial publication on devel supplies the tag through Flux image automation.
   - name: git.allegedly.works/ducktape-ci/runner
-    newTag: devel-20261017122651-23dd881 # {"$imagepolicy": "flux-system:runner:tag"}
+    newTag: devel-20261017125041-66b37c8 # {"$imagepolicy": "flux-system:runner:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
     newTag: devel-20261017073323-704bdc4 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
