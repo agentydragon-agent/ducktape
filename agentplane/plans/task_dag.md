@@ -584,9 +584,11 @@ app/Sandbox Service database changes requires its own migration safety review.
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
-    K3S_STARTUP_COST[Candidate: profile remaining containerd import and startup cost]
+    K3S_SHARED_PACKAGE_LAYERS[Candidate: share Python package layers]
+    K3S_PYTHON_INITIALIZATION[Candidate: reduce Python initialization cost]
+    K3S_IMPORT_CONCURRENCY[Candidate: native containerd import and unpack concurrency]
+    RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
-    K3S_BUNDLED_SERVICES_SPIKE -. timing evidence .-> K3S_STARTUP_COST
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
@@ -635,14 +637,69 @@ frontend a custom frontend for Claude Code web sessions: show their conversation
 messages, by shimming the web interface's control protocol. Builds on the viewer and syncer under
 `devinfra/` and the reverse-engineering in `agentydragon/gaffer-private`.
 
-### `K3S_STARTUP_COST` — reduce remaining isolated-cluster startup cost
+### K3s startup experiment constraints
 
-**Candidate; no worker assigned.** Profile remaining containerd import/unpack and deployment
-readiness costs, then remove the measured bottleneck using existing Bazel/OCI rules where possible.
-The shared Python interpreter layers and matched lifecycle comparison are implemented; evidence
-belongs in [the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
+The independent candidates below were requested by the operator on 2026-10-16 PDT; none waits
+for the others. Use equivalent source/scenarios and report transfer, import/unpack, process
+readiness and total test time separately in
+[the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
 Preserve assertions and timeouts. The expensive lifecycle workflow stays **manual-only**;
-automatic triggers require a separate reviewed change. Language rewrites require Rai's decision.
+automatic triggers require a separate reviewed change. Language rewrites require Rai's decision;
+rank them by unique image bytes removed and startup time on the dependency chain. Remaining
+Python services still need the shared interpreter.
+
+Keep the fixture declarative: supply images and manifests, let Kubernetes reconcile, wait
+for readiness, then test. Startup dependency ordering belongs to Kubernetes; do not add
+PostgreSQL-first sequencing or a custom parallel import/unpack scheduler to the test harness.
+
+### `K3S_SHARED_PACKAGE_LAYERS` — share third-party Python package layers
+
+**Candidate; no worker assigned; no prerequisites.** Use canonical package paths to share
+third-party Python layers across service and migration images with existing Bazel/OCI rules
+where possible. The interpreter layer is already shared. Preserve each binary's declared
+dependency closure and import behavior. Exit: a matched comparison of distinct layer bytes,
+import/unpack and total lifecycle time, passing affected import checks and lifecycle assertions,
+and a recommendation to adopt or discard the package-layer change.
+
+### `K3S_PYTHON_INITIALIZATION` — reduce Python process initialization cost
+
+**Candidate; no worker assigned; no prerequisites.** Profile initialization in the remaining
+Python services and compare narrower imports or precompiled bytecode against added image bytes.
+The app already ships bytecode. Exit: a profile identifying the initialization work removed,
+passing affected service and lifecycle coverage, and a matched comparison of process readiness
+and total lifecycle time including any extra image transfer/unpack cost.
+
+### `K3S_IMPORT_CONCURRENCY` — measure native containerd import and unpack concurrency
+
+**Candidate; no worker assigned; no prerequisites.** Evaluate containerd's own concurrency
+configuration against the current combined stream, preserving distinct-blob deduplication. Count
+deferred unpacking through Pod readiness so moving work later is not reported as a saving.
+The profiled tar-streaming time includes pipe backpressure; it is not a CPU-cost estimate or
+the expected saving from rewriting the streamer. Exit: a matched comparison of import/unpack,
+resource use and total lifecycle time with unchanged lifecycle assertions, and a recommendation
+to adopt or discard the concurrency change.
+
+### `RUNNER_HARNESS_DELIVERY_DESIGN` — choose how runners obtain harness binaries
+
+**Decision; operator, 2026-10-16 PDT: investigate for k3s test latency.** Decide how a runner obtains
+a needed harness independently of its image: digest-pinned downloads from an independent
+Agentplane service or directly from OpenAI/Anthropic distribution endpoints, or separately pinned
+harness OCI images made available through mounts or an init container copying into a shared volume.
+Operator preference: eventual delivery should decouple harnesses from the runner image; the
+narrower test images are an interim optimization. Decide delivery and service/cache ownership. Any serving service must
+respect the backend dependency rule; the integration app cannot own this path.
+
+The [image-split comparison](https://github.com/agentydragon/ducktape/blob/41c322895f/agentplane/x/k3s_env/README.md#harness-specific-runner-comparison-2026-10-16)
+measures removal of unused harness payload; it does not measure runtime delivery of a needed harness.
+Its profiles and inventories are in [#10813](https://github.com/agentydragon/ducktape/pull/10813).
+
+Exit: a measured recommendation and explicit operator choice. Compare equivalent scenarios and
+pins, separating image build/upload, action-input transfer, containerd import/unpack, harness
+fetch/cache hits and first usable Session. Include cold runs: moving bytes from an image to a
+service may only move the same transfer later, and fetching upstream still costs network and
+extraction time. Specify version/digest verification, atomic installation, concurrent requests,
+cache scope, unavailable-artifact behavior and allowed egress for any runtime-delivery proposal.
+No new artifact service or runtime-download implementation is selected by this node.
 
 ### `K3S_BUNDLED_SERVICES_SPIKE` — measure a less isolated control plane in real k3s
 
@@ -924,7 +981,7 @@ flowchart TD
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_POD[Blocked: a Pod takes runner and tools from separate images]
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[Blocked: a guest takes runner and tools from separate images]
     RUNNER_LAYERING_VM --> K3S_VM_IMAGE[Blocked: build a lightweight guest disk in Bazel]
-    K3S_STARTUP_COST[k3s startup cost, section 5] -. related .-> K3S_VM_IMAGE
+    RUNNER_HARNESS_DELIVERY_DESIGN[harness delivery, section 5] -. related .-> K3S_VM_IMAGE
 ```
 
 ### `SANDBOX_GENERIC_SPLIT` — separate the generic Sandbox from the runner's sealing
@@ -1071,9 +1128,10 @@ artifact the spike exists to avoid, and one that cannot carry the code under tes
 
 Make the test build a guest disk itself, so it runs the runner **from the tree under test** rather than a
 published image. The Pod-side pattern already exists there: `//agentplane/x/k3s_env:runner_image` is
-`debian_trixie_slim` plus a `pkg_tar` of the Bazel-pinned Codex and Claude binaries, built with no registry
-credential, and the spike's own note records that the Nix-built image is the full-toolbox one. Something of
-that shape as an image the test boots — with KubeVirt installed in the spike, or the VM path exercised
+`debian_trixie_slim` plus the Bazel-built runner without native harnesses; `:runner_claude_image` adds
+only pinned Claude for the model smoke. Neither needs a registry credential. Build the guest from the
+tree under test and supply the required harness through the layering design. An image the test boots
+— with KubeVirt installed in the spike, or the VM path exercised
 against the host's KVM — is the deliverable, not a bigger image. Retain the production guest's
 delegated cgroup resource limits if this fixture exercises `VM_HARNESS_RESOURCE_LIMITS`: a lightweight
 test must not omit the limits being accepted.
@@ -1081,8 +1139,8 @@ test must not omit the limits being accepted.
 Worth stating in the design, because it argues past the spike: a Bazel-built guest is worth more than the
 test. Once a guest root filesystem is an `oci_image` target, `RUNNER_LAYERING_VM` needs no Nix to build a
 candidate runtime, CI can build a guest without Attic, and a runtime experiment becomes an additive target
-rather than a second release pipeline. Check `K3S_STARTUP_COST` before adding image weight to that
-environment.
+rather than a second release pipeline. Check `RUNNER_HARNESS_DELIVERY_DESIGN` and
+`K3S_SHARED_PACKAGE_LAYERS` before adding image weight to that environment.
 
 ### `SANDBOX_IDLE_EXPIRY` — the controller suspends an idle Sandbox
 
