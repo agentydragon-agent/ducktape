@@ -97,6 +97,46 @@ resource "routeros_system_user" "monitoring" {
   comment  = "Read-only RouterOS exporter; password minted by ESO, see tf/gitops/home-switch."
 }
 
+# The SSH MCP private key is held in its own SOPS-encrypted Secret. Tofu installs only
+# its public half here. This group gives Agentplane broad configuration access over SSH while
+# denying every other login service and RouterOS user management, so its password stays empty.
+resource "routeros_system_user_group" "agentplane_ssh" {
+  name = "agentplane-ssh"
+  policy = [
+    "ssh",
+    "reboot",
+    "read",
+    "write",
+    "test",
+    "sniff",
+    "sensitive",
+    "!ftp",
+    "!local",
+    "!password",
+    "!policy",
+    "!rest-api",
+    "!romon",
+    "!telnet",
+    "!web",
+    "!winbox",
+    "!api",
+  ]
+}
+
+resource "routeros_system_user" "agentplane" {
+  name     = "agentplane"
+  group    = routeros_system_user_group.agentplane_ssh.name
+  address  = var.lan_cidr
+  password = ""
+  comment  = "Agentplane SSH MCP; managed by tf/gitops/home-switch."
+}
+
+resource "routeros_system_user_sshkeys" "agentplane" {
+  user    = routeros_system_user.agentplane.name
+  key     = var.agentplane_ssh_public_key
+  comment = "Agentplane SSH MCP home-switch key."
+}
+
 # Log history on the switch, so a log puller can backfill what happened while it couldn't reach
 # the switch. RouterOS keeps only 1000 lines in RAM by default, lost on reboot: keep 10k in RAM
 # and a rotating 5 x 10k-line copy on flash (about 5 MB). Severities only, never `debug`, which

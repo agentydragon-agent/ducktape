@@ -96,6 +96,8 @@ spec:
   vars:
     - name: switch_address
       value: 192.168.1.100
+    - name: agentplane_ssh_public_key
+      value: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBysHhQLSyUa+4vL7Pj404OGL92nyjAp9ZsOjcsFAn6a
     - name: lan_cidr
       value: 192.168.1.0/24
     - name: syslog_address
