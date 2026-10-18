@@ -15,7 +15,9 @@ The [tentative implementation direction](multiagent_communication.md#tentative-i
 is service-enforced Session-access `PolicySet` rules assigned through existing `PolicyBinding`s,
 with shared evaluation code and enforcement by History on its own API. Exact schemas remain open;
 the representation may be revisited if implementation does not work well. No broader auth-engine
-replacement is a prerequisite. Sending and reading remain independent.
+replacement is a prerequisite. Sending and reading remain independent, and the first rule schema
+carries sending only ([not bundled](multiagent_communication.md#tentative-implementation-direction)),
+so reads get their own rule type or join it when this policy reopens.
 
 ## What is protected
 
@@ -33,7 +35,9 @@ representation must keep the facts needed for authorized historical reads after 
 objects disappear. Follow the [Kubernetes-resource storage preference](multiagent_communication.md#target-collections-and-launch-enrollment),
 with alternatives allowed on concrete implementation friction; historical membership and policy
 resource lifetime after Sandbox deletion remain the open design question
-`HISTORY_ACCESS_AFTER_DELETION` in [the task DAG](task_dag.md).
+`HISTORY_ACCESS_AFTER_DELETION` in [the task DAG](task_dag.md). The operator has tentatively floated
+authorizing the archive [apart from live objects](multiagent_communication.md#option-authorize-the-archive-apart-from-live-objects),
+held with the other read decisions.
 
 ## Scope, identity and enforcement
 
