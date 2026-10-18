@@ -45,13 +45,14 @@ import {
 } from "./client";
 import { ActionPolicySection, BoundPolicySection } from "./actions/policy";
 import { Disclosure, DisclosureBody } from "./disclosure";
-import { EgressSection } from "./egress";
+import { EgressLog } from "./egress";
 import { JsonView } from "./json_view";
 import { MarkGlyph } from "./mark_glyph";
 import { durationLabel } from "./format_time";
 import { TimeAgo } from "./time_ago";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, useLive, type SandboxSnapshot } from "./live";
+import { PolicyBindingsSection } from "./policy_bindings";
 import { RawSwitch } from "./raw_switch";
 import { SandboxConsole } from "./sandbox_console";
 import {
@@ -129,7 +130,7 @@ function lastObservedHarnessState(thread: ThreadView): string {
 }
 
 // The page's tabs, named in the URL (`?tab=`) so a tab can be linked to and survives a reload.
-const TABS = ["sessions", "egress", "policy", "status", "console"] as const;
+const TABS = ["sessions", "egress_log", "policy", "status", "console"] as const;
 type Tab = (typeof TABS)[number];
 const DEFAULT_TAB: Tab = "sessions";
 
@@ -817,17 +818,21 @@ export function SandboxPage({
       >
         <Tabs.List>
           <Tabs.Tab value="sessions">Sessions</Tabs.Tab>
-          <Tabs.Tab value="egress">Egress</Tabs.Tab>
+          <Tabs.Tab value="egress_log">Egress log</Tabs.Tab>
           <Tabs.Tab value="policy">Policies</Tabs.Tab>
           <Tabs.Tab value="status">Status</Tabs.Tab>
           {vmConsoleAvailable && <Tabs.Tab value="console">Console</Tabs.Tab>}
         </Tabs.List>
-        <Tabs.Panel value="egress" pt="sm">
-          <EgressSection name={name} bindings={live.snapshot?.bindings ?? null} />
+        <Tabs.Panel value="egress_log" pt="sm">
+          <EgressLog name={name} />
         </Tabs.Panel>
         <Tabs.Panel value="policy" pt="sm">
           <Stack gap="md">
-            <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
+            <PolicyBindingsSection sandbox={name} bindings={live.snapshot?.bindings ?? null} />
+            <Stack gap="xs">
+              <Title order={5}>Action policy</Title>
+              <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
+            </Stack>
             <BoundPolicySection policy={live.snapshot?.bound_policy ?? null} />
           </Stack>
         </Tabs.Panel>
