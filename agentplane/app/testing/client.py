@@ -12,7 +12,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from http import HTTPStatus
 from types import TracebackType
 from typing import Any, Self
@@ -273,7 +273,7 @@ class Client:
 
     async def events(
         self, thread_id: UUID, *, after: int, read_seconds: float
-    ) -> AsyncIterator[event_log_pb2.EventEntry]:
+    ) -> AsyncGenerator[event_log_pb2.EventEntry]:
         """The Thread's events from `after`, ending when the app sends the `end` frame.
 
         A stream that drops without one -- an app rollout or crash, a closed connection, a `502`, `503` or `504`, or the proxy's plain-text `403`, while no replica is up -- is reopened after the last entry yielded, so a
