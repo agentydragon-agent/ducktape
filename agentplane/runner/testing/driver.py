@@ -42,8 +42,8 @@ async def refusal(operation: Awaitable[object]) -> grpc.StatusCode:
 
 class SessionFollow:
     """One session's Events after a cursor, from the snapshot `attached` on. Reading ends once the
-    session has nothing more to run: its harness exited, its setup or launch failed, or it was stopped
-    when the follow opened. A later run of the harness is a new follow's."""
+    session has nothing more to run: its harness exited or its setup or launch failed. A command
+    submitted through this follow may wake a dormant session and continue the same event stream."""
 
     def __init__(self, gateway: Gateway, attached: runner_pb2.Attached, after_cursor: int) -> None:
         self._gateway = gateway
@@ -53,6 +53,7 @@ class SessionFollow:
         self._ended = (
             attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
             and attached.setup_state != runner_pb2.SETUP_STATE_RUNNING
+            and attached.launch_outcome != runner_pb2.LAUNCH_OUTCOME_PENDING
         )
 
     @property
@@ -66,6 +67,7 @@ class SessionFollow:
         await runner.SubmitInput(
             runner_control_pb2.SubmitInputRequest(session_id=self.attached.session_id, command_id=command_id, text=text)
         )
+        self._ended = False
 
     async def interrupt_turn(self, command_id: str, turn_id: str) -> None:
         runner = await self._gateway.control.runner()
@@ -91,28 +93,34 @@ class SessionFollow:
             )
         )
 
-    async def stop_runner_session(self, command_id: str) -> None:
-        runner = await self._gateway.control.runner()
-        await runner.StopRunnerSession(
-            runner_control_pb2.StopRunnerSessionRequest(session_id=self.attached.session_id, command_id=command_id)
-        )
-
     async def next_entry(self) -> event_log_pb2.EventEntry:
         ingress = self._gateway.ingress
         session_id = self.attached.session_id
         while not (page := ingress.since(session_id, self._cursor)):
             if (sealed := ingress.sealed.get(session_id)) is not None and self._cursor >= sealed:
                 raise SessionSealedError(sealed)
-            # The ingress may still lag the snapshot; what the snapshot covers is always read.
+            # Process exit can precede activation's command settlement. Read through the
+            # runner's current published cursor once that work finishes, even if ingress lags.
             if self._ended and self._cursor >= self.attached.last_cursor:
-                raise StreamClosedError
+                runner = await self._gateway.control.runner()
+                status = await runner.GetStatus(runner_pb2.GetStatusRequest())
+                session = next(row for row in status.sessions if row.session_id == session_id)
+                if session.busy:
+                    # Activation can finish after publishing its final Event, so completion
+                    # need not produce another ingress wakeup.
+                    await asyncio.sleep(0.01)
+                    continue
+                summaries = await runner.ListSessions(runner_pb2.ListSessionsRequest())
+                summary = next(row for row in summaries.sessions if row.session_id == session_id)
+                if summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED and self._cursor >= summary.last_cursor:
+                    raise StreamClosedError
             await ingress.wait_beyond(session_id, self._cursor)
         entry = page[0]
         event = entry.event
-        if self._ended and entry.cursor > self.attached.last_cursor and event.HasField("harness_started"):
-            raise StreamClosedError
         self._cursor = entry.cursor
         self.seen.append(entry)
+        if entry.cursor > self.attached.last_cursor and event.HasField("harness_started"):
+            self._ended = False
         if entry.cursor > self.attached.last_cursor and event.HasField("harness_exited"):
             self._ended = True
         if event.HasField("setup_finished"):
@@ -139,8 +147,15 @@ class SessionFollow:
 
 
 class RunnerDriver:
-    def __init__(self, gateway: Gateway) -> None:
+    def __init__(self, gateway: Gateway, runner: Runner | None = None) -> None:
         self.gateway = gateway
+        self._runner = runner
+
+    async def shutdown(self, session_id: str) -> None:
+        """Test-only access to the runner's internal graceful shutdown operation."""
+        if self._runner is None:
+            raise RuntimeError("this driver is not attached to an in-process Runner")
+        await self._runner.sessions[session_id].shutdown()
 
     async def attach(
         self,
@@ -150,8 +165,7 @@ class RunnerDriver:
         setup_script: str | None = None,
         after_cursor: int = 0,
     ) -> SessionFollow:
-        """Follow a session after `after_cursor`. With `spec`, open it first as a client reopening a
-        session does: create it, or confirm it and start its stopped harness unless its setup failed."""
+        """Follow after `after_cursor`, durably reserving or confirming the session when given a spec."""
         if spec is None:
             summary = next((found for found in await self.list_sessions() if found.session_id == session_id), None)
             if summary is None:
