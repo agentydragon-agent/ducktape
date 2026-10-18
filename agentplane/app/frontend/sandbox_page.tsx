@@ -1,76 +1,51 @@
 import { NotificationStatus } from "./notification_status";
-import { archiveBlockReason } from "./thread_status";
 import {
   ActionIcon,
-  Badge,
+  Alert,
+  Anchor,
   Button,
   Group,
   Menu,
-  Paper,
-  Select,
   Stack,
   Switch,
-  Table,
   Tabs,
   Text,
-  TextInput,
-  Textarea,
   Title,
   Tooltip,
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
-import { type JSX, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
+import IconTrash from "@tabler/icons-react/dist/esm/icons/IconTrash.mjs";
+import { type JSX, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-
-import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 
 import {
   api,
   displayableError,
   findThread,
   getSessionOpening,
-  getRunnerStatus,
   getThread,
   HttpError,
-  modelsForHarness,
-  harnessOptions,
   openSession,
-  type Harness,
-  type ModelCatalog,
-  type RunnerStatusView,
-  type SessionDefaults,
   type SandboxView,
   type ThreadView,
 } from "./client";
-import { ActionPolicySection, BoundPolicySection } from "./actions/policy";
-import { Disclosure, DisclosureBody } from "./disclosure";
+import { ActionPolicySection } from "./actions/policy";
 import { EgressLog } from "./egress";
-import { JsonView } from "./json_view";
 import { MarkGlyph } from "./mark_glyph";
-import { durationLabel } from "./format_time";
-import { TimeAgo } from "./time_ago";
-import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
+import { ConfirmDelete, deletable, DELETE_NEEDS_SUSPENDED, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, useLive, type SandboxSnapshot } from "./live";
+import { NewSessionForm } from "./new_session_form";
 import { PolicyBindingsSection } from "./policy_bindings";
-import { RawSwitch } from "./raw_switch";
 import { SandboxConsole } from "./sandbox_console";
-import {
-  hasVmConsole,
-  containerStatuses,
-  podIp,
-  podPhase,
-  rawConditions,
-  rawString,
-  sandboxReady,
-  sandboxStatusDetail,
-  sandboxSummary,
-  suspensionReason,
-  type RawCondition,
-} from "./sandbox_status";
+import { SessionsTable } from "./sandbox_sessions";
+import { StatusView } from "./sandbox_status_view";
+import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
-import { TopbarTitle } from "./topbar";
-import { SessionSpecSchema } from "../../proto/runner_pb";
+import { snapshotFresh } from "./thread_status";
+import { TopbarActions, TopbarTitle } from "./topbar";
+import type { SessionSpec } from "../../proto/runner_pb";
 
 // Persist only the Session ID, never instructions or setup scripts (which can contain secrets).
 function pendingOpenKey(sandbox: string): string {
@@ -78,8 +53,6 @@ function pendingOpenKey(sandbox: string): string {
 }
 
 type PendingOpen = { sessionId: string; state?: string; reason?: string };
-
-type LoadedPresetDefaults = { preset: string | null; defaults: SessionDefaults | null };
 
 function openingStateLabel(state: string | undefined): string {
   switch (state) {
@@ -98,37 +71,6 @@ function openingStateLabel(state: string | undefined): string {
   }
 }
 
-function setupLabel(state: string | null | undefined): string {
-  switch (state) {
-    case "SETUP_STATE_UNSPECIFIED":
-    case "SETUP_STATE_NOT_REQUIRED":
-    case null:
-    case undefined:
-      return "—";
-    case "SETUP_STATE_RUNNING":
-      return "Running";
-    case "SETUP_STATE_SUCCEEDED":
-      return "Complete";
-    case "SETUP_STATE_FAILED":
-      return "Failed";
-    case "SETUP_STATE_INTERRUPTED":
-      return "Interrupted";
-    default:
-      return "Unknown";
-  }
-}
-
-function lastObservedHarnessState(thread: ThreadView): string {
-  switch (thread.harness_state) {
-    case "HARNESS_STATE_RUNNING":
-      return "Running";
-    case "HARNESS_STATE_STOPPED":
-      return "Stopped";
-    default:
-      return "Unknown";
-  }
-}
-
 // The page's tabs, named in the URL (`?tab=`) so a tab can be linked to and survives a reload.
 const TABS = ["sessions", "egress_log", "policy", "status", "console"] as const;
 type Tab = (typeof TABS)[number];
@@ -136,345 +78,6 @@ const DEFAULT_TAB: Tab = "sessions";
 
 function isTab(value: string | null): value is Tab {
   return TABS.includes(value as Tab);
-}
-
-function ConditionsTable({ title, conditions }: { title: string; conditions: RawCondition[] }): JSX.Element {
-  return (
-    <Stack gap="xs">
-      <Title order={5}>{title}</Title>
-      <Table.ScrollContainer minWidth={620} type="native">
-        <Table>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Condition</Table.Th>
-              <Table.Th>Status</Table.Th>
-              <Table.Th>Reason</Table.Th>
-              <Table.Th>Message</Table.Th>
-              <Table.Th>Transition</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {conditions.map((condition) => (
-              <Table.Tr key={condition.type}>
-                <Table.Td>{condition.type}</Table.Td>
-                <Table.Td>
-                  <Badge color={condition.status === "True" ? "green" : "orange"}>{condition.status}</Badge>
-                </Table.Td>
-                <Table.Td>{condition.reason ?? "—"}</Table.Td>
-                <Table.Td>{condition.message ?? "—"}</Table.Td>
-                <Table.Td>
-                  {condition.lastTransitionTime ?? "—"}
-                  {condition.lastProbeTime ? ` · probed ${condition.lastProbeTime}` : ""}
-                  {condition.observedGeneration !== null ? ` · generation ${condition.observedGeneration}` : ""}
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </Table.ScrollContainer>
-    </Stack>
-  );
-}
-
-function harnessLabel(harness: RunnerStatusView["processes"][number]["harness"]): string {
-  switch (harness) {
-    case "HARNESS_CLAUDE":
-      return "Claude";
-    case "HARNESS_CODEX":
-      return "Codex";
-  }
-}
-
-function processStateLabel(state: RunnerStatusView["processes"][number]["state"]): string {
-  switch (state) {
-    case "PROCESS_STATE_STARTING":
-      return "Starting";
-    case "PROCESS_STATE_RUNNING":
-      return "Running";
-    case "PROCESS_STATE_STOPPING":
-      return "Stopping";
-  }
-}
-
-function executionStateLabel(state: RunnerStatusView["sessions"][number]["execution_state"]): string {
-  switch (state) {
-    case "SESSION_EXECUTION_STATE_DORMANT":
-      return "Dormant";
-    case "SESSION_EXECUTION_STATE_PREPARING":
-      return "Preparing";
-    case "SESSION_EXECUTION_STATE_READY":
-      return "Ready";
-    case "SESSION_EXECUTION_STATE_FAILED":
-      return "Failed";
-  }
-}
-
-type RunnerDiagnosticsState =
-  | { kind: "loading" }
-  | { kind: "available"; value: RunnerStatusView; observedAt: string }
-  | { kind: "unavailable"; reason: string }
-  | { kind: "suspended" };
-
-function RunnerDiagnostics({ sandbox, active }: { sandbox: SandboxView; active: boolean }): JSX.Element {
-  const [state, setState] = useState<RunnerDiagnosticsState>({ kind: "loading" });
-  const [refreshVersion, setRefreshVersion] = useState(0);
-  useEffect(() => {
-    if (!active) return;
-    if (sandbox.phase === "Suspended" || sandbox.operating_mode === "Suspended") {
-      setState({ kind: "suspended" });
-      return;
-    }
-    let current = true;
-    setState({ kind: "loading" });
-    void getRunnerStatus(sandbox.name).then(
-      (value) => {
-        if (current) setState({ kind: "available", value, observedAt: new Date().toISOString() });
-      },
-      (reason: unknown) => {
-        if (current) setState({ kind: "unavailable", reason: displayableError(reason) });
-      }
-    );
-    return () => {
-      current = false;
-    };
-  }, [active, refreshVersion, sandbox.name, sandbox.operating_mode, sandbox.phase]);
-
-  return (
-    <Stack gap="xs" data-testid="sandbox-runner-diagnostics">
-      <Group justify="space-between" align="flex-start" wrap="wrap" gap="xs">
-        <div>
-          <Title order={5}>Runner diagnostics</Title>
-          <Text size="xs" c="dimmed">
-            Read-only snapshot of process and Session state reported by the runner.
-          </Text>
-        </div>
-        <Button
-          size="xs"
-          variant="subtle"
-          disabled={state.kind === "loading" || state.kind === "suspended"}
-          onClick={() => setRefreshVersion((version) => version + 1)}
-        >
-          Refresh
-        </Button>
-      </Group>
-      {state.kind === "loading" && (
-        <Text size="sm" role="status" c="dimmed">
-          Loading runner diagnostics…
-        </Text>
-      )}
-      {state.kind === "suspended" && (
-        <Text size="sm" role="status" c="dimmed">
-          Sandbox suspended. Runner diagnostics are unavailable until it is running.
-        </Text>
-      )}
-      {state.kind === "unavailable" && (
-        <Text size="sm" role="status" c="dimmed">
-          Runner diagnostics unavailable: {state.reason}
-        </Text>
-      )}
-      {state.kind === "available" && (
-        <Stack gap="xs">
-          <Text size="xs" c="dimmed">
-            Snapshot read at <time dateTime={state.observedAt}>{new Date(state.observedAt).toLocaleString()}</time>
-          </Text>
-          <Text size="sm">Runner boot ID · {state.value.runner_boot_id}</Text>
-          {state.value.processes.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              No harness processes reported.
-            </Text>
-          ) : (
-            <Stack gap="xs">
-              <Title order={6}>Harness processes</Title>
-              {state.value.processes.map((process) => (
-                <Paper key={process.process_id} withBorder p="sm" radius="md">
-                  <Stack gap={4}>
-                    <Group justify="space-between" wrap="wrap" gap="xs">
-                      <Text fw={600}>{harnessLabel(process.harness)}</Text>
-                      <Badge>{processStateLabel(process.state)}</Badge>
-                    </Group>
-                    <Text size="sm">PID {process.pid ?? "not started"}</Text>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Process ID · {process.process_id}
-                    </Text>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Assigned Sessions ·{" "}
-                      {process.assigned_session_ids.length ? process.assigned_session_ids.join(", ") : "None"}
-                    </Text>
-                  </Stack>
-                </Paper>
-              ))}
-            </Stack>
-          )}
-          {state.value.sessions.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              No Sessions reported.
-            </Text>
-          ) : (
-            <Stack gap="xs">
-              <Title order={6}>Sessions</Title>
-              {state.value.sessions.map((session) => (
-                <Paper key={session.session_id} withBorder p="sm" radius="md">
-                  <Stack gap={4}>
-                    <Group justify="space-between" wrap="wrap" gap="xs">
-                      <Text fw={600} style={{ overflowWrap: "anywhere" }}>
-                        {session.session_id}
-                      </Text>
-                      <Badge>{executionStateLabel(session.execution_state)}</Badge>
-                    </Group>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Process ID · {session.process_id ?? "—"}
-                    </Text>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Native Session ID · {session.native_session_id ?? "—"}
-                    </Text>
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Active turn · {session.active_turn_id ?? "—"}
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      Failure cursor · {session.failure_cursor ?? "—"}
-                      {session.busy ? " · Work in progress" : ""}
-                    </Text>
-                  </Stack>
-                </Paper>
-              ))}
-            </Stack>
-          )}
-        </Stack>
-      )}
-    </Stack>
-  );
-}
-
-/** What Kubernetes says about the sandbox: the Sandbox CR's own status, then its Pod's. */
-function StatusView({ sandbox, active }: { sandbox: SandboxView; active: boolean }): JSX.Element {
-  const [raw, setRaw] = useState(false);
-  const sandboxConditions = rawConditions(sandbox.status);
-  const podConditions = rawConditions(sandbox.pod?.status ?? null);
-  const containers = containerStatuses(sandbox.pod?.status ?? null);
-  return (
-    <Stack gap="xs">
-      <Group>
-        <Title order={4}>Status</Title>
-        <RawSwitch raw={raw} onChange={setRaw} />
-      </Group>
-      {raw ? (
-        <JsonView value={sandbox} />
-      ) : (
-        <>
-          <Text size="sm">
-            Sandbox {sandbox.phase.toLowerCase()}
-            {suspensionReason(sandbox) ? ` (${suspensionReason(sandbox)})` : ""}, created{" "}
-            <TimeAgo value={sandbox.created_at} />
-            {sandbox.pod?.node_name ? `, Pod placed on ${sandbox.pod.node_name}` : ", Pod not placed"}
-          </Text>
-          {/* The account its Pod runs as is what every binding names, so the tabs below are its policy, not this
-              Sandbox's: two sandboxes sharing an account share what they may do. */}
-          <Text size="sm">
-            Runs as ServiceAccount {sandbox.service_account.namespace}/{sandbox.service_account.name}, the subject its
-            egress and action-policy bindings name.
-          </Text>
-          {sandbox.preset && <Text size="sm">Made from preset {sandbox.preset}.</Text>}
-          <Text size="sm">
-            {sandbox.idle_suspend_after_seconds
-              ? `Suspends once its runner has been idle for ${durationLabel(sandbox.idle_suspend_after_seconds)}.`
-              : "Never suspends for idleness."}
-          </Text>
-          {sandbox.status && rawString(sandbox.status.phase) && (
-            <Text size="sm">Sandbox status phase: {rawString(sandbox.status.phase)}</Text>
-          )}
-          {sandboxConditions.length > 0 ? (
-            <ConditionsTable title="Sandbox conditions" conditions={sandboxConditions} />
-          ) : (
-            <Text size="sm" c="dimmed">
-              No Sandbox conditions reported.
-            </Text>
-          )}
-          {sandbox.pod ? (
-            <>
-              <Text size="sm">
-                Pod {podPhase(sandbox) ?? "phase unknown"}
-                {podIp(sandbox) ? ` at ${podIp(sandbox)}` : ""}
-                {sandbox.pod.node_name ? ` on ${sandbox.pod.node_name}` : ""}
-                {sandbox.pod.deleting ? " · deleting" : ""}
-                {rawString(sandbox.pod.status?.reason) ? `: ${rawString(sandbox.pod.status?.reason)}` : ""}
-                {rawString(sandbox.pod.status?.message) ? ` (${rawString(sandbox.pod.status?.message)})` : ""}
-              </Text>
-              <Text size="xs" c="dimmed">
-                Pod {sandbox.pod.namespace}/{sandbox.pod.name} · UID {sandbox.pod.uid}
-                {rawString(sandbox.pod.status?.startTime)
-                  ? ` · started ${rawString(sandbox.pod.status?.startTime)}`
-                  : ""}
-                {rawString(sandbox.pod.status?.qosClass) ? ` · QoS ${rawString(sandbox.pod.status?.qosClass)}` : ""}
-              </Text>
-              {podConditions.length > 0 ? (
-                <ConditionsTable title="Pod conditions" conditions={podConditions} />
-              ) : (
-                <Text size="sm" c="dimmed">
-                  No Pod conditions reported.
-                </Text>
-              )}
-              {containers.length > 0 && (
-                <Stack gap="xs">
-                  <Title order={5}>Containers</Title>
-                  <Table.ScrollContainer minWidth={620} type="native">
-                    <Table>
-                      <Table.Thead>
-                        <Table.Tr>
-                          <Table.Th>Container</Table.Th>
-                          <Table.Th>State</Table.Th>
-                          <Table.Th>Ready</Table.Th>
-                          <Table.Th>Restarts</Table.Th>
-                          <Table.Th>Detail</Table.Th>
-                          <Table.Th>Started</Table.Th>
-                          <Table.Th>Finished</Table.Th>
-                        </Table.Tr>
-                      </Table.Thead>
-                      <Table.Tbody>
-                        {containers.map((container) => (
-                          <Table.Tr key={`${container.role}/${container.name}`}>
-                            <Table.Td>
-                              {container.role === "container" ? container.name : `${container.role} ${container.name}`}
-                            </Table.Td>
-                            <Table.Td>
-                              <Badge color={container.state === "running" ? "green" : "orange"}>
-                                {container.state}
-                              </Badge>
-                            </Table.Td>
-                            <Table.Td>{container.ready ? "yes" : "no"}</Table.Td>
-                            <Table.Td>
-                              {container.restartCount > 0 ? (
-                                <Badge color="red">{container.restartCount}</Badge>
-                              ) : (
-                                container.restartCount
-                              )}
-                            </Table.Td>
-                            <Table.Td>
-                              {[
-                                container.reason,
-                                container.message,
-                                container.exitCode !== null && `exit ${container.exitCode}`,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ") || "—"}
-                            </Table.Td>
-                            <Table.Td>{container.startedAt ?? "—"}</Table.Td>
-                            <Table.Td>{container.finishedAt ?? "—"}</Table.Td>
-                          </Table.Tr>
-                        ))}
-                      </Table.Tbody>
-                    </Table>
-                  </Table.ScrollContainer>
-                </Stack>
-              )}
-            </>
-          ) : (
-            <Text size="sm">No Pod.</Text>
-          )}
-        </>
-      )}
-      <RunnerDiagnostics sandbox={sandbox} active={active} />
-    </Stack>
-  );
 }
 
 export function SandboxPage({
@@ -505,17 +108,7 @@ export function SandboxPage({
     else sessionStorage.removeItem(pendingOpenKey(name));
     setPendingOpen(attempt);
   }
-  const [effort, setEffort] = useState("low");
-  const [instructions, setInstructions] = useState("");
-  const [cwdTemplate, setCwdTemplate] = useState("/state/workspaces/{session_id}");
-  const [setupScript, setSetupScript] = useState("");
-  const [inheritsDefaults, setInheritsDefaults] = useState(false);
-  const [presetDefaults, setPresetDefaults] = useState<LoadedPresetDefaults | null>(null);
-  // Launch-form offerings; existing threads retain their harness and model.
-  const [harness, setHarness] = useState<Harness>("HARNESS_CLAUDE");
-  const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
-  const models = useMemo(() => (modelCatalog ? modelsForHarness(modelCatalog, harness) : []), [modelCatalog, harness]);
-  const [model, setModel] = useState<string | null>(null);
+  const [launching, setLaunching] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
 
@@ -552,79 +145,6 @@ export function SandboxPage({
     if (projectedPendingThread) openProjectedPending(pendingSessionId);
   }, [pendingSessionId, projectedPendingThread]);
 
-  const presetName = sandbox?.preset ?? null;
-  useEffect(() => {
-    void (async () => {
-      const { data, error: failure } = await api.GET("/models");
-      if (failure) {
-        setError(displayableError(failure));
-        return;
-      }
-      if (data) setModelCatalog(data);
-    })();
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (presetName === null) {
-      setPresetDefaults({ preset: null, defaults: {} });
-      return () => {
-        cancelled = true;
-      };
-    }
-    setPresetDefaults(null);
-    void (async () => {
-      const { data, error: failure } = await api.GET("/presets");
-      if (cancelled) return;
-      if (failure) {
-        setError(displayableError(failure));
-        return;
-      }
-      const preset = data?.find((candidate) => candidate.name === presetName);
-      if (!preset) {
-        setError(`Sandbox preset ${presetName} is missing from the app configuration.`);
-        setPresetDefaults({ preset: presetName, defaults: null });
-        return;
-      }
-      setPresetDefaults({ preset: presetName, defaults: preset.session_defaults });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [name, presetName]);
-
-  useEffect(() => {
-    const offered = harnessOptions(modelCatalog).filter((option) => !option.disabled);
-    if (offered.length && !offered.some((option) => option.value === harness)) {
-      setHarness(offered[0].value);
-    }
-    if (modelCatalog) {
-      setModel((current) =>
-        current && models.some((option) => option.model === current) ? current : (models[0]?.model ?? null)
-      );
-    }
-  }, [modelCatalog, harness, models]);
-
-  useEffect(() => {
-    const option = models.find((entry) => entry.model === model);
-    // A Sandbox binding can arrive before the model catalog; do not erase its default
-    // while the selected model is not yet known to this catalog.
-    if (option && !option.reasoning_efforts.includes(effort)) setEffort(option.reasoning_efforts[0] ?? "");
-  }, [effort, model, models]);
-
-  const applyPresetDefaults = useEffectEvent(() => {
-    if (!presetDefaults || presetDefaults.preset !== presetName || presetDefaults.defaults === null) return;
-    const defaults = presetDefaults.defaults;
-    setInheritsDefaults(presetName !== null);
-    setHarness(defaults.harness ?? "HARNESS_CLAUDE");
-    setModel(defaults.model ?? null);
-    setEffort(defaults.reasoning_effort ?? "low");
-    setInstructions(defaults.instructions ?? "");
-    setCwdTemplate(defaults.cwd ?? "/state/workspaces/{session_id}");
-    setSetupScript(defaults.setup_script ?? "");
-  });
-  useEffect(() => applyPresetDefaults(), [presetName, presetDefaults]);
-
   // No re-read after an action: the change reaches the API server, and the watch behind the
   // stream brings the sandbox's new state back on its own.
   async function act(action: "suspend" | "resume"): Promise<void> {
@@ -650,18 +170,12 @@ export function SandboxPage({
     setError(displayableError(failure));
   }
 
-  async function createSession(): Promise<void> {
-    if (!sandbox || !model || creatingSession || pendingOpen) return;
+  async function createSession(spec: SessionSpec, setupScript: string): Promise<void> {
+    if (!sandbox || creatingSession || pendingOpen) return;
     const sessionId = crypto.randomUUID();
-    const spec = fromJson(SessionSpecSchema, {
-      harness,
-      cwd: cwdTemplate, // The app resolves {session_id} before it opens the Session.
-      model,
-      reasoningEffort: effort,
-      instructions,
-    } as JsonValue);
     // Only the Session ID survives reload. In particular, never persist instructions or bootstrap.
     rememberOpen({ sessionId });
+    setLaunching(false);
     setCreatingSession(true);
     setError(null);
     try {
@@ -742,6 +256,21 @@ export function SandboxPage({
     <Stack>
       <TopbarTitle>
         <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+          {sandbox && (
+            <Tooltip label={sandboxStatusDetail(sandbox)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
+              <span
+                role="img"
+                tabIndex={0}
+                aria-label={`Sandbox status: ${sandboxSummary(sandbox).label}`}
+                style={{ display: "inline-flex", flexShrink: 0 }}
+              >
+                <MarkGlyph mark={SANDBOX_STATUS_MARKS[sandboxSummary(sandbox).kind]} size="small" />
+              </span>
+            </Tooltip>
+          )}
+          <Anchor component="button" type="button" size="sm" c="dimmed" visibleFrom="sm" onClick={onBack}>
+            Sandboxes ›
+          </Anchor>
           <Title
             order={1}
             size="h4"
@@ -755,45 +284,43 @@ export function SandboxPage({
           >
             {name}
           </Title>
-          {sandbox && (
-            <Tooltip label={sandboxStatusDetail(sandbox)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
-              <span
-                role="img"
-                tabIndex={0}
-                aria-label={`Sandbox status: ${sandboxSummary(sandbox).label}`}
-                style={{ display: "inline-flex", flexShrink: 0 }}
-              >
-                <MarkGlyph mark={SANDBOX_STATUS_MARKS[sandboxSummary(sandbox).kind]} size="small" />
-              </span>
-            </Tooltip>
-          )}
         </Group>
       </TopbarTitle>
-      <Group>
-        <Button variant="subtle" onClick={onBack}>
-          ← Sandboxes
-        </Button>
-        {sandbox && (
-          <Group gap="xs" ml="auto" wrap="nowrap">
-            <Button size="xs" variant="subtle" visibleFrom="sm" onClick={() => setNotificationsOpen(true)}>
-              Notifications
-            </Button>
-            <Menu position="bottom-end">
-              <Menu.Target>
-                <ActionIcon variant="subtle" hiddenFrom="sm" aria-label="More Sandbox actions">
-                  <IconDotsVertical size={16} />
-                </ActionIcon>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Item onClick={() => setNotificationsOpen(true)}>Notifications</Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
-            <NotificationStatus sandbox={name} opened={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
-            <SuspendResume sandbox={sandbox} onAct={(action) => void act(action)} />
-            <DeleteButton sandbox={sandbox} onDelete={() => setConfirmingDelete(true)} />
-          </Group>
-        )}
-      </Group>
+      {sandbox && (
+        <TopbarActions>
+          <Button size="xs" variant="subtle" visibleFrom="sm" onClick={() => setNotificationsOpen(true)}>
+            Notifications
+          </Button>
+          <NotificationStatus sandbox={name} opened={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
+          <SuspendResume sandbox={sandbox} onAct={(action) => void act(action)} />
+          <Menu position="bottom-end">
+            <Menu.Target>
+              <ActionIcon size="sm" variant="subtle" color="gray" aria-label="More Sandbox actions">
+                <IconDotsVertical size={16} />
+              </ActionIcon>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item hiddenFrom="sm" onClick={() => setNotificationsOpen(true)}>
+                Notifications
+              </Menu.Item>
+              {/* The API refuses a running sandbox (inventory.py); the reason is shown beside the item. */}
+              <Menu.Item
+                color="red"
+                leftSection={<IconTrash size={15} />}
+                disabled={!deletable(sandbox)}
+                onClick={() => setConfirmingDelete(true)}
+              >
+                Delete
+                {!deletable(sandbox) && (
+                  <Text size="xs" c="dimmed">
+                    {DELETE_NEEDS_SUSPENDED}
+                  </Text>
+                )}
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+        </TopbarActions>
+      )}
       {confirmingDelete && (
         <ConfirmDelete
           name={name}
@@ -804,10 +331,47 @@ export function SandboxPage({
           }}
         />
       )}
-      {error && <Text c="red">{error}</Text>}
-      {live.snapshot !== null && sandbox === null && <Text c="red">There is no sandbox {name} any more.</Text>}
+      {error && (
+        <Alert color="red" role="alert">
+          {error}
+        </Alert>
+      )}
+      {live.snapshot !== null && sandbox === null && (
+        <Alert color="red" role="alert">
+          There is no sandbox {name} any more.
+        </Alert>
+      )}
       {sandbox && !ready && (
-        <Text>Sandbox status: {sandboxSummary(sandbox).label}. New sessions need a ready Sandbox.</Text>
+        <Alert color="gray" role="status">
+          Sandbox status: {sandboxSummary(sandbox).label}. New sessions need a ready Sandbox.
+        </Alert>
+      )}
+      {pendingOpen && (
+        <Alert color="yellow" role="status" title="Session opening">
+          <Stack gap="xs">
+            <Text size="sm">
+              Open attempt {pendingOpen.sessionId}: {openingStateLabel(pendingOpen.state)}
+              {pendingOpen.reason ? ` — ${pendingOpen.reason}` : ""}. Check before starting another session. An
+              unconfirmed attempt is never retried automatically.
+            </Text>
+            <Group gap="xs">
+              <Button disabled={creatingSession} variant="light" onClick={() => void checkPendingOpen()}>
+                Check Open status
+              </Button>
+              <Button
+                disabled={creatingSession}
+                variant="subtle"
+                color="red"
+                onClick={() => {
+                  rememberOpen(null);
+                  setError(null);
+                }}
+              >
+                Forget attempt; it may still open
+              </Button>
+            </Group>
+          </Stack>
+        </Alert>
       )}
       <Tabs
         value={tab}
@@ -829,15 +393,11 @@ export function SandboxPage({
         <Tabs.Panel value="policy" pt="sm">
           <Stack gap="md">
             <PolicyBindingsSection sandbox={name} bindings={live.snapshot?.bindings ?? null} />
-            <Stack gap="xs">
-              <Title order={5}>Action policy</Title>
-              <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
-            </Stack>
-            <BoundPolicySection policy={live.snapshot?.bound_policy ?? null} />
+            <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
-          {sandbox && <StatusView sandbox={sandbox} active={tab === "status"} />}
+          {sandbox && <StatusView sandbox={sandbox} active={tab === "status"} onError={setError} />}
         </Tabs.Panel>
         {vmConsoleAvailable && (
           <Tabs.Panel value="console" pt="sm">
@@ -847,150 +407,19 @@ export function SandboxPage({
         <Tabs.Panel value="sessions" pt="sm">
           <Stack>
             {threadsUnavailable && (
-              <Text c="red">History Thread summaries are unavailable ({threadsUnavailable}).</Text>
+              <Alert color="red" role="alert">
+                History Thread summaries are unavailable ({threadsUnavailable}).
+              </Alert>
             )}
-            <Group align="flex-end">
-              <Select
-                label="Harness"
-                data={harnessOptions(modelCatalog)}
-                value={harness}
-                onChange={(value) => value && setHarness(value as Harness)}
-              />
-              <Select
-                label="Model"
-                data={models.map((option) => ({ value: option.model, label: option.display_name }))}
-                value={model}
-                onChange={setModel}
-              />
-              {(models.find((option) => option.model === model)?.reasoning_efforts ?? []).length > 0 && (
-                <Select
-                  label="Reasoning effort"
-                  data={models.find((option) => option.model === model)?.reasoning_efforts ?? []}
-                  value={effort}
-                  onChange={(v) => v && setEffort(v)}
-                />
-              )}
+            <Group justify="space-between">
               <Button
-                onClick={() => void createSession()}
-                loading={creatingSession}
-                disabled={!ready || !model || !!pendingOpen}
+                leftSection={<IconPlus size={16} />}
+                variant={launching ? "light" : "filled"}
+                aria-expanded={launching}
+                onClick={() => setLaunching((open) => !open)}
               >
-                {creatingSession ? "Creating session…" : "New session"}
+                New session
               </Button>
-            </Group>
-            {pendingOpen && (
-              <Stack gap="xs">
-                <Text size="sm" role="status">
-                  Open attempt {pendingOpen.sessionId}: {openingStateLabel(pendingOpen.state)}
-                  {pendingOpen.reason ? ` — ${pendingOpen.reason}` : ""}. Check before starting another session. An
-                  unconfirmed attempt is never retried automatically.
-                </Text>
-                <Group gap="xs">
-                  <Button disabled={creatingSession} variant="light" onClick={() => void checkPendingOpen()}>
-                    Check Open status
-                  </Button>
-                  <Button
-                    disabled={creatingSession}
-                    variant="subtle"
-                    color="red"
-                    onClick={() => {
-                      rememberOpen(null);
-                      setError(null);
-                    }}
-                  >
-                    Forget attempt; it may still open
-                  </Button>
-                </Group>
-              </Stack>
-            )}
-            <Disclosure summary="Standing instructions" keepMounted>
-              <DisclosureBody>
-                <Textarea
-                  aria-label="Standing instructions"
-                  description={
-                    inheritsDefaults ? "From this Sandbox's configured preset; editable for this thread" : undefined
-                  }
-                  autosize
-                  minRows={2}
-                  value={instructions}
-                  onChange={(event) => setInstructions(event.currentTarget.value)}
-                />
-              </DisclosureBody>
-            </Disclosure>
-            <TextInput
-              label="Working directory"
-              description="{session_id} is replaced with this Thread's ID"
-              value={cwdTemplate}
-              onChange={(event) => setCwdTemplate(event.currentTarget.value)}
-            />
-            <Disclosure summary="Thread setup script" keepMounted>
-              <DisclosureBody>
-                <Textarea
-                  aria-label="Thread setup script"
-                  description="Runs once in the resolved working directory before the harness starts"
-                  autosize
-                  minRows={2}
-                  value={setupScript}
-                  onChange={(event) => setSetupScript(event.currentTarget.value)}
-                />
-              </DisclosureBody>
-            </Disclosure>
-            <Table>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Session</Table.Th>
-                  <Table.Th>Last observed harness</Table.Th>
-                  <Table.Th>Setup</Table.Th>
-                  <Table.Th>Last observed turn</Table.Th>
-                  <Table.Th>Events</Table.Th>
-                  <Table.Th />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {visibleThreads.map((thread) => {
-                  const sessionId = thread.id;
-                  const archiveBlock = archiveBlockReason(thread);
-                  return (
-                    <Table.Tr key={sessionId}>
-                      <Table.Td>
-                        {/* The id is only useful once you're in the session's own detail view (which
-                          shows it beside the name); the list links by name where one exists. */}
-                        <Button variant="subtle" onClick={() => void openThread(sessionId)}>
-                          {thread.name ?? sessionId}
-                        </Button>
-                      </Table.Td>
-                      <Table.Td>{lastObservedHarnessState(thread)}</Table.Td>
-                      <Table.Td>{setupLabel(thread.setup_state)}</Table.Td>
-                      <Table.Td>{thread.active_turn_id ?? "—"}</Table.Td>
-                      <Table.Td>{String(thread.last_cursor)}</Table.Td>
-                      <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
-                        <Menu position="bottom-end">
-                          <Menu.Target>
-                            <ActionIcon variant="subtle" aria-label={`More actions for ${sessionId}`}>
-                              <IconDotsVertical size={16} />
-                            </ActionIcon>
-                          </Menu.Target>
-                          <Menu.Dropdown>
-                            {thread.archived ? (
-                              <Menu.Item onClick={() => void threadAct(thread.id, "unarchive")}>Unarchive</Menu.Item>
-                            ) : (
-                              <Menu.Item
-                                disabled={archiveBlock !== null}
-                                title={archiveBlock ?? undefined}
-                                onClick={() => void threadAct(thread.id, "archive")}
-                              >
-                                {archiveBlock ?? "Archive"}
-                              </Menu.Item>
-                            )}
-                          </Menu.Dropdown>
-                        </Menu>
-                      </Table.Td>
-                    </Table.Tr>
-                  );
-                })}
-              </Table.Tbody>
-            </Table>
-            <Group justify="flex-end">
               <Switch
                 size="md"
                 label="Show archived"
@@ -998,6 +427,28 @@ export function SandboxPage({
                 onChange={(e) => setIncludeArchived(e.currentTarget.checked)}
               />
             </Group>
+            {/* Hidden, not unmounted: what was entered, and the model catalog, outlive closing the form. */}
+            <div hidden={!launching}>
+              <NewSessionForm
+                presetName={sandbox?.preset ?? null}
+                startable={ready && !pendingOpen}
+                creating={creatingSession}
+                onStart={(spec, setupScript) => void createSession(spec, setupScript)}
+                onClose={() => setLaunching(false)}
+                onError={setError}
+              />
+            </div>
+            {live.snapshot !== null && visibleThreads.length === 0 && !threadsUnavailable ? (
+              <Text c="dimmed">No sessions yet.</Text>
+            ) : (
+              <SessionsTable
+                threads={visibleThreads}
+                sandbox={sandbox}
+                fresh={snapshotFresh(live)}
+                onOpen={(sessionId) => void openThread(sessionId)}
+                onArchive={(threadId, action) => void threadAct(threadId, action)}
+              />
+            )}
           </Stack>
         </Tabs.Panel>
       </Tabs>

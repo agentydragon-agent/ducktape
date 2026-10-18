@@ -53,7 +53,8 @@ export type NativeFramePage = components["schemas"]["NativeFramePage"];
 export type ObservationPage = components["schemas"]["ObservationPage"];
 export type ArchivedObservationEntry = components["schemas"]["ArchivedObservationEntry"];
 export type BindingView = components["schemas"]["BindingView"];
-export type PolicyView = components["schemas"]["PolicyView"];
+export type PolicySetView = components["schemas"]["PolicySetView"];
+export type EgressRuleView = components["schemas"]["EgressRuleView"];
 export type SandboxPresetView = components["schemas"]["SandboxPresetView"];
 export type SessionDefaults = components["schemas"]["SessionDefaults"];
 export type SessionOpening = {
@@ -76,6 +77,18 @@ export function harnessOptions(catalog: ModelCatalog | null): { value: Harness; 
     const disabled = !catalog?.harnesses[value]?.length;
     return { value, label: disabled && catalog ? `${label} (no models offered)` : label, disabled };
   });
+}
+
+/** A harness as the pages name it; null while a Thread has no runner attachment to say. */
+export function harnessLabel(harness: Harness | null): string {
+  switch (harness) {
+    case "HARNESS_CLAUDE":
+      return "Claude";
+    case "HARNESS_CODEX":
+      return "Codex";
+    case null:
+      return "Unknown harness";
+  }
 }
 
 /** The models offered for one harness, resolved from the catalog's deduplicated `models`

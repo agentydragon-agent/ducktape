@@ -267,8 +267,8 @@ ts_library(
     srcs = ["caller_grants.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":bindings_table",
         ":client",
-        ":egress",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -508,6 +508,37 @@ ts_library(
 )
 
 ts_library(
+    name = "wake_on_send",
+    srcs = ["wake_on_send.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "sandbox_status_view",
+    srcs = ["sandbox_status_view.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":idle_suspend",
+        ":json_view",
+        ":lifecycle",
+        ":raw_switch",
+        ":sandbox_status",
+        ":time_ago",
+        ":wake_on_send",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "sandboxes",
     srcs = [
         "sandboxes.tsx",
@@ -528,6 +559,7 @@ ts_library(
         ":sandbox_status",
         ":status_mark",
         ":topbar",
+        ":wake_on_send",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -752,12 +784,50 @@ ts_library(
 )
 
 ts_library(
+    name = "binding_state",
+    srcs = ["binding_state.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":status_mark",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "binding_state_test",
+    srcs = ["binding_state.test.ts"],
+    deps = [
+        ":binding_state",
+        ":client",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "bindings_table",
+    srcs = ["bindings_table.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":binding_state",
+        ":client",
+        ":code_block",
+        ":mark_glyph",
+        ":status_mark",
+        ":time_ago",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+ts_library(
     name = "policy_bindings",
     srcs = ["policy_bindings.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":bindings_table",
         ":client",
-        ":egress",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -848,6 +918,42 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "new_session_form",
+    srcs = ["new_session_form.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":disclosure",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/proto:runner_pb",
+    ],
+)
+
+ts_library(
+    name = "sandbox_sessions",
+    srcs = [
+        "sandbox_sessions.tsx",
+        # The ambient declaration for the @tabler/icons-react subpaths this file imports; see the
+        # note in tabler_icons.d.ts.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":thread_status",
+        ":thread_status_indicator",
+        ":time_ago",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "sandbox_page",
     srcs = [
         "sandbox_page.tsx",
@@ -859,23 +965,20 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
-        ":disclosure",
         ":egress",
-        ":format_time",
-        ":json_view",
         ":lifecycle",
         ":live",
         ":mark_glyph",
+        ":new_session_form",
         ":notification_status",
         ":policy_bindings",
-        ":raw_switch",
         ":sandbox_console",
+        ":sandbox_sessions",
         ":sandbox_status",
+        ":sandbox_status_view",
         ":status_mark",
         ":thread_status",
-        ":time_ago",
         ":topbar",
-        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",

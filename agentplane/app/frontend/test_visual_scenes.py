@@ -153,7 +153,7 @@ async def test_sandboxes(view: VisualPage, app: AgentplaneFixture) -> None:
 async def test_sandbox_status_idle_suspended(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.ADD_SUSPENDED_SANDBOXES)
     await app.mount_app("/sandboxes/idle-suspended-sandbox?tab=status")
-    await view.page.get_by_text("Suspends once its runner has been idle for 30 minutes.").wait_for(state="visible")
+    await expect(view.page.get_by_label("Idle suspend minutes for idle-suspended-sandbox")).to_have_value("30")
     await view.page.get_by_text("Runner diagnostics are unavailable until it is running.").wait_for(state="visible")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
@@ -238,11 +238,15 @@ async def test_consent(view: VisualPage, app: AgentplaneFixture) -> None:
 async def test_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox")
     page = view.page
-    await page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
+    await expect(page.get_by_role("table")).to_be_visible()
     await view.check(context="fixture ready")
     await view.capture(target=page.locator("#app"))
 
     assert view.capture_name is not None
+    await page.get_by_role("button", name="New session").click()
+    await expect(page.get_by_role("combobox", name="Model")).not_to_have_value("")
+    await expect(page.get_by_role("button", name="Start session")).to_be_enabled()
+    await view.capture(target=page.locator("#app"), name=f"{view.capture_name}_new_session")
     for label, checkpoint in (
         ("Standing instructions", "standing_instructions"),
         ("Thread setup script", "thread_setup_script"),
@@ -283,8 +287,50 @@ async def test_sandbox_status(view: VisualPage, app: AgentplaneFixture) -> None:
 
 
 @DESKTOP_AND_MOBILE
+async def test_sandbox_status_details(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/sandboxes/ready-sandbox?tab=status")
+    page = view.page
+    await expect(page.get_by_role("rowheader", name="Wake on message")).to_be_visible()
+    await expect(page.get_by_text("Loading runner diagnostics…")).to_have_count(0)
+    await view.check(context="fixture ready")
+    await view.capture(target=page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_sandbox_status_unmet_conditions(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/sandboxes/pending-sandbox?tab=status")
+    page = view.page
+    await expect(page.get_by_text("PodPending", exact=True)).to_be_visible()
+    await expect(page.get_by_text("ImagePullBackOff")).to_be_visible()
+    await expect(page.get_by_text("Loading runner diagnostics…")).to_have_count(0)
+    await view.check(context="fixture ready")
+    await view.capture(target=page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
 async def test_sandbox_policy(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=policy")
+    await expect(view.page.get_by_role("img", name="Refused")).to_have_count(1)
+    await expect(view.page.get_by_role("img", name="Not yet judged")).to_have_count(1)
+    await view.check(context="fixture ready")
+    await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_sandbox_policy_rules(view: VisualPage, app: AgentplaneFixture) -> None:
+    open_rules = "ready-sandbox-k2m9x,ready-sandbox-github-public,ready-sandbox-push-afternoon"
+    await app.mount_app(f"/sandboxes/ready-sandbox?tab=policy&rules={open_rules}")
+    await expect(view.page.get_by_role("button", name="Hide rules")).to_have_count(3)
+    await expect(view.page.get_by_text("harness-release: no such PolicySet")).to_be_visible()
+    await view.check(context="fixture ready")
+    await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_sandbox_policy_refused_binding_hover(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/sandboxes/ready-sandbox?tab=policy")
+    await view.page.get_by_role("img", name="Refused").hover()
+    await expect(view.page.get_by_role("tooltip")).to_contain_text("harness-release")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 
