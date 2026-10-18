@@ -443,11 +443,10 @@ manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
 - **docker-ci**: `cluster/parked/docker-ci/` — decommissioned despite backing
   `loom/gym`'s on-demand forecasting-eval Job (`loom/gym/k8s/eval-job.yaml`); parked at
   operator request, accepting that an eval run needs reviving it first.
-- **haku-dispatch**: `cluster/parked/haku-dispatch/` — only the Flux Kustomization
-  pointer moved (it was already `spec.suspend: true`); the ducktape-owned manifests it
-  deploys (`haku/x/dispatch/deploy/`) stay untouched, per the usual ducktape-owned-code
-  exemption below. Operator request: the pointer itself moves under `parked/` and out
-  of root `kustomization.yaml` regardless.
+- **haku-dispatch**: the dispatch and worker-zone source and Flux owner were removed
+  after a targeted read-only inspection found no Flux inventory, component namespaces,
+  matching PVC/PVs, or named zone policies to clean up. The zone package had no active
+  Flux owner. No cluster mutation was needed.
 
 **Wayback cache**: `loom/wayback/deploy/` — decommissioned by operator request, but this
 is ducktape-owned code (`loom/wayback/cache/`), so its parked Flux declaration stays

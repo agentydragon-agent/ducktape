@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -138,25 +134,6 @@ def gecko_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> K
         # Keep this controller paused so Flux does not recreate the empty namespace.
         suspend=True,
         timeout="2m",
-    )
-
-
-def haku_dispatch(chart: Chart, cnpg: Kustomization, external_secrets_operator: Kustomization) -> Kustomization:
-    name = "haku-dispatch"
-    return flux_kustomization(
-        chart,
-        name,
-        KustomizationSpecSourceRef(
-            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
-        ),
-        annotations={"ducktape.org/parked": "true"},
-        # Haku dispatch is intentionally parked. Flip this to false only when the
-        # worker-zone and provider wiring has been deliberately restored.
-        suspend=True,
-        timeout="10m",
-        path="./haku/x/dispatch/deploy",
-        deletion_policy=KustomizationSpecDeletionPolicy.WAIT_FOR_TERMINATION,
-        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator),
     )
 
 
