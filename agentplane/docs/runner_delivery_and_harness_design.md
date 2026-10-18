@@ -657,8 +657,8 @@ than assuming every image shares a build SHA.
    Sandbox diagnostics and the controls on desktop and phone.
 2. Inventory staging Sessions, pending Dispatches, historical receipts, journals/native histories,
    workspace and state volumes. Settle outstanding old stop commands before removing their wire
-   variant; keep settled historical receipt readers. Pause submissions and notification delivery at
-   cutover so the old and new stacks do not execute work concurrently. Preserve admitted work and
+   variant; keep settled historical receipt readers. Hold Sandbox starts and automatic wake through
+   cutover so no old runner can execute work against the changing service stack. Preserve admitted work and
    all person-authored data. Back up at a consistent boundary and verify restore in isolation before
    any persistent-format migration; do not restore an old snapshot over post-cutover writes.
 3. Keep staging Sandbox starts disabled, quiesce any remaining runners with the old stack, and verify
@@ -666,15 +666,31 @@ than assuming every image shares a build SHA.
    new starts (2026-10-17); recheck this condition immediately before cutover. Testing Sandboxes may
    be deleted/recreated under the operator's authorization. Staging Sandbox CRs, UIDs and retained
    PVCs must survive.
-4. Promote the exact tested service and template tags through GitOps with automatic promotion still
-   held. Replace affected caller replicas as a coordinated cutover; do not serve old callers against
-   the new protocol. Updating a template alone does not upgrade an already running Sandbox. Upgrade
-   every template, including suspended-only and VM templates, before allowing starts. Verify image
-   revisions, migrations and connections before reopening submissions/notifications.
-5. Start existing Sessions through the new send path and prove their context is retained; perform
-   the idle-suspend/send-to-wake drive after lifecycle deployment. Check exact-turn rejection and
-   process/Session status. Keep the rollout incomplete until behavior is observed, not just Flux or
-   Deployment readiness. Restore staging image-automation markers only after acceptance.
+4. With zero staging runner workloads and starts held, promote the exact tested service and template
+   tags together through GitOps and restore their Flux Image Automation markers in the same PR
+   (operator, 2026-10-17). Flux manages the pins once that promotion merges. Normal Deployment
+   rollouts are sufficient; no separate service stop or Flux suspension is needed (operator,
+   2026-10-17). Upgrade every template, including suspended-only and VM templates. Verify all new
+   service replicas, image revisions and migration gates, and wait for old service Pods to disappear
+   before allowing any Sandbox start. If runners reappear, stop promotion and quiesce them first;
+   updating a template alone does not upgrade a running Sandbox.
+5. Activate retained Sessions with the new runner and verify native continuation, reconciliation,
+   unchanged archived history and retained storage. Testing's follow-up model turns prove context
+   recall on both harnesses. Check exact-turn rejection and process/Session status. Keep the rollout
+   incomplete until behavior is observed, not just Flux or Deployment readiness. Record the actual
+   deployed revisions as Flux continues managing the pins. The separate `IDLE_SUSPEND_UI_DRIVE` node follows
+   lifecycle rollout and remains assigned to the operator for the human staging UI drive.
+
+**Rollout checkpoint, 2026-10-17 PDT:** implementation merged in #10950
+(`2893ec865aa16c6be938f08d0314d7353496468f`); the exact-head suite passed 163 tests and the
+desktop/phone visual review passed. The released runner wheel is `agentplane-runner-70b9a3bb287b`,
+pinned by `e7fd6c3830b86463ad1dd3c27f2a42db250d515d`. Testing has the new services, standard runner
+and VM template; staging remains held with four suspended Sandbox CRs and their original volumes.
+The first deployed preset test completed a model/tool turn, then exposed a Pod-deletion wait race in
+the test; #10959 fixes that wait. Subsequent attempts failed before creating resources, first on host
+DNS and then on direct API TCP connection timeouts during token minting. Full Pod/VM suspend/resume
+and egress acceptance and retained-state staging acceptance remain pending. The promotion PR restores
+automatic image promotion on merge. No staging service stop or Flux suspension has been applied.
 
 Keep previous image revisions and a tested persistent-format rollback policy. Before new work is
 accepted, revert the coordinated release if necessary. After new writes, reconcile/preserve them;
