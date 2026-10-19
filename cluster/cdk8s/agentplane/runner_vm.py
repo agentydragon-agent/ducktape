@@ -27,9 +27,10 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumes,
     VirtualMachineSpecTemplateSpecVolumesConfigMap,
 )
+from pydantic import AnyHttpUrl
 
 from agentplane.crd_group import GROUP
-from agentplane.runner.guest_config import CA_BUNDLE, Endpoint, GuestConfig
+from agentplane.sandboxes.guest_config import CA_BUNDLE, Endpoint, GuestConfig
 from cluster.cdk8s.agentplane import launcher_relay, llm_ingress, platform_routes, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
@@ -74,8 +75,8 @@ class RunnerVmTemplate(Construct):
                 target=_guest_address(platform_routes.ingress(namespace).listen_port),
                 bearer=platform_routes.ROUTE_BEARER,
             ),
-            llm_base_url=llm_ingress.proxied_url(namespace),
-            proxy_url=f"http://{_guest_address(sandbox_pod.SIDECAR_LISTEN_PORT)}",
+            llm_base_url=AnyHttpUrl(llm_ingress.proxied_url(namespace)),
+            proxy_url=AnyHttpUrl(f"http://{_guest_address(sandbox_pod.SIDECAR_LISTEN_PORT)}"),
             platform_instructions=platform_instructions,
             console_autologin=env.vm_console_autologin,
         )

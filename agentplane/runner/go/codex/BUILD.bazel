@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "codex",
+    srcs = [
+        "adapter.go",
+        "history.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/go/codex",
+    visibility = ["//agentplane/runner:__subpackages__"],
+    deps = [
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/runner/go/codex/protocol",
+        "//agentplane/runner/go/harness",
+        "@com_github_google_uuid//:uuid",
+    ],
+)
+
+go_test(
+    name = "codex_test",
+    srcs = ["adapter_test.go"],
+    embed = [":codex"],
+    deps = ["//agentplane/runner/go/codex/protocol"],
+)

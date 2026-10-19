@@ -9,7 +9,7 @@ on:
       - "agentplane/runner/image.nix"
       - "agentplane/images/sandbox.nix"
       - "nix/lib/nix-ld-image.nix"
-      # The runner arrives as a released wheel, so a runner change reaches the image when its
+      # The runner arrives as a released executable, so a runner change reaches the image when its
       # pin moves.
       - "nix/artifact-pins.json"
       - "flake.lock"
