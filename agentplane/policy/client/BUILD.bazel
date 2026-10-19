@@ -1,0 +1,14 @@
+load("//devinfra/go:kubernetes_clients.bzl", "kubernetes_clients")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+kubernetes_clients(
+    name = "generated",
+    api = "//agentplane/policy/api/v1alpha1",
+    importpath = "github.com/agentydragon/ducktape/agentplane/policy/client",
+    input_base = "github.com/agentydragon/ducktape/agentplane/policy",
+    kinds = [
+        "PolicySet",
+        "PolicyBinding",
+    ],
+)
