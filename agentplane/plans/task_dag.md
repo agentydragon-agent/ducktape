@@ -1602,6 +1602,7 @@ flowchart TD
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     RUNNER_RENAME[Decision, unscheduled: a better name than runner]
+    GO_SERVICES_SETTINGS_LOADER[Blocked: Go services read settings through util/settings]
 ```
 
 ### `RUNNER_RENAME` — a better name than "runner"
@@ -1640,6 +1641,17 @@ sandbox, so it no longer reads as a Session Sandbox: the `sandbox__*` Actions,
 `action_service/sandbox/`, the `agentplane-sandbox` templates and labels, and
 `cluster/cdk8s/agentplane/command_sandbox.py`. The `sandbox__*` tool names are what agents and
 external Connections call, so renaming them is a wire change.
+
+### `GO_SERVICES_SETTINGS_LOADER` — Go services read settings through one loader
+
+**Blocked on the egress `util/settings` loader landing ([#10989](https://github.com/agentydragon/ducktape/pull/10989)
+and [#11080](https://github.com/agentydragon/ducktape/pull/11080)); unscheduled (coordinator, 2026-10-19,
+relaying the operator's 2026-10-18 direction of one settings loader for Go services, file and
+environment, no flags).** Move the Runner Gateway, the Sandbox Controller, the Policy Controller and the
+egress sidecar from flag parsing to `util/settings`, one service per change. Setting names and values stay;
+only how they are read changes. Each manifest change follows its image pin and removes flags only after
+the image that reads the file is pinned (image before config). New settings in the meantime, such as the
+Gateway's `--http-listen-address`, follow how the service reads settings today.
 
 ## 9. Legacy burn-down
 
@@ -1753,7 +1765,8 @@ Decision nodes do not authorize runtime changes. Detailed code paths and alterna
 gRPC-Gateway for the generated HTTP/JSON facade, and an ergonomic CLI, adopted incrementally by
 service and interface. Use JSON server streams for watches/waits and native gRPC for full duplex.
 Individual service migrations and the CLI workflow contract remain separate work items below, and the
-HTTP/JSON facade is built per service inside each migration; this direction does not authorize runtime changes.
+HTTP/JSON facade is built per service inside each migration; this direction authorizes no runtime change
+beyond the transport track nodes marked in flight, which the operator dispatched.
 
 ```mermaid
 flowchart LR
@@ -1766,7 +1779,6 @@ flowchart LR
     IDLE_SUSPEND_UI_DRIVE[Operator: remaining VM idle-suspend/send-to-wake UI drive, section 7]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement, section 3]
-    SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
     AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a PostgreSQL-free K3s tier]
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
@@ -1889,15 +1901,109 @@ This implementation can make a central Session-to-Sandbox placement lookup unnec
 delivery. Neither the destination design nor this node deletes retained History or the Kubernetes
 UID-to-connection locator.
 
-### `SERVICE_API_TRANSPORT_MIGRATIONS` — stage service and interface migrations independently
+### Service API transport tracks
 
-**Blocked on a reviewed contract for each service.** Move
-internal service interfaces to gRPC and expose their generated HTTP/JSON facades incrementally, one
-service/interface at a time. Each migration needs its own caller inventory, authorization and
-behavior-preservation review, tests, rollout and rollback plan. Do not turn the approved direction
-into one repo-wide migration. No service has been selected for the first cutover;
-[generated HTTP facades](grpc_http_facade.md) recommends the Dispatcher's read RPCs and extends the
-facade to the browser through the app first; direct browser access is a later option there.
+One track per service. Tracks are independent except where an edge is drawn, and graph position
+claims no priority. Each migration keeps its own caller inventory, authorization and
+behavior-preservation review, tests, rollout and rollback plan; none is a repo-wide migration. The
+shared piece is the facade machinery (gateway toolchain, serve helper, the app's generic upstream
+proxy, the browser's stream client), which `DISPATCHER_READS_FACADE` builds once. A Python service
+gets its facade with its Go port, from the same proto. Design, alternatives and exit evidence:
+[generated HTTP facades](grpc_http_facade.md). The order of the ports belongs to the Go rewrite.
+
+```mermaid
+flowchart LR
+    DISPATCHER_READS_FACADE[In flight: Dispatcher reads as a generated browser API]
+    EGRESS_ADMIN_GRPC[In flight: gRPC interface beside the egress admin HTTP]
+    EGRESS_ADMIN_APP_SWITCH[Blocked: the app reads egress admin over gRPC]
+    EGRESS_ADMIN_HTTP_TEARDOWN[Blocked: remove the hand-written egress admin HTTP]
+    HISTORY_SERVICE_GO_PORT[Candidate: port the History Service to Go]
+    HISTORY_READS_FACADE[Blocked: History reads as a generated browser API]
+    NOTIFICATION_SERVICE_GO_PORT[Blocked: port the Notification Service to Go]
+    ACTION_SERVICE_GO_PORT[Candidate: port the Action Service to Go]
+    NOTIFICATION_SERVICE_SPLIT[Unscheduled: split the Notification Service, section 2]
+    HISTORY_SANDBOX_UID[Blocked: History records the Sandbox UID, section 3]
+    EGRESS_ADMIN_GRPC --> EGRESS_ADMIN_APP_SWITCH
+    EGRESS_ADMIN_APP_SWITCH --> EGRESS_ADMIN_HTTP_TEARDOWN
+    HISTORY_SERVICE_GO_PORT --> HISTORY_READS_FACADE
+    DISPATCHER_READS_FACADE --> HISTORY_READS_FACADE
+    NOTIFICATION_SERVICE_SPLIT --> NOTIFICATION_SERVICE_GO_PORT
+    DISPATCHER_READS_FACADE -. facade half waits for the shared machinery .-> NOTIFICATION_SERVICE_GO_PORT
+    DISPATCHER_READS_FACADE -. facade half waits for the shared machinery .-> ACTION_SERVICE_GO_PORT
+    DISPATCHER_READS_FACADE -. generated handlers replace the hand-written ones where an HTTP caller remains .-> EGRESS_ADMIN_HTTP_TEARDOWN
+    HISTORY_SERVICE_GO_PORT -. sequencing choice: record the UID in Go if the port goes first .-> HISTORY_SANDBOX_UID
+```
+
+### `DISPATCHER_READS_FACADE` — Dispatcher reads as a generated browser API
+
+**In flight (the operator dispatched it in the delivery-facade thread, 2026-10-19 10:13 UTC; the
+Gateway code is in [#11116](https://github.com/agentydragon/ducktape/pull/11116)).** Serve `GetDispatch`,
+`ListDispatches` and `WatchDispatches` as a generated HTTP/JSON facade from the Runner Gateway process, and replace `app/threads/dispatch_stream.py` and its route with the app's
+generic upstream proxy and a `fetch` stream client in the browser. This builds the machinery every other
+facade reuses. The page treats a command the Dispatcher no longer holds as `DELIVERY_STATE_UNKNOWN`, so the
+watch likely needs a marker that the current Dispatches have been sent; the node's design settles it. It
+lands as the Gateway code with its listener optional, then the manifests once that image is pinned, then
+the app and frontend change that deletes the old route. Exit evidence: missing, invalid and valid
+bearers behave as over gRPC; a stream arrives unbuffered through the app and ends on logout; the generated
+TypeScript types are chosen; one visual scene runs on the streaming stub.
+
+### `EGRESS_ADMIN_GRPC` — a gRPC interface beside the egress admin HTTP
+
+**In flight (the operator dispatched it in the delivery-facade thread, 2026-10-19 10:15 UTC; a worker is
+assigned).** Add a gRPC copy of each egress HTTP API: the decisions list and stream on the admin listener,
+the rules API on the rules listener, and `healthz` and `livez` (the app probes `/healthz` today), each
+driven by the same readers and the same authentication as its hand-written HTTP handlers. Each copy serves
+on its HTTP API's existing listener, so no port or network-policy change (operator, 2026-10-19 10:48 UTC).
+The HTTP interfaces stay until `EGRESS_ADMIN_HTTP_TEARDOWN`. New caller settings are optional until the
+image is pinned; manifests follow.
+
+### `EGRESS_ADMIN_APP_SWITCH` — the app reads egress admin over gRPC
+
+**Blocked on `EGRESS_ADMIN_GRPC` reaching the cluster (image pinned, caller settings configured).** Move the
+app's `DecisionsClient`, its egress health probe and every other caller the inventory finds from the HTTP
+admin to the gRPC interface, adding the Python proto targets with it. Event-driven, as now: the decisions
+stream stays a stream.
+
+### `EGRESS_ADMIN_HTTP_TEARDOWN` — remove the hand-written egress admin HTTP
+
+**Blocked on `EGRESS_ADMIN_APP_SWITCH` being rolled out.** Delete the `/decisions`, `/decisions/changes`,
+`/healthz`, `/livez`, `/v1/rules` and OpenAPI handlers, after every caller's image is pinned
+(removals follow their callers). Inventory callers first, including the rules route the
+[agent CLI](agent_cli.md) plan's egress commands target: where an HTTP caller remains, the generated facade
+from `DISPATCHER_READS_FACADE` replaces the handler instead of leaving two interfaces.
+
+### `HISTORY_SERVICE_GO_PORT` — port the History Service to Go
+
+**Candidate; the Go rewrite recommended it as the next port (2026-10-17), and the operator's pick is not
+recorded here.** Keep the schema and the gRPC contract unchanged so Electric and the existing callers keep
+working; the fold's Python tests pin the port. `HISTORY_SANDBOX_UID` is the next History change and would
+land in Go if the port goes first; otherwise it lands in Python and is ported. The operator picks the order.
+
+### `HISTORY_READS_FACADE` — History reads as a generated browser API
+
+**Blocked on `HISTORY_SERVICE_GO_PORT` and `DISPATCHER_READS_FACADE`.** Annotate the browser's History
+reads and replace the app's mirror models (`app/threads/view/content.py`,
+`app/threads/events/debug.py`) with the generic proxy. `WatchSessionSummaries` says only that something
+changed, so a browser-facing watch gets frames that carry state. Decide on purpose whether the app's Thread
+check on `thread_observations` (404 for a Session no Thread links) is kept or dropped.
+
+### `NOTIFICATION_SERVICE_GO_PORT` — port the Notification Service to Go
+
+**Blocked on `NOTIFICATION_SERVICE_SPLIT`, so the service is ported once, after the operator decides what
+stays.** Proto and generated facade for subscriptions, inboxes and the operator streams, replacing the
+app's Notification proxy. The signed GitHub webhook stays hand-written HTTP. The facade half waits for
+`DISPATCHER_READS_FACADE`.
+
+### `ACTION_SERVICE_GO_PORT` — port the Action Service to Go
+
+**Candidate; recommended after the other ports because it sits on MCP and OAuth.** Serve its operator and
+workload APIs as generated facades and delete `OperatorActionServiceClient` and the app's Action routes and
+relays. The request watch gets a resume cursor or delta frames in its proto from the start: its first frame
+is the whole history (megabytes, #7922) and it ends every minute with the exchanged token. The MCP
+endpoint, OAuth metadata and consent callbacks stay hand-written HTTP. The facade half waits for
+`DISPATCHER_READS_FACADE`. Decide with
+[`AGENT_API_TOOLING_DESIGN`](#agent_api_tooling_design--preserve-ergonomic-scriptable-agent-workflows)
+whether the agent CLI's Action Service changes land in the Python service or in this port.
 
 ### `AGENT_API_TOOLING_DESIGN` — preserve ergonomic, scriptable agent workflows
 
