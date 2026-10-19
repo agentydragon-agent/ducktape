@@ -19,7 +19,9 @@ python314Packages.buildPythonApplication {
     with python314Packages;
     [
       atomicwrites
+      dbus-next
       httpx
+      httpx-sse
       platformdirs
       pydantic
       typer
@@ -29,13 +31,30 @@ python314Packages.buildPythonApplication {
   doCheck = false;
   dontUsePytestCheck = true;
 
+  preDistPhases = [ "aiquotaConsoleScriptsImportCheck" ];
+  aiquotaConsoleScriptsImportCheck = ''
+        export PYTHONPATH="$out/${python314Packages.python.sitePackages}:$PYTHONPATH"
+        (cd "$out" && ${python314Packages.python.interpreter} -c '
+    import importlib.metadata
+
+    entry_points = [
+        entry_point
+        for entry_point in importlib.metadata.distribution("aiquota").entry_points
+        if entry_point.group == "console_scripts"
+    ]
+    if not entry_points:
+        raise RuntimeError("aiquota wheel has no console-script entry points")
+    for entry_point in entry_points:
+        entry_point.load()
+    ')
+  '';
+
   nativeBuildInputs = [ pkgs.unzip ];
   postInstall = ''
     uuid="aiquota@allegedly.works"
     extDir="$out/share/gnome-shell/extensions/$uuid"
     mkdir -p "$extDir"
     unzip -o ${extensionZip} -d "$extDir"
-    ln -s ../../../../bin/aiquota "$extDir/aiquota"
   '';
 
   passthru.extensionUuid = "aiquota@allegedly.works";
