@@ -24,7 +24,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/runner
     newTag: devel-20261019035331-ad52443 # {"$imagepolicy": "flux-system:runner:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
-    newTag: devel-20261018065621-67b01f1 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
+    newTag: devel-20261019042206-b9c4b9e # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
     newTag: devel-20261018065701-67b01f1 # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
