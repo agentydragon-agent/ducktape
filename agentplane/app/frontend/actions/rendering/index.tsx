@@ -76,6 +76,21 @@ import {
 } from "./kubernetes_admin/resources_list";
 import { renderResultPreview, type ResultPreview } from "./result_entry";
 import { execArgumentsPreview, execCollapsedPreview, execLabel, execResultPreview } from "./ssh/exec";
+import {
+  sandboxExecLabel,
+  sandboxExecArguments,
+  sandboxExecResult,
+  sandboxCreateLabel,
+  sandboxCreateArguments,
+  sandboxInfoResult,
+  sandboxGetLabel,
+  sandboxDisposeLabel,
+  sandboxNamedArguments,
+  sandboxListLabel,
+  sandboxListArguments,
+  sandboxListResult,
+  sandboxDisposeResult,
+} from "./sandbox";
 import { calendarNodeArgumentsPreview, calendarNodeLabel } from "./tana";
 
 type ActionIdentity = ActionRequestView["action"];
@@ -93,6 +108,7 @@ interface ActionPresentation {
   details?: {
     arguments?: ArgumentsPreview | null;
     result?: ResultPreview | null;
+    nativeResult?: ResultPreview;
   };
   /** Card decision buttons are a capability of their own: a custom view does not grant them. The Action decides per
       invocation, from the complete arguments, whether what the compact card shows is enough to decide on. */
@@ -279,6 +295,51 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
       ],
     ]),
   ],
+  [
+    "sandbox",
+    new Map<string, ActionPresentation>([
+      [
+        "exec",
+        {
+          label: sandboxExecLabel,
+          pane: { opened: sandboxExecArguments },
+          details: { arguments: sandboxExecArguments, nativeResult: sandboxExecResult },
+        },
+      ],
+      [
+        "create",
+        {
+          label: sandboxCreateLabel,
+          pane: { opened: sandboxCreateArguments },
+          details: { arguments: sandboxCreateArguments, nativeResult: sandboxInfoResult },
+        },
+      ],
+      [
+        "get",
+        {
+          label: sandboxGetLabel,
+          pane: { opened: sandboxNamedArguments },
+          details: { arguments: sandboxNamedArguments, nativeResult: sandboxInfoResult },
+        },
+      ],
+      [
+        "dispose",
+        {
+          label: sandboxDisposeLabel,
+          pane: { opened: sandboxNamedArguments },
+          details: { arguments: sandboxNamedArguments, nativeResult: sandboxDisposeResult },
+        },
+      ],
+      [
+        "list",
+        {
+          label: sandboxListLabel,
+          pane: { opened: sandboxListArguments },
+          details: { arguments: sandboxListArguments, nativeResult: sandboxListResult },
+        },
+      ],
+    ]),
+  ],
   // x/ssh_mcp_server/server.py, under the group name staging configures it as.
   [
     "ssh",
@@ -368,4 +429,10 @@ export function renderDetailsResult(action: ActionIdentity, result: CallToolResu
 /** Whether this invocation gets card decision buttons; independent of the presentation chosen. */
 export function actionOffersCardDecisionButtons(action: ActionIdentity, args: unknown): boolean {
   return presentation(action)?.offersCardDecisionButtons?.(args) ?? false;
+}
+
+/** Native executors store their result models directly, without an MCP envelope. */
+export function renderNativeDetailsResult(action: ActionIdentity, value: unknown): ReactNode | null {
+  const preview = presentation(action)?.details?.nativeResult;
+  return preview ? renderResultPreview(preview, value) : null;
 }
