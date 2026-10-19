@@ -45,6 +45,6 @@ images:
     newTag: devel-20261018231211-8a973d0 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # The runner VM SandboxTemplate's containerDisk, which `images:` reaches through kustomizeconfig.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-vm
-    newTag: devel-20261018234116-fcdd5bc # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
+    newTag: devel-20261019002756-370ad33 # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
 configurations:
   - kustomizeconfig
