@@ -97,6 +97,88 @@ def test_generated_root_holds_only_generated_files(generated: Path, checkout: Pa
     )
 
 
+def test_piraeus_storage_is_confined_to_the_retained_two_node_canary(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    release = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "HelmRelease" and doc["metadata"].get("name") == "linstor-cluster"
+    )
+    values = release["spec"]["values"]
+    canary_selector = {"storage.allegedly.works/drbd-canary": "true"}
+
+    assert values["createInternalTLS"] == "cert-manager"
+    assert values["createApiTLS"] == "cert-manager"
+    cluster = values["linstorCluster"]
+    assert cluster["nodeSelector"] == canary_selector
+    assert cluster["properties"] == [{"name": "TcpPortAutoRange", "value": "7900-7919"}]
+    assert cluster["highAvailabilityController"] == {"enabled": False}
+    assert cluster["nfsServer"] == {"enabled": False}
+
+    [satellite] = values["linstorSatelliteConfigurations"]
+    assert satellite["nodeSelector"] == canary_selector
+    assert satellite["deletionPolicy"] == "Retain"
+    [pool] = satellite["storagePools"]
+    assert pool == {"name": "local-canary", "fileThinPool": {"directory": "/var/mnt/local-path-ovh-hdd/linstor-canary"}}
+
+    assert len(values["linstorSatelliteConfigurations"]) == 1
+    assert satellite["nodeSelector"] == canary_selector
+    [reactor_patch] = satellite["patches"]
+    assert reactor_patch["target"] == {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"}
+    assert 'address = "127.0.0.1:9942"' in reactor_patch["patch"]
+    assert "satellite-config" not in reactor_patch["patch"]
+    assert "bind_address" not in reactor_patch["patch"]
+    assert "3366" not in reactor_patch["patch"]
+
+    [storage_class] = values["storageClasses"]
+    assert storage_class["name"] == "local-canary"
+    assert storage_class["reclaimPolicy"] == "Retain"
+    assert storage_class["volumeBindingMode"] == "WaitForFirstConsumer"
+    assert storage_class["allowVolumeExpansion"] is True
+    assert storage_class["parameters"] == {
+        "linstor.csi.linbit.com/storagePool": "local-canary",
+        "linstor.csi.linbit.com/placementCount": "1",
+        "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
+    }
+    assert "annotations" not in storage_class
+
+    operator_flux = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "piraeus-operator"
+    )
+    cluster_flux = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "piraeus-cluster"
+    )
+    assert operator_flux["spec"]["prune"] is False
+    assert operator_flux["spec"]["deletionPolicy"] == "Orphan"
+    assert cluster_flux["spec"]["prune"] is False
+    assert cluster_flux["spec"]["deletionPolicy"] == "Orphan"
+    assert cluster_flux["spec"]["dependsOn"] == [
+        {"name": "piraeus-operator", "namespace": "ducktape-flux"},
+        {"name": "cert-manager", "namespace": "ducktape-flux"},
+    ]
+
+
+def test_piraeus_controller_network_policy_only_admits_api_tls(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    policy = next(
+        document
+        for document in _generated_documents(generated, parsed_yaml_documents)
+        if document.get("kind") == "NetworkPolicy" and document["metadata"].get("name") == "linstor-controller-api"
+    )
+
+    assert policy["metadata"]["namespace"] == "piraeus-datastore"
+    assert policy["spec"]["podSelector"]["matchLabels"] == {"app.kubernetes.io/component": "linstor-controller"}
+    assert policy["spec"]["policyTypes"] == ["Ingress"]
+    assert policy["spec"]["ingress"] == [{"ports": [{"port": 3371, "protocol": "TCP"}]}]
+
+
 def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:

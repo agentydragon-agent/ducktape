@@ -1469,6 +1469,7 @@ py_library(
         ":ntfy",
         ":nvidia_device_plugin",
         ":nvidia_runtimeclass",
+        ":piraeus",
         ":platform_monitoring",
         ":proxmox_proxy",
         ":reflector",
@@ -1734,6 +1735,24 @@ py_library(
         ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "piraeus",
+    srcs = ["piraeus.py"],
+    data = ["piraeus-reactor-patch.yaml"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        ":flux",
+        ":helm",
+        ":manifest_roots",
+        ":namespaces",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
     ],
 )
 
