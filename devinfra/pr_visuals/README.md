@@ -205,6 +205,11 @@ expiration criterion. The [storage cleanup procedure](docs/storage-cleanup.md)
 describes one-time review expiry, reference checks, and volume compaction, including
 the measured 2026-10-19 cleanup. No recurring expiry policy is installed.
 
+`//devinfra/pr_visuals:retention_bin` prints a read-only JSON planning report. Run it
+with `bb run`; invocation details and the publisher race decision gate are in
+[`docs/retention.md`](docs/retention.md). Its output is always a stale plan, never a
+deletion command or a claim that an object is safe to delete now.
+
 ## Released commands
 
 The `//devinfra/pr_visuals:wheel` target builds the `pr-visuals` wheel. It
