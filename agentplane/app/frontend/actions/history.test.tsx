@@ -148,7 +148,8 @@ describe("ActionHistory", () => {
       node.textContent?.includes("test-exact-token")
     );
     if (!block) throw new Error("missing the arguments");
-    expect(block.closest(".agentplane-disclosure-panel")).toBeNull();
+    expect(block.closest("[data-clamped]")?.getAttribute("data-clamped")).toBe("false");
+    expect(block.closest("[hidden]")).toBeNull();
   });
 
   it("renders the auto-approving policy when the Decision carries policy evidence", async () => {
@@ -202,6 +203,43 @@ describe("ActionHistory", () => {
     expect(stream?.url).toBe("/actions/stream?state=decision_pending");
     await unmountLast();
     expect(stream?.close).toHaveBeenCalledOnce();
+  });
+
+  it("defaults to excluding auto-allows and resets pagination when the filter changes", async () => {
+    const sent = answerApi(({ path, query }) => {
+      if (path === "/action-groups") return [];
+      if (path !== "/actions/history") return undefined;
+      const all = query.get("include_auto_allowed") === "true";
+      return {
+        items: [
+          request(
+            all ? "succeeded" : query.has("cursor") ? "cancelled" : "denied",
+            all ? 3 : query.has("cursor") ? 2 : 1
+          ),
+        ],
+        next_cursor: query.has("cursor") ? null : "page2",
+      };
+    });
+    const container = await renderLive(<ActionHistory />);
+    await vi.waitFor(() => expect(container.textContent).toContain("Denied"));
+    expect(
+      sent
+        .filter(({ path }) => path === "/actions/history")
+        .every(({ query }) => query.get("include_auto_allowed") === "false")
+    ).toBe(true);
+    await act(async () => button(container, "Load more").click());
+    await vi.waitFor(() => expect(container.textContent).toContain("cancelled"));
+    const all = container.querySelector<HTMLInputElement>('input[value="all"]')!;
+    await act(async () => all.click());
+    await vi.waitFor(() => expect(container.textContent).toContain("succeeded"));
+    expect(container.textContent).not.toContain("cancelled");
+    const latest = sent.filter(({ path }) => path === "/actions/history").at(-1)!;
+    expect(latest.query.get("include_auto_allowed")).toBe("true");
+    expect(latest.query.get("cursor")).toBeNull();
+    const filtered = container.querySelector<HTMLInputElement>('input[value="not-auto-allowed"]')!;
+    await act(async () => filtered.click());
+    await vi.waitFor(() => expect(container.textContent).toContain("Denied"));
+    expect(container.textContent).not.toContain("succeeded");
   });
 
   it("draws an MCP group's result the way the tool answered it", async () => {

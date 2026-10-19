@@ -803,5 +803,76 @@ async def test_sandbox_policy_grant_pick_updates_options(view: VisualPage, app: 
     await view.capture(target=view.page.locator("#app"))
 
 
+@DESKTOP_AND_MOBILE
+async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture, capture_name: str) -> None:
+    await app.set_flag(Flag.PENDING_ACTIONS)
+    await app.mount_app("/actions")
+    page = view.page
+    filtered = page.get_by_role("radio", name="Not auto-allowed", exact=True)
+    all_actions = page.get_by_role("radio", name="All actions", exact=True)
+    auto_allowed = page.get_by_text("search ducktape for auto_allow", exact=True)
+    await expect(filtered).to_be_checked()
+    await expect(page.get_by_text("list the test backup archive", exact=True)).to_be_visible()
+    await expect(auto_allowed).to_have_count(0)
+    await _focus(page, page.get_by_text("Not auto-allowed", exact=True))
+    await view.capture()
+    await page.get_by_text("All actions", exact=True).click()
+    await expect(all_actions).to_be_checked()
+    await expect(auto_allowed).to_be_visible()
+    await _focus(page, page.get_by_text("All actions", exact=True))
+    await view.capture(f"{capture_name}-all-actions")
+    await page.get_by_text("Not auto-allowed", exact=True).click()
+    await expect(auto_allowed).to_have_count(0)
+
+
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("kind", ["text", "json", "email", "manifest"])
+async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, capture_name: str, kind: str) -> None:
+    text = "\n".join(f"Long action content line {index + 1}" for index in range(48))
+    group, name = "example_docs", "long_text"
+    arguments: dict[str, object] = {"lines": text.splitlines()}
+    result: object = {"content": [{"type": "text", "text": text}]}
+    if kind == "json":
+        result = {"content": [], "structuredContent": {"lines": text.splitlines()}}
+    elif kind == "email":
+        group, name = "gmail", "drafts_create"
+        arguments = {"to": ["reader@example.com"], "subject": "Long email body", "body": text}
+        result = {"content": [], "structuredContent": {"id": "long-draft"}}
+    elif kind == "manifest":
+        group, name = "kubernetes_admin", "resources_create_or_update"
+        arguments = {
+            "resource": "apiVersion: v1\nkind: ConfigMap\ndata:\n"
+            + "\n".join(f"  line{index}: Long manifest content" for index in range(48))
+        }
+        result = {"content": []}
+    await app.show_action_receipt(group, name, arguments, result)
+    await app.mount_app("/actions")
+    page = view.page
+    await expect(page.get_by_text("Long action text", exact=True)).to_be_visible()
+    if kind == "text":
+        await expect(page.get_by_role("button", name="Show all 48 lines", exact=True)).to_be_visible()
+    elif kind == "json":
+        await expect(page.get_by_text("Structured content", exact=True)).to_be_visible()
+    elif kind == "manifest":
+        await expect(page.get_by_text("Apply Kubernetes resource", exact=True)).to_be_visible()
+    blocks = page.locator('.agentplane-clamped-block:has([data-clamped="true"])')
+    block = blocks.last if kind in {"text", "json"} else blocks.first
+    await expect(block).to_be_visible()
+    await _focus(page, block)
+    await view.capture()
+    await block.get_by_role("button", name=re.compile(r"Show all \d+ lines")).click()
+    expanded = page.locator('.agentplane-clamped-block[data-expanded="true"]').first
+    await expect(expanded).to_be_visible()
+    await expect(expanded.locator('[data-clamped="true"]')).to_have_count(0)
+    await view.capture(f"{capture_name}-expanded")
+    await expanded.get_by_role("button", name="Action text", exact=True).click()
+    await expect(page.locator('.agentplane-clamped-block[data-expanded="true"]')).to_have_count(0)
+    if kind == "email":
+        await _open_raw_switches(page)
+        await expect(page.get_by_text("Exact arguments (unredacted)", exact=True)).to_be_visible()
+        await expect(page.locator('[data-clamped="true"]').first).to_be_visible()
+        await view.capture(f"{capture_name}-raw")
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
