@@ -19,7 +19,10 @@ function window(overrides: Partial<QuotaWindow> = {}): QuotaWindow {
 function provider(overrides: Partial<ProviderView>): ProviderView {
   return {
     provider: "claude",
-    last_output: { fetched_at: FETCHED_AT, result: { kind: "success", windows: [window()] } },
+    last_output: {
+      fetched_at: FETCHED_AT,
+      result: { kind: "success", windows: [window()], reset_credit_expiry_lookup_failed: false },
+    },
     last_success: null,
     currently_over_plan: false,
     paid_credits_active: false,
@@ -43,7 +46,11 @@ describe("effectiveQuota", () => {
         last_output: { fetched_at: FETCHED_AT, result: { kind: "error", error: "HTTP 503" } },
         last_success: {
           fetched_at: EARLIER,
-          result: { kind: "success", windows: [window({ used_percent: 72 })] },
+          result: {
+            kind: "success",
+            windows: [window({ used_percent: 72 })],
+            reset_credit_expiry_lookup_failed: false,
+          },
         },
       })
     );
@@ -65,8 +72,19 @@ describe("effectiveQuota", () => {
     // data, not a reason to fall back to an older snapshot.
     const quota = effectiveQuota(
       provider({
-        last_output: { fetched_at: FETCHED_AT, result: { kind: "success", windows: [], available_reset_credits: 2 } },
-        last_success: { fetched_at: EARLIER, result: { kind: "success", windows: [window()] } },
+        last_output: {
+          fetched_at: FETCHED_AT,
+          result: {
+            kind: "success",
+            windows: [],
+            available_reset_credits: 2,
+            reset_credit_expiry_lookup_failed: false,
+          },
+        },
+        last_success: {
+          fetched_at: EARLIER,
+          result: { kind: "success", windows: [window()], reset_credit_expiry_lookup_failed: false },
+        },
       })
     );
     expect(quota.resetCredits).toBe(2);
@@ -74,12 +92,35 @@ describe("effectiveQuota", () => {
     expect(quota.staleSince).toBeNull();
   });
 
+  it("retains the banked reset count when supplemental expiry details failed", () => {
+    const quota = effectiveQuota(
+      provider({
+        last_output: {
+          fetched_at: FETCHED_AT,
+          result: {
+            kind: "success",
+            windows: [window()],
+            available_reset_credits: 2,
+            reset_credit_expiry_lookup_failed: true,
+          },
+        },
+      })
+    );
+
+    expect(quota.resetCredits).toBe(2);
+    expect(quota.resetCreditExpiryLookupFailed).toBe(true);
+  });
+
   it("drops windows the provider marked as not for display", () => {
     const quota = effectiveQuota(
       provider({
         last_output: {
           fetched_at: FETCHED_AT,
-          result: { kind: "success", windows: [window(), window({ window_seconds: 604800, display: false })] },
+          result: {
+            kind: "success",
+            windows: [window(), window({ window_seconds: 604800, display: false })],
+            reset_credit_expiry_lookup_failed: false,
+          },
         },
       })
     );
