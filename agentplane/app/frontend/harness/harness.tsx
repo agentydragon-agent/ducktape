@@ -23,6 +23,7 @@ import type {
   SandboxView,
   ThreadView,
 } from "../client";
+import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { DecisionsSnapshot, SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
 import type { InboxNoticeState } from "../thread_notices";
@@ -2499,7 +2500,7 @@ routes.push(
     "GET",
     /^\/actions\/([^/]+)$/,
     (match) => {
-      const request = ACTIONS.find((item) => item.id === match[1]);
+      const request = previewAction?.id === match[1] ? previewAction : ACTIONS.find((item) => item.id === match[1]);
       return request ?? Response.json({ detail: "Action request not found" }, { status: 404 });
     },
   ],
@@ -3206,6 +3207,11 @@ const visualHarness = {
   ageOutage(milliseconds: number): void {
     streamRegistry.now = () => Date.now() + milliseconds;
   },
+  actionRendererKeys(): string[] {
+    return Array.from(ACTION_RENDERERS, ([group, renderers]) =>
+      Array.from(renderers.keys(), (name) => `${group}.${name}`)
+    ).flat();
+  },
   showActionPreview(action: ActionRequestView["action"], args: ActionRequestView["arguments"]): void {
     previewAction = {
       ...COMPACT_POD_ACTION,
@@ -3225,9 +3231,10 @@ const visualHarness = {
     ACTIONS[2]!.execution!.result = result;
   },
   showActionReceipt(action: ActionRequestView["action"], args: ActionRequestView["arguments"], result: unknown): void {
-    receiptActionGroup = MCP_GROUPS.some((group) => group.key === action.group)
-      ? undefined
-      : mcpGroup(action.group, "Test MCP backend for the receipt renderer.");
+    receiptActionGroup =
+      action.group === "sandbox" || MCP_GROUPS.some((group) => group.key === action.group)
+        ? undefined
+        : mcpGroup(action.group, "Test MCP backend for the receipt renderer.");
     const receipt = ACTIONS[2]!;
     ACTIONS.splice(0, ACTIONS.length, {
       ...receipt,
