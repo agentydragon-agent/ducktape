@@ -21,8 +21,8 @@
       "sha256": "1KvHfNukys99Lq+jKi0B2v4XnMieefGWKwCAtkM6HJI="
     },
     "ducktape-util": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-2071cd431c51/ducktape_util-0.1.0-py3-none-any.whl",
-      "sha256": "IHHNQxxR+srUmcNduilIbylDQ/UbS/p7Je/2y6yKiXg="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-ee32dc40501c/ducktape_util-0.1.0-py3-none-any.whl",
+      "sha256": "7jLcQFAcJ1kWXUkWxY/r/y4e+yk1mwTBeazmpsPHpSg="
     },
     "ducktape": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-1e08e83ef370/ducktape-0.1.0-py3-none-any.whl",
@@ -37,11 +37,11 @@
       "sha256": "4eBO7BRYjX1X/+02uRxQ0ihH9aoK9X0cTxw2qIA9PWY="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-221506296fcc/aiquota.zip",
-      "sha256": "lgLwFrnUA6rzjzwS8eSQz/eXU8OqguFxTT1Jpfr2buo="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-8be2985b9492/aiquota.zip",
+      "sha256": "Hn6G+W1nF/vM4uKxYNGruOIe1dCSjkpbohZrwbxRcgc="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-221506296fcc/aiquota-0.1.0-py3-none-any.whl",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-8be2985b9492/aiquota-0.1.0-py3-none-any.whl",
       "sha256": "CjH2+p6oVAQptCcRdHksB5LkryWpUvrR3fMBv8qjeZA="
     },
     "debundle": {
@@ -241,8 +241,8 @@
       "sha256": "/deBD9Su3oYI5fk5EMY81pz+cE8lrRHyQXpViQgxdeM="
     },
     "pr-visuals": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-ed83d8208237/pr_visuals-0.1.0-py3-none-any.whl",
-      "sha256": "7YPYIII3djL1lo030h9i9ZXYg7ioqJz4dnNWpxncgDk="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-187360f5e373/pr_visuals-0.1.0-py3-none-any.whl",
+      "sha256": "GHNg9eNzQo8BG0XMPt4+xwvzwOIj3PIiiiyxHfzpCs4="
     },
     "skill-ci_reliability": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_reliability-c5422d1aa967/ci_reliability.skill",
