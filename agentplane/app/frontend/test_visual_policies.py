@@ -139,16 +139,127 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
         await expect(section.get_by_text("Requested by", exact=False)).to_have_count(0)
         await expect(section.get_by_text("Check the exact call before approving.", exact=True)).to_have_count(0)
         await expect(section.get_by_text("app=demo")).to_be_visible()
-        await expect(section.get_by_role("button", name="Deny inspect running demo pods")).to_be_visible()
         await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
+        await expect(section.get_by_role("button", name="Deny inspect running demo pods")).to_be_visible()
     else:
-        await expect(section.get_by_text("Filters")).to_be_visible()
+        await expect(section.get_by_text("Matching pods where")).to_be_visible()
         await expect(
             section.locator(".agentplane-actions-sidebar-collapsed-preview").get_by_text("test-apps")
         ).to_have_count(0)
         await expect(section.get_by_text("test-apps", exact=True)).to_have_count(1)
         await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
-    await view.capture()
+        await expect(section.get_by_role("button", name="Deny inspect running demo pods")).to_be_visible()
+    await view.capture(target=section)
+
+
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
+@pytest.mark.parametrize(
+    ("group", "name", "arguments", "visible", "overview"),
+    [
+        pytest.param(
+            "kubernetes_admin",
+            "pods_list_in_namespace",
+            {
+                "namespace": "test-namespace-" + "n" * 48,
+                "labelSelector": "app=" + "demo-" + "d" * 56,
+                "fieldSelector": "status.phase=Running," + "x" * 48,
+            },
+            ["test-namespace-", "label selector", "status.phase=Running"],
+            "Matching pods where",
+            id="long-target-and-selectors",
+        ),
+        pytest.param(
+            "gmail",
+            "threads_list",
+            {"q": "from:deployments@example.com " + "query-" * 12, "maxResults": 23},
+            ['"maxResults": 23', "from:deployments@example.com"],
+            "from:deployments@example.com",
+            id="gmail-query-limit",
+        ),
+        pytest.param(
+            "kubernetes_admin",
+            "pods_log",
+            {
+                "name": "api-" + "pod-" * 12,
+                "namespace": "apps",
+                "container": "sidecar-" + "container-" * 8,
+                "previous": True,
+                "tail": -1,
+            },
+            ['"container": "sidecar-', '"previous": true', '"tail": -1'],
+            "Previous logs",
+            id="previous-pod-logs",
+        ),
+        pytest.param(
+            "kubernetes_admin",
+            "resources_list",
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "namespace": "apps",
+                "fieldSelector": "status.phase=Running," + "x" * 48,
+                "labelSelector": "app=" + "demo-" + "d" * 56,
+            },
+            ["field selector status.phase=Running", "label selector app=demo-"],
+            "Matching resources where",
+            id="resource-list-selectors",
+        ),
+        pytest.param(
+            "kubernetes_admin",
+            "events_list",
+            {"namespace": "apps", "fieldSelector": "type=Warning," + "reason-" * 8},
+            ["Show events matching", "type=Warning"],
+            "Show events matching",
+            id="event-field-selector",
+        ),
+        pytest.param(
+            "kubernetes_admin",
+            "resources_delete",
+            {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
+            ["Use API version v1", "request a 0s grace period"],
+            "Request a 0s grace period",
+            id="resource-delete-grace-period",
+        ),
+        pytest.param(
+            "tana",
+            "get_or_create_calendar_node",
+            {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
+            ["week calendar node", "2026-10-12", "workspace-123"],
+            "week calendar node",
+            id="calendar-context",
+        ),
+    ],
+)
+async def test_action_argument_layouts(
+    view: VisualPage,
+    app: AgentplaneFixture,
+    expanded: bool,
+    group: str,
+    name: str,
+    arguments: dict[str, object],
+    visible: list[str],
+    overview: str,
+) -> None:
+    await app.show_action_preview(group, name, arguments)
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+    await _open_phone_navigation(page)
+    section = page.locator(".agentplane-actions-sidebar")
+    title = "inspect running demo pods" if name == "pods_list_in_namespace" else f"review {name.replace('_', ' ')}"
+    if expanded:
+        await section.get_by_role("button", name=f"Expand {title}").click()
+        for value in visible:
+            await expect(section.get_by_text(value, exact=False)).to_be_visible()
+        if (group, name) not in {("kubernetes_admin", "resources_delete"), ("tana", "get_or_create_calendar_node")}:
+            await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+            await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
+    else:
+        await expect(section.get_by_text(overview, exact=False)).to_be_visible()
+        if (group, name) not in {("kubernetes_admin", "resources_delete"), ("tana", "get_or_create_calendar_node")}:
+            await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+            await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
+    await view.capture(target=section)
 
 
 @DESKTOP_AND_MOBILE
@@ -209,34 +320,48 @@ async def test_sandbox_action_results(
 @pytest.mark.parametrize(
     ("group", "name", "arguments", "visible"),
     [
-        (
+        pytest.param(
             "kubernetes_admin",
             "resources_get",
             {"apiVersion": "apps/v1", "kind": "Deployment", "name": "web"},
             "Read with API version apps/v1",
+            id="resource-get",
         ),
-        (
+        pytest.param(
             "kubernetes_admin",
             "pods_list_in_namespace",
             {"namespace": "apps", "labelSelector": "app=web", "fieldSelector": "status.phase=Running"},
             "status.phase=Running",
+            id="pods-in-namespace",
         ),
-        (
+        pytest.param(
             "kubernetes_admin",
             "resources_list",
             {"apiVersion": "v1", "kind": "Pod", "namespace": "apps", "labelSelector": "app=web"},
             "app=web",
+            id="resource-list",
         ),
-        ("kubernetes_admin", "pods_get", {"name": "web-0", "namespace": "apps"}, "No additional arguments"),
-        ("kubernetes_admin", "pods_log", {"name": "web-0", "previous": True, "tail": -1}, "previous: yes"),
-        (
+        pytest.param(
+            "kubernetes_admin", "pods_get", {"name": "web-0", "namespace": "apps"}, "Get Pod apps/web-0", id="pod-get"
+        ),
+        pytest.param(
+            "kubernetes_admin", "pods_log", {"name": "web-0", "previous": True, "tail": -1}, '"tail": -1', id="pod-log"
+        ),
+        pytest.param(
             "kubernetes_admin",
             "resources_delete",
             {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
             "request a 0s grace period",
+            id="resource-delete",
         ),
-        ("kubernetes_admin", "events_list", {"namespace": "apps", "fieldSelector": "type=Warning"}, "type=Warning"),
-        (
+        pytest.param(
+            "kubernetes_admin",
+            "events_list",
+            {"namespace": "apps", "fieldSelector": "type=Warning"},
+            "type=Warning",
+            id="events-list",
+        ),
+        pytest.param(
             "github",
             "create_pull_request",
             {
@@ -246,28 +371,40 @@ async def test_sandbox_action_results(
                 "head": "docs",
                 "base": "devel",
                 "draft": True,
+                "maintainer_can_modify": False,
+                "reviewers": ["reviewer1", "reviewer2"],
             },
             "Update docs",
+            id="github-pr",
         ),
-        (
+        pytest.param(
             "kubernetes_admin",
             "pods_exec",
             {"name": "web-0", "namespace": "apps", "container": "main", "command": ["printenv", "POD_NAME"]},
             "printenv POD_NAME",
+            id="pod-exec",
         ),
-        (
+        pytest.param(
             "gmail",
             "drafts_create",
-            {"to": ["reviewer@example.com"], "subject": "Deployment review", "body": "Please review."},
+            {
+                "to": ["reviewer@example.com", "owner@example.com"],
+                "cc": ["team@example.com"],
+                "subject": "Deployment review",
+                "body": "Please review.\nConfirm the rollout.\nCheck the deployment notes.\nReply with any blockers.",
+                "thread_id": "existing-thread-123",
+            },
             "reviewer@example.com",
+            id="gmail-draft",
         ),
-        (
+        pytest.param(
             "gmail",
             "threads_list",
             {"q": "from:deployments@example.com", "maxResults": 5},
             "from:deployments@example.com",
+            id="gmail-search",
         ),
-        (
+        pytest.param(
             "sandbox",
             "exec",
             {
@@ -278,46 +415,33 @@ async def test_sandbox_action_results(
                 "cwd": "/workspace",
             },
             "Working directory /workspace",
+            id="sandbox-exec",
         ),
-        ("sandbox", "create", {"name": "new-sandbox", "template": "python"}, "python"),
-        ("sandbox", "get", {"name": "inspected-sandbox"}, "No additional arguments."),
-        ("sandbox", "dispose", {"name": "disposed-sandbox"}, "No additional arguments."),
-        ("sandbox", "list", {}, "No arguments."),
-        ("grocy_sf", "products_list", {"detail": "full"}, "Full Product records"),
-        ("grocy_sf", "quantity_units_list", {}, "Quantity unit names"),
-        ("grocy_sf", "get_system_info", {}, "No arguments."),
-        (
+        pytest.param("sandbox", "create", {"name": "new-sandbox", "template": "python"}, "python", id="sandbox-create"),
+        pytest.param("sandbox", "get", {"name": "inspected-sandbox"}, "No additional arguments.", id="sandbox-get"),
+        pytest.param(
+            "sandbox", "dispose", {"name": "disposed-sandbox"}, "No additional arguments.", id="sandbox-dispose"
+        ),
+        pytest.param("sandbox", "list", {}, "No arguments.", id="sandbox-list"),
+        pytest.param("grocy_sf", "products_list", {"detail": "full"}, "Full Product records", id="grocy-products"),
+        pytest.param("grocy_sf", "quantity_units_list", {}, "Quantity unit names", id="grocy-units"),
+        pytest.param(
             "tana",
             "get_or_create_calendar_node",
             {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
-            "Granularity: week",
+            "week calendar node",
+            id="tana-calendar-node",
         ),
     ],
-    ids=[
-        "resource-get",
-        "pods-in-namespace",
-        "resource-list",
-        "pod-get",
-        "pod-log",
-        "resource-delete",
-        "events-list",
-        "github-pr",
-        "pod-exec",
-        "gmail-draft",
-        "gmail-search",
-        "sandbox-exec",
-        "sandbox-create",
-        "sandbox-get",
-        "sandbox-dispose",
-        "sandbox-list",
-        "grocy-products",
-        "grocy-units",
-        "grocy-system-info",
-        "tana-calendar-node",
-    ],
 )
-async def test_compact_action_chips(
-    view: VisualPage, app: AgentplaneFixture, group: str, name: str, arguments: dict[str, object], visible: str
+async def test_compact_action_summaries(
+    view: VisualPage,
+    app: AgentplaneFixture,
+    capture_name: str,
+    group: str,
+    name: str,
+    arguments: dict[str, object],
+    visible: str,
 ) -> None:
     await app.show_action_preview(group, name, arguments)
     await app.mount_thread(IDLE_THREAD)
@@ -328,8 +452,25 @@ async def test_compact_action_chips(
     else:
         title = f"review {name.replace('_', ' ')}"
     disclosure = section.get_by_role("button", name=f"Expand {title}")
+    collapsed_summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
     bounds = await disclosure.bounding_box()
     assert bounds is not None
+    if group == "gmail" and name == "drafts_create":
+        await expect(collapsed_summary.get_by_text("Deployment review", exact=True)).to_be_visible()
+        await expect(collapsed_summary.get_by_text("Cc team@example.com", exact=True)).to_be_visible()
+        await expect(
+            collapsed_summary.get_by_text("Replying to thread existing-thread-123", exact=True)
+        ).to_be_visible()
+        await view.capture(f"{capture_name}-collapsed", target=section)
+    if group == "github" and name == "create_pull_request":
+        await expect(collapsed_summary.get_by_text("Draft pull request.", exact=True)).to_be_visible()
+        await expect(
+            collapsed_summary.get_by_text("Do not allow maintainers to edit the branch.", exact=True)
+        ).to_be_visible()
+        await expect(
+            collapsed_summary.get_by_text("Request review from reviewer1, reviewer2.", exact=True)
+        ).to_be_visible()
+        await view.capture(f"{capture_name}-collapsed", target=section)
     await disclosure.click(position={"x": bounds["width"] - 4, "y": bounds["height"] - 3})
     await expect(section.get_by_text(visible)).to_be_visible()
     if group == "kubernetes_admin" and name == "pods_list_in_namespace":
@@ -337,7 +478,7 @@ async def test_compact_action_chips(
     if group == "gmail" and name == "threads_list":
         await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("Gmail: Search threads")
         await expect(
-            section.locator(".agentplane-actions-sidebar-preview").get_by_text("Maximum results: 5", exact=True)
+            section.locator(".agentplane-actions-sidebar-preview").get_by_text('"maxResults": 5', exact=False)
         ).to_be_visible()
     if group == "grocy_sf":
         expected_label = {
@@ -353,15 +494,13 @@ async def test_compact_action_chips(
     await expect(section.get_by_role("link", name=f"View details for {title}")).to_be_visible()
     if group == "kubernetes_admin" and name in {"resources_get", "pods_list_in_namespace", "pods_get", "pods_log"}:
         await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
-    if group == "kubernetes_admin" and name == "pods_log":
-        await expect(section.get_by_text("container: (default)", exact=True)).to_be_visible()
     await view.capture(target=section)
 
 
 @pytest.mark.parametrize(
     ("group", "name"),
-    [("ssh", "list_targets"), ("uncatalogued", "unknown_action")],
-    ids=["unregistered-action", "unknown-action"],
+    [("ssh", "list_targets"), ("uncatalogued", "unknown_action"), ("kubernetes_admin", "resources_get")],
+    ids=["unregistered-action", "unknown-action", "schema-mismatch"],
 )
 async def test_action_argument_fallbacks_use_json_view(
     view: VisualPage, app: AgentplaneFixture, group: str, name: str
@@ -375,11 +514,15 @@ async def test_action_argument_fallbacks_use_json_view(
     await section.get_by_role("button", name=f"Expand {title}").click()
     preview = section.locator(".agentplane-actions-sidebar-preview")
     await expect(preview).to_contain_text('"vendor_field": "fixture"')
+    await expect(preview.get_by_text("Details shown as recorded data", exact=True)).to_be_visible()
+    await expect(section.get_by_role("button", name=f"Approve {title}")).to_have_count(0)
     await view.capture(target=section)
 
 
 @DESKTOP_AND_MOBILE
-async def test_compact_pr_with_description_requires_review(view: VisualPage, app: AgentplaneFixture) -> None:
+async def test_compact_pr_with_description_requires_review(
+    view: VisualPage, app: AgentplaneFixture, capture_name: str
+) -> None:
     await app.show_action_preview(
         "github",
         "create_pull_request",
@@ -389,14 +532,24 @@ async def test_compact_pr_with_description_requires_review(view: VisualPage, app
             "title": "Update docs",
             "head": "docs",
             "base": "devel",
-            "body": "Important PR description that must be read before approval.",
+            "body": "Important PR description that must be read before approval.\n"
+            "Second paragraph explains the rollout and its verification.\n"
+            "Final paragraph lists the remaining review questions.",
         },
     )
     await app.mount_thread(IDLE_THREAD)
     section = view.page.locator(".agentplane-actions-sidebar")
     await _open_phone_navigation(view.page)
+    collapsed_summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
+    await expect(
+        collapsed_summary.get_by_text("Important PR description that must be read before approval.", exact=False)
+    ).to_be_visible()
+    await expect(section.get_by_role("button", name="Approve review create pull request")).to_have_count(0)
+    await view.capture(f"{capture_name}-collapsed", target=section)
     await section.get_by_role("button", name="Expand review create pull request").click()
-    await expect(section.get_by_text("description: open Review")).to_be_visible()
+    await expect(
+        section.get_by_text("Important PR description that must be read before approval.", exact=False)
+    ).to_be_visible()
     await expect(section.get_by_role("button", name="Approve review create pull request")).to_have_count(0)
     await expect(section.get_by_role("link", name="View details for review create pull request")).to_be_visible()
     await view.capture(target=section)
@@ -844,6 +997,13 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
     await app.mount_app("/actions")
     page = view.page
     await expect(page.get_by_text("Long action text", exact=True)).to_be_visible()
+    if kind == "email":
+        editor = page.locator(".agentplane-code-block .cm-content").last
+        await expect(editor).to_be_visible()
+        await expect(editor).to_contain_text("Long action content line 48")
+        await _focus(page, editor)
+        await view.capture()
+        return
     if kind == "text":
         await expect(page.get_by_role("button", name="Show all 48 lines", exact=True)).to_be_visible()
     elif kind == "json":

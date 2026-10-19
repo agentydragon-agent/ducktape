@@ -3,7 +3,6 @@ import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
-import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
 import { resource } from "./resource_common";
@@ -23,21 +22,26 @@ export function offersCardDecisionButtonsResourcesList(args: unknown): boolean {
   return resourcesListArguments.safeParse(args).success;
 }
 
-function Selectors({ args }: { args: z.infer<typeof resourcesListArguments> }): JSX.Element {
+function ListOptions({ args }: { args: z.infer<typeof resourcesListArguments> }): JSX.Element {
+  const selectors: string[] = [];
+  if (args.fieldSelector) selectors.push(`field selector ${args.fieldSelector}`);
+  if (args.labelSelector) selectors.push(`label selector ${args.labelSelector}`);
   return (
-    <>
-      {args.fieldSelector !== undefined && <Chip label="field selector" value={args.fieldSelector} />}
-      {args.labelSelector !== undefined && <Chip label="label selector" value={args.labelSelector} />}
-    </>
+    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+      Using API version <Code>{args.apiVersion}</Code>
+      {selectors.length > 0 ? ` · matching ${selectors.join(" and ")}` : ""}.
+    </Text>
   );
 }
 
-function List({ args }: { args: z.infer<typeof resourcesListArguments> }): JSX.Element {
+function ListSummary({ args }: { args: z.infer<typeof resourcesListArguments> }): JSX.Element {
+  const selectors: string[] = [];
+  if (args.fieldSelector) selectors.push(`field selector ${args.fieldSelector}`);
+  if (args.labelSelector) selectors.push(`label selector ${args.labelSelector}`);
   return (
-    <>
-      <Chip label="API version" value={args.apiVersion} />
-      <Selectors args={args} />
-    </>
+    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+      {selectors.length > 0 ? `Matching resources where ${selectors.join(" and ")}.` : ""}
+    </Text>
   );
 }
 
@@ -56,11 +60,12 @@ function ListLabel({ args }: { args: z.infer<typeof resourcesListArguments> }): 
 }
 
 export const resourcesListLabel: ArgumentsPreview = definePreview(resourcesListArguments, ListLabel);
-export const resourcesListPane: ArgumentsPreview = definePreview(resourcesListArguments, List);
+export const resourcesListPane: ArgumentsPreview = definePreview(resourcesListArguments, ListOptions);
+export const resourcesListSummary: ArgumentsPreview = definePreview(resourcesListArguments, ListSummary);
 
 export const resourcesListPresentation: ActionPresentation = {
   label: resourcesListLabel,
-  pane: { opened: resourcesListPane },
+  pane: { collapsed: resourcesListSummary, opened: resourcesListPane },
   details: { arguments: resourcesListPane },
   offersCardDecisionButtons: offersCardDecisionButtonsResourcesList,
 };
