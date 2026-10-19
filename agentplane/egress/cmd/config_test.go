@@ -4,16 +4,38 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 )
 
-const requiredFlags = "--rules-namespace=rules --credentials-namespace=secrets --ca-cert=/ca.crt --ca-key=/ca.key " +
-	"--token-audience=hop"
+const databaseURLEnv = settingPrefix + "DATABASE_URL=postgresql://user:never-print-this@db/egress"
 
-func required(extra ...string) []string {
-	return append(strings.Fields(requiredFlags), extra...)
+// required is the environment of a deployment that sets every setting without a default.
+func required(t *testing.T, extra ...string) []string {
+	t.Helper()
+	return append([]string{
+		settingPrefix + "RULES_NAMESPACE=rules", settingPrefix + "CREDENTIALS_NAMESPACE=secrets",
+		settingPrefix + "CA_CERT=/ca.crt", settingPrefix + "CA_KEY=/ca.key", settingPrefix + "TOKEN_AUDIENCE=hop",
+		settingPrefix + "CONFIG_FILE=" + writeSettings(t, "allowed_service_account_namespaces: [ns]\n"), databaseURLEnv,
+	}, extra...)
+}
+
+func loadTestConfig(t *testing.T, environ []string) (config, error) {
+	t.Helper()
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(name, settingPrefix) {
+			t.Setenv(name, "")
+		}
+	}
+	for _, entry := range environ {
+		name, value, _ := strings.Cut(entry, "=")
+		t.Setenv(name, value)
+	}
+	return loadConfig()
 }
 
 func writeSettings(t *testing.T, contents string) string {
@@ -25,56 +47,37 @@ func writeSettings(t *testing.T, contents string) string {
 	return path
 }
 
-const databaseURLEnv = settingPrefix + "DATABASE_URL=postgresql://user:never-print-this@db/egress"
-
-func TestEachSourceOverridesTheOneBeforeIt(t *testing.T) {
+func TestCollectionsLoadFromTheFileAndScalarsFromTheEnvironment(t *testing.T) {
 	path := writeSettings(t, `allowed_service_account_namespaces: [file-namespace]
 projected_token_audiences: [file-audience]
 exempt_networks: [127.0.0.0/8]
 admin_port: 1111
-listen_port: 2222
 `)
-	c, err := loadConfig(required(`--listen-port=3333`), []string{
-		configFileEnv + "=" + path, databaseURLEnv,
-		settingPrefix + "ADMIN_PORT=4444", settingPrefix + "LISTEN_PORT=5555",
-		settingPrefix + "PROJECTED_TOKEN_AUDIENCES=[\"env-audience\"]",
+	c, err := loadTestConfig(t, []string{
+		settingPrefix + "CONFIG_FILE=" + path, settingPrefix + "RULES_NAMESPACE=rules",
+		settingPrefix + "CREDENTIALS_NAMESPACE=secrets", settingPrefix + "CA_CERT=/ca.crt",
+		settingPrefix + "CA_KEY=/ca.key", settingPrefix + "TOKEN_AUDIENCE=hop", databaseURLEnv,
+		settingPrefix + "LISTEN_PORT=5555",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ListenPort != 3333 || c.AdminPort != 4444 || c.AgentAPIPort != 8082 ||
-		c.AllowedServiceAccountNamespaces[0] != "file-namespace" ||
-		len(c.ProjectedTokenAudiences) != 1 || c.ProjectedTokenAudiences[0] != "env-audience" ||
-		len(c.ExemptNetworks) != 1 || c.ExemptNetworks[0] != netip.MustParsePrefix("127.0.0.0/8") {
+	if c.ListenPort != 5555 || c.AdminPort != 1111 || c.AgentAPIPort != 8082 ||
+		!slices.Equal(c.AllowedServiceAccountNamespaces, []string{"file-namespace"}) ||
+		!slices.Equal(c.ProjectedTokenAudiences, []string{"file-audience"}) ||
+		!slices.Equal(c.ExemptNetworks, []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}) {
 		t.Fatalf("unexpected merged config: %+v", c)
 	}
 }
 
-func TestSettingsFileRejectsWhatItDoesNotKnow(t *testing.T) {
-	path := writeSettings(t, "allowed_service_account_namespaces: [ns]\nconfdir: /tmp\n")
-	if _, err := loadConfig(required(), []string{configFileEnv + "=" + path, databaseURLEnv}); err == nil {
-		t.Fatal("a key outside the settings was accepted")
-	}
-	if _, err := loadConfig(required("--confdir=/tmp"), []string{databaseURLEnv}); err == nil {
-		t.Fatal("a flag outside the settings was accepted")
-	}
-}
-
-func TestSettingsFileThatIsNamedMustExist(t *testing.T) {
-	if _, err := loadConfig(required(), []string{configFileEnv + "=/nonexistent/settings.yaml", databaseURLEnv}); err == nil {
-		t.Fatal("a missing settings file ran on defaults")
-	}
-}
-
 func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
-	environ := []string{databaseURLEnv, settingPrefix + "ALLOWED_SERVICE_ACCOUNT_NAMESPACES=[\"ns\"]"}
 	for _, bad := range [][]string{
-		required("--decision-batch-size=0"),
-		required("--listen-port=not-a-number"),
-		required("--log-levels={\"agentplane.other\":\"INFO\"}"),
-		required("--exempt-networks=[\"not-a-prefix\"]"),
+		{settingPrefix + "DECISION_BATCH_SIZE=0"},
+		{settingPrefix + "LISTEN_PORT=not-a-number"},
+		{settingPrefix + "CONFIG_FILE=" + writeSettings(t, "allowed_service_account_namespaces: [ns]\nlog_levels: {agentplane.other: INFO}\n")},
+		{settingPrefix + "CONFIG_FILE=" + writeSettings(t, "allowed_service_account_namespaces: [ns]\nexempt_networks: [not-a-prefix]\n")},
 	} {
-		_, err := loadConfig(bad, environ)
+		_, err := loadTestConfig(t, required(t, bad...))
 		if err == nil {
 			t.Fatalf("%v accepted", bad)
 		}
@@ -85,23 +88,18 @@ func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
 }
 
 func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
-	complete := append(required(), "--allowed-service-account-namespaces=[\"ns\"]")
-	if _, err := loadConfig(complete, []string{databaseURLEnv}); err != nil {
+	if _, err := loadTestConfig(t, required(t)); err != nil {
 		t.Fatal(err)
 	}
-	for _, missing := range []string{"rules-namespace", "credentials-namespace", "ca-cert", "ca-key", "token-audience"} {
-		var rest []string
-		for _, arg := range complete {
-			if !strings.HasPrefix(arg, "--"+missing+"=") {
-				rest = append(rest, arg)
-			}
-		}
-		if _, err := loadConfig(rest, []string{databaseURLEnv}); err == nil {
+	for _, missing := range []string{
+		"RULES_NAMESPACE", "CREDENTIALS_NAMESPACE", "CA_CERT", "CA_KEY", "TOKEN_AUDIENCE", "DATABASE_URL",
+	} {
+		rest := slices.DeleteFunc(required(t), func(item string) bool {
+			return strings.HasPrefix(item, settingPrefix+missing+"=")
+		})
+		if _, err := loadTestConfig(t, rest); err == nil {
 			t.Fatalf("ran without %s", missing)
 		}
-	}
-	if _, err := loadConfig(complete, nil); err == nil {
-		t.Fatal("ran without a database URL")
 	}
 }
 
@@ -110,27 +108,65 @@ func TestADeploymentNamingNoWorkloadNamespaceIsRefused(t *testing.T) {
 		"absent": "", "empty list": `[]`, "empty entry": `["ns", ""]`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			args := required()
+			contents := ""
 			if namespaces != "" {
-				args = append(args, "--allowed-service-account-namespaces="+namespaces)
+				contents = "allowed_service_account_namespaces: " + namespaces + "\n"
 			}
-			if _, err := loadConfig(args, []string{databaseURLEnv}); err == nil {
+			environ := required(t, settingPrefix+"CONFIG_FILE="+writeSettings(t, contents))
+			if _, err := loadTestConfig(t, environ); err == nil {
 				t.Fatal("ran with no usable workload namespace")
 			}
 		})
 	}
 }
 
-// The manifests render each setting under its file key, as its upper-cased environment variable
-// and as its kebab-case flag.
-func TestEverySettingIsAFileKeyAnEnvironmentVariableAndAFlag(t *testing.T) {
-	configType := reflect.TypeFor[config]()
-	for i := range configType.NumField() {
-		key := configType.Field(i).Tag.Get("yaml")
-		flag := "--" + strings.ReplaceAll(key, "_", "-") + "=value"
-		given, err := flagValues(environmentOptions(nil), []string{flag})
-		if err != nil || given[settingPrefix+strings.ToUpper(key)] != "value" {
-			t.Errorf("%s is not the flag %s: %v, %v", key, flag, given, err)
-		}
+func TestAdminGRPCIsOffUnlessItsSettingsAreSet(t *testing.T) {
+	c, err := loadTestConfig(t, required(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.adminGRPCEnabled() {
+		t.Fatal("admin gRPC enabled without being configured")
+	}
+}
+
+func TestAdminGRPCLoadsFromTheFileAndTheEnvironment(t *testing.T) {
+	path := writeSettings(t, `allowed_service_account_namespaces: [ns]
+admin_grpc_audience: file-audience
+admin_grpc_callers: [test-ns/test-app, test-ns/test-other]
+`)
+	c, err := loadTestConfig(t, required(
+		t,
+		settingPrefix+"CONFIG_FILE="+path, settingPrefix+"ADMIN_GRPC_AUDIENCE=env-audience",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	callers, err := c.adminGRPCCallers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.adminGRPCEnabled() || c.AdminGRPCAudience != "env-audience" ||
+		!slices.Equal(callers, []auth.Account{{Namespace: "test-ns", Name: "test-app"}, {Namespace: "test-ns", Name: "test-other"}}) {
+		t.Fatalf("unexpected merged config: %+v", c)
+	}
+}
+
+func TestAdminGRPCIsAllOrNothing(t *testing.T) {
+	const audience, callers = "admin_grpc_audience: test-audience\n", "admin_grpc_callers: [test-ns/test-app]\n"
+	for name, contents := range map[string]string{
+		"audience without callers": audience,
+		"callers without audience": callers,
+		"caller without a slash":   audience + "admin_grpc_callers: [test-ns]\n",
+		"caller without namespace": audience + "admin_grpc_callers: [/test-app]\n",
+		"caller without a name":    audience + "admin_grpc_callers: [test-ns/]\n",
+		"caller with a deep path":  audience + "admin_grpc_callers: [test-ns/test-app/extra]\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := writeSettings(t, "allowed_service_account_namespaces: [ns]\n"+contents)
+			if _, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
+				t.Fatal("accepted")
+			}
+		})
 	}
 }

@@ -1,57 +1,52 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
-	"io"
-	"maps"
 	"net/netip"
 	"os"
-	"reflect"
 	"slices"
-	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
-	"github.com/caarlos0/env/v11"
-	"gopkg.in/yaml.v3"
+	"github.com/go-viper/mapstructure/v2"
+	"github.com/spf13/viper"
 )
 
-const (
-	settingPrefix = "AGENTPLANE_EGRESS_"
-	configFileEnv = settingPrefix + "CONFIG_FILE"
-)
+const settingPrefix = "AGENTPLANE_EGRESS_"
 
-// config is the proxy's deployment contract. Each setting is a YAML key of the file named by
-// AGENTPLANE_EGRESS_CONFIG_FILE, an AGENTPLANE_EGRESS_* environment variable and a --kebab-case flag,
-// and a flag overrides the environment, which overrides the file. A list or map given as an
-// environment variable or a flag is JSON.
+// config is the proxy's deployment contract: each setting is a YAML key of the file named by
+// AGENTPLANE_EGRESS_CONFIG_FILE, with AGENTPLANE_EGRESS_* environment overrides for scalar
+// settings. Lists and maps are file-only. Viper loads the settings.
+//
+// The admin listener also serves the admin API as gRPC when admin_grpc_audience, the audience of the
+// bearer its callers send, and admin_grpc_callers, the ServiceAccounts it admits as `namespace/name`,
+// are set; it serves only HTTP without them.
 type config struct {
-	RulesNamespace                  string            `yaml:"rules_namespace"`
-	CredentialsNamespace            string            `yaml:"credentials_namespace"`
-	AllowedServiceAccountNamespaces []string          `yaml:"allowed_service_account_namespaces"`
-	ListenHost                      string            `yaml:"listen_host"`
-	ListenPort                      int               `yaml:"listen_port"`
-	AdminHost                       string            `yaml:"admin_host"`
-	AdminPort                       int               `yaml:"admin_port"`
-	AgentAPIHost                    string            `yaml:"agent_api_host"`
-	AgentAPIPort                    int               `yaml:"agent_api_port"`
-	CACert                          string            `yaml:"ca_cert"`
-	CAKey                           string            `yaml:"ca_key"`
-	UpstreamCAFile                  string            `yaml:"upstream_ca_file"`
-	TokenAudience                   string            `yaml:"token_audience"`
-	ProjectedTokenAudiences         []string          `yaml:"projected_token_audiences"`
-	Kubeconfig                      string            `yaml:"kubeconfig"`
-	LogLevels                       map[string]string `yaml:"log_levels"`
-	ResyncSeconds                   int               `yaml:"resync_seconds"`
-	DatabaseURL                     string            `yaml:"database_url"`
-	DecisionHistorySize             int               `yaml:"decision_history_size"`
-	DecisionRetentionDays           int               `yaml:"decision_retention_days"`
-	DecisionQueueSize               int               `yaml:"decision_queue_size"`
-	DecisionBatchSize               int               `yaml:"decision_batch_size"`
-	ExemptNetworks                  []netip.Prefix    `yaml:"exempt_networks"`
+	RulesNamespace                  string            `mapstructure:"rules_namespace"`
+	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`
+	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
+	ListenHost                      string            `mapstructure:"listen_host"`
+	ListenPort                      int               `mapstructure:"listen_port"`
+	AdminHost                       string            `mapstructure:"admin_host"`
+	AdminPort                       int               `mapstructure:"admin_port"`
+	AdminGRPCAudience               string            `mapstructure:"admin_grpc_audience"`
+	AdminGRPCCallers                []string          `mapstructure:"admin_grpc_callers"`
+	AgentAPIHost                    string            `mapstructure:"agent_api_host"`
+	AgentAPIPort                    int               `mapstructure:"agent_api_port"`
+	CACert                          string            `mapstructure:"ca_cert"`
+	CAKey                           string            `mapstructure:"ca_key"`
+	UpstreamCAFile                  string            `mapstructure:"upstream_ca_file"`
+	TokenAudience                   string            `mapstructure:"token_audience"`
+	ProjectedTokenAudiences         []string          `mapstructure:"projected_token_audiences"`
+	Kubeconfig                      string            `mapstructure:"kubeconfig"`
+	LogLevels                       map[string]string `mapstructure:"log_levels"`
+	ResyncSeconds                   int               `mapstructure:"resync_seconds"`
+	DatabaseURL                     string            `mapstructure:"database_url"`
+	DecisionHistorySize             int               `mapstructure:"decision_history_size"`
+	DecisionRetentionDays           int               `mapstructure:"decision_retention_days"`
+	DecisionQueueSize               int               `mapstructure:"decision_queue_size"`
+	DecisionBatchSize               int               `mapstructure:"decision_batch_size"`
+	ExemptNetworks                  []netip.Prefix    `mapstructure:"exempt_networks"`
 }
 
 func defaultConfig() config {
@@ -62,117 +57,48 @@ func defaultConfig() config {
 	}
 }
 
-// environmentOptions makes env read each field from AGENTPLANE_EGRESS_<FIELD NAME IN UPPER SNAKE
-// CASE>, the field's YAML key upper-cased, and a list or map as JSON.
-func environmentOptions(environment map[string]string) env.Options {
-	return env.Options{
-		Environment: environment, Prefix: settingPrefix, UseFieldNameByDefault: true,
-		FuncMap: map[reflect.Type]env.ParserFunc{
-			reflect.TypeFor[[]string]():          parseJSON[[]string],
-			reflect.TypeFor[map[string]string](): parseJSON[map[string]string],
-			reflect.TypeFor[[]netip.Prefix]():    parseJSON[[]netip.Prefix],
-		},
-	}
-}
-
-func parseJSON[T any](text string) (any, error) {
-	var value T
-	decoder := json.NewDecoder(strings.NewReader(text))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(&value) != nil || !errors.Is(decoder.Decode(new(any)), io.EOF) {
-		return nil, errors.New("not a JSON value of its type")
-	}
-	return value, nil
-}
-
-// loadConfig applies defaults, then the settings file, then environ, then args.
-func loadConfig(args, environ []string) (config, error) {
+func loadConfig() (config, error) {
 	c := defaultConfig()
-	environment := make(map[string]string, len(environ))
-	for _, item := range environ {
-		if name, value, found := strings.Cut(item, "="); found {
-			environment[name] = value
+	settings := viper.New()
+	settings.SetEnvPrefix("AGENTPLANE_EGRESS")
+	for _, key := range []string{
+		"rules_namespace",
+		"credentials_namespace",
+		"listen_host",
+		"listen_port",
+		"admin_host",
+		"admin_port",
+		"admin_grpc_audience",
+		"agent_api_host",
+		"agent_api_port",
+		"ca_cert",
+		"ca_key",
+		"upstream_ca_file",
+		"token_audience",
+		"kubeconfig",
+		"resync_seconds",
+		"database_url",
+		"decision_history_size",
+		"decision_retention_days",
+		"decision_queue_size",
+		"decision_batch_size",
+	} {
+		settings.MustBindEnv(key)
+	}
+	if path := os.Getenv(settingPrefix + "CONFIG_FILE"); path != "" {
+		settings.SetConfigFile(path)
+		settings.SetConfigType("yaml")
+		if err := settings.ReadInConfig(); err != nil {
+			return config{}, errors.New("could not read egress settings file")
 		}
 	}
-	if path := environment[configFileEnv]; path != "" {
-		if err := readSettingsFile(path, &c); err != nil {
-			return config{}, err
-		}
-	}
-	options := environmentOptions(environment)
-	flagged, err := flagValues(options, args)
-	if err != nil {
-		return config{}, err
-	}
-	maps.Copy(environment, flagged)
-	if err := env.ParseWithOptions(&c, options); err != nil {
-		return config{}, settingsError(err)
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
+		return config{}, errors.New("invalid egress settings")
 	}
 	if err := c.validate(); err != nil {
 		return config{}, err
 	}
 	return c, nil
-}
-
-// settingsError names the settings that failed to parse and never carries their text: the database
-// URL holds a password.
-func settingsError(err error) error {
-	var aggregate env.AggregateError
-	if !errors.As(err, &aggregate) {
-		return err
-	}
-	var failed []string
-	for _, failure := range aggregate.Errors {
-		var parseFailure env.ParseError
-		if !errors.As(failure, &parseFailure) {
-			return failure
-		}
-		field, _ := reflect.TypeFor[config]().FieldByName(parseFailure.Name)
-		failed = append(failed, field.Tag.Get("yaml"))
-	}
-	return fmt.Errorf("settings must be a value of their type, a list or map as JSON: %s", strings.Join(failed, ", "))
-}
-
-// readSettingsFile decodes a file that must exist and hold exactly one document of known keys.
-func readSettingsFile(path string, c *config) error {
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("%s=%s is not a readable file", configFileEnv, path)
-	}
-	decoder := yaml.NewDecoder(bytes.NewReader(contents))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(c); err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("invalid settings file %s: %w", path, err)
-	}
-	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
-		return fmt.Errorf("settings file %s must hold one document", path)
-	}
-	return nil
-}
-
-// flagValues reads each setting's --kebab-case flag and returns the ones given, keyed by the
-// environment variable that gives the same setting.
-func flagValues(options env.Options, args []string) (map[string]string, error) {
-	fields, err := env.GetFieldParamsWithOptions(&config{}, options)
-	if err != nil {
-		return nil, err
-	}
-	flags := flag.NewFlagSet("agentplane-egress", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	given := map[string]string{}
-	for _, field := range fields {
-		flags.Func(strings.ReplaceAll(strings.ToLower(field.OwnKey), "_", "-"), field.OwnKey, func(value string) error {
-			given[field.Key] = value
-			return nil
-		})
-	}
-	if err := flags.Parse(args); err != nil {
-		return nil, fmt.Errorf("invalid command-line flags: %w", err)
-	}
-	if flags.NArg() != 0 {
-		return nil, errors.New("unexpected positional arguments")
-	}
-	return given, nil
 }
 
 // bounded is an integer setting and the inclusive range it must fall in.
@@ -214,6 +140,9 @@ func (c *config) validate() error {
 		if limit.value < limit.lo || limit.value > limit.hi {
 			return fmt.Errorf("%s must be between %d and %d", limit.name, limit.lo, limit.hi)
 		}
+	}
+	if err := c.validateAdminGRPC(); err != nil {
+		return err
 	}
 	for logger, level := range c.LogLevels {
 		if logger != "root" {

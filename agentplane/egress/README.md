@@ -36,7 +36,8 @@ One Go package per concern:
 - `rules`: the agent-facing `egress.agentplane-staging.svc.cluster.local/v1/rules` API, on its own
   independently authenticated listener.
 - `decision` and `history`: admission records, and their bounded best-effort write to the shared
-  PostgreSQL history; `admin` serves that history, a change stream, readiness and liveness.
+  PostgreSQL history; `admin` serves that history, a change stream, readiness and liveness, and the
+  history reads again as the gRPC `EgressAdmin` service.
 - `history_migrations`: the Goose schema of that history (below) and its migrator command.
 
 Also here:
@@ -64,9 +65,10 @@ there is no checked-in generated client tree or manual regeneration step. Build 
 
 ## Running
 
-Settings are YAML keys of the file named by `AGENTPLANE_EGRESS_CONFIG_FILE`, `AGENTPLANE_EGRESS_*`
-environment variables, and `--kebab-case` flags, each overriding the one before; a key the binary
-does not know is refused (<cmd/config.go>). The proxy needs an interception CA (`ca_cert`,
+Settings are YAML keys of the file named by `AGENTPLANE_EGRESS_CONFIG_FILE`. Scalar settings also
+accept `AGENTPLANE_EGRESS_*` environment overrides; lists and maps come from the file. The binary
+takes no flags. Unknown file keys are refused by Viper
+(<cmd/config.go>); unrelated environment variables are ignored. The proxy needs an interception CA (`ca_cert`,
 `ca_key`) that the runner containers trust; it signs a short-lived leaf per handshake. Upstream certificates are
 verified against the system roots, or against `upstream_ca_file` when given; the deployment passes
 public roots plus the cluster CA, so a `clusterInternal` rule can reach the API server. Identity and egress policy come from
@@ -182,6 +184,28 @@ bearer proved and returns only the redacted field allowlist. Operator
 admits the agent API from central egress only. Service target-port separation prevents recursion.
 The Service may select a different replica from the one that admitted the request. The answer is
 an informational snapshot of the answering replica, not a global acknowledgement or admission promise.
+
+## Admin gRPC API
+
+`EgressAdmin` (<../proto/egress_admin.proto>) serves the admin listener's decision reads as gRPC:
+`ListDecisions` is `/decisions`, and `WatchDecisions` is `/decisions/changes` carrying state, the
+`ListDecisions` list on subscribing and again each time it differs. Both read through the same
+`Decisions` and `Changes` as the HTTP handlers. `/healthz` and `/livez` stay HTTP; the rules API stays
+HTTP.
+
+It shares the admin listener with the HTTP API: the listener takes cleartext HTTP/2 beside HTTP/1.1, and
+an HTTP/2 request of content type `application/grpc` goes to the gRPC server. The gRPC server is mounted
+on the HTTP server as a handler (`grpc.Server.ServeHTTP`), so the HTTP server's `Shutdown` is what stops
+it, after ending the open watches.
+
+**Deviation:** the HTTP admin listener is fenced by network policy alone, while every gRPC call admits
+only the ServiceAccounts in `admin_grpc_callers`, each proving itself by a bearer of audience
+`admin_grpc_audience` that is reviewed on every call, before the history is read
+(<../docs/grpc_services.md>). A watch is admitted once, so it ends after ten minutes and when the proxy
+drains; the caller subscribes again and is admitted afresh.
+
+The gRPC API is mounted only when `admin_grpc_audience` and `admin_grpc_callers` (`namespace/name`
+entries) are both set; without them the admin listener serves HTTP alone.
 
 ## ServiceAccount permissions
 
