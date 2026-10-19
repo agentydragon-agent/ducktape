@@ -61,11 +61,8 @@ export const podsExecCollapsed: ArgumentsPreview = definePreview(podsExecArgumen
 export const podsExecPane: ArgumentsPreview = definePreview(podsExecArguments, Opened);
 export const podsExecLabel: ArgumentsPreview = definePreview(podsExecArguments, PodsExecLabel);
 
-function PodsDeletePane(): JSX.Element {
-  return <></>;
-}
-
 const podsDeleteArguments = z.strictObject({ name: z.string().min(1), namespace: z.string().min(1).optional() });
+const podsDeleteResult = z.literal("Pod deleted successfully");
 
 function PodsDeleteLabel({ args }: { args: z.infer<typeof podsDeleteArguments> }): JSX.Element {
   return (
@@ -76,12 +73,19 @@ function PodsDeleteLabel({ args }: { args: z.infer<typeof podsDeleteArguments> }
 }
 
 export const podsDeleteLabel: ArgumentsPreview = definePreview(podsDeleteArguments, PodsDeleteLabel);
-export const podsDeletePane: ArgumentsPreview = definePreview(podsDeleteArguments, PodsDeletePane);
+// Direct previews preserve null as the slot suppression signal after schema validation.
+export const podsDeletePane: ArgumentsPreview = { schema: podsDeleteArguments, render: () => null };
+const podsDeleteResultPreview: ResultPreview = { schema: podsDeleteResult, render: () => null };
 
 export const podsDeletePresentation: ActionPresentation = {
+  outcome: (value) =>
+    podsDeleteResult.safeParse(value).success ? { label: "Deletion accepted", failed: false } : undefined,
   label: podsDeleteLabel,
   pane: { opened: podsDeletePane },
-  details: { arguments: podsDeletePane },
+  details: {
+    arguments: podsDeletePane,
+    result: podsDeleteResultPreview,
+  },
 };
 
 export const podsExecPresentation: ActionPresentation = {
