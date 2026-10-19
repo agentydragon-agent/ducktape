@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	policyapply "github.com/agentydragon/ducktape/agentplane/policy/client/apply"
 )
 
 const (
@@ -376,16 +377,11 @@ func (r *Reconciler) applyCondition(ctx context.Context, binding *policyapi.Poli
 	if reason == "Applied" {
 		status = metav1.ConditionTrue
 	}
-	patch := binding.PrepareConditionApply(metav1.Condition{Type: KubernetesReady, Status: status, Reason: reason, Message: message})
-	if patch == nil {
+	configuration := policyapply.PrepareConditionApply(binding, metav1.Condition{Type: KubernetesReady, Status: status, Reason: reason, Message: message})
+	if configuration == nil {
 		return nil
 	}
-	// The CRD has no generated apply configuration; an unstructured one carries the same fields.
-	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(patch)
-	if err != nil {
-		return err
-	}
-	return r.Status().Apply(ctx, client.ApplyConfigurationFromUnstructured(&unstructured.Unstructured{Object: object}),
+	return r.Status().Apply(ctx, configuration,
 		client.FieldOwner(FieldManager), client.ForceOwnership)
 }
 
