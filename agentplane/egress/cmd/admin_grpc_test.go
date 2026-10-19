@@ -9,11 +9,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/egress/admin"
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
+	"github.com/agentydragon/ducktape/agentplane/egress/history"
+	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/proto/egress_admin"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -53,12 +59,24 @@ func (quietChanges) Follow(ctx context.Context, changed func() error) error {
 	return ctx.Err()
 }
 
+type readyIndex struct{}
+
+func (readyIndex) Status(time.Time) policy.Status {
+	return policy.Status{Available: true, Synced: true}
+}
+
+type idleHistory struct{}
+
+func (idleHistory) Health() history.Health { return history.Health{} }
+
 func TestAdminListenerServesHTTPAndGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 	c := config{AdminGRPCAudience: "test-audience", AdminGRPCCallers: []string{"test-ns/test-app"}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /test-live", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "alive") })
 	adminServer := &http.Server{Handler: mux}
-	shutdown, err := mountAdminGRPC(adminServer, c, acceptingReviews{}, noDecisions{}, quietChanges{})
+	shutdown, err := mountAdminGRPC(adminServer, c, acceptingReviews{}, admin.ServiceOptions{
+		Decisions: noDecisions{}, Changes: quietChanges{}, HistoryHealth: idleHistory{}, Index: readyIndex{}, Clock: time.Now,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,8 +109,17 @@ func TestAdminListenerServesHTTPAndGRPCAndShutsDownWithAnOpenWatch(t *testing.T)
 		t.Fatal(err)
 	}
 	defer connection.Close()
+	probe, err := healthpb.NewHealthClient(connection).Check(context.Background(), &healthpb.HealthCheckRequest{})
+	if err != nil || probe.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+		t.Fatalf("health probe: %v, %v", probe, err)
+	}
+	admitted := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+testToken)
+	health, err := egressadminpb.NewEgressAdminClient(connection).GetHealth(admitted, &egressadminpb.GetHealthRequest{})
+	if err != nil || !health.GetReady() {
+		t.Fatalf("GetHealth: %v, %v", health, err)
+	}
 	stream, err := egressadminpb.NewEgressAdminClient(connection).WatchDecisions(
-		metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+testToken),
+		admitted,
 		&egressadminpb.WatchDecisionsRequest{Filter: &egressadminpb.DecisionFilter{
 			Scope: &egressadminpb.DecisionFilter_Unauthenticated{Unauthenticated: &egressadminpb.Unauthenticated{}},
 		}},
@@ -114,5 +141,35 @@ func TestAdminListenerServesHTTPAndGRPCAndShutsDownWithAnOpenWatch(t *testing.T)
 	}
 	if _, err := stream.Recv(); !errors.Is(err, io.EOF) {
 		t.Fatalf("the watch ended with %v, want a clean end", err)
+	}
+}
+
+// Kubernetes' native grpc probes send no bearer, so health is served whether or not the EgressAdmin
+// API is configured.
+func TestAdminListenerServesHealthWithoutTheAdminGRPCAPI(t *testing.T) {
+	adminServer := &http.Server{Handler: http.NewServeMux()}
+	shutdown, err := mountAdminGRPC(adminServer, config{}, acceptingReviews{}, admin.ServiceOptions{Index: readyIndex{}, Clock: time.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = adminServer.Serve(listener) }()
+	defer func() { _ = shutdown.Shutdown(context.Background()) }()
+
+	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	probe, err := healthpb.NewHealthClient(connection).Check(context.Background(), &healthpb.HealthCheckRequest{})
+	if err != nil || probe.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+		t.Fatalf("health probe: %v, %v", probe, err)
+	}
+	_, err = egressadminpb.NewEgressAdminClient(connection).GetHealth(context.Background(), &egressadminpb.GetHealthRequest{})
+	if status.Code(err) != codes.Unimplemented {
+		t.Fatalf("GetHealth without the admin gRPC API configured: %v, want Unimplemented", err)
 	}
 }
