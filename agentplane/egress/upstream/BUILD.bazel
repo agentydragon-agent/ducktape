@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "upstream",
+    srcs = [
+        "classify.go",
+        "resolver.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/upstream",
+    visibility = ["//agentplane/egress:__subpackages__"],
+    deps = [
+        "@dev_dny_code_ssrf//:ssrf",
+        "@io_k8s_apimachinery//pkg/util/cache",
+        "@org_golang_x_sync//singleflight",
+    ],
+)
+
+go_test(
+    name = "upstream_test",
+    srcs = [
+        "classify_test.go",
+        "resolver_test.go",
+    ],
+    embed = [":upstream"],
+)
