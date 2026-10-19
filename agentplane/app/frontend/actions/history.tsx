@@ -7,9 +7,8 @@ import { Disclosure, DisclosureBody } from "../disclosure";
 import { RawSwitch } from "../raw_switch";
 import { TimeAgo } from "../time_ago";
 import { displayableError } from "../client";
-import { ClampedBlock, lineCount } from "../clamped_block";
-import { OUTPUT_MAX_HEIGHT_REM } from "../command_view";
-import { ActionJson } from "./payload";
+import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../clamped_block";
+import { JsonBlock } from "../text_block";
 import { useOptionalStreamStatus } from "../stream_status";
 import { followStream, type StreamConnection } from "../live_stream";
 import { ActionCall } from "./call";
@@ -46,10 +45,10 @@ function ExecutionResult({
         Result
       </Text>
       {raw ? (
-        <ActionJson value={result} />
+        <JsonBlock value={result} />
       ) : pretty === undefined ? (
         call === null ? (
-          <ActionJson value={result} />
+          <JsonBlock value={result} />
         ) : (
           <CallToolResultView result={call} />
         )
@@ -146,7 +145,7 @@ export function ActionHistoryCard({
   const actionLabel = renderActionLabel(request.action, request.arguments);
   const summary = renderPaneCollapsed(request.action, request.arguments);
   const receipt = (
-    <Stack gap="sm">
+    <Stack className="agentplane-action-operation-host" data-operation-density="detail" gap="sm">
       <ActionCall
         request={request}
         status={status}
@@ -159,7 +158,7 @@ export function ActionHistoryCard({
       />
       {decision?.decision_note && (
         <ClampedBlock
-          maxHeightRem={OUTPUT_MAX_HEIGHT_REM}
+          maxHeightRem={TEXT_MAX_HEIGHT_REM}
           lines={lineCount(decision.decision_note)}
           label="Decision note"
         >
@@ -181,7 +180,7 @@ export function ActionHistoryCard({
               <Text size="sm" fw={600} mb={4}>
                 Execution error
               </Text>
-              <ActionJson value={executionError} />
+              <JsonBlock value={executionError} />
             </div>
           )}
         </Stack>

@@ -3,6 +3,9 @@ import { type JSX, type ReactNode, useLayoutEffect, useState } from "react";
 
 import { Disclosure, DisclosureBody } from "./disclosure";
 
+/** Shared height limit for expandable text and output. */
+export const TEXT_MAX_HEIGHT_REM = 16;
+
 /** How many lines `text` has, a final newline ending its last line rather than starting another. */
 export function lineCount(text: string): number {
   return text.replace(/\n$/, "").split("\n").length;
@@ -21,6 +24,7 @@ export function ClampedBlock({
   maxHeightRem,
   lines,
   label = "Expanded content",
+  expandLabel,
   header,
   expansion,
   stickyCollapse = true,
@@ -30,6 +34,8 @@ export function ClampedBlock({
   lines?: number;
   /** Short context for the sticky collapse control while expanded. */
   label?: string;
+  /** Override the clipped-content action when a source line count is not meaningful. */
+  expandLabel?: string;
   /** Existing heading to turn into the sticky control row when the block opens. */
   header?: ReactNode;
   expansion?: readonly [boolean, (expanded: boolean) => void];
@@ -85,7 +91,7 @@ export function ClampedBlock({
             fontSize: "var(--mantine-font-size-xs)",
           }}
         >
-          {lines !== undefined && lines > 1 ? `Show all ${lines} lines` : "Show all"}
+          {expandLabel ?? (lines !== undefined && lines > 1 ? `Show all ${lines} lines` : "Show all")}
         </UnstyledButton>
       )}
     </div>
