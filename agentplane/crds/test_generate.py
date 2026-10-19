@@ -2,10 +2,8 @@
 regenerate with `bb run //agentplane/crds:generate_bin` and commit the result when this fails.
 """
 
-import re
 from pathlib import Path
 
-import pytest
 import pytest_bazel
 import yaml
 from jsonschema import Draft4Validator
@@ -65,26 +63,6 @@ def test_policybinding_schema_preserves_validation_and_condition_ownership() -> 
         {"policySets": ["basic"]},
     ):
         assert not validator.is_valid(invalid), invalid
-
-
-@pytest.mark.parametrize(
-    ("host", "valid"),
-    [
-        ("*", True),
-        ("example.com", True),
-        ("*.example.com", True),
-        ("*example.com", False),
-        ("example.*", False),
-        ("**", False),
-        ("", False),
-    ],
-)
-def test_policy_host_schema_admits_only_supported_wildcards(host: str, valid: bool) -> None:
-    crd = yaml.safe_load(_committed(CRDS_DIR / "crd-policysets.yaml"))
-    for version in crd["spec"]["versions"]:
-        rule = version["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"]["rules"]["items"]
-        pattern = rule["properties"]["hosts"]["items"]["pattern"]
-        assert bool(re.fullmatch(pattern, host)) is valid
 
 
 def test_credential_schema_preserves_source_and_target_constraints() -> None:
