@@ -3,14 +3,14 @@ kind: Component
 images:
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
-    newTag: devel-20261019061701-aabfbbb # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
+    newTag: devel-20261019072632-6c676a6 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller
-    newTag: devel-20261019061703-aabfbbb # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
+    newTag: devel-20261019072630-6c676a6 # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
     newTag: devel-20261019061656-aabfbbb # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   # Bootstrap only: Flux selects the published Go images before the separate workload cutover.
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-proxy
-    newTag: devel-20261019061708-aabfbbb # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
+    newTag: devel-20261019072633-6c676a6 # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate
     newTag: devel-20261019070159-d538834 # {"$imagepolicy": "flux-system:agentplane-egress-history-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
