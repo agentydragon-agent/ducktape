@@ -5,7 +5,7 @@ import re
 import pytest
 import pytest_asyncio
 import pytest_bazel
-from playwright.async_api import expect
+from playwright.async_api import Page, expect
 
 from agentplane.app.frontend.testing.visual_assertions import (
     _focus,
@@ -758,10 +758,33 @@ async def test_consent_reconnect_warning_desktop(reconnect_review: VisualPage) -
     await view.capture(target=view.page.locator("#app"))
 
 
+async def _open_history_receipts(page: Page) -> None:
+    await expect(page.get_by_role("button", name="Receipt details", exact=True).first).to_be_attached()
+    for control in await page.get_by_role("button", name="Receipt details", exact=True).all():
+        if await control.get_attribute("aria-expanded") == "false":
+            await control.click()
+
+
+@DESKTOP_AND_MOBILE
+async def test_action_history_summaries(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.set_flag(Flag.PENDING_ACTIONS)
+    await app.mount_app("/actions")
+    page = view.page
+    summary = page.get_by_text("render the test diagram", exact=True)
+    card = page.locator('[data-action-receipt="70000000-0000-4000-8000-000000000002"]')
+    await expect(card.get_by_role("button", name="Receipt details", exact=True)).to_have_attribute(
+        "aria-expanded", "false"
+    )
+    await expect(page.get_by_role("link", name="View details for render the test diagram")).to_be_visible()
+    await _focus(page, summary)
+    await view.capture(target=page.locator("#app"))
+
+
 @DESKTOP_AND_MOBILE
 async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
     await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
     await view.page.wait_for_selector('img[src^="data:image/"]', state="attached")
     await view.check(context="fixture ready")
@@ -776,6 +799,7 @@ async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) 
 async def test_gmail_draft_history_keeps_request_and_result_together(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.GMAIL_DRAFT_HISTORY)
     await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
     page = view.page
     await expect(page.get_by_text("prepare the release email", exact=True)).to_be_visible()
     await expect(page.get_by_role("link", name="Release notes", exact=True)).to_be_visible()
@@ -790,6 +814,7 @@ async def test_gmail_draft_history_keeps_request_and_result_together(view: Visua
 async def test_action_history_diagram(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
     await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
     await view.page.wait_for_selector('img[src^="data:image/"]', state="attached")
     await view.check(context="fixture ready")
@@ -995,14 +1020,20 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
         result = {"content": []}
     await app.show_action_receipt(group, name, arguments, result)
     await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
     page = view.page
     await expect(page.get_by_text("Long action text", exact=True)).to_be_visible()
     if kind == "email":
         editor = page.locator(".agentplane-code-block .cm-content").last
         await expect(editor).to_be_visible()
-        await expect(editor).to_contain_text("Long action content line 48")
+        await expect(editor).to_contain_text("Long action content line 1")
         await _focus(page, editor)
         await view.capture()
+        # CodeMirror virtualizes offscreen lines; bring the end into view before checking it.
+        await editor.evaluate("element => element.scrollIntoView({block: 'end'})")
+        await expect(editor.get_by_text("Long action content line 48", exact=True)).to_be_visible()
+        await wait_for_stable(page)
+        await view.capture(f"{capture_name}-end")
         return
     if kind == "text":
         await expect(page.get_by_role("button", name="Show all 48 lines", exact=True)).to_be_visible()
@@ -1049,6 +1080,7 @@ async def test_kubernetes_applied_manifest_receipt(view: VisualPage, app: Agentp
         },
     )
     await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
     page = view.page
     await expect(page.get_by_text("Apply Kubernetes resource", exact=True)).to_be_visible()
     await expect(page.locator('[data-operation-heading="Manifest · ConfigMap apps/settings"]')).to_be_visible()
@@ -1083,6 +1115,7 @@ async def test_kubernetes_yaml_result_receipt(view: VisualPage, app: AgentplaneF
         },
     )
     await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
     page = view.page
     await expect(page.locator('[data-operation-heading="Resource · ConfigMap apps/settings"]')).to_be_visible()
     await expect(page.get_by_text("Structured content", exact=True)).to_have_count(0)
@@ -1099,6 +1132,7 @@ async def test_kubernetes_delete_success_receipt(view: VisualPage, app: Agentpla
         {"content": [{"type": "text", "text": "Resource deleted successfully"}], "isError": False},
     )
     await app.mount_app("/actions")
+    await _open_history_receipts(view.page)
     page = view.page
     await expect(page.get_by_text("Delete Pod apps/web-0", exact=True)).to_be_visible()
     await expect(page.get_by_text("Deletion accepted", exact=True)).to_be_visible()

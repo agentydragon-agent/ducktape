@@ -6,6 +6,7 @@ import { Disclosure, DisclosureBody } from "../disclosure";
 import { ClampedBlock, lineCount } from "../clamped_block";
 import { OUTPUT_MAX_HEIGHT_REM } from "../command_view";
 import { ActionJson } from "./payload";
+import { TimeAgo } from "../time_ago";
 import { RawSwitch } from "../raw_switch";
 import type { ActionRequestView } from "./client";
 import {
@@ -59,6 +60,24 @@ function RequestAuditDetails({ request }: { request: ActionRequestView }): JSX.E
           <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
             Request <Code>{request.id}</Code>
           </Text>
+          <Text size="xs" c="dimmed">
+            Requested <TimeAgo value={request.created_at} />
+          </Text>
+          {request.decision && (
+            <Text size="xs" c="dimmed">
+              Decided <TimeAgo value={request.decision.decided_at} />
+            </Text>
+          )}
+          {request.execution?.started_at && (
+            <Text size="xs" c="dimmed">
+              Started <TimeAgo value={request.execution.started_at} />
+            </Text>
+          )}
+          {request.execution?.completed_at && (
+            <Text size="xs" c="dimmed">
+              Completed <TimeAgo value={request.execution.completed_at} />
+            </Text>
+          )}
           {grant && <ExternalGrantFields grant={grant} />}
         </Stack>
       </DisclosureBody>
@@ -82,8 +101,11 @@ export function ActionCall({
   onRawChange,
   prettyResult,
   combinedCall: providedCombinedCall,
+  detailsOnly = false,
 }: {
   request: ActionRequestView;
+  /** The history summary already presents identity, intent, status and Raw controls. */
+  detailsOnly?: boolean;
   status?: ReactNode;
   headerActions?: ReactNode;
   raw: boolean;
@@ -101,25 +123,29 @@ export function ActionCall({
   return (
     <Stack gap="sm">
       <Stack gap={2}>
-        <Group justify="space-between" align="flex-start" gap="xs">
-          {actionLabel === undefined ? (
-            <Text fw={600} ff="monospace" style={{ overflowWrap: "anywhere" }}>
-              {request.action.group} / {request.action.name}
-            </Text>
-          ) : (
-            actionLabel
-          )}
-          <Group gap="xs" justify="flex-end" wrap="wrap">
-            {status}
-            {(prettyArguments !== undefined ||
-              prettyResult ||
-              (combinedCall !== undefined && combinedCall !== null)) && <RawSwitch raw={raw} onChange={onRawChange} />}
-            {headerActions}
+        {!detailsOnly && (
+          <Group justify="space-between" align="flex-start" gap="xs">
+            {actionLabel === undefined ? (
+              <Text fw={600} ff="monospace" style={{ overflowWrap: "anywhere" }}>
+                {request.action.group} / {request.action.name}
+              </Text>
+            ) : (
+              actionLabel
+            )}
+            <Group gap="xs" justify="flex-end" wrap="wrap">
+              {status}
+              {(prettyArguments !== undefined ||
+                prettyResult ||
+                (combinedCall !== undefined && combinedCall !== null)) && (
+                <RawSwitch raw={raw} onChange={onRawChange} />
+              )}
+              {headerActions}
+            </Group>
           </Group>
-        </Group>
+        )}
         {/* TODO: the caller's own framing renders verbatim as plain text; markdown rendering is a
             possible later addition. */}
-        <Text size="sm">{request.title}</Text>
+        {!detailsOnly && <Text size="sm">{request.title}</Text>}
         {request.description && (
           <ClampedBlock maxHeightRem={OUTPUT_MAX_HEIGHT_REM} lines={lineCount(request.description)} label="Description">
             <Text size="xs" c="dimmed">
@@ -133,7 +159,7 @@ export function ActionCall({
           </Text>
         )}
         {/* The grant provenance behind an external caller is in the audit details below. */}
-        {request.external_grant && (
+        {request.external_grant && !detailsOnly && (
           <Text size="xs" fw={600}>
             Authenticated external caller at submission
           </Text>
