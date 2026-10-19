@@ -57,8 +57,8 @@
       "sha256": "60HktLuzMOSwLor92VKJc3YUYXZeErbBSrOt1RbwgK8="
     },
     "skill-flux_reconcile_audit": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-flux_reconcile_audit-173ec315f57b/flux_reconcile_audit.skill",
-      "sha256": "Fz7DFfV70NYlrUti+Yli+AoqEvOPF51z2B/00sjciGM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-flux_reconcile_audit-053b894da092/flux_reconcile_audit.skill",
+      "sha256": "BTuJTaCSLSCLFD22XcGOGa1h3KVmC3eJ7AIqvwVrezs="
     },
     "skill-proxmox_vm": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-proxmox_vm-ef9676d0a96e/proxmox_vm.skill",
@@ -193,8 +193,8 @@
       "sha256": "1KhuyvwEYUNWSV6UrsuhHswso8nZAXO/JKW3PRit5qQ="
     },
     "skill-verify_docs": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-verify_docs-13266cad693f/verify_docs.skill",
-      "sha256": "EyZsrWk/MnlTXUt5ZpzEdP2Bop1Jx4Efh9M5rnDwoP0="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-verify_docs-24ed68425cdd/verify_docs.skill",
+      "sha256": "JO1oQlzdGS0Y/uQurGZvQks4E0h3wwve2kaBWwWbtY8="
     },
     "aw-importer": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/aw-importer-db6d24741cb4/aw_importer_bin",
