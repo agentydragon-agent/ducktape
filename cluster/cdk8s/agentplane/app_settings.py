@@ -31,6 +31,14 @@ from cluster.cdk8s.model_selections import HarnessRoutes
 from model_catalog.catalog import Provider, Route
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
+_COMMON_HARNESS_REASONING_EFFORTS = frozenset(("low", "medium", "high"))
+
+# CLIProxyAPI live probe (2026-10-19): 16 one-token `/v1/messages` requests with adaptive
+# thinking. Sonnet 4.6 (`low`/`medium`/`high`/`max`) and both Gemini routes
+# (`minimal`/`low`/`medium`/`high`) returned HTTP 200 at every route-declared effort. All
+# four Opus efforts returned 429 `Individual quota reached`, so those remain unverified.
+# Agentplane stores one effort list per model across both harnesses, so expose their common
+# values: low, medium, high.
 
 DUCKTAPE_PR_INSTRUCTIONS = Path(__file__).with_name("ducktape_pr_instructions.md").read_text(encoding="utf-8").strip()
 _PUBLIC_CODER_INSTRUCTIONS = "\n\n".join(
@@ -53,6 +61,13 @@ def _picker_model_name(route: Route) -> str:
     return f"{route.display_name} — {provider}"
 
 
+def _reasoning_efforts(route: Route, models: HarnessRoutes) -> list[str]:
+    efforts = route.reasoning_efforts
+    if route in models.claude and route in models.codex:
+        efforts = tuple(effort for effort in efforts if effort in _COMMON_HARNESS_REASONING_EFFORTS)
+    return list(efforts)
+
+
 def settings(
     *,
     namespace: str,
@@ -68,7 +83,7 @@ def settings(
                 ModelOption(
                     model=route.id,
                     display_name=_picker_model_name(route),
-                    reasoning_efforts=list(route.reasoning_efforts),
+                    reasoning_efforts=_reasoning_efforts(route, models),
                 )
                 for route in models.all
             ],
