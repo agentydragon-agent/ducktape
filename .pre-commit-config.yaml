@@ -301,6 +301,11 @@ repos:
           -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           -ignore-missing-schemas
           -skip seaweed.seaweedfs.com/v1/Seaweed
+          -skip agentplane.allegedly.works/v1alpha1/Sandbox
+          -skip agentplane.allegedly.works/v1alpha1/SandboxTemplate
+          -skip agentplane.allegedly.works/v1alpha1/PolicySet
+          -skip agentplane.allegedly.works/v1alpha1/PolicyBinding
+          -skip agentplane.allegedly.works/v1alpha1/EgressCredential
         files: ^cluster/(k8s|generated|parked)/.*\.(yaml|yml)$
         exclude: |
           (?x)^(

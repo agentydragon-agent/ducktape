@@ -1,17 +1,14 @@
-"""Derived Sandbox CRDs and kubeconform schemas, written by `bb run //agentplane/crds:generate_bin`.
+"""Derived Sandbox CRDs, written by `bb run //agentplane/crds:generate_bin`.
 
 The Sandbox CRDs are generated from the shared Go API types by controller-gen. The other CRDs
 remain authored in `manifests/`. `PolicyBinding.spec.subject`
 is `agentplane.subjects.ServiceAccountRef`, the model every binding reader decides against, so its schema block
-is spliced into the otherwise hand-written CRD from the model's own JSON schema. Each served version's
-`openAPIV3Schema` is then dumped verbatim to `cluster/schemas/<group>/<kind>_<version>.json`, where
-the pre-commit kubeconform hook reads it. Flux packages the authored CRDs directly from
-`agentplane/crds/manifests` (`cluster/cdk8s/agentplane_crds.py`).
+is spliced into the otherwise hand-written CRD from the model's own JSON schema. Flux packages
+the authored CRDs directly from `agentplane/crds/manifests` (`cluster/cdk8s/agentplane_crds.py`).
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 from textwrap import indent
@@ -26,7 +23,6 @@ from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
 
 CRDS_DIR = Path("agentplane/crds/manifests")
-SCHEMAS_DIR = Path("cluster/schemas")
 CRD_FILES = (
     "crd-egresscredentials.yaml",
     "crd-policysets.yaml",
@@ -130,7 +126,7 @@ def _sandbox_crd(generated: str) -> str:
 
 
 def generated_files(crds: Mapping[str, str], sandbox_crds: Mapping[str, str]) -> Iterator[tuple[Path, str]]:
-    """(repo-relative path, content) of each generated CRD and kubeconform schema."""
+    """(repo-relative path, content) of each generated CRD."""
     for crd_file, committed in crds.items():
         if crd_file in SANDBOX_CRDS:
             text = _sandbox_crd(sandbox_crds[crd_file])
@@ -139,12 +135,7 @@ def generated_files(crds: Mapping[str, str], sandbox_crds: Mapping[str, str]) ->
             text = with_subject_schema(committed, field)
             yield CRDS_DIR / crd_file, text
         else:
-            text = committed
-        crd = yaml.safe_load(text)
-        group, kind = crd["spec"]["group"], crd["spec"]["names"]["kind"].lower()
-        for version in crd["spec"]["versions"]:
-            schema = json.dumps(version["schema"]["openAPIV3Schema"], indent=2, ensure_ascii=False)
-            yield SCHEMAS_DIR / group / f"{kind}_{version['name']}.json", schema + "\n"
+            yield CRDS_DIR / crd_file, committed
 
 
 def main() -> None:

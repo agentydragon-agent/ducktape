@@ -3,8 +3,7 @@
 # so importing directly from them is correct (see
 # devinfra/js/cdk8s_import.bzl's crd arg doc, which only warns against vendoring a copy of
 # an *upstream* CRD). See cluster/docs/cdk8s.md. `bb run :generate_bin` writes the Sandbox CRDs,
-# the binding CRD's subject block, and the kubeconform schemas under
-# cluster/schemas/. Flux packages the CRDs from this same source directory for
+# and the binding CRD's subject block. Flux packages the CRDs from this same source directory for
 # application, so there is no checked-in manifest copy.
 
 # Each *_crds module below is generated at build time by cdk8s_import, not a pip
@@ -66,7 +65,6 @@ py_test(
     data = [
         ":crds",
         "//agentplane/sandboxes/api:generated_crds",
-        "//cluster/schemas",
     ],
     deps = [
         ":generate",
