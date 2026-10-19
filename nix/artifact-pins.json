@@ -37,12 +37,12 @@
       "sha256": "4eBO7BRYjX1X/+02uRxQ0ihH9aoK9X0cTxw2qIA9PWY="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-fb014827d0f7/aiquota.zip",
-      "sha256": "fLw843xZV4mEa/C3Y3j/JmrHoUkuPURJWxRnclwXrvs="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-055539fb4eb2/aiquota.zip",
+      "sha256": "coMmkpOuUn+i1qDYn3SUgDngW7RJYUwhKm+ytIi87cM="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-fb014827d0f7/aiquota-0.1.0-py3-none-any.whl",
-      "sha256": "jldC4Sunxu1XiUV7hxMoNgxPvENSz9VAIw6mAkqkoNk="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-055539fb4eb2/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "iR+N5zVvc8DYl0cBMxeS6/K6kSvE1yK+Y8saLZ5ZEUU="
     },
     "debundle": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-e0c30a2d753c/debundle",
@@ -129,8 +129,8 @@
       "sha256": "fsy7mhfDo7JFUm1Rf2abTxPYHlAEISJO6L2+uTlJIS0="
     },
     "skill-forgejo": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-forgejo-195ea019c64b/forgejo.skill",
-      "sha256": "GV6gGcZLxCavavx0PfhPsTM/BT1epkPY2U70NuhKKZU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-forgejo-b5b095e711d7/forgejo.skill",
+      "sha256": "tbCV5xHXlKL+MFhf0BBQnSxTxc/7G8YCRVF38IGHPlQ="
     },
     "skill-freecad": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-freecad-053bf8a4a067/freecad.skill",
@@ -177,8 +177,8 @@
       "sha256": "UNTTQSGQD+dbvEEZ0TuTckFDh6MJXAjLXsCYSRWSWXI="
     },
     "skill-reverse_engineer": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-reverse_engineer-04b45b4d5ba9/reverse_engineer.skill",
-      "sha256": "BLRbTVupl++pIpqmQZ7WZVzCw1IGy/JDG50ZOqc7HGg="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-reverse_engineer-0f2cccde48c0/reverse_engineer.skill",
+      "sha256": "DyzM3kjAfl23UDeq4fvrZ7fs+1narJ2wrAF3G2/NRWw="
     },
     "skill-session_logs": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-session_logs-4b5f18ae4cdb/session_logs.skill",
@@ -233,12 +233,12 @@
       "sha256": "ehEEqt+2TQPSBsA/KugNUtehlLVNeWkdFlugUmDWZOk="
     },
     "plaid-spend-desktop": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-f2d7aa9e679a/plaid_spend_desktop-0.1.0-py3-none-any.whl",
-      "sha256": "DtcKo6YKpYQhGPmXyIIX5GV80nDz1f55c5l0Ij/goBY="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-e1b67c2c29e2/plaid_spend_desktop-0.1.0-py3-none-any.whl",
+      "sha256": "4PMMe5PYciG5cHWniRxeGp8lC1h1GNXokyS3LNjSE7U="
     },
     "plaid-spend-desktop-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-f2d7aa9e679a/plaid-spend-desktop.zip",
-      "sha256": "8glq1ekMrIXkgDYwq6SSQ7EyIot3eJHeJxg+rUwLvrc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-e1b67c2c29e2/plaid-spend-desktop.zip",
+      "sha256": "/deBD9Su3oYI5fk5EMY81pz+cE8lrRHyQXpViQgxdeM="
     },
     "pr-visuals": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-5cad7a17cfc4/pr_visuals-0.1.0-py3-none-any.whl",
