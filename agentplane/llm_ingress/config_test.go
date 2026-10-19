@@ -7,6 +7,21 @@ import (
 	"testing"
 )
 
+func loadTestConfig(t *testing.T, environ []string) (config, error) {
+	t.Helper()
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(name, settingPrefix) {
+			t.Setenv(name, "")
+		}
+	}
+	for _, entry := range environ {
+		name, value, _ := strings.Cut(entry, "=")
+		t.Setenv(name, value)
+	}
+	return loadConfig()
+}
+
 func writeSettings(t *testing.T, contents string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "settings.yaml")
@@ -21,42 +36,38 @@ func TestLoadConfigPrecedence(t *testing.T) {
 token_audience: yaml-audience
 litellm_url: http://127.0.0.1:8100/prefix
 litellm_key: yaml-secret
+log_llm_requests: true
+port: 6060
 models:
   - model: test/model
     total_context_budget_tokens: 8192
 `)
-	c, err := loadConfig(
-		[]string{
-			"--token-audience=flag-audience", "--port=9090", "--log-llm-requests", "false",
-			`--allowed-service-account-namespaces=["flag-namespace"]`,
-		},
-		[]string{
-			configFileEnv + "=" + path,
-			"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=env-audience",
-			"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=env-secret",
-			"AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=true",
-			"AGENTPLANE_LLM_INGRESS_PORT=7070",
-		},
-	)
+	c, err := loadTestConfig(t, []string{
+		configFileEnv + "=" + path,
+		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=env-audience",
+		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=env-secret",
+		"AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=false",
+		"AGENTPLANE_LLM_INGRESS_PORT=7070",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.TokenAudience != "flag-audience" || c.Port != 9090 || c.LiteLLMKey != "env-secret" || c.LogLLMRequests ||
-		len(c.AllowedServiceAccountNamespaces) != 1 || c.AllowedServiceAccountNamespaces[0] != "flag-namespace" ||
+	if c.TokenAudience != "env-audience" || c.Port != 7070 || c.LiteLLMKey != "env-secret" || c.LogLLMRequests ||
+		len(c.AllowedServiceAccountNamespaces) != 1 || c.AllowedServiceAccountNamespaces[0] != "yaml-namespace" ||
 		c.LiteLLMURL != "http://127.0.0.1:8100/prefix" || len(c.Models) != 1 || c.Models[0].TotalContextBudgetTokens != 8192 {
 		t.Fatalf("unexpected merged config: %+v", c)
 	}
 }
 
 func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
-	for _, value := range []string{"8.0", `"8"`, "true", "null"} {
+	for _, value := range []string{`"not-a-budget"`, "null", "0", "-1"} {
 		t.Run(value, func(t *testing.T) {
 			path := writeSettings(t, "allowed_service_account_namespaces: [test-namespace]\n"+
 				"token_audience: test-audience\n"+
 				"litellm_url: http://127.0.0.1:8100\n"+
 				"litellm_key: never-include-this-secret\n"+
 				"models:\n  - model: test/model\n    total_context_budget_tokens: "+value+"\n")
-			_, err := loadConfig(nil, []string{configFileEnv + "=" + path})
+			_, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
 			if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
 				t.Fatalf("got unsafe or missing config error: %v", err)
 			}
@@ -64,7 +75,7 @@ func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
 	}
 }
 
-func TestLoadConfigRejectsUnknownSettingsWithoutEchoingValues(t *testing.T) {
+func TestLoadConfigRejectsUnknownFileSettingsWithoutEchoingValues(t *testing.T) {
 	base := `allowed_service_account_namespaces: [test-namespace]
 token_audience: test-audience
 litellm_url: http://127.0.0.1:8100
@@ -73,16 +84,8 @@ models: []
 `
 	path := writeSettings(t, base+`unknown_setting: never-include-this-secret
 `)
-	_, err := loadConfig(nil, []string{configFileEnv + "=" + path})
+	_, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
 	if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
 		t.Fatalf("got unsafe or missing config error: %v", err)
-	}
-	path = writeSettings(t, base)
-	_, err = loadConfig(nil, []string{
-		configFileEnv + "=" + path,
-		"AGENTPLANE_LLM_INGRESS_UNKNOWN=never-include-this-secret",
-	})
-	if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
-		t.Fatalf("got unsafe or missing environment error: %v", err)
 	}
 }

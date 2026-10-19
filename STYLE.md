@@ -253,6 +253,7 @@ that needs it.
 | Job        | Use                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Logging    | `log/slog` with the JSON handler on stderr. A controller-runtime binary hands it over with `ctrl.SetLogger(logr.FromSlogHandler(...))`; never `zap`. |
+| Settings   | `spf13/viper`: service-local configuration and validation; use `UnmarshalExact` for file keys.                                                       |
 | HTTP       | Stdlib `net/http`; no router library.                                                                                                                |
 | Tests      | Stdlib `testing`.                                                                                                                                    |
 | PostgreSQL | `lib/pq` for the driver, `goose` for migrations.                                                                                                     |
