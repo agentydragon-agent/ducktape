@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"k8s.io/client-go/kubernetes"
@@ -131,7 +132,7 @@ func New(
 // RegisterProxy installs the per-Sandbox Runner proxy. RunnerControl.Connect is deliberately
 // registered on a separate listener.
 func (g *Gateway) RegisterProxy(server *grpc.Server) {
-	runnercontrolpb.RegisterRunnerServer(server, &runnerProxy{gateway: g})
+	runnerservicepb.RegisterRunnerServer(server, &runnerProxy{gateway: g})
 }
 
 // RegisterRunnerControl serves the runner-initiated bidirectional connection, authenticated

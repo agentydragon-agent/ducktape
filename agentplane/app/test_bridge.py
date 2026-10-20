@@ -57,20 +57,14 @@ from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntit
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import (
-    command_pb2,
-    event_log_pb2,
-    event_pb2,
-    runner_control_pb2,
-    runner_pb2,
-    session_dispatcher_pb2,
-    session_dispatcher_pb2_grpc,
-)
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
+from agentplane.runner import runner_service_pb2
 from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
 from agentplane.runner_gateway.client import SandboxControlClient
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.testing.runner_peer import Endpoint
 from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
 from agentplane.subjects import ServiceAccountRef
@@ -1337,7 +1331,7 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
                 await gateway.runner_unary(
                     destination,
                     lambda stub: stub.OpenSession,
-                    runner_control_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec),
+                    runner_service_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec),
                     timeout_s=gateway.lifecycle_timeout_s,
                 )
                 # Only the openings can create this row: no bridge exists, so no command or SSE request ran.
