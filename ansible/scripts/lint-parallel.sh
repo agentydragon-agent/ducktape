@@ -3,7 +3,7 @@
 #
 # Usage:
 #   ./scripts/lint-parallel.sh              # Lint all playbooks in parallel
-#   ./scripts/lint-parallel.sh atlas.yaml vps.yaml  # Lint specific playbooks
+#   ./scripts/lint-parallel.sh atlas.yaml gpd.yaml   # Lint specific playbooks
 #
 # Requires: GNU parallel
 # Install: apt-get install parallel || brew install parallel

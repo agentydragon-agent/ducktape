@@ -2,23 +2,22 @@
 
 ```bash
 cd ansible
-ansible-galaxy role install -r requirements.yaml
 ansible-galaxy collection install -r requirements.yaml
 ```
 
-These install into the default `~/.ansible/{roles,collections}` paths so
-third-party content never lands in `ansible/roles` or `ansible/collections`.
+Collections install into the default `~/.ansible/collections` path so third-party
+content never lands in `ansible/collections`.
 
-## To deploy
+## To deploy Atlas
 
 ```bash
 cd ansible
-ansible-playbook vps.yaml
+ansible-playbook atlas.yaml
 ```
 
 `--skip-tags` is unreliable: tasks were not tagged with it in mind.
 
-## To deploy gpd
+## To deploy GPD
 
 ```bash
 cd ansible

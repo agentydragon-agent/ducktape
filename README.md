@@ -1,6 +1,6 @@
 # Ducktape
 
-Personal infrastructure monorepo: configuration for **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2), **vps**, **atlas** (Proxmox/Talos k8s).
+Personal infrastructure monorepo: configuration for **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2), and **atlas** (Proxmox/Talos k8s).
 
 ## Build System
 

@@ -17,9 +17,9 @@ that same circularity, which is why none of them are worth routing to ntfy on th
 own.
 
 The construction that does work: `Watchdog` already fires continuously by design and
-routes to `"null"`. Point it at an external service (healthchecks.io, Better Stack, a
-cron on the VPS) that alerts when the heartbeat **stops** arriving. Costs zero ntfy
-messages and is the only signal that survives the pager itself failing.
+routes to `"null"`. Point it at an external service such as healthchecks.io or Better
+Stack that alerts when the heartbeat **stops** arriving. Costs zero ntfy messages and
+is the only signal that survives the pager itself failing.
 
 Deliberately not done as part of the alert-routing work in #3792/#3795/#3798: it needs
 an external account and an egress path, which is a different kind of decision than
@@ -266,12 +266,9 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
 
 ## Legacy VPS Decommission
 
-`agentydragon.com`, `www` and `adgn.link` are served from the cluster.
-
-- [ ] Decommission ansible-managed VPS:
-  - [ ] Clean up remaining: stale nginx sites, stale home dirs, `/tmp` tarball
-  - [ ] Verify no remaining services depend on old VPS
-  - [ ] Tear down VPS
+The standalone Ansible-managed VPS was deleted after `agentydragon.com`, `www`, and
+`adgn.link` moved to the cluster. Syncthing is intentionally retired. This supersedes
+the old host-side cleanup checklist; it does not refer to the separate Talos VPS nodes.
 
 ### File Sync (Syncthing Replacement)
 

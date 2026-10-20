@@ -17,8 +17,8 @@ def test_unrelated_pr_files_skip_ansible_roles(path: str) -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "ansible/devel.yaml",
-        "ansible/roles/common/tasks/main.yml",
+        "ansible/atlas.yaml",
+        "ansible/roles/gui/tasks/main.yml",
         ".ansible-lint.yaml",
         ".github/scripts/run-ansible-lint.sh",
         ".github/workflows/ansible-lint.yml",
@@ -77,7 +77,7 @@ def test_changed_paths_are_nul_delimited_and_keep_roles_for_ansible(tmp_path: Pa
     calls = iter(
         [
             subprocess.CompletedProcess(["git", "fetch"], 0),
-            subprocess.CompletedProcess(["git", "diff"], 0, stdout=b"README.md\0ansible/devel.yaml\0"),
+            subprocess.CompletedProcess(["git", "diff"], 0, stdout=b"README.md\0ansible/atlas.yaml\0"),
         ]
     )
 
@@ -89,8 +89,8 @@ def test_changed_paths_are_nul_delimited_and_keep_roles_for_ansible(tmp_path: Pa
     )
 
     assert needs_roles
-    assert paths == ["README.md", "ansible/devel.yaml"]
-    assert changed_files.read_bytes() == b"README.md\0ansible/devel.yaml\0"
+    assert paths == ["README.md", "ansible/atlas.yaml"]
+    assert changed_files.read_bytes() == b"README.md\0ansible/atlas.yaml\0"
 
 
 def test_diff_failure_does_not_become_an_empty_selection(tmp_path: Path) -> None:

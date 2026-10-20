@@ -24,7 +24,7 @@ home-manager switch --impure --flake ~/code/ducktape#atlas
 
 ### Per-Host Status
 
-Ansible-role columns cross-checked against the playbooks (`ansible/{gpd,vps,atlas}.yaml`)
+Ansible-role columns cross-checked against the playbooks (`ansible/{gpd,atlas}.yaml`)
 and `ansible/roles/`.
 
 | Host         | Nix status          | Ansible roles                                 | Notes                                           |
@@ -36,7 +36,6 @@ and `ansible/roles/`.
 | **atlas**    | Standalone HM entry | `system_inspection_nopasswd`, `nebula`, `nix` | Minimal Proxmox host                            |
 | **nixos-vm** | Standalone HM entry | (test-only config, no Ansible playbook)       | Simplified standalone home-manager config       |
 | **gpd**      | No current output   | `gui`, `legacy_gui`, `laptop`                 | Still uses the `legacy_gui` role — last holdout |
-| **vps**      | No current output   | `common`, `system_inspection_nopasswd`        | Server, no GUI/dev tools                        |
 
 ### What Nix Manages
 

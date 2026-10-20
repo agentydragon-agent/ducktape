@@ -3,7 +3,7 @@ name: ducktape
 version: 0.1.0
 readme: README.md
 description: >
-  Personal infrastructure automation for laptops, desktops, VPS, and ancillary
+  Personal infrastructure automation for laptops, desktops, and ancillary
   services managed by agentydragon.
 authors:
   - agentydragon

@@ -1,10 +1,10 @@
 # File Sync Service Evaluation
 
 **Date**: 2026-03-21
-**Context**: Replacing Syncthing on the old VPS (being decommissioned) with a
-cluster-hosted file sync solution. Key requirements: filesystem-like access,
-lazy fetch (on-demand download), selective sync (per-device folder pinning),
-and offline capability.
+**Context**: Evaluating a cluster-hosted replacement for Syncthing, which formerly
+ran on the now-deleted standalone VPS and is intentionally down. Key requirements:
+filesystem-like access, lazy fetch (on-demand download), selective sync (per-device
+folder pinning), and offline capability.
 
 ## Solutions Evaluated
 
@@ -33,7 +33,8 @@ offline sync automatically when connectivity resumes. Conflict handling creates
 No built-in merge. User resolves manually. Conflicts are rare in single-user setups.
 
 **Self-hosted / K8s**: Runs as a single binary. No official Helm chart but trivial
-to deploy (StatefulSet + PVC). Already deployed in the old VPS via Ansible.
+to deploy (StatefulSet + PVC). It was historically deployed on the standalone VPS via
+Ansible; that instance is retired.
 
 **Linux client**: Native. Runs as a daemon, CLI + web UI.
 
@@ -252,7 +253,8 @@ enough storage for full replication. Simplest to deploy, most reliable offline.
 1. Deploy Seafile CE on the cluster (official Helm chart on `lvm-proxmox-hdd`)
 2. Test SeaDrive on Linux (FUSE mount, cache behavior, offline resilience)
 3. Test selective sync granularity and cache eviction behavior
-4. Migrate data from old VPS Syncthing to Seafile
+4. If the old Syncthing data is still needed and another copy exists, decide whether to
+   migrate it to Seafile
 5. Set up SeaDrive on daily-driver machines
 6. Evaluate whether Seafile Pro features (file locking, online preview) justify cost
 
