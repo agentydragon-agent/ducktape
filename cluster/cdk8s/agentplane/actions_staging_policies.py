@@ -61,6 +61,7 @@ GMAIL_READS_SET = "gmail-reads"
 GOOGLE_CALENDAR_READS_SET = "google-calendar-reads"
 TANA_READS_SET = "tana-reads"
 GROCY_SF_READS_SET = "grocy-sf-reads"
+KUBERNETES_INSPECTION_READS_SET = "kubernetes-inspection-reads"
 # The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
@@ -115,6 +116,7 @@ _ACCOUNT_READ_SETS = (
     TANA_READS_SET,
     GROCY_SF_READS_SET,
     SSH_READS_SET,
+    KUBERNETES_INSPECTION_READS_SET,
 )
 
 
@@ -334,6 +336,11 @@ _GROCY_SF_READS_ACTIONS = [
     "stock_get",
     # keep-sorted end
 ]
+
+# kubectl-passthrough-mcp's node and Pod resource-usage reads: metrics only, no object contents,
+# logs or Secrets. They execute as the operator's cluster-admin identity, so they cover every node
+# and namespace. Every other kubernetes_admin Action stays manual until reviewed here.
+_KUBERNETES_INSPECTION_READS_ACTIONS = ["nodes_stats_summary", "nodes_top", "pods_top"]
 
 
 def add_staging_action_policies(scope: Construct) -> None:
@@ -894,6 +901,22 @@ def add_staging_action_policies(scope: Construct) -> None:
             },
         ),
         rules=[AutoApproveIf.exact_actions(actions={"ssh": ["list_targets"]})],
+    )
+
+    _policy_set(
+        scope,
+        "kubernetes-inspection-reads",
+        metadata=ApiObjectMetadata(
+            name=KUBERNETES_INSPECTION_READS_SET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": (
+                    "Auto-approves kubernetes_admin's node stats and node/Pod resource-usage reads; every "
+                    "other kubernetes_admin Action stays on the human path."
+                )
+            },
+        ),
+        rules=[AutoApproveIf.exact_actions(actions={"kubernetes_admin": _KUBERNETES_INSPECTION_READS_ACTIONS})],
     )
 
     # The long-running OpenClaw Pod is hosted in its own namespace; keep its Action
