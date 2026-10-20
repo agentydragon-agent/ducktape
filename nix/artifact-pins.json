@@ -225,8 +225,8 @@
       "sha256": "6yC0MaTqNDzJh7BZ+lx5VH49MTUjhKjF/+Mu2Wt2ggc="
     },
     "agentplane-runner": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-356d1240b6b9/agentplane-runner",
-      "sha256": "NW0SQLa5FW+vI0Sv23vLoxocCK84QdMMdmwGfrHLbRs="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-cda9684f893e/agentplane-runner",
+      "sha256": "zaloT4k+MelnmFnKeMnynGsjVgkOi4KO9mDLGpmabDQ="
     },
     "skill-cdk8s_builders": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-7a1104aadfb6/cdk8s_builders.skill",
