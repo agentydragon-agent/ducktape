@@ -108,11 +108,11 @@ def replica_settings(
 ) -> Settings:
     cert, key = ca
     return Settings(
-        _cli_parse_args=False,
         rules_namespace=NAMESPACE,
         allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
         credentials_namespace=CREDENTIALS_NAMESPACE,
         kubeconfig=api_config,
+        log_levels={},
         ca_cert=cert,
         ca_key=key,
         listen_host="127.0.0.1",
