@@ -255,6 +255,10 @@
     "skill-debundle_explain": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_explain-b7af4f15c2f2/debundle_explain.skill",
       "sha256": "t69PFcLypAMxQsOuX2p88epd6BNKcVJiw7ih905/Hxk="
+    },
+    "agentplane-cli": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-cli-ff9535e09c4e/agentplane-cli",
+      "sha256": "/5U14JxOesi7HnQCPtRPvoB1sPgIC6U8g6sjYAUqlqk="
     }
   }
 }
