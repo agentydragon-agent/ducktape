@@ -714,7 +714,7 @@ flowchart LR
     VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
     VM_HARNESS_RESOURCE_LIMITS[Blocked: accept VM per-harness resource limits]
     VM_INTRA_SANDBOX_HARDENING[Deferred: optional intra-Sandbox process/state hardening]
-    RUNNER_LAYERING_VM[Blocked: slim VM runtime, section 7]
+    RUNNER_LAYERING_VM[In flight: slim VM runtime, section 7]
     K3S_VM_IMAGE[Blocked: lightweight guest fixture, section 7]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
@@ -1385,7 +1385,7 @@ flowchart TD
     RUNNER_LAYERING_SPIKE_EXIT --> RUNNER_IMAGE_LAYERING_DESIGN
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_SPIKE_RETIRE
     RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_POD[Blocked: a Pod takes runner and tools from separate images]
-    RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[Blocked: a guest takes runner and tools from separate images]
+    RUNNER_IMAGE_LAYERING_DESIGN --> RUNNER_LAYERING_VM[In flight: a guest takes runner and tools from separate images]
     RUNNER_LAYERING_VM --> K3S_VM_IMAGE[Blocked: build a lightweight guest disk in Bazel]
     RUNNER_HARNESS_DELIVERY_DESIGN[harness delivery, section 5] -. related .-> K3S_VM_IMAGE
 ```
@@ -1505,14 +1505,18 @@ half carries the requirement.
 
 ### `RUNNER_LAYERING_VM` — a guest takes the runner, harnesses and tools from separate images
 
-**Blocked on the layering decision; pursuable independently of the Pod half; operator, 2026-10-15 PDT.**
+**In flight; operator chose to split the disks on KubeVirt first (2026-10-20 PDT); Firecracker and a runtime-class abstraction stay later, and whether harnesses become a separate disk stays open in `RUNNER_IMAGE_LAYERING_DESIGN`. Pursuable independently of the Pod half.**
 Split the guest so a runner bump or a template's tool list does not rebuild and repush the whole VM. The
 two-stage shape the operator named — lean stage 1 booting the runner and mounting a stage 2 filesystem,
 with the runner jailing a forked child into stage 2 to exec Claude/Codex — is one option, with the
 squashfs-disk and split-`containerDisk` shapes in the decision node beside it. KubeVirt is not assumed and
 Firecracker stays open; what must not change is that the state volume and its ownership rules survive
 (`STATE_VOLUME_BLOCK`, and the `107:107` virtiofs constraint). Halted containerDisk replacement already
-works, so the update path exists; today it moves a whole guest image, and after this it can move one disk.
+works, so the update path exists. Landed: the runner and CLI are published as their own `containerDisk`
+(`runner/runner-disk.nix`) and the `runner-vm` template attaches it as a second read-only disk. Remaining:
+the guest mounts it at `/run/agentplane/runner` and runs the runner from it, the runner and CLI leave the
+guest closure and the full-guest pin triggers, and a raw erofs `containerDisk` is booted for the first time.
+The tools disk is not split yet.
 The in-guest budgets (`VM_GUEST_BUDGET_DERIVE`) are the other half of the same story — stage 1 owns the
 reserve, stage 2 gets the rest.
 Deliver a lean bootable guest: a bare root filesystem with the runner and harnesses available from
@@ -1973,13 +1977,13 @@ flowchart LR
 
 ### `HISTORY_GO_SERVICE` — the Go History Service
 
-**In flight (this thread, 2026-10-20 UTC); the operator chose the History Service as the next port (2026-10-19).**
+**In flight; the operator chose the History Service as the next port (2026-10-19).**
 Keep the schema and the gRPC contract unchanged so Electric and the existing callers keep working; the
 ported Python tests and the golden vectors the Python fold produced pin the port. `HISTORY_SANDBOX_UID` and the
 History changes after it wait for this service and land in it, so no History change is written in Python and
 ported afterwards. Landed: the Goose migrator (a baseline over Alembic head `0022`), the store with delta
-settlement, the pure fold, and projection leases. In review: fold recording. Remaining: lifecycle
-projection, summaries and the projector; the fold runner; the readers, gRPC servicers and runner ingress;
+settlement, the fold with its recording, projection leases and the per-Session fold runner, the readers,
+cross-replica reader wakeups, and runner ingress. Remaining: the gRPC servicers for the read RPCs;
 settings, `main`, health and the image. **Deliverable:** the Go binary passes the ported Python tests
 against Postgres and serves every History RPC; nothing deploys it yet.
 
