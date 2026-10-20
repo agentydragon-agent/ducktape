@@ -125,12 +125,12 @@ func api(t *testing.T, accounts map[string]string, index *policy.Index) (http.Ha
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(rulesFacade, fstest.MapFS{}), reviewed
+	return New(rulesFacade, fstest.MapFS{}, docs.OpenAPI), reviewed
 }
 
 // documentation is the rules API serving agentDocs, with no rules behind it.
 func documentation(agentDocs fs.FS) http.Handler {
-	return New(http.NotFoundHandler(), agentDocs)
+	return New(http.NotFoundHandler(), agentDocs, docs.OpenAPI)
 }
 
 // githubIndex grants the sandbox account `sb` the GitHub policy and `other` a policy of its own.
@@ -283,7 +283,7 @@ func TestFacadeCannotBeAimedAtAnotherSubject(t *testing.T) {
 func TestOnlyTheAgentRoutesAreServed(t *testing.T) {
 	handler, _ := api(t, map[string]string{"token-sb": "sb"}, githubIndex())
 
-	for _, path := range []string{"/", "/decisions", "/healthz", "/openapi.json", "/v1/decisions", "/docs/agents/"} {
+	for _, path := range []string{"/", "/decisions", "/healthz", "/v1/decisions", "/docs/agents/"} {
 		if response := get(handler, path, bearer("token-sb")...); response.Code != http.StatusNotFound {
 			t.Errorf("GET %s = %d, want 404", path, response.Code)
 		}
@@ -342,13 +342,18 @@ func TestAgentDocumentationGraphIsServed(t *testing.T) {
 		}
 		visited[path] = true
 		response := get(handler, path)
-		if response.Code != http.StatusOK || !strings.HasPrefix(response.Header().Get("Content-Type"), "text/") ||
+		if strings.HasSuffix(path, ".json") {
+			// The generated OpenAPI document of the rules route.
+			if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "application/json" || !json.Valid(response.Body.Bytes()) {
+				t.Errorf("GET %s = %d %q %.20q, want a served JSON document", path, response.Code, response.Header().Get("Content-Type"), response.Body)
+			}
+		} else if response.Code != http.StatusOK || !strings.HasPrefix(response.Header().Get("Content-Type"), "text/") ||
 			!strings.HasPrefix(response.Body.String(), "# ") {
 			t.Errorf("GET %s = %d %q %.20q, want a served text document that opens with a heading", path, response.Code, response.Header().Get("Content-Type"), response.Body)
 		}
 		for _, match := range links.FindAllStringSubmatch(response.Body.String(), -1) {
 			target, err := url.Parse(match[1])
-			if err == nil && target.Host == "" && strings.HasPrefix(target.Path, "/docs/agents/") {
+			if err == nil && target.Host == "" && (strings.HasPrefix(target.Path, "/docs/agents/") || target.Path == "/openapi.json") {
 				pending = append(pending, target.Path)
 			}
 		}
