@@ -6,36 +6,20 @@
 # native backtraces shared across crashes, are in:
 #   nix/debug/rugged/gnome_shell_iris_abort.md
 #
-# This module does two things:
-#   1. Mitigation — bump Mesa from the stable channel's 25.2.6 to nixpkgs-unstable
-#      (26.1.x), pulling in ~8 months of Intel/LNL driver work. No release note
-#      names this exact abort, so it is an attempt, not a guaranteed fix.
-#   2. Diagnostics — make the *next* crash conclusive: log the iris submit errno,
-#      retain gnome-shell cores, and capture kernel xe devcoredumps before they
-#      auto-expire.
+# Keep Mesa from the host's Nixpkgs package set so its driver ABI matches the
+# system glibc. The previous unstable-package-set override made fresh GNOME
+# sessions fail while loading Iris. The remaining settings track the older
+# GNOME Shell crash investigation below.
 {
-  config,
-  inputs,
-  lib,
   pkgs,
   ...
 }:
-let
-  # nixpkgs-unstable mesa is 26.1.2 and Hydra-cached. nixpkgs-master has 26.1.3
-  # but is not built by the binary cache, so it would compile Mesa from source.
-  pkgsUnstable = import inputs.nixpkgs-unstable {
-    inherit (pkgs.stdenv.hostPlatform) system;
-    config.allowUnfree = true;
-  };
-in
 {
-  # --- Mitigation: newer Mesa --------------------------------------------------
-  # Swap only the graphics driver package; the rest of the system stays on the
-  # stable channel. hardware.graphics.package feeds /run/opengl-driver, which is
-  # where gnome-shell loads its iris / EGL / Vulkan drivers from.
+  # Keep the graphics drivers on the same Nixpkgs revision as the system
+  # libraries they load, including glibc.
   hardware.graphics = {
-    package = pkgsUnstable.mesa;
-    package32 = pkgsUnstable.pkgsi686Linux.mesa;
+    package = pkgs.mesa;
+    package32 = pkgs.pkgsi686Linux.mesa;
   };
 
   # --- Active experiment: disable PSR2 selective fetch ------------------------
