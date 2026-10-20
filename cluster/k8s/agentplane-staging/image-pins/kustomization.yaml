@@ -38,7 +38,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-history-migrate
     newTag: devel-20261020033733-e077352 # {"$imagepolicy": "flux-system:agentplane-history-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261020060625-7c22e7f # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261020072305-0fa0096 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
     newTag: devel-20261017094830-fd684b6 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
   # CLEANUP(added 2026-10-20): Restore this pin's Flux image-policy marker (policy `agentplane-history-service`, field
