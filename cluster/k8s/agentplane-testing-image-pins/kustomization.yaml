@@ -51,6 +51,6 @@ images:
     newTag: devel-20261020034320-fe8e9fd # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
   # The runner and `agentplane` command disk attached beside it.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
-    newTag: devel-20261020033040-fe8e9fd # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
+    newTag: devel-20261020034729-5ac0b3e # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
 configurations:
   - kustomizeconfig
