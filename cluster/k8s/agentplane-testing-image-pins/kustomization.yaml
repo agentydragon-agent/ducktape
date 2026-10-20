@@ -10,7 +10,7 @@ images:
     newTag: devel-20261020003829-f0deb81 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   # Bootstrap only: Flux selects the published Go images before the separate workload cutover.
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-proxy
-    newTag: devel-20261020003839-f0deb81 # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
+    newTag: devel-20261020024346-9c8e26c # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate
     newTag: devel-20261019070159-d538834 # {"$imagepolicy": "flux-system:agentplane-egress-history-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
@@ -40,7 +40,7 @@ images:
     newTag: devel-20261019001843-8a68df2 # {"$imagepolicy": "flux-system:agentplane-history-migrate:tag"}
   # Bootstrap only: CI publishes the first images after merge; Flux must select real tags before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261019202701-fa056a5 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261020024350-9c8e26c # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
     newTag: devel-20261017094830-fd684b6 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
