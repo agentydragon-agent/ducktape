@@ -257,8 +257,8 @@
       "sha256": "t69PFcLypAMxQsOuX2p88epd6BNKcVJiw7ih905/Hxk="
     },
     "agentplane-cli": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-cli-7930b9a25e4a/agentplane-cli",
-      "sha256": "eTC5ol5Kfz49Hzfe6mH7WEq3ZB7Va91wGFFp781DWtU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-cli-71cf6e3e9720/agentplane-cli",
+      "sha256": "cc9uPpcg9khZGxJK3X34mOBAT4iwyjwIUNSE7ZJk6cU="
     }
   }
 }
