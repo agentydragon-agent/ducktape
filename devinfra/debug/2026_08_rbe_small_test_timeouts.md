@@ -263,3 +263,31 @@ answers the August open question: the pinned image was never the mechanism.
   on a 60s watch race (#5469), unrelated to any of the above; its file now runs in 0.35s. It is
   named here because it sat inside this same symptom and will otherwise look like more evidence
   for a story it does not belong to.
+
+## 2026-10-20: handing pytest the test file moves the time, it does not remove it
+
+`//agentplane/app:test_system_status` and `//agentplane/app/threads:test_dispatcher_client` timed out
+on a PR that touched neither (`test_dispatcher_client` also 1 in 3 on plain `devel`), with the log
+ending at `pytest_bazel`'s `Running pytest.main with:` line. `pytest_bazel` passes pytest no path,
+so pytest walks the runfiles tree. Setting `PYTEST_ADDOPTS="--rootdir=. <entry-point file>"` in
+`py_test` cut the session `pytest` reports for `//agentplane/app:test_notifications_operator_client`
+from 8.8-10.9s to 0.24-0.30s, and did not shorten the test:
+
+| `test_notifications_operator_client`, 6 runs each | `devel`            | file handed to pytest          |
+| ------------------------------------------------- | ------------------ | ------------------------------ |
+| wall time, min / avg / max                        | 26.7 / 39.1 / 58.0 | 27.9 / 39.0 / 61.6 (1 TIMEOUT) |
+
+With `PYTHONPROFILEIMPORTTIME=1` and `--test_arg=-s` (so pytest does not swallow the profile), 3 runs
+each: the junit `timestamp` puts the session start 8-12s after the process starts on `devel` and
+18-25s after it with the file handed over, so the time the session lost is spent before it starts.
+The mechanism is not established. Both trees import 580 modules (2.5-2.8s) before `pytest.main` and
+2451 (9-11s; 23.9s on a slow host) between `pytest.main` and the header: the
+`agentplane/app/conftest.py` chain, led by `kubernetes_asyncio.client` (12.7s cumulative on the slow
+host), `agentplane.app.action_policy` (4.7s) and `sqlalchemy.ext.asyncio` (1.8s).
+
+Side by side on the 44 targets that timed out in a cold full-suite CI run (one run each, at the same
+time): 4 timed out with the file handed to pytest, 9 on `devel`. One run each is not a rate. The
+change was dropped (#11301).
+
+Not tested: whether importing `kubernetes_asyncio` and `action_policy` inside the fixtures that need
+them shortens the tests that do not.
