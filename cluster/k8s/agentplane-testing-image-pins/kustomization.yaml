@@ -16,7 +16,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-app
     newTag: devel-20261021205206-9f23b65 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
-    newTag: devel-20261021093807-1d8c938 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
+    newTag: devel-20261021225349-df10d2e # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway
     newTag: devel-20261021215825-6f00f44 # {"$imagepolicy": "flux-system:agentplane-runner-gateway:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate
