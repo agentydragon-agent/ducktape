@@ -7,10 +7,10 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller
     newTag: devel-20261021094053-c9bb047 # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
-    newTag: devel-20261021094600-c420b98 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
+    newTag: devel-20261021095054-888e1b9 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   # Bootstrap only: Flux selects the published Go images before the separate workload cutover.
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-proxy
-    newTag: devel-20261021094622-c420b98 # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
+    newTag: devel-20261021095032-888e1b9 # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate
     newTag: devel-20261021084121-b16aa21 # {"$imagepolicy": "flux-system:agentplane-egress-history-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
@@ -18,7 +18,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20261021093807-1d8c938 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway
-    newTag: devel-20261021094600-c420b98 # {"$imagepolicy": "flux-system:agentplane-runner-gateway:tag"}
+    newTag: devel-20261021095049-888e1b9 # {"$imagepolicy": "flux-system:agentplane-runner-gateway:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate
     newTag: devel-20261021083944-b16aa21 # {"$imagepolicy": "flux-system:agentplane-runner-gateway-queue-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/runner
@@ -38,11 +38,11 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-history-migrate
     newTag: devel-20261020033733-e077352 # {"$imagepolicy": "flux-system:agentplane-history-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261021094547-c420b98 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261021095030-888e1b9 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
     newTag: devel-20261020121534-258b550 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261021094553-c420b98 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+    newTag: devel-20261021095044-888e1b9 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # The runner VM SandboxTemplate's containerDisk, which `images:` reaches through kustomizeconfig.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-vm
     newTag: devel-20261021023513-a07f390 # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
