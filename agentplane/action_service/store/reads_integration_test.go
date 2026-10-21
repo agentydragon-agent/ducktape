@@ -183,10 +183,29 @@ func TestRequestViewsDoNotDependOnTheReader(t *testing.T) {
 		if listed := f.list(t, principal, ListFilter{}); len(listed) != 1 || !reflect.DeepEqual(listed[0], want) {
 			t.Errorf("%s lists %+v", name, listed)
 		}
+		if page, _, err := f.History(t.Context(), principal, HistoryPage{Limit: 10}); err != nil || len(page) != 1 || !reflect.DeepEqual(page[0], want) {
+			t.Errorf("%s reads history %+v, %v", name, page, err)
+		}
 	}
-	page, _, err := f.History(t.Context(), HistoryPage{Limit: 10})
-	if err != nil || len(page) != 1 || !reflect.DeepEqual(page[0], want) {
-		t.Errorf("history reads %+v, %v", page, err)
+}
+
+func TestHistoryHoldsACallersOwnRequestsOnly(t *testing.T) {
+	f := newFixture(t)
+	own := f.decide(t, f.submit(t, caller, "own-history"), VerdictDeny)
+	other := f.decide(t, f.submit(t, otherCaller, "other-history"), VerdictDeny)
+	for name, test := range map[string]struct {
+		principal ReadPrincipal
+		want      []uuid.UUID
+	}{
+		"the owner":        {caller, []uuid.UUID{own.ID}},
+		"another owner":    {otherCaller, []uuid.UUID{other.ID}},
+		"an operator":      {operator, []uuid.UUID{other.ID, own.ID}},
+		"a service reader": {reader, []uuid.UUID{other.ID, own.ID}},
+	} {
+		page, _, err := f.History(t.Context(), test.principal, HistoryPage{Limit: 10})
+		if got := ids(page); err != nil || !slices.Equal(got, test.want) {
+			t.Errorf("%s reads history %v, %v; want %v", name, got, err, test.want)
+		}
 	}
 }
 
@@ -208,7 +227,7 @@ func vote(verdict Verdict) *ProviderVote {
 
 func (f fixture) history(t *testing.T, page HistoryPage) ([]ActionRequest, *string) {
 	t.Helper()
-	requests, next, err := f.History(t.Context(), page)
+	requests, next, err := f.History(t.Context(), operator, page)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +338,7 @@ func TestHistoryRefusesWhatItCannotPage(t *testing.T) {
 		"limit below one": {Limit: 0},
 		"invalid cursor":  {Limit: 1, Cursor: &invalidCursor},
 	} {
-		if _, _, err := f.History(t.Context(), page); !errors.Is(err, ErrInvalid) {
+		if _, _, err := f.History(t.Context(), operator, page); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
@@ -373,5 +392,56 @@ func TestEventsPageBySequence(t *testing.T) {
 		if _, err := f.Events(t.Context(), request.ID, operator, filter); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: %v", name, err)
 		}
+	}
+}
+
+func TestVersionsHoldTheReadableRequestsInTheStates(t *testing.T) {
+	f := newFixture(t)
+	pending := f.submit(t, caller, "versions-pending")
+	denied := f.decide(t, f.submit(t, caller, "versions-denied"), VerdictDeny)
+	foreign := f.submit(t, otherCaller, "versions-foreign")
+	for name, tc := range map[string]struct {
+		principal ReadPrincipal
+		states    []ActionState
+		want      map[uuid.UUID]int64
+	}{
+		"a caller's every state":    {caller, nil, map[uuid.UUID]int64{pending.ID: pending.Version, denied.ID: denied.Version}},
+		"a caller's pending":        {caller, []ActionState{StateDecisionPending}, map[uuid.UUID]int64{pending.ID: pending.Version}},
+		"a reader's pending":        {reader, []ActionState{StateDecisionPending}, map[uuid.UUID]int64{pending.ID: pending.Version, foreign.ID: foreign.Version}},
+		"an operator's every state": {operator, nil, map[uuid.UUID]int64{pending.ID: pending.Version, denied.ID: denied.Version, foreign.ID: foreign.Version}},
+	} {
+		got, err := f.Versions(t.Context(), tc.principal, tc.states)
+		if err != nil || !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: %v, %v; want %v", name, got, err, tc.want)
+		}
+	}
+	if _, err := f.Versions(t.Context(), operator, []ActionState{"test-unknown-state"}); !errors.Is(err, ErrInvalid) {
+		t.Errorf("an unknown state: %v", err)
+	}
+}
+
+func TestFindReturnsTheRequestsTheReaderMaySee(t *testing.T) {
+	f := newFixture(t)
+	mine := f.decide(t, f.submit(t, caller, "find-mine"), VerdictAllow)
+	foreign := f.submit(t, otherCaller, "find-foreign")
+	sorted := func(ids []uuid.UUID) []uuid.UUID {
+		return slices.SortedFunc(slices.Values(ids), func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
+	}
+	asked := []uuid.UUID{mine.ID, foreign.ID, uuid.New()}
+	for name, tc := range map[string]struct {
+		principal ReadPrincipal
+		want      []uuid.UUID
+	}{
+		"the owner":   {caller, []uuid.UUID{mine.ID}},
+		"an operator": {operator, []uuid.UUID{mine.ID, foreign.ID}},
+	} {
+		found, err := f.Find(t.Context(), tc.principal, asked)
+		if err != nil || !slices.Equal(sorted(ids(found)), sorted(tc.want)) {
+			t.Errorf("%s finds %v, %v; want %v", name, ids(found), err, tc.want)
+		}
+	}
+	found, err := f.Find(t.Context(), caller, []uuid.UUID{mine.ID})
+	if err != nil || len(found) != 1 || !reflect.DeepEqual(found[0], f.get(t, mine.ID)) {
+		t.Errorf("found %+v, %v; want the request as Get reads it", found, err)
 	}
 }

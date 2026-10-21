@@ -13,23 +13,46 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
-// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
-const callDeadline = 30 * time.Second
+const (
+	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
+	callDeadline = 30 * time.Second
+	testAudience = "test-actions"
+)
+
+var (
+	kube *kubeapiserver.Server
+	// reader reads every account's requests; readerToken proves it, from a Pod running as it.
+	reader      = auth.Account{Namespace: "test-agentplane", Name: "test-reader"}
+	readerToken string
+)
+
+func useAPIServer(server *kubeapiserver.Server) (err error) {
+	kube = server
+	readerToken, err = server.WorkloadToken(context.Background(), reader, testAudience)
+	return err
+}
 
 // running is a served Action Service over a database of its own.
 type running struct {
-	health healthpb.HealthClient
+	health  healthpb.HealthClient
+	actions action_servicepb.ActionServiceClient
 	// url is the base URL of the service's HTTP routes.
 	url string
 	// store is the service's database, and updates is signalled on every Event committed to it.
@@ -43,6 +66,11 @@ func start(t *testing.T) running {
 	t.Helper()
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.Clone(t)
+	c.TokenAudience = testAudience
+	c.CallerServiceAccountNamespaces = []string{reader.Namespace}
+	c.ReaderAccounts = []auth.Account{reader}
+	// As deployed until the caller label's index lands: no workload is admitted as a caller.
+	cluster := deps{Reviews: kube.TokenReviews(), Callers: noCallers{}}
 	db, err := sql.Open("postgres", c.DatabaseURL)
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +92,7 @@ func start(t *testing.T) running {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
-	go func() { served <- serve(ctx, c, listener) }()
+	go func() { served <- serve(ctx, c, cluster, listener) }()
 	var result error
 	var stopped sync.Once
 	stop := func() error {
@@ -85,7 +113,7 @@ func start(t *testing.T) running {
 	}
 	t.Cleanup(func() { connection.Close() })
 	return running{
-		health: healthpb.NewHealthClient(connection), url: "http://" + listener.Addr().String(), store: store.New(db), updates: updates,
+		health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection), url: "http://" + listener.Addr().String(), store: store.New(db), updates: updates,
 		stop: stop,
 	}
 }
@@ -138,7 +166,7 @@ func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testi
 func TestTheServiceRunsTheDispatchWorkerWhichHasNoExecutorYet(t *testing.T) {
 	service := start(t)
 	operator := store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
-	pending, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}},
+	pending, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}},
 		store.ActionRequestInput{
 			IdempotencyKey: "test-dispatched", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 			Arguments: json.RawMessage(`{}`), Title: "test title",
@@ -173,5 +201,46 @@ func TestTheServiceRunsTheDispatchWorkerWhichHasNoExecutorYet(t *testing.T) {
 	}
 	if err := service.stop(); !errors.Is(err, context.Canceled) {
 		t.Errorf("serve returned %v, want the cancellation that stopped it", err)
+	}
+}
+
+func TestTheServiceAnswersAReadersReadsOverGRPCAndHTTP(t *testing.T) {
+	service := start(t)
+	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}},
+		store.ActionRequestInput{
+			IdempotencyKey: "test-read", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
+			Arguments: json.RawMessage(`{}`), Title: "test title",
+		}, store.Admission{RequestID: uuid.New()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+	defer cancel()
+	request := &action_servicepb.GetActionRequestRequest{RequestId: submitted.ID.String()}
+	if _, err := service.actions.GetActionRequest(ctx, request); status.Code(err) != codes.Unauthenticated {
+		t.Errorf("a call without a bearer: %v", err)
+	}
+	got, err := service.actions.GetActionRequest(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken), request)
+	if err != nil || got.GetActionRequest().GetId() != submitted.ID.String() {
+		t.Errorf("gRPC receipt: %v, %v", got, err)
+	}
+
+	call, err := http.NewRequestWithContext(ctx, http.MethodGet, service.url+"/v1/action-requests/"+submitted.ID.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call.Header.Set("Authorization", "Bearer "+readerToken)
+	response, err := http.DefaultClient.Do(call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := &action_servicepb.GetActionRequestResponse{}
+	if response.StatusCode != http.StatusOK || protojson.Unmarshal(body, receipt) != nil || !proto.Equal(receipt, got) {
+		t.Errorf("HTTP receipt: %d %s", response.StatusCode, body)
 	}
 }
