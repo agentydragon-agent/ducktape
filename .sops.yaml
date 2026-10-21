@@ -124,6 +124,20 @@ creation_rules:
           - *agent-box-codex-user
           - *haku
 
+  # BuildBuddy org-admin API key for managing encrypted BuildBuddy secrets.
+  # Keep this local-operator-only; it is not the shared RBE key and is not
+  # available to CI or the cluster. Decryptable by admin and personal machine
+  # user keys derived from ~/.ssh/id_ed25519.
+  - path_regex: secrets/buildbuddy-org-admin-api-key\.sops\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *gecko-agentydragon
+
   # Brave Search API key — external-creds is canonical and ESO distributes it
   # to the egress proxy; workstations read it directly via ducktape.sopsEnv.
   # The legacy shared-secrets copy remains managed during the initial cutover
