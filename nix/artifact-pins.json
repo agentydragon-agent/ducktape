@@ -37,12 +37,12 @@
       "sha256": "4eBO7BRYjX1X/+02uRxQ0ihH9aoK9X0cTxw2qIA9PWY="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-8be2985b9492/aiquota.zip",
-      "sha256": "Hn6G+W1nF/vM4uKxYNGruOIe1dCSjkpbohZrwbxRcgc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-626232e58620/aiquota.zip",
+      "sha256": "1dOKcy7QP0WPyp8ay+yr5L500Mz9tQ5dTXwSBE7c1Qo="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-8be2985b9492/aiquota-0.1.0-py3-none-any.whl",
-      "sha256": "CjH2+p6oVAQptCcRdHksB5LkryWpUvrR3fMBv8qjeZA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-626232e58620/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "Yex7jMfK1PMDQJHsIax2jQ1dNlElXSE1xD5cF+iASIQ="
     },
     "debundle": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-e0c30a2d753c/debundle",
@@ -229,12 +229,12 @@
       "sha256": "ehEEqt+2TQPSBsA/KugNUtehlLVNeWkdFlugUmDWZOk="
     },
     "plaid-spend-desktop": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-e1b67c2c29e2/plaid_spend_desktop-0.1.0-py3-none-any.whl",
-      "sha256": "4PMMe5PYciG5cHWniRxeGp8lC1h1GNXokyS3LNjSE7U="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-35dfa133eaf8/plaid_spend_desktop-0.1.0-py3-none-any.whl",
+      "sha256": "yBhVsIgSN9BnKT0ub6Cu3ftRFdK1OZm1Fzi8dHt0ti0="
     },
     "plaid-spend-desktop-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-e1b67c2c29e2/plaid-spend-desktop.zip",
-      "sha256": "/deBD9Su3oYI5fk5EMY81pz+cE8lrRHyQXpViQgxdeM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-35dfa133eaf8/plaid-spend-desktop.zip",
+      "sha256": "LAEf22GknJj3AgbdUsi9T76OlDkuQ5tzB507BtneTS0="
     },
     "pr-visuals": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-637a319b2f5d/pr_visuals-0.1.0-py3-none-any.whl",
