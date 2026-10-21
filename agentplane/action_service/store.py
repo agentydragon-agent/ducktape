@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from binascii import Error as Base64Error
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,12 +60,17 @@ class ActionConflictError(Exception):
     pass
 
 
-_TERMINAL_ACTION_STATE = {
+TERMINAL_ACTION_STATE = {
     ExecutionState.SUCCEEDED: ActionState.SUCCEEDED,
     ExecutionState.FAILED: ActionState.FAILED,
     ExecutionState.CANCELLED: ActionState.CANCELLED,
     ExecutionState.EXECUTION_UNKNOWN: ActionState.EXECUTION_UNKNOWN,
 }
+
+
+def unknown_outcome_error(reason: UnknownOutcomeReason) -> dict[str, JsonValue]:
+    """`action_execution.error` of an Execution whose outcome could not be observed."""
+    return {"kind": reason, "message": "dispatch outcome unknown; not replayed"}
 
 
 class ActionStore:
@@ -171,23 +176,16 @@ class ActionStore:
             )
             query = query.where(~auto_allowed.exists())
         if cursor is not None:
-            if len(cursor) > 1024:
-                raise ValueError("invalid history cursor")
-            try:
-                timestamp, identifier = json.loads(urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
-                before = (datetime.fromisoformat(timestamp), UUID(identifier))
-                if before[0].tzinfo is None:
-                    raise ValueError("naive cursor")
-            except (ValueError, TypeError, UnicodeDecodeError, Base64Error) as error:
-                raise ValueError("invalid history cursor") from error
-            query = query.where(tuple_(ActionRequestRow.history_at, ActionRequestRow.id) < before)
+            query = query.where(
+                tuple_(ActionRequestRow.history_at, ActionRequestRow.id) < decode_history_cursor(cursor)
+            )
         query = query.order_by(ActionRequestRow.history_at.desc(), ActionRequestRow.id.desc()).limit(limit + 1)
         async with self._sessions() as session:
             rows = list(await session.scalars(query))
             page = rows[:limit]
             last = page[-1] if len(rows) > limit else None
             next_cursor = (
-                urlsafe_b64encode(json.dumps([last.history_at.isoformat(), str(last.id)]).encode()).decode().rstrip("=")
+                encode_history_cursor(last.history_at, last.id)
                 if last is not None and last.history_at is not None
                 else None
             )
@@ -221,7 +219,7 @@ class ActionStore:
                     sequence=e.sequence,
                     state=e.state,
                     at=e.at,
-                    actor=None if e.actor is None else TypeAdapter(Principal).validate_python(e.actor),
+                    actor=None if e.actor is None else actor_from_document(e.actor),
                 )
                 for e in events
             ]
@@ -405,7 +403,7 @@ class ActionStore:
         is accepted as a reconciliation, still gated on presenting the same lease — it
         never starts a second effect, only records the truth about the one attempt made.
         """
-        if result.state not in _TERMINAL_ACTION_STATE:
+        if result.state not in TERMINAL_ACTION_STATE:
             raise ValueError(f"executor returned non-terminal state {result.state}")
         async with self._sessions.begin() as session:
             row = await session.scalar(
@@ -428,7 +426,7 @@ class ActionStore:
             execution.state = result.state
             execution.result = result.result
             execution.error = result.error
-            row.state = _TERMINAL_ACTION_STATE[result.state]
+            row.state = TERMINAL_ACTION_STATE[result.state]
             row.version += 1
             row.updated_at = now
             _record_event(session, row, now)
@@ -467,7 +465,7 @@ class ActionStore:
                     else UnknownOutcomeReason.LEASE_EXPIRED
                 )
                 execution.state = ExecutionState.EXECUTION_UNKNOWN
-                execution.error = {"kind": reason, "message": "dispatch outcome unknown; not replayed"}
+                execution.error = unknown_outcome_error(reason)
                 execution.completed_at = now
                 row.state = ActionState.EXECUTION_UNKNOWN
                 row.version += 1
@@ -527,7 +525,7 @@ def _record_event(
             sequence=row.version,
             state=row.state,
             at=at,
-            actor=None if actor is None else actor.model_dump(mode="json"),
+            actor=None if actor is None else actor_document(actor),
         )
     )
 
@@ -606,3 +604,30 @@ def _execution_view(row: ExecutionRow | None) -> ExecutionView | None:
 
 def _owns_lease(execution: ExecutionRow, executor_id: str, lease_token: UUID) -> bool:
     return execution.executor_id == executor_id and execution.lease_token == lease_token
+
+
+def encode_history_cursor(history_at: datetime, request_id: UUID) -> str:
+    """The opaque position after a history page's last request."""
+    return urlsafe_b64encode(json.dumps([history_at.isoformat(), str(request_id)]).encode()).decode().rstrip("=")
+
+
+def decode_history_cursor(cursor: str) -> tuple[datetime, UUID]:
+    if len(cursor) > 1024:
+        raise ValueError("invalid history cursor")
+    try:
+        timestamp, identifier = json.loads(urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+        before = (datetime.fromisoformat(timestamp), UUID(identifier))
+        if before[0].tzinfo is None:
+            raise ValueError("naive cursor")
+    except (ValueError, TypeError, UnicodeDecodeError, Base64Error) as error:
+        raise ValueError("invalid history cursor") from error
+    return before
+
+
+def actor_document(actor: Principal) -> dict[str, JsonValue]:
+    """`action_event.actor`: either kind of principal, keeping its own shape."""
+    return actor.model_dump(mode="json")
+
+
+def actor_from_document(document: Mapping[str, JsonValue]) -> Principal:
+    return TypeAdapter(Principal).validate_python(document)
