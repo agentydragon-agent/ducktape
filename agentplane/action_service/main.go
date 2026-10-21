@@ -1,8 +1,8 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
 // `ActionService`'s request reads, watches and cancellation and `OperatorActionService`'s Decisions over gRPC and
 // their HTTP facade under /v1/, the agent documentation, the standard gRPC health service and the process's
-// Prometheus metrics at /metrics, runs the dispatch worker, and keeps its policy index equal to the API server's. The
-// other RPCs answer UNIMPLEMENTED, and it runs no Executor.
+// Prometheus metrics at /metrics, runs the dispatch worker, which runs the Actions of the sandbox groups and of the MCP
+// groups, and keeps its policy index equal to the API server's. The other RPCs answer UNIMPLEMENTED.
 package main
 
 import (
@@ -16,7 +16,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -24,7 +26,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
+	"github.com/agentydragon/ducktape/agentplane/action_service/mcpexec"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
@@ -52,11 +56,12 @@ const (
 )
 
 // deps is who the service asks about a caller: the API server, which reviews a workload's bearer, and the view of
-// which ServiceAccounts carry the caller label; and the API server whose policy objects the policy index reads.
+// which ServiceAccounts carry the caller label. Kube reaches that API server, whose policy objects the policy index
+// reads and where the sandbox groups run.
 type deps struct {
 	Reviews auth.TokenReviews
 	Callers api.Callers
-	Policy  *rest.Config
+	Kube    *rest.Config
 }
 
 // noCallers admits no workload, as if no ServiceAccount carried the caller label: the Gate does not read the policy
@@ -77,7 +82,7 @@ func inClusterDeps() (deps, error) {
 	if err != nil {
 		return deps{}, err
 	}
-	return deps{Reviews: kube.AuthenticationV1().TokenReviews(), Callers: noCallers{}, Policy: kubeConfig}, nil
+	return deps{Reviews: kube.AuthenticationV1().TokenReviews(), Callers: noCallers{}, Kube: kubeConfig}, nil
 }
 
 // run serves on the configured address until ctx ends, authenticating workloads with the cluster's TokenReview API
@@ -114,7 +119,7 @@ func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
 // waits for it to come back.
 type executors struct {
 	catalog *catalog.Catalog
-	// byGroup holds the Executor of each group that has one, by key. No Executor is ported yet.
+	// byGroup holds the Executor of each group, by key.
 	byGroup map[string]worker.Executor
 }
 
@@ -149,6 +154,68 @@ func (r readiness) Check(ctx context.Context, request *healthpb.HealthCheckReque
 	return r.Probes.Check(ctx, request)
 }
 
+// sandboxExecutors builds the Executor of each sandbox group, and gives the group the Actions it offers: they are
+// declared, not discovered, so a direct tool the roster lacks is a typo found now. The offered templates are read once,
+// here, so that a missing or unsafe one stops the service rather than failing each create.
+func sandboxExecutors(ctx context.Context, groups *catalog.Catalog, kube *rest.Config) (map[string]worker.Executor, error) {
+	byGroup := map[string]worker.Executor{}
+	var exec sandbox.Exec
+	var client kubernetes.Interface
+	for key, group := range groups.Groups() {
+		binding, isSandbox := group.Executor.(catalog.PodBinding)
+		if !isSandbox {
+			continue
+		}
+		if client == nil {
+			var err error
+			if client, err = kubernetes.NewForConfig(kube); err != nil {
+				return nil, err
+			}
+			exec = sandbox.KubernetesExec(kube, client)
+		}
+		inventory := sandbox.NewInventory(binding, client, exec)
+		if err := inventory.CheckTemplates(ctx); err != nil {
+			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
+		}
+		group.Actions = sandbox.Actions(binding)
+		var unoffered []string
+		for tool := range group.DirectTools {
+			if _, offered := group.Actions[tool]; !offered {
+				unoffered = append(unoffered, tool)
+			}
+		}
+		if len(unoffered) > 0 {
+			slices.Sort(unoffered)
+			return nil, fmt.Errorf("ActionGroup %s direct_tools names Actions it does not offer: %q", key, unoffered)
+		}
+		executor, err := sandbox.NewExecutor(binding, inventory)
+		if err != nil {
+			return nil, err
+		}
+		byGroup[key] = executor
+	}
+	return byGroup, nil
+}
+
+// mcpExecutors builds the Executor of each MCP group, which withdraws the group's Actions until its server lists them:
+// a server that is down leaves its group unavailable, not the service stopped. linkages read the tokens of the
+// OAuth-backed groups.
+func mcpExecutors(groups *catalog.Catalog, linkages mcpexec.Linkages) (map[string]*mcpexec.Executor, error) {
+	byGroup := map[string]*mcpexec.Executor{}
+	for key, group := range groups.Groups() {
+		binding, isMCP := group.Executor.(catalog.MCPBinding)
+		if !isMCP {
+			continue
+		}
+		executor, err := mcpexec.New(groups, key, binding, linkages, mcpexec.DefaultTiming())
+		if err != nil {
+			return nil, err
+		}
+		byGroup[key] = executor
+	}
+	return byGroup, nil
+}
+
 // gate admits the callers of the service's RPCs.
 func gate(c config, d deps) (*api.Gate, error) {
 	workloads, err := auth.NewResolver(d.Reviews, c.TokenAudience, c.CallerServiceAccountNamespaces)
@@ -178,9 +245,10 @@ func newRoutes(httpFacade http.Handler) (http.Handler, error) {
 	return routes, nil
 }
 
-// serve answers on listener, runs the dispatch worker and keeps the policy index until ctx ends or the listener fails.
-// gRPC and the HTTP routes share the listener. The worker drains from then on, beside the listener's shutdown, and
-// serve returns once it has and the policy watches have stopped.
+// serve answers on listener, runs the dispatch worker, supervises the MCP groups' sessions and keeps the policy index
+// until ctx ends or the listener fails. gRPC and the HTTP routes share the listener. The worker and the MCP groups
+// drain from then on, beside the listener's shutdown, and serve returns once they have and the policy watches have
+// stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	admission, err := gate(c, d)
 	if err != nil {
@@ -202,15 +270,26 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		return err
 	}
 	defer unsubscribe()
+	byGroup, err := sandboxExecutors(ctx, c.ActionGroups, d.Kube)
+	if err != nil {
+		return err
+	}
 	requests := store.New(db)
-	dispatcher, err := worker.New(requests, executors{catalog: c.ActionGroups}, worker.DefaultTiming())
+	supervisors, err := mcpExecutors(c.ActionGroups, requests)
+	if err != nil {
+		return err
+	}
+	for key, executor := range supervisors {
+		byGroup[key] = executor
+	}
+	dispatcher, err := worker.New(requests, executors{catalog: c.ActionGroups, byGroup: byGroup}, worker.DefaultTiming())
 	if err != nil {
 		return err
 	}
 
 	watchPeriod := c.policyWatchPeriod()
 	policy := informer.NewIndex(reader.StaleAfterCycles*watchPeriod, c.CallerServiceAccountNamespaces)
-	policyInformer, err := informer.New(d.Policy, policy, c.PolicyNamespace, watchPeriod)
+	policyInformer, err := informer.New(d.Kube, policy, c.PolicyNamespace, watchPeriod)
 	if err != nil {
 		return err
 	}
@@ -254,10 +333,33 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	facade.MountGRPC(server, grpcServer)
 
 	working, drain := context.WithCancel(ctx)
+	var supervising sync.WaitGroup
+	for _, executor := range supervisors {
+		supervising.Go(func() { executor.Run(working) })
+	}
+	// The worker reads the pending dispatches again on a dispatch and whenever a group changes, which can make its
+	// Executor ready.
+	wakeups := make(chan struct{}, 1)
+	go func() {
+		changed := c.ActionGroups.Changed()
+		for {
+			select {
+			case <-working.Done():
+				return
+			case <-dispatches:
+			case <-changed:
+				changed = c.ActionGroups.Changed()
+			}
+			select {
+			case wakeups <- struct{}{}:
+			default:
+			}
+		}
+	}()
 	worked := make(chan struct{})
 	go func() {
 		defer close(worked)
-		dispatcher.Run(working, dispatches)
+		dispatcher.Run(working, wakeups)
 	}()
 	failed := make(chan error, 1)
 	go func() { failed <- fmt.Errorf("listener: %w", server.Serve(listener)) }()
@@ -276,6 +378,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		server.Close()
 	}
 	<-worked
+	supervising.Wait()
 	return result
 }
 
