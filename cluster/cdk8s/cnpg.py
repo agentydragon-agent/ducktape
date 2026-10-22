@@ -37,6 +37,7 @@ POSTGRES_IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
 BARMAN_PLUGIN = "barman-cloud.cloudnative-pg.io"
 # The port of every Service CNPG creates for a Cluster.
 PORT = Port(name="postgres", number=5432)
+_PIRAEUS_SSD_STORAGE_CLASS = "piraeus-ssd-local"
 
 _CONTROL_PLANE_TOLERATION = ClusterSpecAffinityTolerations(
     key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
@@ -71,11 +72,16 @@ class PostgresRef:
 def _affinity(*, placement: Placement, storage_class: str) -> ClusterSpecAffinity:
     """One instance per node within `placement`, required: instances sharing a node share its
     failure, and preferred anti-affinity lets the scheduler co-locate them. A Cluster tolerates
-    control-plane nodes exactly when its storage is SSD, since OVH's SSD nodes are its control
-    planes."""
+    control-plane nodes for local-path SSD classes and the Piraeus SSD pilot, whose only pool is
+    currently on an OVH control-plane."""
+    tolerations = (
+        [_CONTROL_PLANE_TOLERATION]
+        if storage_class in SSD_STORAGE_CLASSES or storage_class == _PIRAEUS_SSD_STORAGE_CLASS
+        else None
+    )
     return ClusterSpecAffinity(
         node_selector=placement.node_selector,
-        tolerations=[_CONTROL_PLANE_TOLERATION] if storage_class in SSD_STORAGE_CLASSES else None,
+        tolerations=tolerations,
         topology_key="kubernetes.io/hostname",
         pod_anti_affinity_type="required",
     )

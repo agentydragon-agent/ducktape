@@ -45,7 +45,7 @@ spec:
     initdb:
       database: attic
       owner: attic
-  instances: 2
+  instances: 3
   monitoring:
     enablePodMonitor: true
   plugins:
@@ -63,7 +63,7 @@ spec:
   storage:
     resizeInUseVolumes: false
     size: 8Gi
-    storageClass: local-path-ovh-ssd
+    storageClass: piraeus-ssd-local
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
