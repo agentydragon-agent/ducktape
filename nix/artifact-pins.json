@@ -205,8 +205,8 @@
       "sha256": "ZhniFV+zu50MP/tcGL3P3tGNyzYFrjb9PUAjqw0PlOU="
     },
     "skill-update_deps": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-update_deps-b21915d8c6fe/update_deps.skill",
-      "sha256": "shkV2Mb+I7ixINq7/whEwZHHKtQbpa4s/82paPdZtr4="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-update_deps-debd0828d4d7/update_deps.skill",
+      "sha256": "3r0IKNTXwQK19Nk6BuxH7IlHdIJdIHLSx3r7JynUP9k="
     },
     "skill-verify_docs": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-verify_docs-24ed68425cdd/verify_docs.skill",
