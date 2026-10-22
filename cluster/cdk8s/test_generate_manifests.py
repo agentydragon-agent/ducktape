@@ -257,6 +257,15 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
         {"name": "litellm-crossplane-keys", "namespace": "ducktape-flux"},
     ]
 
+    organizations = [
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "litellm.m.crossplane.io/v1alpha1" and doc.get("kind") == "Organization"
+    ]
+    assert len(organizations) == 1
+    assert organizations[0]["metadata"]["name"] == "ducktape"
+    assert organizations[0]["spec"]["forProvider"]["organizationAlias"] == "ducktape"
+
     keys = {
         doc["spec"]["forProvider"]["keyAlias"]: doc
         for doc in documents
@@ -282,7 +291,24 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
             "key": "api-key",
         }
 
-    assert all(key["spec"]["forProvider"]["organizationId"] == "" for key in keys.values())
+    assert all(key["spec"]["forProvider"]["organizationIdRef"] == {"name": "ducktape"} for key in keys.values())
+
+    published_key_secrets = [
+        doc
+        for doc in documents
+        if doc.get("kind") == "ExternalSecret"
+        and any(
+            data.get("remoteRef", {}).get("key", "").startswith("litellm-crossplane-key-")
+            for data in doc.get("spec", {}).get("data", [])
+        )
+    ]
+    assert published_key_secrets
+    assert all(
+        data["remoteRef"]["property"] == "attribute.key"
+        for doc in published_key_secrets
+        for data in doc["spec"]["data"]
+        if data["remoteRef"]["key"].startswith("litellm-crossplane-key-")
+    )
 
     teams = {
         doc["metadata"]["name"]: doc

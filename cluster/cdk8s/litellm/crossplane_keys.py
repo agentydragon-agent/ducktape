@@ -18,9 +18,16 @@ from litellm_key_crds.io.crossplane.m.litellm import (
     KeySpecForProvider,
     KeySpecForProviderKeyWoSecretRef,
     KeySpecForProviderMetadataSecretRef,
+    KeySpecForProviderOrganizationIdRef,
     KeySpecForProviderTeamIdRef,
     KeySpecProviderConfigRef,
     KeySpecWriteConnectionSecretToRef,
+)
+from litellm_organization_crds.io.crossplane.m.litellm import (
+    Organization,
+    OrganizationSpec,
+    OrganizationSpecForProvider,
+    OrganizationSpecProviderConfigRef,
 )
 from litellm_providerconfig_crds.io.crossplane.m.litellm import (
     ProviderConfig,
@@ -68,12 +75,8 @@ def _key_spec(
     for_provider = KeySpecForProvider(
         key_alias=alias,
         models=list(models),
-        # provider-litellm v2.1.0 can leave this optional field unknown after
-        # create when LiteLLM omits organization_id from key info. An explicit
-        # empty value normalizes that state; the provider omits it from API
-        # requests when empty.
-        organization_id="",
         metadata_secret_ref=KeySpecForProviderMetadataSecretRef(name=metadata_secret),
+        organization_id_ref=KeySpecForProviderOrganizationIdRef(name="ducktape"),
         max_budget=max_budget,
         budget_duration=budget_duration,
         team_id_ref=KeySpecForProviderTeamIdRef(name=team) if team is not None else None,
@@ -133,7 +136,7 @@ def _publish_key(
         metadata=ApiObjectMetadata(name=target_secret, namespace=NAMESPACE),
         refresh_interval="1h",
         secret_store_ref=SecretStoreRef.cluster(store),
-        data=[remote_data(connection_secret, "key", secret_key=data_key)],
+        data=[remote_data(connection_secret, "attribute.key", secret_key=data_key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(
             metadata=ExternalSecretSpecTargetTemplateMetadata(annotations=dict(annotations or {})), type="Opaque"
@@ -194,6 +197,16 @@ def chart(app: App) -> Chart:
                     name=_PROVIDER_CONFIG_SECRET, namespace=NAMESPACE, key="credentials"
                 ),
             )
+        ),
+    )
+
+    Organization(
+        chart,
+        "organization-ducktape",
+        metadata=ApiObjectMetadata(name="ducktape", namespace=NAMESPACE),
+        spec=OrganizationSpec(
+            for_provider=OrganizationSpecForProvider(organization_alias="ducktape"),
+            provider_config_ref=OrganizationSpecProviderConfigRef(kind="ProviderConfig", name="default"),
         ),
     )
 
