@@ -111,7 +111,9 @@ def _database(scope: Construct) -> None:
         # Instances whose PVs predate the move to SSD stay on their HDD worker until rebuilt; a
         # changed class only applies to PVCs CNPG creates afterwards.
         storage_class="local-path-ovh-ssd",
-        size="2Gi",
+        # Give new replica claims headroom while retaining the existing claim sizes during evacuation.
+        size="8Gi",
+        resize_in_use_volumes=False,
         initdb=cnpg.same_owner_initdb("attic"),
         wal_archive=True,
         # Attic autocommits several statements per ~64 KiB chunk. With a commit per fsync on the HDD
