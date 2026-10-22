@@ -26,7 +26,7 @@ images:
     newTag: devel-20261021215539-6f00f44 # {"$imagepolicy": "flux-system:agentplane-runner-gateway-queue-migrate:tag"}
   # Initial publication on devel supplies the tag through Flux image automation.
   - name: git.allegedly.works/ducktape-ci/runner
-    newTag: devel-20261022054328-0d5092f # {"$imagepolicy": "flux-system:runner:tag"}
+    newTag: devel-20261022070155-2adfbc1 # {"$imagepolicy": "flux-system:runner:tag"}
   # CLEANUP(added 2026-10-21): Restore the `agentplane-sandbox` Flux image-policy tag marker
   #   with the testing Actions Go cutover (ACTION_SERVICE_GO_PORT stage M); this caller must
   #   remain on the Python API until its generated-client image rolls with the Go service.
