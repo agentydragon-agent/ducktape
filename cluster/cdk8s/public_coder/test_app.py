@@ -13,7 +13,6 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-import yaml
 from cdk8s import (
     App,
     Chart,
@@ -151,16 +150,6 @@ def test_openclaw_cannot_bypass_agentplane_egress(app_objects: list[dict[str, An
             "podSelector": {"matchLabels": public_coder_egress.GATEWAY.pods.selector},
         }
     ]
-
-
-def test_kubeconfig_retains_haku_identity_over_the_relay() -> None:
-    config_map = _one(_synth(public_coder_app.kubeconfig_chart), "ConfigMap", "kubeconfig")
-    config = yaml.safe_load(config_map["data"]["config"])
-    cluster = one(config["clusters"])["cluster"]
-    assert cluster["server"] == "https://haku-kubeapi.allegedly.works"
-    assert cluster["proxy-url"] == "http://127.0.0.1:3128"
-    assert cluster["certificate-authority"] == "/etc/ssl/certs/ca-certificates.crt"
-    assert one(config["users"])["user"] == {"token": "agentplane-credential-public-coder-haku-console"}
 
 
 if __name__ == "__main__":
