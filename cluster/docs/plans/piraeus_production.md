@@ -368,38 +368,116 @@ fsync/tail latency, Seaweed volume-server I/O and representative application
 operations. Exercise limit enforcement, sparse allocation, expansion, discard,
 retention, restart/reboot and volume/controller recovery on disposable capacity.
 Select the production stack from these results. Do not extend the control-plane
-maintenance window for a long soak: restore service after the short admission
-gates, then perform the extended observation with redundancy restored.
+maintenance window for a long soak: finish the short node/pool admission gates,
+then keep application data on verified off-node copies through the step 5 stop.
+Use disposable claims for extended observation before the step 6 production
+handoffs.
 
-### 4. Restore production members and observe
+### 4. Maintain production service on off-node application copies
 
-Restore Seaweed master 2 first onto its replacement Piraeus claim, preserving
-identity and verifying three healthy members. Rebuild the database members on
-new strict-local claims, then restore an SSD volume server using a single-copy
-local Piraeus claim and validate Seaweed replication and application reads/writes.
-Use a reviewed operator handoff for individual claims; do not change every
-member's immutable storage at once through a group-wide template edit.
+Keep evacuated application data on its verified off-node replacements during
+node/pool acceptance. Keep Seaweed master 2 on its temporary HDD-backed claim
+in the original master topology; verify three healthy masters, leader
+agreement, and application S3 reads/writes. Keep the affected Attic and Study
+Casino CNPG clusters at two healthy off-target instances while their evacuated
+members remain off-node. Do not restore the third instance or create production
+Piraeus PVCs yet. Study Casino's instance claim template remains 1Gi.
 
-The volume-server migration changes Seaweed's backing claim. Applications using
-existing SeaweedFS CSI claims keep those claims and their service endpoints.
-Seaweed and CNPG provide their own replication; avoid adding a second Piraeus
-copy by default for each member. Keep LINSTOR controller metadata/recovery
-independent of the first data pool so the pool can be recovered without itself.
+Keep the two existing SSD local-path volume servers and their claims serving
+the existing Seaweed volumes. Do not edit their immutable claim template or
+move SSD volumes onto Piraeus in this step. Applications using existing
+SeaweedFS CSI claims keep those claims and their service endpoints. Keep
+LINSTOR controller metadata/recovery independent of the first data pool so the
+pool can be recovered without itself.
 
-Observe ordinary load, replica convergence, application performance, pool
-headroom and restart behavior. Finish this node's acceptance and restore full
-application/etcd redundancy before selecting another node. Once a disk is wiped,
-recovery depends on the verified off-node source. Once replacement claims accept
-writes, old copies are stale; rollback requires write quiescence and data
-reconciliation rather than simply switching claim names.
+Observe service health and replica convergence while production state remains
+off-node. Use disposable claims for pool headroom, restart, and recovery
+observations. Retain verified off-node sources until the corresponding
+step 6 replacements have been accepted.
+
+### 5. Complete node and pool acceptance, then pause
+
+Complete the checks in [First SSD node, strict-local mode](#first-ssd-node-strict-local-mode),
+including observed thin-pool data and metadata alerts, while application data
+remains on its off-node copies. The [first-node execution
+record](../../debug/piraeus_first_node_2026_10_21/README.md) stops before step 6.
+Stop here, present the acceptance evidence, and wait for the user's explicit
+approval before creating any production Piraeus PVC or restoring application
+data onto Piraeus.
+
+### 6. Restore production members and add the Piraeus-backed SSD server
+
+Proceed only after step 5 acceptance and explicit user approval. This is the
+first step that may create production Piraeus PVCs. Keep verified off-node data
+and temporary HDD sources until each replacement is accepted.
+
+Restore the evacuated Seaweed master 2 using its application-specific handoff:
+copy the verified Raft state from the temporary HDD-backed claim to a
+replacement Piraeus claim, preserve the member identity, and verify three
+healthy masters, leader agreement, and application S3 reads/writes before
+retiring the source. Rebuild each evacuated Attic and Study Casino CNPG member
+on a new strict-local Piraeus claim through its operator's native replica
+workflow, one member at a time. Keep the other two healthy off-node instances
+serving while CNPG creates and catches up the replacement; require all three
+healthy before completing that member handoff. Keep Study Casino's instance
+claim template at 1Gi.
+Applications continue to use their existing SeaweedFS CSI claims and service
+endpoints. Do not add a second Piraeus copy by default when the application
+already provides replication.
+
+Then keep the two existing `local-path-ovh-ssd` volume servers and their claims,
+and add a separate Seaweed `volumeTopology` group, such as `ssd-piraeus`, with
+one filesystem-backed volume-server claim on the accepted rebuilt node:
+
+| Setting                      | Proposed value                                  |
+| ---------------------------- | ----------------------------------------------- |
+| Kubernetes topology group    | `ssd-piraeus`                                   |
+| Replicas                     | `1`                                             |
+| Storage class                | `piraeus-ssd-local`                             |
+| Volume-server PVC request    | `250Gi` (initial sizing proposal)               |
+| Seaweed disk argument        | `-disk=ssd`                                     |
+| Seaweed data center and rack | `hil` / `hil-ovh-h108b01`                       |
+| Seaweed default replication  | `001` (two copies across the SSD placement set) |
+| Piraeus placement            | One local copy; remote access disabled          |
+
+Keep the existing `ssd` group's `local-path-ovh-ssd` claim template unchanged;
+StatefulSet claim templates are immutable. The new Kubernetes topology group
+name must not create a separate Seaweed placement domain: retain the existing
+Seaweed `disk=ssd`, `dataCenter=hil` and `rack=hil-ovh-h108b01` identity so
+`defaultReplication: "001"` places two Seaweed copies across the existing and
+new SSD servers. Piraeus supplies one local backing copy for the new server;
+Seaweed supplies the second data copy.
+
+An empty new server registers with the normal Seaweed heartbeat but does not
+automatically attract volumes that already have two healthy copies. Start with
+a bounded canary set moved using Seaweed's native volume-move operations. Verify
+reads and writes, two healthy copies, expected SSD placement, and adequate thin
+pool data and metadata headroom before each further batch. Then rebalance SSD
+volumes gradually, checking the same gates as placement changes.
+
+Before creating the new claim or moving data, reconfirm that the node and pool
+passed step 5 and that the data/metadata alerts report fresh samples with usable
+headroom. Ensure Seaweed volume-server monitoring covers both SSD topology
+groups. Review generated pod labels and anti-affinity across both groups: the
+current helper matches `seaweedfs/topology` using the disk value, which may not
+match a new group named `ssd-piraeus`. Extend the selector so all SSD volume
+servers remain separated across hosts; do not assume the distinct Kubernetes
+group name changes Seaweed's replication placement.
+
+Use the [volume-server runbook](../runbooks/rolling_seaweedfs_volume_pvc.md)
+for replication convergence and the alive-empty-server/FUSE-client gate if a
+server endpoint is later retired. This step retains both existing local-path
+servers; their later retirement is a separate reviewed change. Once replacement
+claims accept writes, old copies are stale; rollback requires write quiescence
+and data reconciliation rather than simply switching claim names.
 
 ### SeaweedFS and later conversions
 
-After the pilot, each converted data disk's remaining local-path consumers must
-move or be rebuilt. Seaweed volume-server claims on those disks move to local
-Piraeus claims too; the previous proposal to retain them on a legacy localpath LV
-is superseded. Use application-native replication or a quiesced final copy for
-other state, keeping the next conversion serial and independently reviewable.
+For later converted disks, move or rebuild each remaining local-path consumer.
+Move Seaweed volume-server claims to Piraeus-backed groups rather than retaining
+them on a legacy `localpath` LV. Use application-native replication or a quiesced
+final copy for other state, keeping each conversion serial and independently
+reviewable.
 
 ### Existing local-path workload candidates
 
