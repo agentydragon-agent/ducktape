@@ -47,7 +47,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate
     newTag: devel-20261021220301-bdeae93 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-migrate
-    newTag: devel-20261020033733-e077352 # {"$imagepolicy": "flux-system:agentplane-history-migrate:tag"}
+    newTag: devel-20261022061700-dacc697 # {"$imagepolicy": "flux-system:agentplane-history-migrate:tag"}
   # Bootstrap only: CI publishes the first images after merge; Flux must select real tags before rollout.
   # CLEANUP(added 2026-10-21): Restore the `agentplane-notification-service` Flux image-policy tag marker
   #   with the testing Actions Go cutover (ACTION_SERVICE_GO_PORT stage M); this caller must

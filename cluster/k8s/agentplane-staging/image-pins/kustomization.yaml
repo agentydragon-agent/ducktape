@@ -51,7 +51,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate
     newTag: devel-20261021093121-fb3d6ca
   - name: git.allegedly.works/ducktape-ci/agentplane-history-migrate
-    newTag: devel-20261020033733-e077352 # {"$imagepolicy": "flux-system:agentplane-history-migrate:tag"}
+    newTag: devel-20261022061700-dacc697 # {"$imagepolicy": "flux-system:agentplane-history-migrate:tag"}
   # CLEANUP(added 2026-10-21): Restore the `agentplane-notification-service` Flux image-policy tag marker
   #   with the staging Actions Go cutover (ACTION_SERVICE_GO_PORT stage N); this caller must
   #   remain on the Python API until its generated-client image rolls with the Go service.
