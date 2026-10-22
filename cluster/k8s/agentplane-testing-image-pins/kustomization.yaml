@@ -3,7 +3,7 @@ kind: Component
 images:
   # Publication bootstrap: unused until the separate frontend serving cutover.
   - name: git.allegedly.works/ducktape-ci/agentplane-frontend
-    newTag: devel-20261022074426-2a608b0 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
+    newTag: devel-20261022082903-8d1c93b # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
     newTag: devel-20261021215932-6f00f44 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
@@ -17,7 +17,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate
     newTag: devel-20261021215830-6f00f44 # {"$imagepolicy": "flux-system:agentplane-egress-history-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261022070752-e2ee72e # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20261022082825-8d1c93b # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20261021225349-df10d2e # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway
