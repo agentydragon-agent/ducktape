@@ -27,7 +27,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/runner
     newTag: devel-20261022070155-2adfbc1 # {"$imagepolicy": "flux-system:runner:tag"}
   - name: git.allegedly.works/ducktape-ci/runner-ducktape
-    newTag: devel-20261022070305-2adfbc1 # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
+    newTag: devel-20261022071510-e1ec276 # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
   # CLEANUP(added 2026-10-21): Restore the `agentplane-sandbox` Flux image-policy tag marker
   #   with the staging Actions Go cutover (ACTION_SERVICE_GO_PORT stage N); this caller must
   #   remain on the Python API until its generated-client image rolls with the Go service.
