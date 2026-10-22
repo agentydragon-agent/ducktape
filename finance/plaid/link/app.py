@@ -25,6 +25,7 @@ from finance.plaid.db.products import Product, syncable_products
 from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
 from finance.plaid.db.sync import PlaidApiLike, sync_link, sync_transactions_only
 from finance.plaid.link.webhooks import InvalidPlaidWebhookError, PlaidWebhookVerifier
+from finance.plaid.models import ItemInventory
 from util.oidc_login import LoginConfig, install_login
 
 logger = logging.getLogger(__name__)
@@ -344,6 +345,10 @@ def create_app(
             _link_summary(link, _addable_products(client, link), sync_running=link.item_id in running)
             for link in await storage.list_active_links()
         ]
+
+    @app.get("/api/account-inventory")
+    async def account_inventory() -> list[ItemInventory]:
+        return await require_storage().list_account_inventory()
 
     @app.get("/api/links/{item_id}")
     async def get_link_state(item_id: Annotated[str, ApiPath(description="Plaid item_id")]) -> LinkSummary:

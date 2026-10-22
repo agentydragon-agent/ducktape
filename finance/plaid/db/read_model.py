@@ -8,7 +8,7 @@ from datetime import date, datetime
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from finance.plaid.db.schema import (
+from finance.plaid.db.models import (
     AccountRow,
     BalanceSnapshotRow,
     HoldingSnapshotRow,
@@ -63,7 +63,11 @@ async def read_current_cash_balances(
         )
         .join(AccountRow, AccountRow.account_id == BalanceSnapshotRow.account_id)
         .join(LinkRow, LinkRow.item_id == BalanceSnapshotRow.item_id)
-        .where(BalanceSnapshotRow.account_id.in_(account_ids), LinkRow.status != "revoked")
+        .where(
+            BalanceSnapshotRow.account_id.in_(account_ids),
+            LinkRow.status != "revoked",
+            AccountRow.detached_at.is_(None),
+        )
         .subquery()
     )
     stmt = (
@@ -109,7 +113,11 @@ async def read_current_holdings(
         .join(AccountRow, AccountRow.account_id == HoldingSnapshotRow.account_id)
         .join(LinkRow, LinkRow.item_id == HoldingSnapshotRow.item_id)
         .join(SecurityRow, SecurityRow.security_id == HoldingSnapshotRow.security_id)
-        .where(HoldingSnapshotRow.account_id.in_(account_ids), LinkRow.status != "revoked")
+        .where(
+            HoldingSnapshotRow.account_id.in_(account_ids),
+            LinkRow.status != "revoked",
+            AccountRow.detached_at.is_(None),
+        )
         .subquery()
     )
     stmt = (

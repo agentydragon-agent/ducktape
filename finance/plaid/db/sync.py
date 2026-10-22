@@ -23,7 +23,9 @@ from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
-from finance.plaid.db.models import (
+from finance.plaid.db.products import Product
+from finance.plaid.db.secret_store import SecretStore
+from finance.plaid.payloads import (
     AccountsGetResponse,
     InvestmentsHoldingsGetResponse,
     InvestmentsTransactionsGetResponse,
@@ -36,8 +38,6 @@ from finance.plaid.db.models import (
     PlaidTransaction,
     TransactionsSyncResponse,
 )
-from finance.plaid.db.products import Product
-from finance.plaid.db.secret_store import SecretStore
 
 logger = logging.getLogger(__name__)
 
@@ -178,9 +178,7 @@ async def sync_transactions_only(
             link.item_id,
             response_model=AccountsGetResponse,
         )
-        await storage.apply_accounts(
-            item_id=link.item_id, accounts=accounts_payload.accounts or [], captured_at=captured_at
-        )
+        await storage.apply_accounts(item_id=link.item_id, accounts=accounts_payload.accounts, captured_at=captured_at)
         await _sync_transactions_inner(
             api=api,
             storage=storage,
@@ -262,9 +260,7 @@ async def _sync_link_inner(
         link.item_id,
         response_model=AccountsGetResponse,
     )
-    await storage.apply_accounts(
-        item_id=link.item_id, accounts=accounts_payload.accounts or [], captured_at=captured_at
-    )
+    await storage.apply_accounts(item_id=link.item_id, accounts=accounts_payload.accounts, captured_at=captured_at)
 
     if Product.TRANSACTIONS.value in link.products_requested:
         await _sync_transactions_inner(
