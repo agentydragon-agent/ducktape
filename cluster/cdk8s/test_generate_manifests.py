@@ -228,6 +228,13 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
     provider = next(
         doc for doc in documents if doc.get("kind") == "Provider" and doc["metadata"].get("name") == "provider-litellm"
     )
+    pull_secret = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "ExternalSecret"
+        and doc["metadata"].get("name") == "forgejo-images-creds"
+        and doc["metadata"].get("namespace") == "crossplane-system"
+    )
     kustomization = next(
         doc
         for doc in documents
@@ -236,16 +243,29 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
 
     assert provider["apiVersion"] == "pkg.crossplane.io/v1"
     assert provider["spec"]["revisionActivationPolicy"] == "Automatic"
-    assert kustomization["spec"]["dependsOn"] == [{"name": "crossplane", "namespace": "ducktape-flux"}]
+    assert provider["spec"]["package"].startswith("git.allegedly.works/ducktape-ci/provider-litellm:")
+    assert provider["spec"]["packagePullSecrets"] == [{"name": "forgejo-images-creds"}]
+    assert pull_secret["apiVersion"] == "external-secrets.io/v1"
+    assert pull_secret["spec"]["target"]["template"]["type"] == "kubernetes.io/dockerconfigjson"
+    assert kustomization["spec"]["dependsOn"] == [
+        {"name": "crossplane", "namespace": "ducktape-flux"},
+        {"name": "external-secrets-operator", "namespace": "ducktape-flux"},
+    ]
     assert kustomization["spec"]["wait"] is True
     assert kustomization["spec"]["prune"] is False
     assert kustomization["spec"]["healthCheckExprs"] == [
+        {
+            "apiVersion": "external-secrets.io/v1",
+            "kind": "ExternalSecret",
+            "current": "has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'True')",
+            "failed": "has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'False')",
+        },
         {
             "apiVersion": "pkg.crossplane.io/v1",
             "kind": "Provider",
             "current": "has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')",
             "failed": "has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
-        }
+        },
     ]
 
 
@@ -276,15 +296,6 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
         {"name": "litellm-crossplane-keys", "namespace": "ducktape-flux"},
     ]
 
-    organizations = [
-        doc
-        for doc in documents
-        if doc.get("apiVersion") == "litellm.m.crossplane.io/v1alpha1" and doc.get("kind") == "Organization"
-    ]
-    assert len(organizations) == 1
-    assert organizations[0]["metadata"]["name"] == "ducktape"
-    assert organizations[0]["spec"]["forProvider"]["organizationAlias"] == "ducktape"
-
     keys = {
         doc["spec"]["forProvider"]["keyAlias"]: doc
         for doc in documents
@@ -304,13 +315,17 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
         "gemini-clients",
         "antigravity-clients",
     }
+    assert not any(
+        doc.get("apiVersion") == "litellm.m.crossplane.io/v1alpha1" and doc.get("kind") == "Organization"
+        for doc in documents
+    )
     for alias in ("claude-subscription-clients", "codex-clients", "gemini-clients", "antigravity-clients"):
         assert keys[alias]["spec"]["forProvider"]["keyWoSecretRef"] == {
             "name": f"litellm-client-key-{alias}",
             "key": "api-key",
         }
 
-    assert all(key["spec"]["forProvider"]["organizationIdRef"] == {"name": "ducktape"} for key in keys.values())
+    assert all("organizationIdRef" not in key["spec"]["forProvider"] for key in keys.values())
 
     published_key_secrets = [
         doc
