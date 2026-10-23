@@ -81,6 +81,8 @@ debundle_e2e_test(name = "naturalize_cross_scope_params_test")
 
 debundle_e2e_test(name = "object_plain_data_calls_test")
 
+debundle_e2e_test(name = "proxy_constructor_purity_test")
+
 debundle_e2e_test(name = "url_rebase_test")
 
 debundle_e2e_test(
@@ -140,6 +142,11 @@ debundle_e2e_test(name = "residual_member_rename_test")
 debundle_e2e_test(
     name = "purity_test",
     deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
+    name = "initializer_purity_test",
+    deps = ["//devinfra/js/debundle:analysis"],
 )
 
 debundle_e2e_test(name = "object_literal_return_shorthand_drops_import_test")
