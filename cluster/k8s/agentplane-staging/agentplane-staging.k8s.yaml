@@ -1336,12 +1336,12 @@ spec:
               value: agentplane-staging
             - name: AGENTPLANE_EGRESS_CREDENTIALS_NAMESPACE
               value: agentplane-staging-egress-credentials
-            - name: AGENTPLANE_EGRESS_LISTEN_PORT
-              value: "8888"
-            - name: AGENTPLANE_EGRESS_ADMIN_PORT
-              value: "8081"
-            - name: AGENTPLANE_EGRESS_AGENT_API_PORT
-              value: "8082"
+            - name: AGENTPLANE_EGRESS_LISTEN_ADDRESS
+              value: 0.0.0.0:8888
+            - name: AGENTPLANE_EGRESS_ADMIN_LISTEN_ADDRESS
+              value: 0.0.0.0:8081
+            - name: AGENTPLANE_EGRESS_AGENT_API_LISTEN_ADDRESS
+              value: 0.0.0.0:8082
             - name: AGENTPLANE_EGRESS_CA_CERT
               value: /etc/agentplane-egress/ca/tls.crt
             - name: AGENTPLANE_EGRESS_CA_KEY
@@ -3817,9 +3817,7 @@ data:
   settings.yaml: |
     proxy_host: egress.agentplane-staging.svc.cluster.local
     proxy_port: 8888
-    listen_port: 3128
-    readiness_host: 0.0.0.0
-    readiness_port: 3129
+    readiness_listen_address: 0.0.0.0:3129
     token_file: /var/run/agentplane-egress/token
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
@@ -3828,11 +3826,11 @@ data:
       agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
     platform_routes:
       control:
-        listen_port: 3130
+        listen_address: 127.0.0.1:3130
         upstream: runner-gateway.agentplane-staging.svc.cluster.local:8080
         token_file: /var/run/agentplane-egress/runner-control-token
       ingress:
-        listen_port: 3131
+        listen_address: 127.0.0.1:3131
         upstream: history-service.agentplane-staging.svc.cluster.local:8081
         token_file: /var/run/agentplane-egress/runner-ingress-token
 immutable: false
@@ -4119,10 +4117,8 @@ data:
   settings.yaml: |
     proxy_host: egress.agentplane-staging.svc.cluster.local
     proxy_port: 8888
-    listen_port: 3128
-    readiness_host: 0.0.0.0
-    readiness_port: 3129
-    listen_host: 0.0.0.0
+    readiness_listen_address: 0.0.0.0:3129
+    listen_address: 0.0.0.0:3128
     token_file: /var/run/agentplane-egress/token
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
@@ -4131,11 +4127,11 @@ data:
       agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
     platform_routes:
       control:
-        listen_port: 3130
+        listen_address: 0.0.0.0:3130
         upstream: runner-gateway.agentplane-staging.svc.cluster.local:8080
         token_file: /var/run/agentplane-egress/runner-control-token
       ingress:
-        listen_port: 3131
+        listen_address: 0.0.0.0:3131
         upstream: history-service.agentplane-staging.svc.cluster.local:8081
         token_file: /var/run/agentplane-egress/runner-ingress-token
 immutable: false
@@ -6156,9 +6152,7 @@ data:
   settings.yaml: |
     proxy_host: egress.agentplane-staging.svc.cluster.local
     proxy_port: 8888
-    listen_port: 3128
-    readiness_host: 0.0.0.0
-    readiness_port: 3129
+    readiness_listen_address: 0.0.0.0:3129
     token_file: /var/run/agentplane-egress/token
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
@@ -6167,11 +6161,11 @@ data:
       agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
     platform_routes:
       control:
-        listen_port: 3130
+        listen_address: 127.0.0.1:3130
         upstream: runner-gateway.agentplane-staging.svc.cluster.local:8080
         token_file: /var/run/agentplane-egress/runner-control-token
       ingress:
-        listen_port: 3131
+        listen_address: 127.0.0.1:3131
         upstream: history-service.agentplane-staging.svc.cluster.local:8081
         token_file: /var/run/agentplane-egress/runner-ingress-token
 immutable: false
@@ -6513,9 +6507,7 @@ data:
   settings.yaml: |
     proxy_host: egress.agentplane-staging.svc.cluster.local
     proxy_port: 8888
-    listen_port: 3128
-    readiness_host: 0.0.0.0
-    readiness_port: 3129
+    readiness_listen_address: 0.0.0.0:3129
     token_file: /var/run/agentplane-egress/token
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
