@@ -32,13 +32,13 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "This dashboard shows **current size and growth over time** from existing collectors. It covers scraped ext4/XFS filesystems on nodes running node-exporter, each node/device counted once.\n\n**Per-disk attribution** comes from the `disk_usage:*` recording rules (`cluster/cdk8s/monitoring/rules.py`). Each component reports its own bytes and is placed on a disk through its pod's PVC host path: SeaweedFS volume files per collection (one series per replica, on the disk holding it), SeaweedFS bytes deleted but not yet vacuumed, ClickHouse MergeTree parts, CNPG database files on PGDATA (no WAL), and PVCs that kubelet measures. Unattributed is filesystem used (size minus free) minus those components: container images, emptyDir volumes, logs, etcd, node-local PVCs whose owner exports no size, and collector skew. Reserved is ext4's root-only reserve (free minus available). Media is the kernel's rotational flag; virtual disks report rotational whatever backs them, so they show as `virtual`.\n\nLower sections are per-collector detail. SeaweedFS bucket logical bytes omit replicas; physical bucket bytes and collection bytes mostly measure the same replicated data. Do not add the detailed charts together. Missing samples do not imply zero use.\n\n**Machine selector:** Filters node-owned filesystem panels and collector details. SeaweedFS S3 bucket panels are cluster-wide because the metrics do not identify storage-node ownership, so the selector does not apply to them. Piraeus thin-pool accounting and per-volume allocation are not supported in this dashboard yet; they will be added with the native accounting rules."
+        "content": "This dashboard separates **ext4/XFS host filesystem accounting**, **Piraeus thin-pool physical use**, and **per-copy allocation estimates**. They cover different layers; do not add them or expect the per-copy estimates to reconcile to pool physical use.\n\nPiraeus `pool_used` and `pool_free` are physical measurements. `pool_committed` sums diskful PV capacity limits; commitment ratio is limits divided by raw pool capacity, not a physical-use percentage, and can exceed 100%. Uncommitted headroom is capacity minus limits and can be negative.\n\nPer-copy rows include retained resources; resource name and PV phase identify copies without a current PVC. PVC filesystem-used is a separate kubelet measure on the consumer node, compared with a Bound PV capacity limit deduplicated across copies. Raw block PVCs have a limit but no filesystem-used value; unmounted and Released copies appear only in the copy section.\n\nMachine filters node-owned panels. S3 bucket panels are cluster-wide because they lack storage-node ownership. Lower collector detail overlaps: SeaweedFS logical bucket bytes omit replicas; physical bucket bytes and collection bytes mostly measure the same replicated data. Missing samples do not imply zero use."
       }
     },
     {
       "id": 2,
-      "title": "Selected node filesystems: data used",
-      "description": "Sum of ext4/XFS size minus free bytes across selected machines, deduplicated by node and device. This excludes ext4 root-reserved blocks.",
+      "title": "Node filesystem used",
+      "description": "Sum of ext4/XFS filesystem size minus free bytes, deduplicated by node and device. This excludes ext4 root-reserved blocks and is host-filesystem accounting, separate from Piraeus thin-pool use.",
       "type": "stat",
       "gridPos": {
         "h": 5,
@@ -49,7 +49,7 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(max by (node, device) (max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} - node_filesystem_free_bytes{fstype=~\"ext4|xfs\",device!=\"\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))))",
+          "expr": "sum(disk_usage:filesystem_size_bytes{node=~\"$node\"} - on (node, device) disk_usage:filesystem_free_bytes{node=~\"$node\"})",
           "instant": true,
           "refId": "A"
         }
@@ -72,8 +72,8 @@
     },
     {
       "id": 3,
-      "title": "Selected node filesystem capacity",
-      "description": "Total ext4/XFS filesystem capacity across selected machines, deduplicated by node and device.",
+      "title": "Node filesystem capacity",
+      "description": "Total ext4/XFS host filesystem capacity from filesystem recording rules, deduplicated by node and device.",
       "type": "stat",
       "gridPos": {
         "h": 5,
@@ -84,7 +84,7 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(max by (node, device) (max by (node, device, mountpoint) (node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"}))))",
+          "expr": "sum(disk_usage:filesystem_size_bytes{node=~\"$node\"})",
           "instant": true,
           "refId": "A"
         }
@@ -106,15 +106,727 @@
       }
     },
     {
+      "id": 25,
+      "type": "row",
+      "title": "Piraeus thin pools",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "panels": []
+    },
+    {
+      "id": 26,
+      "title": "Physical pool used",
+      "description": "Piraeus thin-pool physical use, summed over the selected storage nodes and pools.",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(disk_usage:pool_used_bytes{node=~\"$node\"})",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 27,
+      "title": "Physical pool capacity",
+      "description": "Raw Piraeus thin-pool capacity. This is separate from ext4/XFS filesystem capacity.",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 12
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(disk_usage:pool_capacity_bytes{node=~\"$node\"})",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 28,
+      "title": "Physical pool free",
+      "description": "Piraeus thin-pool physical free bytes from the pool accounting rules.",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 12
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(disk_usage:pool_free_bytes{node=~\"$node\"})",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 29,
+      "title": "Diskful copy limits",
+      "description": "Sum of per-copy PV capacity limits committed on the selected pools; this is not physical use.",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 12
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(disk_usage:pool_committed_bytes{node=~\"$node\"})",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 30,
+      "title": "Uncommitted limit headroom",
+      "description": "Raw pool capacity minus diskful copy capacity limits. This limit comparison may be negative; it is not physical free space.",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 12
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(disk_usage:pool_capacity_bytes{node=~\"$node\"}) - sum(disk_usage:pool_committed_bytes{node=~\"$node\"})",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 31,
+      "title": "Copy limits / pool capacity",
+      "description": "Diskful PV capacity limits divided by raw pool capacity. This is not a physical-use percentage and can exceed 100%.",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 12
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(disk_usage:pool_committed_bytes{node=~\"$node\"}) / sum(disk_usage:pool_capacity_bytes{node=~\"$node\"})",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 32,
+      "title": "Piraeus thin-pool physical use over time",
+      "description": "Physical bytes used and raw capacity per storage node and pool. These series do not include per-volume estimates or ext4/XFS host filesystem bytes.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "disk_usage:pool_used_bytes{node=~\"$node\"}",
+          "legendFormat": "{{node}} · {{storage_pool}} used",
+          "refId": "A"
+        },
+        {
+          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\"}",
+          "legendFormat": "{{node}} · {{storage_pool}} capacity",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 33,
+      "title": "Diskful copy limits vs pool capacity over time",
+      "description": "PV capacity limits of diskful copies compared with raw pool capacity, per storage node and pool. These limits are not allocated bytes.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "disk_usage:pool_committed_bytes{node=~\"$node\"}",
+          "legendFormat": "{{node}} · {{storage_pool}} copy limits",
+          "refId": "A"
+        },
+        {
+          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\"}",
+          "legendFormat": "{{node}} · {{storage_pool}} capacity",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 34,
+      "title": "Piraeus thin-pool accounting by storage node",
+      "description": "Physical capacity, used and free bytes are shown separately from the sum of diskful PV limits. Uncommitted headroom is capacity minus those limits and may be negative.",
+      "type": "table",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "disk_usage:pool_used_bytes{node=~\"$node\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        },
+        {
+          "expr": "disk_usage:pool_free_bytes{node=~\"$node\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "C"
+        },
+        {
+          "expr": "disk_usage:pool_committed_bytes{node=~\"$node\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "D"
+        },
+        {
+          "expr": "disk_usage:pool_committed_bytes{node=~\"$node\"} / on (node, storage_pool) disk_usage:pool_capacity_bytes{node=~\"$node\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "E"
+        },
+        {
+          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\"} - on (node, storage_pool) disk_usage:pool_committed_bytes{node=~\"$node\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "F"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "node": 0,
+              "storage_pool": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4,
+              "Value #D": 5,
+              "Value #E": 6,
+              "Value #F": 7
+            },
+            "renameByName": {
+              "node": "Storage node",
+              "storage_pool": "Pool",
+              "Value #A": "Physical capacity",
+              "Value #B": "Physical used",
+              "Value #C": "Physical free",
+              "Value #D": "Diskful copy limits",
+              "Value #E": "Copy limits / capacity",
+              "Value #F": "Uncommitted limit headroom"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Physical used",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Copy limits / capacity"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      }
+    },
+    {
+      "id": 35,
+      "type": "row",
+      "title": "Piraeus diskful volume copies",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "panels": []
+    },
+    {
+      "id": 36,
+      "title": "Estimated allocation per diskful copy",
+      "description": "Per-copy allocation estimates on each Piraeus storage node. Resource and PV phase labels keep retained or unidentified copies visible. These estimates are not a decomposition of pool physical use.",
+      "type": "barchart",
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 36
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\"}), \"copy\", \" · \", \"node\", \"storage_pool\", \"phase\", \"resource\", \"persistentvolume\", \"namespace\", \"persistentvolumeclaim\")",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 85,
+            "lineWidth": 0,
+            "axisPlacement": "auto",
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "copy",
+        "stacking": "none",
+        "showValue": "never",
+        "barWidth": 0.8,
+        "groupWidth": 0.7,
+        "xTickLabelMaxLength": 0,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      }
+    },
+    {
+      "id": 37,
+      "title": "Diskful copy allocation estimates and PV limits",
+      "description": "One row per storage-node copy, including resources without a current PVC identity. Estimated allocation and PV capacity limit are separate values; phase distinguishes Bound, Released, and Available PVs.",
+      "type": "table",
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 36
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\"})",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "max by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{node=~\"$node\"})",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "node": 0,
+              "storage_pool": 1,
+              "phase": 2,
+              "resource": 3,
+              "persistentvolume": 4,
+              "namespace": 5,
+              "persistentvolumeclaim": 6,
+              "Value #A": 7,
+              "Value #B": 8
+            },
+            "renameByName": {
+              "node": "Storage node",
+              "storage_pool": "Pool",
+              "phase": "PV phase",
+              "resource": "LINSTOR resource",
+              "persistentvolume": "PV",
+              "namespace": "Namespace",
+              "persistentvolumeclaim": "PVC",
+              "Value #A": "Estimated allocated bytes",
+              "Value #B": "PV capacity limit"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Estimated allocated bytes",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      }
+    },
+    {
+      "id": 38,
+      "type": "row",
+      "title": "Piraeus PVC filesystem usage and capacity limits",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "panels": []
+    },
+    {
+      "id": 39,
+      "title": "Kubelet filesystem use and Bound Piraeus PVC limit",
+      "description": "Kubelet filesystem-used bytes and volume capacity limits for measured Bound Piraeus PVCs on the selected consumer nodes. Limits are deduplicated across diskful copies. Raw block PVCs and unmounted volumes have no filesystem-used sample; their limits remain visible in the diskful copy table above.",
+      "type": "table",
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 49
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "disk_usage:pvc_used_bytes{node=~\"$node\"} and on (namespace, persistentvolumeclaim) max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\"})",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "group by (namespace, persistentvolumeclaim, node) (disk_usage:pvc_used_bytes{node=~\"$node\"}) * on (namespace, persistentvolumeclaim) group_left () max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\"})",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        },
+        {
+          "expr": "(disk_usage:pvc_used_bytes{node=~\"$node\"} and on (namespace, persistentvolumeclaim) max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\"})) / on (namespace, persistentvolumeclaim) group_left() max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\"})",
+          "format": "table",
+          "instant": true,
+          "refId": "C"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "namespace": 0,
+              "persistentvolumeclaim": 1,
+              "node": 2,
+              "Value #A": 3,
+              "Value #B": 4,
+              "Value #C": 5
+            },
+            "renameByName": {
+              "namespace": "Namespace",
+              "persistentvolumeclaim": "PVC",
+              "node": "Consumer node",
+              "Value #A": "Filesystem used",
+              "Value #B": "Bound PV capacity limit",
+              "Value #C": "Filesystem used / PV limit"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Filesystem used",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Filesystem used / PV limit"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      }
+    },
+    {
       "id": 18,
-      "title": "Scraped disk capacity by use on selected machines",
-      "description": "Existing ext4/XFS filesystem attribution for selected machines. Reserved is ext4 root-only reserve; Piraeus pool and per-volume accounting are not included yet.",
+      "title": "Scraped ext4/XFS filesystem capacity by use",
+      "description": "Host filesystem components, unattributed use, root-only reserve, and available bytes. Piraeus thin-pool physical use and volume-copy estimates are separate accounting layers.",
       "type": "piechart",
       "gridPos": {
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 60
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -219,20 +931,20 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 69
       },
       "panels": []
     },
     {
       "id": 19,
-      "title": "Node filesystems by component",
-      "description": "One bar per node and filesystem device; disk labels include node, device, mountpoint, and media.",
+      "title": "Node filesystem use by component",
+      "description": "One bar per scraped ext4/XFS filesystem across the selected machines, labelled node, device, mountpoint, and media. Bars share the largest selected disk as their scale. Components come from existing filesystem rules; Piraeus pool physical use and per-copy estimates are separate.",
       "type": "barchart",
       "gridPos": {
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 70
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -388,26 +1100,26 @@
     {
       "id": 24,
       "type": "row",
-      "title": "Detail",
+      "title": "Per-collector detail",
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 78
       },
       "panels": []
     },
     {
       "id": 20,
-      "title": "Per-disk attribution across selected machines",
-      "description": "Filesystem component, unattributed, reserved, and free bytes per node and disk. Values are attributed through the existing component rules.",
+      "title": "Node filesystem attribution details",
+      "description": "Ext4/XFS filesystem component estimates, free bytes, and root-only reserve by node and device. Piraeus thin-pool accounting is kept separate; per-copy Piraeus allocation estimates do not form a residual against these filesystem bytes.",
       "type": "table",
       "gridPos": {
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 79
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -501,14 +1213,14 @@
     },
     {
       "id": 21,
-      "title": "Unattributed bytes per disk on selected machines",
+      "title": "Unattributed bytes per disk",
       "description": "Filesystem used (size minus free) minus every attributed component. On system disks (/var, /) this is mostly container images, emptyDir volumes, logs and etcd, which no scraped metric breaks down; on data disks, see the PVC list beside it.",
       "type": "bargauge",
       "gridPos": {
         "h": 11,
         "w": 12,
         "x": 0,
-        "y": 42
+        "y": 91
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -545,14 +1257,14 @@
     },
     {
       "id": 22,
-      "title": "Node-local PVCs without usage metrics on selected machines",
+      "title": "Node-local PVCs with no filesystem size attribution",
       "description": "PVCs visible in the existing node-local filesystem mapping but without a matching component-size sample. This is an ext4/XFS mapping detail, separate from Piraeus copy allocation and kubelet PVC use below.",
       "type": "table",
       "gridPos": {
         "h": 11,
         "w": 12,
         "x": 12,
-        "y": 42
+        "y": 91
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -604,13 +1316,13 @@
     {
       "id": 4,
       "title": "Node filesystem used now",
-      "description": "Ext4/XFS size minus filesystem free bytes on selected machines. Free includes root-reserved blocks, so used bytes exclude that reserve.",
+      "description": "Ext4/XFS size minus filesystem free bytes on the selected machine. Free bytes include root-reserved blocks, so the reported used bytes exclude that reserve.",
       "type": "table",
       "gridPos": {
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 53
+        "y": 102
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -628,7 +1340,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} - node_filesystem_free_bytes{fstype=~\"ext4|xfs\",device!=\"\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "expr": "sort_desc(max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\",device!~\"/dev/drbd.*\"} - node_filesystem_free_bytes{fstype=~\"ext4|xfs\",device!=\"\",device!~\"/dev/drbd.*\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
           "format": "table",
           "instant": true,
           "legendFormat": "{{node}} {{device}} {{mountpoint}}",
@@ -651,13 +1363,13 @@
     {
       "id": 5,
       "title": "Largest node filesystems over time",
-      "description": "Top ten ext4/XFS mounts by size minus free bytes across selected machines. Free includes root-reserved blocks, so used bytes exclude that reserve.",
+      "description": "Ext4/XFS size minus filesystem free bytes on the selected machine. Free bytes include root-reserved blocks, so the reported used bytes exclude that reserve.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 53
+        "y": 102
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -680,7 +1392,7 @@
       },
       "targets": [
         {
-          "expr": "topk(10, max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} - node_filesystem_free_bytes{fstype=~\"ext4|xfs\",device!=\"\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
+          "expr": "topk(10, max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\",device!~\"/dev/drbd.*\"} - node_filesystem_free_bytes{fstype=~\"ext4|xfs\",device!=\"\",device!~\"/dev/drbd.*\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\",node=~\"$node\"})))",
           "legendFormat": "{{node}} {{mountpoint}}",
           "refId": "A"
         }
@@ -695,7 +1407,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 62
+        "y": 111
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -742,7 +1454,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 62
+        "y": 111
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -780,7 +1492,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 71
+        "y": 120
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -827,7 +1539,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 71
+        "y": 120
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -859,13 +1571,13 @@
     {
       "id": 10,
       "title": "SeaweedFS S3 logical bucket size now (cluster-wide)",
-      "description": "Logical object bytes by bucket across the cluster. The Machine selector does not apply because this metric has no storage-node ownership.",
+      "description": "Logical S3 object bytes by bucket across the cluster. The Machine selector does not apply because this metric has no storage-node ownership.",
       "type": "table",
       "gridPos": {
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 80
+        "y": 129
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -906,13 +1618,13 @@
     {
       "id": 11,
       "title": "Largest SeaweedFS S3 logical buckets over time (cluster-wide)",
-      "description": "Top ten logical object buckets across the cluster. The Machine selector does not apply because this metric has no storage-node ownership.",
+      "description": "Logical S3 object bytes by bucket across the cluster. The Machine selector does not apply because this metric has no storage-node ownership; logical bytes omit replicas.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 80
+        "y": 129
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -950,7 +1662,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 89
+        "y": 138
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -991,13 +1703,13 @@
     {
       "id": 13,
       "title": "Largest SeaweedFS S3 physical buckets over time (cluster-wide)",
-      "description": "Top ten S3-reported physical buckets across the cluster. The Machine selector does not apply because this metric has no storage-node ownership; these bytes overlap collection-level replica bytes.",
+      "description": "S3-reported physical bucket bytes across the cluster. The Machine selector does not apply because this metric has no storage-node ownership; these overlap with collection-level replica bytes.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 89
+        "y": 138
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -1035,7 +1747,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 98
+        "y": 147
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -1082,7 +1794,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 98
+        "y": 147
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -1120,7 +1832,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 107
+        "y": 156
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -1167,7 +1879,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 107
+        "y": 156
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -1209,12 +1921,12 @@
           "value": ["$__all"]
         },
         "datasource": "${DS_MIMIR}",
-        "definition": "label_values(disk_usage:filesystem:info, node)",
+        "definition": "label_values({__name__=~\"disk_usage:filesystem:info|disk_usage:pool_capacity_bytes\"}, node)",
         "includeAll": true,
         "label": "Machine",
         "multi": true,
         "name": "node",
-        "query": "label_values(disk_usage:filesystem:info, node)",
+        "query": "label_values({__name__=~\"disk_usage:filesystem:info|disk_usage:pool_capacity_bytes\"}, node)",
         "refresh": 1,
         "sort": 1,
         "type": "query"
@@ -1222,7 +1934,7 @@
     ]
   },
   "time": {
-    "from": "now-7d",
+    "from": "now-24h",
     "to": "now"
   },
   "timepicker": {},
