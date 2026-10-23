@@ -180,5 +180,32 @@ def test_github_presence_and_secret_separation(settings_file: Path, monkeypatch:
     assert "test-signing-ke" not in str(failure.value)
 
 
+@pytest.mark.parametrize("days", [0, -1, 3651])
+def test_github_delivery_retention_bounds(settings_file: Path, days: int) -> None:
+    with pytest.raises(ValidationError, match="github_delivery_retention_days"):
+        Settings(database_url="postgresql://unused", github_delivery_retention_days=days, _cli_parse_args=False)
+
+
+def test_github_delivery_retention_override(settings_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
+    assert settings.github_delivery_retention_days == 7
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB_DELIVERY_RETENTION_DAYS", "3")
+    settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
+    assert settings.github_delivery_retention_days == 3
+    assert settings.github is None
+
+
+@pytest.mark.parametrize("source", ["yaml", "environment"])
+def test_infinite_github_delivery_retention(settings_file: Path, monkeypatch: pytest.MonkeyPatch, source: str) -> None:
+    if source == "yaml":
+        with settings_file.open("a") as file:
+            file.write("github_delivery_retention_days: null\n")
+    else:
+        monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB_DELIVERY_RETENTION_DAYS", "null")
+    settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
+    assert settings.github_delivery_retention_days is None
+    assert settings.github is None
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
