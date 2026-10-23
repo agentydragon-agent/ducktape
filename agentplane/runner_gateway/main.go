@@ -20,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/util/netlistener"
 	"github.com/go-logr/logr"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
@@ -89,15 +90,11 @@ func reportUnexpected(ctx context.Context, failed chan<- error, role string, err
 	failed <- fmt.Errorf("%s: %w", role, err)
 }
 
-// serveFacade answers the Dispatcher's HTTP/JSON form on address, forwarding each request over
+// serveFacade answers the Dispatcher's HTTP/JSON form on listener, forwarding each request over
 // loopback to the gRPC server so the servicer authenticates it.
-func serveFacade(ctx context.Context, address string, grpcListener net.Listener, failed chan<- error) (*http.Server, error) {
+func serveFacade(ctx context.Context, listener net.Listener, grpcListener net.Listener, failed chan<- error) (*http.Server, error) {
 	handler, err := facade.NewHandler(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(grpcListener.Addr().(*net.TCPAddr).Port)),
 		dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint)
-	if err != nil {
-		return nil, err
-	}
-	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +104,25 @@ func serveFacade(ctx context.Context, address string, grpcListener net.Listener,
 	return server, nil
 }
 
-func serve(ctx context.Context, c config) error {
+func listenAndServe(ctx context.Context, c config) error {
+	listener, err := netlistener.Open(c.ListenAddress)
+	if err != nil {
+		return fmt.Errorf("gRPC listener: %w", err)
+	}
+	defer listener.Close()
+	var httpListener net.Listener
+	if c.HTTPListenAddress != "" {
+		httpListener, err = netlistener.Open(c.HTTPListenAddress)
+		if err != nil {
+			return fmt.Errorf("HTTP listener: %w", err)
+		}
+		defer httpListener.Close()
+	}
+	return serve(ctx, c, listener, httpListener)
+}
+
+// serve uses supplied listeners; a nil HTTP listener disables the facade.
+func serve(ctx context.Context, c config, listener, httpListener net.Listener) error {
 	config, err := kubernetesConfig(c)
 	if err != nil {
 		return err
@@ -214,15 +229,10 @@ func serve(ctx context.Context, c config) error {
 	g.RegisterRunnerControl(server)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
-	listener, err := net.Listen("tcp", c.ListenAddress)
-	if err != nil {
-		return err
-	}
-	defer listener.Close()
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(listener)) }()
 	var facadeServer *http.Server
-	if c.HTTPListenAddress != "" {
-		if facadeServer, err = serveFacade(ctx, c.HTTPListenAddress, listener, failed); err != nil {
+	if httpListener != nil {
+		if facadeServer, err = serveFacade(ctx, httpListener, listener, failed); err != nil {
 			return err
 		}
 	}
@@ -264,7 +274,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := serve(ctx, c); err != nil && !errors.Is(err, context.Canceled) {
+	if err := listenAndServe(ctx, c); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("Runner Gateway stopped", "error", err)
 		os.Exit(1)
 	}

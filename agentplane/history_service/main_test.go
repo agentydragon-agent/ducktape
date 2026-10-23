@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -379,14 +381,26 @@ func TestACallThatOutlastsTheConfiguredRequestTimeoutIsAbandoned(t *testing.T) {
 	}
 }
 
-func freePort(t *testing.T) int {
+func duplicateListenerFD(t *testing.T, listener net.Listener) int {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	tcpListener, ok := listener.(*net.TCPListener)
+	if !ok {
+		t.Fatalf("listener %T is not a TCP listener", listener)
+	}
+	file, err := tcpListener.File()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
-	return listener.Addr().(*net.TCPAddr).Port
+	fd, dupErr := syscall.Dup(int(file.Fd()))
+	closeErr := file.Close()
+	if dupErr != nil {
+		t.Fatal(dupErr)
+	}
+	if closeErr != nil {
+		syscall.Close(fd)
+		t.Fatal(closeErr)
+	}
+	return fd
 }
 
 // run is what main serves: the settings name the addresses, and the Kubernetes client is built from the kubeconfig.
@@ -400,12 +414,28 @@ func TestRunServesTheReadAPIAndTheIngressOnTheirConfiguredPorts(t *testing.T) {
 	if err := os.WriteFile(kubeconfig, []byte(unreachableCluster), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	readerListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ingressListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		readerListener.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		readerListener.Close()
+		ingressListener.Close()
+	})
+	readerAddress, ingressAddress := readerListener.Addr().(*net.TCPAddr), ingressListener.Addr().(*net.TCPAddr)
+	readerFD, ingressFD := duplicateListenerFD(t, readerListener), duplicateListenerFD(t, ingressListener)
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.URL
 	c.ReaderAccounts = []auth.Account{{Namespace: "test-reader-namespace", Name: "test-reader"}}
 	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
 	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}
-	c.Host, c.Port, c.Ingress.Port, c.Kubeconfig = "127.0.0.1", freePort(t), freePort(t), kubeconfig
+	c.ListenAddress, c.Ingress.ListenAddress = fmt.Sprintf("fd:%d", readerFD), fmt.Sprintf("fd:%d", ingressFD)
+	c.Kubeconfig = kubeconfig
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
 	go func() { served <- run(ctx, c) }()
@@ -413,9 +443,10 @@ func TestRunServesTheReadAPIAndTheIngressOnTheirConfiguredPorts(t *testing.T) {
 		cancel()
 		<-served
 	})
-
-	dial := func(port int) *grpc.ClientConn {
-		connection, err := grpc.NewClient(net.JoinHostPort(c.Host, strconv.Itoa(port)), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	readTarget := net.JoinHostPort("127.0.0.1", strconv.Itoa(readerAddress.Port))
+	ingressTarget := net.JoinHostPort("127.0.0.1", strconv.Itoa(ingressAddress.Port))
+	dial := func(target string) *grpc.ClientConn {
+		connection, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -424,22 +455,24 @@ func TestRunServesTheReadAPIAndTheIngressOnTheirConfiguredPorts(t *testing.T) {
 	}
 	call, stop := context.WithTimeout(t.Context(), callDeadline)
 	defer stop()
-	if _, err := healthpb.NewHealthClient(dial(c.Port)).Check(call, &healthpb.HealthCheckRequest{}, grpc.WaitForReady(true)); err != nil {
+	if _, err := healthpb.NewHealthClient(dial(readTarget)).Check(call, &healthpb.HealthCheckRequest{}, grpc.WaitForReady(true)); err != nil {
 		t.Fatalf("the read port does not answer: %v", err)
 	}
-	// An ingress that is reached without credentials refuses them; a server without the ingress does not know it.
-	push := func(port int) error {
-		stream, err := runneringresspb.NewRunnerIngressClient(dial(port)).Push(call, grpc.WaitForReady(true))
+	// The service now owns duplicates, so releasing the original sockets does not interrupt either endpoint.
+	readerListener.Close()
+	ingressListener.Close()
+	push := func(target string) error {
+		stream, err := runneringresspb.NewRunnerIngressClient(dial(target)).Push(call, grpc.WaitForReady(true))
 		if err != nil {
 			return err
 		}
 		_, err = stream.Recv()
 		return err
 	}
-	if got := status.Code(push(c.Ingress.Port)); got != codes.Unauthenticated {
+	if got := status.Code(push(ingressTarget)); got != codes.Unauthenticated {
 		t.Errorf("Push on the ingress port: %v, want Unauthenticated", got)
 	}
-	if got := status.Code(push(c.Port)); got != codes.Unimplemented {
+	if got := status.Code(push(readTarget)); got != codes.Unimplemented {
 		t.Errorf("Push on the read port: %v, want Unimplemented", got)
 	}
 }
