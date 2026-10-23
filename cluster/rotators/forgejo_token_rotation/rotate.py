@@ -334,8 +334,26 @@ def parse_revocations(values: list[str], rotations: list[Rotation]) -> list[tupl
     return requests
 
 
+def stamped_published_token_id(rotation: Rotation, tokens: list[dict[str, Any]]) -> str:
+    stamps = unencrypted_stamps(rotation.sops_file)
+    stamped_id = stamps.get("token_id_unencrypted")
+    stamped_name = stamps.get("token_name_unencrypted")
+    stamped_last_eight = stamps.get("token_last_eight_unencrypted")
+    if stamped_id is None or stamped_name is None or stamped_last_eight is None:
+        raise RuntimeError(f"{rotation.name}: current published token identity stamp is incomplete")
+
+    matches = [token for token in tokens if str(token.get("id")) == str(stamped_id)]
+    if len(matches) != 1:
+        raise RuntimeError(f"{rotation.name}: stamped published token ID {stamped_id} is not present exactly once")
+    token = matches[0]
+    if token.get("name") != stamped_name or token.get("token_last_eight") != stamped_last_eight:
+        raise RuntimeError(f"{rotation.name}: published token ID {stamped_id} disagrees with inventory metadata")
+    return str(stamped_id)
+
+
 def revoke_requested_tokens(client: httpx.Client, requests: list[tuple[Rotation, int]]) -> None:
     inventories: dict[str, tuple[ForgejoCredentials, list[dict[str, Any]]]] = {}
+    published_ids: dict[str, str] = {}
     planned: list[tuple[Rotation, ForgejoCredentials, dict[str, Any]]] = []
     for rotation, token_id in requests:
         if rotation.name not in inventories:
@@ -345,21 +363,9 @@ def revoke_requested_tokens(client: httpx.Client, requests: list[tuple[Rotation,
         matches = [token for token in tokens if str(token.get("id")) == str(token_id)]
         if len(matches) != 1:
             raise RuntimeError(f"{rotation.name}: token ID {token_id} is not present exactly once in its inventory")
-
-        stamps = unencrypted_stamps(rotation.sops_file)
-        stamped_id = stamps.get("token_id_unencrypted")
-        published_ids = {str(stamped_id)} if stamped_id is not None else set()
-        stamped_name = stamps.get("token_name_unencrypted")
-        stamped_last_eight = stamps.get("token_last_eight_unencrypted")
-        if stamped_name is not None:
-            for token in tokens:
-                if token.get("name") != stamped_name:
-                    continue
-                if stamped_last_eight is not None and token.get("token_last_eight") != stamped_last_eight:
-                    continue
-                if token.get("id") is not None:
-                    published_ids.add(str(token["id"]))
-        if str(token_id) in published_ids:
+        if rotation.name not in published_ids:
+            published_ids[rotation.name] = stamped_published_token_id(rotation, tokens)
+        if str(token_id) == published_ids[rotation.name]:
             raise RuntimeError(f"{rotation.name}: refusing to revoke currently published token ID {token_id}")
         planned.append((rotation, creds, matches[0]))
 
