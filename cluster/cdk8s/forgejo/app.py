@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_envoyconfig_crds.io.cilium import (
     CiliumEnvoyConfig,
@@ -342,7 +342,7 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
 
 
 def _helm_release(scope: Construct, *, storage: s3.PrivateBucket) -> None:
-    release = helm_release(
+    helm_release(
         scope,
         _NAME,
         _NAMESPACE,
@@ -367,7 +367,6 @@ def _helm_release(scope: Construct, *, storage: s3.PrivateBucket) -> None:
         ],
         values=_values(storage),
     )
-    release.add_json_patch(JsonPatch.add("/spec/suspend", True))
 
 
 _TCP_PROXY_TYPE = "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy"

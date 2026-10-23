@@ -77,7 +77,6 @@ spec:
     remediation:
       retries: -1
   interval: 15m
-  suspend: true
   timeout: 15m
   upgrade:
     remediation:

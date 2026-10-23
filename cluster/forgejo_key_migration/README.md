@@ -1,8 +1,10 @@
 # Forgejo encryption-key cutover
 
-The [2026-10-22 rehearsal](../debug/2026_10_22_forgejo_key_rehearsal.md) passed
-forward/reverse migration and native Forgejo reads on both replicas. Production
-activation remains pending.
+The [production cutover](../debug/2026_10_23_forgejo_key_cutover.md) completed on
+2026-10-23. Both replicas use the replacement key; all five values were preserved.
+The [rehearsal](../debug/2026_10_22_forgejo_key_rehearsal.md) also covered reverse
+migration. The operator sequence below records the maintenance procedure; do not
+rerun forward `apply` against the migrated database.
 
 One-off migration for Forgejo **15.0.8**, database schema **305**. `check` uses a
 read-only, repeatable-read transaction. `apply` locks the relevant tables,
@@ -37,10 +39,9 @@ Compare inside each pod without printing key material or stable hashes.
 
 This follow-up selects `replacement`, switches to `SECRET_KEY_URI`, converts
 the retained inline setting in `initPreScript`, and suppresses the chart's
-inline-key generation on a fresh install. The HelmRelease is explicitly
-**suspended**: applying these values does not upgrade the running release.
-Merge during the coordinated window below, after the database migration.
-Keep `current` for rollback.
+inline-key generation on a fresh install. PR #11597 explicitly suspended the HelmRelease for the offline migration.
+This completion change removes that declarative suspension after verification;
+normal Helm reconciliation can resume. Keep `current` for backup recovery.
 
 ## Rehearsal prerequisites
 
@@ -128,7 +129,7 @@ the expected numbers to make the guard pass.
    for `forgejo-key-apply` to complete and review its sanitized logs. Keep
    Forgejo stopped, then create/start `verify` and require its read-only check
    under the replacement key to succeed before activating either replica.
-5. Merge this activation PR. Resume the Forgejo Kustomization so it
+5. Merge the activation configuration (PR #11597 for this cutover). Resume the Forgejo Kustomization so it
    applies the new Helm values **and the explicitly suspended HelmRelease**.
    Verify the source revision, key selection `replacement`, and suspended state;
    suspend that Kustomization again, then resume the HelmRelease with `upgrade.remediation.retries: 0` and
@@ -153,7 +154,7 @@ the expected numbers to make the guard pass.
 The activation commit's explicit suspension prevents Flux from dropping a live
 maintenance override while applying new values. Check for a pending Helm
 operation before proceeding; suspension does not cancel one already running.
-Merging this PR suspends Helm reconciliation; it does not run a Job or rotate credentials.
+The completion change removes the temporary suspension; it does not run a Job or rotate credentials.
 
 ## Failure and rollback
 
