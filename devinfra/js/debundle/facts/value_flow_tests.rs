@@ -1,0 +1,616 @@
+use super::*;
+use swc_common::SyntaxContext;
+
+fn id(name: &str) -> Id {
+    (name.into(), SyntaxContext::empty())
+}
+
+fn assert_matches_reference(source: &str) -> ChunkValueFlow {
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    let actual = ChunkValueFlow::analyze(&body);
+    let reference = ChunkValueFlow::analyze_reference(&body);
+    assert_eq!(
+        actual, reference,
+        "value-flow mismatch for source:\n{source}"
+    );
+    actual
+}
+
+fn return_call_chain(depth: usize, reverse_declarations: bool) -> String {
+    let mut source = String::from("function base() {}\n");
+    if reverse_declarations {
+        source.push_str(&format!("function f{depth}() {{ return base; }}\n"));
+        for index in (0..depth).rev() {
+            source.push_str(&format!(
+                "function f{index}() {{ return f{}(); }}\n",
+                index + 1
+            ));
+        }
+    } else {
+        for index in 0..depth {
+            source.push_str(&format!(
+                "function f{index}() {{ return f{}(); }}\n",
+                index + 1
+            ));
+        }
+        source.push_str(&format!("function f{depth}() {{ return base; }}\n"));
+    }
+    source.push_str("const result = f0();\n");
+    source
+}
+
+fn reverse_identity_alias_chain(depth: usize) -> String {
+    let mut source = String::from("function base() {}\n");
+    for index in 0..depth {
+        source.push_str(&format!(
+            "function f{index}() {{ return f{}; }}\n",
+            index + 1
+        ));
+    }
+    source.push_str(&format!(
+        "function f{depth}() {{ return base; }}\nconst result = f0();\n"
+    ));
+    source
+}
+
+#[test]
+fn worklist_matches_reference_across_reverse_calls_and_source_orders() {
+    for source in [
+        return_call_chain(48, false),
+        return_call_chain(48, true),
+        reverse_identity_alias_chain(48),
+        r#"
+const result = relay(target);
+function relay(callback) { return callback(); }
+function target() { return base; }
+function base() {}
+"#
+        .to_string(),
+        r#"
+function apply(callback, depth) {
+  if (depth > 0) return apply(callback, depth - 1);
+  return callback();
+}
+function left() { return right(); }
+function right() { return base; }
+function base() { return object; }
+function object() {}
+const source = { run: left };
+const branch0 = { run: source.run };
+const branch1 = { run: branch0.run };
+const branch2 = { run: branch1.run };
+const result = apply(branch2.run, 2);
+"#
+        .to_string(),
+    ] {
+        assert_matches_reference(&source);
+    }
+}
+
+#[test]
+fn worklist_matches_reference_across_expression_and_binding_shapes() {
+    let cases = [
+        // Arrow expression bodies and block bodies both contribute return facts.
+        r#"
+function leaf() { return base; }
+function base() {}
+const expression = callback => callback();
+const block = callback => { return callback(); };
+const first = expression(leaf);
+const second = block(leaf);
+"#,
+        // Canonical callable identities flow through classes and object methods.
+        r#"
+function helper() {}
+class Target { static run(callback = helper) { return callback; } }
+const { run } = Target;
+const holder = {
+  run,
+  invoke(callback = run) { return callback(); },
+};
+const result = holder.invoke();
+"#,
+        // Array holes and spreads preserve the existing element-value behavior.
+        r#"
+function first() {}
+function second() {}
+const source = [first, , ...[second]];
+const copy = [...source];
+const result = copy[0] || copy[1] || copy[2];
+"#,
+        // Dynamic member writes and later static reads must agree with the sweep.
+        r#"
+function target() {}
+const key = "run";
+const box = {};
+box[key] = target;
+const dynamic_read = box[key];
+const static_read = box.run;
+const result = dynamic_read || static_read;
+"#,
+        // Destructured/default/rest parameters include declared ids with no value.
+        r#"
+function fallback() {}
+function target() {}
+let empty;
+function select({ run = fallback } = {}, ...callbacks) {
+  const callback = callbacks[0] || run || empty;
+  return callback();
+}
+const result = select({ run: target }, target, fallback);
+"#,
+        // Nested conditional/logical/sequence/assignment expressions grow callees.
+        r#"
+function invoke(callback) { return callback(); }
+function first() { return second(); }
+function second() { return leaf; }
+function leaf() {}
+function fallback() {}
+let chosen;
+const box = { run: first };
+const result = invoke((chosen = true ? box.run : second, chosen || fallback));
+"#,
+    ];
+
+    for source in cases {
+        assert_matches_reference(source);
+    }
+}
+
+#[test]
+fn worklist_matches_reference_when_only_function_metadata_is_discovered() {
+    for source in [
+        "((callback) => callback)(globalThis);",
+        "((callback) => callback)(class {});",
+        "((Constructor) => new Constructor())(class {});",
+        // A separate return fact makes the legacy solver perform another sweep.
+        "((callback) => callback)(globalThis); (() => ({}))();",
+    ] {
+        assert_matches_reference(source);
+    }
+}
+
+#[test]
+fn polymorphic_invokes_reuse_complex_arguments_without_param_dependencies() {
+    let flow = assert_matches_reference(
+        r#"
+function primary_leaf() {}
+function returned_leaf() {}
+function factory() { return returned_leaf; }
+function target0(value0) {}
+function target1(value1) {}
+function target2(value2) {}
+function target3(value3) {}
+function target4(value4) {}
+function target5(value5) {}
+function target6(value6) {}
+function target7(value7) {}
+
+const box = { primary: primary_leaf, factory };
+const poly = target0 || target1 || target2 || target3 || target4 || target5 || target6 || target7;
+const before = poly(box.missing || box.primary || box.factory());
+box.missing = returned_leaf;
+const after = poly(box.missing || box.primary || box.factory());
+"#,
+    );
+
+    let primary = flow.values_of_binding(&id("primary_leaf"));
+    let returned = flow.values_of_binding(&id("returned_leaf"));
+    let mut expected = primary.iter().collect::<std::collections::BTreeSet<_>>();
+    expected.extend(returned.iter());
+    expected.insert(ValueOrigin::Unknown);
+
+    for parameter in [
+        "value0", "value1", "value2", "value3", "value4", "value5", "value6", "value7",
+    ] {
+        assert_eq!(
+            flow.values_of_binding(&id(parameter))
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>(),
+            expected,
+            "wrong argument facts for {parameter}",
+        );
+    }
+}
+
+#[test]
+fn arguments_reading_a_later_callees_params_see_earlier_param_writes() {
+    let flow = assert_matches_reference(
+        r#"
+function earlier(left, right) {}
+function feedback(seed, carry) {
+  (earlier || feedback)(carry, seed);
+}
+function initial_value() {}
+function introduced_value() {}
+feedback(initial_value, introduced_value);
+"#,
+    );
+
+    let initial = flow.values_of_binding(&id("initial_value"));
+    let introduced = flow.values_of_binding(&id("introduced_value"));
+    let mut expected = initial.iter().collect::<std::collections::BTreeSet<_>>();
+    expected.extend(introduced.iter());
+
+    // `seed` is first read for `earlier`, before the later `feedback` target
+    // receives `carry` into `seed`. Its value must be evaluated again for the
+    // second target after that parameter write.
+    for parameter in ["seed", "carry", "left", "right"] {
+        assert_eq!(
+            flow.values_of_binding(&id(parameter))
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>(),
+            expected,
+            "wrong feedback facts for {parameter}",
+        );
+    }
+}
+
+#[test]
+fn polymorphic_invokes_zip_only_to_declared_identifier_parameters() {
+    let flow = assert_matches_reference(
+        r#"
+function no_params() {}
+function one(callback) {}
+function destructured({ ignored }, secondary) {}
+function two(left, right) {}
+function leaf() {}
+function extra() {}
+const box = {};
+const poly = no_params || one || destructured || two;
+poly(box.missing || leaf, extra);
+"#,
+    );
+
+    let extra = flow.values_of_binding(&id("extra"));
+    let extra_values = extra.iter().collect::<Vec<_>>();
+    assert_eq!(
+        extra_values.len(),
+        1,
+        "extra should have one function identity"
+    );
+    let extra_origin = extra_values[0];
+    let callback = flow.values_of_binding(&id("callback"));
+    assert!(callback.contains(&ValueOrigin::Unknown));
+    let leaf = flow.values_of_binding(&id("leaf"));
+    let leaf_values = leaf.iter().collect::<Vec<_>>();
+    assert_eq!(
+        leaf_values.len(),
+        1,
+        "leaf should have one function identity"
+    );
+    assert!(callback.contains(&leaf_values[0]));
+    assert!(!callback.contains(&extra_origin));
+
+    assert_eq!(
+        flow.values_of_binding(&id("secondary"))
+            .iter()
+            .collect::<Vec<_>>(),
+        [extra_origin],
+    );
+    assert_eq!(
+        flow.values_of_binding(&id("right"))
+            .iter()
+            .collect::<Vec<_>>(),
+        [extra_origin],
+    );
+    assert!(
+        flow.values_of_binding(&id("ignored"))
+            .iter()
+            .next()
+            .is_none(),
+        "a destructured parameter should not receive a binding fact",
+    );
+}
+
+#[test]
+fn reverse_return_call_chain_has_bounded_worklist_growth() {
+    let mut previous_executions = None;
+    for depth in [64, 128, 256, 512] {
+        let source = return_call_chain(depth, false);
+        let module = raw_js_test_support::parse(&source);
+        let body = top_level_item_views(&module.body);
+        let (actual, stats) = ChunkValueFlow::analyze_with_stats(&body);
+        assert_eq!(actual, ChunkValueFlow::analyze_reference(&body));
+        if let Some(previous) = previous_executions {
+            assert!(
+                stats.event_executions <= previous * 3,
+                "doubling return-call depth grew work from {previous} to {} events",
+                stats.event_executions,
+            );
+        }
+        previous_executions = Some(stats.event_executions);
+    }
+}
+
+#[test]
+fn unknown_from_missing_property_survives_its_later_static_write() {
+    let flow = assert_matches_reference(
+        r#"
+function invoke(callback) { return callback(); }
+function target() { return leaf; }
+function leaf() {}
+const box = {};
+const early = invoke(box.run);
+box.run = target;
+const later = invoke(box.run);
+"#,
+    );
+
+    let callback_values = flow.values_of_binding(&id("callback"));
+    assert!(callback_values.contains(&ValueOrigin::Unknown));
+    assert!(
+        callback_values
+            .iter()
+            .any(|value| matches!(value, ValueOrigin::Function(_)))
+    );
+}
+
+#[test]
+fn dynamic_property_read_wakes_when_a_new_static_property_is_added() {
+    for source in [
+        r#"
+function target() {}
+const key = "run";
+const box = {};
+const early = box[key];
+box.run = target;
+"#,
+        // The member event must first track its base binding, then its property.
+        r#"
+let box;
+function target() {}
+const early = box.run;
+box.run = target;
+box = {};
+"#,
+    ] {
+        let flow = assert_matches_reference(source);
+
+        let values = flow.values_of_binding(&id("early"));
+        assert!(values.contains(&ValueOrigin::Unknown));
+        assert!(
+            values
+                .iter()
+                .any(|value| matches!(value, ValueOrigin::Function(_)))
+        );
+    }
+}
+
+#[test]
+fn dynamic_property_unions_track_late_writes_per_object_alias() {
+    let flow = assert_matches_reference(
+        r#"
+function left_first() {}
+function left_second() {}
+function left_third() {}
+function right_first() {}
+function right_second() {}
+function right_third() {}
+
+const left = {};
+const right = {};
+function make_left() { return left; }
+function make_right() { return right; }
+const key = globalThis;
+
+const early_left = make_left()[key];
+const early_right = make_right()[key];
+make_left().unknown_value = make_left().missing;
+make_right().unknown_value = make_right().missing;
+
+let left_progress;
+left_progress = left_first;
+make_left().changing = left_progress;
+left_progress = left_second;
+make_left().changing = left_progress;
+make_left().another_property = left_third;
+
+let right_progress;
+right_progress = right_first;
+make_right().changing = right_progress;
+right_progress = right_second;
+make_right().changing = right_progress;
+make_right().another_property = right_third;
+
+const late_left = make_left()[key];
+const late_right = make_right()[key];
+"#,
+    );
+
+    let function_origin = |name: &str| {
+        let values = flow.values_of_binding(&id(name));
+        let functions = values
+            .iter()
+            .filter(|value| matches!(value, ValueOrigin::Function(_)))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            functions.len(),
+            1,
+            "{name} should have one function identity"
+        );
+        functions[0]
+    };
+    let left_functions = [
+        function_origin("left_first"),
+        function_origin("left_second"),
+        function_origin("left_third"),
+    ];
+    let right_functions = [
+        function_origin("right_first"),
+        function_origin("right_second"),
+        function_origin("right_third"),
+    ];
+    let object_origin = |name: &str| {
+        let values = flow.values_of_binding(&id(name));
+        let objects = values
+            .iter()
+            .filter_map(|value| match value {
+                ValueOrigin::Object(object) => Some(object),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(objects.len(), 1, "{name} should have one object identity");
+        objects[0]
+    };
+
+    for (binding, expected_functions) in [
+        ("left", &left_functions[..2]),
+        ("right", &right_functions[..2]),
+    ] {
+        let object = object_origin(binding);
+        let unknown = flow
+            .values_of_property(object, "unknown_value")
+            .expect("the missing-property write should create a property");
+        assert!(unknown.contains(&ValueOrigin::Unknown));
+        let changing = flow
+            .values_of_property(object, "changing")
+            .expect("the changing property should be written");
+        for expected in expected_functions {
+            assert!(changing.contains(expected));
+        }
+    }
+
+    for binding in ["early_left", "late_left"] {
+        let values = flow.values_of_binding(&id(binding));
+        assert!(
+            values.contains(&ValueOrigin::Unknown),
+            "{binding} lost Unknown"
+        );
+        for expected in left_functions {
+            assert!(values.contains(&expected), "{binding} lost {expected:?}");
+        }
+        for other_object in right_functions {
+            assert!(
+                !values.contains(&other_object),
+                "{binding} included another object's value {other_object:?}",
+            );
+        }
+    }
+    for binding in ["early_right", "late_right"] {
+        let values = flow.values_of_binding(&id(binding));
+        assert!(
+            values.contains(&ValueOrigin::Unknown),
+            "{binding} lost Unknown"
+        );
+        for expected in right_functions {
+            assert!(values.contains(&expected), "{binding} lost {expected:?}");
+        }
+        for other_object in left_functions {
+            assert!(
+                !values.contains(&other_object),
+                "{binding} included another object's value {other_object:?}",
+            );
+        }
+    }
+}
+
+#[test]
+fn later_alias_values_grow_recursive_callee_sets() {
+    let depth = 40;
+    let mut source = String::from(
+        "function invoke(callback, recursive) {\n\
+           if (recursive) return invoke(callback, false);\n\
+           return callback();\n\
+         }\n\
+         function target_a() { return leaf_a; }\n\
+         function target_b() { return leaf_b; }\n\
+         function leaf_a() {}\n\
+         function leaf_b() {}\n\
+         var alias0 = alias1;\n",
+    );
+    for index in 1..depth {
+        source.push_str(&format!("var alias{index} = alias{};\n", index + 1));
+    }
+    source.push_str(&format!(
+        "var alias{depth} = target_a;\nconst result = invoke(alias0, true);\nalias{depth} = target_b;\n"
+    ));
+
+    let flow = assert_matches_reference(&source);
+    let callback_values = flow.values_of_binding(&id("callback"));
+    assert!(
+        callback_values
+            .iter()
+            .filter(|value| matches!(value, ValueOrigin::Function(_)))
+            .count()
+            >= 2
+    );
+}
+
+#[test]
+fn borrowed_value_merges_match_reference_for_overlapping_call_and_property_sets() {
+    let flow = assert_matches_reference(
+        r#"
+function relay(callback) { return callback || callback || globalThis; }
+function leaf0() {}
+function leaf1() {}
+function leaf2() {}
+function leaf3() {}
+function leaf4() {}
+function leaf5() {}
+function leaf6() {}
+function leaf7() {}
+
+const wide = leaf0 || leaf1 || leaf2 || leaf3 || leaf4 || leaf5 || leaf6 || leaf7;
+const overlap = wide || leaf0 || leaf3 || globalThis;
+const box = { primary: wide, secondary: overlap };
+const before_write = box.later;
+box.later = overlap;
+const first = relay(before_write || box.primary || globalThis);
+const alias = first || box.secondary || box.later;
+const second = relay(alias || box.primary || globalThis);
+"#,
+    );
+
+    let wide_values = flow.values_of_binding(&id("wide"));
+    assert_eq!(
+        wide_values
+            .iter()
+            .filter(|value| matches!(value, ValueOrigin::Function(_)))
+            .count(),
+        8,
+    );
+    assert!(
+        flow.values_of_binding(&id("overlap"))
+            .contains(&ValueOrigin::Unknown)
+    );
+
+    for name in ["first", "alias", "second"] {
+        let values = flow.values_of_binding(&id(name));
+        assert!(
+            values.contains(&ValueOrigin::Unknown),
+            "{name} lost Unknown"
+        );
+        assert!(
+            values
+                .iter()
+                .filter(|value| matches!(value, ValueOrigin::Function(_)))
+                .count()
+                >= 8,
+            "{name} lost part of the wide function set",
+        );
+    }
+
+    let [ValueOrigin::Object(box_origin)] = flow
+        .values_of_binding(&id("box"))
+        .iter()
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("box should have exactly one object identity");
+    };
+    for property in ["primary", "secondary", "later"] {
+        let values = flow
+            .values_of_property(box_origin, property)
+            .unwrap_or_else(|| panic!("missing static property {property}"));
+        assert!(values.contains(&ValueOrigin::Unknown) || property == "primary");
+        assert!(
+            values
+                .iter()
+                .filter(|value| matches!(value, ValueOrigin::Function(_)))
+                .count()
+                >= 8,
+            "property {property} lost part of the wide function set",
+        );
+    }
+}
