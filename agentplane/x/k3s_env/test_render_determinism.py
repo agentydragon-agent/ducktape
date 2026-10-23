@@ -9,6 +9,14 @@ import pytest_bazel
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+_EXPECTED_OUTPUTS = {
+    "local-model.json",
+    "local-model-mcp-fixtures.json",
+    "local-model-vm.json",
+    "none.json",
+    "public-litellm.json",
+}
+
 
 def test_independent_renders_are_byte_identical(tmp_path: Path) -> None:
     renderer = get_required_path(os.environ["K3S_RENDERER_RLOCATION"])
@@ -25,7 +33,7 @@ def test_independent_renders_are_byte_identical(tmp_path: Path) -> None:
                 stderr=subprocess.STDOUT,
             )
         outputs.append({path.name: path.read_bytes() for path in output.glob("*.json")})
-    assert outputs[0]
+    assert set(outputs[0]) == _EXPECTED_OUTPUTS
     assert outputs[0] == outputs[1]
 
 
