@@ -60,8 +60,21 @@ complete: the 151-copy wave finished at 10:29:33 UTC (final move 1058), and the
 source has zero Seaweed volumes and zero allocated volume data. At 10:48 UTC,
 the smaller destination had about 331 GB free (16.58%), above the 15%
 free-space floor.
-The source has not been reimaged; no HDD reset or ClickHouse migration has
-started. The accepted overcommit policy and issue trigger remain in the
+The legacy HDD contents were erased under the explicit waiver; no archive was
+made. Keeper-0 and Alertmanager-0 were preserved on SSD. Physical acceptance
+passed on the whole HDD: `piraeus_hdd/data` is 1851.02GiB with 4GiB metadata, a
+4GiB spare and 64KiB chunks. A 512MiB write/fsync completed at 92.5MiB/s;
+discard returned pool allocation to 0.01%. Filesystem/block canary hashes and
+claim identities survived a controlled reboot without Pod replacement, all
+three etcd services remained healthy, and the worker's 32/512/1024/32GiB system
+volumes and both disk identities remained intact. The node was admitted and
+uncordoned at 12:56 UTC after shared gates passed, local-path aliases were
+confirmed to deny new allocations, metrics were fresh, and canaries were removed.
+Seaweed replacement PR #11720 is merged, but
+`seaweedfs-volume-hdd-piraeus-103656-0` is assigned to this node and Seaweed join
+acceptance is in progress. Piraeus timeout PR #11722 is merged and Flux-ready;
+Terraform readiness handoff PR #11723 remains pending.
+The accepted overcommit policy and issue trigger remain in the
 [runbook](../../docs/runbooks/piraeus_node_roll.md#accepted-thin-pool-overcommit-policy).
 
 ## Evidence map
