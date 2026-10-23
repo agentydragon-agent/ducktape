@@ -29,8 +29,8 @@
       "sha256": "tVquufIA/kWE67sRStJsDwlAs9SWXdFj99PaRs2lza4="
     },
     "gmail-archiver": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-25647b22e163/gmail_archiver-0.1.0-py3-none-any.whl",
-      "sha256": "JWR7IuFjeSpn89KHZeVG/tzfXIDMRfNuQ7Ym33lcmh4="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-1e37f4ad11d8/gmail_archiver-0.1.0-py3-none-any.whl",
+      "sha256": "Hjf0rRHYUh97fV2oXG4cWfuA8iy/yQAMUC2tFPPEarc="
     },
     "vm-interact": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/vm-interact-beb3ac8bc322/vm_interact-0.1.0-py3-none-any.whl",
