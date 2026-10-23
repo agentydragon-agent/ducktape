@@ -242,7 +242,7 @@ Review emptyDir contents before allowing drain to delete them.
 
 Use CNPG's native streaming replication, one cluster at a time:
 
-1. For each of the seven clusters listed in
+1. For each of the seven SSD evacuation clusters listed in
    [CNPG conventions](../cnpg_conventions.md#current-compliance), work serially:
    finish and verify one before starting the next. Record its desired count
    (two), each Pod/PVC UID, size, StorageClass and primary. The prepared Git
