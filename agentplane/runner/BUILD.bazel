@@ -147,6 +147,8 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//agentplane/native/codex/testing:model_catalog",
+        "//agentplane/native/codex/testing:responses",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:driver",
