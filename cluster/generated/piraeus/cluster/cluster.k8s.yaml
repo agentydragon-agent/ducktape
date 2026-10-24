@@ -3433,3 +3433,17 @@ spec:
           linstor.csi.linbit.com/storagePool: hdd
         reclaimPolicy: Retain
         volumeBindingMode: WaitForFirstConsumer
+      - allowVolumeExpansion: true
+        name: piraeus-ssd-2-autodiskful
+        parameters:
+          DrbdOptions/auto-diskful: "1"
+          DrbdOptions/auto-diskful-allow-cleanup: "true"
+          DrbdOptions/auto-quorum: suspend-io
+          linstor.csi.linbit.com/allowRemoteVolumeAccess: |
+            - fromSame:
+              - topology.kubernetes.io/zone
+          linstor.csi.linbit.com/placementCount: "2"
+          linstor.csi.linbit.com/replicasOnSame: topology.kubernetes.io/zone=hil-ovh
+          linstor.csi.linbit.com/storagePool: ssd
+        reclaimPolicy: Retain
+        volumeBindingMode: WaitForFirstConsumer
