@@ -406,36 +406,58 @@ it("sends the draft on Enter and clears it", async () => {
   expect(container.querySelector('[aria-label="Pending commands"]')).toBeNull();
 });
 
-it.each([true, false])(
-  "queues a message through the Dispatcher for a fresh suspended Sandbox with wake-on-message %s",
-  async (wakeOnSend) => {
-    sandboxes = [inventorySandbox("Suspended", wakeOnSend)];
-    sharedThread = {
-      harness_state: "HARNESS_STATE_STOPPED",
-      feed_status: "ended",
-      setup_state: "SETUP_STATE_SUCCEEDED",
-      launch_outcome: "LAUNCH_OUTCOME_STARTED",
-    };
-    const sealedThread = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
-    const container = await render(sealedThread);
-    const field = composer(container);
-    expect(field.disabled).toBe(false);
-    expect(button(container, "Send").disabled).toBe(true);
-    expect(container.textContent).toContain(
-      wakeOnSend
-        ? "Wake on message is on; submitted commands will queue while it wakes."
-        : "Wake on message is off; submitted commands stay queued until you resume it manually."
-    );
+it("queues a message through the Dispatcher for a fresh suspended Sandbox with wake-on-message", async () => {
+  sandboxes = [{ ...inventorySandbox("Suspended", true), suspended_by: "Requested" }];
+  sharedThread = {
+    harness_state: "HARNESS_STATE_STOPPED",
+    feed_status: "ended",
+    setup_state: "SETUP_STATE_SUCCEEDED",
+    launch_outcome: "LAUNCH_OUTCOME_STARTED",
+  };
+  const sealedThread = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
+  const container = await render(sealedThread);
+  const field = composer(container);
+  expect(field.disabled).toBe(false);
+  expect(button(container, "Send").disabled).toBe(true);
+  expect(field.placeholder).toBe(
+    "Sandbox is suspended (on request). Wake on message is on; submitted commands will queue while it wakes. Enter sends, Shift+Enter or Ctrl+Enter for a new line"
+  );
+  expect(container.querySelector('[role="status"]')).toBeNull();
+  expect(buttonIn(container, "Resume Sandbox")).toBeUndefined();
 
-    await type(field, "Continue after resume");
-    await press(field, {});
+  await type(field, "Continue after resume");
+  await press(field, {});
 
-    expect(field.value).toBe("");
-    expect(vi.mocked(submitInput).mock.calls).toHaveLength(1);
-    expect(vi.mocked(submitInput).mock.calls[0]?.[0]).toBe(THREAD.id);
-    expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "Continue after resume" } }]);
-  }
-);
+  expect(field.value).toBe("");
+  expect(vi.mocked(submitInput).mock.calls).toHaveLength(1);
+  expect(vi.mocked(submitInput).mock.calls[0]?.[0]).toBe(THREAD.id);
+  expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "Continue after resume" } }]);
+});
+
+it("disables the composer and offers resume for a fresh suspended Sandbox without wake-on-message", async () => {
+  vi.mocked(resumeSandbox).mockResolvedValue(undefined);
+  sandboxes = [{ ...inventorySandbox("Suspended", false), suspended_by: "Requested" }];
+  sharedThread = {
+    harness_state: "HARNESS_STATE_STOPPED",
+    feed_status: "ended",
+    setup_state: "SETUP_STATE_SUCCEEDED",
+    launch_outcome: "LAUNCH_OUTCOME_STARTED",
+  };
+  const sealedThread = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
+  const container = await render(sealedThread);
+  const field = composer(container);
+  expect(field.disabled).toBe(true);
+  expect(field.placeholder).toBe(
+    "Sandbox is suspended (on request). Wake on message is off; submitted commands stay queued until you resume it manually."
+  );
+  expect(container.querySelector('[role="status"]')).toBeNull();
+  expect(container.querySelector('button[aria-label="Interrupt"]')).toBeNull();
+  expect(container.querySelector('button[aria-label="Send"]')).toBeNull();
+  const resume = buttonIn(container.querySelector(".agentplane-composer-controls"), "Resume Sandbox");
+  expect(resume).toBeDefined();
+  await act(async () => resume?.click());
+  expect(resumeSandbox).toHaveBeenCalledExactlyOnceWith(THREAD.sandbox);
+});
 
 it.each(["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"])(
   "does not queue messages for a suspended Session whose setup is %s",
@@ -648,13 +670,14 @@ it("shows a suspended Sandbox as paused in the status indicator, favicon and thr
 it.each<[NonNullable<SandboxView["suspended_by"]>, string]>([
   ["Idle", "idle"],
   ["Requested", "on request"],
-])("says a Sandbox suspended by %s was suspended %s, in the indicator and the notice", async (suspendedBy, reason) => {
+])("says a Sandbox suspended by %s was suspended %s, in the indicator and composer", async (suspendedBy, reason) => {
   sandboxes = [{ ...inventorySandbox("Suspended"), suspended_by: suspendedBy }];
   const container = await render();
   expect(container.querySelector(".agentplane-thread-status-indicator")?.getAttribute("aria-label")).toBe(
     `Sandbox suspended (${reason})`
   );
-  expect(container.querySelector('[role="status"]')?.textContent).toContain(`Sandbox is suspended (${reason}).`);
+  expect(composer(container).placeholder).toContain(`Sandbox is suspended (${reason}). Wake on message is off;`);
+  expect(container.querySelector('[role="status"]')).toBeNull();
 });
 
 it("offers to resume a suspended Sandbox, and only from a current inventory", async () => {
@@ -798,12 +821,7 @@ it("fetches thread metadata when it is absent from the live snapshot", async () 
 it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | null]>([
   ["a running sandbox", [RUNNING], {}, null],
   ["an inventory not yet heard from", null, {}, null],
-  [
-    "a suspended sandbox",
-    [SUSPENDED],
-    {},
-    "Sandbox is suspended. Wake on message is off; submitted commands stay queued until you resume it manually.",
-  ],
+  ["a suspended sandbox", [SUSPENDED], {}, null],
   ["a deleted sandbox", [], {}, "Sandbox no longer exists."],
   ["a running sandbox on a stale inventory", [RUNNING], { fresh: false }, null],
   ["an absence from a stale inventory", [], { fresh: false }, ABSENT],
