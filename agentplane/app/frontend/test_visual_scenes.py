@@ -92,7 +92,6 @@ async def test_session_thread_setup(view: VisualPage, app: AgentplaneFixture) ->
 
 @DESKTOP_AND_MOBILE
 async def test_session_auto_title_control(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.set_flag(Flag.TITLE_GENERATION_AVAILABLE)
     await app.mount_thread(IDLE_THREAD)
     await expect(view.page.get_by_role("button", name="Auto-title")).to_be_visible()
     await view.check(context="fixture ready")
