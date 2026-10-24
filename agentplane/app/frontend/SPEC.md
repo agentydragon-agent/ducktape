@@ -1,5 +1,14 @@
 # Thread history scrolling
 
+## Thread titles
+
+The app stores Thread titles and title automation settings. The new-Session form initializes
+**Auto-title after the first message** from the app default, then sends the selected value with the
+Session open request. Presets do not set this option. With a configured backend, the app applies a
+title after the first confirmed user message only while the Thread has no title and the operator has
+not set or cleared one. **Auto-title** explicitly generates and applies a replacement from recent
+confirmed user messages. A manual rename or clear made while generation is running takes precedence.
+
 A thread's conversation can grow long, include messages of different heights, and change while
 someone is reading it. The following are promises to the reader; they do not prescribe how the
 browser loads, stores, or draws the conversation. These guarantees cover the supported Chromium

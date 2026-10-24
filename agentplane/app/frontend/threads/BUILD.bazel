@@ -507,6 +507,7 @@ ts_library(
     srcs = ["thread_title.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",

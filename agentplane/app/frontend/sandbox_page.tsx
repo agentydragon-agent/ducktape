@@ -171,7 +171,11 @@ export function SandboxPage({
     setError(displayableError(failure));
   }
 
-  async function createSession(spec: SessionSpec, setupScript: string): Promise<void> {
+  async function createSession(
+    spec: SessionSpec,
+    setupScript: string,
+    autoTitleOnFirstMessage: boolean
+  ): Promise<void> {
     if (!sandbox || creatingSession || pendingOpen) return;
     const sessionId = crypto.randomUUID();
     // Only the Session ID survives reload. In particular, never persist instructions or bootstrap.
@@ -180,7 +184,7 @@ export function SandboxPage({
     setCreatingSession(true);
     setError(null);
     try {
-      const opening = await openSession(name, sessionId, spec, setupScript);
+      const opening = await openSession(name, sessionId, spec, setupScript, autoTitleOnFirstMessage);
       if (!opening.sessionId) throw new Error("Open returned without a Session ID");
       // The live projection may have resolved this attempt while the Open response was in flight.
       // Do not resurrect its pending record after navigation, or after the user forgot it.
@@ -437,7 +441,9 @@ export function SandboxPage({
                 presetName={sandbox?.preset ?? null}
                 startable={(ready || canWakeForSession) && !pendingOpen}
                 creating={creatingSession}
-                onStart={(spec, setupScript) => void createSession(spec, setupScript)}
+                onStart={(spec, setupScript, autoTitleOnFirstMessage) =>
+                  void createSession(spec, setupScript, autoTitleOnFirstMessage)
+                }
                 onClose={() => setLaunching(false)}
                 onError={setError}
               />

@@ -39,6 +39,21 @@ py_library(
     ],
 )
 
+py_library(
+    name = "title_generation",
+    srcs = ["title_generation.py"],
+    deps = [
+        ":store",
+        ":thread_view",
+        "//agentplane/app:settings",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/grpc:calls",
+        "//agentplane/history_service:client",
+        "@pypi//httpx",
+        "@pypi//sqlalchemy",
+    ],
+)
+
 py_test(
     name = "test_store",
     size = "medium",
