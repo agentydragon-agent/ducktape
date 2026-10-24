@@ -494,6 +494,12 @@ The second SSD evacuation exercised this procedure with master-1 moving from
 
 ### Other local consumers
 
+During HDD maintenance, keep metadata checks light: use same-user loopback HTTP
+queries instead of repeatedly cold-starting the ClickHouse CLI, which adds disk
+reads under contention. For stateless web workloads, use existing control-plane
+overflow eligibility and Pod tolerations, and verify the replacement is Ready
+before continuing.
+
 #### ClickHouse data and Keeper
 
 Include ClickHouse explicitly when preparing its worker nodes. Inventory each

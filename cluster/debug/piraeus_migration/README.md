@@ -290,11 +290,29 @@ before a physical reset. Private per-cluster proofs are in
 `/tmp/piraeus-hdd-roll-20261023/last-hdd-102453/`, including
 `root-final-independent-acceptance.json`.
 
-ClickHouse replica 1 is planned for a native rebuild on `ovh-ns103656` using
-the existing 500Gi `piraeus-hdd-local` `data-piraeus-hdd` claim template. The
-accepted replica 0 remains on `ovh-ns103711`; the existing Retain claim is
-preserved, and replica-1 rebuild and native table/query acceptance remain
-pending.
+### ClickHouse replica 1 on 103656 — 2026-10-24 (in progress)
+
+Replica 1 started on a fresh 500Gi `piraeus-hdd-local` claim on
+`ovh-ns103656`; its target storage proof passed. Its two-database, 26-object
+catalog was restored, and the accepted application window verified a clean
+106-row migration ledger (latest version 53), plus 17 writable tables with two
+active replicas and no lost parts. After a controlled stop and restart, native
+copy resumed with the same PVC, PV and CSI identity. At the 08:26 UTC acceptance,
+it had 640 queued tasks and 16 active fetches, so catch-up is still incomplete.
+Source replica 0 remains Ready with its original Pod UID on
+`ovh-ns103711`; client routing remains pinned there. The ClickHouse Flux
+Kustomization and native CHI are the remaining holds until full catch-up and
+final application gates pass. The former replica-1 Retain claim, PV and files
+are preserved.
+
+AIQuota and Langfuse are Ready under normal Flux management. Langfuse web is
+Ready on SSD control-plane `ovh-ns1001419` using its existing placement policy.
+Both `103656` and `103711` are uncordoned; `102453` remains cordoned while
+Seaweed repair continues. Private proofs are under
+`/tmp/piraeus-hdd-roll-20261023/last-hdd-102453/clickhouse-replica1/`, including
+`root-start-handoff-accepted.json` and `app-window-complete.json`.
+Refresh application gates before restoring normal ClickHouse routing or
+reconciliation.
 
 OCI-cache and Langfuse Valkey were then evacuated serially: coordinated native
 failover to each existing Piraeus member on `103656`, followed by rebuilding
