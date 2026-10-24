@@ -3,12 +3,14 @@ import "@mantine/core/styles.css";
 import { createRoot } from "react-dom/client";
 
 import { restoreRouteAfterLogin } from "./operator_login";
+import { initializeBrowserTracing } from "./tracing";
 import { ThemeProvider } from "./theme";
 
 import App from "./app";
 
 const container = document.getElementById("root");
 if (!container) throw new Error("missing #root");
+initializeBrowserTracing();
 // A login redirect drops the fragment the router routes on; put it back before mounting.
 restoreRouteAfterLogin();
 

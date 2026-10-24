@@ -55,9 +55,11 @@ py_library(
         ":sandbox_models",
         ":shutdown",
         ":system_status",
+        ":trace_relay",
         ":upstream_proxy",
         "//agentplane:sse",
         "//agentplane:subjects",
+        "//agentplane:tracing",
         "//agentplane/action_service:policy_view",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:runner_directory",
@@ -84,6 +86,15 @@ py_library(
         "@pypi//itsdangerous",
         "@pypi//protobuf",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "trace_relay",
+    srcs = ["trace_relay.py"],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//httpx",
     ],
 )
 
@@ -133,6 +144,7 @@ py_library(
         "//agentplane:kubernetes_watch",
         "//agentplane:service_process",
         "//agentplane:subjects",
+        "//agentplane:tracing",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:dispatcher_client",
         "//agentplane/app/threads:history_watch",
