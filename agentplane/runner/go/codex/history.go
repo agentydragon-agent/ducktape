@@ -3,6 +3,7 @@ package codex
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -19,12 +20,12 @@ type codexHistoryRecord struct {
 }
 
 type codexPayload struct {
-	Type    string `json:"type"`
-	Role    string `json:"role"`
-	ID      string `json:"id"`
-	CallID  string `json:"call_id"`
-	Output  string `json:"output"`
-	Text    string `json:"text"`
+	Type    string          `json:"type"`
+	Role    string          `json:"role"`
+	ID      string          `json:"id"`
+	CallID  string          `json:"call_id"`
+	Output  json.RawMessage `json:"output"`
+	Text    string          `json:"text"`
 	Content []struct {
 		Text string `json:"text"`
 	} `json:"content"`
@@ -116,7 +117,11 @@ func readCodexHistory(directory, sessionID string, observed map[string]harness.O
 		case "function_call":
 			calls[payload.CallID] = true
 		case "function_call_output":
-			outputs[payload.CallID] = payload.Output
+			output, err := codexToolOutput(payload.Output)
+			if err != nil {
+				return nil, fmt.Errorf("decode function call output %q: %w", payload.CallID, err)
+			}
+			outputs[payload.CallID] = output
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -156,4 +161,29 @@ func readCodexHistory(directory, sessionID string, observed map[string]harness.O
 		}
 	}
 	return recovered, nil
+}
+
+func codexToolOutput(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 {
+		return "", nil
+	}
+	var output string
+	if err := json.Unmarshal(raw, &output); err == nil {
+		return output, nil
+	}
+	var content []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &content); err != nil {
+		return "", fmt.Errorf("expected text or an array of text content: %w", err)
+	}
+	var text strings.Builder
+	for _, part := range content {
+		if part.Type != "input_text" {
+			return "", fmt.Errorf("unsupported content type %q", part.Type)
+		}
+		text.WriteString(part.Text)
+	}
+	return text.String(), nil
 }
