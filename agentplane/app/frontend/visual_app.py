@@ -30,6 +30,7 @@ class Flag(StrEnum):
     ENTITY_SEGMENTS_WITHHELD = "entitySegmentsWithheld"
     SYNC_SCOPE_UNAVAILABLE = "syncScopeUnavailable"
     COMMAND_ADMISSION_TIMED_OUT = "commandAdmissionTimedOut"
+    TITLE_GENERATION_AVAILABLE = "titleGenerationAvailable"
     PENDING_ACTIONS = "pendingActions"
     COMPACT_POD_ACTION = "compactPodAction"
     GMAIL_DRAFT_HISTORY = "gmailDraftHistory"
