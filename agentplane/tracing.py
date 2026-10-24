@@ -137,6 +137,30 @@ async def _sanitize_httpx_span_async(span: Any, request: Any) -> None:
     _sanitize_httpx_span(span, request)
 
 
+class _SanitizeAfterRouteMiddleware:
+    """Reapply URL sanitization after routing without buffering streaming responses."""
+
+    def __init__(self, app: Any) -> None:
+        self._app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await self._app(scope, receive, send)
+            return
+
+        async def sanitize_response(message: dict[str, Any]) -> None:
+            if message.get("type") == "http.response.start":
+                _sanitize_http_span(trace.get_current_span(), scope)
+            await send(message)
+
+        try:
+            await self._app(scope, receive, sanitize_response)
+        finally:
+            # Routing mutates the ASGI scope. Reapply sanitization after that happens so spans
+            # retain a route template while never exporting dynamic IDs or query strings.
+            _sanitize_http_span(trace.get_current_span(), scope)
+
+
 def instrument_fastapi(app: Any) -> None:
     """Instrument ASGI requests while preventing query strings and dynamic paths from escaping."""
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # noqa: PLC0415
@@ -147,14 +171,7 @@ def instrument_fastapi(app: Any) -> None:
     def on_response(span: Any, scope: dict[str, Any], _message: dict[str, Any]) -> None:
         _sanitize_http_span(span, scope)
 
-    @app.middleware("http")
-    async def sanitize_after_route(request: Any, call_next: Any) -> Any:
-        try:
-            return await call_next(request)
-        finally:
-            # Routing mutates the ASGI scope. Reapply sanitization after that happens so spans
-            # retain a route template while never exporting dynamic IDs or query strings.
-            _sanitize_http_span(trace.get_current_span(), request.scope)
+    app.add_middleware(_SanitizeAfterRouteMiddleware)
 
     FastAPIInstrumentor.instrument_app(
         app,

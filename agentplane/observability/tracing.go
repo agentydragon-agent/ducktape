@@ -38,6 +38,10 @@ var traceContext = propagation.TraceContext{}
 // Init configures an OTLP/gRPC trace exporter using the standard OTEL_* environment variables.
 // serviceName is used when OTEL_SERVICE_NAME is absent. Shutdown is idempotent and flushes spans.
 func Init(ctx context.Context, serviceName string) (func(), error) {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("OTEL_SDK_DISABLED")), "true") {
+		return func() {}, nil
+	}
+
 	exporter, err := otlptracegrpc.New(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create OTLP trace exporter: %w", err)

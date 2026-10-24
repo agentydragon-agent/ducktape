@@ -1,5 +1,4 @@
 import { context, ROOT_CONTEXT, trace, type Span, type SpanContext } from "@opentelemetry/api";
-import { ZoneContextManager } from "@opentelemetry/context-zone";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
@@ -172,13 +171,20 @@ function safeUrl(request: Request | string | URL): URL {
 }
 
 /** Install browser trace export and same-origin W3C trace-context propagation once at startup. */
-export function initializeBrowserTracing(): void {
+export async function initializeBrowserTracing(): Promise<void> {
   if (initialized) return;
   initialized = true;
 
+  // Zone.js patches browser APIs at import time. Load it only in the real app entrypoint so
+  // importing tracing helpers in component tests does not replace their fake browser APIs.
+  const { ZoneContextManager } = await import("@opentelemetry/context-zone");
   const provider = new WebTracerProvider({
     resource: resourceFromAttributes({ "service.name": "agentplane-web" }),
-    spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter({ url: "/telemetry/v1/traces" }))],
+    spanProcessors: [
+      new BatchSpanProcessor(
+        new OTLPTraceExporter({ url: new URL("/telemetry/v1/traces", window.location.origin).toString() })
+      ),
+    ],
   });
   provider.register({
     contextManager: new ZoneContextManager(),
