@@ -167,7 +167,7 @@ SHARED_DIAGNOSTICS = (
 )
 PUBLIC_INVENTORY = ("public-coder-node-read", "public-coder-cluster-metadata-read")
 HAKU_EXTRAS = ("cluster-diagnostics", "haku-sandbox-write")
-PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY)
+PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY, "cluster-diagnostics")
 # Shared grant membership for PolicySets. Each deployment chart composes these Kubernetes rules with
 # its own rules before materializing the complete PolicySet, then separately materializes controller
 # RBAC from the resolved assignable grants.

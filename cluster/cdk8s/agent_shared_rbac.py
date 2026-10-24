@@ -1,5 +1,5 @@
 """Cluster-scoped agent RBAC (cluster/generated/agents/shared-rbac): the ClusterRoleBinding that
-grants every agent identity the secret-free cluster-diagnostics-reader ClusterRole.
+grants existing agent identities the secret-free cluster-diagnostics-reader ClusterRole.
 Namespace-scoped RoleBindings live in per-service agent-rbac/ directories
 (cluster/docs/agent_rbac.md).
 """
