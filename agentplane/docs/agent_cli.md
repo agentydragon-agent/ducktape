@@ -39,6 +39,8 @@ joins as one more group under them.
 | `actions events ID [--after SEQUENCE]`                                                                                                         | `ListActionRequestEvents`, paged                  |
 | `actions cancel ID`                                                                                                                            | `CancelActionRequest`                             |
 | `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--destination JSON]` | `POST /v1/subscriptions`                          |
+| `notifications inbox read ID [--after CURSOR] [--limit N]`                                                                                     | `GET /v1/inboxes/{id}/entries`, one page          |
+| `notifications inbox ack ID --through CURSOR`                                                                                                  | `PUT /v1/inboxes/{id}/acknowledgement`            |
 | `notifications subscriptions`                                                                                                                  | `GET /v1/subscriptions`, paged                    |
 | `notifications subscription ID`                                                                                                                | `GET /v1/subscriptions/{id}`                      |
 | `notifications renew ID [--lifetime-days N]`                                                                                                   | `GET`, then `PATCH` with the read `version`       |
@@ -47,13 +49,11 @@ joins as one more group under them.
 | `notifications message ID`                                                                                                                     | `GET /v1/messages/{id}`                           |
 | `egress rules`                                                                                                                                 | `GET /v1/rules`                                   |
 
-Every command takes `--json` and `--timeout`; the paged lists take `--limit` and `--after`.
+Every command takes `--json` and `--timeout`; paged lists take `--limit` and `--after`, as does the one-page inbox read.
 
 Left out on purpose:
 
-- **Inbox read and acknowledgement.** Acknowledging advances a contiguous prefix across every
-  subscription in the inbox, so it stays an explicit `curl` step until a review of its own. The other
-  `github` subjects (`issue`, `branch`, `commit`) would take `subscribe` the same way; only `pr` exists.
+- **Other GitHub subjects.** `issue`, `branch` and `commit` would take `subscribe` the same way; only `pr` exists.
 - **Following an Action by subscription,** and operator and cluster-internal routes. The CLI never calls
   `/v1/operator/...` or the egress `/decisions` read side.
 - **Selecting rules by host, method or path.** `egress rules` prints the caller's view and `jq` selects
@@ -82,8 +82,13 @@ Left out on purpose:
   and lowercase state names; update scripts that read `--json` before using this CLI version.
 - Notifications and Egress keep their service JSON objects. A gRPC-Gateway response wraps each answer in
   a named field (`{"subscription": {...}}`, `{"subscriptions": [...]}`); the `notifications` commands
-  print that field's value. Their gateway field names are camelCase, with `int64` values such as `version`
-  as strings.
+  generally print that field's value. `notifications inbox read --json` prints the full response with its
+  `inbox`, `entries` and optional `notice`; `notifications inbox ack --json` prints the updated inbox.
+  Their gateway field names are camelCase, with `int64` values such as cursors and `version` as strings.
+- `notifications inbox read` prints one bounded page and its inbox/notice status in text mode; use `--json`
+  to inspect the complete provider payloads. Reads do not acknowledge. `--after` is exclusive, starts at 0,
+  and can be set to the last cursor you handled. Acknowledgement advances the handled prefix across every
+  subscription in the inbox, so pass `--through` only after processing every entry up to that cursor.
 - **`actions groups --json` is large:** the service returns every Action's full description and input
   schema inline. `actions list` prints the same Actions one per line.
 - **Without `--json`** prints concise text, one line per item. Text is not a stable interface; a script

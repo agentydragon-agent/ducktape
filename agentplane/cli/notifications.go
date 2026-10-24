@@ -28,24 +28,189 @@ import (
 const notificationsHelp = `Calls the Notification Service (AGENTPLANE_NOTIFICATIONS_URL, AGENTPLANE_NOTIFICATIONS_CREDENTIAL).
 
 Subscriptions deliver notices to a Session inbox, so a long wait costs no turn; send puts a message in
-another Session's inbox. Reading and acknowledging the inbox stays an explicit HTTP step. No command here
-has an outcome exit code; cancel removes a subscription and never cancels an Action.`
+another Session's inbox. Inbox reads are non-destructive; acknowledgement advances the handled prefix.
+No command here has an outcome exit code; cancel removes a subscription and never cancels an Action.`
 
 const (
 	githubEventPrefix  = "GITHUB_EVENT_NAME_"
 	failureKindPrefix  = "SOURCE_FAILURE_KIND_"
 	subscriptionsRoute = "/v1/subscriptions"
+	inboxesRoute       = "/v1/inboxes"
 	messagesRoute      = "/v1/messages"
 )
 
 var pullRequestPattern = regexp.MustCompile(`^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)#([1-9][0-9]*)$`)
 
 func (a *app) notificationsCommand() *cobra.Command {
-	return group("notifications", "Subscribe to events and manage subscriptions", notificationsHelp,
+	return group("notifications", "Follow events, subscriptions and inboxes", notificationsHelp,
 		group("subscribe", "Subscribe to a source", "Creates a subscription for this Session's inbox.",
 			group("github", "Subscribe to GitHub activity", "Only pull requests (`pr`) are supported.", a.subscribePullRequestCommand())),
-		a.subscriptionsCommand(), a.subscriptionCommand(), a.renewCommand(), a.cancelSubscriptionCommand(),
+		a.inboxCommand(), a.subscriptionsCommand(), a.subscriptionCommand(), a.renewCommand(), a.cancelSubscriptionCommand(),
 		a.sendCommand(), a.messageCommand())
+}
+
+func (a *app) inboxCommand() *cobra.Command {
+	return group("inbox", "Read and acknowledge inbox entries", "Reading is non-destructive; acknowledgement advances the handled prefix.",
+		a.readInboxCommand(), a.ackInboxCommand())
+}
+
+func (a *app) readInboxCommand() *cobra.Command {
+	var after int64
+	var limit int
+	command := &cobra.Command{
+		Use:   "read ID [--after CURSOR] [--limit N]",
+		Short: "Read one page of inbox entries",
+		Long: `GET /v1/inboxes/{id}/entries. Reads are non-destructive and return one contiguous page.
+Continue after the last returned entry's cursor. Text output summarizes the entries; --json prints the
+full response, including provider payloads and the latest notice state. The service returns at most 128
+entries per page, and expired payloads are reported in inbox.expiredThrough.`,
+		Args: cobra.ExactArgs(1),
+		RunE: a.command("NOTIFICATIONS", func(ctx context.Context, svc *service, args []string) error {
+			if after < 0 {
+				return usageFailure("--after must not be negative")
+			}
+			if limit < 1 || limit > maxPage {
+				return usageFailure("--limit must be between 1 and %d", maxPage)
+			}
+			query := url.Values{}
+			query.Set("afterCursor", strconv.FormatInt(after, 10))
+			query.Set("limit", strconv.Itoa(limit))
+			response, err := svc.fetch(ctx, inboxesRoute+"/"+url.PathEscape(args[0])+"/entries", query)
+			if err != nil {
+				return err
+			}
+			return a.showOne(response, inboxPageLine)
+		}),
+	}
+	command.Flags().Int64Var(&after, "after", 0, "read entries with cursors greater than CURSOR")
+	command.Flags().IntVar(&limit, "limit", maxPage, "maximum entries in this page (1-128)")
+	return command
+}
+
+func (a *app) ackInboxCommand() *cobra.Command {
+	var through int64
+	command := &cobra.Command{
+		Use:   "ack ID --through CURSOR",
+		Short: "Acknowledge a handled inbox prefix",
+		Long: `PUT /v1/inboxes/{id}/acknowledgement. Acknowledgement covers every entry through the cursor,
+across all subscriptions in this inbox. Read and handle the whole contiguous prefix first. The service
+never moves the cursor backwards and refuses a cursor beyond the inbox's last entry.`,
+		Args: cobra.ExactArgs(1),
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			if !cmd.Flags().Changed("through") {
+				return usageFailure("--through is required")
+			}
+			if through < 0 {
+				return usageFailure("--through must not be negative")
+			}
+			return nil
+		},
+		RunE: a.command("NOTIFICATIONS", func(ctx context.Context, svc *service, args []string) error {
+			body := struct {
+				ThroughCursor string `json:"throughCursor"`
+			}{ThroughCursor: strconv.FormatInt(through, 10)}
+			response, err := svc.do(ctx, request{
+				method: http.MethodPut,
+				path:   inboxesRoute + "/" + url.PathEscape(args[0]) + "/acknowledgement",
+				body:   body,
+			})
+			if err != nil {
+				return err
+			}
+			inbox, err := responseField(response, "inbox")
+			if err != nil {
+				return err
+			}
+			return a.showOne(inbox, inboxLine)
+		}),
+	}
+	command.Flags().Int64Var(&through, "through", 0, "last cursor you have handled; required")
+	return command
+}
+
+func inboxPageLine(raw json.RawMessage) (string, error) {
+	var page notificationspb.ReadInboxResponse
+	if err := decodeMessage(raw, &page); err != nil {
+		return "", err
+	}
+	if page.GetInbox().GetId() == "" {
+		return "", invalidResponse("no inbox in the response")
+	}
+	lines := []string{inboxSummary(page.GetInbox())}
+	if page.GetNotice() != nil {
+		lines = append(lines, noticeLine(page.GetNotice()))
+	}
+	if len(page.GetEntries()) == 0 {
+		lines = append(lines, "no entries in this page")
+	}
+	for _, entry := range page.GetEntries() {
+		lines = append(lines, inboxEntryLine(entry))
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func inboxLine(raw json.RawMessage) (string, error) {
+	var inbox notificationspb.Inbox
+	if err := decodeMessage(raw, &inbox); err != nil {
+		return "", err
+	}
+	if inbox.GetId() == "" {
+		return "", invalidResponse("no inbox ID in the response")
+	}
+	return inboxSummary(&inbox), nil
+}
+
+func inboxSummary(inbox *notificationspb.Inbox) string {
+	line := fields(
+		"inbox", inbox.GetId(),
+		"acknowledged", strconv.FormatInt(inbox.GetAcknowledged(), 10),
+		"covered", strconv.FormatInt(inbox.GetCovered(), 10),
+		"last", strconv.FormatInt(inbox.GetLastCursor(), 10),
+		"expired through", strconv.FormatInt(inbox.GetExpiredThrough(), 10),
+	)
+	if inbox.GetRetired() {
+		line += "  retired"
+	}
+	if inbox.GetDeliveryError() != "" {
+		line += fields("delivery error", strconv.Quote(inbox.GetDeliveryError()))
+	}
+	return line
+}
+
+func noticeLine(notice *notificationspb.Notice) string {
+	line := fields(
+		"notice through", strconv.FormatInt(notice.GetThroughCursor(), 10),
+		"attempted", strconv.FormatBool(notice.GetAttempted()),
+		"admitted", strconv.FormatBool(notice.GetAdmitted()),
+		"confirmed", strconv.FormatBool(notice.GetConfirmed()),
+	)
+	if notice.GetError() != "" {
+		line += fields("error", strconv.Quote(notice.GetError()))
+	}
+	return line
+}
+
+func inboxEntryLine(entry *notificationspb.InboxEntry) string {
+	var identity string
+	switch provider := entry.GetEvent().GetProvider().(type) {
+	case *notificationspb.EventIdentity_Actions:
+		identity = fmt.Sprintf("actions %s sequence %d", provider.Actions.GetRequestId(), provider.Actions.GetSequence())
+	case *notificationspb.EventIdentity_Github:
+		identity = "github " + enumSuffix(provider.Github.GetEvent().String(), githubEventPrefix)
+		if action := provider.Github.GetAction(); action != "" {
+			identity += " " + strconv.Quote(action)
+		}
+	case *notificationspb.EventIdentity_Message:
+		sender := provider.Message.GetSender()
+		identity = fmt.Sprintf("message %s from %s/%s", provider.Message.GetMessageId(), sender.GetNamespace(), sender.GetName())
+	default:
+		identity = "unknown event"
+	}
+	line := fields("entry "+strconv.FormatInt(entry.GetCursor(), 10), identity)
+	if len(entry.GetSubscriptionIds()) > 0 {
+		line += fields("subscriptions", strings.Join(entry.GetSubscriptionIds(), ","))
+	}
+	return line
 }
 
 // optionalInt is an int32 flag that records whether it was given.
