@@ -31,6 +31,9 @@ class Flag(StrEnum):
     SYNC_SCOPE_UNAVAILABLE = "syncScopeUnavailable"
     COMMAND_ADMISSION_TIMED_OUT = "commandAdmissionTimedOut"
     PENDING_ACTIONS = "pendingActions"
+    # Two opted-in reads ahead of PENDING_ACTIONS: a queue that overflows the attention strip even
+    # after one decision.
+    PENDING_ACTION_OVERFLOW = "pendingActionOverflow"
     COMPACT_POD_ACTION = "compactPodAction"
     GMAIL_DRAFT_HISTORY = "gmailDraftHistory"
     PAGED_ACTION_HISTORY = "pagedActionHistory"
