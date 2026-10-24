@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import fcntl
+import json
 import os
 import shlex
 import shutil
@@ -13,6 +14,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from agentplane.native.codex.testing import model_catalog
+from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.testing import events
 from agentplane.runner.testing.driver import RunnerDriver
@@ -647,6 +650,92 @@ async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and
     assert request.reasoning_texts == []
     await model.reply(request, Text("RESUMED_OK"))
     await second.until(events.turn_completed)
+
+
+@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
+async def test_codex_failed_turn_reconciles_array_tool_output_before_continuation(
+    driver: RunnerDriver,
+    endpoint: object,
+    model: ScriptedModel,
+    spec: runner_pb2.SessionSpec,
+    start_runner: Callable[..., Awaitable[RunnerProcess]],
+    tmp_path: Path,
+) -> None:
+    """The real Codex binary persists an array tool output that recovery must fold after an LLM error."""
+    assert isinstance(endpoint, OpenAIResponses)
+    endpoint.serve_catalog([model_catalog.bundled("gpt-6-luna", slug=spec.model)])
+
+    session_id = "codex-llm-error-reconcile"
+    first_runner = await start_runner()
+    first = await driver.attach(session_id, spec=spec)
+    await first.submit_input("error-turn", "Run the tool, then continue.")
+
+    request = await model.request()
+    assert request.native.code_mode
+    await model.reply(request, ShellCall("call_history_array", "printf CODEX_HISTORY_OUTPUT"))
+
+    failed_request = await model.request()
+    for attempt in range(3):
+        if attempt:
+            failed_request = await model.request()
+        custom_output = next(
+            output
+            for output in failed_request.native.custom_tool_call_outputs
+            if output.call_id == "call_history_array"
+        )
+        assert isinstance(custom_output.output, list)
+        assert any("CODEX_HISTORY_OUTPUT" in part.text for part in custom_output.output)
+        await model.http_error(failed_request)
+
+    failed = await first.until(events.turn_completed)
+    assert failed.event.turn_completed.status == event_pb2.TURN_STATUS_FAILED
+    (tool_call_id,) = events.items(first.seen, event_pb2.ITEM_KIND_TOOL_CALL)
+
+    codex_home = tmp_path / "state" / "sessions" / session_id / "codex"
+    rollout_files = list((codex_home / "sessions").glob("**/rollout-*.jsonl"))
+    assert len(rollout_files) == 1
+    rollout = [json.loads(line) for line in rollout_files[0].read_text().splitlines()]
+    (persisted_output,) = [
+        record["payload"]
+        for record in rollout
+        if record["type"] == "response_item"
+        and record["payload"]["type"] == "custom_tool_call_output"
+        and record["payload"]["call_id"] == "call_history_array"
+    ]
+    assert isinstance(persisted_output["output"], list)
+    assert any("CODEX_HISTORY_OUTPUT" in part["text"] for part in persisted_output["output"])
+
+    harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
+    await first_runner.crash(harness_pids)
+
+    await start_runner()
+    reconnected = await driver.attach(session_id, after_cursor=first.cursor)
+    await reconnected.submit_input("continue-after-error", "Continue from the failed turn and reply CONTINUED_OK.")
+    started = await reconnected.until(events.is_kind("harness_started"))
+    assert started.event.harness_started.resumed
+    reconciled = await reconnected.until(
+        lambda entry: (
+            events.kind(entry) == "conversation_reconciled"
+            and entry.event.conversation_reconciled.turn_id == failed.event.turn_completed.turn_id
+        )
+    )
+    assert tool_call_id in {item.item_id for item in reconciled.event.conversation_reconciled.items}
+    assert all(
+        item.disposition != event_pb2.RECOVERY_DISPOSITION_UNKNOWN
+        for item in reconciled.event.conversation_reconciled.items
+    )
+
+    request = await model.request()
+    assert request.user_texts[-1] == "Continue from the failed turn and reply CONTINUED_OK."
+    assert any(
+        output.call_id == "call_history_array" and output.contains("CODEX_HISTORY_OUTPUT")
+        for output in request.tool_outputs
+    )
+    await model.reply(request, Text("CONTINUED_OK"))
+    continued = await reconnected.until(events.turn_completed)
+    assert continued.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    assert continued.event.turn_completed.turn_id != failed.event.turn_completed.turn_id
+    events.assert_contiguous([*first.seen, *reconnected.seen])
 
 
 if __name__ == "__main__":
