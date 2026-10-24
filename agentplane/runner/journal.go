@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -15,6 +14,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	_ "modernc.org/sqlite"
@@ -28,7 +28,6 @@ var (
 	ErrJournalFailed         = errors.New("journal failed; reopen it for recovery")
 	ErrJournalSealed         = errors.New("journal is sealed")
 	ErrUnknownCommand        = errors.New("unknown command ID")
-	ErrUnknownRecoveryTurn   = errors.New("unknown recovery turn")
 	ErrJournalChangedOutside = errors.New("journal changed outside its owner; reopen it for recovery")
 )
 
@@ -48,19 +47,9 @@ type SealState struct {
 	IncarnationUID string
 }
 
-// CommandRecord is the journal's durable admission and dispatch receipt for a command.
-type CommandRecord struct {
-	Command           *commandpb.Command
-	AdmittedCursor    uint64
-	DispatchPlanned   bool
-	NativeCorrelation map[string]string
-	TerminalCursor    *uint64
-}
-
 type AppendOptions struct {
 	Sources            []uint64
 	TerminalCommandIDs []string
-	NativeCorrelation  map[string]string
 }
 
 type Journal struct {
@@ -686,11 +675,7 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 	}
 	for _, commandID := range options.TerminalCommandIDs {
 		var terminal sql.NullInt64
-		var rawCorrelation string
-		err := j.conn.QueryRowContext(
-			ctx,
-			"SELECT terminal_cursor, native_correlation FROM command WHERE command_id = ?", commandID,
-		).Scan(&terminal, &rawCorrelation)
+		err := j.conn.QueryRowContext(ctx, "SELECT terminal_cursor FROM command WHERE command_id = ?", commandID).Scan(&terminal)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w %q", ErrUnknownCommand, commandID)
 		}
@@ -698,21 +683,10 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 			return nil, storageError("read command receipt", err)
 		}
 		if !terminal.Valid {
-			correlation, err := decodeCorrelation(rawCorrelation)
-			if err != nil {
-				return nil, storageError("decode command correlation", err)
-			}
-			for key, value := range options.NativeCorrelation {
-				correlation[key] = value
-			}
-			encoded, err := json.Marshal(correlation)
-			if err != nil {
-				return nil, storageError("encode command correlation", err)
-			}
 			if _, err := j.conn.ExecContext(
 				ctx,
-				"UPDATE command SET terminal_cursor = ?, native_correlation = ? WHERE command_id = ? AND terminal_cursor IS NULL",
-				cursor, string(encoded), commandID,
+				"UPDATE command SET terminal_cursor = ? WHERE command_id = ? AND terminal_cursor IS NULL",
+				cursor, commandID,
 			); err != nil {
 				return nil, storageError("write command receipt", err)
 			}
@@ -720,20 +694,6 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 	}
 	batch.appended = append(batch.appended, entry)
 	return proto.Clone(entry).(*eventlogpb.EventEntry), nil
-}
-
-func decodeCorrelation(raw string) (map[string]string, error) {
-	correlation := map[string]string{}
-	if raw == "" {
-		return correlation, nil
-	}
-	if err := json.Unmarshal([]byte(raw), &correlation); err != nil {
-		return nil, err
-	}
-	if correlation == nil {
-		correlation = map[string]string{}
-	}
-	return correlation, nil
 }
 
 func (j *Journal) Append(ctx context.Context, event *eventpb.Event, options AppendOptions) (*eventlogpb.EventEntry, error) {
@@ -809,7 +769,7 @@ func (j *Journal) Admit(ctx context.Context, command *commandpb.Command, expecte
 		}
 		if _, err := j.conn.ExecContext(
 			ctx,
-			"INSERT INTO command (command_id, payload, admitted_cursor, dispatch_planned, native_correlation, terminal_cursor) VALUES (?, ?, ?, 0, '{}', NULL)",
+			"INSERT INTO command (command_id, payload, admitted_cursor, dispatch_planned, terminal_cursor) VALUES (?, ?, ?, 0, NULL)",
 			commandCopy.GetCommandId(), payload, entry.GetCursor(),
 		); err != nil {
 			return storageError("insert command admission", err)
@@ -820,15 +780,14 @@ func (j *Journal) Admit(ctx context.Context, command *commandpb.Command, expecte
 	return result, newlyAdmitted, err
 }
 
-func (j *Journal) DispatchPlanned(ctx context.Context, commandID string, nativeCorrelation map[string]string) (bool, error) {
+func (j *Journal) DispatchPlanned(ctx context.Context, commandID string) (bool, error) {
 	planned := false
 	err := j.write(ctx, func(_ *journalBatch) error {
 		var terminal sql.NullInt64
-		var rawCorrelation string
 		err := j.conn.QueryRowContext(
 			ctx,
-			"SELECT terminal_cursor, native_correlation FROM command WHERE command_id = ?", commandID,
-		).Scan(&terminal, &rawCorrelation)
+			"SELECT terminal_cursor FROM command WHERE command_id = ?", commandID,
+		).Scan(&terminal)
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w %q", ErrUnknownCommand, commandID)
 		}
@@ -838,21 +797,10 @@ func (j *Journal) DispatchPlanned(ctx context.Context, commandID string, nativeC
 		if terminal.Valid {
 			return nil
 		}
-		correlation, err := decodeCorrelation(rawCorrelation)
-		if err != nil {
-			return storageError("decode command correlation", err)
-		}
-		for key, value := range nativeCorrelation {
-			correlation[key] = value
-		}
-		encoded, err := json.Marshal(correlation)
-		if err != nil {
-			return storageError("encode command correlation", err)
-		}
 		if _, err := j.conn.ExecContext(
 			ctx,
-			"UPDATE command SET dispatch_planned = 1, native_correlation = ? WHERE command_id = ? AND terminal_cursor IS NULL",
-			string(encoded), commandID,
+			"UPDATE command SET dispatch_planned = 1 WHERE command_id = ? AND terminal_cursor IS NULL",
+			commandID,
 		); err != nil {
 			return storageError("mark command dispatch planned", err)
 		}
@@ -862,7 +810,7 @@ func (j *Journal) DispatchPlanned(ctx context.Context, commandID string, nativeC
 	return planned, err
 }
 
-func (j *Journal) GetCommand(ctx context.Context, commandID string) (*CommandRecord, error) {
+func (j *Journal) GetCommand(ctx context.Context, commandID string) (*harness.CommandRecord, error) {
 	if !j.ownsBatch(ctx) {
 		j.mu.Lock()
 		defer j.mu.Unlock()
@@ -870,31 +818,36 @@ func (j *Journal) GetCommand(ctx context.Context, commandID string) (*CommandRec
 	if err := j.checkWritableLocked(); err != nil {
 		return nil, err
 	}
+	return j.getCommandLocked(ctx, commandID)
+}
+
+func (j *Journal) getCommandLocked(ctx context.Context, commandID string) (*harness.CommandRecord, error) {
 	var payload []byte
 	var admitted int64
 	var dispatch bool
-	var correlation string
 	var terminal sql.NullInt64
 	err := j.conn.QueryRowContext(
 		ctx,
-		"SELECT payload, admitted_cursor, dispatch_planned, native_correlation, terminal_cursor FROM command WHERE command_id = ?",
+		"SELECT payload, admitted_cursor, dispatch_planned, terminal_cursor FROM command WHERE command_id = ?",
 		commandID,
-	).Scan(&payload, &admitted, &dispatch, &correlation, &terminal)
+	).Scan(&payload, &admitted, &dispatch, &terminal)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	return decodeCommandRecord(payload, admitted, dispatch, terminal)
+}
+
+func decodeCommandRecord(payload []byte, admitted int64, dispatch bool, terminal sql.NullInt64) (*harness.CommandRecord, error) {
 	command := &commandpb.Command{}
 	if err := proto.Unmarshal(payload, command); err != nil {
 		return nil, err
 	}
-	nativeCorrelation, err := decodeCorrelation(correlation)
-	if err != nil {
-		return nil, err
+	record := &harness.CommandRecord{
+		Command: command, AdmittedCursor: uint64(admitted), DispatchPlanned: dispatch,
 	}
-	record := &CommandRecord{Command: command, AdmittedCursor: uint64(admitted), DispatchPlanned: dispatch, NativeCorrelation: nativeCorrelation}
 	if terminal.Valid {
 		value := uint64(terminal.Int64)
 		record.TerminalCursor = &value
@@ -903,34 +856,15 @@ func (j *Journal) GetCommand(ctx context.Context, commandID string) (*CommandRec
 }
 
 func (j *Journal) PendingCommands(ctx context.Context) ([]*commandpb.Command, error) {
-	if !j.ownsBatch(ctx) {
-		j.mu.Lock()
-		defer j.mu.Unlock()
-	}
-	if err := j.checkWritableLocked(); err != nil {
-		return nil, err
-	}
-	rows, err := j.conn.QueryContext(
-		ctx,
-		"SELECT payload FROM command WHERE terminal_cursor IS NULL ORDER BY admitted_cursor",
-	)
+	records, err := j.PendingCommandRecords(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	commands := []*commandpb.Command{}
-	for rows.Next() {
-		var payload []byte
-		if err := rows.Scan(&payload); err != nil {
-			return nil, err
-		}
-		command := &commandpb.Command{}
-		if err := proto.Unmarshal(payload, command); err != nil {
-			return nil, err
-		}
-		commands = append(commands, command)
+	commands := make([]*commandpb.Command, 0, len(records))
+	for _, record := range records {
+		commands = append(commands, record.Command)
 	}
-	return commands, rows.Err()
+	return commands, nil
 }
 
 func (j *Journal) AdmittedEntry(ctx context.Context, commandID string) (*eventlogpb.EventEntry, error) {
@@ -1101,7 +1035,7 @@ func (j *Journal) turnBoundary(ctx context.Context, turnID string) (start, end u
 		"SELECT start_cursor, end_cursor FROM turn_boundary WHERE turn_id = ?", turnID,
 	).Scan(&startCursor, &endCursor)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, 0, fmt.Errorf("%w %q", ErrUnknownRecoveryTurn, turnID)
+		return 0, 0, fmt.Errorf("%w %q", harness.ErrUnknownRecoveryTurn, turnID)
 	}
 	if err != nil {
 		return 0, 0, err

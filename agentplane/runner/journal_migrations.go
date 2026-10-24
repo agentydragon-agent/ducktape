@@ -21,9 +21,7 @@ func migrateJournalSchema(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	provider, err := goose.NewProvider(
-		goose.DialectSQLite3,
-		db,
-		files,
+		goose.DialectSQLite3, db, files,
 		goose.WithTableName(journalMigrationTableName),
 		goose.WithDisableGlobalRegistry(true),
 		goose.WithSlog(slog.Default()),

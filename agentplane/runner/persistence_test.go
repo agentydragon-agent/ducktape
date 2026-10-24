@@ -1,10 +1,12 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,6 +16,8 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/pressly/goose/v3"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -115,8 +119,8 @@ func TestOpenJournalReopensPythonSchemaAndKeepsStoredBytes(t *testing.T) {
 	if err := journal.conn.QueryRowContext(ctx, "SELECT MAX(version_id) FROM "+journalMigrationTableName).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 1 {
-		t.Fatalf("Goose migration version = %d, want 1", version)
+	if version != 2 {
+		t.Fatalf("Goose migration version = %d, want 2", version)
 	}
 }
 
@@ -239,12 +243,11 @@ func TestOneEventCoalescesCommandReceiptsAtomically(t *testing.T) {
 	}
 	event := &eventpb.Event{
 		Observation: &eventpb.Event_HarnessUserMessageConfirmed{HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{
-			OriginCommandIds: []string{"input-a", "input-b"}, Text: "combined",
+			OriginCommandIds: []string{"input-a", "input-b"}, Text: "combined", HarnessMessageId: "native-7", TurnId: "turn-1",
 		}},
 	}
 	receipt, err := journal.Append(ctx, event, AppendOptions{
 		TerminalCommandIDs: []string{"input-a", "input-b"},
-		NativeCorrelation:  map[string]string{"message_id": "native-7"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -254,9 +257,16 @@ func TestOneEventCoalescesCommandReceiptsAtomically(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if command == nil || command.TerminalCursor == nil || *command.TerminalCursor != receipt.GetCursor() || command.NativeCorrelation["message_id"] != "native-7" {
+		if command == nil || command.TerminalCursor == nil || *command.TerminalCursor != receipt.GetCursor() {
 			t.Fatalf("receipt for %s = %+v", id, command)
 		}
+	}
+	entries, err := journal.Since(ctx, receipt.GetCursor()-1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !proto.Equal(entries[0].GetEvent().GetHarnessUserMessageConfirmed(), event.GetHarnessUserMessageConfirmed()) {
+		t.Fatalf("terminal receipt event = %v", entries)
 	}
 	before := journal.LastCursor()
 	_, err = journal.Append(ctx, &eventpb.Event{
@@ -267,6 +277,239 @@ func TestOneEventCoalescesCommandReceiptsAtomically(t *testing.T) {
 	}
 	if journal.LastCursor() != before {
 		t.Fatalf("rejected receipt append published cursor %d; want %d", journal.LastCursor(), before)
+	}
+}
+
+func TestNativeRequestSurvivesJournalReopenAndPartialSettlement(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "journal.sqlite")
+	journal, err := OpenJournal(ctx, path, "test-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands := []*commandpb.Command{
+		{CommandId: "model-1", Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: "test-model"}}},
+		{CommandId: "effort-1", Operation: &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: "high"}}},
+		{CommandId: "input-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}},
+	}
+	for _, command := range commands {
+		if _, _, err := journal.Admit(ctx, command, ""); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := journal.DispatchPlanned(ctx, command.CommandId); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := journal.RecordNativeRequest(ctx, "request-1", harness.CodexTurnStart, []string{"input-1", "model-1", "effort-1"}); err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := journal.Append(ctx, &eventpb.Event{
+		Observation: &eventpb.Event_ModelChanged{ModelChanged: &eventpb.ModelChanged{CommandId: "model-1", Model: "test-model"}},
+	}, AppendOptions{TerminalCommandIDs: []string{"model-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	journal, err = OpenJournal(ctx, path, "test-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+	requests, err := journal.PendingNativeRequests(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 1 || requests[0].ID != "request-1" || requests[0].Kind != harness.CodexTurnStart || len(requests[0].Commands) != 3 {
+		t.Fatalf("recovered requests = %+v", requests)
+	}
+	for i, record := range requests[0].Commands {
+		if !proto.Equal(record.Command, commands[i]) || !record.DispatchPlanned {
+			t.Fatalf("recovered command = %+v", record)
+		}
+	}
+	if cursor := requests[0].Commands[0].TerminalCursor; cursor == nil || *cursor != receipt.GetCursor() {
+		t.Fatalf("lost settled model receipt: %v", cursor)
+	}
+	if _, err := journal.Append(ctx, &eventpb.Event{
+		Observation: &eventpb.Event_ReasoningEffortChanged{ReasoningEffortChanged: &eventpb.ReasoningEffortChanged{CommandId: "effort-1", Effort: "high"}},
+	}, AppendOptions{TerminalCommandIDs: []string{"effort-1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.Append(ctx, &eventpb.Event{
+		Observation: &eventpb.Event_HarnessUserMessageConfirmed{HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{OriginCommandIds: []string{"input-1"}, HarnessMessageId: "message-1", TurnId: "turn-1", Text: "hello"}},
+	}, AppendOptions{TerminalCommandIDs: []string{"input-1"}}); err != nil {
+		t.Fatal(err)
+	}
+	requests, err = journal.PendingNativeRequests(ctx)
+	if err != nil || len(requests) != 0 {
+		t.Fatalf("settled requests = %+v, error = %v", requests, err)
+	}
+}
+
+func TestJournalMigratesNativeRequests(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		legacy string
+		kind   harness.NativeRequestKind
+	}{
+		{name: "empty", legacy: `{}`},
+		{
+			name:   "receipt",
+			legacy: `{"harness_message_id":"message-1","turn_id":"turn-1"}`,
+		},
+		{
+			name: "claude-submit", kind: harness.ClaudeSubmit,
+			legacy: `{"claude.submit.message_uuid":"message-1"}`,
+		},
+		{
+			name: "claude-model", kind: harness.ClaudeModelChange,
+			legacy: `{"claude.model.request_id":"request-1","claude.model.value":"test-model"}`,
+		},
+		{
+			name: "claude-effort", kind: harness.ClaudeEffortChange,
+			legacy: `{"claude.effort.request_id":"request-1","claude.effort.value":"high"}`,
+		},
+		{
+			name: "codex-start", kind: harness.CodexTurnStart,
+			legacy: `{"codex.turn_start.request_id":"request-1"}`,
+		},
+		{
+			name: "codex-start-with-changes-and-receipt", kind: harness.CodexTurnStart,
+			legacy: `{"codex.turn_start.request_id":"request-1","codex.turn_start.model_command_id":"model-1","codex.turn_start.model_value":"test-model","codex.turn_start.effort_command_id":"effort-1","codex.turn_start.effort_value":"high","harness_message_id":"message-1","turn_id":"turn-1"}`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			path := filepath.Join(t.TempDir(), "journal.sqlite")
+			db, err := sql.Open("sqlite", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			files, err := fs.Sub(journalMigrationFiles, "journal_migrations")
+			if err != nil {
+				t.Fatal(err)
+			}
+			provider, err := goose.NewProvider(goose.DialectSQLite3, db, files,
+				goose.WithTableName(journalMigrationTableName), goose.WithDisableGlobalRegistry(true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := provider.UpTo(ctx, 1); err != nil {
+				t.Fatal(err)
+			}
+			operation := &commandpb.Command{CommandId: "input-legacy", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
+			if test.kind == harness.ClaudeModelChange {
+				operation.Operation = &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: "test-model"}}
+			}
+			if test.kind == harness.ClaudeEffortChange {
+				operation.Operation = &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: "high"}}
+			}
+			commands := []*commandpb.Command{operation}
+			if test.name == "codex-start-with-changes-and-receipt" {
+				commands = append(commands,
+					&commandpb.Command{CommandId: "model-1", Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: "test-model"}}},
+					&commandpb.Command{CommandId: "effort-1", Operation: &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: "high"}}})
+			}
+			var entryBytes [][]byte
+			for i, command := range commands {
+				payload, err := proto.Marshal(command)
+				if err != nil {
+					t.Fatal(err)
+				}
+				entry := &eventlogpb.EventEntry{
+					Cursor: uint64(i + 1), Origin: &eventlogpb.EventOrigin{SourceId: "test-source", Sequence: uint64(i + 1)},
+					Event: &eventpb.Event{Observation: &eventpb.Event_CommandAdmitted{CommandAdmitted: &eventpb.CommandAdmitted{Command: command}}},
+				}
+				encoded, err := proto.Marshal(entry)
+				if err != nil {
+					t.Fatal(err)
+				}
+				entryBytes = append(entryBytes, encoded)
+				if _, err := db.ExecContext(ctx, "INSERT INTO event_entry VALUES (?, ?)", i+1, encoded); err != nil {
+					t.Fatal(err)
+				}
+				correlation := "{}"
+				if i == 0 {
+					correlation = test.legacy
+				}
+				if _, err := db.ExecContext(ctx, "INSERT INTO command VALUES (?, ?, ?, 1, ?, NULL)", command.CommandId, payload, i+1, correlation); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var terminalCursor *uint64
+			if test.name == "receipt" || test.name == "codex-start-with-changes-and-receipt" {
+				cursor := uint64(len(entryBytes) + 1)
+				terminalCursor = &cursor
+				entry := &eventlogpb.EventEntry{
+					Cursor: cursor, Origin: &eventlogpb.EventOrigin{SourceId: "test-source", Sequence: cursor},
+					Event: &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{OriginCommandIds: []string{operation.CommandId}, HarnessMessageId: "message-1", TurnId: "turn-1", Text: "hello"}}},
+				}
+				encoded, err := proto.Marshal(entry)
+				if err != nil {
+					t.Fatal(err)
+				}
+				entryBytes = append(entryBytes, encoded)
+				if _, err := db.ExecContext(ctx, "INSERT INTO event_entry VALUES (?, ?)", cursor, encoded); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.ExecContext(ctx, "UPDATE command SET terminal_cursor = ? WHERE command_id = ?", cursor, operation.CommandId); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := db.ExecContext(ctx, "INSERT INTO checkpoint VALUES (1, 'test-source', ?, 0, '')", len(entryBytes)); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				journal, err := OpenJournal(ctx, path, "test-source")
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer journal.Close()
+				requests, err := journal.PendingNativeRequests(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if test.kind == "" {
+					if len(requests) != 0 {
+						t.Fatalf("unexpected requests: %+v", requests)
+					}
+				} else {
+					if len(requests) != 1 || requests[0].Kind != test.kind || len(requests[0].Commands) != len(commands) {
+						t.Fatalf("migrated requests = %+v", requests)
+					}
+					for i, record := range requests[0].Commands {
+						if !proto.Equal(record.Command, commands[i]) || !record.DispatchPlanned {
+							t.Fatalf("migrated command = %+v", record)
+						}
+					}
+				}
+				mainRecord, err := journal.GetCommand(ctx, operation.CommandId)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if mainRecord == nil || (mainRecord.TerminalCursor == nil) != (terminalCursor == nil) {
+					t.Fatalf("lost command receipt: %+v", mainRecord)
+				}
+				if terminalCursor != nil && *mainRecord.TerminalCursor != *terminalCursor {
+					t.Fatalf("receipt cursor = %d, want %d", *mainRecord.TerminalCursor, *terminalCursor)
+				}
+				for i, original := range entryBytes {
+					var retained []byte
+					if err := journal.conn.QueryRowContext(ctx, "SELECT payload FROM event_entry WHERE cursor = ?", i+1).Scan(&retained); err != nil {
+						t.Fatal(err)
+					}
+					if !bytes.Equal(retained, original) {
+						t.Fatal("migration rewrote event bytes")
+					}
+				}
+				if err := journal.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
 	}
 }
 

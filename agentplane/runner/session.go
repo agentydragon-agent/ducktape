@@ -56,6 +56,14 @@ type matchedReply struct {
 }
 type interruptTargetKey struct{}
 
+// Run read-only reconciliation off the stdout reader, which must deliver its RPC replies.
+type pendingReconciliation struct {
+	turnID  string
+	adapter harness.Adapter
+	sources []uint64
+	ready   bool
+}
+
 type Session struct {
 	runner                                                      *Runner
 	id                                                          string
@@ -65,11 +73,14 @@ type Session struct {
 	admitMu                                                     sync.Mutex
 	writeMu                                                     sync.Mutex
 	shutdownMu                                                  sync.Mutex
+	reconcileMu                                                 sync.Mutex
 	process                                                     *Process
 	adapter                                                     harness.Adapter
 	processID                                                   string
 	processState                                                runnerpb.ProcessState
 	ready, resuming, stopping, sealing, tearingDown, activating bool
+	reconciliations                                             []*pendingReconciliation
+	reconciling                                                 bool
 	activeTurn                                                  string
 	setup                                                       runnerpb.SetupState
 	launch                                                      runnerpb.LaunchOutcome
@@ -122,6 +133,9 @@ func (s *Session) hostedAdapter() harness.Adapter {
 	return s.adapter
 }
 func (s *Session) Journal() harness.AdapterJournal { return s.journal }
+func (s *Session) RecordNativeRequest(ctx context.Context, requestID string, kind harness.NativeRequestKind, commandIDs []string) error {
+	return s.journal.RecordNativeRequest(ctx, requestID, kind, commandIDs)
+}
 
 func (s *Session) apply(entry *eventlogpb.EventEntry, ids []string) {
 	e := entry.Event
@@ -174,7 +188,7 @@ func (s *Session) apply(entry *eventlogpb.EventEntry, ids []string) {
 	}
 }
 
-func (s *Session) recordEvent(ctx context.Context, e *eventpb.Event, sources []uint64, ids []string, correlation map[string]string) (*eventlogpb.EventEntry, error) {
+func (s *Session) recordEvent(ctx context.Context, e *eventpb.Event, sources []uint64, ids []string) (*eventlogpb.EventEntry, error) {
 	// Turn transitions share the final native-write gate with exact-turn controls.
 	// Once a successor is recorded, an interrupt cannot reach its stdin under the
 	// predecessor's identity.
@@ -182,7 +196,7 @@ func (s *Session) recordEvent(ctx context.Context, e *eventpb.Event, sources []u
 		s.writeMu.Lock()
 		defer s.writeMu.Unlock()
 	}
-	entry, err := s.journal.Append(ctx, e, AppendOptions{Sources: sources, TerminalCommandIDs: ids, NativeCorrelation: correlation})
+	entry, err := s.journal.Append(ctx, e, AppendOptions{Sources: sources, TerminalCommandIDs: ids})
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +209,7 @@ func (s *Session) Emit(ctx context.Context, e *eventpb.Event, sources []uint64) 
 	if turn := e.GetTurnCompleted(); turn != nil {
 		return s.completeTurn(ctx, turn, sources)
 	}
-	_, err := s.recordEvent(ctx, e, sources, nil, nil)
+	_, err := s.recordEvent(ctx, e, sources, nil)
 	return err
 }
 
@@ -203,11 +217,16 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 	if err := s.journal.CommitBatch(ctx); err != nil {
 		return err
 	}
+	var reconciliation *pendingReconciliation
 	s.mu.Lock()
 	interrupt := s.interrupts[turn.TurnId]
 	delete(s.interrupts, turn.TurnId)
 	adapter := s.adapter
 	teardown := s.tearingDown
+	if turn.Status == eventpb.TurnStatus_TURN_STATUS_INTERRUPTED && adapter != nil {
+		reconciliation = &pendingReconciliation{turnID: turn.TurnId, adapter: adapter, sources: append([]uint64(nil), sources...)}
+		s.reconciliations = append(s.reconciliations, reconciliation)
+	}
 	s.mu.Unlock()
 	ids := []string{}
 	if turn.Status == eventpb.TurnStatus_TURN_STATUS_INTERRUPTED {
@@ -217,8 +236,13 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 			ids = append(ids, interrupt)
 		}
 	}
-	if _, err := s.recordEvent(ctx, observation(turn), sources, ids, map[string]string{"turn_id": turn.TurnId}); err != nil {
+	if _, err := s.recordEvent(ctx, observation(turn), sources, ids); err != nil {
 		return err
+	}
+	if reconciliation != nil {
+		s.mu.Lock()
+		reconciliation.ready = true
+		s.mu.Unlock()
 	}
 	if turn.Status == eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST {
 		items, err := s.journal.ObservedItems(ctx, turn.TurnId)
@@ -226,14 +250,6 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 			return err
 		}
 		if err := s.Emit(ctx, observation(harness.UnknownReport(turn.TurnId, items, "the harness exited before continuation could be inspected")), nil); err != nil {
-			return err
-		}
-	} else if turn.Status == eventpb.TurnStatus_TURN_STATUS_INTERRUPTED && adapter != nil {
-		report, err := adapter.Reconcile(ctx, turn.TurnId, false)
-		if err != nil {
-			return err
-		}
-		if err := s.Emit(ctx, observation(report), sources); err != nil {
 			return err
 		}
 	}
@@ -247,12 +263,12 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 }
 
 func (s *Session) FailCommand(ctx context.Context, id, reason string, sources []uint64) error {
-	_, err := s.recordEvent(ctx, observation(&eventpb.CommandFailed{CommandId: id, Reason: reason}), sources, []string{id}, nil)
+	_, err := s.recordEvent(ctx, observation(&eventpb.CommandFailed{CommandId: id, Reason: reason}), sources, []string{id})
 	return err
 }
 
 func (s *Session) NoopCommand(ctx context.Context, id, reason string, sources []uint64) error {
-	_, err := s.recordEvent(ctx, observation(&eventpb.CommandNoop{CommandId: id, Reason: reason}), sources, []string{id}, nil)
+	_, err := s.recordEvent(ctx, observation(&eventpb.CommandNoop{CommandId: id, Reason: reason}), sources, []string{id})
 	return err
 }
 
@@ -272,7 +288,7 @@ func (s *Session) ModelChanged(ctx context.Context, id, model string, sources []
 	if err := s.runner.store.Write(s.id, record); err != nil {
 		return err
 	}
-	_, err = s.recordEvent(ctx, observation(&eventpb.ModelChanged{CommandId: id, PreviousModel: previous, Model: model}), sources, []string{id}, nil)
+	_, err = s.recordEvent(ctx, observation(&eventpb.ModelChanged{CommandId: id, PreviousModel: previous, Model: model}), sources, []string{id})
 	return err
 }
 
@@ -292,7 +308,7 @@ func (s *Session) ReasoningEffortChanged(ctx context.Context, id, effort string,
 	if err := s.runner.store.Write(s.id, record); err != nil {
 		return err
 	}
-	_, err = s.recordEvent(ctx, observation(&eventpb.ReasoningEffortChanged{CommandId: id, PreviousEffort: previous, Effort: effort}), sources, []string{id}, nil)
+	_, err = s.recordEvent(ctx, observation(&eventpb.ReasoningEffortChanged{CommandId: id, PreviousEffort: previous, Effort: effort}), sources, []string{id})
 	return err
 }
 
@@ -300,10 +316,24 @@ func (s *Session) ConfirmUserMessage(ctx context.Context, c harness.UserMessageC
 	if len(c.OriginCommandIDs) == 0 {
 		return errors.New("native confirmation has no originating command")
 	}
+	pending := false
+	for _, id := range c.OriginCommandIDs {
+		record, err := s.journal.GetCommand(ctx, id)
+		if err != nil {
+			return err
+		}
+		if record == nil {
+			return fmt.Errorf("%w %q", ErrUnknownCommand, id)
+		}
+		pending = pending || record.TerminalCursor == nil
+	}
+	if !pending {
+		return nil
+	}
 	if err := s.checkpoint(ctx, "before-user-message-confirmed", c.OriginCommandIDs[0]); err != nil {
 		return err
 	}
-	_, err := s.recordEvent(ctx, observation(&eventpb.HarnessUserMessageConfirmed{HarnessMessageId: c.HarnessMessageID, Text: c.Text, OriginCommandIds: c.OriginCommandIDs, TurnId: c.TurnID}), sources, c.OriginCommandIDs, map[string]string{"harness_message_id": c.HarnessMessageID, "turn_id": c.TurnID})
+	_, err := s.recordEvent(ctx, observation(&eventpb.HarnessUserMessageConfirmed{HarnessMessageId: c.HarnessMessageID, Text: c.Text, OriginCommandIds: c.OriginCommandIDs, TurnId: c.TurnID}), sources, c.OriginCommandIDs)
 	if err != nil {
 		return err
 	}
@@ -474,8 +504,20 @@ func (s *Session) startHarness(ctx context.Context) error {
 	}
 }
 
+func recoverAdapter(ctx context.Context, adapter harness.Adapter) error {
+	if recovery, ok := adapter.(harness.RecoveryAdapter); ok {
+		if err := recovery.Recover(ctx); err != nil {
+			return fmt.Errorf("recover pending native requests: %w", err)
+		}
+	}
+	return nil
+}
+
 // startProcess runs this Session's own native harness process.
 func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapter) error {
+	if err := recoverAdapter(ctx, adapter); err != nil {
+		return err
+	}
 	command, err := adapter.Command()
 	if err != nil {
 		return err
@@ -528,7 +570,10 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 		return err
 	}
 	server := s.runner.codex
-	adapter := codex.New(s, server.store)
+	adapter := codex.New(s)
+	if err := recoverAdapter(ctx, adapter); err != nil {
+		return err
+	}
 	// Frames for every hosted Session, and the exit of a start it makes, can reach this one as soon as
 	// it is hosted.
 	s.mu.Lock()
@@ -615,6 +660,16 @@ func (s *Session) commandLoop() {
 		case <-s.kick:
 		}
 		s.mu.Lock()
+		running := s.ready
+		s.mu.Unlock()
+		if !running {
+			continue
+		}
+		if err := s.reconcilePending(s.runner.ctx); err != nil {
+			s.runner.fail(err)
+			return
+		}
+		s.mu.Lock()
 		ready := s.ready && !s.sealing
 		s.mu.Unlock()
 		if !ready {
@@ -625,6 +680,9 @@ func (s *Session) commandLoop() {
 			s.runner.fail(err)
 			return
 		}
+		s.mu.Lock()
+		adapter := s.adapter
+		s.mu.Unlock()
 		for _, command := range commands {
 			if command.GetInterruptTurn() != nil {
 				s.dispatchControl(command)
@@ -634,6 +692,33 @@ func (s *Session) commandLoop() {
 				s.runner.fail(err)
 				return
 			}
+			if adapter != nil && adapter.BlocksCommandDispatch() {
+				break
+			}
+		}
+	}
+}
+
+func (s *Session) reconcilePending(ctx context.Context) error {
+	s.reconcileMu.Lock()
+	defer s.reconcileMu.Unlock()
+	for {
+		s.mu.Lock()
+		if len(s.reconciliations) == 0 || !s.reconciliations[0].ready {
+			s.reconciling = false
+			s.mu.Unlock()
+			return nil
+		}
+		pending := s.reconciliations[0]
+		s.reconciliations = s.reconciliations[1:]
+		s.reconciling = true
+		s.mu.Unlock()
+		report, err := pending.adapter.Reconcile(ctx, pending.turnID, false)
+		if err != nil {
+			return err
+		}
+		if err := s.Emit(ctx, observation(report), pending.sources); err != nil {
+			return err
 		}
 	}
 }
@@ -650,7 +735,7 @@ func (s *Session) dispatchControl(command *commandpb.Command) {
 
 func (s *Session) dispatch(ctx context.Context, c *commandpb.Command) error {
 	s.mu.Lock()
-	if s.dispatched[c.CommandId] || s.adapter == nil || !s.ready || (s.sealing && c.GetInterruptTurn() == nil) {
+	if s.dispatched[c.CommandId] || s.adapter == nil || !s.ready || s.reconciling || len(s.reconciliations) != 0 || (s.sealing && c.GetInterruptTurn() == nil) {
 		s.mu.Unlock()
 		return nil
 	}
@@ -662,6 +747,10 @@ func (s *Session) dispatch(ctx context.Context, c *commandpb.Command) error {
 		return err
 	}
 	if stored == nil || stored.TerminalCursor != nil {
+		return nil
+	}
+	if stored.DispatchPlanned {
+		// This marker is committed before native I/O. Its presence cannot prove that retry is safe.
 		return nil
 	}
 	if input := c.GetSubmitInput(); input != nil && input.Text == "" {
@@ -704,11 +793,7 @@ func (s *Session) dispatch(ctx context.Context, c *commandpb.Command) error {
 		s.admitMu.Unlock()
 		return nil
 	}
-	correlation := map[string]string{}
-	if v := c.GetInterruptTurn(); v != nil {
-		correlation["turn_id"] = v.TurnId
-	}
-	planned, err := s.journal.DispatchPlanned(ctx, c.CommandId, correlation)
+	planned, err := s.journal.DispatchPlanned(ctx, c.CommandId)
 	s.admitMu.Unlock()
 	if err != nil || !planned {
 		return err
@@ -739,6 +824,9 @@ func (s *Session) dispatch(ctx context.Context, c *commandpb.Command) error {
 		err = errors.New("unrecognized command operation")
 	}
 	if err != nil {
+		if errors.Is(err, harness.ErrNativeResponsePending) {
+			return nil
+		}
 		if errors.Is(err, errStaleInterrupt) {
 			return s.NoopCommand(ctx, c.CommandId, err.Error(), nil)
 		}
@@ -777,10 +865,16 @@ func (s *Session) SendNative(ctx context.Context, frame json.RawMessage) error {
 			return err
 		}
 	}
-	return process.WriteLine(ctx, string(frame))
+	if err := process.WriteLine(ctx, string(frame)); err != nil {
+		return &harness.NativeResponsePendingError{Cause: err}
+	}
+	return nil
 }
 
-func (s *Session) RequestNative(ctx context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (harness.NativeReceipt, error) {
+// RequestNativeHandshake sequences native startup and read-only history exchanges. It must not
+// run on the stdout reader that delivers the reply. Runtime commands use send-and-observe
+// transitions instead, so their scheduler never waits here for a native response.
+func (s *Session) RequestNativeHandshake(ctx context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (harness.NativeReceipt, error) {
 	waiter := &nativeWaiter{matches: match, result: make(chan nativeResult, 1)}
 	s.mu.Lock()
 	s.waiters = append(s.waiters, waiter)
@@ -798,20 +892,16 @@ func (s *Session) RequestNative(ctx context.Context, frame json.RawMessage, matc
 	if err := s.SendNative(ctx, frame); err != nil {
 		return harness.NativeReceipt{}, err
 	}
-	timer := time.NewTimer(60 * time.Second)
-	defer timer.Stop()
 	select {
 	case reply := <-waiter.result:
 		return reply.receipt, reply.err
 	case <-ctx.Done():
-		return harness.NativeReceipt{}, ctx.Err()
-	case <-timer.C:
-		return harness.NativeReceipt{}, errors.New("native request did not receive its response within 60s")
+		return harness.NativeReceipt{}, &harness.NativeResponsePendingError{Cause: ctx.Err()}
 	}
 }
 
 func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adapter) error {
-	entry, err := s.recordEvent(ctx, observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: string(line)}), nil, nil, nil)
+	entry, err := s.recordEvent(ctx, observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: string(line)}), nil, nil)
 	if err != nil {
 		return err
 	}
@@ -882,6 +972,7 @@ func (s *Session) readStdout(process *Process, adapter harness.Adapter) {
 				readErr = e
 				break
 			}
+			s.wake()
 			s.deliverReplies()
 			if len(pending) > harness.MaxFrameLineBytes {
 				readErr = errors.New("native frame exceeded the 64 MiB limit")
@@ -893,6 +984,7 @@ func (s *Session) readStdout(process *Process, adapter harness.Adapter) {
 				if e := s.journal.WithBatch(s.runner.ctx, func(ctx context.Context) error { return s.receive(ctx, bytes.TrimRight(pending, "\r"), adapter) }); e != nil {
 					readErr = e
 				} else {
+					s.wake()
 					s.deliverReplies()
 				}
 			}
@@ -1032,6 +1124,13 @@ func (s *Session) recover(ctx context.Context) error {
 	}
 	for _, c := range commands {
 		if c.GetInterruptTurn() != nil {
+			stored, err := s.journal.GetCommand(ctx, c.CommandId)
+			if err != nil {
+				return err
+			}
+			if stored == nil || stored.DispatchPlanned {
+				continue
+			}
 			if err := s.NoopCommand(ctx, c.CommandId, "the target turn is no longer active after the runner restarted", nil); err != nil {
 				return err
 			}

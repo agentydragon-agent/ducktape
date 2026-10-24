@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 	"sync"
 
@@ -42,31 +40,38 @@ type codexTurnStart struct {
 }
 
 type codexAdapter struct {
-	host harness.AdapterHost
-	// store is the Runner's one Codex home, shared by every Codex Session.
-	store string
+	historyMu      sync.Mutex
+	host           harness.AdapterHost
+	historyMode    *protocol.ThreadHistoryMode
+	resumedHistory *codexHistorySnapshot
 
 	mu                   sync.Mutex
 	threadID             string
 	adapterID            string
-	nextRequest          uint64
 	pendingModelChanges  []codexPendingChange
 	pendingEffortChanges []codexPendingChange
 	turnStarts           map[string]codexTurnStart
+	processingResponses  map[string]bool
 }
 
 // New creates an adapter for one runner-owned Session hosted as a thread of the Runner's shared
-// app-server, whose Codex home is `store`.
-func New(host harness.AdapterHost, store string) harness.Adapter {
+// app-server. Native history is read through that server's public RPCs.
+func New(host harness.AdapterHost) harness.Adapter {
 	snapshot := host.Session()
 	threadID := ""
 	if snapshot.Resuming {
 		threadID = snapshot.NativeSessionID
 	}
 	return &codexAdapter{
-		host: host, store: store, threadID: threadID, adapterID: uuid.NewString(),
-		turnStarts: make(map[string]codexTurnStart),
+		host: host, threadID: threadID, adapterID: uuid.NewString(),
+		turnStarts: make(map[string]codexTurnStart), processingResponses: make(map[string]bool),
 	}
+}
+
+func (a *codexAdapter) BlocksCommandDispatch() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.turnStarts) != 0
 }
 
 // Handshake starts or resumes this Session's thread on the shared app-server, which the Runner has
@@ -129,58 +134,129 @@ func (a *codexAdapter) Handshake(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("Codex %s returned no result", method)
 	}
 	var nativeThreadID string
+	var historyMode *protocol.ThreadHistoryMode
 	if method == "thread/resume" {
 		var response protocol.ThreadResumeResponse
 		if err := json.Unmarshal(result, &response); err != nil {
 			return "", err
 		}
 		nativeThreadID = response.Thread.ID
+		historyMode = response.Thread.HistoryMode
 	} else {
 		var response protocol.ThreadStartResponse
 		if err := json.Unmarshal(result, &response); err != nil {
 			return "", err
 		}
 		nativeThreadID = response.Thread.ID
+		historyMode = response.Thread.HistoryMode
 	}
 	if nativeThreadID == "" {
 		return "", fmt.Errorf("Codex %s returned no thread id", method)
 	}
 	a.mu.Lock()
 	a.threadID = nativeThreadID
+	a.historyMode = historyMode
 	a.mu.Unlock()
 	return nativeThreadID, nil
 }
 
-func (a *codexAdapter) Reconcile(ctx context.Context, turnID string, _ bool) (*eventpb.ConversationReconciled, error) {
-	observed, err := a.host.Journal().ObservedItems(ctx, turnID)
+func (a *codexAdapter) Recover(ctx context.Context) error {
+	pending, err := a.host.Journal().PendingCommandRecords(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	requests, err := a.host.Journal().PendingNativeRequests(ctx)
+	if err != nil {
+		return err
+	}
+	requestIDs := map[string]bool{}
+	inFlightChanges := map[string]bool{}
+	var replayFrom uint64
 	a.mu.Lock()
-	threadID := a.threadID
-	a.mu.Unlock()
-	recovered, err := readCodexHistory(a.store, threadID, observed)
-	if err != nil {
-		return harness.UnknownReport(turnID, observed, "cannot inspect native continuation: "+err.Error()), nil
+	for _, request := range requests {
+		if request.Kind != harness.CodexTurnStart {
+			a.mu.Unlock()
+			return fmt.Errorf("unexpected Codex request kind %q", request.Kind)
+		}
+		start := codexTurnStart{}
+		for _, record := range request.Commands {
+			command := record.Command
+			if input := command.GetSubmitInput(); input != nil {
+				start.commandID, start.text = command.GetCommandId(), input.GetText()
+				before := uint64(0)
+				if record.AdmittedCursor > 0 {
+					before = record.AdmittedCursor - 1
+				}
+				if len(requestIDs) == 0 || before < replayFrom {
+					replayFrom = before
+				}
+			}
+			inFlightChanges[command.GetCommandId()] = true
+			if record.TerminalCursor != nil {
+				continue
+			}
+			if model := command.GetChangeModel(); model != nil {
+				start.modelChange = &codexPendingChange{commandID: command.GetCommandId(), value: model.GetModel()}
+			}
+			if effort := command.GetChangeReasoningEffort(); effort != nil {
+				start.effortChange = &codexPendingChange{commandID: command.GetCommandId(), value: effort.GetEffort()}
+			}
+		}
+		if start.commandID == "" || start.text == "" {
+			a.mu.Unlock()
+			return fmt.Errorf("Codex turn/start request %q requires an input command", request.ID)
+		}
+		a.turnStarts[request.ID] = start
+		requestIDs[request.ID] = true
 	}
-	if recovered == nil {
-		return harness.UnknownReport(turnID, observed, "native continuation evidence is unavailable or unsupported"), nil
-	}
-	report := &eventpb.ConversationReconciled{TurnId: turnID}
-	for _, itemID := range slices.Sorted(maps.Keys(observed)) {
-		item := observed[itemID]
-		if item.Kind == eventpb.ItemKind_ITEM_KIND_TOOL_CALL && item.ToolName != "commandExecution" {
-			report.Items = append(report.Items, harness.UnknownItem(item.ItemID, fmt.Sprintf("the adapter does not match %s items to saved function calls", item.ToolName)))
+	for _, record := range pending {
+		if !record.DispatchPlanned || inFlightChanges[record.Command.GetCommandId()] {
 			continue
 		}
-		recoveredItem, ok := recovered[itemID]
-		if !ok {
-			report.Items = append(report.Items, harness.CompareItem(item, nil))
-		} else {
-			report.Items = append(report.Items, harness.CompareItem(item, &recoveredItem))
+		command := record.Command
+		if model := command.GetChangeModel(); model != nil {
+			a.pendingModelChanges = append(a.pendingModelChanges, codexPendingChange{commandID: command.GetCommandId(), value: model.GetModel()})
+		}
+		if effort := command.GetChangeReasoningEffort(); effort != nil {
+			a.pendingEffortChanges = append(a.pendingEffortChanges, codexPendingChange{commandID: command.GetCommandId(), value: effort.GetEffort()})
 		}
 	}
-	return report, nil
+	a.mu.Unlock()
+	if len(requestIDs) == 0 {
+		return nil
+	}
+
+	cursor := replayFrom
+	for cursor < a.host.Journal().LastCursor() {
+		entries, err := a.host.Journal().Since(ctx, cursor, 128)
+		if err != nil {
+			return err
+		}
+		if len(entries) == 0 {
+			break
+		}
+		for _, entry := range entries {
+			cursor = entry.GetCursor()
+			native := entry.GetEvent().GetNative()
+			if native == nil || native.GetDirection() != eventpb.Direction_DIRECTION_FROM_HARNESS {
+				continue
+			}
+			var frame codexWireFrame
+			if json.Unmarshal([]byte(native.GetLine()), &frame) != nil || len(frame.ID) == 0 || frame.Method != "" {
+				continue
+			}
+			requestID, ok := jsonString(frame.ID)
+			if !ok || !requestIDs[requestID] {
+				continue
+			}
+			sequence := entry.GetOrigin().GetSequence()
+			if err := a.onResponse(ctx, frame, requestID, []uint64{sequence}); err != nil {
+				return err
+			}
+			delete(requestIDs, requestID)
+		}
+	}
+	return nil
 }
 
 func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error {
@@ -212,25 +288,35 @@ func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error
 		return err
 	}
 	start := codexTurnStart{commandID: commandID, text: text, modelChange: modelChange, effortChange: effortChange}
+	commandIDs := []string{commandID}
+	if modelChange != nil {
+		commandIDs = append(commandIDs, modelChange.commandID)
+	}
+	if effortChange != nil {
+		commandIDs = append(commandIDs, effortChange.commandID)
+	}
+	if err := a.host.RecordNativeRequest(ctx, requestID, harness.CodexTurnStart, commandIDs); err != nil {
+		return err
+	}
 	a.mu.Lock()
 	a.turnStarts[requestID] = start
 	a.mu.Unlock()
-	response, sourceSequence, err := a.request(ctx, requestID, map[string]any{
+	if err := a.send(ctx, map[string]any{
 		"method": "turn/start", "id": requestID,
 		"params": protocol.TurnStartParams{
 			ThreadID: threadID, Input: []protocol.UserInput{{Type: "text", Text: &text}},
 			Model: &model, Effort: &effort,
 		},
-	})
-	if err != nil {
-		a.mu.Lock()
-		delete(a.turnStarts, requestID)
-		a.mu.Unlock()
+	}); err != nil {
+		if !errors.Is(err, harness.ErrNativeResponsePending) {
+			a.mu.Lock()
+			delete(a.turnStarts, requestID)
+			a.mu.Unlock()
+		}
 		return err
 	}
-	// The native reader also dispatches this receipt to OnFrame. The pending request is removed
-	// atomically there, so calling it here closes the gap if the response waiter won the race.
-	return a.onResponse(ctx, response, requestID, []uint64{sourceSequence}, sourceSequence)
+	// The command remains pending until OnFrame observes the journaled turn/start response.
+	return nil
 }
 
 func (a *codexAdapter) Interrupt(ctx context.Context, turnID string) error {
@@ -241,7 +327,7 @@ func (a *codexAdapter) Interrupt(ctx context.Context, turnID string) error {
 	if err != nil {
 		return err
 	}
-	_, _, err = a.request(ctx, requestID, map[string]any{
+	err = a.send(ctx, map[string]any{
 		"method": "turn/interrupt", "id": requestID,
 		"params": protocol.TurnInterruptParams{ThreadID: threadID, TurnID: turnID},
 	})
@@ -325,7 +411,7 @@ func (a *codexAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceS
 	if len(frame.ID) > 0 && len(frame.Method) == 0 {
 		id, ok := jsonString(frame.ID)
 		if ok {
-			return a.onResponse(ctx, frame, id, sources, sourceSequence)
+			return a.onResponse(ctx, frame, id, sources)
 		}
 		return nil
 	}
@@ -390,16 +476,26 @@ func (a *codexAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceS
 	return nil
 }
 
-func (a *codexAdapter) onResponse(ctx context.Context, frame codexWireFrame, requestID string, sources []uint64, sequence uint64) error {
+func (a *codexAdapter) onResponse(ctx context.Context, frame codexWireFrame, requestID string, sources []uint64) error {
 	a.mu.Lock()
 	start, ok := a.turnStarts[requestID]
-	if ok {
+	if !ok || a.processingResponses[requestID] {
+		a.mu.Unlock()
+		return nil
+	}
+	a.processingResponses[requestID] = true
+	a.mu.Unlock()
+	err := a.applyTurnStartResponse(ctx, frame, start, sources)
+	a.mu.Lock()
+	delete(a.processingResponses, requestID)
+	if err == nil {
 		delete(a.turnStarts, requestID)
 	}
 	a.mu.Unlock()
-	if !ok {
-		return nil
-	}
+	return err
+}
+
+func (a *codexAdapter) applyTurnStartResponse(ctx context.Context, frame codexWireFrame, start codexTurnStart, sources []uint64) error {
 	if frame.Error != nil || len(frame.Result) == 0 || string(frame.Result) == "null" {
 		reason := "turn/start returned no result"
 		if frame.Error != nil {
@@ -434,7 +530,18 @@ func (a *codexAdapter) onResponse(ctx context.Context, frame codexWireFrame, req
 	if result.Turn.ID == "" {
 		return errors.New("Codex turn/start returned no turn id")
 	}
-	if result.Turn.ID != a.host.Session().ActiveTurnID {
+	started := false
+	turnEvents, err := a.host.Journal().TurnEvents(ctx, result.Turn.ID)
+	if err != nil && !errors.Is(err, harness.ErrUnknownRecoveryTurn) {
+		return err
+	}
+	for _, entry := range turnEvents {
+		if entry.GetEvent().GetTurnStarted() != nil {
+			started = true
+			break
+		}
+	}
+	if !started && result.Turn.ID != a.host.Session().ActiveTurnID {
 		if err := a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: result.Turn.ID, Model: a.host.Session().Model}}, sources); err != nil {
 			return err
 		}
@@ -598,7 +705,7 @@ func (a *codexAdapter) request(ctx context.Context, requestID string, request an
 	if err != nil {
 		return codexWireFrame{}, 0, err
 	}
-	receipt, err := a.host.RequestNative(ctx, frame, func(raw json.RawMessage) bool {
+	receipt, err := a.host.RequestNativeHandshake(ctx, frame, func(raw json.RawMessage) bool {
 		var response codexWireFrame
 		return json.Unmarshal(raw, &response) == nil && len(response.ID) > 0 && len(response.Method) == 0 && rawJSONIDEquals(response.ID, requestID)
 	})
@@ -614,10 +721,7 @@ func (a *codexAdapter) request(ctx context.Context, requestID string, request an
 
 // nextID names a request uniquely on the shared app-server, which carries every Codex Session's requests.
 func (a *codexAdapter) nextID() (string, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.nextRequest++
-	return fmt.Sprintf("agentplane-%s-%d", a.adapterID, a.nextRequest), nil
+	return "agentplane-" + uuid.NewString(), nil
 }
 
 func (a *codexAdapter) send(ctx context.Context, value any) error {

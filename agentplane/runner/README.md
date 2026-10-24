@@ -26,11 +26,11 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   each frame in the Sessions that `codex/router.go` assigns it to.
 - `transport.go`: the outbound control tunnel and independent per-Session ingress
   pushes, including heartbeat, replay, acknowledgement and backpressure.
-- `journal.go`, `journal_migrations/` and `store.go`: the Goose-managed SQLite
-  schema, verbatim protobuf Event blobs, session metadata, ingress acknowledgements
-  and ownership lock.
+- `journal.go`, `native_requests.go`, `journal_migrations/` and `store.go`: the Goose-managed SQLite
+  schema, verbatim protobuf Event blobs, native request records with foreign-key links
+  to their originating commands, session metadata, ingress acknowledgements and ownership lock.
   Transactions use `database/sql` with the cgo-free SQLite driver. Outcomes and all
-  coalesced command receipts commit together; publication and waiter replies follow commit.
+  coalesced command receipts commit together; publication and startup handshake replies follow commit.
 - `process.go`, `supervisor.go` and `cgroups.go`: native pipes and process
   isolation. The runner executes itself in an internal supervisor mode, which retains
   the state-owner descriptor until native work is fenced. A private liveness pipe
@@ -55,8 +55,9 @@ workspace tools and CA certificates are supplied by the runtime image.
 exported by the same pinned Codex executable used by the native tests. Requests,
 responses, notifications and known item payloads use these models. Method and item
 dispatch keep a raw JSON boundary for unknown variants; recorded native frames are
-never reconstructed from decoded models. Codex rollout history is a separate format
-and still has a dedicated reader. Schema export and JavaScript code generation are
+never reconstructed from decoded models. Codex reconciliation uses turn-scoped
+`thread/items/list` RPCs on that connection, with the same generated protocol types; it does not
+read Codex's private files or databases. Schema export and JavaScript code generation are
 build dependencies only.
 
 Claude stream events and assistant content blocks use the Anthropic Go SDK's
@@ -154,17 +155,19 @@ the app only folds that neutral report.
   of its message was written, and thinking that would otherwise be absent is unknown when a native
   line of the turn could not be parsed. Compacted or missing history and unfinished live tool outcomes
   remain unknown. The reader is tested against Claude Code 2.1.252.
-- `codex/history.go` reads model `response_item` records, not the app-server's reconstructed
-  turn-item projection, which can omit an unresolved call still sent to the model. In Codex
-  0.157.0, `core/src/tasks/mod.rs` flushes the interrupted-turn marker before the terminal
-  notification and then flushes that event; `core/src/context_manager/normalize.rs` supplies
-  `aborted` for a call with no output. The reader
-  reports this synthetic content as a revision without creating an execution result. A reasoning
-  item matches the saved `reasoning` record carrying its app-server id, and is absent without one.
-  Unmodeled tools, compacted history, and rollback remain unknown.
+- `codex/history.go` verifies paginated history and reads `thread/items/list` through the shared
+  app-server connection. It fetches only selected recovery turns and the original owning turns of
+  items that finish later, follows opaque cursors with limit 100, and shares one snapshot across
+  a resume. A turn without observations can still carry a compaction barrier for an earlier item;
+  an entirely empty recovery window needs no RPCs. Assistant text, visible reasoning summaries and
+  fully observed completed command output are compared by native item ID. Legacy/unsupported
+  history, incomplete page sequences, compaction barriers and uncertain tool context stay unknown.
+  There is no private Codex file/database reader or synthetic tool-output reconstruction. The
+  [protocol characterization](../debug/codex_app_server_history_apis.md) records what the pinned
+  0.157.0 API exposes and the real runner/model tests that support the comparison.
 
 Unreadable, malformed, or unsupported native evidence produces an explicit unknown report.
-These readers depend on the pinned native formats and must be checked with the app-level recovery
+These adapters depend on the pinned native protocols and must be checked with the app-level recovery
 matrix when upgrading a harness. The matrix covers interrupt, graceful shutdown/resume, and
 process-group kill/resume at three gates: streaming text, tool execution, and streaming after a
 completed tool. The mock reads tool results throughout each request, including older user messages.

@@ -98,7 +98,12 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   an unknown session, a sealed journal, a command ID already used for other work, or a command
   without an ID and an operation. Delivery never creates a session. A newly admitted execution command
   triggers shared background startup; concurrent commands do not wait for it, and the runner
-  recovers pending admitted commands after a process restart without relying on gateway redelivery.
+  recovers undispatched admitted commands after a process restart without relying on gateway redelivery.
+  A command with a durable dispatch marker is not sent again automatically: its native effect may
+  already have occurred. Native requests retain their kind and foreign-key links to the commands they carry.
+  Recovery reads values from those original commands and replays matching responses already present
+  in the Event log. Goose migrates stored request relationships before recovery. Terminal receipt
+  facts remain in the Event referenced by the command’s terminal cursor.
   A process-lost active turn also triggers native reconciliation even if its input was already
   confirmed. Completed idle sessions remain dormant. Interrupts neither start a harness nor prevent
   recovery required by other work; an admitted interrupt whose target ended is settled as a no-op.
@@ -193,8 +198,9 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 - A later causal event is the terminal result: `HarnessUserMessageConfirmed`, `ModelChanged`, an
   interrupted `TurnCompleted`, `CommandFailed`, or `CommandNoop`. Re-submitting an already
   journaled command id does not dispatch it again. Restart recovery is a separate boundary:
-  it reconciles nonterminal commands with their original ids and replays committed Events unchanged. Native execution before
-  durable effect evidence is not yet proven duplicate-free across restart.
+  it replays committed Events unchanged and reconciles nonterminal commands with their original ids.
+  Native execution before durable effect evidence is not proven duplicate-free across restart, so a
+  dispatch-planned command without terminal evidence remains pending instead of being resent.
 - `SubmitInput` is terminal only when the harness confirms its causal delivery. Its receipt names
   the native message/correlation id, text, turn id, and every originating command id. Claude's
   normal request carries its representative input UUID on `stream_event.message_start`; compatible
@@ -249,8 +255,12 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   already published for another Event. Harness output recording failures stop the harness.
 - A runner that finds a session it had running reports `HarnessLost`, then `TurnCompleted` with
   `PROCESS_LOST` if a turn was active. It replays committed Events unchanged and automatically
-  starts the harness in the background to reconcile remaining admitted commands. There is no
-  indeterminate command outcome.
+  starts the harness in the background to reconcile remaining admitted commands. A dispatched command
+  with no terminal evidence remains pending; a missing response is not a failure or proof that retry
+  is safe. Command dispatch returns after the native write; correlated response Events advance the
+  command state and release later response-dependent commands. If a response was committed before the
+  restart, recovery translates it and settles the command. A planned interruption without terminal
+  evidence also remains pending because the runner cannot know whether it reached the harness.
 - A runner that finds a session whose setup had started without a terminal event records
   `SetupInterrupted`. It never executes that script again. The inherited state-owner descriptor
   keeps a replacement runner out until a surviving setup child exits.
@@ -271,6 +281,21 @@ observed item is `RETAINED`, `ABSENT`, `REVISED` (with its continuing content), 
 future compaction. Native interpretation belongs to the runner adapter; clients consume the
 same dispositions for every harness.
 
+Codex reconciliation requires `paginated` history, checked from `thread/start` or `thread/resume`.
+It pages `thread/items/list` with a native `turnId`, at most 100 items per response. An ordinary
+interruption reads that turn; resume reads the most recent completed turn and later turns from the
+runner journal. An item that finishes in a later turn adds its original owning turn to the reads.
+An entirely unobserved window needs no RPCs. When validating earlier items, later turns still
+need a scoped compaction check even if their items were not observed. One history snapshot serves
+all turns of a resume. There is no private
+Codex file/database reader or legacy-format fallback. Unsupported history, an incomplete/invalid
+page sequence, or a compaction marker in the inspected window produces `UNKNOWN`. Unsupported tools
+and command executions without a fully observed completed result also remain `UNKNOWN`; API
+display output cannot establish the synthetic model continuation of an interrupted command.
+
+Interruption reconciliation runs outside native stdout translation, so the shared Codex reader can
+deliver history responses. Subsequent input waits until the reconciliation report is committed.
+
 Process loss first ends the active turn as `PROCESS_LOST` and reports its items `UNKNOWN`.
 Explicit resume replaces those decisions using surviving native evidence. An unreadable or
 unsupported native history stays `UNKNOWN`; absence of evidence does not establish `ABSENT`.
@@ -288,6 +313,11 @@ Both native harnesses run against asserting model endpoints. Tests compare recov
 and materialized Thread payloads with the next model request, and verify that recovery does not
 repeat a shell side effect. This does not establish exact equality for harness-private context,
 reasoning, compaction, or unmodeled tools.
+
+`//agentplane/runner:test_restart` additionally checks turn-scoped Codex RPCs across failed-turn
+resume and live interruption. Its 101-reasoning-item fixture forces pagination and compares the
+actual next model request, while an unrelated older turn must not be fetched. Unit tests cover
+cross-turn ownership, mode and cursor failures, compaction barriers, and stdout/scheduler ordering.
 
 ## Standing instructions across a resume
 

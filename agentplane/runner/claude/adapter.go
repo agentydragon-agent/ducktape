@@ -127,6 +127,12 @@ func (a *claudeAdapter) Environment() (map[string]string, error) {
 	return environment, nil
 }
 
+func (a *claudeAdapter) BlocksCommandDispatch() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.modelChanges) != 0 || len(a.effortChanges) != 0
+}
+
 func (a *claudeAdapter) Handshake(ctx context.Context) (string, error) {
 	requestID := nativeRequestID()
 	frame, err := marshalClaudeControlRequest(requestID, claudeInitializeRequest{
@@ -136,7 +142,7 @@ func (a *claudeAdapter) Handshake(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	receipt, err := a.host.RequestNative(ctx, frame, func(raw json.RawMessage) bool {
+	receipt, err := a.host.RequestNativeHandshake(ctx, frame, func(raw json.RawMessage) bool {
 		parsed, err := decodeClaudeControlResponse(raw)
 		return err == nil && parsed.RequestID == requestID
 	})
@@ -155,6 +161,100 @@ func (a *claudeAdapter) Handshake(ctx context.Context) (string, error) {
 	nativeID := a.nativeSessionID
 	a.mu.Unlock()
 	return nativeID, nil
+}
+
+func (a *claudeAdapter) Recover(ctx context.Context) error {
+	requests, err := a.host.Journal().PendingNativeRequests(ctx)
+	if err != nil {
+		return err
+	}
+	correlations := map[string]bool{}
+	var replayFrom uint64
+	a.mu.Lock()
+	for _, request := range requests {
+		if len(request.Commands) != 1 {
+			a.mu.Unlock()
+			return fmt.Errorf("Claude request %q must carry one command", request.ID)
+		}
+		command := request.Commands[0]
+		if command.TerminalCursor != nil {
+			continue
+		}
+		id := command.Command.GetCommandId()
+		switch request.Kind {
+		case harness.ClaudeSubmit:
+			input := command.Command.GetSubmitInput()
+			if input == nil || input.Text == "" {
+				a.mu.Unlock()
+				return fmt.Errorf("Claude submit request %q requires input", request.ID)
+			}
+			a.pending[request.ID] = claudePendingInput{commandID: id, text: input.Text}
+		case harness.ClaudeModelChange:
+			model := command.Command.GetChangeModel()
+			if model == nil || model.Model == "" {
+				a.mu.Unlock()
+				return fmt.Errorf("Claude model request %q requires a model command", request.ID)
+			}
+			a.modelChanges[request.ID] = claudeChange{commandID: id, value: model.Model}
+		case harness.ClaudeEffortChange:
+			effort := command.Command.GetChangeReasoningEffort()
+			if effort == nil || effort.Effort == "" {
+				a.mu.Unlock()
+				return fmt.Errorf("Claude effort request %q requires an effort command", request.ID)
+			}
+			a.effortChanges[request.ID] = claudeChange{commandID: id, value: effort.Effort}
+		default:
+			a.mu.Unlock()
+			return fmt.Errorf("unexpected Claude request kind %q", request.Kind)
+		}
+		correlations[request.ID] = true
+		before := uint64(0)
+		if command.AdmittedCursor > 0 {
+			before = command.AdmittedCursor - 1
+		}
+		if len(correlations) == 1 || before < replayFrom {
+			replayFrom = before
+		}
+	}
+	a.mu.Unlock()
+	if len(correlations) == 0 {
+		return nil
+	}
+
+	cursor := replayFrom
+	for cursor < a.host.Journal().LastCursor() {
+		entries, err := a.host.Journal().Since(ctx, cursor, 128)
+		if err != nil {
+			return err
+		}
+		if len(entries) == 0 {
+			break
+		}
+		for _, entry := range entries {
+			cursor = entry.GetCursor()
+			native := entry.GetEvent().GetNative()
+			if native == nil || native.GetDirection() != eventpb.Direction_DIRECTION_FROM_HARNESS {
+				continue
+			}
+			var frame claudeWireFrame
+			if json.Unmarshal([]byte(native.GetLine()), &frame) != nil {
+				continue
+			}
+			matching := correlations[frame.UUID] || correlations[frame.UserMessageUUID] || correlations[frame.CommandUUID]
+			if frame.Type == "control_response" {
+				response, err := decodeClaudeControlResponse(json.RawMessage(native.GetLine()))
+				if err == nil && correlations[response.RequestID] {
+					matching = true
+				}
+			}
+			if matching {
+				if err := a.OnFrame(ctx, json.RawMessage(native.GetLine()), entry.GetOrigin().GetSequence()); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (a *claudeAdapter) Reconcile(ctx context.Context, turnID string, resumed bool) (*eventpb.ConversationReconciled, error) {
@@ -254,6 +354,9 @@ func (a *claudeAdapter) Submit(ctx context.Context, commandID, text string) erro
 		}
 	}
 	messageUUID := uuid.NewString()
+	if err := a.host.RecordNativeRequest(ctx, messageUUID, harness.ClaudeSubmit, []string{commandID}); err != nil {
+		return err
+	}
 	frame, err := json.Marshal(map[string]any{
 		"type": "user", "message": map[string]string{"role": "user", "content": text}, "parent_tool_use_id": nil, "uuid": messageUUID,
 	})
@@ -264,9 +367,11 @@ func (a *claudeAdapter) Submit(ctx context.Context, commandID, text string) erro
 	a.pending[messageUUID] = claudePendingInput{commandID: commandID, text: text}
 	a.mu.Unlock()
 	if err := a.host.SendNative(ctx, frame); err != nil {
-		a.mu.Lock()
-		delete(a.pending, messageUUID)
-		a.mu.Unlock()
+		if !errors.Is(err, harness.ErrNativeResponsePending) {
+			a.mu.Lock()
+			delete(a.pending, messageUUID)
+			a.mu.Unlock()
+		}
 		return err
 	}
 	return nil
@@ -290,8 +395,14 @@ func (a *claudeAdapter) ChangeModel(ctx context.Context, commandID, model string
 	a.mu.Lock()
 	a.modelChanges[requestID] = claudeChange{commandID: commandID, value: model}
 	a.mu.Unlock()
-	err := a.requestAndTranslate(ctx, requestID, claudeSetModelRequest{Subtype: "set_model", Model: model})
-	if err != nil {
+	if err := a.host.RecordNativeRequest(ctx, requestID, harness.ClaudeModelChange, []string{commandID}); err != nil {
+		a.mu.Lock()
+		delete(a.modelChanges, requestID)
+		a.mu.Unlock()
+		return err
+	}
+	err := a.sendControlRequest(ctx, requestID, claudeSetModelRequest{Subtype: "set_model", Model: model})
+	if err != nil && !errors.Is(err, harness.ErrNativeResponsePending) {
 		a.mu.Lock()
 		delete(a.modelChanges, requestID)
 		a.mu.Unlock()
@@ -304,10 +415,16 @@ func (a *claudeAdapter) ChangeReasoningEffort(ctx context.Context, commandID, ef
 	a.mu.Lock()
 	a.effortChanges[requestID] = claudeChange{commandID: commandID, value: effort}
 	a.mu.Unlock()
+	if err := a.host.RecordNativeRequest(ctx, requestID, harness.ClaudeEffortChange, []string{commandID}); err != nil {
+		a.mu.Lock()
+		delete(a.effortChanges, requestID)
+		a.mu.Unlock()
+		return err
+	}
 	request := claudeApplyFlagSettingsRequest{Subtype: "apply_flag_settings"}
 	request.Settings.EffortLevel = effort
-	err := a.requestAndTranslate(ctx, requestID, request)
-	if err != nil {
+	err := a.sendControlRequest(ctx, requestID, request)
+	if err != nil && !errors.Is(err, harness.ErrNativeResponsePending) {
 		a.mu.Lock()
 		delete(a.effortChanges, requestID)
 		a.mu.Unlock()
@@ -315,21 +432,12 @@ func (a *claudeAdapter) ChangeReasoningEffort(ctx context.Context, commandID, ef
 	return err
 }
 
-func (a *claudeAdapter) requestAndTranslate(ctx context.Context, requestID string, request any) error {
+func (a *claudeAdapter) sendControlRequest(ctx context.Context, requestID string, request any) error {
 	frame, err := marshalClaudeControlRequest(requestID, request)
 	if err != nil {
 		return err
 	}
-	receipt, err := a.host.RequestNative(ctx, frame, func(raw json.RawMessage) bool {
-		response, err := decodeClaudeControlResponse(raw)
-		return err == nil && response.RequestID == requestID
-	})
-	if err != nil {
-		return err
-	}
-	// The journaled receipt is also sent through OnFrame by the native reader. Taking the pending
-	// request under a lock makes either path the single translator if they race.
-	return a.OnFrame(ctx, receipt.Frame, receipt.Sequence)
+	return a.host.SendNative(ctx, frame)
 }
 
 func (a *claudeAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceSequence uint64) error {
