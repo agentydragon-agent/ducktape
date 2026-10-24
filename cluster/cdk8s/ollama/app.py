@@ -310,10 +310,7 @@ def _rbac(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(name="ollama-api-consumer"),
         rules=[
             k8s.PolicyRule(
-                api_groups=[""],
-                resources=["secrets"],
-                resource_names=["litellm-master-key", DIRECT_TOKEN.secret.name],
-                verbs=["get"],
+                api_groups=[""], resources=["secrets"], resource_names=[DIRECT_TOKEN.secret.name], verbs=["get"]
             )
         ],
     )
