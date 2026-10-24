@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/agentplane-frontend
-    newTag: devel-20261024232817-c1a5af8 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
+    newTag: devel-20261024233912-630f618 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
     newTag: devel-20261024140416-841392f # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
