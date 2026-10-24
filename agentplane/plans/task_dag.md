@@ -715,7 +715,7 @@ nothing connects them:
 
 - the unit in `agentplane/runner/vm.nix`: `MemoryHigh = "6G"`, `MemoryMax = "7G"`, `CPUQuota = "700%"`,
   `TasksMax = 1024`;
-- the delegated groups in `agentplane/runner/go/cgroups.go`: aggregate `memory.max` 4 GiB with
+- the delegated groups in `agentplane/runner/cgroups.go`: aggregate `memory.max` 4 GiB with
   `cpu.max` 400000/100000 (4 cores) and `pids.max` 768, per-process 3 GiB / 3 cores / 512.
 
 On this 1536Mi / 1 vCPU guest the unit is live — read `memory.max` 7516192768 and
@@ -767,7 +767,7 @@ flowchart LR
 **Unscheduled; operator, 2026-10-21 07:11 UTC: "fidelity improvements like images for Claude let's put on task
 dag".** Tool results become ordered parts (text, image) in the harness-neutral vocabulary instead of one string.
 Today `event.proto` carries `ToolResult.output`, `ToolOutputDelta.text` and `RecoveredContent.output` as strings,
-the Claude adapter's `resultText()` (`runner/go/claude/protocol.go`) joins text blocks and drops images, and the
+the Claude adapter's `resultText()` (`runner/claude/protocol.go`) joins text blocks and drops images, and the
 History fold's `FieldOutput` is one text field that deltas append to. Scope: the proto, both runner adapters, the
 History fold with its storage and reads, the app API, the frontend tool cards, and the fold, span and visual
 fixtures. Archived event logs and History rows hold `output` strings and sealed archives cannot be rewritten; the

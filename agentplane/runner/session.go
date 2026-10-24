@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/go/claude"
-	"github.com/agentydragon/ducktape/agentplane/runner/go/codex"
-	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/claude"
+	"github.com/agentydragon/ducktape/agentplane/runner/codex"
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"

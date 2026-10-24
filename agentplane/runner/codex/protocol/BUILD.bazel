@@ -23,7 +23,7 @@ js_run_binary(
 go_library(
     name = "protocol",
     srcs = [":generate_types"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner/go/codex/protocol",
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/codex/protocol",
     visibility = ["//agentplane/runner:__subpackages__"],
 )
 

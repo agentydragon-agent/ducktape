@@ -1,5 +1,5 @@
 """A scripted runner's control stream to the Runner Gateway, held as the runner holds it
-(`runner/go/transport.go`), for tests whose `Runner` service is scripted."""
+(`runner/transport.go`), for tests whose `Runner` service is scripted."""
 
 import asyncio
 from collections.abc import AsyncIterator, Callable

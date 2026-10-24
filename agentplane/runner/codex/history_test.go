@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 )
 
 func TestReadCodexHistoryIgnoresArrayCustomToolOutput(t *testing.T) {

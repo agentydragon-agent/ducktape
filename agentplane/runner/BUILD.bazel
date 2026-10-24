@@ -1,3 +1,4 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
@@ -12,7 +13,7 @@ package(default_visibility = ["//visibility:public"])
 
 alias(
     name = "main_bin",
-    actual = "//agentplane/runner/go/cmd:agentplane-runner",
+    actual = "//agentplane/runner/cmd:agentplane-runner",
 )
 
 # The runner and `agentplane` CLI, in one image that a Pod mounts as an image volume (`bin/`) and a
@@ -22,7 +23,7 @@ pkg_tar(
     name = "disk_bin",
     srcs = [
         "//agentplane/cli:agentplane",
-        "//agentplane/runner/go/cmd:agentplane-runner",
+        "//agentplane/runner/cmd:agentplane-runner",
     ],
     mode = "0755",
     package_dir = "/bin",
@@ -360,8 +361,8 @@ py_test(
 py_test(
     name = "test_cgroups",
     srcs = ["test_cgroups.py"],
-    data = ["//agentplane/runner/go:runner_test"],  # keep: the real Go integration fixture
-    env = {"RUNNER_TEST_BINARY": "$(rlocationpath //agentplane/runner/go:runner_test)"},
+    data = ["//agentplane/runner:runner_test"],  # keep: the real Go integration fixture
+    env = {"RUNNER_TEST_BINARY": "$(rlocationpath //agentplane/runner:runner_test)"},
     requires_docker = True,
     deps = [
         ":conftest",
@@ -426,5 +427,71 @@ py_test(
         "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
+    ],
+)
+
+go_library(
+    name = "runner",
+    srcs = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ),
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner",
+    deps = [
+        "//agentplane/history_service:runner_ingress_go_proto",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:grpc_tunnel_go_proto",
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/runner:runner_service_go_proto",
+        "//agentplane/runner/claude",
+        "//agentplane/runner/codex",
+        "//agentplane/runner/harness",
+        "//agentplane/runner_gateway:runner_control_go_proto",
+        "@com_github_containerd_cgroups_v3//cgroup2",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_sethvargo_go_retry//:go-retry",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//backoff",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+        "@org_golang_x_sync//errgroup",
+        "@org_golang_x_sys//unix",
+        "@org_modernc_sqlite//:sqlite",
+    ],
+)
+
+go_test(
+    name = "runner_test",
+    srcs = glob(["*_test.go"]),
+    embed = [":runner"],
+    exec_properties = {"test.dockerUser": "0:0"},
+    pure = "on",
+    deps = [
+        "//agentplane/history_service:runner_ingress_go_proto",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:grpc_tunnel_go_proto",
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/runner:runner_service_go_proto",
+        "//agentplane/runner/claude",
+        "//agentplane/runner/codex",
+        "//agentplane/runner/harness",
+        "//agentplane/runner_gateway:runner_control_go_proto",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_x_sys//unix",
     ],
 )

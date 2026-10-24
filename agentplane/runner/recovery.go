@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )

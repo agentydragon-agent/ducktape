@@ -6,12 +6,15 @@ go_library(
         "adapter.go",
         "history.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner/go/codex",
-    visibility = ["//agentplane/runner:__subpackages__"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/codex",
+    visibility = [
+        "//agentplane/runner:__pkg__",
+        "//agentplane/runner:__subpackages__",
+    ],
     deps = [
         "//agentplane/proto:event_go_proto",
-        "//agentplane/runner/go/codex/protocol",
-        "//agentplane/runner/go/harness",
+        "//agentplane/runner/codex/protocol",
+        "//agentplane/runner/harness",
         "@com_github_google_uuid//:uuid",
     ],
 )
@@ -25,7 +28,7 @@ go_test(
     embed = [":codex"],
     deps = [
         "//agentplane/proto:event_go_proto",
-        "//agentplane/runner/go/codex/protocol",
-        "//agentplane/runner/go/harness",
+        "//agentplane/runner/codex/protocol",
+        "//agentplane/runner/harness",
     ],
 )

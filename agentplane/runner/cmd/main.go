@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	runner "github.com/agentydragon/ducktape/agentplane/runner/go"
+	runner "github.com/agentydragon/ducktape/agentplane/runner"
 )
 
 func main() {

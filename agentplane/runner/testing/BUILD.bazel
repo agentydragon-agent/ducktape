@@ -136,7 +136,7 @@ py_library(
 py_library(
     name = "process",
     srcs = ["process.py"],
-    data = ["//agentplane/runner/go/cmd:agentplane-runner"],  # keep: the production subprocess
+    data = ["//agentplane/runner/cmd:agentplane-runner"],  # keep: the production subprocess
     deps = [
         ":config",
         ":gateway",

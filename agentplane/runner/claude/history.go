@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/anthropics/anthropic-sdk-go"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"

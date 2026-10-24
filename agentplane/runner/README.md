@@ -20,35 +20,35 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 
 ## Layout
 
-- `go/runner.go` and `go/session.go`: durable Session reservations, admission, setup,
+- `runner.go` and `session.go`: durable Session reservations, admission, setup,
   lazy native startup, command scheduling, recovery and quiesce.
-- `go/transport.go`: the outbound control tunnel and independent per-Session ingress
+- `transport.go`: the outbound control tunnel and independent per-Session ingress
   pushes, including heartbeat, replay, acknowledgement and backpressure.
-- `go/journal.go` and `go/store.go`: the existing SQLite schema, verbatim protobuf
+- `journal.go` and `store.go`: the existing SQLite schema, verbatim protobuf
   Event blobs, session metadata, ingress acknowledgements and ownership lock.
   Transactions use `database/sql` with the cgo-free SQLite driver. Outcomes and all
   coalesced command receipts commit together; publication and waiter replies follow commit.
-- `go/process.go`, `go/supervisor.go` and `go/cgroups.go`: native pipes and process
+- `process.go`, `supervisor.go` and `cgroups.go`: native pipes and process
   isolation. The runner executes itself in an internal supervisor mode, which retains
   the state-owner descriptor until native work is fenced. A private liveness pipe
   detects parent death independently of the Go runtime's OS-thread lifetimes.
   Containerd's cgroup-v2 library applies resource limits and fences group members;
   the supervisor retains state ownership until the group is empty and removed.
-- `go/claude/` and `go/codex/`: harness-specific launch, frame translation and native
+- `claude/` and `codex/`: harness-specific launch, frame translation and native
   history readers. They depend on the shared adapter contract and recovery types in
-  `go/harness/`, independently of the runner runtime. Unknown frames remain in raw history,
+  `harness/`, independently of the runner runtime. Unknown frames remain in raw history,
   and derived Events retain their sources.
   Native argument payloads remain as received; runner-constructed projections use standard
   JSON encoding rather than reproducing the former Python runner's formatting.
-- `go/config.go`, `go/guest.go` and `go/cli.go`: explicit child environment and launch
-  configuration. `go/cmd/main.go` dispatches internal process modes before service startup.
+- `config.go`, `guest.go` and `cli.go`: explicit child environment and launch
+  configuration. `cmd/main.go` dispatches internal process modes before service startup.
   `agentplane-runner-vm` is a symlink to this same executable.
 
-The production build target is `//agentplane/runner/go/cmd:agentplane-runner`, shipped in `//agentplane/runner:disk_image`.
+The production build target is `//agentplane/runner/cmd:agentplane-runner`, shipped in `//agentplane/runner:disk_image`.
 The binary includes the supervisor and SQLite; the native Claude/Codex executables,
 workspace tools and CA certificates are supplied by the runtime image.
 
-`go/codex/protocol` generates Go models at build time with Quicktype from schemas
+`codex/protocol` generates Go models at build time with Quicktype from schemas
 exported by the same pinned Codex executable used by the native tests. Requests,
 responses, notifications and known item payloads use these models. Method and item
 dispatch keep a raw JSON boundary for unknown variants; recorded native frames are
@@ -128,21 +128,21 @@ runs the runner as its own process so a crash takes its harnesses with it. No te
 image (<image.nix>), which carries nixpkgs' harnesses rather than these pinned ones; its header
 says what to run after a bump.
 
-`go/persistence_test.go` checks retained-state compatibility, command deduplication,
-transaction publication, coalesced receipts, rollback, and seals. `go/session_test.go`
+`persistence_test.go` checks retained-state compatibility, command deduplication,
+transaction publication, coalesced receipts, rollback, and seals. `session_test.go`
 checks native reply publication after translation commits and final frames at EOF.
-`go/transport_test.go` exercises real loopback gRPC replay, durable acknowledgements,
-the ingress window, and seal ordering. `go/process_test.go` checks parent-death fencing,
+`transport_test.go` exercises real loopback gRPC replay, durable acknowledgements,
+the ingress window, and seal ordering. `process_test.go` checks parent-death fencing,
 native descendants, inherited state ownership, and cancellation during blocked input.
 These are not physical power-loss tests.
 
 ## Native continuation evidence
 
-`go/recovery.go` reconstructs observed item content from the journal's indexed turn boundaries.
+`recovery.go` reconstructs observed item content from the journal's indexed turn boundaries.
 The adapters compare it with native continuation evidence and emit `ConversationReconciled`;
 the app only folds that neutral report.
 
-- `go/claude/history.go` walks the persisted main parent chain, correlates split assistant blocks,
+- `claude/history.go` walks the persisted main parent chain, correlates split assistant blocks,
   and removes what Claude's resume loader removes: messages with an unresolved tool call, then a
   message holding only thinking once no other entry of its message id is left, so thinking
   before a tool that never answered is not replayed even though the transcript holds it. Ordinary
@@ -151,7 +151,7 @@ the app only folds that neutral report.
   of its message was written, and thinking that would otherwise be absent is unknown when a native
   line of the turn could not be parsed. Compacted or missing history and unfinished live tool outcomes
   remain unknown. The reader is tested against Claude Code 2.1.252.
-- `go/codex/history.go` reads model `response_item` records, not the app-server's reconstructed
+- `codex/history.go` reads model `response_item` records, not the app-server's reconstructed
   turn-item projection, which can omit an unresolved call still sent to the model. In Codex
   0.157.0, `core/src/tasks/mod.rs` flushes the interrupted-turn marker before the terminal
   notification and then flushes that event; `core/src/context_manager/normalize.rs` supplies

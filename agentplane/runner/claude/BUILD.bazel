@@ -7,11 +7,14 @@ go_library(
         "history.go",
         "protocol.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner/go/claude",
-    visibility = ["//agentplane/runner:__subpackages__"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/claude",
+    visibility = [
+        "//agentplane/runner:__pkg__",
+        "//agentplane/runner:__subpackages__",
+    ],
     deps = [
         "//agentplane/proto:event_go_proto",
-        "//agentplane/runner/go/harness",
+        "//agentplane/runner/harness",
         "@com_github_anthropics_anthropic_sdk_go//:anthropic-sdk-go",
         "@com_github_google_uuid//:uuid",
         "@com_github_schlunsen_claude_agent_sdk_go//types",
