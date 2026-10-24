@@ -93,7 +93,7 @@ The generated manifests are excluded when a generator source is available.
 
 - **Workstation Codex CLI:** It still defaults to a direct ChatGPT login. The requested addition is an opt-in LiteLLM profile with per-request visibility; this would add a prospective caller rather than preserve existing LiteLLM traffic. [Workstation Codex routing request](https://github.com/agentydragon/ducktape/issues/4996)
 - **Skills evaluation harnesses:** These currently call providers directly, and the owner confirmed they should route through a future gateway. The exact direct-provider callers are listed above. [Direct-provider callers request](https://github.com/agentydragon/ducktape/issues/4999)
-- **Gmail classification:** `gmail_archiver`'s `EmailTemplateExtractor` creates an OpenAI client directly from `OPENAI_API_KEY`; its inclusion in future gateway scope is still open. [event_classifier.py:90-93](../../../gmail_archiver/event_classifier.py#L90), [direct-provider callers request](https://github.com/agentydragon/ducktape/issues/4999)
+- **Gmail classification is out of scope for now.** `gmail_archiver`'s `EmailTemplateExtractor` creates an OpenAI client directly from `OPENAI_API_KEY`; do not count it as a replacement requirement. [event_classifier.py:90-93](../../../gmail_archiver/event_classifier.py#L90), [direct-provider callers request](https://github.com/agentydragon/ducktape/issues/4999)
 
 ## Current pain points
 
@@ -115,4 +115,8 @@ The generated manifests are excluded when a generator source is available.
 
 ## Open questions for the owner
 
-1. Should Gmail classification join skills evaluation and other planned direct-provider callers on the future gateway, or remain outside its scope? `gmail_archiver` currently calls OpenAI directly from [event_classifier.py:90-93](../../../gmail_archiver/event_classifier.py#L90); the call is also captured in [the direct-provider callers request](https://github.com/agentydragon/ducktape/issues/4999).
+No scope questions block a replacement review. Decisions that can be made when selecting a design:
+
+- For the optional per-key safety limit, what time window and behavior should apply? The owner prefers a meaningful measure such as tokens over time, rather than placeholder USD budgets, and is open to a sane default.
+- Should client-supplied trace metadata accept arbitrary fields or use a configured allowlist? Key-level attribution is enough by default; callers such as Props can add their own useful fields.
+- Which current Langfuse ingestion path(s) must a replacement preserve? The required outcome is structured traces in Langfuse, with no prompt/output copy in pod logs or Loki; the current legacy callback and OTEL paths have overlapping coverage.
