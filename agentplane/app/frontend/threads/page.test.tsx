@@ -74,9 +74,13 @@ function inventorySandbox(operating_mode: "Running" | "Suspended" = "Running", w
     uid,
     namespace: "agentplane-test",
     created_at: "2026-01-01T00:00:00Z",
+    binding: null,
+    preset: null,
     operating_mode,
     wake_on_send,
-    status: operating_mode === "Running" ? { conditions: [{ type: "Ready", status: "True" }] } : null,
+    idle_suspend_after_seconds: null,
+    suspended_by: null,
+    status: operating_mode === "Running" ? { conditions: [{ type: "Ready", status: "True" }] } : {},
     service_account: { namespace: "agentplane-test", name: THREAD.sandbox },
     phase: operating_mode,
     pod:
@@ -972,7 +976,7 @@ it("shows why a refused resume of a suspended Sandbox failed", async () => {
 
 // A send to a suspended Sandbox wakes it: it is Running again with no Pod and no Ready condition until
 // the controller has started the incarnation.
-const waking: SandboxView = { ...autosuspendSandbox(null), phase: "Creating", pod: null, status: null };
+const waking: SandboxView = { ...autosuspendSandbox(null), phase: "Creating", pod: null, status: {} };
 
 it.each([
   ["a current", true, "Sandbox is starting. Submitted commands will queue until it is ready."],
@@ -1007,7 +1011,7 @@ it.each([null, "2026-01-01T12:12:00Z"])(
 
 it("does not call a failed Pod a Sandbox that is starting", async () => {
   const running = autosuspendSandbox(null);
-  sandboxes = [{ ...running, status: null, pod: running.pod && { ...running.pod, status: { phase: "Failed" } } }];
+  sandboxes = [{ ...running, status: {}, pod: running.pod && { ...running.pod, status: { phase: "Failed" } } }];
   const container = await render();
   expect(container.querySelector('[role="status"]')?.textContent).toBe(
     "Last observed Sandbox and Pod: Failed. Showing retained Thread history; controls are disabled."

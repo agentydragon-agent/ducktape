@@ -1,8 +1,19 @@
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
 import { useMatch } from "react-router";
 
-import type { ThreadsSnapshot } from "../schema";
-import { useLive, type Live } from "../live";
+import { useLive, type Live, type WatchHealth } from "../live";
+
+import type { SandboxView } from "../sandboxes/client";
+import type { ThreadView } from "./client";
+
+export type ThreadsSnapshot = {
+  sandboxes: SandboxView[];
+  threads: ThreadView[];
+  more: boolean;
+  archived_count: number;
+  updates_connected: boolean;
+  watch: WatchHealth;
+};
 
 /** What the thread lists ask of `/live/threads`: a window of the newest threads, which grows a page
  * at a time, and the filters it is read under. */

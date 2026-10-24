@@ -119,6 +119,17 @@ openapi_js_library(
 )
 
 ts_library(
+    name = "test_model_catalog",
+    testonly = True,
+    srcs = ["test_model_catalog.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":model_catalog",
+    ],
+)
+
+ts_library(
     name = "frontend_config",
     srcs = ["frontend_config.ts"],
     tsconfig = TSCONFIG,
@@ -541,9 +552,9 @@ ts_library(
     srcs = ["live.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":format_time",
         ":live_stream",
-        ":schema",
         ":stream_status",
         "//:node_modules/@types/react",
         "//:node_modules/react",

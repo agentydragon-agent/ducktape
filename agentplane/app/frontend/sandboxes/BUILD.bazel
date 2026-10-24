@@ -309,10 +309,12 @@ ts_library(
     srcs = ["live.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:live",
-        "//agentplane/app/frontend:schema",
+        "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/threads:client",
     ],
 )
 

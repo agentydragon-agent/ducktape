@@ -1,9 +1,35 @@
 import { toJson, type JsonObject } from "@bufbuild/protobuf";
 
-import type { RunnerStatusView } from "../schema";
+import type { components } from "../schema";
 import { api, ok } from "../client";
 import { SessionSpecSchema, type SessionSpec } from "../../../proto/runner_pb";
 
+export type SandboxView = components["schemas"]["SandboxView"];
+export type RunnerStatusView = components["schemas"]["RunnerStatusView"];
+export type PodView = components["schemas"]["PodView"];
+export type NewSandbox = components["schemas"]["NewSandbox"];
+export type NewSandboxDefaults = components["schemas"]["NewSandboxDefaults"];
+type OtherRuleView = {
+  kind: "other";
+  number: number;
+  type: string;
+  fields: Record<string, unknown>;
+};
+type PolicyRuleView = EgressRuleView | OtherRuleView;
+export type PolicySetView = Omit<components["schemas"]["PolicySetView"], "rules"> & { rules: PolicyRuleView[] };
+export type BindingView = Omit<components["schemas"]["BindingView"], "policy_sets"> & { policy_sets: PolicySetView[] };
+export type EgressRuleView = {
+  kind: "egress";
+  number: number;
+  hosts: string[];
+  methods: string[] | null;
+  paths: string[] | null;
+  credential: components["schemas"]["CredentialView"] | null;
+  missing_credential: string | null;
+};
+export type Decision = components["schemas"]["Decision"];
+export type SandboxPresetView = components["schemas"]["SandboxPresetView"];
+export type SessionDefaults = components["schemas"]["SessionDefaults"];
 export type SessionOpening = {
   sessionId: string;
   sandbox: string;

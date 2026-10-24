@@ -1,7 +1,21 @@
 import { createContext, type JSX, type ReactNode, useContext } from "react";
 
-import type { SandboxesSnapshot } from "../schema";
-import { useLive, type Live } from "../live";
+import { useLive, type Live, type WatchHealth } from "../live";
+
+import type { ActionPolicyUnavailable, ActionPolicyView } from "../actions/client";
+import type { BindingView, Decision, SandboxView } from "./client";
+import type { ThreadView } from "../threads/client";
+
+export type SandboxesSnapshot = { sandboxes: SandboxView[]; watch: WatchHealth };
+export type SandboxSnapshot = {
+  sandbox: SandboxView | null;
+  bindings: BindingView[];
+  action_policy: ActionPolicyView | ActionPolicyUnavailable | null;
+  threads: ThreadView[] | { kind: "unavailable"; code: string };
+  updates_connected: boolean;
+  watch: WatchHealth;
+};
+export type DecisionsSnapshot = { watching: boolean; decisions: Decision[] | { detail: string } };
 
 export function liveSandboxesUrl(): string {
   return "/live/sandboxes";
