@@ -223,7 +223,7 @@ func TestCodexLateTurnStartResponseConfirmsPendingCommand(t *testing.T) {
 			RequestID string `json:"request_id"`
 		} `json:"turn_start"`
 	}
-	if correlation.Adapter != "codex" || correlation.SchemaVersion != 1 {
+	if correlation.Adapter != "codex" {
 		t.Fatalf("Codex correlation schema = %+v", correlation)
 	}
 	if err := json.Unmarshal(correlation.Payload, &codexCorrelation); err != nil {
@@ -270,7 +270,7 @@ func TestCodexRecoveryReplaysJournaledLateTurnStartResponse(t *testing.T) {
 	}
 	host.journal.pending = []harness.PendingCommandInfo{{
 		CommandID: "input-1", SubmitText: "hello", DispatchPlanned: true,
-		NativeCorrelation: &harness.NativeCorrelation{Adapter: "codex", SchemaVersion: 1, Payload: payload},
+		NativeCorrelation: &harness.NativeCorrelation{Adapter: "codex", Payload: payload},
 	}}
 	host.journal.events = []*eventlogpb.EventEntry{{
 		Cursor: 1, Origin: &eventlogpb.EventOrigin{SourceId: "test-source", Sequence: 43},
@@ -302,7 +302,7 @@ func TestClaudeLateControlResponseSettlesPendingModelChange(t *testing.T) {
 			Model     string `json:"model"`
 		} `json:"model_change"`
 	}
-	if correlation.Adapter != "claude" || correlation.SchemaVersion != 1 {
+	if correlation.Adapter != "claude" {
 		t.Fatalf("Claude correlation schema = %+v", correlation)
 	}
 	if err := json.Unmarshal(correlation.Payload, &claudeCorrelation); err != nil {
