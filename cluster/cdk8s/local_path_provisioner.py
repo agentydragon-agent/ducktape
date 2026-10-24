@@ -38,12 +38,13 @@ _OPTIPLEX_LOCAL_PATH_ENABLED = False
 
 # OVH classes opt into these dedicated paths; unlisted nodes must not use the
 # provisioner's default system-disk path. Empty paths also deny provisioning.
-_OVH_NODE_PATHS = {
+_OVH_NODE_PATHS: dict[str, list[str]] = {
     # The HDD is reserved for the inert Piraeus pool configuration and later conversion.
     "ovh-ns103656": [],
     # Keep old local PVs readable during evacuation; deny new HDD claims before reimage.
     "ovh-ns103711": [],
-    "ovh-ns102453": ["/var/mnt/local-path-ovh-hdd/local-path"],
+    # Last OVH local-path node: retain existing data but deny new claims.
+    "ovh-ns102453": [],
     # Evacuated legacy claims stay readable; deny fresh allocations before cutover.
     "ovh-ns104952": [],
     "ovh-ns104963": [],
@@ -90,7 +91,9 @@ class _Class:
 
 _OVH_TOPOLOGY = {
     **{key: [value] for key, value in node_scheduling.HIL_OVH_NODE_SELECTOR.items()},
-    "kubernetes.io/hostname": [node for node, paths in _OVH_NODE_PATHS.items() if paths],
+    # Once all OVH paths are disabled, keep valid OVH-only topology; the explicit
+    # empty nodePathMap entries reject provisioning on every one of these nodes.
+    "kubernetes.io/hostname": [node for node, paths in _OVH_NODE_PATHS.items() if paths] or list(_OVH_NODE_PATHS),
 }
 _OVH_HDD = {**_OVH_TOPOLOGY, _TIER: ["hdd"]}
 _CLASSES = {
