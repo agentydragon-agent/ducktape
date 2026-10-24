@@ -81,7 +81,6 @@ ts_library(
     name = "custom_mark_icons",
     srcs = [
         "custom_mark_icons.tsx",
-        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -207,7 +206,6 @@ ts_library(
     name = "disclosure",
     srcs = [
         "disclosure.tsx",
-        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -252,7 +250,6 @@ ts_library(
     name = "operation_section",
     srcs = [
         "operation_section.tsx",
-        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -314,7 +311,6 @@ ts_library(
     name = "inline_name",
     srcs = [
         "inline_name.tsx",
-        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -365,7 +361,6 @@ ts_library(
     name = "connections",
     srcs = [
         "settings/connections.tsx",
-        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -611,7 +606,6 @@ ts_library(
     name = "mark_glyph",
     srcs = [
         "mark_glyph.tsx",
-        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -671,8 +665,6 @@ ts_library(
     name = "sidebar",
     srcs = [
         "sidebar.tsx",
-        # `declare module "*.css"` for the stylesheet import above.
-        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -753,7 +745,6 @@ ts_library(
     name = "system",
     srcs = [
         "system.tsx",
-        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -864,8 +855,6 @@ ts_library(
     name = "app",
     srcs = [
         "app.tsx",
-        # `declare module "*.css"` for the stylesheet import above.
-        "//util/frontend:css_types",
     ],
     tsconfig = TSCONFIG,
     deps = [
