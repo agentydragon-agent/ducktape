@@ -45,7 +45,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-history-migrate
     newTag: devel-20261022061700-dacc697 # {"$imagepolicy": "flux-system:agentplane-history-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261023111851-6e7b459 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261024052413-3d07b86 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
     newTag: devel-20261023092025-3c01b52 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
