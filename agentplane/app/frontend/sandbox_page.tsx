@@ -188,7 +188,7 @@ export function SandboxPage({
     let openingAccepted = false;
     try {
       const opening = await withinSessionCreate(sessionId, () =>
-        openSession(name, sessionId, spec, setupScript, autoTitleOnFirstMessage),
+        openSession(name, sessionId, spec, setupScript, autoTitleOnFirstMessage)
       );
       if (!opening.sessionId) throw new Error("Open returned without a Session ID");
       openingAccepted = true;
