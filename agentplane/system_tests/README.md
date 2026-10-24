@@ -7,13 +7,13 @@ they are the checks that the deployed system does what <../egress/SPEC.md> says 
 session's standing instructions reach the model that serves it.
 
 A scenario declared with `system_test(k3s = ...)` ([`defs.bzl`](defs.bzl)) runs as `<scenario>`: one
-RBE action that starts its own [k3s stack](../x/k3s_env/README.md) and publishes it through
+RBE action that starts its own [k3s stack](k3s/README.md) and publishes it through
 `AGENTPLANE_SYSTEM_TEST_{URL,TOKEN,NAMESPACE,SERVICE_ACCOUNT}`
-([`system_test_target.py`](../x/k3s_env/system_test_target.py)), so it needs no cluster credentials
+([`system_test_target.py`](k3s/system_test_target.py)), so it needs no cluster credentials
 and runs in PR CI whenever its inputs change. That stack runs no VM Sandboxes; it deselects cases
 marked `vm_sandboxes`. `system_test(vm_sandboxes = ...)` runs those cases, and only those, as
 `<scenario>_vm`, on a stack with KubeVirt emulating the guest CPU and the k3s test guest
-([VM Sandboxes](../x/k3s_env/README.md#vm-sandboxes)). PR CI runs only what a VM alone exercises:
+([VM Sandboxes](k3s/README.md#vm-sandboxes)). PR CI runs only what a VM alone exercises:
 `test_vm_sandbox_vm` boots a VM Sandbox and runs a scripted turn on each harness through the
 launcher's egress relay. The other `_vm` targets are `manual`; name one to run it.
 `system_test(real_model = True)` runs the `real_model` cases as `<scenario>_real_model`
@@ -25,8 +25,8 @@ and a deployment serve a real model. On the other stacks, LLM ingress forwards t
 ([`scripted_upstream.py`](scripted_upstream.py)): the `scripted` fixture hands a scenario the
 `ScriptedModel` of its own Sandbox's Pod, and the scenario answers each request and asserts what
 the harness sent. A case marked `real_model` or `scripted_model` runs only where that backend is;
-only cases whose evidence is what a model does are `real_model`. LLM ingress serves the Codex catalog
-of `TESTING_APP_MODELS` there too, so a ChatGPT route puts Codex in code mode, which the scripted model answers.
+only cases whose evidence is what a model does are `real_model`. Codex is offered a ChatGPT route there
+too, so it runs in code mode, which the scripted model answers.
 Every request the scripted model receives is kept in the target's `test.outputs/scripted_upstream/`.
 
 ```bash

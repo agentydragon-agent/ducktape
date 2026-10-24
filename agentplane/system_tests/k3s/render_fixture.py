@@ -1,6 +1,6 @@
 """Render one ordinary or VM fixture chart into `$K3S_FIXTURE_DIR`.
 
-`K3S_FIXTURE_VARIANT` selects `none`, `local-model`, `public-litellm`, or `local-model-vm`.
+`K3S_FIXTURE_VARIANT` selects `local-model`, `public-litellm`, or `local-model-vm`.
 The selector is an environment variable because the app's Settings parse `sys.argv` as their own.
 """
 
@@ -9,8 +9,9 @@ from dataclasses import asdict
 from enum import StrEnum
 from pathlib import Path
 
-from agentplane.x.k3s_env import fixture_chart
-from agentplane.x.k3s_env.rendered_fixture import (
+from agentplane.system_tests.k3s import fixture_chart
+from agentplane.system_tests.k3s.namespaces import NAMESPACE
+from agentplane.system_tests.k3s.rendered_fixture import (
     MODEL_PLACEHOLDERS,
     PLACEHOLDERS,
     Backend,
@@ -24,7 +25,6 @@ from agentplane.x.k3s_env.rendered_fixture import (
 
 
 class FixtureVariant(StrEnum):
-    NONE = "none"
     LOCAL_MODEL = "local-model"
     LOCAL_MODEL_VM = "local-model-vm"
     PUBLIC_LITELLM = "public-litellm"
@@ -48,7 +48,7 @@ def _render(output: Path, variant: FixtureVariant, backend: Backend, *, vm_sandb
     fixture = RenderedFixture(
         backend=backend,
         vm_sandboxes=vm_sandboxes,
-        namespace=fixture_chart.NAMESPACE,
+        namespace=NAMESPACE,
         app_origin=fixture_chart.APP_ORIGIN,
         browser_services=[
             BrowserService(
@@ -65,8 +65,6 @@ def _render(output: Path, variant: FixtureVariant, backend: Backend, *, vm_sandb
 
 def render_variant(output: Path, variant: FixtureVariant) -> None:
     match variant:
-        case FixtureVariant.NONE:
-            _render(output, variant, Backend.NONE, vm_sandboxes=False)
         case FixtureVariant.LOCAL_MODEL:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False)
         case FixtureVariant.LOCAL_MODEL_VM:
