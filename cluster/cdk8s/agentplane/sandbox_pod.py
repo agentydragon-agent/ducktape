@@ -26,7 +26,6 @@ from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
 from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.agentplane import egress, notifications, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
@@ -309,6 +308,7 @@ def pod_spec(
     workload: k8s.Container,
     service_account_name: str | None,
     sidecar_settings: SettingsFile,
+    node_selector: Mapping[str, str] | None = None,
     workload_volumes: Sequence[k8s.Volume] = (),
     sidecar_resources: k8s.ResourceRequirements | None = None,
     image_pull_secret_name: str | None = SECRET_NAME,
@@ -319,7 +319,8 @@ def pod_spec(
     several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
     `service_account_name` is the template's own; whoever creates a box from it may replace it.
     `sidecar_settings` is the sidecar's settings file (`add_sidecar_settings`), and `workload_volumes`
-    are Pod volumes the workload mounts beyond the egress path's own."""
+    are Pod volumes the workload mounts beyond the egress path's own. `node_selector` is the optional
+    placement restriction for this template."""
     settings = sidecar_settings.pod_wiring(
         volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.Settings.config_file_env
     )
@@ -343,9 +344,7 @@ def pod_spec(
         image_pull_secrets=(
             [k8s.LocalObjectReference(name=image_pull_secret_name)] if image_pull_secret_name is not None else None
         ),
-        # With the rest of the namespace and with LiteLLM: a box's traffic through the egress proxy
-        # and a runner's model calls both stay inside the zone.
-        node_selector=({node_scheduling.ZONE_LABEL: env.app.runner_zone} if env.app.runner_zone is not None else None),
+        node_selector=dict(node_selector) if node_selector is not None else None,
         service_account_name=service_account_name,
         termination_grace_period_seconds=60,
         security_context=k8s.PodSecurityContext(

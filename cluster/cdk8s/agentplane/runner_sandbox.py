@@ -44,6 +44,7 @@ NAME = "runner"
 _POD_LABEL_NAME = "agentplane-runner"
 _IMAGE = "git.allegedly.works/ducktape-ci/runner"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
+_STORAGE_CLASS = "piraeus-hdd-local"
 _LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
 # Shared by the runner's --state-dir flag, its container volumeMount, and the
 # SandboxTemplate's state volume -- all three must name the same volume.
@@ -142,7 +143,7 @@ class RunnerSandbox(Construct):
         env: Environment,
         *,
         egress_api_service: ServiceRef | None = None,
-        storage_class: str = "local-path-ovh-hdd",
+        storage_class: str = _STORAGE_CLASS,
         runner_resources: k8s.ResourceRequirements | None = None,
         sidecar_resources: k8s.ResourceRequirements | None = None,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
@@ -225,7 +226,7 @@ class RunnerTemplate(Construct):
         image: str,
         buildbuddy_secret: bool = False,
         extra_harness_env: Sequence[str] = (),
-        storage_class: str = "local-path-ovh-hdd",
+        storage_class: str = _STORAGE_CLASS,
         runner_resources: k8s.ResourceRequirements | None = None,
         sidecar_resources: k8s.ResourceRequirements | None = None,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
@@ -375,6 +376,7 @@ class RunnerTemplate(Construct):
                 workload=self._runner_container(image),
                 service_account_name=NAME,
                 sidecar_settings=sidecar_settings,
+                # Let LINSTOR's storage-pool topology place the strict-local HDD claims.
                 workload_volumes=[
                     k8s.Volume(
                         name=_RUNNER_VOLUME_NAME,
@@ -407,9 +409,8 @@ class RunnerTemplate(Construct):
             "name": _STATE_VOLUME_NAME,
             "layout": {"type": "DirectoryTree"},
             "claim": {
-                # The bulk tier, and the only one a sandbox can have: OVH's `tier=ssd` nodes are
-                # control-plane, and a sandbox is not getting that toleration. Node-local, so a sandbox
-                # does not outlive its node -- which is what a sandbox is for.
+                # The StorageClass selects Piraeus' hdd pool; WaitForFirstConsumer lets LINSTOR's
+                # topology-aware provisioner place both strict-local claims on a node with that pool.
                 "storageClassName": self.storage_class,
                 "accessModes": ["ReadWriteOnce"],
                 "resources": {"requests": {"storage": "10Gi"}},

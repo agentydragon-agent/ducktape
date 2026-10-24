@@ -4244,8 +4244,6 @@ spec:
               readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
       securityContext:
         fsGroup: 1000
         runAsGroup: 1000
@@ -4300,7 +4298,7 @@ spec:
     layout:
       type: DirectoryTree
     claim:
-      storageClassName: local-path-ovh-hdd
+      storageClassName: piraeus-hdd-local
       accessModes:
         - ReadWriteOnce
       resources:
@@ -4309,7 +4307,7 @@ spec:
   workspaceVolume:
     name: workspace
     claim:
-      storageClassName: local-path-ovh-hdd
+      storageClassName: piraeus-hdd-local
       accessModes:
         - ReadWriteOnce
       resources:
@@ -4706,8 +4704,6 @@ spec:
         networks:
           - name: default
             pod: {}
-        nodeSelector:
-          kubevirt.io/schedulable: "true"
         volumes:
           - containerDisk:
               image: git.allegedly.works/ducktape-ci/agentplane-runner-vm:unset
@@ -4728,7 +4724,7 @@ spec:
     layout:
       type: DirectoryTree
     claim:
-      storageClassName: local-path-ovh-hdd
+      storageClassName: piraeus-hdd-local
       accessModes:
         - ReadWriteOnce
       resources:
@@ -4737,7 +4733,7 @@ spec:
   workspaceVolume:
     name: workspace
     claim:
-      storageClassName: local-path-ovh-hdd
+      storageClassName: piraeus-hdd-local
       accessModes:
         - ReadWriteOnce
       resources:
@@ -7079,8 +7075,6 @@ spec:
               readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
       securityContext:
         fsGroup: 1000
         runAsGroup: 1000
@@ -7139,7 +7133,7 @@ spec:
     layout:
       type: DirectoryTree
     claim:
-      storageClassName: local-path-ovh-hdd
+      storageClassName: piraeus-hdd-local
       accessModes:
         - ReadWriteOnce
       resources:
@@ -7148,7 +7142,7 @@ spec:
   workspaceVolume:
     name: workspace
     claim:
-      storageClassName: local-path-ovh-hdd
+      storageClassName: piraeus-hdd-local
       accessModes:
         - ReadWriteOnce
       resources:
