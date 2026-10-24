@@ -12,6 +12,7 @@ import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import type * as ClientModule from "../client";
 import {
+  api,
   submitInput,
   changeModel,
   changeReasoningEffort,
@@ -129,6 +130,10 @@ beforeEach(() => {
   eventSourceUrls = [];
   dispatchWatches = stubWatchFetch().served;
   threadRows = null;
+  vi.spyOn(api, "GET").mockResolvedValue({
+    data: { auto_title_on_first_message_default: false, title_generation_available: false },
+    response: Response.json({ auto_title_on_first_message_default: false, title_generation_available: false }),
+  } as never);
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({
     models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],

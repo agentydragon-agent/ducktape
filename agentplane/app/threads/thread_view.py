@@ -28,7 +28,7 @@ class ThreadView(BaseModel):
         "attachment is folded."
     )
     created_at: datetime
-    name: str | None = Field(description="The user-given name; None while the thread is unnamed.")
+    name: str | None = Field(description="The Thread title; None while the thread is unnamed.")
     archived: bool
     last_cursor: int = Field(description="The highest stored Event cursor; 0 while nothing is stored.")
     last_event_at: datetime | None = None

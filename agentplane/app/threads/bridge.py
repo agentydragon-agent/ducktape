@@ -50,6 +50,9 @@ class NewSession(BaseModel):
     session_id: UUID = Field(
         description="A fresh UUID the client minted for this Session; a retry of the same Open repeats it."
     )
+    auto_title_on_first_message: bool | None = Field(
+        default=None, description="Whether to title this Thread after its first confirmed user message."
+    )
     setup_script: str | None = Field(default=None, max_length=65_536)
 
 
@@ -142,6 +145,15 @@ async def create_session(request: Request, bridge: Bridge, name: str, body: NewS
     spec = _parse(spec, body.spec)  # Request fields, including explicit empty strings, override the preset.
     spec.cwd = spec.cwd.replace("{session_id}", str(body.session_id))
     setup_script = body.setup_script if "setup_script" in body.model_fields_set else defaults.setup_script or None
+    auto_title = (
+        services.auto_title_on_first_message_default
+        if body.auto_title_on_first_message is None
+        else body.auto_title_on_first_message
+    )
+    if auto_title and services.titles is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "automatic Thread titles are not configured")
+    # Persist the per-Thread app setting before the Dispatcher can start a harness which receives input.
+    await services.store.open_thread(body.session_id, auto_title_on_first_message=auto_title)
     opening = await bridge.create_session(name, body.session_id, spec, setup_script)
     return MessageToDict(opening)
 

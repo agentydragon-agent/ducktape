@@ -30,9 +30,12 @@ let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
-  fetchMock.mockImplementation(async (request: Request) =>
-    Response.json({ ...THREAD, ...((await request.clone().json()) as { name: string | null }) })
-  );
+  fetchMock.mockImplementation(async (request: Request) => {
+    if (new URL(request.url).pathname === "/threads/form") {
+      return Response.json({ auto_title_on_first_message_default: false, title_generation_available: false });
+    }
+    return Response.json({ ...THREAD, ...((await request.clone().json()) as { name: string | null }) });
+  });
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -78,11 +81,13 @@ async function press(input: HTMLInputElement, key: string): Promise<void> {
 
 async function renames(): Promise<Array<{ path: string; method: string; body: unknown }>> {
   return Promise.all(
-    fetchMock.mock.calls.map(async ([request]) => ({
-      path: new URL(request.url).pathname,
-      method: request.method,
-      body: await request.json(),
-    }))
+    fetchMock.mock.calls
+      .filter(([request]) => request.method === "PATCH")
+      .map(async ([request]) => ({
+        path: new URL(request.url).pathname,
+        method: request.method,
+        body: await request.json(),
+      }))
   );
 }
 
@@ -115,7 +120,7 @@ it("puts the stored name back on Escape and sends nothing", async () => {
   expect(input.value).toBe("Test stored name");
   await act(async () => input.blur());
 
-  expect(fetchMock).not.toHaveBeenCalled();
+  expect(fetchMock.mock.calls.some(([request]) => request.method === "PATCH")).toBe(false);
 });
 
 it("sends nothing when the committed name is the stored one", async () => {
@@ -124,7 +129,7 @@ it("sends nothing when the committed name is the stored one", async () => {
   await type(input, " Test stored name ");
   await press(input, "Enter");
 
-  expect(fetchMock).not.toHaveBeenCalled();
+  expect(fetchMock.mock.calls.some(([request]) => request.method === "PATCH")).toBe(false);
 });
 
 it("clears the name when a blank one is committed by moving away", async () => {

@@ -6,7 +6,7 @@ from collections.abc import Set
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
@@ -15,6 +15,30 @@ from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.log_levels import LogLevels
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
+
+
+class TitleGenerationSettings(BaseModel):
+    """An OpenAI Responses-compatible title backend owned by the app."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint: HttpEndpointUrl = Field(description="Full URL of an OpenAI Responses-compatible `/v1/responses` route.")
+    model: str = Field(min_length=1, description="Model identifier sent to the configured endpoint.")
+    token_secret_name: str | None = Field(
+        default=None,
+        description="Optional Kubernetes Secret in the app namespace; its `token` key is mounted read-only.",
+    )
+
+    @model_validator(mode="after")
+    def _valid_secret_name(self) -> TitleGenerationSettings:
+        if self.token_secret_name is not None and not self.token_secret_name:
+            raise ValueError("title-generation token Secret name must not be empty")
+        host = self.endpoint.host or ""
+        if self.endpoint.scheme == "http" and not (
+            host.endswith(".svc.cluster.local") or host == "localhost" or host.startswith("127.")
+        ):
+            raise ValueError("title-generation HTTP endpoints must be cluster-local; use HTTPS for external backends")
+        return self
 
 
 class AppSettingsConfig(YamlFileSettings):
@@ -49,6 +73,18 @@ class AppSettingsConfig(YamlFileSettings):
         description="The Connection Service's generated HTTP/JSON facade; its host and port also serve gRPC health."
     )
     action_federation: ActionFederationSettings
+    auto_title_on_first_message_default: bool = Field(
+        default=False, description="Initial value of the per-Session auto-title option in the new-Session form."
+    )
+    title_generation: TitleGenerationSettings | None = Field(
+        default=None, description="Optional OpenAI Responses-compatible backend for automatic Thread titles."
+    )
+
+    @model_validator(mode="after")
+    def _auto_title_needs_backend(self) -> AppSettingsConfig:
+        if self.auto_title_on_first_message_default and self.title_generation is None:
+            raise ValueError("auto-title default requires a configured title-generation backend")
+        return self
 
     @field_serializer("default_policy_sets")
     def serialize_default_policy_sets(self, value: Set[str]) -> list[str]:

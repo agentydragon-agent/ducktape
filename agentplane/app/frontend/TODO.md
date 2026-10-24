@@ -73,7 +73,6 @@ client can leave bodies past a size to be read when shown, and a memory budget a
 
 ## System page probes
 
-The System page omits LLM ingress, because the app's NetworkPolicy has no egress to it, and the
-Kubernetes API, whose reachability the app has but does not probe (the live views show only the
-watch's freshness). Add either as a probe in `main.py`, with the NetworkPolicy rule LLM ingress
-needs, if an operator wants to see it there.
+The System page omits the optional title backend, and the Kubernetes API, whose reachability the app
+has but does not probe (the live views show only the watch's freshness). Consider a backend probe in
+`main.py` if an operator wants to see it there.

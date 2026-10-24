@@ -222,6 +222,11 @@ class App(Construct):
         oidc_secret_reload = self.oidc.name
         if self.env.app.oidc_session_secret_name != self.oidc.name:
             oidc_secret_reload += f",{self.env.app.oidc_session_secret_name}"
+        if (
+            self.env.app_config.title_generation is not None
+            and self.env.app_config.title_generation.token_secret_name is not None
+        ):
+            oidc_secret_reload += f",{self.env.app_config.title_generation.token_secret_name}"
         workload = add_service_workload(
             self,
             self.env,
@@ -277,6 +282,15 @@ class App(Construct):
             },
         )
         config.mount_into(workload.container, env=Settings.config_file_env)
+        if (
+            title_generation := self.env.app_config.title_generation
+        ) is not None and title_generation.token_secret_name is not None:
+            workload.mount_secret(
+                "title-generation-token",
+                title_generation.token_secret_name,
+                "/var/run/secrets/agentplane-title-generation",
+                key="token",
+            )
         for volume, audience, mount_path in [
             ("runner-gateway-token", runner_gateway.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-runner-gateway"),
             ("history-service-token", history_service.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-history-service"),
@@ -316,6 +330,17 @@ class App(Construct):
         # The app takes browser traffic straight from the gateway and reaches DNS, the
         # API server, the OIDC provider, Runner Gateway, Session Dispatcher, History Service, the egress
         # proxy's admin port, the Action Service, and the trajectory store.
+        title_egress = []
+        if (title_generation := self.env.app_config.title_generation) is not None:
+            endpoint = title_generation.endpoint
+            hostname = endpoint.host
+            assert hostname is not None
+            port = endpoint.port or (443 if endpoint.scheme == "https" else 80)
+            labels = hostname.split(".")
+            if len(labels) == 5 and labels[2:] == ["svc", "cluster", "local"]:
+                title_egress.append(EgressRule.to_endpoints(cilium.endpoint_labels(labels[1], labels[0]), port))
+            elif endpoint.scheme == "https":
+                title_egress.extend([cilium.dns_egress(resolves=[hostname]), EgressRule.to_fqdns(hostname, port=port)])
         NetworkPolicy(
             self,
             "networkpolicy-app",
@@ -338,5 +363,6 @@ class App(Construct):
                 actions.service(namespace).egress(),
                 *([self.electric.egress()] if self.electric is not None else []),
                 database.egress(namespace),
+                *title_egress,
             ],
         )

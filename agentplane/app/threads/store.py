@@ -1,18 +1,19 @@
 """`ThreadStore`, the thread component's API over PostgreSQL.
 
-A Thread is its row here, with what an operator set on it (its name and archive state), joined with
-its fold and Sandbox identity from the History Service.
+A Thread is its row here, with its title, archive state, and title automation state, joined with its
+fold and Sandbox identity from the History Service.
 """
 
 from __future__ import annotations
 
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from binascii import Error as Base64Error
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from sqlalchemy import String, cast, func, or_, select, tuple_, update
+from sqlalchemy import String, and_, cast, func, or_, select, tuple_, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.app.database_updates import Channel
@@ -40,6 +41,10 @@ class HistorySandboxMissingError(LookupError):
 
     def __init__(self, thread_id: UUID) -> None:
         super().__init__(f"History Session {thread_id} has no Sandbox identity")
+
+
+class ConcurrentTitleUpdateError(RuntimeError):
+    """The title changed while automatic title generation was in flight."""
 
 
 class Listing(BaseModel):
@@ -172,9 +177,132 @@ class ThreadStore:
         """Set or, with None, clear the thread's name."""
         summary = await self._require_summary(thread_id)
         async with self._sessions.begin() as session:
-            thread = await _set_thread(session, thread_id, name=name)
+            thread = await _set_thread(
+                session,
+                thread_id,
+                name=name,
+                title_user_managed=True,
+                title_status="done",
+                title_claimed_at=None,
+                title_revision=Thread.title_revision + 1,
+            )
             await notify(session, Channel.THREADS)
         return self._view(thread, summary)
+
+    async def open_thread(self, thread_id: UUID, *, auto_title_on_first_message: bool) -> None:
+        """Create the app-owned row before a new Session can receive a user message."""
+        async with self._sessions.begin() as session:
+            created = await session.scalar(
+                insert(Thread)
+                .values(id=thread_id, auto_title_on_first_message=auto_title_on_first_message)
+                .on_conflict_do_nothing()
+                .returning(Thread.id)
+            )
+            if created is not None:
+                await notify(session, Channel.THREADS)
+
+    async def pending_auto_titles(self) -> list[tuple[UUID, int]]:
+        """Threads whose first-message title still needs scanning or a crashed claim needs recovery."""
+        now = datetime.now(UTC)
+        stale_before = now - timedelta(minutes=5)
+        pending = or_(
+            Thread.title_status == "waiting",
+            and_(Thread.title_status == "generating", Thread.title_claimed_at < stale_before),
+        )
+        async with self._sessions() as session:
+            rows = await session.execute(
+                select(Thread.id, Thread.title_scan_cursor)
+                .where(Thread.auto_title_on_first_message, ~Thread.title_user_managed, Thread.name.is_(None), pending)
+                .order_by(Thread.created_at)
+            )
+            return [(row.id, row.title_scan_cursor) for row in rows]
+
+    async def advance_title_scan_cursor(self, thread_id: UUID, cursor: int) -> None:
+        async with self._sessions.begin() as session:
+            await session.execute(
+                update(Thread)
+                .where(Thread.id == thread_id, Thread.title_status == "waiting")
+                .values(title_scan_cursor=cursor)
+            )
+
+    async def claim_auto_title(self, thread_id: UUID, cursor: int) -> int | None:
+        """Claim one first-message generation across replicas, recovering stale claims after a crash."""
+        now = datetime.now(UTC)
+        stale_before = now - timedelta(minutes=5)
+        claimable = or_(
+            Thread.title_status == "waiting",
+            and_(Thread.title_status == "generating", Thread.title_claimed_at < stale_before),
+        )
+        async with self._sessions.begin() as session:
+            return await session.scalar(
+                update(Thread)
+                .where(
+                    Thread.id == thread_id,
+                    Thread.auto_title_on_first_message,
+                    ~Thread.title_user_managed,
+                    Thread.name.is_(None),
+                    claimable,
+                )
+                .values(title_status="generating", title_claimed_at=now, title_scan_cursor=cursor)
+                .returning(Thread.title_revision)
+            )
+
+    async def generated_title(self, thread_id: UUID, title: str, *, expected_revision: int) -> ThreadView:
+        """Apply an on-demand title only if no user or other generation changed it meanwhile."""
+        summary = await self._require_summary(thread_id)
+        async with self._sessions.begin() as session:
+            thread = await session.scalar(
+                update(Thread)
+                .where(Thread.id == thread_id, Thread.title_revision == expected_revision)
+                .values(
+                    name=title, title_status="done", title_claimed_at=None, title_revision=Thread.title_revision + 1
+                )
+                .returning(Thread)
+            )
+            if thread is None:
+                raise ConcurrentTitleUpdateError(f"Thread {thread_id} was renamed while generating its title")
+            await notify(session, Channel.THREADS)
+        return self._view(thread, summary)
+
+    async def apply_first_message_title(self, thread_id: UUID, title: str, *, expected_revision: int) -> bool:
+        """Apply a claimed title only while the Thread is still unnamed and unedited."""
+        async with self._sessions.begin() as session:
+            updated = await session.scalar(
+                update(Thread)
+                .where(
+                    Thread.id == thread_id,
+                    Thread.title_status == "generating",
+                    Thread.title_revision == expected_revision,
+                    ~Thread.title_user_managed,
+                    Thread.name.is_(None),
+                )
+                .values(
+                    name=title, title_status="done", title_claimed_at=None, title_revision=Thread.title_revision + 1
+                )
+                .returning(Thread.id)
+            )
+            if updated is not None:
+                await notify(session, Channel.THREADS)
+        return updated is not None
+
+    async def fail_auto_title(self, thread_id: UUID, *, expected_revision: int) -> None:
+        async with self._sessions.begin() as session:
+            await session.execute(
+                update(Thread)
+                .where(
+                    Thread.id == thread_id,
+                    Thread.title_status == "generating",
+                    Thread.title_revision == expected_revision,
+                )
+                .values(title_status="failed", title_claimed_at=None)
+            )
+
+    async def title_context(self, thread_id: UUID) -> tuple[int, str | None]:
+        async with self._sessions() as session:
+            thread = await session.get(Thread, thread_id)
+            if thread is None:
+                raise ThreadNotFoundError(thread_id)
+            return thread.title_revision, thread.name
 
     async def archive(self, thread_id: UUID) -> ThreadView:
         """Hide the thread from a default listing without touching its events."""

@@ -37,6 +37,7 @@ from agentplane.app.threads.history_watch import HistoryWatch, SessionOpenings
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
+from agentplane.app.threads.title_generation import ThreadTitles, ThreadTitleWorker, TitleGenerator
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.background_task import background
@@ -146,6 +147,15 @@ async def async_main(settings: Settings) -> None:
         runners = RunnerDirectory(live, runner_control)
         session_openings = SessionOpenings(session_openings_client, event_logs, retry_interval_s=1)
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher)
+        titles = None
+        title_worker = None
+        if settings.title_generation is not None:
+            title_http = await upstream_clients.enter_async_context(httpx.AsyncClient(timeout=20))
+            titles = ThreadTitles(
+                generator=TitleGenerator(settings.title_generation, title_http), store=store, event_logs=event_logs
+            )
+            title_history = await upstream_clients.enter_async_context(history.new_client())
+            title_worker = ThreadTitleWorker(title_history, titles)
 
         decisions = DecisionsClient(
             egress_channel, token_file=settings.egress_admin_token_file, request_timeout_s=settings.egress_admin_timeout
@@ -200,8 +210,14 @@ async def async_main(settings: Settings) -> None:
             actions_http=UpstreamProxy(actions_http, token_file=None),
             connection_http=UpstreamProxy(connection_http, token_file=None),
             system_status=SystemStatusChecker(system_probes, timeout_s=SYSTEM_STATUS_TIMEOUT_S),
+            auto_title_on_first_message_default=settings.auto_title_on_first_message_default,
+            titles=titles,
         )
-        async with background(watch.run(), name="live-watch"), background(history_watch.run(), name="history-watch"):
+        async with AsyncExitStack() as tasks:
+            await tasks.enter_async_context(background(watch.run(), name="live-watch"))
+            await tasks.enter_async_context(background(history_watch.run(), name="history-watch"))
+            if title_worker is not None:
+                await tasks.enter_async_context(background(title_worker.run(), name="thread-title-watch"))
             await serve_then_close(
                 AppServer(
                     uvicorn.Config(

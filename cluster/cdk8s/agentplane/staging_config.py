@@ -9,7 +9,7 @@ from pathlib import Path
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
-from agentplane.app.settings import AppSettingsConfig
+from agentplane.app.settings import AppSettingsConfig, TitleGenerationSettings
 from agentplane.runner.harness import Harness
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane.actions_staging_policies import (
@@ -99,6 +99,8 @@ def config(
     models: HarnessRoutes,
     action_federation: ActionFederationSettings,
     connection_service_url: HttpEndpointUrl,
+    auto_title_on_first_message_default: bool = False,
+    title_generation: TitleGenerationSettings | None = None,
 ) -> AppSettingsConfig:
     cfg = settings(
         namespace=namespace,
@@ -113,6 +115,8 @@ def config(
             *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["public-coder"]),
         ],
         default_policy_sets=set(DEFAULT_POLICIES),
+        auto_title_on_first_message_default=auto_title_on_first_message_default,
+        title_generation=title_generation,
     )
     # The "haku" and "finance-agent" launch presets name staging's own credentials (haku:
     # forgejo-haku, haku-mailbox; finance-agent: forgejo-finance-agent, plaid-pgweb). Preset order
