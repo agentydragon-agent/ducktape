@@ -6,8 +6,11 @@ go_library(
         "adapter.go",
         "recovery.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner/go/harness",
-    visibility = ["//agentplane/runner:__subpackages__"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/harness",
+    visibility = [
+        "//agentplane/runner:__pkg__",
+        "//agentplane/runner:__subpackages__",
+    ],
     deps = [
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",

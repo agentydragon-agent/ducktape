@@ -12,8 +12,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/go/codex/protocol"
-	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/codex/protocol"
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/google/uuid"

@@ -282,9 +282,9 @@ Session record stores one Claude session ID or Codex thread ID, and its state di
 harness's persistent data. Claude's `CLAUDE_CONFIG_DIR` and Codex's `CODEX_HOME` are below the
 per-Session store. A runner restart can create a new process and resume the native conversation from
 that store. This is the current implementation, not an invariant that one process must always own
-exactly one Agentplane Session. See [`session.go`](../runner/go/session.go),
-[`process.go`](../runner/go/process.go), [`store.go`](../runner/go/store.go), and the adapters
-([Claude](../runner/go/claude/adapter.go), [Codex](../runner/go/codex/adapter.go)).
+exactly one Agentplane Session. See [`session.go`](../runner/session.go),
+[`process.go`](../runner/process.go), [`store.go`](../runner/store.go), and the adapters
+([Claude](../runner/claude/adapter.go), [Codex](../runner/codex/adapter.go)).
 
 The current lifecycle is Session-scoped: `Runner` keeps a map of `Session` objects; each Session's
 `ensure_running()` creates its own `HarnessProcess` and adapter using that Session's directory, and
@@ -385,9 +385,9 @@ the possibly orphaned native data for reconciliation. A lost response after the 
 commit resolves by the same public ID. Claude's current adapter chooses a native ID before launch;
 that narrower path does not solve the harness-chosen-ID crash window in general. Specify the
 reservation/mapping format, native reconciliation proof, and failure status before implementation.
-Today [`Session.startHarness`](../runner/go/session.go) writes the native ID only after adapter handshake;
-[`CodexAdapter`](../runner/go/codex/adapter.go) starts a native thread during that handshake, and
-[`ClaudeAdapter`](../runner/go/claude/adapter.go) selects an ID before launch but also persists it afterward.
+Today [`Session.startHarness`](../runner/session.go) writes the native ID only after adapter handshake;
+[`CodexAdapter`](../runner/codex/adapter.go) starts a native thread during that handshake, and
+[`ClaudeAdapter`](../runner/claude/adapter.go) selects an ID before launch but also persists it afterward.
 Persisting Claude's chosen ID before launch can narrow its case; Codex still needs a proven recovery
 path for an ID assigned by the harness.
 

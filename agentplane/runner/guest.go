@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 )
 
 const (

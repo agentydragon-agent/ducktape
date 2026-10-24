@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/go/claude"
-	"github.com/agentydragon/ducktape/agentplane/runner/go/codex"
-	"github.com/agentydragon/ducktape/agentplane/runner/go/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/claude"
+	"github.com/agentydragon/ducktape/agentplane/runner/codex"
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"

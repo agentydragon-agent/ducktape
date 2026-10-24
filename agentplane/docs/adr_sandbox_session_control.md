@@ -283,10 +283,10 @@ followed by a delete, waits on this.
 
 **What "sealed" is after a quiesce.** One fact in several places, only the last keyed to an incarnation:
 
-- The runner journal's `Seal` row (`runner/go/journal.go`): `open` refuses entries after it, append rejects
-  writes after sealing, and Session sealing prevents further work (`runner/go/session.go`).
+- The runner journal's `Seal` row (`runner/journal.go`): `open` refuses entries after it, append rejects
+  writes after sealing, and Session sealing prevents further work (`runner/session.go`).
 - The runner's per-Session acknowledgement file records `sealed`; `IngressPusher.track` skips a Session whose
-  acknowledgement is sealed, and a push ends on a sealed first acknowledgement (`runner/go/transport.go`).
+  acknowledgement is sealed, and a push ends on a sealed first acknowledgement (`runner/transport.go`).
 - The History Service stores the seal in the Session's feed state. `RecordFeedState` keeps it sticky ("conflicting
   seals"), and `Push` returns right after a sealed first acknowledgement, so it takes no entry from a sealed Session
   (`history_service/ingress/ingress.go`, `storage/store.go`). `Append` itself does not check it.

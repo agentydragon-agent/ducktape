@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/go/codex/protocol"
+	"github.com/agentydragon/ducktape/agentplane/runner/codex/protocol"
 )
 
 func TestDecodeCodexItemRetainsGeneratedVariants(t *testing.T) {
