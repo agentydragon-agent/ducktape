@@ -10,15 +10,18 @@ use std::sync::Arc;
 type Values = BTreeSet<AbstractValue>;
 type Context = BTreeMap<Id, Values>;
 
-/// Immutable closure captures are shared across value-set and invocation-cache
-/// clones. Equality remains structural; pointer equality is only a fast path
-/// for the common case where a clone still refers to the same snapshot.
+/// Contexts are interned bottom-up by the executor. Structural equality of
+/// captures becomes identity equality, so comparing value sets and cache keys
+/// never recursively compares a shared capture DAG along every path.
 #[derive(Debug, Clone)]
-struct CapturedContext(Arc<Context>);
+struct CapturedContext {
+    identity: usize,
+    values: Arc<Context>,
+}
 
 impl PartialEq for CapturedContext {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0) || self.0 == other.0
+        self.identity == other.identity
     }
 }
 
@@ -32,11 +35,7 @@ impl PartialOrd for CapturedContext {
 
 impl Ord for CapturedContext {
     fn cmp(&self, other: &Self) -> Ordering {
-        if Arc::ptr_eq(&self.0, &other.0) {
-            Ordering::Equal
-        } else {
-            self.0.cmp(&other.0)
-        }
+        self.identity.cmp(&other.identity)
     }
 }
 
@@ -1024,6 +1023,18 @@ struct ReachabilityState {
     owners: BTreeSet<StatementOrdinal>,
 }
 
+/// Callback roots retained by a fallback stay escaped for the rest of the
+/// chunk. Cache their static read closure once; initialization timing is still
+/// checked against the current prefix when the summary is applied.
+#[derive(Default)]
+struct CallbackFallbackSummary {
+    expanded: BTreeSet<StatementOrdinal>,
+    reads: BTreeSet<Id>,
+    rebinds: BTreeSet<Id>,
+    read_additions: Vec<Id>,
+    rebind_additions: Vec<Id>,
+}
+
 type InvocationSignature = (
     u32,
     Vec<Values>,
@@ -1039,6 +1050,13 @@ type ActiveInvocation = (u32, Option<StatementOrdinal>);
 // evade the state-specific memoization key. Bound recursive analysis separately
 // from that cache so a finite source program cannot consume the Rust stack.
 const MAX_SYNCHRONOUS_INVOCATION_DEPTH: usize = 64;
+// Count actual expansions, including those whose changing prefix state defeats
+// memoization. A cache-size limit alone does not bound a branching call tree.
+const MAX_SYNCHRONOUS_INVOCATIONS: usize = 256;
+// Giving every callback the entire pool as an argument creates a quadratic
+// value cross product, even without recursion. Summarize large pools before
+// manufacturing capture snapshots that retain that cross product.
+const MAX_SYNCHRONOUS_CALLBACK_POOL: usize = 64;
 
 struct Executor<'a> {
     index: &'a ExecutionIndex,
@@ -1064,6 +1082,12 @@ struct Executor<'a> {
     fresh_mutation_callables: BTreeSet<u32>,
     prefix_revision: u64,
     invocation_depth: usize,
+    invocation_count: usize,
+    callback_fallback: CallbackFallbackSummary,
+    fallback_outcome: Outcome,
+    fallback_callback_sizes: Option<(usize, usize)>,
+    fallback_local_owners: BTreeSet<StatementOrdinal>,
+    capture_contexts: BTreeMap<Arc<Context>, usize>,
     active: BTreeSet<ActiveInvocation>,
     cache: BTreeMap<InvocationSignature, Outcome>,
 }
@@ -1080,25 +1104,59 @@ impl Executor<'_> {
         outcome: &mut Outcome,
     ) {
         let fact = &self.facts[owner.0];
-        for id in fact
-            .reads
-            .lazy
-            .iter()
-            .filter(|id| self.top_bindings.contains(*id))
-        {
-            outcome.effects.reads.insert((id.clone(), effect_owner));
-            if !self.initialized_bindings.contains(id) {
-                outcome.effects.uninitialized_reads.insert(id.clone());
-            }
-        }
-        outcome.effects.rebinds.extend(
-            fact.rebinds
-                .lazy
-                .iter()
+        self.promote_lazy_effects(&fact.reads.lazy, &fact.rebinds.lazy, effect_owner, outcome);
+    }
+
+    fn promote_lazy_effects(
+        &self,
+        reads: &BTreeSet<Id>,
+        rebinds: &BTreeSet<Id>,
+        effect_owner: StatementOrdinal,
+        outcome: &mut Outcome,
+    ) {
+        // Large fallback summaries are already sorted. Building and merging
+        // their sets in bulk avoids a tree lookup for every repeated read.
+        // Small per-owner additions still use insertion into the larger set.
+        if reads.len() >= 64 && reads.len().saturating_mul(2) >= outcome.effects.reads.len() {
+            let mut uninitialized = reads
+                .difference(&self.initialized_bindings)
                 .filter(|id| self.top_bindings.contains(*id))
                 .cloned()
-                .map(|id| (id, effect_owner)),
-        );
+                .collect();
+            outcome
+                .effects
+                .uninitialized_reads
+                .append(&mut uninitialized);
+            let mut promoted = reads
+                .intersection(&self.top_bindings)
+                .cloned()
+                .map(|id| (id, effect_owner))
+                .collect();
+            outcome.effects.reads.append(&mut promoted);
+        } else {
+            for id in reads.iter().filter(|id| self.top_bindings.contains(*id)) {
+                outcome.effects.reads.insert((id.clone(), effect_owner));
+                if !self.initialized_bindings.contains(id) {
+                    outcome.effects.uninitialized_reads.insert(id.clone());
+                }
+            }
+        }
+        if rebinds.len() >= 64 && rebinds.len().saturating_mul(2) >= outcome.effects.rebinds.len() {
+            let mut promoted = rebinds
+                .intersection(&self.top_bindings)
+                .cloned()
+                .map(|id| (id, effect_owner))
+                .collect();
+            outcome.effects.rebinds.append(&mut promoted);
+        } else {
+            outcome.effects.rebinds.extend(
+                rebinds
+                    .iter()
+                    .filter(|id| self.top_bindings.contains(*id))
+                    .cloned()
+                    .map(|id| (id, effect_owner)),
+            );
+        }
     }
 
     fn roots_for_owner(&self, owner: StatementOrdinal) -> BTreeSet<StatementOrdinal> {
@@ -1202,7 +1260,9 @@ impl Executor<'_> {
         if writes.is_empty() {
             return;
         }
-        let unknown_call = outcome.unknown_call || self.reachability.unknown_call_seen;
+        let unknown_call = outcome.unknown_call
+            || self.reachability.unknown_call_seen
+            || self.fallback_outcome.unknown_call;
         if self.index.setter_owners.is_empty() && !unknown_call {
             return;
         }
@@ -1328,15 +1388,19 @@ impl Executor<'_> {
         let mut callbacks = Values::new();
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited_objects = BTreeSet::new();
-        let mut expanded_unknown = false;
+        let mut expanded_escaped = false;
         while let Some(value) = pending.pop() {
             match &value {
                 AbstractValue::Origin(ValueOrigin::Function(_)) | AbstractValue::Closure(_, _) => {
-                    callbacks.insert(value.clone());
-                    if let AbstractValue::Closure(_, captured) = &value {
+                    // Capture snapshots form a DAG: multiple bindings can
+                    // contain the same closure. Expand each closure once,
+                    // rather than revisit it along every path through captures.
+                    if callbacks.insert(value.clone())
+                        && let AbstractValue::Closure(_, captured) = &value
+                    {
                         pending.extend(
                             captured
-                                .0
+                                .values
                                 .values()
                                 .flat_map(|values| values.iter().cloned()),
                         );
@@ -1353,15 +1417,12 @@ impl Executor<'_> {
                         );
                     }
                 }
-                AbstractValue::GlobalObject => {
-                    pending.extend(self.global_escaped_callbacks.iter().cloned());
-                }
-                AbstractValue::Unknown if !expanded_unknown => {
+                AbstractValue::GlobalObject | AbstractValue::Unknown if !expanded_escaped => {
                     // Unknown external data cannot expose an unescaped local
                     // callback. Preserve tracked escapes; exports are added
                     // separately at opaque call sites, and known object
                     // identities are expanded through their property maps.
-                    expanded_unknown = true;
+                    expanded_escaped = true;
                     pending.extend(
                         self.global_escaped_callbacks
                             .iter()
@@ -1420,9 +1481,22 @@ impl Executor<'_> {
         }
     }
 
-    fn closure_captures(&self, key: u32, captures: &Context) -> CapturedContext {
+    fn intern_captures(&mut self, captures: Context) -> CapturedContext {
+        if let Some((values, &identity)) = self.capture_contexts.get_key_value(&captures) {
+            return CapturedContext {
+                identity,
+                values: Arc::clone(values),
+            };
+        }
+        let identity = self.capture_contexts.len();
+        let values = Arc::new(captures);
+        self.capture_contexts.insert(Arc::clone(&values), identity);
+        CapturedContext { identity, values }
+    }
+
+    fn closure_captures(&mut self, key: u32, captures: &Context) -> CapturedContext {
         let Some(callable) = self.index.callables.get(&key) else {
-            return CapturedContext(Arc::new(Context::new()));
+            return self.intern_captures(Context::new());
         };
         let free_bindings = callable.reads.iter().chain(callable.rebinds.iter());
         let mut captured = Context::new();
@@ -1441,28 +1515,31 @@ impl Executor<'_> {
                 );
             }
         }
-        CapturedContext(Arc::new(captured))
+        self.intern_captures(captured)
     }
 
     fn available_export_callbacks(&self) -> Values {
         if !self.export_reentry_enabled {
             return Values::new();
         }
-        let mut callbacks = Values::new();
+        // Discover the whole export surface in one traversal. Exported aliases,
+        // unknown values, and shared objects must not each re-expand the same
+        // escaped callback/capture graph independently.
+        let mut values = Values::new();
         for binding in &self.index.exported_bindings {
-            if let Some(values) = self.prefix_values.get(binding) {
-                callbacks.extend(self.callback_values(values));
+            if let Some(exported) = self.prefix_values.get(binding) {
+                values.extend(exported.iter().cloned());
             }
         }
-        callbacks.extend(
+        values.extend(
             self.index
                 .exported_hoisted_functions
                 .iter()
                 .copied()
                 .map(|key| AbstractValue::Origin(ValueOrigin::Function(key))),
         );
-        callbacks.extend(self.callback_values(&self.exported_runtime_values));
-        callbacks
+        values.extend(self.exported_runtime_values.iter().cloned());
+        self.callback_values(&values)
     }
 
     fn invoke_possible_callbacks(
@@ -1474,9 +1551,8 @@ impl Executor<'_> {
         let mut callbacks = self.global_escaped_callbacks.clone();
         callbacks.extend(self.available_export_callbacks());
         if !no_sync_arguments {
-            for values in args {
-                callbacks.extend(self.callback_values(values));
-            }
+            let values = args.iter().flatten().cloned().collect();
+            callbacks.extend(self.callback_values(&values));
         }
         // Unknown host code may invoke any callback it received with another
         // currently available callback, so each formal gets the conservative
@@ -1490,7 +1566,42 @@ impl Executor<'_> {
                 .map_or(0, |callable| callable.params.len());
             vec![possible_argument.clone(); count]
         };
+        let reentrant_pool = callbacks.iter().any(|callback| {
+            let key = match callback {
+                AbstractValue::Origin(ValueOrigin::Function(key))
+                | AbstractValue::Closure(key, _) => *key,
+                _ => return false,
+            };
+            self.active.contains(&(key, self.current_top_owner))
+        });
         for callback in callbacks.clone() {
+            if reentrant_pool
+                || callbacks.len() > MAX_SYNCHRONOUS_CALLBACK_POOL
+                || self.invocation_count >= MAX_SYNCHRONOUS_INVOCATIONS
+                || self.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH
+            {
+                // A recursive member already falls back to a closure over the
+                // entire pool in its arguments. Summarize that pool once rather
+                // than enumerate permutations of callbacks around the cycle.
+                // The same batch fallback bounds exhausted acyclic expansions.
+                let nested = self.bounded_invocation_fallback(
+                    self.current_top_owner
+                        .expect("callback call has a top owner"),
+                    std::slice::from_ref(&callbacks),
+                    &Context::new(),
+                );
+                self.apply_rebind_effects(&nested.effects.rebinds);
+                outcome.effects.reads.extend(nested.effects.reads);
+                outcome.effects.rebinds.extend(nested.effects.rebinds);
+                outcome
+                    .effects
+                    .uninitialized_reads
+                    .extend(nested.effects.uninitialized_reads);
+                outcome.executed_owners.extend(nested.executed_owners);
+                outcome.unknown_call |= nested.unknown_call;
+                outcome.complete &= nested.complete;
+                break;
+            }
             let nested = match callback {
                 AbstractValue::Origin(ValueOrigin::Function(key)) => {
                     self.invoke(key, args_for(key, self.index), None)
@@ -1514,10 +1625,9 @@ impl Executor<'_> {
         // An opaque callee can retain any callback passed to it and invoke it
         // during a later prefix event.
         let before = self.global_escaped_callbacks.len();
-        for values in args {
-            self.global_escaped_callbacks
-                .extend(self.callback_values(values));
-        }
+        let values = args.iter().flatten().cloned().collect();
+        self.global_escaped_callbacks
+            .extend(self.callback_values(&values));
         if self.global_escaped_callbacks.len() != before {
             self.prefix_revision = self.prefix_revision.wrapping_add(1);
         }
@@ -1546,12 +1656,14 @@ impl Executor<'_> {
         captured: &Context,
     ) -> Outcome {
         let effect_owner = self.current_top_owner.unwrap_or(owner);
-        let mut outcome = Outcome {
-            returns: unknown(),
-            complete: false,
-            unknown_call: true,
-            ..Outcome::default()
-        };
+        // Within one source prefix initialization is fixed. Keep a monotone
+        // summary so each reachable owner's lazy effects are promoted once,
+        // even when recursion or changing abstract arguments hit the bound
+        // repeatedly. Reusing earlier fallback roots only adds constraints.
+        let mut outcome = std::mem::take(&mut self.fallback_outcome);
+        let rebinds_before = outcome.effects.rebinds.len();
+        outcome.complete = false;
+        outcome.unknown_call = true;
         outcome.executed_owners.insert(owner);
 
         // The recursive summary is no longer being expanded. Preserve reads
@@ -1563,7 +1675,7 @@ impl Executor<'_> {
         possible_values.extend(self.global_escaped_callbacks.iter().cloned());
         possible_values.extend(self.available_export_callbacks());
         let callbacks = self.callback_values(&possible_values);
-        let mut roots = BTreeSet::from([owner]);
+        let mut roots = BTreeSet::new();
         for callback in &callbacks {
             let key = match callback {
                 AbstractValue::Origin(ValueOrigin::Function(key))
@@ -1576,20 +1688,86 @@ impl Executor<'_> {
                 roots.insert(callback_owner);
             }
         }
-        let mut expanded = BTreeSet::new();
+        self.extend_reachable_owners(roots.iter().copied().chain([owner]));
         let mut owners = BTreeSet::new();
-        self.owner_read_closure.extend_reachable_owners(
+        let mut reached = self.owner_read_closure.extend_reachable_owners(
             roots.iter().copied(),
-            &mut expanded,
+            &mut self.callback_fallback.expanded,
             &mut owners,
         );
-        self.extend_reachable_owners(roots.iter().copied());
         if self.reachability.incomplete {
             // Dynamic lexical scope defeats the normal binding-read closure.
-            owners.extend(self.all_owners());
+            for fact in self.facts {
+                if self.callback_fallback.expanded.insert(fact.ordinal) {
+                    reached.push(fact.ordinal);
+                }
+            }
         }
-        for accessor_owner in owners {
-            self.promote_lazy_owner(accessor_owner, effect_owner, &mut outcome);
+        for reached_owner in reached {
+            let fact = &self.facts[reached_owner.0];
+            for id in fact
+                .reads
+                .lazy
+                .iter()
+                .filter(|id| self.top_bindings.contains(*id))
+            {
+                if self.callback_fallback.reads.insert(id.clone()) {
+                    self.callback_fallback.read_additions.push(id.clone());
+                }
+            }
+            for id in fact
+                .rebinds
+                .lazy
+                .iter()
+                .filter(|id| self.top_bindings.contains(*id))
+            {
+                if self.callback_fallback.rebinds.insert(id.clone()) {
+                    self.callback_fallback.rebind_additions.push(id.clone());
+                }
+            }
+        }
+        let callback_sizes = (
+            self.callback_fallback.reads.len(),
+            self.callback_fallback.rebinds.len(),
+        );
+        if let Some((reads_before, rebinds_before)) = self.fallback_callback_sizes {
+            // New escaped roots can appear during a statement. Apply only
+            // their newly discovered IDs, rather than repeatedly reapplying
+            // the entire growing closure at the same initialization prefix.
+            let reads = self.callback_fallback.read_additions[reads_before..]
+                .iter()
+                .cloned()
+                .collect();
+            let rebinds = self.callback_fallback.rebind_additions[rebinds_before..]
+                .iter()
+                .cloned()
+                .collect();
+            self.promote_lazy_effects(&reads, &rebinds, effect_owner, &mut outcome);
+        } else {
+            self.promote_lazy_effects(
+                &self.callback_fallback.reads,
+                &self.callback_fallback.rebinds,
+                effect_owner,
+                &mut outcome,
+            );
+        }
+        self.fallback_callback_sizes = Some(callback_sizes);
+        // The directly truncated callable need not escape. Its static SCC
+        // summary already contains the same transitive lazy effects, without
+        // adding its private roots to the persistent callback cache.
+        if !self.callback_fallback.expanded.contains(&owner)
+            && self.fallback_local_owners.insert(owner)
+        {
+            let (reads, rebinds) = self.owner_read_closure.lazy_effects_for_owner(owner);
+            let reads = reads
+                .difference(&self.callback_fallback.reads)
+                .cloned()
+                .collect();
+            let rebinds = rebinds
+                .difference(&self.callback_fallback.rebinds)
+                .cloned()
+                .collect();
+            self.promote_lazy_effects(&reads, &rebinds, effect_owner, &mut outcome);
         }
 
         // The truncated body may have passed one of these callback values to
@@ -1599,7 +1777,20 @@ impl Executor<'_> {
         if self.global_escaped_callbacks.len() != before {
             self.prefix_revision = self.prefix_revision.wrapping_add(1);
         }
-        outcome
+        if outcome.effects.rebinds.len() != rebinds_before {
+            self.apply_rebind_effects(&outcome.effects.rebinds);
+        }
+        // Fallback effects are attributed to the active top-level statement,
+        // not the lexical callee. Accumulate them there once instead of copying
+        // and re-merging the whole summary through every nested invocation.
+        self.fallback_outcome = outcome;
+        Outcome {
+            returns: unknown(),
+            complete: false,
+            unknown_call: true,
+            executed_owners: BTreeSet::from([owner]),
+            ..Outcome::default()
+        }
     }
 
     fn evaluate(&mut self, expr: &ValueExpr, env: &Context, captures: &Context) -> Values {
@@ -1826,7 +2017,7 @@ impl Executor<'_> {
         let empty_context = Context::new();
         let captured_context = captured
             .as_ref()
-            .map_or(&empty_context, |captured| captured.0.as_ref());
+            .map_or(&empty_context, |captured| captured.values.as_ref());
         self.record_executed_owner(callable_owner);
         if callable_opaque {
             self.note_unknown_execution(callable_owner);
@@ -1845,12 +2036,13 @@ impl Executor<'_> {
         let active_invocation = (key, self.current_top_owner);
         if self.active.contains(&active_invocation)
             || self.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH
-            || self.cache.len() + self.active.len() >= 4096
+            || self.invocation_count >= MAX_SYNCHRONOUS_INVOCATIONS
         {
             return self.bounded_invocation_fallback(callable_owner, &args, captured_context);
         }
         self.active.insert(active_invocation);
         self.invocation_depth += 1;
+        self.invocation_count += 1;
         let Some(callable) = self.index.callables.get(&key) else {
             self.active.remove(&active_invocation);
             self.invocation_depth -= 1;
@@ -2173,6 +2365,12 @@ pub(crate) fn annotate_synchronous_calls(
         ),
         prefix_revision: 0,
         invocation_depth: 0,
+        invocation_count: 0,
+        callback_fallback: CallbackFallbackSummary::default(),
+        fallback_outcome: Outcome::default(),
+        fallback_callback_sizes: None,
+        fallback_local_owners: BTreeSet::new(),
+        capture_contexts: BTreeMap::new(),
         active: BTreeSet::new(),
         cache: BTreeMap::new(),
     };
@@ -2187,6 +2385,10 @@ pub(crate) fn annotate_synchronous_calls(
         // Cache keys include this owner; previous statement snapshots cannot
         // be reused and should not consume this statement's bounded budget.
         executor.cache.clear();
+        executor.invocation_count = 0;
+        executor.fallback_outcome = Outcome::default();
+        executor.fallback_callback_sizes = None;
+        executor.fallback_local_owners.clear();
         let fact_roots = executor.fact_roots(fact);
         if executor.reachability.unknown_call_seen {
             executor.extend_reachable_owners(fact_roots.iter().copied());
@@ -2243,6 +2445,18 @@ pub(crate) fn annotate_synchronous_calls(
             fact.ordinal,
             &mut outcome,
         );
+        let fallback = std::mem::take(&mut executor.fallback_outcome);
+        if fallback.unknown_call {
+            outcome.effects.reads.extend(fallback.effects.reads);
+            outcome.effects.rebinds.extend(fallback.effects.rebinds);
+            outcome
+                .effects
+                .uninitialized_reads
+                .extend(fallback.effects.uninitialized_reads);
+            outcome.executed_owners.extend(fallback.executed_owners);
+            outcome.unknown_call = true;
+            outcome.complete = false;
+        }
         outcome.complete &= !index.opaque_top.contains(&fact.ordinal);
         outcome.effects.complete = outcome.complete;
         let mut prior_effect_owners = outcome.executed_owners.clone();
