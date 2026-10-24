@@ -1,5 +1,4 @@
-import type { JSX } from "react";
-import { useEffect, useEffectEvent, useState } from "react";
+import { type JSX, useEffect, useEffectEvent, useState } from "react";
 import { Button, Group } from "@mantine/core";
 
 import { api, autoTitleThread, displayableError, renameThread, type ThreadView } from "../client";

@@ -42,11 +42,11 @@ class SeededEventLogStore(EventLogStore):
         super().__init__(engine, history_reader=history_reader, summaries=summaries)
 
     @override
-    async def open(self, session_id: str) -> UUID:
+    async def open(self, session_id: str, *, auto_title_on_first_message: bool = False) -> UUID:
         """Open the Thread of a Session the app discovered, without the History Service's confirmation:
         a fixture's runner may reach the History Service only through the app's own ingestion."""
         public_id = UUID(session_id)
-        await self._insert(public_id)
+        await self._insert(public_id, auto_title_on_first_message=auto_title_on_first_message)
         return public_id
 
     async def register(self, sandbox: str, session_id: str) -> UUID:
@@ -62,7 +62,12 @@ class SeededEventLogStore(EventLogStore):
         await self._insert(public_id)
         return public_id
 
-    async def _insert(self, public_id: UUID) -> None:
+    async def _insert(self, public_id: UUID, *, auto_title_on_first_message: bool = False) -> None:
         async with self._sessions.begin() as session:
-            if await session.scalar(insert(Thread).values(id=public_id).on_conflict_do_nothing().returning(Thread.id)):
+            if await session.scalar(
+                insert(Thread)
+                .values(id=public_id, auto_title_on_first_message=auto_title_on_first_message)
+                .on_conflict_do_nothing()
+                .returning(Thread.id)
+            ):
                 await notify(session, Channel.THREADS)
