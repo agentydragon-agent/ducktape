@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/claude-session-sync
-    newTag: devel-20261023120032-bece833 # {"$imagepolicy": "flux-system:claude-session-sync:tag"}
+    newTag: devel-20261024221820-ddcaa1e # {"$imagepolicy": "flux-system:claude-session-sync:tag"}
