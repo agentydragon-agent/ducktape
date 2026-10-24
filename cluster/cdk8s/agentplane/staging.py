@@ -27,7 +27,6 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
-from agentplane.app.settings import TitleGenerationSettings
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import (
@@ -89,7 +88,6 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRul
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
-from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_256K
 
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _ACTIONS_HOSTNAME = "agentplane-actions-staging.allegedly.works"
@@ -124,7 +122,6 @@ _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
 _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
 _LITELLM_KEY_SECRET = "litellm-key-agentplane-staging"
-_TITLE_GENERATION_TOKEN_SECRET = "agentplane-staging-title-generation-token"
 _OIDC_SESSION_SECRET = "agentplane-staging-session-secret"
 _CONNECTION_SERVICE = mcp_edge.service(STAGING_NAMESPACE)
 
@@ -325,12 +322,8 @@ ENV = Environment(
         models=STAGING_APP_MODELS,
         action_federation=_ACTION_FEDERATION,
         connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
-        # Keep title generation click-driven; the per-Session auto-title default remains false.
-        title_generation=TitleGenerationSettings(
-            endpoint=AnyHttpUrl("http://litellm.litellm.svc.cluster.local:4000/v1/responses"),
-            model=OLLAMA_QWEN_IQ4XS_256K.openai.id,
-            token_secret_name=_TITLE_GENERATION_TOKEN_SECRET,
-        ),
+        # Title generation is disabled until its History Service API and app ownership are designed.
+        # See https://github.com/agentydragon/ducktape/issues/11817.
     ),
     settle_deltas=True,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
@@ -545,14 +538,6 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="external-creds-reader", namespace=STAGING_NAMESPACE),
         automount_token=False,
     )
-    litellm_key_store = single_secret_store(
-        chart,
-        "agentplane-staging-litellm-key",
-        reader=reader,
-        source_namespace="litellm",
-        source_secret=_LITELLM_KEY_SECRET,
-        consumer_namespace=STAGING_NAMESPACE,
-    )
     ExternalSecret(
         chart,
         "litellm-key-external-secret",
@@ -562,21 +547,17 @@ def chart(app: App) -> Chart:
             annotations={"description": "ESO copy of the Crossplane-managed Agentplane staging LiteLLM key."},
         ),
         refresh_interval="1h",
-        secret_store_ref=SecretStoreRef.cluster(litellm_key_store),
-        data=[remote_data(_LITELLM_KEY_SECRET, "api-key")],
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-    )
-    ExternalSecret(
-        chart,
-        "title-generation-token-external-secret",
-        metadata=ApiObjectMetadata(
-            name=_TITLE_GENERATION_TOKEN_SECRET,
-            namespace=STAGING_NAMESPACE,
-            annotations={"description": "Agentplane staging title-generation credential, copied from its LiteLLM key."},
+        secret_store_ref=SecretStoreRef.cluster(
+            single_secret_store(
+                chart,
+                "agentplane-staging-litellm-key",
+                reader=reader,
+                source_namespace="litellm",
+                source_secret=_LITELLM_KEY_SECRET,
+                consumer_namespace=STAGING_NAMESPACE,
+            )
         ),
-        refresh_interval="1h",
-        secret_store_ref=SecretStoreRef.cluster(litellm_key_store),
-        data=[remote_data(_LITELLM_KEY_SECRET, "api-key", secret_key="token")],
+        data=[remote_data(_LITELLM_KEY_SECRET, "api-key")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
     ExternalSecret(
