@@ -1,5 +1,6 @@
 import { type JSX, useEffect, useEffectEvent, useState } from "react";
-import { Button, Group } from "@mantine/core";
+import { ActionIcon, Group, Tooltip } from "@mantine/core";
+import IconSparkles from "@tabler/icons-react/dist/esm/icons/IconSparkles.mjs";
 
 import { api, autoTitleThread, displayableError, renameThread, type ThreadView } from "../client";
 import { InlineName } from "../inline_name";
@@ -67,15 +68,18 @@ export function ThreadTitle({
         onCommit={(name) => void rename(name)}
       />
       {titleGenerationAvailable && (
-        <Button
-          size="xs"
-          variant="subtle"
-          disabled={thread === null || generating}
-          loading={generating}
-          onClick={() => void autoTitle()}
-        >
-          Auto-title
-        </Button>
+        <Tooltip label="Auto-title" withArrow>
+          <ActionIcon
+            size="sm"
+            variant="subtle"
+            aria-label="Auto-title"
+            disabled={thread === null || generating}
+            loading={generating}
+            onClick={() => void autoTitle()}
+          >
+            <IconSparkles size={16} />
+          </ActionIcon>
+        </Tooltip>
       )}
     </Group>
   );
