@@ -26,16 +26,38 @@ func TestReadCodexHistoryIgnoresArrayCustomToolOutput(t *testing.T) {
 	}
 }
 
-func TestReadCodexHistoryDecodesArrayFunctionOutput(t *testing.T) {
+func TestReadCodexHistoryDecodesArrayCustomToolOutput(t *testing.T) {
 	directory := t.TempDir()
-	writeCodexHistory(t, directory, "thread-array-function-output", `{"type":"response_item","payload":{"type":"function_call","call_id":"call-1"}}
-{"type":"response_item","payload":{"type":"function_call_output","call_id":"call-1","output":[{"type":"input_text","text":"tool output"}]}}
+	writeCodexHistory(t, directory, "thread-array-custom-call-output", `{"type":"response_item","payload":{"type":"custom_tool_call","call_id":"call-1"}}
+{"type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call-1","output":[{"type":"input_text","text":"tool "},{"type":"input_text","text":"output"}]}}
 `)
 
 	observed := harness.ObservedItem{
 		ItemID: "call-1", Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, Output: "tool output", Completed: true,
 	}
-	recovered, err := readCodexHistory(directory, "thread-array-function-output", map[string]harness.ObservedItem{"call-1": observed})
+	recovered, err := readCodexHistory(directory, "thread-array-custom-call-output", map[string]harness.ObservedItem{"call-1": observed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredItem, ok := recovered["call-1"]
+	if !ok {
+		t.Fatal("function call output was not recovered")
+	}
+	if got := harness.CompareItem(observed, &recoveredItem).GetDisposition(); got != eventpb.RecoveryDisposition_RECOVERY_DISPOSITION_RETAINED {
+		t.Fatalf("recovery disposition = %s, want retained", got)
+	}
+}
+
+func TestReadCodexHistoryDecodesStringFunctionOutput(t *testing.T) {
+	directory := t.TempDir()
+	writeCodexHistory(t, directory, "thread-string-function-output", `{"type":"response_item","payload":{"type":"function_call","call_id":"call-1"}}
+{"type":"response_item","payload":{"type":"function_call_output","call_id":"call-1","output":"tool output"}}
+`)
+
+	observed := harness.ObservedItem{
+		ItemID: "call-1", Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, Output: "tool output", Completed: true,
+	}
+	recovered, err := readCodexHistory(directory, "thread-string-function-output", map[string]harness.ObservedItem{"call-1": observed})
 	if err != nil {
 		t.Fatal(err)
 	}

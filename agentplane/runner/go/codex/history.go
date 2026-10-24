@@ -19,19 +19,98 @@ type codexHistoryRecord struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
-type codexPayload struct {
-	Type    string          `json:"type"`
-	Role    string          `json:"role"`
-	ID      string          `json:"id"`
-	CallID  string          `json:"call_id"`
-	Output  json.RawMessage `json:"output"`
-	Text    string          `json:"text"`
-	Content []struct {
-		Text string `json:"text"`
-	} `json:"content"`
-	Summary []struct {
-		Text string `json:"text"`
-	} `json:"summary"`
+type codexResponseItemType struct {
+	Type string `json:"type"`
+}
+
+type codexInputText struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type codexContentPart struct {
+	Text string `json:"text"`
+}
+
+type codexSummaryPart struct {
+	Text string `json:"text"`
+}
+
+type codexMessagePayload struct {
+	ID      string             `json:"id"`
+	Role    string             `json:"role"`
+	Content []codexContentPart `json:"content"`
+}
+
+type codexReasoningPayload struct {
+	ID      string             `json:"id"`
+	Summary []codexSummaryPart `json:"summary"`
+}
+
+type codexFunctionCallPayload struct {
+	CallID string `json:"call_id"`
+}
+
+type codexFunctionCallOutputPayload struct {
+	CallID string `json:"call_id"`
+	Output string `json:"output"`
+}
+
+type codexCustomToolCallPayload struct {
+	CallID string `json:"call_id"`
+}
+
+type codexCustomToolCallOutputPayload struct {
+	CallID string                `json:"call_id"`
+	Output codexCustomToolOutput `json:"output"`
+}
+
+type codexCustomToolOutputValue interface {
+	text() string
+}
+
+type codexCustomToolOutputText string
+
+func (output codexCustomToolOutputText) text() string { return string(output) }
+
+type codexCustomToolOutputTextParts []codexInputText
+
+func (parts codexCustomToolOutputTextParts) text() string {
+	var text strings.Builder
+	for _, part := range parts {
+		text.WriteString(part.Text)
+	}
+	return text.String()
+}
+
+type codexCustomToolOutput struct {
+	value codexCustomToolOutputValue
+}
+
+func (output *codexCustomToolOutput) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		output.value = codexCustomToolOutputText(text)
+		return nil
+	}
+	var parts []codexInputText
+	if err := json.Unmarshal(data, &parts); err != nil {
+		return fmt.Errorf("expected a string or array of input_text: %w", err)
+	}
+	for _, part := range parts {
+		if part.Type != "input_text" {
+			return fmt.Errorf("unsupported content type %q", part.Type)
+		}
+	}
+	output.value = codexCustomToolOutputTextParts(parts)
+	return nil
+}
+
+func (output codexCustomToolOutput) text() string {
+	if output.value == nil {
+		return ""
+	}
+	return output.value.text()
 }
 
 // readCodexHistory extracts continuation items from Codex's model-facing rollout, which differs
@@ -91,37 +170,61 @@ func readCodexHistory(directory, sessionID string, observed map[string]harness.O
 		if record.Type != "response_item" {
 			continue
 		}
-		var payload codexPayload
+		var payload codexResponseItemType
 		if err := json.Unmarshal(record.Payload, &payload); err != nil {
 			return nil, err
 		}
 		switch payload.Type {
 		case "message":
-			if payload.Role != "assistant" {
+			var message codexMessagePayload
+			if err := json.Unmarshal(record.Payload, &message); err != nil {
+				return nil, fmt.Errorf("decode message response item: %w", err)
+			}
+			if message.Role != "assistant" {
 				continue
 			}
 			var text strings.Builder
-			for _, part := range payload.Content {
+			for _, part := range message.Content {
 				text.WriteString(part.Text)
 			}
-			texts[payload.ID] = text.String()
+			texts[message.ID] = text.String()
 		case "reasoning":
+			var reasoning codexReasoningPayload
+			if err := json.Unmarshal(record.Payload, &reasoning); err != nil {
+				return nil, fmt.Errorf("decode reasoning response item: %w", err)
+			}
 			var summary strings.Builder
-			for i, part := range payload.Summary {
+			for i, part := range reasoning.Summary {
 				if i > 0 {
 					summary.WriteByte('\n')
 				}
 				summary.WriteString(part.Text)
 			}
-			summaries[payload.ID] = summary.String()
+			summaries[reasoning.ID] = summary.String()
 		case "function_call":
-			calls[payload.CallID] = true
-		case "function_call_output":
-			output, err := codexToolOutput(payload.Output)
-			if err != nil {
-				return nil, fmt.Errorf("decode function call output %q: %w", payload.CallID, err)
+			var call codexFunctionCallPayload
+			if err := json.Unmarshal(record.Payload, &call); err != nil {
+				return nil, fmt.Errorf("decode function call response item: %w", err)
 			}
-			outputs[payload.CallID] = output
+			calls[call.CallID] = true
+		case "function_call_output":
+			var output codexFunctionCallOutputPayload
+			if err := json.Unmarshal(record.Payload, &output); err != nil {
+				return nil, fmt.Errorf("decode function call output response item: %w", err)
+			}
+			outputs[output.CallID] = output.Output
+		case "custom_tool_call":
+			var call codexCustomToolCallPayload
+			if err := json.Unmarshal(record.Payload, &call); err != nil {
+				return nil, fmt.Errorf("decode custom tool call response item: %w", err)
+			}
+			calls[call.CallID] = true
+		case "custom_tool_call_output":
+			var output codexCustomToolCallOutputPayload
+			if err := json.Unmarshal(record.Payload, &output); err != nil {
+				return nil, fmt.Errorf("decode custom tool call output response item: %w", err)
+			}
+			outputs[output.CallID] = output.Output.text()
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -161,29 +264,4 @@ func readCodexHistory(directory, sessionID string, observed map[string]harness.O
 		}
 	}
 	return recovered, nil
-}
-
-func codexToolOutput(raw json.RawMessage) (string, error) {
-	if len(raw) == 0 {
-		return "", nil
-	}
-	var output string
-	if err := json.Unmarshal(raw, &output); err == nil {
-		return output, nil
-	}
-	var content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	if err := json.Unmarshal(raw, &content); err != nil {
-		return "", fmt.Errorf("expected text or an array of text content: %w", err)
-	}
-	var text strings.Builder
-	for _, part := range content {
-		if part.Type != "input_text" {
-			return "", fmt.Errorf("unsupported content type %q", part.Type)
-		}
-		text.WriteString(part.Text)
-	}
-	return text.String(), nil
 }
