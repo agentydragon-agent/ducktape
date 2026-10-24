@@ -3026,6 +3026,10 @@ data:
       scope: openid
       mode: exchange
       token_endpoint: https://auth.allegedly.works/application/o/token/
+    title_generation:
+      endpoint: http://litellm.litellm.svc.cluster.local:4000/v1/responses
+      model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+      token_secret_name: agentplane-staging-title-generation-token
 immutable: false
 ---
 apiVersion: v1
@@ -3040,7 +3044,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: app-config
-    secret.reloader.stakater.com/reload: agentplane-oidc,agentplane-staging-session-secret
+    secret.reloader.stakater.com/reload: agentplane-oidc,agentplane-staging-session-secret,agentplane-staging-title-generation-token
   labels:
     app.kubernetes.io/name: app
   name: app
@@ -3153,6 +3157,9 @@ spec:
             - mountPath: /etc/agentplane
               name: configmap-app-config
               readOnly: true
+            - mountPath: /var/run/secrets/agentplane-title-generation
+              name: title-generation-token
+              readOnly: true
             - mountPath: /var/run/secrets/agentplane-runner-gateway
               name: runner-gateway-token
               readOnly: true
@@ -3240,6 +3247,12 @@ spec:
         - configMap:
             name: app-config
           name: configmap-app-config
+        - name: title-generation-token
+          secret:
+            items:
+              - key: token
+                path: token
+            secretName: agentplane-staging-title-generation-token
         - name: runner-gateway-token
           projected:
             sources:
@@ -3576,6 +3589,14 @@ spec:
       toPorts:
         - ports:
             - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: litellm
+            k8s:io.kubernetes.pod.namespace: litellm
+      toPorts:
+        - ports:
+            - port: "4000"
               protocol: TCP
   endpointSelector:
     matchLabels:
@@ -7990,6 +8011,27 @@ spec:
   target:
     creationPolicy: Owner
     name: litellm-key-agentplane-staging
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: Agentplane staging title-generation credential, copied from its LiteLLM key.
+  name: agentplane-staging-title-generation-token
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: litellm-key-agentplane-staging
+        property: api-key
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-litellm-key-secret-store
+  target:
+    creationPolicy: Owner
+    name: agentplane-staging-title-generation-token
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
