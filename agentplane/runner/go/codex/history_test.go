@@ -70,6 +70,28 @@ func TestReadCodexHistoryDecodesStringFunctionOutput(t *testing.T) {
 	}
 }
 
+func TestReadCodexHistoryDecodesArrayFunctionOutput(t *testing.T) {
+	directory := t.TempDir()
+	writeCodexHistory(t, directory, "thread-array-function-output", `{"type":"response_item","payload":{"type":"function_call","call_id":"call-1"}}
+{"type":"response_item","payload":{"type":"function_call_output","call_id":"call-1","output":[{"type":"input_text","text":"tool "},{"type":"input_text","text":"output"}]}}
+`)
+
+	observed := harness.ObservedItem{
+		ItemID: "call-1", Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, Output: "tool output", Completed: true,
+	}
+	recovered, err := readCodexHistory(directory, "thread-array-function-output", map[string]harness.ObservedItem{"call-1": observed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredItem, ok := recovered["call-1"]
+	if !ok {
+		t.Fatal("function call output was not recovered")
+	}
+	if got := harness.CompareItem(observed, &recoveredItem).GetDisposition(); got != eventpb.RecoveryDisposition_RECOVERY_DISPOSITION_RETAINED {
+		t.Fatalf("recovery disposition = %s, want retained", got)
+	}
+}
+
 func writeCodexHistory(t *testing.T, directory, sessionID, records string) {
 	t.Helper()
 	path := filepath.Join(directory, "sessions", "2026", "10", "07", "rollout-"+sessionID+".jsonl")

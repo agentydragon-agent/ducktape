@@ -23,6 +23,13 @@ type codexResponseItemType struct {
 	Type string `json:"type"`
 }
 
+// Codex CLI v0.152.0 serializes both tool-output response items with
+// FunctionCallOutputBody: a string or an array of FunctionCallOutputContentItem.
+// This history fold projects arrays to text and currently supports InputText
+// items only. The upstream definitions are pinned here:
+// ResponseItem: https://github.com/openai/codex/blob/316795b3cf2a45e90d121d9f46499d4658b2645c/codex-rs/protocol/src/models.rs#L1072-L1129
+// Content items: https://github.com/openai/codex/blob/316795b3cf2a45e90d121d9f46499d4658b2645c/codex-rs/protocol/src/models.rs#L2036-L2053
+// Output body: https://github.com/openai/codex/blob/316795b3cf2a45e90d121d9f46499d4658b2645c/codex-rs/protocol/src/models.rs#L2116-L2131
 type codexInputText struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
@@ -52,8 +59,8 @@ type codexFunctionCallPayload struct {
 }
 
 type codexFunctionCallOutputPayload struct {
-	CallID string `json:"call_id"`
-	Output string `json:"output"`
+	CallID string          `json:"call_id"`
+	Output codexToolOutput `json:"output"`
 }
 
 type codexCustomToolCallPayload struct {
@@ -61,21 +68,21 @@ type codexCustomToolCallPayload struct {
 }
 
 type codexCustomToolCallOutputPayload struct {
-	CallID string                `json:"call_id"`
-	Output codexCustomToolOutput `json:"output"`
+	CallID string          `json:"call_id"`
+	Output codexToolOutput `json:"output"`
 }
 
-type codexCustomToolOutputValue interface {
+type codexToolOutputValue interface {
 	text() string
 }
 
-type codexCustomToolOutputText string
+type codexToolOutputText string
 
-func (output codexCustomToolOutputText) text() string { return string(output) }
+func (output codexToolOutputText) text() string { return string(output) }
 
-type codexCustomToolOutputTextParts []codexInputText
+type codexToolOutputTextParts []codexInputText
 
-func (parts codexCustomToolOutputTextParts) text() string {
+func (parts codexToolOutputTextParts) text() string {
 	var text strings.Builder
 	for _, part := range parts {
 		text.WriteString(part.Text)
@@ -83,14 +90,14 @@ func (parts codexCustomToolOutputTextParts) text() string {
 	return text.String()
 }
 
-type codexCustomToolOutput struct {
-	value codexCustomToolOutputValue
+type codexToolOutput struct {
+	value codexToolOutputValue
 }
 
-func (output *codexCustomToolOutput) UnmarshalJSON(data []byte) error {
+func (output *codexToolOutput) UnmarshalJSON(data []byte) error {
 	var text string
 	if err := json.Unmarshal(data, &text); err == nil {
-		output.value = codexCustomToolOutputText(text)
+		output.value = codexToolOutputText(text)
 		return nil
 	}
 	var parts []codexInputText
@@ -102,11 +109,11 @@ func (output *codexCustomToolOutput) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("unsupported content type %q", part.Type)
 		}
 	}
-	output.value = codexCustomToolOutputTextParts(parts)
+	output.value = codexToolOutputTextParts(parts)
 	return nil
 }
 
-func (output codexCustomToolOutput) text() string {
+func (output codexToolOutput) text() string {
 	if output.value == nil {
 		return ""
 	}
@@ -212,7 +219,7 @@ func readCodexHistory(directory, sessionID string, observed map[string]harness.O
 			if err := json.Unmarshal(record.Payload, &output); err != nil {
 				return nil, fmt.Errorf("decode function call output response item: %w", err)
 			}
-			outputs[output.CallID] = output.Output
+			outputs[output.CallID] = output.Output.text()
 		case "custom_tool_call":
 			var call codexCustomToolCallPayload
 			if err := json.Unmarshal(record.Payload, &call); err != nil {
