@@ -18,7 +18,14 @@ go_library(
 
 go_test(
     name = "codex_test",
-    srcs = ["adapter_test.go"],
+    srcs = [
+        "adapter_test.go",
+        "history_test.go",
+    ],
     embed = [":codex"],
-    deps = ["//agentplane/runner/go/codex/protocol"],
+    deps = [
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/runner/go/codex/protocol",
+        "//agentplane/runner/go/harness",
+    ],
 )
