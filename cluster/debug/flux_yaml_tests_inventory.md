@@ -2,7 +2,7 @@
 
 Inventory for moving Flux delivery manifests off `devel`. The intended test model is per test: test cdk8s-owned behavior from its source constructs or a focused in-memory graph, and test policy or consumer logic with fixtures. CI does not need to feed one rendered bundle to every test. Only checks that truly validate the complete Flux graph need that graph, and should live with the graph owner. This PR changes documentation only. Classes are assigned by the main assertion in each Bazel test target; a target can contain more than one kind of assertion.
 
-This is a snapshot of `origin/devel` at `fae1307c`; test paths and targets are recorded as they exist at that baseline. Since the first draft, the manifest-backed Ollama catalog assertion was removed in [#11913](https://github.com/agentydragon/ducktape/pull/11913); only the live route smoke remains a reader.
+This is a snapshot of `origin/devel` at `fae1307c`; test paths and targets are recorded as they exist at that baseline. Since then, [#11913](https://github.com/agentydragon/ducktape/pull/11913), [#11921](https://github.com/agentydragon/ducktape/pull/11921), [#11926](https://github.com/agentydragon/ducktape/pull/11926), and [#11928](https://github.com/agentydragon/ducktape/pull/11928) have removed the Ollama catalog, LiteLLM roster, Grafana verifier, and live Ollama route readers. The table remains the complete inventory at its stated baseline; the follow-up section records current trim status.
 
 | Class | Meaning                                                                         |
 | ----- | ------------------------------------------------------------------------------- |
@@ -101,37 +101,44 @@ none opens a manifest. The container E2E secret path is staged from its
 
 ## Follow-up trim order
 
-No trim depends on a shared rendered artifact. Keep each PR focused on the owning
-test or source package:
+No trim depends on a shared rendered artifact. These independent output-reader
+trims are already open as separate drafts:
 
-1. `cluster/validation/kyverno/`: synthesize one policy at a time from its cdk8s
-   constructor, then run the real Kyverno CLI on the existing behavior fixtures.
-   Move the namespace-wide VPA annotation rule into an in-memory cdk8s model rule.
-2. `cluster/skills/grafana/`: source the one GrafanaDashboard from its cdk8s model
-   or a focused fixture and keep verifier behavior local.
-3. `cluster/debug/litellm_probe/`: keep parser behavior on explicit synthetic
-   config; remove the production-manifest roster assertion from the test.
-4. `agentplane/system_tests/`: update only the live Ollama route smoke to discover
-   cases from the deployed models API. Catalog selection already has synthetic
-   tests, and `cluster/cdk8s/agentplane/test_sandbox_templates.py` checks route
-   availability from the in-memory cdk8s model.
-5. `cluster/cdk8s/haku_ci/`: synthesize the TriggerAuthentication and compare it
-   with the source Secret contract.
-6. `cluster/cdk8s/authentik/`: keep blueprint reference checks beside the source
-   blueprint data that cdk8s embeds.
-7. `cluster/validation/` mailbox and ClickHouse checks: move generated-object
-   assertions to the specific cdk8s model; keep any remaining authored-source
-   contract checks beside their source.
-8. `cluster/cdk8s/` generator tests: retain durable rules over in-memory objects
-   and remove committed deployment-output parity when those outputs leave devel.
-9. `cluster/validation/` namespace-generator check: keep it on the hand-written
-   Kustomization source declarations; test cdk8s-owned generation at the model.
-10. `cluster/validation/` Flux build and integration checks: move the complete-graph
-    checks with the Flux source graph and run them where that graph is owned.
+1. [#11920](https://github.com/agentydragon/ducktape/pull/11920) synthesizes
+   Kyverno policies from cdk8s and keeps real Kyverno behavior checks on fixtures.
+2. [#11923](https://github.com/agentydragon/ducktape/pull/11923) tests Grafana
+   dashboard mapping from the cdk8s model.
+3. [#11929](https://github.com/agentydragon/ducktape/pull/11929) removes committed
+   generated-output parity checks while retaining model invariants.
+4. [#11934](https://github.com/agentydragon/ducktape/pull/11934) checks the SMTP
+   proxy destination against the synthesized mailbox Service and its authored
+   nginx.conf.
+
+The focused reader trims already merged are [#11913](https://github.com/agentydragon/ducktape/pull/11913)
+(Ollama catalog), [#11921](https://github.com/agentydragon/ducktape/pull/11921)
+(LiteLLM probe), [#11926](https://github.com/agentydragon/ducktape/pull/11926)
+(Grafana verifier), and [#11928](https://github.com/agentydragon/ducktape/pull/11928)
+(live Ollama routes). Each uses its own cdk8s model, fixture, or live API; none
+consumes a universal rendered bundle.
+
+The remaining rows do not all need an output-reader trim:
+
+- `cluster/cdk8s/haku_ci` and the ClickHouse contract test read authored SOPS
+  Secrets. Keep those checks against the source Secret and the specific model
+  contract; their file ownership determines their eventual package location.
+- The Authentik checker reads the authored blueprint data embedded by cdk8s.
+  Keep its reference checks with that source data.
+- `test_generator_namespace` checks hand-written Kustomization declarations.
+  Keep it with those declarations; cdk8s-owned Kustomization generation belongs
+  in model tests.
+- `test_flux_build` and the whole-graph portions of `test_cluster_integration`
+  intentionally validate the complete Flux source graph. Run those with the
+  owner of that graph. Split any discrete cdk8s-owned assertions into focused
+  model tests as they are identified; they do not need the whole graph.
 
 The only unresolved ownership question is which authored inputs under
 `cluster/k8s/` (including SOPS Secrets, Kustomizations, and Authentik blueprints)
 remain as source data in devel versus move with Flux delivery. That affects where
-those source-contract checks run. It does not block the focused cdk8s model trims.
+those source-contract checks run; it does not block the output-reader trims above.
 The linked incident PRs are the available evidence; the checkout's Git history is
 shallow, so no further commit attribution was available.
