@@ -1,6 +1,6 @@
 # LLM gateway candidates
 
-Checked 2026-10-24 UTC against project documentation, source, release records, and repository metadata. Scores are documentary, not deployment results. “Yes” means the checked source covers the complete fixed-plan item; “Partial” means it covers only part of the item or needs an integration; “No” is used only where a checked route definition excludes the required surface. “Not documented” means the checked primary sources do not establish the behavior.
+Candidate documentation, source, release records, and repository metadata were checked on 2026-10-24 UTC. Codex CLI source was checked on 2026-10-25 UTC at the pinned commit listed below. Scores are documentary, not deployment results. “Yes” means the checked source covers the complete fixed-plan item; “Partial” means it covers only part of the item or needs an integration; “No” is used only where a checked route definition excludes the required surface. “Not documented” means the checked primary sources do not establish the behavior.
 
 The score rows reproduce the Must and Should items from [llm_gateway_replacement.md](llm_gateway_replacement.md). Nice items are intentionally omitted. In particular, this comparison does not require Teams, budgets, semantic caching, guardrails, optional providers, transcription, or browser admin features. Every candidate below has a self-hosted deployment path in its primary sources.
 
@@ -104,22 +104,26 @@ M12 is intentionally strict. A generic OTLP exporter does not by itself prove ca
 
 ## Top two to spike
 
-1. **LiteLLM retention spike.** It is the only candidate with all of the current client paths, provider/auth routes, key ownership, BuildBuddy sync, and two-replica state already present in the checked environment [L4]. Prove M12 end to end using streamed Responses and Messages calls: one complete trace per call with input, output, model, usage, and caller/evaluation metadata in the chosen durable store; no prompt or output in pod logs/Loki; retention after a node loss. Record whether the current Langfuse callback and langfuse_otel dual-write can be reduced to one ingestion path under Langfuse v4. Also prove key rotation still refreshes BuildBuddy's OpenAI_API_KEY without exposing generated key material.
+1. **LiteLLM keep-in-place spike.** Test whether we can keep the deployed LiteLLM after correcting its trace/log path. It is the only candidate with all of the current client paths, provider/auth routes, key ownership, BuildBuddy sync, and two-replica state already present in the checked environment [L4]. Prove M12 end to end using streamed Responses and Messages calls: one complete trace per call with input, output, model, usage, and caller/evaluation metadata in the chosen durable store; no prompt or output in pod logs/Loki; retention after a node loss. Record whether the current Langfuse callback and langfuse_otel dual-write can be reduced to one ingestion path under Langfuse v4. Also prove key rotation still refreshes BuildBuddy's `OPENAI_API_KEY` without exposing generated key material.
 
 2. **Bifrost replacement spike.** It is the best new candidate because it documents a durable PostgreSQL LogStore, virtual keys, provider breadth, and Prometheus rather than requiring a separate trace database by default [B3] [B4] [B8]. Prove the exact /v1/responses and root /v1/messages paths against CLIProxyAPI using its OpenAI-compatible bearer-key upstream, with streaming and tool calls; direct Anthropic and Gemini keys; Ollama and Rugged's local OpenAI-compatible route; a declarative virtual-key create/rotate flow with evaluation and caller metadata reaching the trace; BuildBuddy secret refresh on rotation; durable single-store retention across a node loss; no prompt/output in pod logs; /v1/models; Prometheus and health endpoints; and two replicas. Capture any required patch or controller work, including the exact Helm shared-state configuration.
 
-These are a retention spike and a replacement spike, not a claim that either has already cleared every Must. The other candidates have more than one documented Must gap or a larger unverified key/trace surface.
+The LiteLLM spike tests whether the current gateway can stay after its trace/log path is corrected; the Bifrost spike tests replacement. Neither has already cleared every Must. The other candidates have more than one documented Must gap or a larger unverified key/trace surface.
+
+## Codex CLI model catalog
+
+Codex CLI's source defines a native catalog format: the endpoint returns a `ModelsResponse` object with a top-level `models` array of `ModelInfo` entries. Each entry uses `slug` and Codex-specific display, reasoning, context, modality, and tool metadata. The CLI fetches this format from `/models` or a configured `model_catalog_url`; it also accepts a local JSON file through `model_catalog_json`. This is different from the standard OpenAI `/v1/models` response with a `data` array of model IDs. The source does not establish that Claude CLI or other clients consume the Codex format [C1] [C2] [C3] [C4] [C5].
 
 ## Open questions carried from the fixed plan
 
 - Which optional provider routes remain cost-effective: Groq, Mistral, z.ai/GLM, Antigravity, and Tana? Tana may remain a separate LiteLLM instance.
 - If optional per-key limits are used, what token threshold and time window should apply? USD limits do not fit subscription or local-backend costs.
-- Which model-catalog schema does Codex CLI require, and can Claude CLI or other clients use the same capability metadata endpoint?
+- Can Claude CLI or other clients consume the Codex-native model catalog format, or do they need separate projections?
 - For the winning gateway, does its route metadata preserve the evaluation fields sent by Loom Gym and the skills evaluation callers without changing their clients?
 
 ## Primary sources
 
-All external source pages and GitHub release/repository metadata below were checked on 2026-10-24 UTC. Version-specific source links are pinned to the assessed release/tag where one exists. Helicone is pinned to the checked main commit because no release was found.
+Candidate source pages and GitHub release/repository metadata below were checked on 2026-10-24 UTC, except Codex CLI sources, which were checked on 2026-10-25 UTC. Version-specific source links are pinned to the assessed release/tag where one exists. Helicone is pinned to the checked main commit because no release was found; Codex CLI is pinned to commit `970111f6cb62cc02fe36a82ea7d71b37a2889c97`.
 
 - [B1] Bifrost release, repository, README, and license: <https://github.com/maximhq/bifrost/releases/tag/ent-v2.3.2-base>
 - [B2] Bifrost provider documentation at the assessed tag: <https://github.com/maximhq/bifrost/blob/ent-v2.3.2-base/docs/architecture/core/providers.mdx>
@@ -193,6 +197,11 @@ All external source pages and GitHub release/repository metadata below were chec
 - [I3] Higress v2.2.5 Helm deployment and monitoring configuration: <https://github.com/higress-group/higress/tree/v2.2.5/helm/core>
 - [I4] Higress license: <https://github.com/higress-group/higress/blob/v2.2.5/LICENSE>
 - [I5] Higress main-branch commit history: <https://github.com/higress-group/higress/commits/main/>
+- [C1] Codex CLI native `ModelInfo` and `ModelsResponse` types at the checked commit: <https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/protocol/src/openai_models.rs#L411>
+- [C2] Codex CLI `/models` client and `ModelsResponse` decoding: <https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/codex-api/src/endpoint/models.rs#L33>
+- [C3] Codex CLI remote model-catalog URL and slug validation: <https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/model-provider/src/models_endpoint.rs#L45>
+- [C4] Codex CLI `model_catalog_json` config setting: <https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/config/src/config_toml.rs#L408>
+- [C5] Codex CLI static catalog JSON loading and `ModelsResponse` decoding: <https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/core/src/config/mod.rs#L2224>
 
 [B1]: https://github.com/maximhq/bifrost/releases/tag/ent-v2.3.2-base
 [B2]: https://github.com/maximhq/bifrost/blob/ent-v2.3.2-base/docs/architecture/core/providers.mdx
@@ -266,3 +275,8 @@ All external source pages and GitHub release/repository metadata below were chec
 [I3]: https://github.com/higress-group/higress/tree/v2.2.5/helm/core
 [I4]: https://github.com/higress-group/higress/blob/v2.2.5/LICENSE
 [I5]: https://github.com/higress-group/higress/commits/main/
+[C1]: https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/protocol/src/openai_models.rs#L411
+[C2]: https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/codex-api/src/endpoint/models.rs#L33
+[C3]: https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/model-provider/src/models_endpoint.rs#L45
+[C4]: https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/config/src/config_toml.rs#L408
+[C5]: https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/core/src/config/mod.rs#L2224
