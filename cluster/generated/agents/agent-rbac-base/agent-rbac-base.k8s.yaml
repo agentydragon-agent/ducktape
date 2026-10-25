@@ -407,6 +407,14 @@ rules:
       - list
       - watch
   - apiGroups:
+      - opentofu.upbound.io
+    resources:
+      - workspaces
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - image.toolkit.fluxcd.io
     resources:
       - imagepolicies

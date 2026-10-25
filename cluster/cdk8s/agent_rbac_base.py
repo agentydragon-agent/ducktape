@@ -227,6 +227,7 @@ def _add_cluster_roles(chart: Chart) -> None:
         _read("postgresql.cnpg.io", "clusters", "backups", "scheduledbackups"),
         _read("redis.redis.opstreelabs.in", "redisreplications"),
         _read("infra.contrib.fluxcd.io", "terraforms"),
+        _read("opentofu.upbound.io", "workspaces"),
         _read("image.toolkit.fluxcd.io", "imagepolicies", "imagerepositories", "imageupdateautomations"),
         _read("notification.toolkit.fluxcd.io", "receivers", "alerts", "providers"),
         _read("cilium.io", "ciliumnetworkpolicies", "ciliumclusterwidenetworkpolicies"),
