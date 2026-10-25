@@ -17,6 +17,7 @@ const DELETE_FILE = { group: "github", name: "delete_file" };
 const UPDATE_PULL_REQUEST = { group: "github", name: "update_pull_request" };
 const CREATE_BRANCH = { group: "github", name: "create_branch" };
 const CREATE_PULL_REQUEST = { group: "github", name: "create_pull_request" };
+const SEARCH_PULL_REQUESTS = { group: "github", name: "search_pull_requests" };
 
 const REPOSITORY = { owner: "test-owner", repo: "test-repo" };
 
@@ -221,5 +222,42 @@ describe("GitHub create_pull_request", () => {
       "Test description."
     );
     expect(actionOffersCardDecisionButtons(CREATE_PULL_REQUEST, withBody)).toBe(true);
+  });
+});
+
+describe("GitHub search_pull_requests", () => {
+  const args = {
+    owner: "test-owner",
+    repo: "test-repo",
+    query: "is:open label:bug",
+    page: 2,
+    perPage: 10,
+    sort: "updated",
+    order: "desc",
+    fields: ["number", "title", "state", "html_url"],
+  };
+
+  it("shows the query, scope, and every search option on the compact card", async () => {
+    const label = await mount(renderActionLabel(SEARCH_PULL_REQUESTS, args));
+    const collapsed = await mount(renderPaneCollapsed(SEARCH_PULL_REQUESTS, args));
+
+    expect(shownText(label)).toBe("Search GitHub pull requests");
+    expect(shownText(collapsed)).toContain("is:open label:bug");
+    expect(shownText(collapsed)).toContain("Owner filter: test-owner");
+    expect(shownText(collapsed)).toContain("Repository filter: test-repo");
+    expect(shownText(collapsed)).toContain("Page 2");
+    expect(shownText(collapsed)).toContain("10 results per page");
+    expect(shownText(collapsed)).toContain("Sort by updated");
+    expect(shownText(collapsed)).toContain("Order: desc");
+    expect(shownText(collapsed)).toContain("Fields: number, title, state, html_url");
+    expect(actionCompactCardExpands(SEARCH_PULL_REQUESTS, args)).toBe(false);
+    expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, args)).toBe(true);
+  });
+
+  it("rejects unknown or invalid search arguments from compact-card decisions", () => {
+    expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, { ...args, repositoryId: 123 })).toBe(false);
+    expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, { ...args, page: 0 })).toBe(false);
+    expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, { ...args, perPage: 101 })).toBe(false);
+    expect(actionCompactCardExpands(SEARCH_PULL_REQUESTS, { ...args, repositoryId: 123 })).toBe(true);
   });
 });
