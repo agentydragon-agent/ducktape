@@ -12,7 +12,13 @@ from pydantic import AnyHttpUrl
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
-from agentplane.app.settings import AppSettingsConfig, TitleGenerationSettings, TraceSearchSettings
+from agentplane.app.settings import (
+    AppSettingsConfig,
+    FrontendConfig,
+    LangfuseSearchSettings,
+    TitleGenerationSettings,
+    TraceSearchSettings,
+)
 from agentplane.runner.harness import Harness
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane.actions_staging_policies import (
@@ -124,10 +130,20 @@ def config(
         default_policy_sets=set(DEFAULT_POLICIES),
         auto_title_on_first_message_default=auto_title_on_first_message_default,
         title_generation=title_generation,
-        trace_search=TraceSearchSettings(
-            grafana_base_url=AnyHttpUrl(GRAFANA_BASE_URL),
-            tempo_datasource_uid=TEMPO_DATASOURCE_UID,
-            deployment_environment=namespace,
+        frontend_config=FrontendConfig(
+            trace_search=TraceSearchSettings(
+                grafana_base_url=AnyHttpUrl(GRAFANA_BASE_URL),
+                tempo_datasource_uid=TEMPO_DATASOURCE_UID,
+                deployment_environment=namespace,
+            ),
+            langfuse_search=LangfuseSearchSettings(
+                base_url=AnyHttpUrl("https://langfuse.allegedly.works"),
+                project_id="langfuse-litellm-project",
+                sandbox_namespace_metadata_key="attributes.litellm.metadata.spend_logs_metadata.agentplane.namespace",
+                sandbox_service_account_metadata_key=(
+                    "attributes.litellm.metadata.spend_logs_metadata.agentplane.service_account"
+                ),
+            ),
         ),
     )
     # The "haku" and "finance-agent" launch presets name staging's own credentials (haku:
