@@ -407,6 +407,38 @@ spec:
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
+  name: piraeus-storage
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: piraeus-storage.json
+    name: piraeus-storage-dashboard
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_MIMIR
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: storage-service-details
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: storage-service-details.json
+    name: storage-service-details-dashboard
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_MIMIR
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
   name: io-pressure
   namespace: monitoring
 spec:
