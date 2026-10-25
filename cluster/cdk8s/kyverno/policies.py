@@ -1,10 +1,10 @@
 """The cluster's Kyverno ClusterPolicies and the RBAC aggregated into Kyverno's
 controllers so the policies here and elsewhere are admitted.
 
-One chart, and so one file, per policy: //cluster/validation/kyverno runs the
-`kyverno` CLI against each file alone. Fields the ClusterPolicy CRD leaves untyped
-(`preconditions`, `deny.conditions`, `patchStrategicMerge`, `generate.data`) are
-plain dicts.
+One chart, and so one file, per policy: //cluster/cdk8s/kyverno synthesizes each
+constructor alone before its tests run the `kyverno` CLI against fixtures. Fields
+the ClusterPolicy CRD leaves untyped (`preconditions`, `deny.conditions`,
+`patchStrategicMerge`, `generate.data`) are plain dicts.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.kyverno import proxy_injection
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
+from cluster.cdk8s.namespaces import VPA_RESOURCE_POLICY_ANNOTATION, VPA_UPDATE_MODE_LABEL, Vpa
 from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Validate, match_resources
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/policies"
@@ -327,7 +327,7 @@ def default_vpa_requests_only_chart(app: App) -> Chart:
                         "metadata": {
                             "annotations": {
                                 # Add-if-absent: never overwrites a namespace's own policy.
-                                "+(goldilocks.fairwinds.com/vpa-resource-policy)": (
+                                f"+({VPA_RESOURCE_POLICY_ANNOTATION})": (
                                     '{"containerPolicies": [{"containerName": "*", '
                                     '"controlledValues": "RequestsOnly"}]}'
                                 )

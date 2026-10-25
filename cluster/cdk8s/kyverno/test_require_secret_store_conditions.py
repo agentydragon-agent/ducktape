@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from cluster.validation.kyverno.apply import apply_policy
-from cluster.validation.kyverno.paths import manifest, policy
+from cluster.cdk8s.kyverno.apply import apply_policy
+from cluster.cdk8s.kyverno.test_utils import manifest, policy
 
 
 @pytest.fixture

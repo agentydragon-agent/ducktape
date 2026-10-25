@@ -31,7 +31,7 @@ That was a real outage (2026-08-05): haku-sandbox runs VPA in Auto mode, VPA's w
 sorts after Kyverno's and patches resource requests, and haku-ui sat at 1/2 with
 haku-ui-0 permanently uncreatable. It presented as intermittent because VPA patches
 nothing when its recommendation already matches the pod. Pinned by
-//cluster/validation/kyverno:test_proxy_injection, which applies each policy twice.
+//cluster/cdk8s/kyverno:test_proxy_injection, which applies each policy twice.
 
 NO_PROXY is one flat string, injected identically into containers and initContainers.
 Entry by entry, the cluster-addressing set every policy shares:

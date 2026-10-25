@@ -7,6 +7,7 @@ admission denial or a CreateContainerConfigError on the cluster.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Collection, Iterator, Set
 from itertools import combinations
 from typing import Any, cast
@@ -16,6 +17,7 @@ from cdk8s import ApiObject
 from constructs import Construct, IValidation
 
 from cluster.cdk8s.cilium_rule_sections import enforces_nothing
+from cluster.cdk8s.namespaces import VPA_RESOURCE_POLICY_ANNOTATION, VPA_UPDATE_MODE_LABEL
 from cluster.cdk8s.pod_policy import embeds_pod, pod_spec
 
 _OUTSIDE_ENTITIES = {"world", "remote-node", "host"}
@@ -274,6 +276,29 @@ def unused_waivers(objects: list[dict[str, Any]], *, unhardened: Set[str], unpin
     ]
 
 
+def vpa_auto_mode_policies_set_controlled_values(objects: list[dict[str, Any]]) -> list[str]:
+    """A namespace-owned VPA policy opts out of the Kyverno default, so every container
+    policy on an auto-mode namespace must state whether VPA controls requests or limits."""
+    errors: list[str] = []
+    for obj in objects:
+        if obj["kind"] != "Namespace":
+            continue
+        metadata = obj["metadata"]
+        if (metadata.get("labels") or {}).get(VPA_UPDATE_MODE_LABEL) != "auto":
+            continue
+        raw = (metadata.get("annotations") or {}).get(VPA_RESOURCE_POLICY_ANNOTATION)
+        if not raw:
+            continue
+        policy = json.loads(raw)
+        errors.extend(
+            f"Namespace/{metadata['name']}: VPA container policy {container.get('containerName')!r} "
+            "lacks controlledValues"
+            for container in policy["containerPolicies"]
+            if "controlledValues" not in container
+        )
+    return errors
+
+
 @jsii.implements(IValidation)
 class FleetRules:
     def __init__(
@@ -293,6 +318,7 @@ class FleetRules:
             *https_egress_sni_conflicts(objects),
             *cilium_rules_enforce_something(objects),
             *resolved_references(objects),
+            *vpa_auto_mode_policies_set_controlled_values(objects),
             *unused_waivers(objects, unhardened=self._unhardened_pods, unpinned=self._unpinned_https_egress),
         ]
 

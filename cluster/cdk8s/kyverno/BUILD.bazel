@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "app",
@@ -47,10 +47,121 @@ py_library(
 py_library(
     name = "proxy_injection",
     srcs = ["proxy_injection.py"],
-    visibility = ["//cluster/validation/kyverno:__pkg__"],
+    visibility = ["//cluster/cdk8s/kyverno:__pkg__"],
     deps = [
         "//cluster/cdk8s/providers/kyverno:cluster_policy",
         "//cluster/cdk8s/providers/kyverno:clusterpolicy",
         "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "apply",
+    testonly = True,
+    srcs = ["apply.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "test_support",
+    testonly = True,
+    srcs = ["test_utils.py"],
+    deps = [
+        ":apply",
+        ":policies",
+        ":proxy_injection",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_default_vpa_requests_only",
+    srcs = ["test_default_vpa_requests_only.py"],
+    data = [
+        "@multitool//tools/kyverno",
+        "@nodejs_linux_amd64//:bin/node",
+    ] + glob(["testdata/namespace_vpa_*.yaml"]),
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":apply",
+        ":test_support",
+        "//cluster/cdk8s:namespaces",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_default_service_links",
+    srcs = ["test_default_service_links.py"],
+    data = [
+        "@multitool//tools/kyverno",
+        "@nodejs_linux_amd64//:bin/node",
+    ] + glob(["testdata/pod_service_links_*.yaml"]),
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":apply",
+        ":test_support",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_restrict_agent_gateway_routes",
+    srcs = ["test_restrict_agent_gateway_routes.py"],
+    data = [
+        "@multitool//tools/kyverno",
+        "@nodejs_linux_amd64//:bin/node",
+    ] + glob([
+        "testdata/httproute_*.yaml",
+        "testdata/tlsroute_*.yaml",
+    ]),
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":apply",
+        ":test_support",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_require_secret_store_conditions",
+    srcs = ["test_require_secret_store_conditions.py"],
+    data = [
+        "@multitool//tools/kyverno",
+        "@nodejs_linux_amd64//:bin/node",
+    ] + glob(["testdata/cluster_secret_store_*.yaml"]),
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":apply",
+        ":test_support",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_proxy_injection",
+    srcs = ["test_proxy_injection.py"],
+    data = [
+        "testdata/pod_self_wired_egress_proxy.yaml",
+        "@multitool//tools/kyverno",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":apply",
+        ":test_support",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
