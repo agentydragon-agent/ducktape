@@ -28,10 +28,7 @@ py_binary(
 py_test(
     name = "test_verify_dashboard",
     srcs = ["test_verify_dashboard.py"],
-    data = [
-        "verify_dashboard.py",
-        "//cluster:generated/monitoring/grafana-instance/grafana-instance.k8s.yaml",
-    ],
+    data = ["verify_dashboard.py"],
     deps = [
         "//util/bazel:runfiles",
         "@pypi//httpx",
