@@ -27,6 +27,14 @@ configMapGenerator:
     namespace: monitoring
     files:
       - cluster-disk-usage.json
+  - name: piraeus-storage-dashboard
+    namespace: monitoring
+    files:
+      - piraeus-storage.json
+  - name: storage-service-details-dashboard
+    namespace: monitoring
+    files:
+      - storage-service-details.json
   - name: io-pressure-dashboard
     namespace: monitoring
     files:
