@@ -305,7 +305,14 @@ EXAMPLES = (
         },
         "ready for review",
     ),
-    ActionExample("sandbox", "create", {"name": "review-sandbox", "template": "python"}, SANDBOX, "Running"),
+    ActionExample(
+        "sandbox",
+        "create",
+        {"name": "review-sandbox", "template": "python"},
+        SANDBOX,
+        "Running",
+        compact_card_expands=False,
+    ),
     ActionExample("sandbox", "get", {"name": "review-sandbox"}, SANDBOX, "Running", compact_card_expands=False),
     ActionExample(
         "sandbox",
