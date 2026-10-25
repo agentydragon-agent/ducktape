@@ -942,20 +942,14 @@ py_library(
     name = "dns_automation",
     srcs = ["dns_automation.py"],
     deps = [
-        ":artifact_generators",
         ":external_creds",
         ":flux",
         ":manifest_roots",
-        ":route53",
-        ":terraform",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//pydantic",
     ],
 )
 
@@ -1033,7 +1027,7 @@ py_test(
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":dns_automation",
+        ":crossplane_dns_records",
         "//:conftest",
         "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/monitoring:home_switch",
@@ -1267,6 +1261,21 @@ py_library(
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "crossplane_dns_records",
+    srcs = ["crossplane_dns_records.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":flux",
+        ":route53",
+        ":terraform",
+        "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
+        "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
+        "@pypi//cdk8s",
+        "@pypi//pydantic",
     ],
 )
 
@@ -1511,6 +1520,7 @@ py_library(
         ":artifact_generators",
         ":claude_sandbox_secrets",
         ":crossplane",
+        ":crossplane_dns_records",
         ":crossplane_forgejo_agentydragon",
         ":descheduler",
         ":dns_automation",

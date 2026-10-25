@@ -78,6 +78,11 @@ spec:
       name: crossplane-provider-opentofu
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/crossplane-dns-records/**"
+          to: "@artifact/cluster/generated/crossplane-dns-records/"
+      name: crossplane-dns-records
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/crossplane-forgejo-agentydragon/**"
           to: "@artifact/cluster/generated/crossplane-forgejo-agentydragon/"
       name: crossplane-forgejo-agentydragon
@@ -828,11 +833,6 @@ spec:
         - from: "@repo/tf/gitops/home-switch/**"
           to: "@artifact/tf/gitops/home-switch/"
       name: tf-gitops-home-switch
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/dns-records/**"
-          to: "@artifact/tf/gitops/dns-records/"
-      name: tf-gitops-dns-records
       originRevision: "@repo"
     - copy:
         - from: "@repo/tf/gitops/sso-providers/**"

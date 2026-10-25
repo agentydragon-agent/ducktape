@@ -1686,6 +1686,8 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: Keep Route 53 credentials available while tofu-controller hands dns-records state to Crossplane.
   name: dns-automation
   namespace: ducktape-flux
 spec:
@@ -1694,11 +1696,6 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: dns-records
-      namespace: flux-system
   interval: 10m
   path: ./cluster/generated/dns-automation
   prune: true
@@ -1707,6 +1704,33 @@ spec:
     kind: ExternalArtifact
     name: dns-automation
     namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Take over dns-records from tofu-controller using its existing PostgreSQL state; the dependency on dns-automation serializes the controller handoff.
+  name: crossplane-dns-records
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: dns-automation
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/crossplane-dns-records
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: crossplane-dns-records
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

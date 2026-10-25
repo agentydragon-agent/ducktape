@@ -20,6 +20,7 @@ from cluster.cdk8s import (
     claude_sandbox_secrets,
     cnpg_operator,
     crossplane,
+    crossplane_dns_records,
     crossplane_forgejo_agentydragon,
     descheduler,
     dns_automation,
@@ -802,14 +803,19 @@ def generate_manifests(root: Path) -> None:
         flux_chart, kyverno_kustomization, tofu_controller_kustomization
     )
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
-    dns_records_module = terraform.gitops_module(dns_automation.TF_MODULE)
-    dns_automation.dns_automation(
+    dns_automation_kustomization = dns_automation.dns_automation(
         flux_chart,
-        write_directory(
-            root, dns_automation_artifact, functools.partial(dns_automation.chart, module=dns_records_module)
-        ),
+        write_directory(root, dns_automation_artifact, dns_automation.chart),
         tofu_controller_kustomization,
         external_secrets_operator_kustomization,
+    )
+    crossplane_dns_records_artifact = artifact(crossplane_dns_records.NAME, crossplane_dns_records.OUTPUT_DIR)
+    crossplane_dns_records.resources(
+        flux_chart,
+        write_directory(root, crossplane_dns_records_artifact, crossplane_dns_records.chart),
+        crossplane_opentofu_provider_kustomization,
+        tofu_state_db_kustomization,
+        dns_automation_kustomization,
     )
     external_dns_artifact = artifact("external-dns", external_dns.OUTPUT_DIR)
     external_dns_kustomization = external_dns.external_dns(
@@ -1812,6 +1818,7 @@ def generate_manifests(root: Path) -> None:
             crossplane_artifact,
             crossplane_litellm_provider_artifact,
             crossplane_opentofu_provider_artifact,
+            crossplane_dns_records_artifact,
             crossplane_forgejo_agentydragon_artifact,
             external_secrets_config_artifact,
             external_secrets_operator_artifact,
@@ -1954,7 +1961,6 @@ def generate_manifests(root: Path) -> None:
             vpa_artifact,
             website_artifact,
             home_switch_module,
-            dns_records_module,
             sso_providers_module,
             agent_machine_access_module,
             gatus_sso_module,
