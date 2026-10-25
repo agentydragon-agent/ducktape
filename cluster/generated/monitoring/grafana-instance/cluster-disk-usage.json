@@ -1644,7 +1644,7 @@
       "type": "bargauge",
       "gridPos": {
         "h": 11,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 105
       },
@@ -1679,64 +1679,6 @@
           "fields": "",
           "values": false
         }
-      }
-    },
-    {
-      "id": 22,
-      "title": "Node-local PVCs with no filesystem size attribution",
-      "description": "PVCs visible in the existing node-local filesystem mapping but without a matching component-size sample. This is an ext4/XFS mapping detail, separate from Piraeus copy allocation and kubelet PVC use below.",
-      "type": "table",
-      "gridPos": {
-        "h": 11,
-        "w": 12,
-        "x": 12,
-        "y": 105
-      },
-      "datasource": "${DS_MIMIR}",
-      "targets": [
-        {
-          "expr": "sort_desc(max by (node, device, namespace, persistentvolumeclaim) (disk_usage:pvc_filesystem:info{node=~\"$node\"} unless on (namespace, persistentvolumeclaim) disk_usage:component_used_bytes{node=~\"$node\"}) * on (namespace, persistentvolumeclaim) group_left () max by (namespace, persistentvolumeclaim) (kube_persistentvolumeclaim_resource_requests_storage_bytes))",
-          "format": "table",
-          "instant": true,
-          "refId": "A"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "indexByName": {
-              "node": 0,
-              "device": 1,
-              "namespace": 2,
-              "persistentvolumeclaim": 3,
-              "Value": 4
-            },
-            "renameByName": {
-              "node": "Machine",
-              "device": "Device",
-              "namespace": "Namespace",
-              "persistentvolumeclaim": "PVC",
-              "Value": "Requested"
-            }
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "show": false
-        },
-        "showHeader": true
       }
     },
     {
