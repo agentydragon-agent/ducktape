@@ -1,8 +1,4 @@
-"""Live-smoke cases from the committed app config, not its deployment generator."""
-
-from pathlib import Path
-
-import yaml
+"""Select live-smoke cases from the model catalog offered by Agentplane."""
 
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.proto import runner_pb2
@@ -11,16 +7,7 @@ from agentplane.runner.harness import Harness
 # gazelle:include_dep @pypi//protobuf
 
 
-def ollama_cases(manifest: Path) -> list[tuple[runner_pb2.Harness, str]]:
-    [config_map] = [
-        resource
-        for resource in yaml.safe_load_all(manifest.read_text())
-        if resource["kind"] == "ConfigMap"
-        and resource["metadata"]["namespace"] == "agentplane-staging"
-        and resource["metadata"]["name"] == "app-config"
-    ]
-    config = yaml.safe_load(config_map["data"]["config.yaml"])
-    catalog = ModelCatalog.model_validate(config["models"])
+def ollama_cases(catalog: ModelCatalog) -> list[tuple[runner_pb2.Harness, str]]:
     routes = sorted(
         (option.model for option in catalog.models if option.model.startswith("ollama/")),
         key=lambda route: not route.endswith("-128k"),
@@ -32,5 +19,5 @@ def ollama_cases(manifest: Path) -> list[tuple[runner_pb2.Harness, str]]:
         if route in catalog.harnesses[Harness(runner_pb2.Harness.Name(harness))]
     ]
     if not cases:
-        raise ValueError("committed Agentplane staging config offers no Ollama smoke cases")
+        raise ValueError("deployed model catalog offers no Ollama smoke cases")
     return cases
