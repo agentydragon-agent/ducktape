@@ -2,6 +2,8 @@
 
 Inventory for moving Flux delivery manifests off `devel`. The intended test model is per test: test cdk8s-owned behavior from its source constructs or a focused in-memory graph, and test policy or consumer logic with fixtures. CI does not need to feed one rendered bundle to every test. Only checks that truly validate the complete Flux graph need that graph, and should live with the graph owner. This PR changes documentation only. Classes are assigned by the main assertion in each Bazel test target; a target can contain more than one kind of assertion.
 
+This is a snapshot of `origin/devel` at `138897a8`; test paths and targets are recorded as they exist at that baseline.
+
 | Class | Meaning                                                                         |
 | ----- | ------------------------------------------------------------------------------- |
 | a     | Restates a declaration or detects arbitrary changes; delete candidate.          |
