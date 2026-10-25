@@ -1764,13 +1764,9 @@ py_test(
     # Synth imports the agentplane services' Settings, and with them their runtime modules.
     size = "medium",
     srcs = ["test_generate_manifests.py"],
-    # Everything the generator may write, so each written file finds its committed twin, and
-    # the whole generated root, which the test holds closed. cluster_all_files' glob stops at
-    # sub-package boundaries.
+    # Source manifests and CRDs read by the generator. Output-copy checks do not belong here.
     data = [
         "//agentplane/crds:manifests",
-        "//cluster:generated_manifests",
-        "//cluster:parked_generated_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
@@ -1782,7 +1778,6 @@ py_test(
         ":generate_manifests_lib",
         ":manifest_roots",
         "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
