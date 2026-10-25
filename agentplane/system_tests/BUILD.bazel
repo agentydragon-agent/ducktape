@@ -462,13 +462,11 @@ py_library(
 py_test(
     name = "test_ollama_catalog",
     srcs = ["test_ollama_catalog.py"],
-    data = ["//cluster/k8s:agentplane_staging_manifest"],
     deps = [
         ":conftest",
         ":ollama_catalog",
         "//:conftest",
         "//agentplane/proto:runner_pb2",
-        "//util/bazel:runfiles",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

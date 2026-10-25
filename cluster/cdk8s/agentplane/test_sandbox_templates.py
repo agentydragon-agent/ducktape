@@ -95,6 +95,13 @@ def test_ducktape_template_projects_buildbuddy_key_to_runner_only(staging_manife
     assert specialized == generic
 
 
+def test_staging_app_config_offers_ollama_smoke_routes(staging_manifests: list[dict[str, Any]]) -> None:
+    app_config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    ollama_routes = {model["model"] for model in app_config["models"]["models"] if model["model"].startswith("ollama/")}
+    offered_routes = {route for routes in app_config["models"]["harnesses"].values() for route in routes}
+    assert ollama_routes & offered_routes, "Agentplane staging must offer at least one Ollama route for smoke tests"
+
+
 def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_runner_sidecar(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
