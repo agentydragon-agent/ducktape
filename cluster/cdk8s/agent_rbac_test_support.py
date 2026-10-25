@@ -1,9 +1,4 @@
-"""Compare declared RBAC rule coverage, independently of profile/role names.
-
-This is not an apiserver authorizer: live bindings, admission, impersonation, egress,
-and access obtained through exec/node proxy are outside this declarative contract.
-Unsupported aggregation and Kyverno match shapes fail closed instead of losing grants.
-"""
+"""Resolve the Kubernetes permissions declared by synthesized cdk8s resources."""
 
 from __future__ import annotations
 
@@ -11,8 +6,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from itertools import product
 from typing import Any
-
-from cluster.validation.k8s import K8sResource, RbacRoleRef, RoleBindingResource, RoleResource
 
 
 @dataclass(frozen=True)
@@ -53,43 +46,54 @@ def uncovered(required: Iterable[Permission], available: Iterable[Permission]) -
 
 
 class Rbac:
-    def __init__(self, resources: Iterable[K8sResource]):
-        self.roles: dict[tuple[str, str, str], RoleResource] = {}
-        self.bindings: list[RoleBindingResource] = []
+    """Resolve declared RBAC from the dictionaries returned by ``Testing.synth``.
+
+    This is not an apiserver authorizer: admission, impersonation, egress, and access obtained
+    through exec/node proxy are outside this declarative contract. Aggregated roles fail closed.
+    """
+
+    def __init__(self, resources: Iterable[dict[str, Any]]):
+        self.roles: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self.bindings: list[dict[str, Any]] = []
         for resource in resources:
-            if isinstance(resource, RoleResource):
-                key = (resource.kind, resource.namespace, resource.name)
+            kind = resource["kind"]
+            metadata = resource["metadata"]
+            if kind in {"Role", "ClusterRole"}:
+                key = (kind, metadata.get("namespace", ""), metadata["name"])
                 if key in self.roles:
-                    assert self.roles[key].rules == resource.rules, key
+                    assert self.roles[key]["rules"] == resource["rules"], key
                 self.roles[key] = resource
-            elif isinstance(resource, RoleBindingResource):
+            elif kind in {"RoleBinding", "ClusterRoleBinding"}:
                 self.bindings.append(resource)
 
-    def rules(self, ref: RbacRoleRef, namespace: str | None) -> set[Permission]:
-        assert ref.api_group == "rbac.authorization.k8s.io"
-        assert ref.kind in ("Role", "ClusterRole"), ref
-        assert ref.kind != "Role" or namespace is not None, ref
-        role = self.roles[(ref.kind, (namespace or "") if ref.kind == "Role" else "", ref.name)]
-        assert role.aggregation_rule is None, f"Resolve aggregated Role explicitly: {ref.name}"
+    def rules(self, kind: str, name: str, namespace: str | None) -> set[Permission]:
+        assert kind in ("Role", "ClusterRole"), kind
+        assert kind != "Role" or namespace is not None, (kind, name, namespace)
+        role = self.roles[(kind, (namespace or "") if kind == "Role" else "", name)]
+        assert role.get("aggregationRule") is None, f"Resolve aggregated Role explicitly: {name}"
         permissions: set[Permission] = set()
-        for rule in role.rules:
-            if rule.non_resource_urls:
-                assert not rule.resources, rule
-                assert not rule.api_groups, rule
-                assert not rule.resource_names, rule
+        for rule in role["rules"]:
+            non_resource_urls = rule.get("nonResourceURLs", [])
+            resources = rule.get("resources", [])
+            api_groups = rule.get("apiGroups", [])
+            resource_names = rule.get("resourceNames", [])
+            if non_resource_urls:
+                assert not resources, rule
+                assert not api_groups, rule
+                assert not resource_names, rule
                 # Non-resource URL rules have no effect in a namespaced RoleBinding.
                 if namespace is None:
                     permissions.update(
                         Permission(None, "", "", verb, url=url)
-                        for verb, url in product(rule.verbs, rule.non_resource_urls)
+                        for verb, url in product(rule["verbs"], non_resource_urls)
                     )
             else:
-                assert rule.resources, rule
-                assert rule.api_groups, rule
-                names: tuple[str | None, ...] = tuple(rule.resource_names) or (None,)
+                assert resources, rule
+                assert api_groups, rule
+                names: tuple[str | None, ...] = tuple(resource_names) or (None,)
                 permissions.update(
                     Permission(namespace, group, resource, verb, name)
-                    for group, resource, verb, name in product(rule.api_groups, rule.resources, rule.verbs, names)
+                    for group, resource, verb, name in product(api_groups, resources, rule["verbs"], names)
                 )
         return permissions
 
@@ -108,11 +112,15 @@ class Rbac:
     def _subjects(self, subjects: set[tuple[str, str, str]]) -> set[Permission]:
         permissions: set[Permission] = set()
         for binding in self.bindings:
-            if any((s.kind, s.name, s.namespace) in subjects for s in binding.subjects):
-                assert binding.role_ref is not None, binding
-                permissions.update(
-                    self.rules(binding.role_ref, binding.namespace if binding.kind == "RoleBinding" else None)
-                )
+            if any(
+                (subject["kind"], subject["name"], subject.get("namespace", "")) in subjects
+                for subject in binding.get("subjects", [])
+            ):
+                role_ref = binding["roleRef"]
+                assert role_ref.get("apiGroup") == "rbac.authorization.k8s.io", binding
+                assert role_ref["kind"] in ("Role", "ClusterRole"), binding
+                namespace = binding["metadata"].get("namespace") if binding["kind"] == "RoleBinding" else None
+                permissions.update(self.rules(role_ref["kind"], role_ref["name"], namespace))
         return permissions
 
     def policy_set_permissions(
@@ -121,12 +129,10 @@ class Rbac:
         permissions: set[Permission] = set()
         for rule in (rule for name in names for rule in policy_sets[name]):
             if rule["type"] == "kubernetes_role_binding":
-                ref = RbacRoleRef(api_group="rbac.authorization.k8s.io", **rule["role"])
                 for namespace in rule["namespaces"]:
-                    permissions.update(self.rules(ref, namespace))
+                    permissions.update(self.rules(rule["role"]["kind"], rule["role"]["name"], namespace))
             elif rule["type"] == "kubernetes_cluster_role_binding":
-                ref = RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name=rule["clusterRole"])
-                permissions.update(self.rules(ref, None))
+                permissions.update(self.rules("ClusterRole", rule["clusterRole"], None))
         return permissions
 
     def managed(
