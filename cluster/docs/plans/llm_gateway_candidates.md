@@ -1,6 +1,6 @@
 # LLM gateway candidates
 
-Candidate documentation, source, release records, and repository metadata were checked on 2026-10-24 UTC. Codex CLI source was checked on 2026-10-25 UTC at the pinned commit listed below. Scores are documentary, not deployment results. “Yes” means the checked source covers the complete fixed-plan item; “Partial” means it covers only part of the item or needs an integration; “No” is used only where a checked route definition excludes the required surface. “Not documented” means the checked primary sources do not establish the behavior.
+Candidate documentation, source, release records, and repository metadata were checked on 2026-10-24 UTC. Codex CLI sources and Claude Code gateway examples were checked on 2026-10-25 UTC at the pinned commit/release listed below. Scores are documentary, not deployment results. “Yes” means the checked source covers the complete fixed-plan item; “Partial” means it covers only part of the item or needs an integration; “No” is used only where a checked route definition excludes the required surface. “Not documented” means the checked primary sources do not establish the behavior.
 
 The score rows reproduce the Must and Should items from [llm_gateway_replacement.md](llm_gateway_replacement.md). Nice items are intentionally omitted. In particular, this comparison does not require Teams, budgets, semantic caching, guardrails, optional providers, transcription, or browser admin features. Every candidate below has a self-hosted deployment path in its primary sources.
 
@@ -114,16 +114,22 @@ The LiteLLM spike tests whether the current gateway can stay after its trace/log
 
 Codex CLI's source defines a native catalog format: the endpoint returns a `ModelsResponse` object with a top-level `models` array of `ModelInfo` entries. Each entry uses `slug` and Codex-specific display, reasoning, context, modality, and tool metadata. The CLI fetches this format from `/models` or a configured `model_catalog_url`; it also accepts a local JSON file through `model_catalog_json`. This is different from the standard OpenAI `/v1/models` response with a `data` array of model IDs. The source does not establish that Claude CLI or other clients consume the Codex format [C1] [C2] [C3] [C4] [C5].
 
+## Claude Apps Gateway
+
+Anthropic's Claude Code v2.1.310 repository includes customer-deployed `claude gateway` examples: AWS ECS/EKS with RDS PostgreSQL and Bedrock, and GCP Cloud Run/GKE with Cloud SQL and Vertex. The server-side YAML catalog can use built-in Claude models or map configured IDs and labels to provider model IDs; managed policies restrict `cli.availableModels` [G1] [G2] [G3] [G4] [G5]. The repository describes these as reference examples, not supported production deployments [G2] [G4].
+
+The checked examples do not specify the gateway's inbound inference paths or a client-facing model-list response schema. This is a Claude Apps gateway with its own model configuration, not evidence of a general replacement for the required Responses, chat, Messages, and embeddings endpoints. In this repository, Claude Code wrappers opt into gateway model discovery and identify `/v1/models` as the discovery path; that wrapper comment does not establish the enterprise gateway's response schema [G6].
+
 ## Open questions carried from the fixed plan
 
 - Which optional provider routes remain cost-effective: Groq, Mistral, z.ai/GLM, Antigravity, and Tana? Tana may remain a separate LiteLLM instance.
 - If optional per-key limits are used, what token threshold and time window should apply? USD limits do not fit subscription or local-backend costs.
-- Can Claude CLI or other clients consume the Codex-native model catalog format, or do they need separate projections?
+- Can the winning gateway project one source catalog into Codex's native `ModelsResponse` and Claude Code's `/v1/models` discovery format? The checked Claude Apps Gateway examples do not specify that response schema.
 - For the winning gateway, does its route metadata preserve the evaluation fields sent by Loom Gym and the skills evaluation callers without changing their clients?
 
 ## Primary sources
 
-Candidate source pages and GitHub release/repository metadata below were checked on 2026-10-24 UTC, except Codex CLI sources, which were checked on 2026-10-25 UTC. Version-specific source links are pinned to the assessed release/tag where one exists. Helicone is pinned to the checked main commit because no release was found; Codex CLI is pinned to commit `970111f6cb62cc02fe36a82ea7d71b37a2889c97`.
+Candidate source pages and GitHub release/repository metadata below were checked on 2026-10-24 UTC, except Codex CLI sources and Claude Code gateway examples, which were checked on 2026-10-25 UTC. Version-specific source links are pinned to the assessed release/tag where one exists. Helicone is pinned to the checked main commit because no release was found; Codex CLI is pinned to commit `970111f6cb62cc02fe36a82ea7d71b37a2889c97`; Claude Code examples are pinned to v2.1.310, released 2026-10-23.
 
 - [B1] Bifrost release, repository, README, and license: <https://github.com/maximhq/bifrost/releases/tag/ent-v2.3.2-base>
 - [B2] Bifrost provider documentation at the assessed tag: <https://github.com/maximhq/bifrost/blob/ent-v2.3.2-base/docs/architecture/core/providers.mdx>
@@ -202,6 +208,12 @@ Candidate source pages and GitHub release/repository metadata below were checked
 - [C3] Codex CLI remote model-catalog URL and slug validation: <https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/model-provider/src/models_endpoint.rs#L45>
 - [C4] Codex CLI `model_catalog_json` config setting: <https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/config/src/config_toml.rs#L408>
 - [C5] Codex CLI static catalog JSON loading and `ModelsResponse` decoding: <https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/core/src/config/mod.rs#L2224>
+- [G1] Anthropic Claude Code v2.1.310 release: <https://github.com/anthropics/claude-code/releases/tag/v2.1.310>
+- [G2] Anthropic Claude Apps Gateway AWS deployment example: <https://github.com/anthropics/claude-code/blob/v2.1.310/examples/gateway/aws/README.md>
+- [G3] Anthropic Claude Apps Gateway AWS model and upstream configuration: <https://github.com/anthropics/claude-code/blob/v2.1.310/examples/gateway/aws/gateway.yaml.example>
+- [G4] Anthropic Claude Gateway GCP deployment example: <https://github.com/anthropics/claude-code/blob/v2.1.310/examples/gateway/gcp/README.md>
+- [G5] Anthropic Claude Gateway GCP model and upstream configuration: <https://github.com/anthropics/claude-code/blob/v2.1.310/examples/gateway/gcp/gateway.yaml.example>
+- [G6] This repository's Claude Code gateway wrapper and model discovery setting: [gateway.nix](../../../nix/home/claude_code/gateway.nix)
 
 [B1]: https://github.com/maximhq/bifrost/releases/tag/ent-v2.3.2-base
 [B2]: https://github.com/maximhq/bifrost/blob/ent-v2.3.2-base/docs/architecture/core/providers.mdx
@@ -280,3 +292,9 @@ Candidate source pages and GitHub release/repository metadata below were checked
 [C3]: https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/model-provider/src/models_endpoint.rs#L45
 [C4]: https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/config/src/config_toml.rs#L408
 [C5]: https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/core/src/config/mod.rs#L2224
+[G1]: https://github.com/anthropics/claude-code/releases/tag/v2.1.310
+[G2]: https://github.com/anthropics/claude-code/blob/v2.1.310/examples/gateway/aws/README.md
+[G3]: https://github.com/anthropics/claude-code/blob/v2.1.310/examples/gateway/aws/gateway.yaml.example
+[G4]: https://github.com/anthropics/claude-code/blob/v2.1.310/examples/gateway/gcp/README.md
+[G5]: https://github.com/anthropics/claude-code/blob/v2.1.310/examples/gateway/gcp/gateway.yaml.example
+[G6]: ../../../nix/home/claude_code/gateway.nix
