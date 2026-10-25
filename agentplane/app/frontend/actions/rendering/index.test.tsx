@@ -957,19 +957,33 @@ describe("sandbox rendering", () => {
   };
   const result = (value: unknown): unknown => value;
 
-  it.each([
-    ["create", { name: "new-sandbox", template: "python" }, "Create sandbox", "Template: python"],
-    [
-      "exec",
-      { name: "script-sandbox", script: 'echo "$HOME"', timeout_seconds: 60, max_output_bytes: 0, cwd: "/workspace" },
-      "Run command in sandbox script-sandbox",
-      "Working directory /workspace · Timeout 60 s · Output limit 0 bytes per stream",
-    ],
-  ])("renders %s without authorizing compact decisions", async (name, args, label, body) => {
-    expect((await mount(renderActionLabel(action(name), args))).textContent).toContain(label);
-    expect((await mount(renderPaneOpened(action(name), args))).textContent).toContain(body);
-    expect(actionOffersCardDecisionButtons(action(name), args)).toBe(false);
-    const recorded = await mount(renderDetailsArguments(action(name), { ...args, hidden: true }));
+  it("renders create and authorizes compact decisions only for schema-valid arguments", async () => {
+    const args = { name: "new-sandbox", template: "python" };
+    expect((await mount(renderActionLabel(action("create"), args))).textContent).toContain("Create sandbox");
+    expect((await mount(renderPaneOpened(action("create"), args))).textContent).toContain("Template: python");
+    expect((await mount(renderPaneCollapsed(action("create"), args))).textContent).toContain("Template: python");
+    expect(actionOffersCardDecisionButtons(action("create"), args)).toBe(true);
+    expect(actionOffersCardDecisionButtons(action("create"), { ...args, hidden: true })).toBe(false);
+    const recorded = await mount(renderDetailsArguments(action("create"), { ...args, hidden: true }));
+    expect(recorded.textContent).toContain("Details shown as recorded data");
+  });
+
+  it("renders exec without authorizing compact decisions", async () => {
+    const args = {
+      name: "script-sandbox",
+      script: 'echo "$HOME"',
+      timeout_seconds: 60,
+      max_output_bytes: 0,
+      cwd: "/workspace",
+    };
+    expect((await mount(renderActionLabel(action("exec"), args))).textContent).toContain(
+      "Run command in sandbox script-sandbox"
+    );
+    expect((await mount(renderPaneOpened(action("exec"), args))).textContent).toContain(
+      "Working directory /workspace · Timeout 60 s · Output limit 0 bytes per stream"
+    );
+    expect(actionOffersCardDecisionButtons(action("exec"), args)).toBe(false);
+    const recorded = await mount(renderDetailsArguments(action("exec"), { ...args, hidden: true }));
     expect(recorded.textContent).toContain("Details shown as recorded data");
   });
 

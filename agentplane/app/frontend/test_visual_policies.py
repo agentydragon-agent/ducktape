@@ -32,6 +32,7 @@ CLOSED_CARD_SHOWS_EVERYTHING = frozenset(
         ("kubernetes_admin", "pods_get"),
         ("kubernetes_admin", "pods_log"),
         ("kubernetes_admin", "events_list"),
+        ("sandbox", "create"),
         ("sandbox", "get"),
         ("sandbox", "dispose"),
         ("sandbox", "list"),
@@ -552,8 +553,10 @@ async def test_compact_action_summaries(
         ("sandbox", "get"),
         ("sandbox", "dispose"),
         ("sandbox", "list"),
+        ("sandbox", "create"),
     }:
         await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
     await view.capture(target=section)
 
 
