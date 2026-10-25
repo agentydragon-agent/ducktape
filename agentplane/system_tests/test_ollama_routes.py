@@ -1,4 +1,4 @@
-"""Manual live smoke of the offered Ollama routes through both deployed harnesses."""
+"""Manual live smoke of Ollama routes offered by the deployed model catalog."""
 
 from __future__ import annotations
 
@@ -6,21 +6,18 @@ import asyncio
 import json
 import os
 
-import pytest
 import pytest_bazel
 
+from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.testing.client import Client
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.conftest import Sandboxes
 from agentplane.system_tests.ollama_catalog import ollama_cases
-from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
-
-CASES = ollama_cases(get_required_path("ducktape/cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml"))
 
 
 def _id(case: tuple[runner_pb2.Harness, str]) -> str:
@@ -28,19 +25,13 @@ def _id(case: tuple[runner_pb2.Harness, str]) -> str:
     return f"{runner_pb2.Harness.Name(harness).lower()}-{route.replace('/', '-')}"
 
 
-selected = os.environ.get("OLLAMA_SMOKE_CASE")
-if selected:
-    CASES = [case for case in CASES if _id(case) == selected]
-    if not CASES:
-        raise ValueError(f"unknown OLLAMA_SMOKE_CASE: {selected}")
-
-
-@pytest.mark.parametrize(("harness", "route"), CASES, ids=[_id(case) for case in CASES])
-async def test_ollama_tool_call(client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, route: str) -> None:
+async def _exercise_case(
+    client: Client, sandbox: Sandboxes, catalog: ModelCatalog, harness: runner_pb2.Harness, route: str
+) -> None:
     case_id = _id((harness, route))
     evidence: dict[str, object] = {"case": case_id, "route": route, "status": "started"}
     try:
-        offered = (await client.models()).harnesses[Harness(runner_pb2.Harness.Name(harness))]
+        offered = catalog.harnesses[Harness(runner_pb2.Harness.Name(harness))]
         assert route in offered, f"route absent from offered models for {case_id}"
         view = await sandbox("systest-ollama-smoke")
         evidence["sandbox"] = view.name
@@ -97,6 +88,18 @@ async def test_ollama_tool_call(client: Client, sandbox: Sandboxes, harness: run
         hold_seconds = min(max(int(os.environ.get("OLLAMA_SMOKE_HOLD_SECONDS", "0")), 0), 30)
         if hold_seconds:
             await asyncio.sleep(hold_seconds)
+
+
+async def test_ollama_tool_call(client: Client, sandbox: Sandboxes) -> None:
+    catalog = await client.models()
+    cases = ollama_cases(catalog)
+    selected = os.environ.get("OLLAMA_SMOKE_CASE")
+    if selected:
+        cases = [case for case in cases if _id(case) == selected]
+        if not cases:
+            raise ValueError(f"unknown OLLAMA_SMOKE_CASE: {selected}")
+    for harness, route in cases:
+        await _exercise_case(client, sandbox, catalog, harness, route)
 
 
 if __name__ == "__main__":
