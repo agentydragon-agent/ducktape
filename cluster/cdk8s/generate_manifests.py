@@ -20,7 +20,6 @@ from cluster.cdk8s import (
     claude_sandbox_secrets,
     cnpg_operator,
     crossplane,
-    crossplane_dns_records,
     crossplane_forgejo_agentydragon,
     descheduler,
     dns_automation,
@@ -58,6 +57,7 @@ from cluster.cdk8s import (
     proxmox_proxy,
     reflector,
     reloader,
+    route53_domain_delegation,
     talos_cloud_controller_manager,
     tana_mcp,
     terraform,
@@ -806,13 +806,12 @@ def generate_manifests(root: Path) -> None:
     dns_automation_kustomization = dns_automation.dns_automation(
         flux_chart,
         write_directory(root, dns_automation_artifact, dns_automation.chart),
-        tofu_controller_kustomization,
         external_secrets_operator_kustomization,
     )
-    crossplane_dns_records_artifact = artifact(crossplane_dns_records.NAME, crossplane_dns_records.OUTPUT_DIR)
-    crossplane_dns_records.resources(
+    route53_domain_delegation_artifact = artifact(route53_domain_delegation.NAME, route53_domain_delegation.OUTPUT_DIR)
+    route53_domain_delegation.resources(
         flux_chart,
-        write_directory(root, crossplane_dns_records_artifact, crossplane_dns_records.chart),
+        write_directory(root, route53_domain_delegation_artifact, route53_domain_delegation.chart),
         crossplane_opentofu_provider_kustomization,
         tofu_state_db_kustomization,
         dns_automation_kustomization,
@@ -1818,7 +1817,7 @@ def generate_manifests(root: Path) -> None:
             crossplane_artifact,
             crossplane_litellm_provider_artifact,
             crossplane_opentofu_provider_artifact,
-            crossplane_dns_records_artifact,
+            route53_domain_delegation_artifact,
             crossplane_forgejo_agentydragon_artifact,
             external_secrets_config_artifact,
             external_secrets_operator_artifact,

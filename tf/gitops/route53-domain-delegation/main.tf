@@ -26,67 +26,6 @@ data "aws_route53_zone" "zone" {
   zone_id = var.route53_zone_id
 }
 
-# ExternalDNS owns these seven record sets and their TXT registry markers after
-# the previous adoption stage. Forget every address without deleting Route 53
-# records. CLEANUP(added 2026-10-05): Remove these blocks only after the
-# dns-records state has applied the handoff. Domain registration stays in Terraform.
-removed {
-  from = aws_route53_record.wildcard
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = aws_route53_record.apex
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = aws_route53_record.mx_host
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = aws_route53_record.apex_mx
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = aws_route53_record.apex_spf
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = aws_route53_record.dmarc
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = aws_route53_record.api
-  lifecycle {
-    destroy = false
-  }
-}
-
-# A resource address covers all seven for_each marker instances.
-removed {
-  from = aws_route53_record.external_dns_ownership
-  lifecycle {
-    destroy = false
-  }
-}
-
 # Domain registration — delegate to Route 53 nameservers
 import {
   to = aws_route53domains_registered_domain.allegedly_works

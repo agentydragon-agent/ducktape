@@ -1,4 +1,4 @@
-"""Move the Route 53 domain registration root from tofu-controller to Crossplane OpenTofu."""
+"""Manage Route 53 domain registration and delegation through Crossplane OpenTofu."""
 
 from __future__ import annotations
 
@@ -21,18 +21,19 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.route53 import HOSTED_ZONES
 
 NAME = "crossplane-dns-records"
-OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
-TF_MODULE_NAME = "dns-records"
-PROVIDER_CONFIG_NAME = NAME
+OUTPUT_DIR = f"{GENERATED_ROOT}/route53-domain-delegation"
+TF_MODULE_NAME = "route53-domain-delegation"
+PROVIDER_CONFIG_NAME = "crossplane-dns-records"
 WORKSPACE_NAME = TF_MODULE_NAME
 REMOTE_MODULE = f"git::https://github.com/agentydragon/ducktape.git//tf/gitops/{TF_MODULE_NAME}?ref=devel"
-STATE_SCHEMA = terraform.gitops_state_schema(TF_MODULE_NAME)
+# Keep the existing backend schema through the root rename so Crossplane uses the same state.
+STATE_SCHEMA = terraform.gitops_state_schema("dns-records")
 _CREDENTIALS_SECRET = "aws-route53-credentials"
 _NAMESPACE = "flux-system"
 
 
-class DnsRecordsVars(BaseModel):
-    """The inputs of tf/gitops/dns-records; `aws_region` keeps its variables.tf default."""
+class Route53DomainDelegationVars(BaseModel):
+    """The inputs of tf/gitops/route53-domain-delegation; `aws_region` keeps its default."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -52,7 +53,7 @@ def chart(app: App) -> Chart:
             ),
         ),
     )
-    variables = DnsRecordsVars(route53_zone_id=HOSTED_ZONES["allegedly.works"])
+    variables = Route53DomainDelegationVars(route53_zone_id=HOSTED_ZONES["allegedly.works"])
     Workspace(
         chart,
         "workspace",
@@ -102,7 +103,7 @@ def resources(
     tofu_state_db: Kustomization,
     dns_automation: Kustomization,
 ) -> Kustomization:
-    """Start Crossplane only after tofu-controller has pruned the old Terraform root."""
+    """Apply the Workspace after its provider, state DB, and credentials are ready."""
     return flux_kustomization(
         flux_chart,
         NAME,
@@ -110,7 +111,6 @@ def resources(
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(opentofu_provider, tofu_state_db, dns_automation),
         description=(
-            "Take over dns-records from tofu-controller using its existing PostgreSQL state; "
-            "the dependency on dns-automation serializes the controller handoff."
+            "Manage Route 53 domain registration and nameserver delegation using the existing dns_records state."
         ),
     )

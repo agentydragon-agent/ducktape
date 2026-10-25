@@ -1,4 +1,4 @@
-"""The flux-system ExternalSecret supplying credentials to the dns-records Workspace."""
+"""The flux-system ExternalSecret supplying credentials to the Route 53 delegation Workspace."""
 
 from __future__ import annotations
 
@@ -40,15 +40,13 @@ def chart(app: App) -> Chart:
 
 
 def dns_automation(
-    chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization, external_secrets_operator: Kustomization
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         directory,
-        # Wait until Flux has pruned the old Terraform CR before the Crossplane Workspace
-        # depending on this Kustomization can start using the same state schema.
         wait=True,
-        depends_on=flux_kustomization_depends_on_many(tofu_controller, external_secrets_operator),
-        description="Keep Route 53 credentials available while tofu-controller hands dns-records state to Crossplane.",
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
+        description="Make Route 53 credentials available to the Crossplane domain delegation Workspace.",
     )

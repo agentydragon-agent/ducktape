@@ -78,8 +78,8 @@ spec:
       name: crossplane-provider-opentofu
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/crossplane-dns-records/**"
-          to: "@artifact/cluster/generated/crossplane-dns-records/"
+        - from: "@repo/cluster/generated/route53-domain-delegation/**"
+          to: "@artifact/cluster/generated/route53-domain-delegation/"
       name: crossplane-dns-records
       originRevision: "@repo"
     - copy:

@@ -16,7 +16,7 @@ kind: Workspace
 metadata:
   annotations:
     crossplane.io/external-name: default
-  name: dns-records
+  name: route53-domain-delegation
 spec:
   deletionPolicy: Orphan
   forProvider:
@@ -41,7 +41,7 @@ spec:
           key: AWS_SECRET_ACCESS_KEY
           name: aws-route53-credentials
           namespace: flux-system
-    module: git::https://github.com/agentydragon/ducktape.git//tf/gitops/dns-records?ref=devel
+    module: git::https://github.com/agentydragon/ducktape.git//tf/gitops/route53-domain-delegation?ref=devel
     planArgs:
       - -lock-timeout=5m
     remotePullPolicy: Always
