@@ -1,31 +1,4 @@
 filegroup(
-    name = "source_watcher_crd_bundle",
-    srcs = ["flux/flux-system/gotk-components.yaml"],
-    visibility = ["//cluster/cdk8s/providers/source_watcher:__pkg__"],
-)
-
-filegroup(
-    name = "flux_bootstrap_files",
-    srcs = [
-        "flux/flux-system/gotk-components.yaml",
-        "flux/flux-system/gotk-sync.yaml",
-    ],
-    visibility = [
-        "//cluster/terraform/main:__pkg__",
-        "//cluster/validation:__pkg__",
-    ],
-)
-
-# Whole flux-system overlay (kustomization.yaml + the GitHub App Secret it
-# references), which cluster_all_files excludes. cluster/validation's flux-build
-# test needs it because the central Flux root includes flux-system/ as a resource.
-filegroup(
-    name = "flux_system_files",
-    srcs = glob(["flux/flux-system/**"]),
-    visibility = ["//cluster/validation:__pkg__"],
-)
-
-filegroup(
     name = "cluster_yaml_files",
     srcs = glob(
         ["**/*.yaml"],
@@ -57,18 +30,4 @@ exports_files(
         "//cluster/cdk8s/haku_ci:__pkg__",
         "//cluster/validation:__pkg__",
     ],
-)
-
-# The live Ollama smoke enumerates the committed staging app catalog without importing its generator.
-filegroup(
-    name = "agentplane_staging_manifest",
-    srcs = ["agentplane-staging/agentplane-staging.k8s.yaml"],
-    visibility = ["//agentplane/system_tests:__pkg__"],
-)
-
-# //cluster/cdk8s/authentik:app lists every one in the `authentik-sso-blueprints` ConfigMap.
-filegroup(
-    name = "authentik_blueprints",
-    srcs = glob(["authentik/app/blueprints/*.yaml"]),
-    visibility = ["//cluster/cdk8s/authentik:__pkg__"],
 )
