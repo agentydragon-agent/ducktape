@@ -2,7 +2,7 @@
 
 Inventory for moving Flux delivery manifests off `devel`. The intended test model is per test: test cdk8s-owned behavior from its source constructs or a focused in-memory graph, and test policy or consumer logic with fixtures. CI does not need to feed one rendered bundle to every test. Only checks that truly validate the complete Flux graph need that graph, and should live with the graph owner. This PR changes documentation only. Classes are assigned by the main assertion in each Bazel test target; a target can contain more than one kind of assertion.
 
-This is a snapshot of `origin/devel` at `fae1307c`; test paths and targets are recorded as they exist at that baseline. Since then, [#11913](https://github.com/agentydragon/ducktape/pull/11913), [#11921](https://github.com/agentydragon/ducktape/pull/11921), [#11926](https://github.com/agentydragon/ducktape/pull/11926), and [#11928](https://github.com/agentydragon/ducktape/pull/11928) have removed the Ollama catalog, LiteLLM roster, Grafana verifier, and live Ollama route readers. The table remains the complete inventory at its stated baseline; the follow-up section records current trim status.
+This is a snapshot of `origin/devel` at `fae1307c`; test paths and targets are recorded as they exist at that baseline. Since then, [#11913](https://github.com/agentydragon/ducktape/pull/11913), [#11920](https://github.com/agentydragon/ducktape/pull/11920), [#11921](https://github.com/agentydragon/ducktape/pull/11921), [#11923](https://github.com/agentydragon/ducktape/pull/11923), [#11926](https://github.com/agentydragon/ducktape/pull/11926), [#11928](https://github.com/agentydragon/ducktape/pull/11928), and [#11934](https://github.com/agentydragon/ducktape/pull/11934) have removed the Ollama, Kyverno, LiteLLM, Grafana, and mailbox readers. The table remains the complete inventory at its stated baseline; the follow-up section records current trim status.
 
 | Class | Meaning                                                                         |
 | ----- | ------------------------------------------------------------------------------- |
@@ -101,25 +101,19 @@ none opens a manifest. The container E2E secret path is staged from its
 
 ## Follow-up trim order
 
-No trim depends on a shared rendered artifact. These independent output-reader
-trims are already open as separate drafts:
+No trim depends on a shared rendered artifact. The remaining output-parity trim
+is open as a separate draft: [#11929](https://github.com/agentydragon/ducktape/pull/11929)
+removes committed generated-output parity checks while retaining model invariants.
 
-1. [#11920](https://github.com/agentydragon/ducktape/pull/11920) synthesizes
-   Kyverno policies from cdk8s and keeps real Kyverno behavior checks on fixtures.
-2. [#11923](https://github.com/agentydragon/ducktape/pull/11923) tests Grafana
-   dashboard mapping from the cdk8s model.
-3. [#11929](https://github.com/agentydragon/ducktape/pull/11929) removes committed
-   generated-output parity checks while retaining model invariants.
-4. [#11934](https://github.com/agentydragon/ducktape/pull/11934) checks the SMTP
-   proxy destination against the synthesized mailbox Service and its authored
-   nginx.conf.
-
-The focused reader trims already merged are [#11913](https://github.com/agentydragon/ducktape/pull/11913)
-(Ollama catalog), [#11921](https://github.com/agentydragon/ducktape/pull/11921)
-(LiteLLM probe), [#11926](https://github.com/agentydragon/ducktape/pull/11926)
-(Grafana verifier), and [#11928](https://github.com/agentydragon/ducktape/pull/11928)
-(live Ollama routes). Each uses its own cdk8s model, fixture, or live API; none
-consumes a universal rendered bundle.
+The other output-reader trims have merged: [#11913](https://github.com/agentydragon/ducktape/pull/11913)
+(Ollama catalog), [#11920](https://github.com/agentydragon/ducktape/pull/11920)
+(Kyverno policies), [#11921](https://github.com/agentydragon/ducktape/pull/11921)
+(LiteLLM probe), [#11923](https://github.com/agentydragon/ducktape/pull/11923)
+(Grafana model), [#11926](https://github.com/agentydragon/ducktape/pull/11926)
+(Grafana verifier), [#11928](https://github.com/agentydragon/ducktape/pull/11928)
+(live Ollama routes), and [#11934](https://github.com/agentydragon/ducktape/pull/11934)
+(mailbox SMTP relation). Each uses its own cdk8s model, fixture, or live API;
+none consumes a universal rendered bundle.
 
 The remaining rows do not all need an output-reader trim:
 
