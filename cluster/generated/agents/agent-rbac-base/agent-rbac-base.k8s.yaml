@@ -362,6 +362,14 @@ rules:
       - list
       - watch
   - apiGroups:
+      - grafana.integreatly.org
+    resources:
+      - grafanadashboards
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - gateway.networking.k8s.io
     resources:
       - gateways

@@ -222,6 +222,7 @@ def _add_cluster_roles(chart: Chart) -> None:
             "podmonitors",
             "prometheusrules",
         ),
+        _read("grafana.integreatly.org", "grafanadashboards"),
         _read("gateway.networking.k8s.io", "gateways", "httproutes", "tlsroutes", "grpcroutes"),
         _read("postgresql.cnpg.io", "clusters", "backups", "scheduledbackups"),
         _read("redis.redis.opstreelabs.in", "redisreplications"),
