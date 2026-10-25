@@ -2034,6 +2034,53 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: crossplane-source-pins
+  namespace: ducktape-flux
+spec:
+  interval: 10m
+  path: ./cluster/k8s/crossplane-source-pins
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: crossplane-source-pins
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: No-infrastructure OpenTofu Workspace used to verify CI source pinning, Flux delivery, and Crossplane runs.
+  name: crossplane-source-update-canary
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: crossplane-source-pins
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/crossplane-source-update-canary
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: crossplane-source-pins
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: crossplane-source-update-canary
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   annotations:
     description: Take over forgejo-agentydragon from tofu-controller using its existing PostgreSQL state; the dependency on forgejo-gitops serializes the controller handoff.
   name: crossplane-forgejo-agentydragon

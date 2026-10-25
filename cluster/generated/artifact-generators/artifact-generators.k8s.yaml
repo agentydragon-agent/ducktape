@@ -88,6 +88,16 @@ spec:
       name: crossplane-forgejo-agentydragon
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/k8s/crossplane-source-pins/**"
+          to: "@artifact/cluster/k8s/crossplane-source-pins/"
+      name: crossplane-source-pins
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/crossplane-source-update-canary/**"
+          to: "@artifact/cluster/generated/crossplane-source-update-canary/"
+      name: crossplane-source-update-canary
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/external-secrets/config/**"
           to: "@artifact/cluster/generated/external-secrets/config/"
       name: external-secrets-config

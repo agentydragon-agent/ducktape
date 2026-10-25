@@ -21,6 +21,8 @@ from cluster.cdk8s import (
     cnpg_operator,
     crossplane,
     crossplane_forgejo_agentydragon,
+    crossplane_source_pins,
+    crossplane_source_update_canary,
     descheduler,
     dns_automation,
     ducktape_flux,
@@ -947,6 +949,20 @@ def generate_manifests(root: Path) -> None:
     crossplane_forgejo_agentydragon_artifact = artifact(
         crossplane_forgejo_agentydragon.NAME, crossplane_forgejo_agentydragon.OUTPUT_DIR
     )
+    crossplane_source_pins_artifact = artifact(crossplane_source_pins.NAME, crossplane_source_pins.OUTPUT_DIR)
+    crossplane_source_pins_kustomization = crossplane_source_pins.source_pins(
+        flux_chart, crossplane_source_pins_artifact
+    )
+    crossplane_source_update_canary_artifact = artifact(
+        crossplane_source_update_canary.NAME, crossplane_source_update_canary.OUTPUT_DIR
+    )
+    crossplane_source_update_canary.resources(
+        flux_chart,
+        write_directory(root, crossplane_source_update_canary_artifact, crossplane_source_update_canary.chart),
+        crossplane_opentofu_provider_kustomization,
+        tofu_state_db_kustomization,
+        crossplane_source_pins_kustomization,
+    )
     crossplane_forgejo_agentydragon.resources(
         flux_chart,
         write_directory(root, crossplane_forgejo_agentydragon_artifact, crossplane_forgejo_agentydragon.chart),
@@ -1819,6 +1835,8 @@ def generate_manifests(root: Path) -> None:
             crossplane_opentofu_provider_artifact,
             route53_domain_delegation_artifact,
             crossplane_forgejo_agentydragon_artifact,
+            crossplane_source_pins_artifact,
+            crossplane_source_update_canary_artifact,
             external_secrets_config_artifact,
             external_secrets_operator_artifact,
             forgejo_artifact,

@@ -449,6 +449,48 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
     )
 
 
+def test_crossplane_source_update_canary_uses_the_ci_pinned_revision(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    workspace = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "opentofu.upbound.io/v1beta1"
+        and doc.get("kind") == "Workspace"
+        and doc.get("metadata", {}).get("name") == "crossplane-source-update-canary"
+    )
+    workspace_kustomization = next(
+        doc
+        for doc in documents
+        if doc.get("kind", "").lower() == "kustomization"
+        and doc.get("metadata", {}).get("name") == "crossplane-source-update-canary"
+    )
+    source_pins_kustomization = next(
+        doc
+        for doc in documents
+        if doc.get("kind", "").lower() == "kustomization"
+        and doc.get("metadata", {}).get("name") == "crossplane-source-pins"
+    )
+
+    assert workspace["spec"]["managementPolicies"] == ["Observe", "Create", "Update"]
+    assert workspace["spec"]["deletionPolicy"] == "Orphan"
+    assert workspace["spec"]["forProvider"]["remotePullPolicy"] == "IfNotPresent"
+    assert workspace["spec"]["forProvider"]["module"] == (
+        "git::https://github.com/agentydragon/ducktape.git"
+        "//tf/gitops/crossplane-source-update-canary?ref=${CROSSPLANE_SOURCE_UPDATE_CANARY_REVISION}"
+    )
+    assert workspace_kustomization["spec"]["postBuild"]["substituteFrom"] == [
+        {"kind": "ConfigMap", "name": "crossplane-source-pins"}
+    ]
+    assert workspace_kustomization["spec"]["dependsOn"] == [
+        {"name": "crossplane-provider-opentofu", "namespace": "ducktape-flux"},
+        {"name": "tofu-state-db", "namespace": "ducktape-flux"},
+        {"name": "crossplane-source-pins", "namespace": "ducktape-flux"},
+    ]
+    assert source_pins_kustomization["spec"]["path"] == "./cluster/k8s/crossplane-source-pins"
+
+
 def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:

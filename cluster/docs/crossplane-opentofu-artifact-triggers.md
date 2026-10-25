@@ -1,6 +1,6 @@
 # Push-triggered Crossplane OpenTofu sources
 
-**Status: design and spike options.** This compares ways to get a Crossplane OpenTofu Workspace to use new root inputs promptly, without pulling the whole ducktape repository on every Workspace reconciliation. No provider or live-cluster configuration is changed by this document.
+**Status: implementation and canary plan.** This compares ways to get a Crossplane OpenTofu Workspace to use new root inputs promptly, without pulling the whole ducktape repository on every Workspace reconciliation. This PR adds an output-only canary and a CI-pinned source update path; it does not change the existing Route 53 or Forgejo Workspaces.
 
 ## Goal
 
@@ -10,11 +10,19 @@ This is about source updates. Crossplane/provider-opentofu still periodically ob
 
 ## Current state and naming
 
-The current Crossplane OpenTofu root is tf/gitops/route53-domain-delegation. Its Crossplane Workspace is named route53-domain-delegation, while its existing Postgres state schema remains dns_records. The generated Crossplane manifest artifact is named crossplane-dns-records and contains the Kubernetes manifests under cluster/generated/route53-domain-delegation.
+The existing Crossplane OpenTofu roots are tf/gitops/route53-domain-delegation and tf/gitops/forgejo-agentydragon. The Route 53 Workspace is named route53-domain-delegation, while its existing Postgres state schema remains dns_records. Its generated Crossplane manifest artifact is named crossplane-dns-records and contains the Kubernetes manifests under cluster/generated/route53-domain-delegation.
 
 There is not currently a Flux ExternalArtifact containing the route53-domain-delegation Terraform root. The existing tf-gitops-* ExternalArtifacts are created for roots still consumed by tofu-controller. A new root artifact would be required for the watched-ExternalArtifact proposal below. Do not confuse the current crossplane-dns-records manifest artifact with a Terraform source artifact.
 
 The GitHub Receiver already reconciles the shared ducktape GitRepository on push. The Route 53 Workspace still points at the mutable Git URL ending in ref=devel and has remotePullPolicy Always. A push does not change that Workspace spec. Its next normal reconciliation pulls the Git module again. The related LiteLLM Key resources are managed directly through the Crossplane LiteLLM provider; changing a Key would not exercise any Terraform source-update path.
+
+## Implemented canary path
+
+This PR adds `tf/gitops/crossplane-source-update-canary`, an output-only root with a separate Postgres state schema and no external providers or infrastructure resources. Its Workspace uses `remotePullPolicy: IfNotPresent`; the module reference comes from the `crossplane-source-pins` ConfigMap through Flux post-build substitution.
+
+After the full Bazel CI job succeeds on a push to devel, the new CI job compares the canary's OpenTofu input files since the currently pinned revision. When those inputs changed, it writes the validated commit SHA to `cluster/k8s/crossplane-source-pins/source-update-canary-revision.txt` and pushes that pin with the existing `ducktape-automation` GitHub App. Other repository changes do not update the pin. The existing GitHub push Receiver wakes the shared GitRepository; Flux applies the new ConfigMap first, then the canary Kustomization substitutes the immutable commit into the Workspace. Crossplane fetches and reconciles that source once. A later unrelated push leaves the source pin and Workspace module URL unchanged.
+
+The first merge will establish the canary and run this path from devel. The safe state-only output is `canary-v1`; changing it in a later commit tests a real OpenTofu output update without creating or changing infrastructure. The canary is deliberately separate from the live Forgejo and Route 53 roots. Once this path works, Forgejo is the lower-impact existing root to migrate; Route 53 remains a poor first live test because it manages a registered domain.
 
 ## Candidate A: OCI artifact plus Flux Kustomization
 
@@ -196,8 +204,8 @@ A Composition function's required resources alone are not a substitute for this 
 
 ## Suggested investigation order
 
-1. Prototype the OCI Kustomize artifact path in a non-production workspace. It uses supported Flux source and Kustomization APIs already present in the cluster and exercises CI publication, the GitHub package event, Workspace spec update, immutable source pin, and OpenTofu reconciliation without the alpha provider watch. Use a root-only archive if the pinned module downloader accepts the selected URL; otherwise start with a Git commit pin and measure the one-time source fetch.
-2. Compare it with CI pin writeback, which may be the smaller production change if a bot commit or pin PR is acceptable. The OCI Helm chart is another supported path if chart packaging fits better.
+1. Merge the canary implementation and watch CI publish its source pin, Flux update the Workspace module URL, and Crossplane report the output-only plan/apply. Then change the canary output value in a separate commit and confirm the new pin triggers one output update. An unrelated repository push should leave the pin and Workspace spec unchanged.
+2. If the canary works, move the same CI pin and Flux substitution pattern to Forgejo in a follow-up. The OCI Kustomize artifact path remains a viable alternative if CI repository writeback becomes undesirable; it requires an OCIRepository and registry-package event wiring.
 3. Keep Inline for roots whose effective configuration is genuinely one file. Use it to remove remote pulls, not as a blanket fit for arbitrary Terraform roots.
 4. Use the watched-Object composition only as a contained experiment if artifact-status bridging remains valuable; do not treat its alpha watch as production-ready.
 5. If CI writeback and the provider-kubernetes watch are both unacceptable, evaluate a dedicated watcher with per-root RBAC.

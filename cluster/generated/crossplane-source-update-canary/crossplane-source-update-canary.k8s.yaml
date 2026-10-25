@@ -1,0 +1,39 @@
+apiVersion: opentofu.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: crossplane-source-update-canary
+spec:
+  backendFile: |
+    conn_str = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+    schema_name = "crossplane_source_update_canary"
+  configuration: |
+    terraform {
+      backend "pg" {}
+    }
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: Workspace
+metadata:
+  annotations:
+    crossplane.io/external-name: default
+  name: crossplane-source-update-canary
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    env:
+      - name: PGPASSWORD
+        secretKeyRef:
+          key: password
+          name: tofu-state-db-credentials
+          namespace: flux-system
+    module: git::https://github.com/agentydragon/ducktape.git//tf/gitops/crossplane-source-update-canary?ref=${CROSSPLANE_SOURCE_UPDATE_CANARY_REVISION}
+    planArgs:
+      - -lock-timeout=5m
+    remotePullPolicy: IfNotPresent
+    source: Remote
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+  providerConfigRef:
+    name: crossplane-source-update-canary
