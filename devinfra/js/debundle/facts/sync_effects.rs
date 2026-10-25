@@ -248,6 +248,7 @@ impl Parameter {
 struct Call {
     callee: ValueExpr,
     args: Vec<ValueExpr>,
+    span: Span,
     is_new: bool,
     caller: Option<u32>,
     owner: StatementOrdinal,
@@ -1279,6 +1280,7 @@ impl Visit for ExecutionIndex {
                     .map(|arg| ValueExpr::from_expr(&arg.expr))
                     .collect(),
                 is_new: false,
+                span: call.span,
                 has_spread: call.args.iter().any(|arg| arg.spread.is_some()),
                 no_sync_arguments: is_no_sync_callback_member_call(
                     callee,
@@ -1337,6 +1339,7 @@ impl Visit for ExecutionIndex {
                 .map(|arg| ValueExpr::from_expr(&arg.expr))
                 .collect(),
             is_new: true,
+            span: new_expr.span,
             has_spread: new_expr
                 .args
                 .as_deref()
@@ -1429,6 +1432,7 @@ struct Executor<'a> {
     index: &'a ExecutionIndex,
     facts: &'a [StatementFacts],
     flow: &'a ChunkValueFlow,
+    set_iterable_proof: &'a SetIterableProof,
     shadowed: &'a BTreeSet<&'static str>,
     top_bindings: BTreeSet<Id>,
     binding_owner: BTreeMap<Id, StatementOrdinal>,
@@ -2856,6 +2860,15 @@ impl Executor<'_> {
         captures: &Context,
         outcome: &mut Outcome,
     ) {
+        // Only a fresh primitive literal or a checked const alias to one is
+        // safe to omit from callback effects. A pure object/function element
+        // can be retained by the Set and invoked by a later opaque consumer.
+        if call.is_new
+            && call.caller.is_none()
+            && self.set_iterable_proof.contains_constructor(call.span)
+        {
+            return;
+        }
         if call.is_new
             && matches!(&call.callee, ValueExpr::Binding(id) if id.0.as_ref() == "WeakMap" && !self.flow.is_declared(id))
             && !self.shadowed.contains("WeakMap")
@@ -3062,6 +3075,7 @@ pub(crate) fn infer_returned_callback_factories(
 pub(crate) fn annotate_synchronous_calls(
     body: &[TopLevelItemView<'_>],
     flow: &ChunkValueFlow,
+    set_iterable_proof: &SetIterableProof,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisHints,
     export_reentry_policy: ExportReentryPolicy,
@@ -3097,6 +3111,7 @@ pub(crate) fn annotate_synchronous_calls(
             expression.bindings(dependencies.entry(id.clone()).or_default());
         }
     }
+    let mut member_write_receivers = BTreeMap::<ValueOrigin, BTreeSet<Id>>::new();
     for writes in &index.top_member_value_writes {
         for (receiver, _, expression) in writes {
             if index.global_object_names.contains(receiver.0.as_ref()) {
@@ -3104,17 +3119,42 @@ pub(crate) fn annotate_synchronous_calls(
                 // every later opaque call, even when the receiver alias is
                 // not mentioned by a statically visible callee.
                 expression.bindings(&mut needed);
-            } else if needed.contains(receiver) {
+            } else {
                 expression.bindings(dependencies.entry(receiver.clone()).or_default());
+                // A later call may read an object through a different local
+                // alias than the one used for this property write. Retain
+                // that receiver's prefix value whenever its known object
+                // identity also reaches a needed binding.
+                for origin in flow.values_of_binding(receiver) {
+                    if matches!(origin, ValueOrigin::Object(_)) {
+                        member_write_receivers
+                            .entry(origin)
+                            .or_default()
+                            .insert(receiver.clone());
+                    }
+                }
             }
         }
     }
     let mut pending: Vec<Id> = needed.iter().cloned().collect();
+    let mut visited_objects = BTreeSet::new();
     while let Some(id) = pending.pop() {
         if let Some(inputs) = dependencies.get(&id) {
             for input in inputs {
                 if needed.insert(input.clone()) {
                     pending.push(input.clone());
+                }
+            }
+        }
+        for origin in flow.values_of_binding(&id) {
+            if !matches!(origin, ValueOrigin::Object(_)) || !visited_objects.insert(origin) {
+                continue;
+            }
+            if let Some(receivers) = member_write_receivers.get(&origin) {
+                for receiver in receivers {
+                    if needed.insert(receiver.clone()) {
+                        pending.push(receiver.clone());
+                    }
                 }
             }
         }
@@ -3150,6 +3190,7 @@ pub(crate) fn annotate_synchronous_calls(
         index: &index,
         facts,
         flow,
+        set_iterable_proof,
         shadowed,
         top_bindings,
         binding_owner: facts
