@@ -237,7 +237,7 @@ describe("GitHub search_pull_requests", () => {
     fields: ["number", "title", "state", "html_url"],
   };
 
-  it("keeps requested fields out of the compact card but shows them in details", async () => {
+  it("shows only query and scope on the compact card, with options in details", async () => {
     const label = await mount(renderActionLabel(SEARCH_PULL_REQUESTS, args));
     const collapsed = await mount(renderPaneCollapsed(SEARCH_PULL_REQUESTS, args));
     const opened = await mount(renderPaneOpened(SEARCH_PULL_REQUESTS, args));
@@ -247,12 +247,17 @@ describe("GitHub search_pull_requests", () => {
     expect(shownText(collapsed)).toContain("is:open label:bug");
     expect(shownText(collapsed)).toContain("Owner filter: test-owner");
     expect(shownText(collapsed)).toContain("Repository filter: test-repo");
-    expect(shownText(collapsed)).toContain("Page 2");
-    expect(shownText(collapsed)).toContain("10 results per page");
-    expect(shownText(collapsed)).toContain("Sort by updated");
-    expect(shownText(collapsed)).toContain("Order: desc");
-    expect(shownText(collapsed)).not.toContain("Fields:");
-    expect(shownText(opened)).not.toContain("Fields:");
+    for (const compact of [shownText(collapsed), shownText(opened)]) {
+      expect(compact).not.toContain("Page 2");
+      expect(compact).not.toContain("results per page");
+      expect(compact).not.toContain("Sort by");
+      expect(compact).not.toContain("Order:");
+      expect(compact).not.toContain("Fields:");
+    }
+    expect(shownText(details)).toContain("Page 2");
+    expect(shownText(details)).toContain("10 results per page");
+    expect(shownText(details)).toContain("Sort by updated");
+    expect(shownText(details)).toContain("Order: desc");
     expect(shownText(details)).toContain("Fields: number, title, state, html_url");
     expect(actionCompactCardExpands(SEARCH_PULL_REQUESTS, args)).toBe(false);
     expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, args)).toBe(true);

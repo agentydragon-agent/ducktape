@@ -18,10 +18,10 @@ function SearchPullRequestsLabel(): JSX.Element {
 
 function SearchPullRequestsArgumentsView({
   args,
-  showFields,
+  showFullOptions,
 }: {
   args: SearchPullRequestsArguments;
-  showFields: boolean;
+  showFullOptions: boolean;
 }): JSX.Element {
   return (
     <Stack gap={2}>
@@ -38,11 +38,11 @@ function SearchPullRequestsArgumentsView({
           Repository filter: <Code>{args.repo}</Code>
         </Text>
       )}
-      {args.page !== undefined && <Text size="sm">Page {args.page}</Text>}
-      {args.perPage !== undefined && <Text size="sm">{args.perPage} results per page</Text>}
-      {args.sort !== undefined && <Text size="sm">Sort by {args.sort}</Text>}
-      {args.order !== undefined && <Text size="sm">Order: {args.order}</Text>}
-      {showFields && args.fields !== undefined && (
+      {showFullOptions && args.page !== undefined && <Text size="sm">Page {args.page}</Text>}
+      {showFullOptions && args.perPage !== undefined && <Text size="sm">{args.perPage} results per page</Text>}
+      {showFullOptions && args.sort !== undefined && <Text size="sm">Sort by {args.sort}</Text>}
+      {showFullOptions && args.order !== undefined && <Text size="sm">Order: {args.order}</Text>}
+      {showFullOptions && args.fields !== undefined && (
         <Text size="sm" style={{ overflowWrap: "anywhere" }}>
           Fields: {args.fields.length > 0 ? args.fields.join(", ") : "none"}
         </Text>
@@ -52,11 +52,11 @@ function SearchPullRequestsArgumentsView({
 }
 
 function SearchPullRequestsCompactArgumentsView({ args }: { args: SearchPullRequestsArguments }): JSX.Element {
-  return <SearchPullRequestsArgumentsView args={args} showFields={false} />;
+  return <SearchPullRequestsArgumentsView args={args} showFullOptions={false} />;
 }
 
 function SearchPullRequestsDetailsArgumentsView({ args }: { args: SearchPullRequestsArguments }): JSX.Element {
-  return <SearchPullRequestsArgumentsView args={args} showFields={true} />;
+  return <SearchPullRequestsArgumentsView args={args} showFullOptions={true} />;
 }
 
 export function offersCardDecisionButtonsSearchPullRequests(args: unknown): boolean {
