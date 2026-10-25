@@ -118,6 +118,158 @@ fn map_entry_array_span(new_expr: &NewExpr) -> Option<u32> {
     Some(entries.span.lo.0)
 }
 
+#[derive(Debug, Clone, Default)]
+struct ClassValueFacts {
+    instance_fields: BTreeMap<String, ValueExpr>,
+    static_fields: BTreeMap<String, ValueExpr>,
+    opaque_instance: bool,
+    opaque_static: bool,
+    allocation_without_user_code: bool,
+}
+
+enum FreshInstanceStep {
+    Allocate { binding: Id, constructor: Id },
+    Write { receiver: Id, property: String },
+}
+
+fn primitive_constant(expression: &Expr) -> bool {
+    match expression.unwrap_parens() {
+        Expr::Lit(Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_)) => true,
+        Expr::Unary(unary) if unary.op != UnaryOp::Delete => primitive_constant(&unary.arg),
+        Expr::Bin(binary) if !matches!(binary.op, BinaryOp::In | BinaryOp::InstanceOf) => {
+            primitive_constant(&binary.left) && primitive_constant(&binary.right)
+        }
+        _ => false,
+    }
+}
+
+fn value_without_user_code(expression: &Expr) -> bool {
+    if primitive_constant(expression) {
+        return true;
+    }
+    match expression.unwrap_parens() {
+        Expr::Arrow(_) => true,
+        Expr::Fn(function) => {
+            function.function.decorators.is_empty()
+                && function
+                    .function
+                    .params
+                    .iter()
+                    .all(|parameter| parameter.decorators.is_empty())
+        }
+        Expr::Array(array) => array.elems.is_empty(),
+        // A11 fixes Array.prototype.values as an ordinary data property.
+        // The empty receiver cannot publish the instance being initialized.
+        Expr::Member(member) => {
+            matches!(&member.prop, MemberProp::Ident(property) if property.sym == "values")
+                && matches!(member.obj.unwrap_parens(), Expr::Array(array) if array.elems.is_empty())
+        }
+        _ => false,
+    }
+}
+
+fn fresh_instance_step(item: &ModuleItem) -> Option<FreshInstanceStep> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))
+            if declaration.kind == VarDeclKind::Const && declaration.decls.len() == 1 =>
+        {
+            let declaration = &declaration.decls[0];
+            let Pat::Ident(binding) = &declaration.name else {
+                return None;
+            };
+            let Expr::New(allocation) = declaration.init.as_deref()?.unwrap_parens() else {
+                return None;
+            };
+            let Expr::Ident(constructor) = allocation.callee.unwrap_parens() else {
+                return None;
+            };
+            allocation.args.as_ref().is_none_or(Vec::is_empty).then(|| {
+                FreshInstanceStep::Allocate {
+                    binding: binding.id.to_id(),
+                    constructor: constructor.to_id(),
+                }
+            })
+        }
+        ModuleItem::Stmt(Stmt::Expr(statement)) => {
+            let Expr::Assign(assignment) = statement.expr.unwrap_parens() else {
+                return None;
+            };
+            if assignment.op != AssignOp::Assign || !value_without_user_code(&assignment.right) {
+                return None;
+            }
+            let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left else {
+                return None;
+            };
+            let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
+                return None;
+            };
+            let MemberProp::Ident(property) = &member.prop else {
+                return None;
+            };
+            (property.sym != "__proto__").then(|| FreshInstanceStep::Write {
+                receiver: receiver.to_id(),
+                property: property.sym.to_string(),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn fresh_own_field_writes(
+    steps: &[Option<FreshInstanceStep>],
+    facts: &NamespaceValueFacts,
+) -> BTreeSet<StatementOrdinal> {
+    let mut active: Option<(Id, u32)> = None;
+    let mut writes = BTreeSet::new();
+    for (ordinal, step) in steps.iter().enumerate() {
+        match step {
+            Some(FreshInstanceStep::Allocate {
+                binding,
+                constructor,
+            }) => {
+                active = facts
+                    .resolve_class(
+                        &ValueExpr::Binding(constructor.clone()),
+                        &mut BTreeSet::new(),
+                    )
+                    .filter(|(key, surface)| {
+                        *surface == ClassSurface::Constructor
+                            && facts
+                                .classes
+                                .get(key)
+                                .is_some_and(|class| class.allocation_without_user_code)
+                    })
+                    .map(|(key, _)| (binding.clone(), key));
+            }
+            Some(FreshInstanceStep::Write { receiver, property })
+                if active.as_ref().is_some_and(|(binding, key)| {
+                    binding == receiver && facts.classes[key].instance_fields.contains_key(property)
+                }) =>
+            {
+                writes.insert(StatementOrdinal(ordinal));
+            }
+            _ => active = None,
+        }
+    }
+    writes
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ClassSurface {
+    Constructor,
+    Instance,
+}
+
+#[derive(Debug, Clone, Default)]
+struct NamespaceValueFacts {
+    classes: BTreeMap<u32, ClassValueFacts>,
+    /// A binding is resolved only when the retained syntax has exactly one
+    /// assignment for it. Reassignments and alternatives remain opaque.
+    bindings: BTreeMap<Id, ValueExpr>,
+    binding_assignments: BTreeMap<Id, Vec<ValueExpr>>,
+    unstable_class_bindings: BTreeSet<Id>,
+}
+
 impl ValueExpr {
     fn from_expr(expr: &Expr) -> Self {
         match expr.unwrap_parens() {
@@ -268,73 +420,648 @@ impl ValueExpr {
         }
     }
 
-    /// Whether this value may be the namespace itself or an alias to it.
-    /// Direct static identifier-property namespace call results are allowed
-    /// only under the audited callback-factory identity contract; all other
-    /// unknown call results stay conservative.
-    fn may_expose_namespace(&self, id: &Id) -> bool {
+    /// Whether this value has an explicit namespace path through its syntax or
+    /// a binding already proven to carry that path. Unrelated call/constructor
+    /// results are covered by the namespace contract's author audit, while
+    /// their use as mutation receivers is handled separately below.
+    fn carries_namespace(&self, id: &Id, aliases: &BTreeSet<Id>) -> bool {
         match self {
-            Self::Binding(binding) => binding == id,
+            Self::Binding(binding) => binding == id || aliases.contains(binding),
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
-                .any(|(_, value)| value.may_expose_namespace(id)),
+                .any(|(_, value)| value.carries_namespace(id, aliases)),
             Self::Primitive(_) => false,
-            Self::Alternatives(options) => {
-                options.iter().any(|value| value.may_expose_namespace(id))
+            Self::Alternatives(options) => options
+                .iter()
+                .any(|value| value.carries_namespace(id, aliases)),
+            Self::Member(object, _, _) => {
+                matches!(object.as_ref(), Self::Call(callee, _)
+                    if Self::is_direct_namespace_member_callee(callee, id))
+                    || object.carries_namespace(id, aliases)
             }
-            Self::Member(object, _, _) => object.may_expose_namespace(id),
             Self::Call(callee, args) => {
-                args.iter().any(|value| value.may_expose_namespace(id))
-                    || !matches!(callee.as_ref(), Self::Member(object, Some(_), true)
-                        if matches!(object.as_ref(), Self::Binding(namespace) if namespace == id))
+                args.iter()
+                    .any(|value| value.carries_namespace(id, aliases))
+                    || (!Self::is_direct_namespace_member_callee(callee, id)
+                        && callee.carries_namespace(id, aliases))
             }
-            // Constructor calls can return a caller-visible object explicitly.
-            // Keep their result opaque for namespace alias/escape checks.
-            Self::New(_, _) => true,
-            Self::Unknown => true,
+            Self::New(callee, args) => {
+                args.iter()
+                    .any(|value| value.carries_namespace(id, aliases))
+                    || callee.carries_namespace(id, aliases)
+            }
+            // Unknown syntax is not evidence that a value aliases the
+            // namespace. Sinks still handle unknown receivers and
+            // publications conservatively below.
+            Self::Unknown => false,
             Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
         }
     }
 
-    /// Whether the expression explicitly carries the namespace through its
-    /// value inputs. A call's callee is not a value passed to the call; its
-    /// arguments are. This narrower check is used for call arguments, while
-    /// assignment/receiver checks keep unknown call results conservative.
-    fn directly_exposes_namespace(&self, id: &Id) -> bool {
+    fn is_direct_namespace_member_callee(callee: &Self, id: &Id) -> bool {
+        matches!(callee, Self::Member(object, Some(_), true)
+            if matches!(object.as_ref(), Self::Binding(namespace) if namespace == id))
+    }
+
+    /// Whether a value being published may expose the namespace. Unsupported
+    /// syntax and unsupported projections remain possible namespace values;
+    /// aliases to those values are propagated by `infer_namespace_aliases` so
+    /// the uncertainty reaches a later sink.
+    fn may_publish_namespace(
+        &self,
+        id: &Id,
+        aliases: &BTreeSet<Id>,
+        facts: &NamespaceValueFacts,
+    ) -> bool {
+        self.may_publish_namespace_inner(
+            id,
+            aliases,
+            facts,
+            &mut BTreeSet::new(),
+            &mut BTreeSet::new(),
+        )
+    }
+
+    fn may_publish_namespace_inner(
+        &self,
+        id: &Id,
+        aliases: &BTreeSet<Id>,
+        facts: &NamespaceValueFacts,
+        visiting_bindings: &mut BTreeSet<Id>,
+        visiting_classes: &mut BTreeSet<(u32, ClassSurface)>,
+    ) -> bool {
         match self {
-            Self::Binding(binding) => binding == id,
+            Self::Unknown => true,
+            Self::Primitive(_) => false,
+            Self::ObjectLiteral(_, properties) => properties.iter().any(|(_, value)| {
+                value.may_publish_namespace_inner(
+                    id,
+                    aliases,
+                    facts,
+                    visiting_bindings,
+                    visiting_classes,
+                )
+            }),
+            Self::Alternatives(options) => options.iter().any(|value| {
+                value.may_publish_namespace_inner(
+                    id,
+                    aliases,
+                    facts,
+                    visiting_bindings,
+                    visiting_classes,
+                )
+            }),
+            Self::Member(object, _, _) => object.may_publish_namespace_inner(
+                id,
+                aliases,
+                facts,
+                visiting_bindings,
+                visiting_classes,
+            ),
+            Self::Call(callee, args) => {
+                args.iter().any(|value| {
+                    value.may_publish_namespace_inner(
+                        id,
+                        aliases,
+                        facts,
+                        visiting_bindings,
+                        visiting_classes,
+                    )
+                }) || (!Self::is_direct_namespace_member_callee(callee, id)
+                    && callee.may_publish_namespace_inner(
+                        id,
+                        aliases,
+                        facts,
+                        visiting_bindings,
+                        visiting_classes,
+                    ))
+            }
+            Self::New(callee, args) => {
+                let local_class = facts
+                    .resolve_class(callee, &mut BTreeSet::new())
+                    .is_some_and(|(_, surface)| surface == ClassSurface::Constructor);
+                args.iter().any(|value| {
+                    value.may_publish_namespace_inner(
+                        id,
+                        aliases,
+                        facts,
+                        visiting_bindings,
+                        visiting_classes,
+                    )
+                }) || (!local_class
+                    && callee.may_publish_namespace_inner(
+                        id,
+                        aliases,
+                        facts,
+                        visiting_bindings,
+                        visiting_classes,
+                    ))
+                    || facts.class_may_publish(
+                        self,
+                        id,
+                        aliases,
+                        visiting_bindings,
+                        visiting_classes,
+                    )
+            }
+            Self::Binding(binding) => {
+                if binding == id
+                    || aliases.contains(binding)
+                    || facts.unstable_class_bindings.contains(binding)
+                {
+                    true
+                } else if let Some(value) = facts.bindings.get(binding) {
+                    if !visiting_bindings.insert(binding.clone()) {
+                        // A binding cycle contributes no namespace provenance
+                        // without a namespace or unknown-value seed. The
+                        // enclosing traversal still checks every alternative.
+                        false
+                    } else {
+                        let result = value.may_publish_namespace_inner(
+                            id,
+                            aliases,
+                            facts,
+                            visiting_bindings,
+                            visiting_classes,
+                        );
+                        visiting_bindings.remove(binding);
+                        result
+                    }
+                } else {
+                    false
+                }
+            }
+            Self::Origin(ValueOrigin::Class(_)) => {
+                facts.class_may_publish(self, id, aliases, visiting_bindings, visiting_classes)
+            }
+            Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
+        }
+    }
+
+    /// Whether this value could be the namespace object used as a property
+    /// write receiver. Unknown call and constructor results remain possible
+    /// receivers here, even though merely storing or returning those unrelated
+    /// results does not establish namespace provenance.
+    fn may_be_namespace_mutation_receiver(
+        &self,
+        id: &Id,
+        aliases: &BTreeSet<Id>,
+        receiver_aliases: &BTreeSet<Id>,
+    ) -> bool {
+        match self {
+            Self::Binding(binding) => {
+                binding == id || aliases.contains(binding) || receiver_aliases.contains(binding)
+            }
+            Self::Primitive(_) => false,
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
-                .any(|(_, value)| value.directly_exposes_namespace(id)),
-            Self::Primitive(_) => false,
-            Self::Alternatives(options) => options
-                .iter()
-                .any(|value| value.directly_exposes_namespace(id)),
-            Self::Member(object, _, _) => object.directly_exposes_namespace(id),
-            Self::Call(_, args) => args
-                .iter()
-                .any(|value| value.directly_exposes_namespace(id)),
-            Self::New(_, args) => args
-                .iter()
-                .any(|value| value.directly_exposes_namespace(id)),
-            Self::Unknown => true,
+                .any(|(_, value)| value.carries_namespace(id, aliases)),
+            Self::Alternatives(options) => options.iter().any(|value| {
+                value.may_be_namespace_mutation_receiver(id, aliases, receiver_aliases)
+            }),
+            Self::Member(object, _, _) => {
+                matches!(object.as_ref(), Self::Call(callee, _)
+                    if Self::is_direct_namespace_member_callee(callee, id))
+                    || matches!(object.as_ref(), Self::Unknown | Self::New(_, _))
+                    || object.may_be_namespace_mutation_receiver(id, aliases, receiver_aliases)
+            }
+            Self::Call(callee, args) => {
+                args.iter()
+                    .any(|value| value.carries_namespace(id, aliases))
+                    || !Self::is_direct_namespace_member_callee(callee, id)
+            }
+            Self::New(_, _) | Self::Unknown => true,
             Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
         }
     }
 
     /// A callback result may contain one-hop namespace member reads as
     /// ordinary data-property values. That exception applies only to the
-    /// direct returned object graph; assigning an alias locally or passing it
-    /// elsewhere still uses `may_expose_namespace` above.
-    fn may_expose_namespace_in_factory_result(&self, id: &Id) -> bool {
+    /// direct returned object graph; aliases and other unknown shapes remain
+    /// subject to the ordinary publication check.
+    fn may_publish_namespace_in_factory_result(
+        &self,
+        id: &Id,
+        aliases: &BTreeSet<Id>,
+        facts: &NamespaceValueFacts,
+    ) -> bool {
         match self {
             Self::ObjectLiteral(_, properties) => properties.iter().any(|(name, value)| {
                 let direct_member_value = name.is_some()
                     && matches!(value, Self::Member(object, Some(_), true)
                         if matches!(object.as_ref(), Self::Binding(namespace) if namespace == id));
-                !direct_member_value && value.may_expose_namespace_in_factory_result(id)
+                !direct_member_value
+                    && value.may_publish_namespace_in_factory_result(id, aliases, facts)
             }),
-            _ => self.may_expose_namespace(id),
+            _ => self.may_publish_namespace(id, aliases, facts),
+        }
+    }
+}
+
+fn infer_namespace_aliases(
+    namespace: &Id,
+    assignments: &[&(Id, ValueExpr)],
+    facts: &NamespaceValueFacts,
+) -> BTreeSet<Id> {
+    let mut aliases = BTreeSet::new();
+    loop {
+        let mut changed = false;
+        for assignment in assignments {
+            let (target, value) = *assignment;
+            if target != namespace
+                && value.may_publish_namespace(namespace, &aliases, facts)
+                && aliases.insert(target.clone())
+            {
+                changed = true;
+            }
+        }
+        if !changed {
+            return aliases;
+        }
+    }
+}
+
+impl NamespaceValueFacts {
+    fn from_assignments(
+        classes: BTreeMap<u32, ClassValueFacts>,
+        assignments: &[&(Id, ValueExpr)],
+    ) -> Self {
+        let mut values = BTreeMap::<Id, Vec<ValueExpr>>::new();
+        for (binding, value) in assignments {
+            values
+                .entry(binding.clone())
+                .or_default()
+                .push(value.clone());
+        }
+        let mut facts = Self {
+            classes,
+            bindings: values
+                .iter()
+                .filter(|(_, values)| values.len() == 1)
+                .map(|(binding, values)| (binding.clone(), values[0].clone()))
+                .collect(),
+            binding_assignments: values,
+            unstable_class_bindings: BTreeSet::new(),
+        };
+        facts.unstable_class_bindings = facts
+            .binding_assignments
+            .iter()
+            .filter_map(|(binding, values)| {
+                let may_be_class = values
+                    .iter()
+                    .any(|value| facts.may_be_local_class_value(value, &mut BTreeSet::new()));
+                let uniquely_resolved = values.len() == 1
+                    && facts
+                        .resolve_class(&values[0], &mut BTreeSet::new())
+                        .is_some();
+                (may_be_class && !uniquely_resolved).then(|| binding.clone())
+            })
+            .collect();
+        facts
+    }
+
+    fn may_be_local_class_value(&self, value: &ValueExpr, visiting: &mut BTreeSet<Id>) -> bool {
+        match value {
+            ValueExpr::Origin(ValueOrigin::Class(_)) => true,
+            ValueExpr::Binding(binding) => {
+                if !visiting.insert(binding.clone()) {
+                    return false;
+                }
+                let result = self.binding_assignments.get(binding).is_some_and(|values| {
+                    values
+                        .iter()
+                        .any(|value| self.may_be_local_class_value(value, visiting))
+                });
+                visiting.remove(binding);
+                result
+            }
+            ValueExpr::Alternatives(values) => values
+                .iter()
+                .any(|value| self.may_be_local_class_value(value, visiting)),
+            ValueExpr::Member(object, _, _) => {
+                self.resolve_class(object, &mut BTreeSet::new()).is_some()
+                    || self.may_be_local_class_value(object, visiting)
+            }
+            _ => false,
+        }
+    }
+
+    fn resolve_class(
+        &self,
+        value: &ValueExpr,
+        visiting: &mut BTreeSet<Id>,
+    ) -> Option<(u32, ClassSurface)> {
+        match value {
+            ValueExpr::Origin(ValueOrigin::Class(span)) => Some((*span, ClassSurface::Constructor)),
+            ValueExpr::Binding(binding) => {
+                if !visiting.insert(binding.clone()) {
+                    return None;
+                }
+                let result = self
+                    .bindings
+                    .get(binding)
+                    .and_then(|value| self.resolve_class(value, visiting));
+                visiting.remove(binding);
+                result
+            }
+            ValueExpr::New(callee, _) => self
+                .resolve_class(callee, visiting)
+                .filter(|(_, surface)| *surface == ClassSurface::Constructor)
+                .map(|(span, _)| (span, ClassSurface::Instance)),
+            _ => None,
+        }
+    }
+
+    fn class_may_publish(
+        &self,
+        value: &ValueExpr,
+        id: &Id,
+        aliases: &BTreeSet<Id>,
+        visiting_bindings: &mut BTreeSet<Id>,
+        visiting_classes: &mut BTreeSet<(u32, ClassSurface)>,
+    ) -> bool {
+        let Some((span, surface)) = self.resolve_class(value, &mut BTreeSet::new()) else {
+            return false;
+        };
+        if !visiting_classes.insert((span, surface)) {
+            return true;
+        }
+        let result = self.classes.get(&span).is_none_or(|class| {
+            let (opaque, fields) = match surface {
+                ClassSurface::Constructor => (class.opaque_static, &class.static_fields),
+                ClassSurface::Instance => (class.opaque_instance, &class.instance_fields),
+            };
+            opaque
+                || fields.values().any(|field| {
+                    field.may_publish_namespace_inner(
+                        id,
+                        aliases,
+                        self,
+                        visiting_bindings,
+                        visiting_classes,
+                    )
+                })
+        });
+        visiting_classes.remove(&(span, surface));
+        result
+    }
+}
+
+fn add_class_field(facts: &mut ClassValueFacts, is_static: bool, name: String, value: ValueExpr) {
+    let fields = if is_static {
+        &mut facts.static_fields
+    } else {
+        &mut facts.instance_fields
+    };
+    if fields.insert(name.clone(), value).is_some() {
+        fields.insert(name, ValueExpr::Unknown);
+    }
+}
+
+fn collect_class_value_facts(class: &Class) -> ClassValueFacts {
+    let mut facts = ClassValueFacts {
+        allocation_without_user_code: class.super_class.is_none() && class.decorators.is_empty(),
+        ..ClassValueFacts::default()
+    };
+    if class.super_class.is_some() || !class.decorators.is_empty() {
+        facts.opaque_instance = true;
+        facts.opaque_static = true;
+    }
+    for member in &class.body {
+        facts.allocation_without_user_code &= match member {
+            ClassMember::ClassProp(property) => {
+                !property.is_static
+                    && property.decorators.is_empty()
+                    && static_property_name(&property.key).is_some_and(|name| name != "__proto__")
+                    && property
+                        .value
+                        .as_deref()
+                        .is_none_or(value_without_user_code)
+            }
+            ClassMember::Method(method) => {
+                !method.is_static
+                    && matches!(method.kind, MethodKind::Method)
+                    && method.function.decorators.is_empty()
+                    && method
+                        .function
+                        .params
+                        .iter()
+                        .all(|parameter| parameter.decorators.is_empty())
+            }
+            ClassMember::Empty(_) => true,
+            _ => false,
+        };
+        match member {
+            ClassMember::ClassProp(prop) => {
+                if !prop.decorators.is_empty() {
+                    if prop.is_static {
+                        facts.opaque_static = true;
+                    } else {
+                        facts.opaque_instance = true;
+                    }
+                    continue;
+                }
+                let Some(name) = static_property_name(&prop.key) else {
+                    if prop.is_static {
+                        facts.opaque_static = true;
+                    } else {
+                        facts.opaque_instance = true;
+                    }
+                    continue;
+                };
+                add_class_field(
+                    &mut facts,
+                    prop.is_static,
+                    name,
+                    prop.value
+                        .as_deref()
+                        .map_or(ValueExpr::Undefined, ValueExpr::from_expr),
+                );
+            }
+            ClassMember::PrivateProp(prop) => {
+                if !prop.decorators.is_empty() {
+                    if prop.is_static {
+                        facts.opaque_static = true;
+                    } else {
+                        facts.opaque_instance = true;
+                    }
+                    continue;
+                }
+                add_class_field(
+                    &mut facts,
+                    prop.is_static,
+                    format!("#{}", prop.key.name),
+                    prop.value
+                        .as_deref()
+                        .map_or(ValueExpr::Undefined, ValueExpr::from_expr),
+                );
+            }
+            ClassMember::Method(method)
+                if matches!(method.kind, MethodKind::Getter | MethodKind::Setter) =>
+            {
+                if method.is_static {
+                    facts.opaque_static = true;
+                } else {
+                    facts.opaque_instance = true;
+                }
+            }
+            ClassMember::PrivateMethod(method)
+                if matches!(method.kind, MethodKind::Getter | MethodKind::Setter) =>
+            {
+                if method.is_static {
+                    facts.opaque_static = true;
+                } else {
+                    facts.opaque_instance = true;
+                }
+            }
+            ClassMember::Constructor(_) => facts.opaque_instance = true,
+            ClassMember::AutoAccessor(accessor) => {
+                if accessor.is_static {
+                    facts.opaque_static = true;
+                } else {
+                    facts.opaque_instance = true;
+                }
+            }
+            ClassMember::StaticBlock(_) => facts.opaque_static = true,
+            ClassMember::TsIndexSignature(_) => {
+                facts.opaque_instance = true;
+                facts.opaque_static = true;
+            }
+            _ => {}
+        }
+    }
+    facts
+}
+
+fn collect_pattern_assignments(
+    pattern: &Pat,
+    value: &ValueExpr,
+    assignments: &mut Vec<(Id, ValueExpr)>,
+) {
+    match pattern {
+        Pat::Ident(binding) => assignments.push((binding.id.to_id(), value.clone())),
+        Pat::Assign(assign) => {
+            let value =
+                ValueExpr::Alternatives(vec![value.clone(), ValueExpr::from_expr(&assign.right)]);
+            collect_pattern_assignments(&assign.left, &value, assignments);
+        }
+        Pat::Rest(rest) => {
+            collect_pattern_assignments(&rest.arg, &ValueExpr::Unknown, assignments);
+        }
+        Pat::Object(object) => {
+            for property in &object.props {
+                match property {
+                    ObjectPatProp::KeyValue(property) => {
+                        let projected = static_property_name(&property.key)
+                            .map_or(ValueExpr::Unknown, |name| {
+                                ValueExpr::Member(Box::new(value.clone()), Some(name), false)
+                            });
+                        collect_pattern_assignments(&property.value, &projected, assignments);
+                    }
+                    ObjectPatProp::Assign(property) => {
+                        let projected = ValueExpr::Member(
+                            Box::new(value.clone()),
+                            Some(property.key.id.sym.to_string()),
+                            false,
+                        );
+                        let projected =
+                            property
+                                .value
+                                .as_deref()
+                                .map_or(projected.clone(), |default| {
+                                    ValueExpr::Alternatives(vec![
+                                        projected,
+                                        ValueExpr::from_expr(default),
+                                    ])
+                                });
+                        assignments.push((property.key.id.to_id(), projected));
+                    }
+                    ObjectPatProp::Rest(rest) => {
+                        collect_pattern_assignments(&rest.arg, &ValueExpr::Unknown, assignments);
+                    }
+                }
+            }
+        }
+        // Array destructuring invokes the iterator protocol. Retain its bound
+        // names but do not infer element identity from a syntax-only array
+        // shape; unknown iteration results must reach later publication sinks.
+        Pat::Array(array) => {
+            for element in array.elems.iter().flatten() {
+                collect_pattern_assignments(element, &ValueExpr::Unknown, assignments);
+            }
+        }
+        Pat::Invalid(_) | Pat::Expr(_) => {}
+    }
+}
+
+fn collect_assign_target_assignments(
+    target: &AssignTargetPat,
+    value: &ValueExpr,
+    assignments: &mut Vec<(Id, ValueExpr)>,
+) {
+    match target {
+        AssignTargetPat::Object(object) => {
+            for property in &object.props {
+                match property {
+                    ObjectPatProp::KeyValue(property) => {
+                        let projected = static_property_name(&property.key)
+                            .map_or(ValueExpr::Unknown, |name| {
+                                ValueExpr::Member(Box::new(value.clone()), Some(name), false)
+                            });
+                        collect_pattern_assignments(&property.value, &projected, assignments);
+                    }
+                    ObjectPatProp::Assign(property) => {
+                        let projected = ValueExpr::Member(
+                            Box::new(value.clone()),
+                            Some(property.key.id.sym.to_string()),
+                            false,
+                        );
+                        let projected =
+                            property
+                                .value
+                                .as_deref()
+                                .map_or(projected.clone(), |default| {
+                                    ValueExpr::Alternatives(vec![
+                                        projected,
+                                        ValueExpr::from_expr(default),
+                                    ])
+                                });
+                        assignments.push((property.key.id.to_id(), projected));
+                    }
+                    ObjectPatProp::Rest(rest) => {
+                        collect_pattern_assignments(&rest.arg, &ValueExpr::Unknown, assignments);
+                    }
+                }
+            }
+        }
+        AssignTargetPat::Array(array) => {
+            for element in array.elems.iter().flatten() {
+                collect_pattern_assignments(element, &ValueExpr::Unknown, assignments);
+            }
+        }
+        AssignTargetPat::Invalid(_) => {}
+    }
+}
+
+fn infer_mutation_receiver_aliases(
+    namespace: &Id,
+    assignments: &[&(Id, ValueExpr)],
+    aliases: &BTreeSet<Id>,
+) -> BTreeSet<Id> {
+    let mut receiver_aliases = BTreeSet::new();
+    loop {
+        let mut changed = false;
+        for assignment in assignments {
+            let (target, value) = *assignment;
+            if target != namespace
+                && value.may_be_namespace_mutation_receiver(namespace, aliases, &receiver_aliases)
+                && receiver_aliases.insert(target.clone())
+            {
+                changed = true;
+            }
+        }
+        if !changed {
+            return receiver_aliases;
         }
     }
 }
@@ -463,6 +1190,7 @@ struct Callable {
     literal_captures: BTreeSet<Id>,
     literal_exposures: BTreeSet<Id>,
     escaped_bindings: BTreeSet<Id>,
+    namespace_escape_values: Vec<ValueExpr>,
     member_writes: Vec<(Id, String)>,
     member_value_writes: Vec<(Id, Option<String>, ValueExpr)>,
     callback_result_writes: Vec<CallbackResultWrite>,
@@ -671,6 +1399,7 @@ impl Default for Callable {
             literal_captures: BTreeSet::new(),
             literal_exposures: BTreeSet::new(),
             escaped_bindings: BTreeSet::new(),
+            namespace_escape_values: Vec::new(),
             member_writes: Vec::new(),
             member_value_writes: Vec::new(),
             callback_result_writes: Vec::new(),
@@ -726,6 +1455,7 @@ struct ExecutionIndex {
     factory_callback_depth: u32,
     callables: BTreeMap<u32, Callable>,
     local_constructors: BTreeMap<u32, LocalConstructor>,
+    class_values: BTreeMap<u32, ClassValueFacts>,
     class_bindings: BTreeMap<u32, Id>,
     class_ids: BTreeSet<Id>,
     other_class_uses: BTreeSet<Id>,
@@ -739,6 +1469,7 @@ struct ExecutionIndex {
     unindexed_accessor_owners: BTreeSet<StatementOrdinal>,
     top_calls: Vec<Vec<Call>>,
     top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
+    top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     top_definite_initializers: Vec<BTreeSet<Id>>,
     top_member_value_writes: Vec<Vec<(Id, Option<String>, ValueExpr)>>,
@@ -773,6 +1504,7 @@ impl Default for ExecutionIndex {
             factory_callback_depth: 0,
             callables: BTreeMap::new(),
             local_constructors: BTreeMap::new(),
+            class_values: BTreeMap::new(),
             class_bindings: BTreeMap::new(),
             class_ids: BTreeSet::new(),
             other_class_uses: BTreeSet::new(),
@@ -786,6 +1518,7 @@ impl Default for ExecutionIndex {
             unindexed_accessor_owners: BTreeSet::new(),
             top_calls: Vec::new(),
             top_property_writes: Vec::new(),
+            top_dynamic_property_receivers: Vec::new(),
             top_assignments: Vec::new(),
             top_definite_initializers: Vec::new(),
             top_member_value_writes: Vec::new(),
@@ -815,6 +1548,7 @@ impl ExecutionIndex {
             top_calls: vec![Vec::new(); body.len()],
             owner_callable_prefix_reads: vec![None; body.len()],
             top_property_writes: vec![Vec::new(); body.len()],
+            top_dynamic_property_receivers: vec![Vec::new(); body.len()],
             top_assignments: vec![Vec::new(); body.len()],
             top_definite_initializers: vec![BTreeSet::new(); body.len()],
             top_member_value_writes: vec![Vec::new(); body.len()],
@@ -828,6 +1562,7 @@ impl ExecutionIndex {
             no_sync_callback_members: hints.no_sync_callback_members.clone(),
             ..Self::default()
         };
+        let mut fresh_steps = Vec::with_capacity(body.len());
         for item in body {
             let declaration = match item.as_module_item() {
                 ModuleItem::Stmt(Stmt::Decl(Decl::Class(declaration))) => Some(declaration),
@@ -849,6 +1584,7 @@ impl ExecutionIndex {
             }
         }
         for (ordinal, item) in body.iter().enumerate() {
+            fresh_steps.push(fresh_instance_step(item.as_module_item()));
             index.owner = StatementOrdinal(ordinal);
             index.past_await = false;
             index.may_skip_await_depth = 0;
@@ -883,69 +1619,135 @@ impl ExecutionIndex {
                 reads.extend(callable.reads.iter().cloned());
             }
         }
+        let namespace_assignments = index
+            .top_assignments
+            .iter()
+            .flatten()
+            .chain(
+                index
+                    .callables
+                    .values()
+                    .flat_map(|callable| callable.local_assignments.iter()),
+            )
+            .collect::<Vec<_>>();
+        let namespace_value_facts = NamespaceValueFacts::from_assignments(
+            index.class_values.clone(),
+            &namespace_assignments,
+        );
+        // No user code runs from this allocation through its adjacent writes,
+        // so the fresh instance's declared own data fields cannot become
+        // accessors or namespace aliases before these particular assignments.
+        let fresh_writes = if index.dynamic_scope_owners.is_empty() {
+            fresh_own_field_writes(&fresh_steps, &namespace_value_facts)
+        } else {
+            BTreeSet::new()
+        };
         // A namespace member is an audited target only while its binding is
         // unchanged. Any local write could replace a member with an eager
         // callback invoker before the apparent factory call.
         index.callback_factory_members.retain(|id, members| {
-            let top_member_write =
-                index
-                    .top_property_writes
-                    .iter()
-                    .flatten()
-                    .any(|(receiver, property)| {
-                        receiver.as_ref() == Some(id)
+            let aliases =
+                infer_namespace_aliases(id, &namespace_assignments, &namespace_value_facts);
+            let receiver_aliases =
+                infer_mutation_receiver_aliases(id, &namespace_assignments, &aliases);
+            let is_namespace_or_alias = |binding: &Id| binding == id || aliases.contains(binding);
+            let is_mutation_receiver = |receiver: &ValueExpr| {
+                receiver.may_be_namespace_mutation_receiver(id, &aliases, &receiver_aliases)
+            };
+            let top_member_write = index
+                .top_property_writes
+                .iter()
+                .enumerate()
+                .filter(|(owner, _)| !fresh_writes.contains(&StatementOrdinal(*owner)))
+                .flat_map(|(_, writes)| writes)
+                .any(|(receiver, property)| {
+                    receiver.as_ref().is_some_and(|receiver| {
+                        (receiver == id
                             && property
                                 .as_ref()
-                                .is_none_or(|property| members.contains(property))
-                    });
+                                .is_none_or(|property| members.contains(property)))
+                            || aliases.contains(receiver)
+                            || receiver_aliases.contains(receiver)
+                    })
+                });
+            let top_dynamic_write = index
+                .top_dynamic_property_receivers
+                .iter()
+                .flatten()
+                .any(is_mutation_receiver);
+            let top_callback_result_write = index
+                .top_callback_result_writes
+                .iter()
+                .enumerate()
+                .filter(|(owner, _)| !fresh_writes.contains(&StatementOrdinal(*owner)))
+                .flat_map(|(_, writes)| writes)
+                .any(|write| {
+                    is_mutation_receiver(&write.receiver)
+                        || write
+                            .value
+                            .may_publish_namespace(id, &aliases, &namespace_value_facts)
+                });
             let callable_write = index.callables.values().any(|callable| {
-                callable
-                    .member_writes
+                callable.member_writes.iter().any(|(receiver, property)| {
+                    (receiver == id && members.contains(property))
+                        || aliases.contains(receiver)
+                        || receiver_aliases.contains(receiver)
+                }) || callable
+                    .dynamic_property_receivers
                     .iter()
-                    .any(|(receiver, property)| receiver == id && members.contains(property))
-                    || callable
-                        .dynamic_property_receivers
-                        .iter()
-                        .any(|receiver| receiver.may_expose_namespace(id))
-                    || callable.literal_exposures.contains(id)
-                    || callable.escaped_bindings.contains(id)
-                    || callable
-                        .local_assignments
-                        .iter()
-                        .any(|(_, value)| value.may_expose_namespace(id))
-                    || callable
-                        .returns
-                        .iter()
-                        .any(|value| value.may_expose_namespace_in_factory_result(id))
+                    .any(is_mutation_receiver)
+                    || callable.literal_exposures.iter().any(is_namespace_or_alias)
+                    || callable.escaped_bindings.iter().any(is_namespace_or_alias)
+                    || callable.namespace_escape_values.iter().any(|value| {
+                        value.may_publish_namespace(id, &aliases, &namespace_value_facts)
+                    })
+                    || callable.member_value_writes.iter().any(|(_, _, value)| {
+                        value.may_publish_namespace(id, &aliases, &namespace_value_facts)
+                    })
+                    || callable.callback_result_writes.iter().any(|write| {
+                        is_mutation_receiver(&write.receiver)
+                            || write.value.may_publish_namespace(
+                                id,
+                                &aliases,
+                                &namespace_value_facts,
+                            )
+                    })
+                    || callable.returns.iter().any(|value| {
+                        value.may_publish_namespace_in_factory_result(
+                            id,
+                            &aliases,
+                            &namespace_value_facts,
+                        )
+                    })
                     || callable.calls.iter().any(|call| {
-                        call.args
-                            .iter()
-                            .any(|value| value.directly_exposes_namespace(id))
+                        call.args.iter().any(|value| {
+                            value.may_publish_namespace(id, &aliases, &namespace_value_facts)
+                        })
                     })
             });
-            let top_assignment = index
-                .top_assignments
-                .iter()
-                .flatten()
-                .any(|(_, value)| value.may_expose_namespace(id));
-            let top_member_value = index
-                .top_member_value_writes
-                .iter()
-                .flatten()
-                .any(|(_, _, value)| value.may_expose_namespace(id));
+            let top_member_value =
+                index
+                    .top_member_value_writes
+                    .iter()
+                    .flatten()
+                    .any(|(_, _, value)| {
+                        value.may_publish_namespace(id, &aliases, &namespace_value_facts)
+                    });
             let top_call_argument = index.top_calls.iter().flatten().any(|call| {
                 call.args
                     .iter()
-                    .any(|value| value.directly_exposes_namespace(id))
+                    .any(|value| value.may_publish_namespace(id, &aliases, &namespace_value_facts))
             });
             let exported_value = index
                 .top_exported_values
                 .iter()
                 .flatten()
-                .any(|value| value.may_expose_namespace(id));
+                .any(|value| value.may_publish_namespace(id, &aliases, &namespace_value_facts))
+                || index.exported_bindings.iter().any(is_namespace_or_alias);
             !(top_member_write
+                || top_dynamic_write
+                || top_callback_result_write
                 || callable_write
-                || top_assignment
                 || top_member_value
                 || top_call_argument
                 || exported_value)
@@ -1108,6 +1910,10 @@ impl ExecutionIndex {
                 .push(receiver.map_or(ValueExpr::Unknown, ValueExpr::from_expr));
         } else {
             self.top_property_writes[self.owner.0].push((None, None));
+            if let Some(receiver) = receiver {
+                self.top_dynamic_property_receivers[self.owner.0]
+                    .push(ValueExpr::from_expr(receiver));
+            }
         }
     }
 
@@ -1119,14 +1925,12 @@ impl ExecutionIndex {
         let exposed = self
             .callback_factory_members
             .keys()
-            .filter(|id| value.may_expose_namespace(id))
+            .filter(|id| value.carries_namespace(id, &BTreeSet::new()))
             .cloned()
             .collect::<Vec<_>>();
-        self.callables
-            .get_mut(&key)
-            .unwrap()
-            .escaped_bindings
-            .extend(exposed);
+        let callable = self.callables.get_mut(&key).unwrap();
+        callable.escaped_bindings.extend(exposed);
+        callable.namespace_escape_values.push(value);
     }
 
     fn is_factory_member_data_value(&self, key: &PropName, expression: &Expr) -> bool {
@@ -1223,6 +2027,8 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_class(&mut self, class: &Class) {
+        self.class_values
+            .insert(class.span.lo.0, collect_class_value_facts(class));
         if let Some(constructor) = local_constructor(class) {
             self.local_constructors.insert(class.span.lo.0, constructor);
         }
@@ -1390,6 +2196,15 @@ impl Visit for ExecutionIndex {
                 declaration.ident.to_id(),
                 ValueExpr::Origin(ValueOrigin::Class(declaration.class.span.lo.0)),
             ));
+        } else if let Some(key) = self.current {
+            self.callables
+                .get_mut(&key)
+                .unwrap()
+                .local_assignments
+                .push((
+                    declaration.ident.to_id(),
+                    ValueExpr::Origin(ValueOrigin::Class(declaration.class.span.lo.0)),
+                ));
         }
     }
 
@@ -1572,16 +2387,21 @@ impl Visit for ExecutionIndex {
 
     fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
         declarator.visit_children_with(self);
-        if let (Pat::Ident(binding), Some(init)) = (&declarator.name, &declarator.init) {
-            let assignment = (binding.id.to_id(), ValueExpr::from_expr(init));
+        if let Some(init) = &declarator.init {
+            let mut assignments = Vec::new();
+            collect_pattern_assignments(
+                &declarator.name,
+                &ValueExpr::from_expr(init),
+                &mut assignments,
+            );
             if let Some(key) = self.current {
                 self.callables
                     .get_mut(&key)
                     .unwrap()
                     .local_assignments
-                    .push(assignment);
+                    .extend(assignments);
             } else {
-                self.top_assignments[self.owner.0].push(assignment);
+                self.top_assignments[self.owner.0].extend(assignments);
             }
         }
     }
@@ -1687,6 +2507,27 @@ impl Visit for ExecutionIndex {
             } else {
                 self.mark_dynamic_property_effect(Some(&member.obj));
             }
+        } else if let AssignTarget::Pat(pattern) = &assignment.left {
+            let mut assignments = Vec::new();
+            collect_assign_target_assignments(
+                pattern,
+                &ValueExpr::from_expr(&assignment.right),
+                &mut assignments,
+            );
+            if let Some(key) = self.current {
+                let callable = self.callables.get_mut(&key).unwrap();
+                for (binding, value) in assignments {
+                    callable.rebinds.insert(binding.clone());
+                    callable.local_assignments.push((binding, value));
+                }
+            } else {
+                if self.conditional_depth == 0 {
+                    self.top_definite_initializers[self.owner.0]
+                        .extend(assignments.iter().map(|(binding, _)| binding.clone()));
+                }
+                self.top_assignments[self.owner.0].extend(assignments);
+            }
+            self.mark_dynamic_property_effect(None);
         } else {
             self.mark_dynamic_property_effect(None);
         }
