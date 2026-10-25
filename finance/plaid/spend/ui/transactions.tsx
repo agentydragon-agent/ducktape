@@ -213,6 +213,7 @@ function PlaidSourceFields({ row }: { row: TransactionRow }) {
               <PlaidFieldGroup
                 title="Timing and categories"
                 fields={[
+                  ["Plaid date", row.plaid_date ?? row.date],
                   ["Authorized date", details?.authorized_date],
                   ["Authorized time", details?.authorized_datetime],
                   ["Posted time", details?.datetime],

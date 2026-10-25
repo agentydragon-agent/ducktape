@@ -130,7 +130,7 @@ refund. Keep the one-offs short: they are a ledger of reviewed corrections, not 
 When `allowance` is present, it is active. Supply a required `activation_at` ISO date (YYYY-MM-DD) as the stable
 credit-cycle anchor; null or omission is invalid. To disable the allowance, omit the entire `allowance` object. Plaid
 supplies only transaction **dates**, not trustworthy purchase times: activation uses the full UTC date, and a purchase
-dated on activation day counts in full. A full monthly credit arrives immediately on activation, again on each UTC
+dated on activation day counts in full. A full monthly credit arrives immediately on activation, again on each policy-zone
 monthly anniversary (clamped to month-end, always measured from the original day). Unspent credit carries forward; no
 monthly reset or second credit at the first calendar-month boundary. Do not backdate the anchor expecting a clean slate;
 choose the intended first credit date. Only transactions dated on or after activation reduce the allowance or appear in
@@ -146,8 +146,19 @@ monthly-credit-equivalent daily reference; `spending_signal` compares the select
 forecast against that **provisional allowance**, not a sustainability guarantee. Web can select the estimate window;
 GNOME and CLI use the configured default. Each recorded pace report's `unmatched_charges` count and
 amount count positive, default-flexible purchases in the pace lookback, including before activation; this is separate
-from the postactivation review tally. Plaid's transaction date (not an exact swipe timestamp) defines membership in each
-window. A newly linked account with a short historical backfill can understate observed pace; show sync freshness, not a
+from the postactivation review tally. Purchase days define membership in each window and the transaction list:
+prefer an offset-bearing `authorized_datetime` converted into the policy's IANA `time_zone` (default `UTC`), then
+`authorized_date`, then an offset-bearing posting `datetime` converted to that zone, then the original Plaid `date`.
+Date-only values remain unchanged. Missing, malformed, naive, and exact-midnight timestamps are ignored; Plaid
+[documents default midnight times](https://plaid.com/docs/api/products/transactions/#transaction-authorized_datetime),
+so these do not provide reliable purchase instants. A genuine midnight purchase therefore also falls back to its date.
+The original Plaid `date` continues to govern classification `date_range` conditions and card statement totals.
+The reader does not bound retrieval by posting date: late postings and UTC midnight crossings must reach the same
+purchase-day filter as the allowance calculator. This reads the configured accounts' active transaction history;
+if that history grows substantially, optimize with a persisted effective-day index rather than a posting-date bound.
+Pending replacement deduplication still uses Plaid's explicit link. Purchase days can change when an institution
+adds or corrects authorization information, including on posting; no authorization metadata is inferred from a removed
+pending row. A newly linked account with a short historical backfill can understate observed pace; show sync freshness, not a
 promise of comprehensive coverage. CLI, web and GNOME show both rolling windows' unmatched counts and summed amounts.
 
 Configured account IDs should cover **all accounts used for purchases** (credit and checking/debit); otherwise this is

@@ -10,6 +10,7 @@ from collections import defaultdict
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from zoneinfo import ZoneInfo
 
 import anyio
 import asyncpg
@@ -58,6 +59,13 @@ _COUNTERPARTIES_COLUMN = (
     "CASE WHEN jsonb_typeof(t.raw_json->'counterparties') = 'array' "
     "THEN (t.raw_json->'counterparties')::text ELSE '[]' END AS counterparties"
 )
+
+# Read these even when the optional full transaction detail payload is omitted.
+_TRANSACTION_DATES_COLUMNS = """
+    t.raw_json->>'authorized_date' AS authorized_date,
+    t.raw_json->>'authorized_datetime' AS authorized_datetime,
+    t.raw_json->>'datetime' AS posted_datetime
+"""
 
 
 class SpendService:
@@ -238,6 +246,7 @@ class SpendService:
                     f"""
                     SELECT t.account_id, t.transaction_id, t.date, t.amount, t.pending,
                            t.pending_transaction_id,
+                           {_TRANSACTION_DATES_COLUMNS},
                            t.name, t.merchant_name, t.pfc_primary,
                            {raw_column}
                            {counterparties_column}
@@ -252,11 +261,12 @@ class SpendService:
                       ON a.account_id = t.account_id AND a.item_id = t.item_id
                     JOIN public.links AS l ON l.item_id = a.item_id
                     WHERE t.account_id = ANY($1::text[])
-                      AND t.date <= $3
-                      AND (
-                          t.date >= $2
-                          OR (t.pending IS FALSE AND t.pending_transaction_id IS NOT NULL)
-                      )
+                      AND ($4::boolean OR (
+                          t.date <= $3 AND (
+                              t.date >= $2
+                              OR (t.pending IS FALSE AND t.pending_transaction_id IS NOT NULL)
+                          )
+                      ))
                       AND t.removed IS FALSE AND l.status = 'active'
                     """,
                     [row["account_id"] for row in counted_accounts],
@@ -264,6 +274,7 @@ class SpendService:
                     if card_transactions is not None
                     else first_cycle_start,
                     today,
+                    card_transactions is not None,
                 )
 
         if card_transactions is not None:
@@ -422,8 +433,11 @@ class SpendService:
         rows: list[SpendTransactionRow] = []
         seen: set[tuple[str, str]] = set()
 
+        zone = allowance_policy.time_zone if allowance_policy else ZoneInfo("UTC")
+
         def add_row(transaction: Transaction, decision: TransactionDecision | None) -> None:
-            if not start <= transaction.date <= today:
+            day = transaction.report_day(zone)
+            if not start <= day <= today:
                 return
             key = (transaction.account_id, transaction.transaction_id)
             if key in seen:
@@ -455,7 +469,8 @@ class SpendService:
                 )
             rows.append(
                 SpendTransactionRow(
-                    date=transaction.date,
+                    date=day,
+                    plaid_date=transaction.date,
                     account_label=labels.get(transaction.account_id, "Account"),
                     name=transaction.name,
                     merchant_name=transaction.merchant_name,
@@ -502,6 +517,9 @@ class SpendService:
                     transaction_id=row["transaction_id"],
                     pending_transaction_id=row["pending_transaction_id"],
                     date=row["date"],
+                    authorized_date=row["authorized_date"],
+                    authorized_datetime=row["authorized_datetime"],
+                    posted_datetime=row["posted_datetime"],
                     amount=Decimal(str(row["amount"])),
                     pending=row["pending"],
                     name=row["name"],
@@ -604,6 +622,7 @@ class SpendService:
                     f"""SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
                               t.date, t.amount, t.pending, t.name, t.merchant_name,
                               t.pfc_primary, t.pfc_detailed,
+                              {_TRANSACTION_DATES_COLUMNS},
                               {raw_column}
                               a.type AS account_type,
                               t.raw_json->>'merchant_category_code' AS merchant_category_code,
@@ -612,11 +631,12 @@ class SpendService:
                        FROM public.transactions t
                        JOIN public.accounts a ON a.account_id = t.account_id AND a.item_id = t.item_id
                        JOIN public.links l ON l.item_id = a.item_id
-                       WHERE t.account_id = ANY($1::text[]) AND t.date >= $2 AND t.date <= $3
+                       WHERE t.account_id = ANY($1::text[])
                          AND t.removed IS FALSE AND l.status = 'active'""",
+                    # A posting-date bound can drop late postings or purchases
+                    # that cross midnight in the policy zone. Filter in calculate
+                    # after choosing the effective purchase day instead.
                     list(policy.spending_account_ids),
-                    min(policy.activation_at, today - timedelta(days=29)),
-                    today,
                 )
             if transaction_details is not None:
                 transaction_details.update(

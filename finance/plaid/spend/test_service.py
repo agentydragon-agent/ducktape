@@ -85,12 +85,13 @@ async def add_transaction(
     pending_transaction_id: str | None = None,
     category: str | None = None,
     currency: str = "USD",
+    raw_json: dict[str, object] | None = None,
 ) -> None:
     await connection.execute(
         """INSERT INTO public.transactions
            (transaction_id, account_id, item_id, date, amount, name, merchant_name, pending,
             pending_transaction_id, pfc_primary, pfc_detailed, iso_currency_code, removed, raw_json, updated_at)
-           VALUES ($1, $2, $3, $4, $5, 'EXAMPLE SHOP', NULL, $6, $7, 'SHOPPING', $8, $9, false, '{}'::json, NOW())""",
+           VALUES ($1, $2, $3, $4, $5, 'EXAMPLE SHOP', NULL, $6, $7, 'SHOPPING', $8, $9, false, $10::json, NOW())""",
         transaction_id,
         account_id,
         item_id,
@@ -100,7 +101,89 @@ async def add_transaction(
         pending_transaction_id,
         category,
         currency,
+        json.dumps(raw_json or {}),
     )
+
+
+async def test_purchase_days_match_allowance_and_list_without_changing_statement_dates(
+    connection: asyncpg.Connection, postgres_url: str
+) -> None:
+    now = datetime.now(UTC)
+    zone = ZoneInfo("America/Los_Angeles")
+    today = now.astimezone(zone).date()
+    activation = today - timedelta(days=10)
+    await add_link(connection, "item-time", synced=now)
+    await add_account(connection, "card-time", "item-time", type="credit")
+    await add_liability(connection, "card-time", "item-time", activation - timedelta(days=1))
+    # A future posting date must not hide a purchase already authorized locally.
+    await add_transaction(
+        connection,
+        "card-time",
+        "item-time",
+        "late-post",
+        today + timedelta(days=2),
+        7,
+        raw_json={"authorized_datetime": now.isoformat()},
+    )
+    # A posted charge authorized before activation informs pace but not allowance debt.
+    await add_transaction(
+        connection,
+        "card-time",
+        "item-time",
+        "prior-purchase",
+        today,
+        11,
+        raw_json={"authorized_date": (activation - timedelta(days=1)).isoformat()},
+    )
+    await add_transaction(connection, "card-time", "item-time", "date-only", today, 9)
+    await add_transaction(
+        connection,
+        "card-time",
+        "item-time",
+        "pending-time",
+        today,
+        5,
+        pending=True,
+        raw_json={"authorized_datetime": now.isoformat()},
+    )
+    await add_transaction(
+        connection,
+        "card-time",
+        "item-time",
+        "replacement-time",
+        today,
+        6,
+        pending_transaction_id="pending-time",
+        raw_json={"authorized_datetime": now.isoformat()},
+    )
+    config = SpendConfiguration(
+        cards=[CardConfig(account_id="card-time", label="Example card", enabled=True)],
+        allowance=AllowancePolicy(
+            monthly_minor_units=10_000,
+            activation_at=activation,
+            time_zone=zone,
+            spending_account_ids={"card-time"},
+            analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#D97706")},
+            rules=[Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
+        ),
+    )
+    service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
+    async with service.lifespan():
+        view = await service.read_view()
+        transactions = await service.read_transactions(period=PeriodId.CREDIT_CYCLE)
+        rolling = await service.read_transactions(period=PeriodId.ROLLING_30D)
+    assert view.allowance is not None
+    assert view.allowance.posted_minor_units == 2_200
+    assert view.allowance.pending_minor_units == 0
+    assert view.cards[0].posted_minor_units == 2_600  # original posting dates: 11 + 9 + 6
+    assert view.cards[0].pending_minor_units == 0  # posted replacement supersedes pending
+    assert transactions.summary.net_allowance_spend_minor_units == 2_200
+    assert all(row.date == today for row in transactions.rows)
+    late_post = next(row for row in transactions.rows if row.amount_minor_units == 700)
+    assert late_post.plaid_date == today + timedelta(days=2)
+    assert rolling.summary.net_allowance_spend_minor_units == 2_200
+    assert len(rolling.rows) == 5
+    assert min(row.date for row in rolling.rows) == activation - timedelta(days=1)
 
 
 async def test_read_view_uses_statement_cycle_and_normalizes_transactions(

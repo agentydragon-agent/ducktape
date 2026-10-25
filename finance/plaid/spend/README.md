@@ -26,9 +26,16 @@ authenticated detail view remain decimal strings in major units.
   zone determines the local midnight for 7d/30d and calendar periods, the
   monthly-credit anniversary, and the transaction-date cutoff for reports;
   `generated_at`, sync timestamps, and duration-based freshness stay UTC.
-  Plaid supplies transaction **dates**, not purchase instants, so changing the
-  zone does not re-date individual Plaid transactions. A change to an existing
-  policy shifts its next monthly credit instant; review that effect before rollout.
+  Purchase days prefer Plaid's offset-bearing `authorized_datetime` converted
+  to that zone, then `authorized_date`, then offset-bearing `datetime` (posting
+  instant) converted to that zone, then `date`. Missing, malformed, naive, or
+  exact-midnight timestamps fall back: Plaid documents default midnight times,
+  which cannot reliably identify a purchase instant. Date-only values are used
+  unchanged. This purchase day controls allowance activation, spend/pace windows,
+  and transaction-list dates. Statement totals and classification `date_range`
+  selectors still use the original Plaid `date`, exposed as `plaid_date` in the
+  transaction row and its expandable details. A change to an existing policy
+  shifts its next monthly credit instant; review that effect before rollout.
 - `GET /api/v1/view` returns the card and allowance view. Optional `estimate_period_id=rolling_7d|rolling_30d`
   selects the allowance forecast and spending signal; omission uses the policy default.
 - `GET /api/v1/transactions?period=rolling_30d` returns transaction explanations and a period summary. If a requested

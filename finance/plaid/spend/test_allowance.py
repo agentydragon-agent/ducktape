@@ -29,6 +29,7 @@ from finance.plaid.spend.allowance import (
     RuleScope,
     Status,
     Transaction,
+    TransactionDecision,
     calculate,
     matching_rule,
     month_anniversary,
@@ -119,6 +120,64 @@ def unmatched(report: AllowanceView, period_id: PeriodId) -> tuple[int, int]:
     period = next(period for period in report.recorded_pace_periods if period.period.id == period_id)
     assert period.unmatched_charges is not None
     return period.unmatched_charges.count, period.unmatched_charges.amount_minor_units
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({"authorized_datetime": "2026-03-08T07:30:00Z"}, "2026-03-07"),
+        ({"authorized_datetime": "2026-03-08T10:30:00Z"}, "2026-03-08"),
+        ({"authorized_datetime": "2026-11-01T08:30:00Z"}, "2026-11-01"),
+        ({"authorized_datetime": "2026-11-01T09:30:00Z"}, "2026-11-01"),
+        ({"authorized_datetime": "2026-03-08T23:30:00-08:00"}, "2026-03-09"),
+        ({"posted_datetime": "2026-03-08T07:30:00Z"}, "2026-03-07"),
+        ({"authorized_date": "2026-03-06", "posted_datetime": "2026-03-08T07:30:00Z"}, "2026-03-06"),
+        ({"authorized_datetime": "2026-03-08T07:30:00Z", "authorized_date": "2026-03-06"}, "2026-03-07"),
+        ({"authorized_datetime": "2026-03-08T00:00:00Z", "authorized_date": "2026-03-06"}, "2026-03-06"),
+        ({"authorized_datetime": "2026-03-08T00:00:00-08:00"}, "2026-03-08"),
+        ({"authorized_datetime": "2026-03-08T07:30:00"}, "2026-03-08"),
+        ({"authorized_datetime": "invalid", "posted_datetime": "2026-03-08T07:30:00Z"}, "2026-03-07"),
+        ({"posted_datetime": "2026-03-08T00:00:00Z"}, "2026-03-08"),
+        ({}, "2026-03-08"),
+    ],
+)
+def test_transaction_purchase_day(fields: dict[str, str], expected: str) -> None:
+    transaction = Transaction.model_validate({**row("2026-03-08", 10).model_dump(), **fields})
+    assert transaction.report_day(ZoneInfo("America/Los_Angeles")) == date.fromisoformat(expected)
+    assert transaction.date == date(2026, 3, 8)
+
+
+def test_purchase_day_controls_activation_and_periods_but_not_classification_dates() -> None:
+    chosen = policy(
+        activation_at=date(2026, 3, 8),
+        time_zone=ZoneInfo("America/Los_Angeles"),
+        rules=[
+            Rule(
+                condition=AllOf(
+                    conditions=[
+                        NamePrefix(field="name", prefix="EXAMPLE"),
+                        DateRange(start=date(2026, 3, 9), end=date(2026, 3, 9)),
+                    ]
+                ),
+                kind=Kind.REVIEW,
+            )
+        ],
+    )
+    before = Transaction.model_validate(
+        {**row("2026-03-08", 10).model_dump(), "authorized_datetime": "2026-03-08T07:30:00Z"}
+    )
+    after = Transaction.model_validate(
+        {**row("2026-03-09", 20).model_dump(), "authorized_datetime": "2026-03-08T10:30:00Z"}
+    )
+    now = datetime(2026, 3, 8, 20, tzinfo=UTC)
+    decisions: list[TransactionDecision] = []
+    report = calculate(chosen, [before, after], now=now, last_synced_at=now, decisions=decisions)
+    assert report.posted_minor_units == 2_000
+    assert report.review_minor_units == 2_000  # rule still matches the original posting date
+    assert spend(report, PeriodId.CREDIT_CYCLE) == 2_000
+    assert spend(report, PeriodId.ROLLING_7D) == 2_000
+    assert pace(report, PeriodId.ROLLING_7D) == 3_000 // 7  # includes pre-activation history
+    assert sum(decision.allowance_minor_units for decision in decisions) == 2_000
 
 
 def test_pacific_calendar_day_and_monthly_credit_follow_local_midnight():
