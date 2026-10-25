@@ -59,6 +59,7 @@ from agentplane.app.sandbox_models import (
     sandbox_is_ready,
     sandbox_view,
 )
+from agentplane.app.settings import TraceSearchSettings
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from agentplane.app.system_status import ComponentStatus, SystemStatusChecker
 from agentplane.app.threads import bridge as runner_bridge
@@ -154,6 +155,7 @@ class AppServices:
     connection_http: UpstreamProxy | None
     auto_title_on_first_message_default: bool = False
     titles: ThreadTitles | None = None
+    trace_search: TraceSearchSettings | None = None
     oauth: OAuth | None = field(init=False)
     drain: Drain = field(default_factory=Drain)
 
@@ -212,11 +214,24 @@ async def list_models(catalog: Models) -> ModelCatalog:
 
 
 preset_router = APIRouter(prefix="/presets", tags=["presets"])
+frontend_config_router = APIRouter(tags=["frontend config"])
 
 
 @preset_router.get("")
 async def list_presets(services: Services) -> list[SandboxPresetView]:
     return services.presets.views()
+
+
+class FrontendConfig(BaseModel):
+    """Browser-facing settings that are safe to expose to the frontend."""
+
+    trace_search: TraceSearchSettings | None
+
+
+@frontend_config_router.get("/frontend-config")
+async def frontend_config(services: Services) -> FrontendConfig:
+    """Browser-facing configuration; optional settings remain present as null."""
+    return FrontendConfig(trace_search=services.trace_search)
 
 
 @router.get("")
@@ -1135,6 +1150,7 @@ def create_app(
     system_status: SystemStatusChecker,
     auto_title_on_first_message_default: bool = False,
     titles: ThreadTitles | None = None,
+    trace_search: TraceSearchSettings | None = None,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
@@ -1205,6 +1221,7 @@ def create_app(
         connection_http=connection_http,
         auto_title_on_first_message_default=auto_title_on_first_message_default,
         titles=titles,
+        trace_search=trace_search,
     )
     app.state.services = services
     # Every operator route needs a caller. The provider callback has its single-use state/code
@@ -1213,6 +1230,7 @@ def create_app(
         router,
         models,
         preset_router,
+        frontend_config_router,
         runner_bridge.router,
         threads,
         operator_router,

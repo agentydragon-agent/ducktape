@@ -16,6 +16,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.timestamp_pb2 import Timestamp
+from pydantic import AnyHttpUrl
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import _require_operator_login, create_app, upstream_http_error
@@ -29,6 +30,7 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.sandbox_models import NewSandboxDefaults
+from agentplane.app.settings import TraceSearchSettings
 from agentplane.app.testing.dispatcher import served_dispatcher
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
@@ -272,6 +274,23 @@ async def test_the_form_offers_the_namespace_policy_sets_and_the_configured_defa
             "test-packages",
         ],
         "new_sandbox_defaults": served_defaults,
+    }
+
+
+async def test_frontend_config_serves_optional_trace_search_settings(client: httpx.AsyncClient, app: FastAPI) -> None:
+    assert (await client.get("/frontend-config")).json() == {"trace_search": None}
+
+    app.state.services.trace_search = TraceSearchSettings(
+        grafana_base_url=AnyHttpUrl("https://grafana.test.invalid"),
+        tempo_datasource_uid="tempo",
+        deployment_environment="test",
+    )
+    assert (await client.get("/frontend-config")).json() == {
+        "trace_search": {
+            "grafana_base_url": "https://grafana.test.invalid/",
+            "tempo_datasource_uid": "tempo",
+            "deployment_environment": "test",
+        }
     }
 
 
