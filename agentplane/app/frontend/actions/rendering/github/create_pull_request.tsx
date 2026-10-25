@@ -37,7 +37,7 @@ function HeadAndOptions({ args }: { args: CreatePullRequestArguments }): JSX.Ele
   );
 }
 
-// The description's first lines say why the card withholds its decision buttons.
+// Keep the first lines of the PR description visible on the compact card.
 function CreatePullRequestCollapsed({ args }: { args: CreatePullRequestArguments }): JSX.Element {
   return (
     <Stack gap={2}>
