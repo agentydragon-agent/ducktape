@@ -5,7 +5,7 @@ from __future__ import annotations
 import calendar
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
@@ -210,6 +210,7 @@ class PlaidCounterparty(BaseModel):
 
 
 _COUNTERPARTIES_JSON = TypeAdapter(Json[list[PlaidCounterparty]])
+_DATETIME = TypeAdapter(datetime)
 
 
 type SimpleCondition = (
@@ -374,6 +375,9 @@ class Transaction(BaseModel):
     transaction_id: str
     pending_transaction_id: str | None
     date: date
+    authorized_date: date | None = None
+    authorized_datetime: datetime | None = None
+    posted_datetime: datetime | None = None
     amount: Decimal
     pending: bool
     name: str
@@ -384,6 +388,29 @@ class Transaction(BaseModel):
     account_type: str | None = None
     merchant_category_code: str | None = None
     counterparties: Json[list[PlaidCounterparty]] | None = None
+
+    @field_validator("authorized_datetime", "posted_datetime", mode="before")
+    @classmethod
+    def _usable_instant(cls, value: object) -> datetime | None:
+        # Plaid may omit times or supply default midnight values. A naive value
+        # cannot be converted to a policy zone without inventing a source zone.
+        try:
+            instant = _DATETIME.validate_python(value)
+        except ValidationError:
+            return None
+        if instant.utcoffset() is None or instant.timetz().replace(tzinfo=None) == time.min:
+            return None
+        return instant
+
+    def report_day(self, zone: ZoneInfo) -> date:
+        """Purchase day in the policy zone; date-only values are already calendar days."""
+        if self.authorized_datetime is not None:
+            return self.authorized_datetime.astimezone(zone).date()
+        if self.authorized_date is not None:
+            return self.authorized_date
+        if self.posted_datetime is not None:
+            return self.posted_datetime.astimezone(zone).date()
+        return self.date
 
 
 @dataclass(frozen=True)
@@ -590,7 +617,8 @@ def calculate(
             )
 
     for transaction in transactions:
-        if not min(start.date(), *rolling_starts.values()) <= transaction.date <= today:
+        day = transaction.report_day(zone)
+        if not min(start.date(), *rolling_starts.values()) <= day <= today:
             continue
         if transaction.pending and (transaction.account_id, transaction.transaction_id) in superseded:
             record(transaction, None, Disposition.SUPERSEDED_PENDING)
@@ -606,12 +634,12 @@ def calculate(
         amount = int((transaction.amount * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
         # A merchant rule does not prove which earlier purchase a credit reverses.
         if amount < 0:
-            if transaction.date >= start.date():
+            if day >= start.date():
                 unmatched += -amount
             record(transaction, rule, Disposition.HELD_REFUND)
             continue
         pace_effects = {
-            period_id: max(0, amount) if transaction.date >= period_start else 0
+            period_id: max(0, amount) if day >= period_start else 0
             for period_id, period_start in rolling_starts.items()
         }
         for period_id, effect in pace_effects.items():
@@ -619,7 +647,7 @@ def calculate(
             if effect and (rule is None or rule.kind == Kind.REVIEW):
                 unmatched_count_by_period[period_id] += 1
                 unmatched_minor_units_by_period[period_id] += effect
-        if transaction.date >= start.date():
+        if day >= start.date():
             included.append(
                 Purchase(
                     transaction=transaction, minor_units=amount, needs_review=rule is None or rule.kind == Kind.REVIEW
@@ -628,8 +656,8 @@ def calculate(
         record(
             transaction,
             rule,
-            Disposition.COUNTED if transaction.date >= start.date() else Disposition.PACE_ONLY,
-            allowance_minor_units=amount if transaction.date >= start.date() else 0,
+            Disposition.COUNTED if day >= start.date() else Disposition.PACE_ONLY,
+            allowance_minor_units=amount if day >= start.date() else 0,
             pace_effects_minor_units=pace_effects,
         )
 
@@ -641,7 +669,7 @@ def calculate(
         AllowanceSpendPeriod(
             period=period,
             counted_from=max(period.start, policy.activation_at),
-            spend_minor_units=sum(p.minor_units for p in included if p.transaction.date >= period.start),
+            spend_minor_units=sum(p.minor_units for p in included if p.transaction.report_day(zone) >= period.start),
         )
         for period in (Period.for_id(period_id, today, cycle_start) for period_id in PeriodId)
     ]
@@ -668,7 +696,7 @@ def calculate(
     recent_positive = positive_by_period[forecast_basis]
     elapsed_days = min(basis_days, days_since_start)
     since_start_positive = sum(
-        max(0, p.minor_units) for p in included if p.transaction.date >= rolling_starts[forecast_basis]
+        max(0, p.minor_units) for p in included if p.transaction.report_day(zone) >= rolling_starts[forecast_basis]
     )
     # History can inform the pace without becoming an opening allowance debt.
     # Early post-start bursts should not disappear into the full-window average.
