@@ -25,7 +25,7 @@
       "type": "text",
       "options": {
         "mode": "markdown",
-        "content": "IO pressure is Linux PSI: the share of wall time in which tasks were stalled waiting for block IO. **Some** means at least one task was stalled; **full** means every non-idle task was stalled at once, so the workload made no progress; **full** is never above **some**. The **IO stall** picker switches the node and pod graphs between the two; the pod table shows both. Node PSI comes from node-exporter (`node_pressure_io_*`); pod PSI comes from cAdvisor's pod-level cgroup (`container_pressure_io_*{container=\"\"}`). Pod values are not additive: two pods stalled at the same instant each show 100%.\n\nThe node list is the nodes whose node-exporter reports PSI; the disk rows at the bottom repeat once per selected node. Disk panels come from node-exporter `node_disk_*`, mapped to the Kubernetes node via the node-exporter pod. `hdd`/`ssd` is the kernel's per-device rotational flag from `node_disk_info`; virtual disks (`vd*`) usually report rotational regardless of what backs them. Device-mapper, DRBD, loop and optical devices are left out of physical-device panels. The separate DRBD logical throughput panel overlaps backing-device I/O and must not be added to physical throughput. Latency is the mean service time per completed request over 5 minutes, empty when nothing completed; utilization is the fraction of time the device had IO in flight, which saturates at 100% on a spinning disk but not reliably on SSDs with deep queues."
+        "content": "IO pressure is Linux PSI: the share of wall time in which tasks were stalled waiting for block IO. **Some** means at least one task was stalled; **full** means every non-idle task was stalled at once, so the workload made no progress; **full** is never above **some**. The **IO stall** picker switches the node and pod graphs between the two; the pod table shows both. Node PSI comes from node-exporter (`node_pressure_io_*`); pod PSI comes from cAdvisor's pod-level cgroup (`container_pressure_io_*{container=\"\"}`). Pod values are not additive: two pods stalled at the same instant each show 100%.\n\nThe **Storage tier** selector scopes the node list to Kubernetes nodes labeled `storage.allegedly.works/tier`; **Both** selects `ssd` and `hdd`. Nodes without a tier label, including Wyrm2 and its local OpenEBS volumes, are omitted. The disk rows repeat once per selected node. Disk panels come from node-exporter `node_disk_*`, mapped to the Kubernetes node via its exporter pod. Their `hdd`/`ssd` label is the per-device rotational flag from `node_disk_info`, which can differ from the node storage tier. Virtual disks (`vd*`) usually report rotational regardless of what backs them. Device-mapper, DRBD, loop, and optical devices are left out of physical-device panels. The separate DRBD logical throughput panel overlaps backing-device I/O and must not be added to physical throughput. Latency is the mean service time per completed request over 5 minutes, empty when nothing completed; utilization is the fraction of time the device had IO in flight, which saturates at 100% on a spinning disk but not reliably on SSDs with deep queues."
       },
       "id": 1,
       "gridPos": {
@@ -774,7 +774,35 @@
   "templating": {
     "list": [
       {
-        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "Both",
+          "value": "ssd|hdd"
+        },
+        "includeAll": false,
+        "label": "Storage tier",
+        "name": "storage_tier",
+        "options": [
+          {
+            "selected": false,
+            "text": "SSD",
+            "value": "ssd"
+          },
+          {
+            "selected": false,
+            "text": "HDD",
+            "value": "hdd"
+          },
+          {
+            "selected": true,
+            "text": "Both",
+            "value": "ssd|hdd"
+          }
+        ],
+        "query": "SSD : ssd,HDD : hdd,Both : ssd|hdd",
+        "type": "custom"
+      },
+      {
         "current": {
           "text": "All",
           "value": ["$__all"]
@@ -783,12 +811,12 @@
           "type": "prometheus",
           "uid": "mimir"
         },
-        "definition": "query_result(max by (node) (node_pressure_io_stalled_seconds_total * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"})))",
+        "definition": "query_result(max by (node) (node_pressure_io_stalled_seconds_total * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"}) * on (node) group_left () max by (node) (kube_node_labels{label_storage_allegedly_works_tier=~\"$storage_tier\"})))",
         "includeAll": true,
         "label": "Node",
         "multi": true,
         "name": "node",
-        "query": "query_result(max by (node) (node_pressure_io_stalled_seconds_total * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"})))",
+        "query": "query_result(max by (node) (node_pressure_io_stalled_seconds_total * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"}) * on (node) group_left () max by (node) (kube_node_labels{label_storage_allegedly_works_tier=~\"$storage_tier\"})))",
         "refresh": 2,
         "regex": "/node=\"([^\"]+)\"/",
         "sort": 1,

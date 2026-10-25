@@ -32,85 +32,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "This dashboard separates **ext4/XFS host filesystem accounting**, **Piraeus thin-pool physical use**, and **per-copy allocation estimates**. They cover different layers; do not add them or expect the per-copy estimates to reconcile to pool physical use.\n\nPiraeus `pool_used` and `pool_free` are physical measurements. `pool_committed` sums diskful PV capacity limits; commitment ratio is limits divided by raw pool capacity, not a physical-use percentage, and can exceed 100%. Uncommitted headroom is capacity minus limits and can be negative.\n\nPer-copy rows include retained resources; resource name and PV phase identify copies without a current PVC. PVC filesystem-used is a separate kubelet measure on the consumer node, compared with a Bound PV capacity limit deduplicated across copies. Raw block PVCs have a limit but no filesystem-used value; unmounted and Released copies appear only in the copy section.\n\nMachine filters node-owned panels. S3 bucket panels are cluster-wide because they lack storage-node ownership. Lower collector detail overlaps: SeaweedFS logical bucket bytes omit replicas; physical bucket bytes and collection bytes mostly measure the same replicated data. Missing samples do not imply zero use."
-      }
-    },
-    {
-      "id": 2,
-      "title": "Node filesystem used",
-      "description": "Sum of ext4/XFS filesystem size minus free bytes, deduplicated by node and device. This excludes ext4 root-reserved blocks and is host-filesystem accounting, separate from Piraeus thin-pool use.",
-      "type": "stat",
-      "gridPos": {
-        "h": 5,
-        "w": 12,
-        "x": 0,
-        "y": 6
-      },
-      "datasource": "${DS_MIMIR}",
-      "targets": [
-        {
-          "expr": "sum(disk_usage:filesystem_size_bytes{node=~\"$node\"} - on (node, device) disk_usage:filesystem_free_bytes{node=~\"$node\"})",
-          "instant": true,
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "#5794F2"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value"
-      }
-    },
-    {
-      "id": 3,
-      "title": "Node filesystem capacity",
-      "description": "Total ext4/XFS host filesystem capacity from filesystem recording rules, deduplicated by node and device.",
-      "type": "stat",
-      "gridPos": {
-        "h": 5,
-        "w": 12,
-        "x": 12,
-        "y": 6
-      },
-      "datasource": "${DS_MIMIR}",
-      "targets": [
-        {
-          "expr": "sum(disk_usage:filesystem_size_bytes{node=~\"$node\"})",
-          "instant": true,
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "#5794F2"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value"
+        "content": "This dashboard separates **Piraeus thin-pool physical use**, **per-copy allocation estimates**, and **ext4/XFS host filesystem accounting**. They cover different layers; do not add them or expect per-copy estimates to reconcile to pool physical use.\n\nThe **Storage tier** selector filters node-owned panels to nodes labeled `storage.allegedly.works/tier`; **Both** selects `ssd` and `hdd`. Nodes without that tier label, including Wyrm2 and its local OpenEBS volumes, are omitted from tier-filtered panels.\n\nPiraeus `pool_used` and `pool_free` are physical measurements. `pool_committed` sums diskful PV capacity limits; commitment ratio is limits divided by raw pool capacity, not a physical-use percentage, and can exceed 100%. Uncommitted headroom is capacity minus limits and can be negative.\n\nPer-copy rows include retained resources; resource name and PV phase identify copies without a current PVC. PVC filesystem-used is a separate kubelet measure on the consumer node, compared with a Bound PV capacity limit deduplicated across copies. Raw block PVCs have a limit but no filesystem-used value; unmounted and Released copies appear only in the copy section.\n\nS3 bucket panels are cluster-wide because they lack storage-node ownership. Lower collector detail overlaps: SeaweedFS logical bucket bytes omit replicas; physical bucket bytes and collection bytes mostly measure the same replicated data. Missing samples do not imply zero use."
       }
     },
     {
@@ -122,7 +44,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 6
       },
       "panels": []
     },
@@ -135,7 +57,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 12
+        "y": 7
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -174,7 +96,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 12
+        "y": 7
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -213,7 +135,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 12
+        "y": 7
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -252,7 +174,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 12
+        "y": 7
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -291,7 +213,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 12
+        "y": 7
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -330,7 +252,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 12
+        "y": 7
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -369,7 +291,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 11
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -477,7 +399,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 11
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -585,7 +507,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 20
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -844,7 +766,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 30
       },
       "panels": []
     },
@@ -857,7 +779,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 31
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -916,7 +838,7 @@
         "h": 14,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 43
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -1068,7 +990,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 62
+        "y": 57
       },
       "panels": []
     },
@@ -1081,7 +1003,7 @@
         "h": 11,
         "w": 24,
         "x": 0,
-        "y": 63
+        "y": 58
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -1244,6 +1166,84 @@
       }
     },
     {
+      "id": 2,
+      "title": "Node filesystem used",
+      "description": "Sum of ext4/XFS filesystem size minus free bytes, deduplicated by node and device. This excludes ext4 root-reserved blocks and is host-filesystem accounting, separate from Piraeus thin-pool use.",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 69
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(disk_usage:filesystem_size_bytes{node=~\"$node\"} - on (node, device) disk_usage:filesystem_free_bytes{node=~\"$node\"})",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Node filesystem capacity",
+      "description": "Total ext4/XFS host filesystem capacity from filesystem recording rules, deduplicated by node and device.",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 69
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(disk_usage:filesystem_size_bytes{node=~\"$node\"})",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      }
+    },
+    {
       "id": 18,
       "title": "Scraped ext4/XFS filesystem capacity by use",
       "description": "Host filesystem components, unattributed use, root-only reserve, and available bytes. Piraeus thin-pool physical use and volume-copy estimates are separate accounting layers.",
@@ -1252,7 +1252,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 74
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -1357,7 +1357,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 69
+        "y": 83
       },
       "panels": []
     },
@@ -1370,7 +1370,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 70
+        "y": 84
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -1532,7 +1532,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 78
+        "y": 92
       },
       "panels": []
     },
@@ -1545,7 +1545,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 79
+        "y": 93
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -1646,7 +1646,7 @@
         "h": 11,
         "w": 12,
         "x": 0,
-        "y": 91
+        "y": 105
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -1690,7 +1690,7 @@
         "h": 11,
         "w": 12,
         "x": 12,
-        "y": 91
+        "y": 105
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
@@ -1748,7 +1748,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 102
+        "y": 116
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -1795,7 +1795,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 102
+        "y": 116
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -1833,7 +1833,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 111
+        "y": 125
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -1880,7 +1880,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 111
+        "y": 125
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -1918,7 +1918,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 120
+        "y": 134
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -1965,7 +1965,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 120
+        "y": 134
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -2003,7 +2003,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 129
+        "y": 143
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -2050,7 +2050,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 129
+        "y": 143
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -2088,7 +2088,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 138
+        "y": 152
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -2135,7 +2135,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 138
+        "y": 152
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -2173,7 +2173,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 147
+        "y": 161
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -2220,7 +2220,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 147
+        "y": 161
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -2258,7 +2258,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 156
+        "y": 170
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -2305,7 +2305,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 156
+        "y": 170
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -2343,16 +2343,45 @@
     "list": [
       {
         "current": {
+          "selected": true,
+          "text": "Both",
+          "value": "ssd|hdd"
+        },
+        "includeAll": false,
+        "label": "Storage tier",
+        "name": "storage_tier",
+        "options": [
+          {
+            "selected": false,
+            "text": "SSD",
+            "value": "ssd"
+          },
+          {
+            "selected": false,
+            "text": "HDD",
+            "value": "hdd"
+          },
+          {
+            "selected": true,
+            "text": "Both",
+            "value": "ssd|hdd"
+          }
+        ],
+        "query": "SSD : ssd,HDD : hdd,Both : ssd|hdd",
+        "type": "custom"
+      },
+      {
+        "current": {
           "text": "All",
           "value": ["$__all"]
         },
         "datasource": "${DS_MIMIR}",
-        "definition": "label_values({__name__=~\"disk_usage:filesystem:info|disk_usage:pool_capacity_bytes\"}, node)",
+        "definition": "label_values(kube_node_labels{label_storage_allegedly_works_tier=~\"$storage_tier\"}, node)",
         "includeAll": true,
         "label": "Machine",
         "multi": true,
         "name": "node",
-        "query": "label_values({__name__=~\"disk_usage:filesystem:info|disk_usage:pool_capacity_bytes\"}, node)",
+        "query": "label_values(kube_node_labels{label_storage_allegedly_works_tier=~\"$storage_tier\"}, node)",
         "refresh": 1,
         "sort": 1,
         "type": "query"

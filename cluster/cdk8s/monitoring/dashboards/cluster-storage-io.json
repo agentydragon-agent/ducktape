@@ -32,17 +32,17 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "This dashboard defaults to the durable cluster nodes (`optiplex` and `ovh-*`); `wyrm2` and roaming nodes are intentionally outside the default node selector. The HDD/SSD split uses the exported Kubernetes node label `storage.allegedly.works/tier`, surfaced by kube-state-metrics as `label_storage_allegedly_works_tier`.\n\nPhysical device panels show block-device writes and exclude DRBD logical devices. The `IO pressure` dashboard shows DRBD logical throughput separately; it overlaps backing-device I/O. Container panels show cAdvisor filesystem writes. SeaweedFS, Loki, and Mimir panels show logical traffic or ingestion at those services. These layers overlap and must not be added together as one Sankey total. Rate panels use an explicit 5-minute window so the same PromQL and LogQL remain valid in dashboard rendering and Explore."
+        "content": "The **Storage tier** selector scopes node-owned panels to Kubernetes nodes labeled `storage.allegedly.works/tier`; **Both** selects `ssd` and `hdd`. The node selector narrows within that set. Nodes without a tier label, including Wyrm2 and its local OpenEBS volumes, are omitted.\n\nPhysical device panels show block-device writes and exclude DRBD logical devices. Container panels show cAdvisor filesystem writes. SeaweedFS, Loki, and Mimir metrics are grouped under **Cluster-wide service traffic**; the tier selector does not apply because those series have no storage-node ownership. These layers overlap and must not be added together as one total. Rate panels use a fixed 5-minute window so the same PromQL and LogQL remain valid in dashboard rendering and Explore."
       }
     },
     {
       "id": 2,
-      "title": "HDD write throughput",
-      "description": "Physical writes observed by node-exporter on cluster nodes labelled storage tier hdd.",
+      "title": "Physical disk write throughput",
+      "description": "Block-device writes on nodes in the selected storage tier; DRBD logical devices are excluded.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 5
       },
@@ -67,45 +67,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (node, device) (((rate(node_disk_written_bytes_total{device!~\"^(loop|ram|fd|dm-|sr|drbd).*\"}[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"})))",
-          "legendFormat": "{{node}} {{device}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 3,
-      "title": "SSD write throughput",
-      "description": "Physical writes observed by node-exporter on cluster nodes labelled storage tier ssd.",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 5
-      },
-      "datasource": "${DS_MIMIR}",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "expr": "sum by (node, device) (((rate(node_disk_written_bytes_total{device!~\"^(loop|ram|fd|dm-|sr|drbd).*\"}[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"})))",
+          "expr": "sum by (node, device) (((rate(node_disk_written_bytes_total{device!~\"^(loop|ram|fd|dm-|sr|drbd).*\"}[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=~\"$storage_tier\"})))",
           "legendFormat": "{{node}} {{device}}",
           "refId": "A"
         }
@@ -113,12 +75,12 @@
     },
     {
       "id": 4,
-      "title": "HDD write IOPS",
-      "description": "Completed physical write operations per second on HDD-tier nodes.",
+      "title": "Physical disk write IOPS",
+      "description": "Completed block-device writes per second on nodes in the selected storage tier; DRBD logical devices are excluded.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 13
       },
@@ -143,45 +105,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (node, device) (((rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|drbd).*\"}[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"})))",
-          "legendFormat": "{{node}} {{device}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 5,
-      "title": "SSD write IOPS",
-      "description": "Completed physical write operations per second on SSD-tier nodes.",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 13
-      },
-      "datasource": "${DS_MIMIR}",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "expr": "sum by (node, device) (((rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|drbd).*\"}[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"})))",
+          "expr": "sum by (node, device) (((rate(node_disk_writes_completed_total{device!~\"^(loop|ram|fd|dm-|sr|drbd).*\"}[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=~\"$storage_tier\"})))",
           "legendFormat": "{{node}} {{device}}",
           "refId": "A"
         }
@@ -189,12 +113,12 @@
     },
     {
       "id": 6,
-      "title": "HDD busy fraction",
-      "description": "Fraction of wall time for which HDD devices had I/O in flight. Values near 1 mean the device is continuously busy.",
+      "title": "Physical disk busy fraction",
+      "description": "Fraction of the last five minutes each block device had I/O in flight on nodes in the selected storage tier.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 21
       },
@@ -221,47 +145,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (node, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|drbd).*\"}[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"})))",
-          "legendFormat": "{{node}} {{device}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 7,
-      "title": "SSD busy fraction",
-      "description": "Fraction of wall time for which SSD devices had I/O in flight.",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 21
-      },
-      "datasource": "${DS_MIMIR}",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "max": 1,
-          "min": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "expr": "sum by (node, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|drbd).*\"}[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"})))",
+          "expr": "sum by (node, device) (((rate(node_disk_io_time_seconds_total{device!~\"^(loop|ram|fd|dm-|sr|drbd).*\"}[5m]) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{pod=~\"prometheus-node-exporter-.+\"})) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=~\"$storage_tier\"})))",
           "legendFormat": "{{node}} {{device}}",
           "refId": "A"
         }
@@ -269,12 +153,12 @@
     },
     {
       "id": 8,
-      "title": "Top HDD container writers",
-      "description": "cAdvisor filesystem writes grouped by namespace, pod, container, node, and device. This is the best current producer attribution, but is not a physical-block-device conservation total.",
+      "title": "Top container writers",
+      "description": "cAdvisor filesystem writes grouped by namespace, pod, container, node, and device on nodes in the selected storage tier. This is producer attribution, not a physical-block-device total.",
       "type": "table",
       "gridPos": {
         "h": 10,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 29
       },
@@ -294,54 +178,7 @@
       },
       "targets": [
         {
-          "expr": "topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_bytes_total{namespace!=\"\", pod!=\"\", container!=\"\", container!=\"POD\", node=~\"$node\"}[5m]) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"})))",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "{{namespace}}/{{pod}} {{container}} {{node}} {{device}}",
-          "refId": "A"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "indexByName": {},
-            "renameByName": {}
-          }
-        }
-      ]
-    },
-    {
-      "id": 9,
-      "title": "Top SSD container writers",
-      "description": "cAdvisor filesystem writes grouped by namespace, pod, container, node, and device.",
-      "type": "table",
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 29
-      },
-      "datasource": "${DS_MIMIR}",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps"
-        },
-        "overrides": []
-      },
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "show": false
-        },
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "expr": "topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_bytes_total{namespace!=\"\", pod!=\"\", container!=\"\", container!=\"POD\", node=~\"$node\"}[5m]) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"})))",
+          "expr": "topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_bytes_total{namespace!=\"\", pod!=\"\", container!=\"\", container!=\"POD\", node=~\"$node\"}[5m]) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=~\"$storage_tier\"})))",
           "format": "table",
           "instant": true,
           "legendFormat": "{{namespace}}/{{pod}} {{container}} {{node}} {{device}}",
@@ -363,12 +200,12 @@
     },
     {
       "id": 10,
-      "title": "Top HDD container write IOPS",
-      "description": "cAdvisor filesystem write operations per second grouped by namespace, pod, container, node, and device.",
+      "title": "Top container write IOPS",
+      "description": "cAdvisor filesystem write operations grouped by namespace, pod, container, node, and device on nodes in the selected storage tier.",
       "type": "table",
       "gridPos": {
         "h": 10,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 39
       },
@@ -388,7 +225,7 @@
       },
       "targets": [
         {
-          "expr": "topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_total{namespace!=\"\", pod!=\"\", container!=\"\", container!=\"POD\", node=~\"$node\"}[5m]) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"hdd\"})))",
+          "expr": "topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_total{namespace!=\"\", pod!=\"\", container!=\"\", container!=\"POD\", node=~\"$node\"}[5m]) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=~\"$storage_tier\"})))",
           "format": "table",
           "instant": true,
           "legendFormat": "{{namespace}}/{{pod}} {{container}} {{node}} {{device}}",
@@ -409,62 +246,28 @@
       ]
     },
     {
-      "id": 11,
-      "title": "Top SSD container write IOPS",
-      "description": "cAdvisor filesystem write operations per second grouped by namespace, pod, container, node, and device.",
-      "type": "table",
+      "id": 19,
+      "type": "row",
+      "title": "Cluster-wide service traffic \u00b7 tier selector does not apply",
+      "collapsed": false,
       "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 39
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 49
       },
-      "datasource": "${DS_MIMIR}",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "show": false
-        },
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "expr": "topk(${topk}, sum by (namespace, pod, container, node, device) (rate(container_fs_writes_total{namespace!=\"\", pod!=\"\", container!=\"\", container!=\"POD\", node=~\"$node\"}[5m]) * on (node) group_left () max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~\"$node\", label_storage_allegedly_works_tier=\"ssd\"})))",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "{{namespace}}/{{pod}} {{container}} {{node}} {{device}}",
-          "refId": "A"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "indexByName": {},
-            "renameByName": {}
-          }
-        }
-      ]
+      "panels": []
     },
     {
       "id": 12,
-      "title": "SeaweedFS S3 received by bucket",
-      "description": "Logical bytes received by SeaweedFS S3, broken down by bucket. This is ingress to SeaweedFS and is not the same as physical disk writes.",
+      "title": "Cluster-wide S3 bytes received by bucket",
+      "description": "Cluster-wide service telemetry; storage tier selection does not apply. Logical bytes received by SeaweedFS S3, broken down by bucket. This is ingress to SeaweedFS and is not the same as physical disk writes.",
       "type": "table",
       "gridPos": {
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 49
+        "y": 50
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -504,14 +307,14 @@
     },
     {
       "id": 13,
-      "title": "SeaweedFS S3 sent by bucket",
-      "description": "Logical bytes sent by SeaweedFS S3, broken down by bucket.",
+      "title": "Cluster-wide S3 bytes sent by bucket",
+      "description": "Cluster-wide service telemetry; storage tier selection does not apply. Logical bytes sent by SeaweedFS S3, broken down by bucket.",
       "type": "table",
       "gridPos": {
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 49
+        "y": 50
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -551,14 +354,14 @@
     },
     {
       "id": 14,
-      "title": "Loki log bytes by namespace",
-      "description": "Logical log volume accepted by Loki, grouped by namespace.",
+      "title": "Cluster-wide Loki log bytes by namespace",
+      "description": "Cluster-wide service telemetry; storage tier selection does not apply. Logical log volume accepted by Loki, grouped by namespace.",
       "type": "timeseries",
       "gridPos": {
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 59
+        "y": 60
       },
       "datasource": "${DS_LOKI}",
       "fieldConfig": {
@@ -589,14 +392,14 @@
     },
     {
       "id": 15,
-      "title": "Loki log bytes by pod",
-      "description": "Logical log volume accepted by Loki, grouped by namespace and pod.",
+      "title": "Cluster-wide Loki log bytes by pod",
+      "description": "Cluster-wide service telemetry; storage tier selection does not apply. Logical log volume accepted by Loki, grouped by namespace and pod.",
       "type": "timeseries",
       "gridPos": {
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 59
+        "y": 60
       },
       "datasource": "${DS_LOKI}",
       "fieldConfig": {
@@ -627,14 +430,14 @@
     },
     {
       "id": 16,
-      "title": "Scraped samples/s by target",
-      "description": "Estimated samples/s per scrape target, derived from the per-scrape sample count over five minutes. Shows only the selected top rows; this pre-ingestion estimate does not include direct OTLP or Tempo metrics-generator writes counted by Mimir.",
+      "title": "Cluster-wide scraped samples/s by target",
+      "description": "Cluster-wide service telemetry; storage tier selection does not apply. Estimated samples/s per scrape target, derived from the per-scrape sample count over five minutes. Shows only the selected top rows; this pre-ingestion estimate does not include direct OTLP or Tempo metrics-generator writes counted by Mimir.",
       "type": "table",
       "gridPos": {
         "h": 10,
-        "w": 16,
+        "w": 12,
         "x": 0,
-        "y": 69
+        "y": 70
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -674,14 +477,14 @@
     },
     {
       "id": 17,
-      "title": "Mimir samples/s",
-      "description": "Samples accepted by Mimir's distributor for the anonymous tenant, including scrape and direct-write sources. Rejected and deduplicated samples are excluded, so this is not expected to equal the scrape-target estimate.",
+      "title": "Cluster-wide Mimir samples/s",
+      "description": "Cluster-wide service telemetry; storage tier selection does not apply. Samples accepted by Mimir's distributor for the anonymous tenant, including scrape and direct-write sources. Rejected and deduplicated samples are excluded, so this is not expected to equal the scrape-target estimate.",
       "type": "stat",
       "gridPos": {
         "h": 10,
-        "w": 4,
-        "x": 16,
-        "y": 69
+        "w": 6,
+        "x": 12,
+        "y": 70
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -713,14 +516,14 @@
     },
     {
       "id": 18,
-      "title": "Scraped samples/s",
-      "description": "Estimated average rate from per-scrape sample counts over five minutes, across all scrape targets. Excludes direct OTLP and Tempo metrics-generator writes sent to Mimir.",
+      "title": "Cluster-wide scraped samples/s",
+      "description": "Cluster-wide service telemetry; storage tier selection does not apply. Estimated average rate from per-scrape sample counts over five minutes, across all scrape targets. Excludes direct OTLP and Tempo metrics-generator writes sent to Mimir.",
       "type": "stat",
       "gridPos": {
         "h": 10,
-        "w": 4,
-        "x": 20,
-        "y": 69
+        "w": 6,
+        "x": 18,
+        "y": 70
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -757,6 +560,35 @@
   "tags": ["cluster", "storage", "io"],
   "templating": {
     "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "Both",
+          "value": "ssd|hdd"
+        },
+        "includeAll": false,
+        "label": "Storage tier",
+        "name": "storage_tier",
+        "options": [
+          {
+            "selected": false,
+            "text": "SSD",
+            "value": "ssd"
+          },
+          {
+            "selected": false,
+            "text": "HDD",
+            "value": "hdd"
+          },
+          {
+            "selected": true,
+            "text": "Both",
+            "value": "ssd|hdd"
+          }
+        ],
+        "query": "SSD : ssd,HDD : hdd,Both : ssd|hdd",
+        "type": "custom"
+      },
       {
         "allValue": "optiplex|ovh-.*",
         "current": {
