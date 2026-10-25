@@ -217,6 +217,19 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_grafana_instance",
+    srcs = ["test_grafana_instance.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":grafana_instance",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # `grafana_instance`'s dashboard JSON, also the Grafana skill verifier's candidates.
 filegroup(
     name = "dashboards",
