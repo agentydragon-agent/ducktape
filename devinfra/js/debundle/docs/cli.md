@@ -35,7 +35,7 @@ both are set.
 | `--graph <path>`       | `DEBUNDLE_GRAPH`       | `owner_graph.json` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation. |
 | `--modules <dir>`      | `DEBUNDLE_MODULES`     | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                            |
 | `--source-root <dir>`  | `DEBUNDLE_SOURCE_ROOT` | Upstream snapshot root containing the original chunk bytes.                                                                                                 |
-| `--tree-config <file>` | `DEBUNDLE_TREE_CONFIG` | For `modules propose`, `modules decompose`, and `modules apply`, scope an app-level modules tree to the chunk named by `--graph`.                           |
+| `--tree-config <file>` | `DEBUNDLE_TREE_CONFIG` | For graph-backed `modules` edits and queries, scope an app-level modules tree to the chunk named by `--graph`.                                              |
 
 `debundle run --out-root` reads `DEBUNDLE_OUT`. `debundle run
 --tree-source-root` (the spec-tree compile root for source-relative paths in
@@ -386,6 +386,24 @@ those labels and the report remains false with that atom conflict listed. Both
 modes run the same full candidate gate; JSON's `strategy` field identifies the
 selected mode.
 
+Local `intrinsic_alias.referenced_by` selectors resolve their anchor within the
+same logical module. To keep each such member with its resolved anchor while
+splitting, opt in to source-backed selector resolution:
+
+```sh
+debundle modules decompose --atomic --preserve-selector-anchors \
+  --source-root source --graph owner_graph.json --modules spec/modules --format json
+```
+
+This option requires `--source-root`, resolves current claims through the normal
+joint selector resolver, and coalesces only the member and its local anchor in
+the candidate. The JSON report sets `preserve_selector_anchors` and lists the
+resolved relationships in `selector_anchor_relations`. Other selector anchors
+remain governed by their existing global semantics. The command remains
+read-only, and the complete candidate still passes through the same structural
+and realizability gates. Without the option, graph-only decomposition behavior
+is unchanged.
+
 To ask for a coarser candidate when the atomic partition is blocked by gate
 cycles, add `--coarsen-blocking-sccs`:
 
@@ -411,6 +429,69 @@ that groups sharing a suggested path belong to one semantic feature. The mode
 does not edit YAML or choose descriptive module names; review `origin_module_paths`
 and owner IDs before assigning the groups in a later spec change.
 
+When structural atoms span candidate module paths, SCC coarsening normally
+stops with `atomic_unit_conflicts`. Add `--coarsen-atomic-conflicts` to first
+co-locate the complete candidate groups named by each reported atomic unit:
+
+```sh
+debundle modules decompose --atomic --coarsen-blocking-sccs \
+  --coarsen-atomic-conflicts --graph owner_graph.json --modules spec/modules \
+  --format json
+```
+
+Overlapping atomic conflicts are joined transitively. A merge containing the
+residual entry keeps its entry path, including import and export declarations.
+The complete candidate goes through the shared gate before SCC coarsening and
+again after each SCC round. The JSON `coarsening.atomic_conflict_merges` rows
+give the native unit IDs, previous candidate paths, and new path; final
+ownership is in `coarsening.groups`. This flag requires
+`--coarsen-blocking-sccs`. Without it, reported structural conflicts stop
+coarsening as before.
+
+With `--preserve-selector-anchors --source-root`, the final `coarsening` report
+also includes `naming_collisions`. Each row names a suggested destination and
+readable export name that distinct original modules would both claim there,
+with each resolved source binding and its graph owner IDs. It covers direct
+members and `source_matches` after the joint selector resolution, and reports
+all such collisions in the final coarsened groups. An empty array means this
+particular name check found none; the read-only planner does not rename members
+or certify that a later spec edit passes every source-level check. Graph-only
+decomposition omits this field.
+
+To retain as many original semantic homes as the accepted partition permits,
+add `--rejoin-original-modules` to the SCC coarsening command. This requires
+`--coarsen-blocking-sccs` and starts only after its complete candidate passes
+the shared gate. It contracts whole candidate groups when every owner in both
+groups came from the same original module. Each proposed contraction passes the
+full shared realizability gate on its hypothetical complete partition. Groups
+that already combine different original homes remain intact. The final complete
+partition passes that gate again. A fully rejoined home gets its original path;
+other groups keep deterministic temporary paths.
+
+For a bounded authoring pass, add `--rejoin-pair-attempt-limit N`. This requires
+`--rejoin-original-modules` and limits speculative partial pair checks per
+original home across all passes. A zero limit still tries each whole-home
+contraction, including two-fragment homes. The default has no limit. The report
+lists `budget_limited_home_count` and `budget_limited_home_paths`; a
+`pair_attempt_limit_reached` stop reason means some homes still have untried
+pairs. A limited proposal still passes the same complete final gate.
+
+To bound retries across homes, add `--rejoin-home-pass-limit N`. This also
+requires `--rejoin-original-modules` and limits complete stable-order passes
+over pure original homes. Zero skips rejoining; one runs at most one pass. The
+report gives `whole_home_pass_count` and `whole_home_pass_limit`; when the cap
+stops a productive pass while pure homes remain split, the stop reason is
+`whole_home_pass_limit_reached`. The default remains exhaustive; limits never
+bypass either gate check.
+
+The `coarsening.original_home_rejoining` report lists fully restored and
+`unrestored_module_paths`, attempted and accepted contractions, final group
+count, and largest group size and origin count. An unrestored home may be split
+across groups or wholly absorbed into a mixed-origin SCC group. The option has
+no module-size cap, so an existing large home can rejoin. It remains read-only:
+review the reported final `coarsening.groups` before applying assignments with
+`modules refine`.
+
 To include residual ownership in that baseline, add `--include-residual`:
 
 ```sh
@@ -426,6 +507,39 @@ as conflicts. The complete candidate still goes through the shared gate; an
 atomic split is not assumed to be realizable. The suggested
 `decomposition/residual/part-N` paths are temporary names that authors should
 replace after reviewing the source.
+
+### Applying reviewed owner assignments (`modules refine`)
+
+Use `modules refine` to apply a reviewed owner-to-module batch to claims already
+present in the scoped module tree:
+
+```sh
+debundle modules refine --batch reviewed-owners.json \
+  --graph owner_graph.json --modules spec/modules --source-root source
+```
+
+The batch is a JSON array of `{ "owner_id": "...", "module": "..." }`
+rows. `module` names a destination path; with `--tree-config`, include the
+selected chunk root in that path. Owners omitted from the batch keep their
+current assignment. Each row moves every existing selector that resolves to
+that owner, including `members:`, grouped `source_matches[].bindings[]`, and
+`anonymous_statements:` entries. It preserves selector text, binding names,
+annotations, source-match notes, and anonymous-statement comments and notes.
+Module-level `comment:` and `note:` fields stay with their original module.
+
+The command accepts only already-claimed, non-residual owners. Residual,
+unclaimed, import, and export owners cannot be assigned. It rejects duplicate
+owner rows, split/conflicting current claims, destination name or annotation
+collisions, and stale owner graphs. It then resolves every selector in the
+complete scoped post-edit spec and compares every graph owner—including
+unchanged and residual owners—to the requested complete partition. Only after
+that identity check does the shared atomic-unit and realizability gate run.
+There is no `--no-verify` mode. `--dry-run` performs the same checks without
+writing YAML; a rejected batch leaves every module document unchanged.
+
+The primitive does not create selectors or choose semantic module names. It
+applies the reviewed owner map as written; inspect the resulting modules and
+run the project extraction gate after an accepted edit.
 
 ### `--batch` JSON format
 

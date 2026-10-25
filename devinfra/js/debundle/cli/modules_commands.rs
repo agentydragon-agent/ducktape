@@ -1,9 +1,11 @@
 //! `modules` command arguments, dispatch, and report presentation. Merge and
 //! delete planning/persistence live in `module`, separate from CLI rendering.
+use crate::binding::{OwnerAssignment, run_owner_refine};
 use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
 use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
+use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use peel::propose::{
@@ -13,6 +15,7 @@ use peel::propose::{
 };
 use peel::{CommonArgs, OutputFormat, PlanWorkArgs, run_plan_work_report};
 use std::path::PathBuf;
+use std::{fs, io::Read};
 
 /// Args for `debundle modules ...`. Aggregates the existing
 /// comment-edit verb (in `cli::comment`) with the new
@@ -68,6 +71,17 @@ enum ModulesNsCommand {
     Propose(PlanWorkArgs),
     /// Claim reviewed residual proposal bindings using proven structural selectors.
     Apply(ModulesApplyArgs),
+    /// Move reviewed existing owner claims as one validated batch.
+    ///
+    /// The JSON batch contains `{ "owner_id": "...", "module": "..." }`
+    /// rows. Omitted owners keep their current module. This command moves
+    /// existing selectors and metadata without synthesizing selectors, then
+    /// resolves the entire scoped spec again and requires the complete owner
+    /// partition to match the requested assignment before running the normal
+    /// realizability and atomic-unit gates. Import/export scaffolding and
+    /// residual owners cannot be moved. Module comments and notes stay with
+    /// their original YAML module.
+    Refine(ModulesRefineArgs),
     /// Report a read-only, gate-checked refinement of existing module groups.
     ///
     /// The planner keeps each current module separate from the others and
@@ -77,7 +91,9 @@ enum ModulesNsCommand {
     /// for a faster, more fragmented structural baseline. Suggested paths are
     /// review aids; the command does not edit the spec. Pair `--atomic` with
     /// `--include-residual` to split residual body atoms while keeping top-level
-    /// imports and exports in the entry module.
+    /// imports and exports in the entry module. `--preserve-selector-anchors`
+    /// resolves current claims using `--source-root` and keeps local
+    /// `intrinsic_alias.referenced_by` pairs together.
     Decompose(ModuleDecomposeArgs),
     /// List all modules in the spec with summary stats.
     ///
@@ -112,6 +128,65 @@ struct ModuleDecomposeArgs {
     /// the shared gate, revalidating the complete candidate after each round.
     #[arg(long, requires = "atomic")]
     coarsen_blocking_sccs: bool,
+
+    /// First co-locate whole candidate groups joined by reported structural
+    /// atomic units, then run the normal blocking-SCC coarsening.
+    #[arg(long, requires = "coarsen_blocking_sccs")]
+    coarsen_atomic_conflicts: bool,
+
+    /// Rejoin accepted atomic fragments from the same original module when
+    /// each incremental contraction still passes the shared gate.
+    #[arg(long, requires = "coarsen_blocking_sccs")]
+    rejoin_original_modules: bool,
+
+    /// Limit speculative pair checks per original home across all rejoining
+    /// passes. Whole-home checks remain available; zero skips pair fallback.
+    #[arg(long, requires = "rejoin_original_modules")]
+    rejoin_pair_attempt_limit: Option<usize>,
+
+    /// Limit complete stable-order passes over original homes during rejoining.
+    /// Zero skips rejoining; the final complete candidate is still gate-checked.
+    #[arg(long, requires = "rejoin_original_modules")]
+    rejoin_home_pass_limit: Option<usize>,
+
+    /// Source root used to resolve existing source-backed and relational claims.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    source_root: Option<PathBuf>,
+
+    /// Keep each local intrinsic_alias member with its resolved referenced_by anchor.
+    #[arg(long, requires = "source_root")]
+    preserve_selector_anchors: bool,
+}
+
+#[derive(Debug, ClapArgs)]
+struct ModulesRefineArgs {
+    /// JSON array of reviewed owner IDs and destination module paths; `-` reads stdin.
+    #[arg(long)]
+    batch: String,
+
+    /// Modules tree root.
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    modules_root: PathBuf,
+
+    /// Current owner graph used to resolve selectors and check the complete result.
+    #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
+    graph: PathBuf,
+
+    /// Root for the chunk source used by existing selectors.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    source_root: PathBuf,
+
+    /// Tree config that scopes this graph-backed edit to its chunk's module roots.
+    #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
+    tree_config: Option<PathBuf>,
+
+    /// Validate the complete edit without writing module YAML.
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Output format. Default text on tty, JSON on pipe.
+    #[arg(long, value_enum)]
+    format: Option<OutputFormat>,
 }
 
 /// Args for `debundle modules list`.
@@ -246,6 +321,15 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
         ModuleDecompositionStrategy::AtomicIncludingResidual => "atomic_including_residual",
     };
     out.push_str(&format!("strategy: {strategy}\n"));
+    if report.preserve_selector_anchors {
+        let relation_count = report
+            .selector_anchor_relations
+            .as_ref()
+            .map_or(0, Vec::len);
+        out.push_str(&format!(
+            "selector anchor cohesion: enabled ({relation_count} local intrinsic_alias relation(s))\n"
+        ));
+    }
     out.push_str(if report.candidate_is_realizable {
         "candidate is realizable\n"
     } else {
@@ -297,6 +381,19 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
             coarsening.stop_reason,
             coarsening.rounds.len()
         ));
+        for merge in &coarsening.atomic_conflict_merges {
+            out.push_str(&format!(
+                "  atomic units {}: merged {} into {}\n",
+                merge.unit_ids.join(", "),
+                merge
+                    .merged_candidate_paths
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                merge.suggested_module_path,
+            ));
+        }
         for (round_idx, round) in coarsening.rounds.iter().enumerate() {
             out.push_str(&format!(
                 "  round {}: merged {} blocking SCC(s) into {}\n",
@@ -324,6 +421,45 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
                 group.binding_ids.join(", "),
             ));
         }
+        if let Some(collisions) = &coarsening.naming_collisions {
+            for collision in collisions {
+                out.push_str(&format!(
+                    "  name collision {} in {}: {}\n",
+                    collision.readable_name,
+                    collision.suggested_module_path,
+                    collision
+                        .claims
+                        .iter()
+                        .map(|claim| format!(
+                            "{}:{} (owners {})",
+                            claim.original_module_path,
+                            claim.binding_id,
+                            claim.owner_ids.join(", ")
+                        ))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ));
+            }
+        }
+        if let Some(rejoining) = &coarsening.original_home_rejoining {
+            let whole_home_pass_limit = rejoining
+                .whole_home_pass_limit
+                .map_or_else(|| "unlimited".to_owned(), |limit| limit.to_string());
+            out.push_str(&format!(
+                "original-home rejoining stopped: {:?}; restored={}/{} groups={} largest_group_owners={} largest_group_origins={} contractions={}/{} whole_home_passes={}/{} budget_limited_homes={}\n",
+                rejoining.stop_reason,
+                rejoining.fully_restored_module_count,
+                rejoining.original_module_count,
+                rejoining.final_group_count,
+                rejoining.largest_group_owner_count,
+                rejoining.largest_group_origin_module_count,
+                rejoining.accepted_contractions,
+                rejoining.attempted_contractions,
+                rejoining.whole_home_pass_count,
+                whole_home_pass_limit,
+                rejoining.budget_limited_home_count,
+            ));
+        }
     }
 }
 
@@ -337,7 +473,7 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
             owner_graph_path: args.common.owner_graph_path,
             modules_root: args.common.modules_root,
             tree_config: args.tree_config,
-            source_root: None,
+            source_root: args.source_root,
             size_cap_lines: DEFAULT_SIZE_CAP_LINES,
         },
         ModuleDecompositionOptions {
@@ -355,6 +491,11 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
             } else {
                 ModuleDecompositionCoarseningMode::None
             },
+            preserve_selector_anchors: args.preserve_selector_anchors,
+            coarsen_atomic_conflicts: args.coarsen_atomic_conflicts,
+            rejoin_original_modules: args.rejoin_original_modules,
+            rejoin_pair_attempt_limit: args.rejoin_pair_attempt_limit,
+            whole_home_pass_limit: args.rejoin_home_pass_limit,
         },
     )?;
     emit_report(
@@ -363,6 +504,43 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
         render_module_decomposition_text,
         "writing module decomposition output",
     )
+}
+
+fn run_modules_refine(args: ModulesRefineArgs) -> Result<()> {
+    let text = if args.batch == "-" {
+        let mut text = String::new();
+        std::io::stdin().read_to_string(&mut text)?;
+        text
+    } else {
+        fs::read_to_string(&args.batch).with_context(|| format!("reading {}", args.batch))?
+    };
+    let assignments: Vec<OwnerAssignment> =
+        serde_json::from_str(&text).context("parsing modules refine batch")?;
+    let outcome = match run_owner_refine(
+        &args.modules_root,
+        &args.graph,
+        &args.source_root,
+        args.tree_config.as_deref(),
+        assignments,
+        args.dry_run,
+    ) {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            emit_gate_rejection_json("refine", args.format, &err);
+            return Err(err);
+        }
+    };
+    match OutputFormat::resolve(args.format) {
+        OutputFormat::Text => println!(
+            "{}: {} owner(s), {} file(s) written, {} file(s) deleted",
+            outcome.outcome.action,
+            outcome.owners_reassigned,
+            outcome.outcome.files_written.len(),
+            outcome.outcome.files_deleted.len(),
+        ),
+        format => print_outcome_json(&outcome, format)?,
+    }
+    Ok(())
 }
 
 // --- Text renderers -------------------------------------------------
@@ -417,6 +595,7 @@ pub(super) fn run(args: ModulesNs) -> Result<()> {
         }
         ModulesNsCommand::Decompose(args) => run_module_decompose(args),
         ModulesNsCommand::Apply(args) => run_modules_apply(args),
+        ModulesNsCommand::Refine(args) => run_modules_refine(args),
         ModulesNsCommand::List(args) => run_modules_list(args),
     }
 }
