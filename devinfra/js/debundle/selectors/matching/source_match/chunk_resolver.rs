@@ -382,12 +382,12 @@ fn member_matches_var_declarator(
 }
 
 /// Collect every declarator-hole member match (`const DECLARATORS, x = …,
-/// DECLARATORS;` with a `target_binding`): for each var-decl owner in the chunk,
-/// try each candidate binding name at the target's declarator position —
-/// prebinding it so the alpha bijection pins the target's identity — and take
-/// the greedy-leftmost declarator alignment. `alignment[target_decl_idx]` names
-/// the subject declarator the target pinned, whose binding is the resolved
-/// owner. One `MemberBindingMatch` per matched owner, body-index ascending.
+/// DECLARATORS;` with a `target_binding`). Alpha mode uses the one-target group
+/// matcher without a prebind, preserving the distinction between a declared
+/// target and a free sibling reference that resolves to the same source binding.
+/// Exact mode prebinds the target name to preserve its intentional alpha-coupling.
+/// Both paths return one `MemberBindingMatch` per matched owner, body-index
+/// ascending.
 fn member_matches_declarator_hole(
     chunk: &ChunkResolver,
     needle: &ModuleItem,
@@ -399,6 +399,35 @@ fn member_matches_declarator_hole(
             "source_match resolver: declarator-hole member selector needs target_binding"
         )
     })?;
+    let mode = selector_mode(selector);
+    if mode == selector_match::Mode::AlphaAll {
+        // A raw free sibling name may resolve to the claimed binding in the
+        // subject. Prebinding the declared target would merge those two template
+        // roles, so use the group's un-prebound alignment even for one target.
+        let candidates = group_matches_declarator_holes(
+            chunk,
+            needle,
+            request_id,
+            selector,
+            &BTreeMap::from([(target_binding.to_string(), target_binding.to_string())]),
+        )?;
+        return candidates
+            .into_iter()
+            .map(|candidate| {
+                let matched = candidate.bindings.get(target_binding).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "source_match resolver: declarator-hole group omitted target `{target_binding}`"
+                    )
+                })?;
+                Ok(MemberBindingMatch {
+                    body_idx: matched.body_idx,
+                    binding: matched.binding.clone(),
+                    free_bindings: candidate.free_bindings,
+                })
+            })
+            .collect();
+    }
+
     let needle_var = item_var_decl(needle).ok_or_else(|| {
         anyhow::anyhow!(
             "source_match resolver: declarator-hole needle is not a variable declaration"
@@ -408,7 +437,6 @@ fn member_matches_declarator_hole(
         selector_var_declarator_binding_location(needle_var, request_id, selector, target_binding)?;
     let needle_index = needle_index(needle)?;
     let free = free_identifiers([&needle_index]);
-    let mode = selector_mode(selector);
     // Probe the needle once: an unsupported construct errors uniformly (and makes
     // the per-subject `.expect` below sound — the only `Unsupported` source is the
     // needle construct, invariant across subjects and prebindings).
@@ -976,6 +1004,48 @@ fn member_matches_single_statement(
 }
 
 impl ChunkResolver<'_> {
+    /// Candidate free-name mappings for a template that claims a binding by
+    /// its use site. A single-declarator needle must match each candidate
+    /// declarator, even when its source statement declares other bindings.
+    /// Anonymous statement selectors retain whole-statement semantics.
+    pub fn free_reference_candidates(
+        &self,
+        request_id: &str,
+        parsed: &ParsedSourceMatchSelector,
+    ) -> Result<Vec<BTreeMap<String, String>>> {
+        if let [needle] = parsed.body()
+            && selector_single_var_declarator(needle).is_some()
+        {
+            let declared = parsed.declared_binding_names();
+            if !declared.is_empty() {
+                let targets = declared
+                    .into_iter()
+                    .map(|name| (name.clone(), name))
+                    .collect();
+                return group_matches_single_declarator(
+                    self,
+                    needle,
+                    request_id,
+                    parsed.selector(),
+                    &targets,
+                )
+                .map(|candidates| {
+                    candidates
+                        .into_iter()
+                        .map(|candidate| candidate.free_bindings)
+                        .collect()
+                });
+            }
+        }
+        self.anonymous_group_candidates(request_id, parsed)
+            .map(|candidates| {
+                candidates
+                    .into_iter()
+                    .map(|candidate| candidate.free_bindings)
+                    .collect()
+            })
+    }
+
     /// Every place a `source_match` member selector matches, each carrying its
     /// `body_idx` and claimed binding; the caller (the global selector solve, the
     /// minimizer's uniqueness measure) decides what the matches mean.
@@ -1018,6 +1088,34 @@ impl ChunkResolver<'_> {
         let [first, ..] = needles else {
             bail!("logical_module {request_id}: source_matches[] parsed to zero statements");
         };
+        // A sole declared claim keeps the member matcher's contextual
+        // declarator projection. Its fixed-window path also preserves the
+        // existing candidate set; a STMT_LIST hole needs group alignment.
+        if exports_by_target.len() == 1
+            && !needles
+                .iter()
+                .any(|item| module_item_list_hole_name(item).is_some())
+        {
+            let target = exports_by_target
+                .keys()
+                .next()
+                .expect("single target was checked");
+            let member = parsed.with_target_binding(Some(target.clone()));
+            return Ok(self
+                .member_candidates(request_id, &member)?
+                .into_iter()
+                .map(|matched| MemberBindingGroupMatch {
+                    bindings: BTreeMap::from([(
+                        target.clone(),
+                        MatchedBinding {
+                            body_idx: matched.body_idx,
+                            binding: matched.binding,
+                        },
+                    )]),
+                    free_bindings: matched.free_bindings,
+                })
+                .collect());
+        }
         if needles.len() == 1 && selector_single_var_declarator(first).is_some() {
             return group_matches_single_declarator(
                 self,
@@ -1334,6 +1432,37 @@ mod tests {
             identifiers: SourceMatchIdentifierMode::Exact,
             ..member(match_source, target_binding)
         }
+    }
+
+    #[test]
+    fn chunk_resolver_alpha_declarator_hole_member_matches_single_target_group() {
+        js_ast::with_swc_globals(|| {
+            let chunk = module(
+                "const prefix = 0, a = () => b(), b = () => c(), c = () => \"ready\", tail = 1;\n",
+            );
+            let pattern = "const DECLARATORS_BEFORE = null, Factory = () => b(), Loader = () => c(), Value = () => \"ready\", DECLARATORS_BETWEEN = null, Tail = 1;";
+            let member = member(pattern, Some("Loader"));
+            let member_matches = ChunkResolver::new(&chunk)
+                .member_candidates("test", &parse(&member))
+                .expect("alpha member candidates");
+            let group_matches =
+                group_candidates(&chunk, &group(pattern), &exports(&[("Loader", "Loader")]));
+
+            assert_eq!(member_matches.len(), 1);
+            assert_eq!(group_matches.len(), 1);
+            assert_eq!(
+                member_matches[0].body_idx,
+                group_matches[0].bindings["Loader"].body_idx
+            );
+            assert_eq!(
+                member_matches[0].binding,
+                group_matches[0].bindings["Loader"].binding
+            );
+            assert_eq!(
+                member_matches[0].free_bindings,
+                group_matches[0].free_bindings
+            );
+        });
     }
 
     // The exact-mode identifier candidate discriminator must stay a *sound*

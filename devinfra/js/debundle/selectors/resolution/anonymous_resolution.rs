@@ -12,7 +12,10 @@ use std::path::{Path, PathBuf};
 use analysis::{OwnerGraphReport, OwnerId, StatementKind};
 use anyhow::{Context, Result, bail};
 use selector_outcome::{Candidate, Outcome, SelectorOutcome, Severity};
-use selector_resolve::{AnonymousStatement, EntityIndex, Member, MemberSelector, SpecModule};
+pub use selector_resolve::ModuleNeutralReferenceMeaning;
+use selector_resolve::{
+    AnonymousStatement, EntityIndex, Member, MemberSelector, SourceMatchReferenceOrigin, SpecModule,
+};
 use source_match::ParsedSourceMatchSelector;
 use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchClaim};
 use swc_common::{EqIgnoreSpan, SyntaxContext};
@@ -36,10 +39,30 @@ pub struct ResolvedSourceClaims {
     pub bindings: BTreeSet<String>,
     /// The resolved source binding for each non-name-pin member's readable name.
     pub member_bindings: BTreeMap<String, String>,
+    /// Resolved free-name references from one source-backed member claim to
+    /// another member in the same module. `module_neutral_meaning` is from the
+    /// canonical export classifier, not names re-parsed from selector text.
+    pub local_member_references: BTreeSet<ResolvedLocalMemberReference>,
     pub anonymous_owners: BTreeSet<OwnerId>,
     /// The owner selected by each anonymous source selector. The key keeps
     /// authored selector entries addressable when a CLI edit moves claims.
     pub anonymous_selector_owners: BTreeMap<AnonymousStatementSelector, OwnerId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ResolvedLocalMemberReference {
+    pub source: ResolvedLocalMemberOrigin,
+    pub referenced_by: String,
+    pub module_neutral_meaning: ModuleNeutralReferenceMeaning,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ResolvedLocalMemberOrigin {
+    Member(String),
+    AnonymousStatement {
+        index: usize,
+        selector: AnonymousStatementSelector,
+    },
 }
 
 /// Resolve every module's claims together against each chunk source the
@@ -176,6 +199,45 @@ fn resolve_claim_sets(
                 let mut per_source = BTreeMap::<(usize, EntityIndex), Vec<SourceOutcome>>::new();
                 for ((source_path, parsed), resolution) in parsed_by_source.iter().zip(resolutions)
                 {
+                    for reference in resolution.member_references {
+                        if reference.source_module != reference.referenced_module {
+                            continue;
+                        }
+                        let Ok(set) = &mut resolved[reference.source_module] else {
+                            continue;
+                        };
+                        let source = match reference.source {
+                            SourceMatchReferenceOrigin::Member(member) => {
+                                ResolvedLocalMemberOrigin::Member(member)
+                            }
+                            SourceMatchReferenceOrigin::AnonymousStatement(index) => {
+                                let selector = modules[reference.source_module]
+                                    .anonymous_statements
+                                    .iter()
+                                    .find(|statement| statement.index == index)
+                                    .with_context(|| {
+                                        format!(
+                                            "resolved anonymous source_match reference has no \
+                                             authored selector index {index} in module {}",
+                                            claim_sets[reference.source_module]
+                                                .module_path
+                                                .display()
+                                        )
+                                    })?
+                                    .selector
+                                    .selector()
+                                    .clone();
+                                ResolvedLocalMemberOrigin::AnonymousStatement { index, selector }
+                            }
+                        };
+                        set.claims
+                            .local_member_references
+                            .insert(ResolvedLocalMemberReference {
+                                source,
+                                referenced_by: reference.referenced_member,
+                                module_neutral_meaning: reference.module_neutral_meaning,
+                            });
+                    }
                     for entity in resolution.outcomes {
                         per_source
                             .entry((entity.module, entity.entity))

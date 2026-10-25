@@ -164,6 +164,43 @@ pub struct Resolution {
     /// What each matched template's free identifiers mean,
     /// for templates that have any.
     pub templates: Vec<TemplateIdentifiers>,
+    /// Same-module member references made by projected `source_match`
+    /// templates. Authoring tools use these typed relationships to preserve
+    /// the local readable-name resolution when proposing module moves.
+    pub member_references: Vec<ResolvedMemberReference>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ResolvedMemberReference {
+    pub source_module: usize,
+    pub source: SourceMatchReferenceOrigin,
+    pub referenced_module: usize,
+    pub referenced_member: String,
+    /// How the canonical free-name classifier resolves this identifier when
+    /// it has no same-module export to prefer. Anchor planners must preserve
+    /// local co-location only for names that are ambiguous in that view.
+    pub module_neutral_meaning: ModuleNeutralReferenceMeaning,
+}
+
+/// The resolved source entity whose `source_match` template makes a local
+/// member reference. Anonymous indices are the authored selector indices in
+/// that module, not positions in a filtered outcomes list.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SourceMatchReferenceOrigin {
+    Member(String),
+    AnonymousStatement(usize),
+}
+
+/// The module-neutral meaning of a reference that currently resolves to a
+/// member in the template's own module.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ModuleNeutralReferenceMeaning {
+    /// The export index has one matching member, so the reference still has a
+    /// unique target after the source template is separated from its module.
+    Unique,
+    /// The export index has several matching members, so the reference needs
+    /// its same-module preference to identify its current target.
+    Ambiguous,
 }
 
 #[derive(Debug, Clone)]
@@ -747,6 +784,9 @@ pub struct Projection {
     /// Anonymous statement targets, by module and position in it.
     anonymous: Vec<(SelectorTargetId, usize, usize)>,
     projected: Vec<Projected>,
+    /// SourceMatch member references that resolved to another member in the
+    /// same original module, after canonical identifier classification.
+    member_references: Vec<ResolvedMemberReference>,
     /// Each name pin's places: the declarations of its name, of its kind.
     pin_places: BTreeMap<SelectorTargetId, BTreeSet<Place>>,
     templates: Vec<TemplateIdentifiers>,
@@ -913,6 +953,7 @@ struct Resolve<'c, 'm> {
     members: BTreeMap<SelectorTargetId, (usize, usize)>,
     anonymous: Vec<(SelectorTargetId, usize, usize)>,
     projected: Vec<Projected>,
+    member_references: Vec<ResolvedMemberReference>,
     templates: Vec<TemplateIdentifiers>,
 }
 
@@ -930,6 +971,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             members: BTreeMap::new(),
             anonymous: Vec::new(),
             projected: Vec::new(),
+            member_references: Vec::new(),
             templates: Vec::new(),
         }
     }
@@ -1024,6 +1066,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             members: self.members,
             anonymous: self.anonymous,
             projected: self.projected,
+            member_references: self.member_references,
             pin_places,
             templates: self.templates,
         })
@@ -1139,10 +1182,10 @@ impl<'c, 'm> Resolve<'c, 'm> {
             .partition(|(local, _)| declared_names.contains(local));
         let matched = if declared.is_empty() {
             matcher
-                .anonymous_group_candidates(logical_module, template)
+                .free_reference_candidates(logical_module, template)
                 .map_err(|error| Rejection::invalid(MATCHER_ERROR, &error))?
                 .into_iter()
-                .map(|group| Ok((BTreeMap::new(), group.free_bindings)))
+                .map(|free_bindings| Ok((BTreeMap::new(), free_bindings)))
                 .collect::<Result<Vec<_>>>()
         } else {
             matcher
@@ -1441,6 +1484,62 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 };
                 referenced.push((name.clone(), *module_index, target));
             }
+            let source_origins = targets
+                .iter()
+                .filter_map(|target| {
+                    if let Some((module_index, member_index)) = self.members.get(target)
+                        && *module_index == entity.module_index
+                    {
+                        return Some(SourceMatchReferenceOrigin::Member(
+                            modules[*module_index].members[*member_index]
+                                .export_name
+                                .clone(),
+                        ));
+                    }
+                    self.anonymous
+                        .iter()
+                        .find(|(anonymous_target, module_index, _)| {
+                            anonymous_target == target && *module_index == entity.module_index
+                        })
+                        .map(|(_, module_index, position)| {
+                            SourceMatchReferenceOrigin::AnonymousStatement(
+                                modules[*module_index].anonymous_statements[*position].index,
+                            )
+                        })
+                })
+                .collect::<Vec<_>>();
+            for (name, referenced_module, target) in &referenced {
+                if *referenced_module != entity.module_index {
+                    continue;
+                }
+                let Some((target_module, target_member)) =
+                    target.and_then(|target| self.members.get(&target))
+                else {
+                    continue;
+                };
+                if *target_module != entity.module_index {
+                    continue;
+                }
+                let referenced_member = modules[*target_module].members[*target_member]
+                    .export_name
+                    .clone();
+                let module_neutral_meaning =
+                    match classify_without_local_preference(name, &exports, &shadowing) {
+                        Meaning::Ambiguous(_) => ModuleNeutralReferenceMeaning::Ambiguous,
+                        Meaning::Reference(_, _) => ModuleNeutralReferenceMeaning::Unique,
+                        Meaning::Global | Meaning::Wildcard => {
+                            unreachable!("a resolved member reference has an exported target")
+                        }
+                    };
+                self.member_references
+                    .extend(source_origins.iter().map(|source| ResolvedMemberReference {
+                        source_module: entity.module_index,
+                        source: source.clone(),
+                        referenced_module: *target_module,
+                        referenced_member: referenced_member.clone(),
+                        module_neutral_meaning,
+                    }));
+            }
             // Rows without repeats, telling rows apart by their places and
             // their column values.
             let key = |at: usize| {
@@ -1688,6 +1787,7 @@ impl Projection {
             mut outcomes,
             members,
             anonymous,
+            member_references,
             pin_places,
             templates,
             ..
@@ -1755,6 +1855,7 @@ impl Projection {
         Ok(Resolution {
             outcomes,
             templates,
+            member_references,
         })
     }
 
@@ -2123,9 +2224,31 @@ fn classify(
     exports: &BTreeMap<&str, Vec<(usize, Referent)>>,
     shadowing: &BTreeSet<String>,
 ) -> Meaning {
+    classify_with_local_preference(name, Some(module_index), exports, shadowing)
+}
+
+/// Classify with no same-module export preference. This is the canonical
+/// resolver view a source-match reference will use after its current module
+/// no longer supplies the local preference.
+fn classify_without_local_preference(
+    name: &str,
+    exports: &BTreeMap<&str, Vec<(usize, Referent)>>,
+    shadowing: &BTreeSet<String>,
+) -> Meaning {
+    classify_with_local_preference(name, None, exports, shadowing)
+}
+
+fn classify_with_local_preference(
+    name: &str,
+    preferred_module: Option<usize>,
+    exports: &BTreeMap<&str, Vec<(usize, Referent)>>,
+    shadowing: &BTreeSet<String>,
+) -> Meaning {
     match exports.get(name).map(Vec::as_slice) {
         Some(named) => match (
-            named.iter().find(|(exporter, _)| *exporter == module_index),
+            preferred_module.and_then(|module_index| {
+                named.iter().find(|(exporter, _)| *exporter == module_index)
+            }),
             named,
         ) {
             (Some((exporter, referent)), _) | (None, [(exporter, referent)]) => {
@@ -2263,9 +2386,10 @@ fn member_place(
     })
 }
 
-/// A module's `source_match` members grouped by shared template: members
-/// whose templates differ only in their `target_binding`, when there are at
-/// least two and no two claim the same binding.
+/// A module's `source_matches[]` members grouped by shared template: members
+/// whose templates differ only in their `target_binding` and do not claim the
+/// same binding. A one-binding claim keeps group matching semantics after a
+/// `modules refine` split.
 fn source_match_groups(module: &SpecModule) -> Vec<Group> {
     let mut by_template = BTreeMap::<AnonymousStatementSelector, Vec<usize>>::new();
     for (index, member) in module.members.iter().enumerate() {
@@ -2281,7 +2405,6 @@ fn source_match_groups(module: &SpecModule) -> Vec<Group> {
     }
     let mut groups = by_template
         .into_values()
-        .filter(|indices| indices.len() >= 2)
         .filter_map(|indices| {
             let mut exports_by_target = BTreeMap::new();
             let mut members_by_target = BTreeMap::new();

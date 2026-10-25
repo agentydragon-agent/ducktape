@@ -162,6 +162,54 @@ fn rejects_atom_split_without_changing_any_module_yaml() {
 }
 
 #[test]
+fn moves_free_claim_from_use_inside_multi_declarator_statement() {
+    let fixture = GraphFixture::new(
+        "const spare = 0, limit = 8, sanitizer = value => value.length > limit ? value.slice(0, limit) : value, tail = 1;\nconsole.log(sanitizer('hello world'));\n",
+        &[(
+            "home.yaml",
+            "source_matches:\n  - match: 'const normalize = value => value.length > maxLength ? value.slice(0, maxLength) : value;'\n    bindings: [normalize, maxLength]\n",
+        )],
+    );
+    fixture.assert_runs("hello wo\n");
+
+    let batch = write_batch(json!([{
+        "owner_id": owner_for_binding(&fixture, "limit"),
+        "module": "config/limit",
+    }]));
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    fixture.assert_runs("hello wo\n");
+}
+
+#[test]
+fn moves_one_claim_from_gapped_source_match_group() {
+    let fixture = GraphFixture::new(
+        "function first() { return 1; }\nfunction middle() { return 99; }\nfunction second() { return 2; }\nconsole.log(first() + second());\n",
+        &[(
+            "home.yaml",
+            "source_matches:\n  - match: |\n      function left() { return 1; }\n      STMT_LIST;\n      function right() { return 2; }\n    bindings: [left, right]\n",
+        )],
+    );
+    fixture.assert_runs("3\n");
+
+    let batch = write_batch(json!([{
+        "owner_id": owner_for_binding(&fixture, "first"),
+        "module": "split/first",
+    }]));
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    fixture.assert_runs("3\n");
+}
+
+#[test]
 fn refines_only_the_selected_chunk_under_tree_config() {
     let run = run_tree_fixture(
         &TreeFixture {
@@ -463,4 +511,293 @@ console.log(new C().greet());
         batch.path().join("refine.json").to_str().unwrap(),
     ]);
     fixture.assert_runs("hi!\n");
+}
+
+#[test]
+fn atomic_decomposition_keeps_source_match_references_with_local_helpers() {
+    let fixture = GraphFixture::new(
+        r#"const decorateA = value => value;
+const decorateB = value => value;
+class Widget { render() { return "widget"; } }
+decorateA(Widget);
+const widget = new Widget();
+const spare = 4;
+decorateB("other");
+console.log(widget.render());
+"#,
+        &[
+            (
+                "home.yaml",
+                r#"members:
+  - name: applyDecorators
+    selector: {binding: {name: decorateA}}
+  - name: Spare
+    selector: {binding: {name: spare}}
+source_matches:
+  - match: |
+      class patternWidget { render() { return "widget"; } }
+      applyDecorators(patternWidget);
+      const patternWidgetInstance = new patternWidget();
+    bindings:
+      - {local: patternWidget, name: Widget}
+      - {local: patternWidgetInstance, name: WidgetInstance}
+annotations:
+  Widget: {purity: pure_new}
+"#,
+            ),
+            (
+                "other.yaml",
+                "members:\n  - name: applyDecorators\n    selector: {binding: {name: decorateB}}\n",
+            ),
+        ],
+    );
+    fixture.assert_runs("widget\n");
+
+    let atomic = fixture.json(&["modules", "decompose", "--atomic"]);
+    assert_eq!(atomic["candidate_is_realizable"], true);
+    let mut atomic_paths = BTreeMap::new();
+    let mut atomic_rows = Vec::new();
+    for module in atomic["modules"].as_array().unwrap() {
+        for fragment in module["fragments"].as_array().unwrap() {
+            let suggested_module = fragment["suggested_module_path"].as_str().unwrap();
+            for owner_id in fragment["owner_ids"].as_array().unwrap() {
+                let owner_id = owner_id.as_str().unwrap();
+                atomic_paths.insert(owner_id.to_string(), suggested_module.to_string());
+                atomic_rows.push(json!({
+                    "owner_id": owner_id,
+                    "module": suggested_module,
+                }));
+            }
+        }
+    }
+    let atomic_path = |binding: &str, original: &str| {
+        atomic_paths
+            .get(&owner_for_binding(&fixture, binding))
+            .cloned()
+            .unwrap_or_else(|| original.to_string())
+    };
+    assert_ne!(
+        atomic_path("Widget", "home"),
+        atomic_path("decorateA", "home"),
+        "plain atomic decomposition should split a source match from its local helper"
+    );
+    let rejected_batch = write_batch(serde_json::Value::Array(atomic_rows));
+    fixture.assert_rejected_unchanged(
+        &[
+            "modules",
+            "refine",
+            "--batch",
+            rejected_batch.path().join("refine.json").to_str().unwrap(),
+        ],
+        &["ambiguous_reference", "applyDecorators"],
+    );
+
+    let source_path = fixture.source_path();
+    let source_root = source_path.parent().unwrap().to_str().unwrap();
+    let cohesive = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--preserve-selector-anchors",
+        "--source-root",
+        source_root,
+    ]);
+    assert_eq!(cohesive["candidate_is_realizable"], true);
+    let relations = cohesive["selector_anchor_relations"].as_array().unwrap();
+    assert!(relations.iter().any(|relation| {
+        relation["kind"] == "source_match_reference"
+            && relation["source"] == json!({"kind": "member", "name": "Widget"})
+            && relation["referenced_by"] == "applyDecorators"
+    }));
+    let mut cohesive_paths = BTreeMap::new();
+    let mut cohesive_rows = Vec::new();
+    for module in cohesive["modules"].as_array().unwrap() {
+        for fragment in module["fragments"].as_array().unwrap() {
+            let suggested_module = fragment["suggested_module_path"].as_str().unwrap();
+            for owner_id in fragment["owner_ids"].as_array().unwrap() {
+                let owner_id = owner_id.as_str().unwrap();
+                cohesive_paths.insert(owner_id.to_string(), suggested_module.to_string());
+                cohesive_rows.push(json!({
+                    "owner_id": owner_id,
+                    "module": suggested_module,
+                }));
+            }
+        }
+    }
+    let cohesive_path = |binding: &str, original: &str| {
+        cohesive_paths
+            .get(&owner_for_binding(&fixture, binding))
+            .cloned()
+            .unwrap_or_else(|| original.to_string())
+    };
+    assert_eq!(
+        cohesive_path("Widget", "home"),
+        cohesive_path("decorateA", "home")
+    );
+    assert_ne!(
+        cohesive_path("decorateA", "home"),
+        cohesive_path("decorateB", "other"),
+        "the unrelated duplicate provider should remain independently placed"
+    );
+    let batch = write_batch(serde_json::Value::Array(cohesive_rows));
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    fixture.assert_runs("widget\n");
+}
+
+#[test]
+fn atomic_decomposition_splits_source_match_from_a_unique_local_helper() {
+    let fixture = GraphFixture::new(
+        r#"const decorate = value => value;
+class Widget { render() { return "widget"; } }
+decorate(Widget);
+const widget = new Widget();
+const spare = 4;
+console.log(widget.render());
+"#,
+        &[(
+            "home.yaml",
+            r#"members:
+  - name: applyDecorators
+    selector: {binding: {name: decorate}}
+  - name: Spare
+    selector: {binding: {name: spare}}
+source_matches:
+  - match: |
+      class patternWidget { render() { return "widget"; } }
+      applyDecorators(patternWidget);
+      const patternWidgetInstance = new patternWidget();
+    bindings:
+      - {local: patternWidget, name: Widget}
+      - {local: patternWidgetInstance, name: WidgetInstance}
+annotations:
+  Widget: {purity: pure_new}
+"#,
+        )],
+    );
+    fixture.assert_runs("widget\n");
+
+    let source_path = fixture.source_path();
+    let source_root = source_path.parent().unwrap().to_str().unwrap();
+    let decomposition = fixture.json(&[
+        "modules",
+        "decompose",
+        "--atomic",
+        "--preserve-selector-anchors",
+        "--source-root",
+        source_root,
+    ]);
+    assert_eq!(decomposition["candidate_is_realizable"], true);
+    assert!(
+        decomposition["selector_anchor_relations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|relation| relation["kind"] != "source_match_reference")
+    );
+
+    let mut paths = BTreeMap::new();
+    let mut rows = Vec::new();
+    for module in decomposition["modules"].as_array().unwrap() {
+        for fragment in module["fragments"].as_array().unwrap() {
+            let suggested_module = fragment["suggested_module_path"].as_str().unwrap();
+            for owner_id in fragment["owner_ids"].as_array().unwrap() {
+                let owner_id = owner_id.as_str().unwrap();
+                paths.insert(owner_id.to_string(), suggested_module.to_string());
+                rows.push(json!({
+                    "owner_id": owner_id,
+                    "module": suggested_module,
+                }));
+            }
+        }
+    }
+    assert_ne!(
+        paths[&owner_for_binding(&fixture, "Widget")],
+        paths[&owner_for_binding(&fixture, "decorate")],
+        "a unique global helper name should not force module co-location"
+    );
+
+    let batch = write_batch(serde_json::Value::Array(rows));
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    fixture.assert_runs("widget\n");
+}
+
+#[test]
+fn source_match_claim_with_raw_sibling_references_survives_split() {
+    let fixture = GraphFixture::new(
+        "const prefix = 0, a = () => b(), b = () => c(), c = () => \"ready\", tail = 1;\nconsole.log(a());\n",
+        &[(
+            "home.yaml",
+            r#"source_matches:
+  - match: |
+      const DECLARATORS_BEFORE = null,
+        Factory = () => b(),
+        Loader = () => c(),
+        Value = () => "ready",
+        DECLARATORS_BETWEEN = null,
+        Tail = 1;
+    bindings:
+      - Factory
+      - Loader
+      - Value
+"#,
+        )],
+    );
+    fixture.assert_runs("ready\n");
+    let batch = write_batch(json!([{
+        "owner_id": owner_for_binding(&fixture, "b"),
+        "module": "parts/loader",
+    }]));
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    fixture.assert_runs("ready\n");
+}
+
+#[test]
+fn source_match_claim_with_declared_sibling_references_survives_split() {
+    let fixture = GraphFixture::new(
+        "const prefix = 0, a = () => b(), b = () => c(), c = () => \"ready\", tail = 1;\nconsole.log(a());\n",
+        &[(
+            "home.yaml",
+            r#"source_matches:
+  - match: |
+      const DECLARATORS_BEFORE = null,
+        Factory = () => Loader(),
+        Loader = () => Value(),
+        Value = () => "ready",
+        DECLARATORS_BETWEEN = null,
+        Tail = 1;
+    bindings:
+      - Factory
+      - Loader
+      - Value
+"#,
+        )],
+    );
+    fixture.assert_runs("ready\n");
+
+    let batch = write_batch(json!([{
+        "owner_id": owner_for_binding(&fixture, "b"),
+        "module": "parts/loader",
+    }]));
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    fixture.assert_runs("ready\n");
 }
