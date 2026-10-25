@@ -237,9 +237,11 @@ describe("GitHub search_pull_requests", () => {
     fields: ["number", "title", "state", "html_url"],
   };
 
-  it("shows the query, scope, and every search option on the compact card", async () => {
+  it("keeps requested fields out of the compact card but shows them in details", async () => {
     const label = await mount(renderActionLabel(SEARCH_PULL_REQUESTS, args));
     const collapsed = await mount(renderPaneCollapsed(SEARCH_PULL_REQUESTS, args));
+    const opened = await mount(renderPaneOpened(SEARCH_PULL_REQUESTS, args));
+    const details = await mount(renderDetailsArguments(SEARCH_PULL_REQUESTS, args));
 
     expect(shownText(label)).toBe("Search GitHub pull requests");
     expect(shownText(collapsed)).toContain("is:open label:bug");
@@ -249,7 +251,9 @@ describe("GitHub search_pull_requests", () => {
     expect(shownText(collapsed)).toContain("10 results per page");
     expect(shownText(collapsed)).toContain("Sort by updated");
     expect(shownText(collapsed)).toContain("Order: desc");
-    expect(shownText(collapsed)).toContain("Fields: number, title, state, html_url");
+    expect(shownText(collapsed)).not.toContain("Fields:");
+    expect(shownText(opened)).not.toContain("Fields:");
+    expect(shownText(details)).toContain("Fields: number, title, state, html_url");
     expect(actionCompactCardExpands(SEARCH_PULL_REQUESTS, args)).toBe(false);
     expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, args)).toBe(true);
   });

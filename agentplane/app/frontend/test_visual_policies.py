@@ -721,6 +721,7 @@ async def test_compact_pull_request_search_offers_card_decisions(
     await expect(collapsed_summary).to_contain_text("example")
     await expect(collapsed_summary).to_contain_text("repo")
     await expect(collapsed_summary).to_contain_text("10 results per page")
+    await expect(collapsed_summary).not_to_contain_text("Fields:")
     await expect(section.get_by_role("button", name="Approve review search pull requests")).to_be_visible()
     await expect(section.get_by_role("button", name="Deny review search pull requests")).to_be_visible()
     await expect(section.get_by_role("button", name="Expand review search pull requests")).to_have_count(0)

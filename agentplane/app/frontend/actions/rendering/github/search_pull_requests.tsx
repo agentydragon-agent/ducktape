@@ -16,7 +16,13 @@ function SearchPullRequestsLabel(): JSX.Element {
   );
 }
 
-function SearchPullRequestsArgumentsView({ args }: { args: SearchPullRequestsArguments }): JSX.Element {
+function SearchPullRequestsArgumentsView({
+  args,
+  showFields,
+}: {
+  args: SearchPullRequestsArguments;
+  showFields: boolean;
+}): JSX.Element {
   return (
     <Stack gap={2}>
       <Text size="sm" style={{ overflowWrap: "anywhere" }}>
@@ -36,13 +42,21 @@ function SearchPullRequestsArgumentsView({ args }: { args: SearchPullRequestsArg
       {args.perPage !== undefined && <Text size="sm">{args.perPage} results per page</Text>}
       {args.sort !== undefined && <Text size="sm">Sort by {args.sort}</Text>}
       {args.order !== undefined && <Text size="sm">Order: {args.order}</Text>}
-      {args.fields !== undefined && (
+      {showFields && args.fields !== undefined && (
         <Text size="sm" style={{ overflowWrap: "anywhere" }}>
           Fields: {args.fields.length > 0 ? args.fields.join(", ") : "none"}
         </Text>
       )}
     </Stack>
   );
+}
+
+function SearchPullRequestsCompactArgumentsView({ args }: { args: SearchPullRequestsArguments }): JSX.Element {
+  return <SearchPullRequestsArgumentsView args={args} showFields={false} />;
+}
+
+function SearchPullRequestsDetailsArgumentsView({ args }: { args: SearchPullRequestsArguments }): JSX.Element {
+  return <SearchPullRequestsArgumentsView args={args} showFields={true} />;
 }
 
 export function offersCardDecisionButtonsSearchPullRequests(args: unknown): boolean {
@@ -53,15 +67,19 @@ export const searchPullRequestsLabel: ArgumentsPreview = definePreview(
   zSearchPullRequestsArguments,
   SearchPullRequestsLabel
 );
-export const searchPullRequestsArguments: ArgumentsPreview = definePreview(
+export const searchPullRequestsCompactArguments: ArgumentsPreview = definePreview(
   zSearchPullRequestsArguments,
-  SearchPullRequestsArgumentsView
+  SearchPullRequestsCompactArgumentsView
+);
+export const searchPullRequestsDetailsArguments: ArgumentsPreview = definePreview(
+  zSearchPullRequestsArguments,
+  SearchPullRequestsDetailsArgumentsView
 );
 
 export const searchPullRequestsPresentation: ActionPresentation = {
   label: searchPullRequestsLabel,
-  pane: { collapsed: searchPullRequestsArguments, opened: searchPullRequestsArguments },
-  details: { arguments: searchPullRequestsArguments },
+  pane: { collapsed: searchPullRequestsCompactArguments, opened: searchPullRequestsCompactArguments },
+  details: { arguments: searchPullRequestsDetailsArguments },
   offersCardDecisionButtons: offersCardDecisionButtonsSearchPullRequests,
   compactCardExpands: expandsForRejectedArguments(zSearchPullRequestsArguments),
 };
