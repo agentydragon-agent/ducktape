@@ -1687,13 +1687,11 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Keep Route 53 credentials available while tofu-controller hands dns-records state to Crossplane.
+    description: Make Route 53 credentials available to the Crossplane domain delegation Workspace.
   name: dns-automation
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
@@ -1710,7 +1708,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Take over dns-records from tofu-controller using its existing PostgreSQL state; the dependency on dns-automation serializes the controller handoff.
+    description: Manage Route 53 domain registration and nameserver delegation using the existing dns_records state.
   name: crossplane-dns-records
   namespace: ducktape-flux
 spec:
@@ -1722,7 +1720,7 @@ spec:
     - name: dns-automation
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/generated/crossplane-dns-records
+  path: ./cluster/generated/route53-domain-delegation
   prune: true
   retryInterval: 1m
   sourceRef:

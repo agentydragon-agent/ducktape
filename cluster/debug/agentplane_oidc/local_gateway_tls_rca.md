@@ -174,7 +174,7 @@ on the same node). Same family:
 ## DNS and availability
 
 - `*.allegedly.works` is five node A records, TTL 300
-  (<../../../tf/gitops/dns-records/main.tf>); CoreDNS runs `loadbalance` and
+  (<../../../tf/gitops/route53-domain-delegation/main.tf>); CoreDNS runs `loadbalance` and
   `cache 30`, Talos's stock Corefile
   ([`CoreDNSConfigMap`](https://github.com/siderolabs/talos/blob/main/internal/app/machined/pkg/controllers/k8s/internal/k8stemplates/coredns.go)).
 - JWKS: `httpx.get(..., timeout=10)` in <../../../util/oidc_principal.py>,

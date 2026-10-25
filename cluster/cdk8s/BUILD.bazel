@@ -1020,14 +1020,14 @@ py_test(
     name = "test_terraform_vars",
     srcs = ["test_terraform_vars.py"],
     data = [
-        "//tf/gitops/dns-records:variables.tf",
         "//tf/gitops/forgejo-images:variables.tf",
         "//tf/gitops/home-switch:variables.tf",
+        "//tf/gitops/route53-domain-delegation:variables.tf",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":crossplane_dns_records",
+        ":route53_domain_delegation",
         "//:conftest",
         "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/monitoring:home_switch",
@@ -1265,8 +1265,8 @@ py_library(
 )
 
 py_library(
-    name = "crossplane_dns_records",
-    srcs = ["crossplane_dns_records.py"],
+    name = "route53_domain_delegation",
+    srcs = ["route53_domain_delegation.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
@@ -1520,7 +1520,6 @@ py_library(
         ":artifact_generators",
         ":claude_sandbox_secrets",
         ":crossplane",
-        ":crossplane_dns_records",
         ":crossplane_forgejo_agentydragon",
         ":descheduler",
         ":dns_automation",
@@ -1558,6 +1557,7 @@ py_library(
         ":proxmox_proxy",
         ":reflector",
         ":reloader",
+        ":route53_domain_delegation",
         ":talos_cloud_controller_manager",
         ":terraform",
         ":user_agentydragon",

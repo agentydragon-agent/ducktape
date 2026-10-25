@@ -11,7 +11,7 @@ tf_providers_versions(
 )
 
 tf_module(
-    name = "dns-records",
+    name = "route53-domain-delegation",
     providers = [
         "aws",
     ],

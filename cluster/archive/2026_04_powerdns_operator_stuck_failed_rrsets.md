@@ -1,7 +1,7 @@
 # PowerDNS Operator: Stuck Failed ClusterRRsets
 
 **Archived — PowerDNS and its operator were removed from the cluster.** DNS is
-Route 53 only (<../../tf/gitops/dns-records/main.tf>); no `powerdns` namespace or
+Route 53 only (<../../tf/gitops/route53-domain-delegation/main.tf>); no `powerdns` namespace or
 manifest remains, so the upstream bug this write-up wanted to file no longer
 affects anything here.
 

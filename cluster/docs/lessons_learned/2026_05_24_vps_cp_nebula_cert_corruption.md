@@ -254,7 +254,7 @@ node`'d).
   `nebula_configs` / `talos_nebula_nodes`.
 - `hcloud-csi` controller updated to tolerate the control-plane taint
   (commit `17c456803`) so it can land on a CP after the worker is gone.
-- Outstanding: `tf/gitops/dns-records/main.tf` edit (drop `5.78.106.249`
+- Outstanding: `tf/gitops/route53-domain-delegation/main.tf` edit (drop `5.78.106.249`
   from `public_gateway_ips`) is staged but not yet applied — separate TF
   root, run when convenient.
 ````

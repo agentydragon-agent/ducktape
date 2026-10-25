@@ -54,17 +54,18 @@ around TXT values in the `DNSEndpoint` targets, including SPF and DMARC.
 
 ## Key Files
 
-| File                                                      | Purpose                                                                   |
-| --------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `tf/gitops/dns-records/main.tf`                           | Domain registration, delegation, and record state handoff                 |
-| `generated/dns-automation/dns-automation.k8s.yaml`        | tofu-controller Terraform resource (generated, `cdk8s/dns_automation.py`) |
-| `k8s/external-creds/aws-route53-dns-automation.sops.yaml` | Canonical AWS IAM Secret for DNS automation (SOPS)                        |
-| `k8s/external-creds/aws-route53-external-dns.sops.yaml`   | Dedicated ExternalDNS IAM key (SOPS)                                      |
-| `k8s/external-creds/aws-route53-cert-manager.sops.yaml`   | Canonical AWS IAM Secret for cert-manager (SOPS)                          |
-| `cdk8s/dns_automation.py`                                 | ESO destination Secret for Terraform in `flux-system`                     |
-| `cdk8s/external_dns.py`                                   | ExternalDNS HelmRelease and ESO credential copy                           |
-| `generated/external-dns-records/`                         | DNSEndpoint for wildcard, API, and mail records                           |
-| `cdk8s/cert_manager/environment.py`                       | ESO destination Secret for cert-manager                                   |
+| File                                                      | Purpose                                                                  |
+| --------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `tf/gitops/route53-domain-delegation/main.tf`             | Domain registration and nameserver delegation                            |
+| `generated/route53-domain-delegation/`                    | Crossplane OpenTofu Workspace for domain registration                    |
+| `generated/dns-automation/dns-automation.k8s.yaml`        | ESO credentials for the Crossplane Workspace (`cdk8s/dns_automation.py`) |
+| `k8s/external-creds/aws-route53-dns-automation.sops.yaml` | Canonical AWS IAM Secret for DNS automation (SOPS)                       |
+| `k8s/external-creds/aws-route53-external-dns.sops.yaml`   | Dedicated ExternalDNS IAM key (SOPS)                                     |
+| `k8s/external-creds/aws-route53-cert-manager.sops.yaml`   | Canonical AWS IAM Secret for cert-manager (SOPS)                         |
+| `cdk8s/dns_automation.py`                                 | ESO destination Secret for the Workspace in `flux-system`                |
+| `cdk8s/external_dns.py`                                   | ExternalDNS HelmRelease and ESO credential copy                          |
+| `generated/external-dns-records/`                         | DNSEndpoint for wildcard, API, and mail records                          |
+| `cdk8s/cert_manager/environment.py`                       | ESO destination Secret for cert-manager                                  |
 
 ### IAM User: `cluster-dns-manager`
 
