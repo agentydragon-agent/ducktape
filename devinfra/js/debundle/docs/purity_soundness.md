@@ -228,17 +228,50 @@ classification. There is no "declare a whole module pure" shorthand.
 
 ## Audited callback-factory exports
 
-`chunk_export_purity.<defining chunk>.callback_factory_exports` is not a
-purity annotation. It asserts that a call to the named export, with one inline
-function or arrow callback, neither invokes that callback or other
+`chunk_export_purity.<defining chunk>.callback_factory_exports` and
+`callback_factory_members` are not purity annotations. They assert that a call
+to the named export or static namespace member, with one inline function or
+arrow callback or a retained audited-factory result, neither invokes that
+callback or other
 caller-, host-, or export-provided callbacks synchronously nor publishes the
 argument outside the returned fresh ordinary callable/plain-object graph. It
 must not synchronously access importer-owned state through other routes, including
 imported lexical cells or caller-owned objects. Provider-private effects are
 allowed. The analyzer enforces the call-site shape and conservatively handles other shapes;
-the author remains responsible for every provider branch/helper, ordinary
-property access, and prototype integrity. The returned graph may expose or
-invoke the captured callback later, and must not contain proxies or accessors.
+the author remains responsible for every provider and type branch, helper,
+ordinary property access on both input and result, and prototype integrity.
+The retained input and returned graph must be fresh ordinary callable/plain-object
+graphs with no proxies or accessors at the call. The returned graph may expose
+or invoke the captured callback later.
+For a namespace-member contract, the author must audit the provider and every
+caller/runtime path supplying values used by admitted callbacks, establishing
+that listed factory members retain their identities and behavior through the
+analyzed chunk's synchronous initialization. In particular, provider or other
+namespace members and callback/ref/hook inputs must not expose an alias that
+can replace a listed factory member. Direct static identifier-property
+namespace call results are treated as independent only under this explicit
+author assertion. Computed, chained, unrelated, and unknown call results remain
+conservative when assigned, returned, or used as dynamic-write receivers. For
+call-argument checks, the checker follows namespace values in the supplied
+argument expressions and excludes the callee expression, which is not passed
+as an argument; an unrelated call result is not assumed to be the namespace
+solely because it appears as an argument. Unknown expression shapes remain
+conservative. The analyzer tracks dynamic-write receiver values and rejects
+receivers whose checked value flow reaches the namespace, including direct
+member-rooted writes, local aliases, and unknown call results. A receiver with
+no syntactic path to the namespace is accepted only under the audited
+non-aliasing assertion; the checker does not prove that arbitrary callback
+parameters cannot alias the namespace.
+
+The author must additionally audit static member reads used as callback result
+object data properties. The analyzer treats a direct one-hop
+identifier-property read as a deferred member value, but does not infer whether
+that value aliases the namespace or can mutate a listed factory member. The
+author must establish that guarantee and audit any accessor, proxy, or callback
+behavior reachable through the member value. The object-literal `__proto__`
+prototype setter is not an ordinary data property and stays conservative. Only
+the direct data-property shape is accepted; computed reads, chains, calls,
+spreads, arrays, and other expression forms remain conservative.
 Factory calls remain effectful for ordering unless a separate purity contract
 applies. See <design.md> for how this contract scopes callback-flow analysis.
 

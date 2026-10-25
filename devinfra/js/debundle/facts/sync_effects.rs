@@ -71,7 +71,7 @@ enum ValueExpr {
     ObjectLiteral(u32, Vec<(Option<String>, Self)>),
     Undefined,
     NonCallable,
-    Member(Box<Self>, Option<String>),
+    Member(Box<Self>, Option<String>, bool),
     Call(Box<Self>, Vec<Self>),
     New(Box<Self>, Vec<Self>),
     Alternatives(Vec<Self>),
@@ -94,7 +94,7 @@ impl ValueExpr {
                         PropOrSpread::Spread(spread) => (None, Self::from_expr(&spread.expr)),
                         PropOrSpread::Prop(property) => match property.as_ref() {
                             Prop::KeyValue(pair) => (
-                                static_property_name(&pair.key),
+                                object_data_property_name(&pair.key),
                                 Self::from_expr(&pair.value),
                             ),
                             Prop::Shorthand(ident) => {
@@ -132,6 +132,7 @@ impl ValueExpr {
             Expr::Member(member) => Self::Member(
                 Box::new(Self::from_expr(&member.obj)),
                 static_prop(&member.prop),
+                matches!(member.prop, MemberProp::Ident(_)),
             ),
             Expr::Call(call) if call.args.iter().all(|arg| arg.spread.is_none()) => {
                 match &call.callee {
@@ -194,7 +195,7 @@ impl ValueExpr {
             Self::Binding(id) => {
                 result.insert(id.clone());
             }
-            Self::Member(object, _) => object.bindings(result),
+            Self::Member(object, _, _) => object.bindings(result),
             Self::Call(callee, args) | Self::New(callee, args) => {
                 callee.bindings(result);
                 for arg in args {
@@ -212,6 +213,74 @@ impl ValueExpr {
                 }
             }
             Self::Origin(_) | Self::Undefined | Self::NonCallable | Self::Unknown => {}
+        }
+    }
+
+    /// Whether this value may be the namespace itself or an alias to it.
+    /// Direct static identifier-property namespace call results are allowed
+    /// only under the audited callback-factory identity contract; all other
+    /// unknown call results stay conservative.
+    fn may_expose_namespace(&self, id: &Id) -> bool {
+        match self {
+            Self::Binding(binding) => binding == id,
+            Self::ObjectLiteral(_, properties) => properties
+                .iter()
+                .any(|(_, value)| value.may_expose_namespace(id)),
+            Self::Alternatives(options) => {
+                options.iter().any(|value| value.may_expose_namespace(id))
+            }
+            Self::Member(object, _, _) => object.may_expose_namespace(id),
+            Self::Call(callee, args) => {
+                args.iter().any(|value| value.may_expose_namespace(id))
+                    || !matches!(callee.as_ref(), Self::Member(object, Some(_), true)
+                        if matches!(object.as_ref(), Self::Binding(namespace) if namespace == id))
+            }
+            // Constructor calls can return a caller-visible object explicitly.
+            // Keep their result opaque for namespace alias/escape checks.
+            Self::New(_, _) => true,
+            Self::Unknown => true,
+            Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
+        }
+    }
+
+    /// Whether the expression explicitly carries the namespace through its
+    /// value inputs. A call's callee is not a value passed to the call; its
+    /// arguments are. This narrower check is used for call arguments, while
+    /// assignment/receiver checks keep unknown call results conservative.
+    fn directly_exposes_namespace(&self, id: &Id) -> bool {
+        match self {
+            Self::Binding(binding) => binding == id,
+            Self::ObjectLiteral(_, properties) => properties
+                .iter()
+                .any(|(_, value)| value.directly_exposes_namespace(id)),
+            Self::Alternatives(options) => options
+                .iter()
+                .any(|value| value.directly_exposes_namespace(id)),
+            Self::Member(object, _, _) => object.directly_exposes_namespace(id),
+            Self::Call(_, args) => args
+                .iter()
+                .any(|value| value.directly_exposes_namespace(id)),
+            Self::New(_, args) => args
+                .iter()
+                .any(|value| value.directly_exposes_namespace(id)),
+            Self::Unknown => true,
+            Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
+        }
+    }
+
+    /// A callback result may contain one-hop namespace member reads as
+    /// ordinary data-property values. That exception applies only to the
+    /// direct returned object graph; assigning an alias locally or passing it
+    /// elsewhere still uses `may_expose_namespace` above.
+    fn may_expose_namespace_in_factory_result(&self, id: &Id) -> bool {
+        match self {
+            Self::ObjectLiteral(_, properties) => properties.iter().any(|(name, value)| {
+                let direct_member_value = name.is_some()
+                    && matches!(value, Self::Member(object, Some(_), true)
+                        if matches!(object.as_ref(), Self::Binding(namespace) if namespace == id));
+                !direct_member_value && value.may_expose_namespace_in_factory_result(id)
+            }),
+            _ => self.may_expose_namespace(id),
         }
     }
 }
@@ -292,6 +361,14 @@ fn static_property_name(name: &PropName) -> Option<String> {
     }
 }
 
+fn object_data_property_name(name: &PropName) -> Option<String> {
+    match name {
+        PropName::Ident(ident) if ident.sym == "__proto__" => None,
+        PropName::Str(string) if string.value.to_string_lossy() == "__proto__" => None,
+        _ => static_property_name(name),
+    }
+}
+
 #[derive(Debug, Clone)]
 struct CallbackResultWrite {
     receiver: ValueExpr,
@@ -310,11 +387,13 @@ struct Callable {
     returns: Vec<ValueExpr>,
     local_functions: BTreeSet<Id>,
     literal_captures: BTreeSet<Id>,
+    literal_exposures: BTreeSet<Id>,
     escaped_bindings: BTreeSet<Id>,
     member_writes: Vec<(Id, String)>,
     member_value_writes: Vec<(Id, Option<String>, ValueExpr)>,
     callback_result_writes: Vec<CallbackResultWrite>,
     dynamic_property_effect: bool,
+    dynamic_property_receivers: Vec<ValueExpr>,
     opaque: bool,
     generator: bool,
 }
@@ -477,11 +556,13 @@ impl Default for Callable {
             returns: Vec::new(),
             local_functions: BTreeSet::new(),
             literal_captures: BTreeSet::new(),
+            literal_exposures: BTreeSet::new(),
             escaped_bindings: BTreeSet::new(),
             member_writes: Vec::new(),
             member_value_writes: Vec::new(),
             callback_result_writes: Vec::new(),
             dynamic_property_effect: false,
+            dynamic_property_receivers: Vec::new(),
             opaque: false,
             generator: false,
         }
@@ -528,6 +609,7 @@ struct ExecutionIndex {
     may_skip_await_depth: u32,
     conditional_depth: u32,
     literal_depth: u32,
+    factory_member_value_depth: u32,
     callables: BTreeMap<u32, Callable>,
     local_constructors: BTreeMap<u32, LocalConstructor>,
     class_bindings: BTreeMap<u32, Id>,
@@ -555,6 +637,7 @@ struct ExecutionIndex {
     opaque_top: BTreeSet<StatementOrdinal>,
     no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
     callback_factory_imports: BTreeSet<Id>,
+    callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
     callback_factory_functions: BTreeSet<u32>,
 }
 
@@ -567,6 +650,7 @@ impl Default for ExecutionIndex {
             may_skip_await_depth: 0,
             conditional_depth: 0,
             literal_depth: 0,
+            factory_member_value_depth: 0,
             callables: BTreeMap::new(),
             local_constructors: BTreeMap::new(),
             class_bindings: BTreeMap::new(),
@@ -594,6 +678,7 @@ impl Default for ExecutionIndex {
             opaque_top: BTreeSet::new(),
             no_sync_callback_members: BTreeMap::new(),
             callback_factory_imports: BTreeSet::new(),
+            callback_factory_members: BTreeMap::new(),
             callback_factory_functions: BTreeSet::new(),
         }
     }
@@ -643,6 +728,7 @@ impl ExecutionIndex {
             index.may_skip_await_depth = 0;
             index.conditional_depth = 0;
             index.literal_depth = 0;
+            index.factory_member_value_depth = 0;
             index.collect_uninitialized_lexical_bindings(item.as_module_item());
             index.collect_export_roots(item.as_module_item());
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item() {
@@ -651,10 +737,82 @@ impl ExecutionIndex {
                     if hints.callback_factories.contains(local.sym.as_ref()) {
                         index.callback_factory_imports.insert(local.to_id());
                     }
+                    if let Some(members) = hints.callback_factory_members.get(local.sym.as_ref()) {
+                        index
+                            .callback_factory_members
+                            .insert(local.to_id(), members.clone());
+                    }
                 }
             }
             item.as_module_item().visit_with(&mut index);
         }
+        // A namespace member is an audited target only while its binding is
+        // unchanged. Any local write could replace a member with an eager
+        // callback invoker before the apparent factory call.
+        index.callback_factory_members.retain(|id, members| {
+            let top_member_write =
+                index
+                    .top_property_writes
+                    .iter()
+                    .flatten()
+                    .any(|(receiver, property)| {
+                        receiver.as_ref() == Some(id)
+                            && property
+                                .as_ref()
+                                .is_none_or(|property| members.contains(property))
+                    });
+            let callable_write = index.callables.values().any(|callable| {
+                callable
+                    .member_writes
+                    .iter()
+                    .any(|(receiver, property)| receiver == id && members.contains(property))
+                    || callable
+                        .dynamic_property_receivers
+                        .iter()
+                        .any(|receiver| receiver.may_expose_namespace(id))
+                    || callable.literal_exposures.contains(id)
+                    || callable.escaped_bindings.contains(id)
+                    || callable
+                        .local_assignments
+                        .iter()
+                        .any(|(_, value)| value.may_expose_namespace(id))
+                    || callable
+                        .returns
+                        .iter()
+                        .any(|value| value.may_expose_namespace_in_factory_result(id))
+                    || callable.calls.iter().any(|call| {
+                        call.args
+                            .iter()
+                            .any(|value| value.directly_exposes_namespace(id))
+                    })
+            });
+            let top_assignment = index
+                .top_assignments
+                .iter()
+                .flatten()
+                .any(|(_, value)| value.may_expose_namespace(id));
+            let top_member_value = index
+                .top_member_value_writes
+                .iter()
+                .flatten()
+                .any(|(_, _, value)| value.may_expose_namespace(id));
+            let top_call_argument = index.top_calls.iter().flatten().any(|call| {
+                call.args
+                    .iter()
+                    .any(|value| value.directly_exposes_namespace(id))
+            });
+            let exported_value = index
+                .top_exported_values
+                .iter()
+                .flatten()
+                .any(|value| value.may_expose_namespace(id));
+            !(top_member_write
+                || callable_write
+                || top_assignment
+                || top_member_value
+                || top_call_argument
+                || exported_value)
+        });
         index
     }
 
@@ -770,18 +928,49 @@ impl ExecutionIndex {
         }
     }
 
-    fn mark_dynamic_property_effect(&mut self) {
+    fn mark_dynamic_property_effect(&mut self, receiver: Option<&Expr>) {
         if self.past_await {
             return;
         }
         if let Some(key) = self.current {
-            self.callables
-                .get_mut(&key)
-                .unwrap()
-                .dynamic_property_effect = true;
+            let callable = self.callables.get_mut(&key).unwrap();
+            callable.dynamic_property_effect = true;
+            callable
+                .dynamic_property_receivers
+                .push(receiver.map_or(ValueExpr::Unknown, ValueExpr::from_expr));
         } else {
             self.top_property_writes[self.owner.0].push((None, None));
         }
+    }
+
+    fn mark_possible_namespace_escape(&mut self, expression: &Expr) {
+        let Some(key) = self.current else {
+            return;
+        };
+        let value = ValueExpr::from_expr(expression);
+        let exposed = self
+            .callback_factory_members
+            .keys()
+            .filter(|id| value.may_expose_namespace(id))
+            .cloned()
+            .collect::<Vec<_>>();
+        self.callables
+            .get_mut(&key)
+            .unwrap()
+            .escaped_bindings
+            .extend(exposed);
+    }
+
+    fn is_factory_member_data_value(&self, key: &PropName, expression: &Expr) -> bool {
+        if object_data_property_name(key).is_none() {
+            return false;
+        }
+        let Expr::Member(member) = expression.unwrap_parens() else {
+            return false;
+        };
+        matches!(member.obj.unwrap_parens(), Expr::Ident(namespace)
+            if self.callback_factory_members.contains_key(&namespace.to_id()))
+            && matches!(member.prop, MemberProp::Ident(_))
     }
 
     fn record_member_write(&mut self, member: &MemberExpr) {
@@ -803,7 +992,7 @@ impl ExecutionIndex {
             (None, receiver, property) => {
                 self.top_property_writes[self.owner.0].push((receiver, property))
             }
-            _ => self.mark_dynamic_property_effect(),
+            _ => self.mark_dynamic_property_effect(Some(&member.obj)),
         }
     }
 
@@ -929,7 +1118,25 @@ impl Visit for ExecutionIndex {
             self.plain_data_objects.insert(object.span.lo.0);
         }
         self.literal_depth += 1;
-        object.visit_children_with(self);
+        for property in &object.props {
+            match property {
+                PropOrSpread::Prop(property)
+                    if let Prop::KeyValue(pair) = property.as_ref()
+                        && self.is_factory_member_data_value(&pair.key, &pair.value) =>
+                {
+                    pair.key.visit_with(self);
+                    // This one-hop member read is a deferred data value, not
+                    // the namespace object itself. The factory contract's
+                    // author must establish that it cannot alias the namespace
+                    // or mutate a listed factory member; syntax alone cannot
+                    // prove the imported member's runtime identity.
+                    self.factory_member_value_depth += 1;
+                    pair.value.visit_with(self);
+                    self.factory_member_value_depth -= 1;
+                }
+                _ => property.visit_with(self),
+            }
+        }
         self.literal_depth -= 1;
     }
 
@@ -1116,6 +1323,9 @@ impl Visit for ExecutionIndex {
             callable.reads.insert(ident.to_id());
             if self.literal_depth > 0 {
                 callable.literal_captures.insert(ident.to_id());
+                if self.factory_member_value_depth == 0 {
+                    callable.literal_exposures.insert(ident.to_id());
+                }
             }
         }
     }
@@ -1209,24 +1419,21 @@ impl Visit for ExecutionIndex {
                     self.top_member_value_writes[self.owner.0].push(write);
                 }
             }
-            if let Some(key) = self.current {
-                ValueExpr::from_expr(&assignment.right)
-                    .bindings(&mut self.callables.get_mut(&key).unwrap().escaped_bindings);
-            }
+            self.mark_possible_namespace_escape(&assignment.right);
             if assignment.op == AssignOp::Assign {
                 self.record_member_write(member);
             } else {
-                self.mark_dynamic_property_effect();
+                self.mark_dynamic_property_effect(Some(&member.obj));
             }
         } else {
-            self.mark_dynamic_property_effect();
+            self.mark_dynamic_property_effect(None);
         }
     }
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
         expression.visit_children_with(self);
-        if matches!(expression.arg.unwrap_parens(), Expr::Member(_)) {
-            self.mark_dynamic_property_effect();
+        if let Expr::Member(member) = expression.arg.unwrap_parens() {
+            self.mark_dynamic_property_effect(Some(&member.obj));
         }
         self.mark_opaque();
     }
@@ -1234,9 +1441,9 @@ impl Visit for ExecutionIndex {
     fn visit_unary_expr(&mut self, expression: &UnaryExpr) {
         expression.visit_children_with(self);
         if expression.op == UnaryOp::Delete
-            && matches!(expression.arg.unwrap_parens(), Expr::Member(_))
+            && let Expr::Member(member) = expression.arg.unwrap_parens()
         {
-            self.mark_dynamic_property_effect();
+            self.mark_dynamic_property_effect(Some(&member.obj));
         }
     }
 
@@ -1260,10 +1467,7 @@ impl Visit for ExecutionIndex {
 
     fn visit_throw_stmt(&mut self, thrown: &ThrowStmt) {
         thrown.visit_children_with(self);
-        if let Some(key) = self.current {
-            ValueExpr::from_expr(&thrown.arg)
-                .bindings(&mut self.callables.get_mut(&key).unwrap().escaped_bindings);
-        }
+        self.mark_possible_namespace_escape(&thrown.arg);
     }
 
     fn visit_call_expr(&mut self, call: &CallExpr) {
@@ -1769,7 +1973,7 @@ impl Executor<'_> {
         {
             return false;
         }
-        let ValueExpr::Member(object, Some(property)) = &call.callee else {
+        let ValueExpr::Member(object, Some(property), _) = &call.callee else {
             return false;
         };
         matches!(object.as_ref(), ValueExpr::Binding(object_id)
@@ -2535,7 +2739,18 @@ impl Executor<'_> {
             }
             ValueExpr::Undefined => BTreeSet::from([AbstractValue::Undefined]),
             ValueExpr::NonCallable => BTreeSet::from([AbstractValue::NonCallable]),
-            ValueExpr::Member(object, property) => {
+            ValueExpr::Member(object, property, is_static_identifier) => {
+                if let ValueExpr::Binding(id) = object.as_ref()
+                    && *is_static_identifier
+                    && property.as_ref().is_some_and(|property| {
+                        self.index
+                            .callback_factory_members
+                            .get(id)
+                            .is_some_and(|members| members.contains(property))
+                    })
+                {
+                    return BTreeSet::from([AbstractValue::CallbackFactory]);
+                }
                 if matches!(object.as_ref(), ValueExpr::Binding(id) if id.0.as_ref() == "Object" && !self.flow.is_declared(id))
                     && property.as_deref() == Some("assign")
                     && !self.shadowed.contains("Object")
@@ -2610,7 +2825,7 @@ impl Executor<'_> {
                 if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
                     return BTreeSet::from([AbstractValue::Unavailable]);
                 }
-                let fresh_callback = matches!(
+                let inline_callback = matches!(
                     args.as_slice(),
                     [ValueExpr::Origin(ValueOrigin::Function(_))]
                 );
@@ -2630,6 +2845,8 @@ impl Executor<'_> {
                 for values in &mut args {
                     values.remove(&AbstractValue::Unavailable);
                 }
+                let deferred_callback = matches!(args.as_slice(), [values] if !values.is_empty()
+                    && values.iter().all(|value| matches!(value, AbstractValue::DeferredCallbacks(_))));
                 let mut returns = Values::new();
                 let no_targets = targets.is_empty();
                 let may_throw = args_may_throw
@@ -2644,7 +2861,7 @@ impl Executor<'_> {
                     });
                 for target in targets {
                     match target {
-                        AbstractValue::CallbackFactory if fresh_callback => {
+                        AbstractValue::CallbackFactory if inline_callback || deferred_callback => {
                             let callbacks = self.callback_values(&args[0]);
                             returns.insert(self.deferred_callbacks(callbacks));
                         }
@@ -2894,6 +3111,8 @@ impl Executor<'_> {
         for values in &mut args {
             values.remove(&AbstractValue::Unavailable);
         }
+        let retained_callback = matches!(args.as_slice(), [values] if !values.is_empty()
+            && values.iter().all(|value| matches!(value, AbstractValue::DeferredCallbacks(_))));
         if targets.is_empty() {
             outcome.complete = false;
             outcome.unknown_call = true;
@@ -2906,10 +3125,11 @@ impl Executor<'_> {
                 AbstractValue::CallbackFactory
                     if !call.is_new
                         && !call.has_spread
-                        && matches!(
-                            call.args.as_slice(),
-                            [ValueExpr::Origin(ValueOrigin::Function(_))]
-                        ) => {}
+                        && (retained_callback
+                            || matches!(
+                                call.args.as_slice(),
+                                [ValueExpr::Origin(ValueOrigin::Function(_))]
+                            )) => {}
                 AbstractValue::DeferredCallbacks(captured) => {
                     outcome.complete = false;
                     outcome.unknown_call = true;

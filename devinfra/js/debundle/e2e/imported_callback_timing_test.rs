@@ -335,3 +335,438 @@ fn primitive_metadata_writes_keep_the_callback_deferred() {
     );
     assert_preserved_entry_output(&fixture, "42 factory\n");
 }
+
+const NAMESPACE_FACTORY: &str = "export const api = {\n\
+    make(callback) { return { invoke: () => callback() }; },\n\
+    wrap(inner) { return { invoke: () => inner.invoke() }; },\n\
+};\n";
+
+#[test]
+fn namespace_factories_compose_without_eager_callback_reads() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.wrap(api.make(() => later));\n\
+             const later = 42;\nconsole.log(wrapped.invoke());\n",
+            modules(),
+        )
+        .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make", "wrap"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+}
+
+#[test]
+fn namespace_factory_defers_member_reads_inside_callback_result_literals() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.make(() => ({ field: api.other, value: later }));\n\
+             const later = 42;\nconsole.log(wrapped.invoke().value);\n",
+            vec![
+                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = {\n\
+                 make(callback) { return { invoke: () => callback() }; },\n\
+                 other: 'member',\n\
+             };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+}
+
+#[test]
+fn namespace_factory_allows_audited_method_results_and_unrelated_callback_receivers() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.make(ref => {\n\
+                 ref.current[dynamic] = api.createRef();\n\
+                 return { field: api.other, value: later };\n\
+             });\n\
+             const dynamic = 'slot';\n\
+             const later = 42;\n\
+             console.log(wrapped.invoke({ current: {} }).value);\n",
+            vec![
+                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = {\n\
+                 make(callback) { return { invoke: value => callback(value) }; },\n\
+                 createRef() { return {}; },\n\
+                 other: 'member',\n\
+             };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+}
+
+#[test]
+fn namespace_factory_contract_stays_conservative_when_callback_returns_namespace() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.make(() => ({ field: api, value: later }));\n\
+             const later = 42;\nconsole.log(wrapped.invoke().value);\n",
+            vec![
+                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &["eager_use", "sequenced"],
+    );
+}
+
+#[test]
+fn namespace_factory_contract_stays_conservative_for_namespace_aliases() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.make(() => {\n\
+                 const namespace = api;\n\
+                 return { field: namespace, value: later };\n\
+             });\n\
+             const later = 42;\nconsole.log(wrapped.invoke().value);\n",
+            vec![
+                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &["eager_use", "sequenced"],
+    );
+}
+
+#[test]
+fn namespace_factory_contract_rejects_computed_namespace_mutation() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.make(() => {\n\
+                 api[dynamic] = callback => callback();\n\
+                 return { field: api.other, value: later };\n\
+             });\n\
+             const dynamic = 'make';\n\
+             const later = 42;\nconsole.log(wrapped.invoke().value);\n",
+            vec![
+                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[ (
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; }, other: 'member' };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &["eager_use", "sequenced"],
+    );
+}
+
+#[test]
+fn namespace_factory_contract_rejects_dynamic_write_through_member_alias() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.make(() => {\n\
+                 const target = api.other;\n\
+                 target[dynamic] = 0;\n\
+                 return { field: api.other, value: later };\n\
+             });\n\
+             const dynamic = 'make';\n\
+             const later = 42;\nconsole.log(wrapped.invoke().value);\n",
+            vec![
+                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[ (
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; }, other: 'member' };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &["eager_use", "sequenced"],
+    );
+}
+
+#[test]
+fn namespace_factory_contract_rejects_unknown_call_results_as_write_receivers() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.make(() => {\n\
+                 const receiver = lookup();\n\
+                 receiver[dynamic] = 0;\n\
+                 return { field: api.other, value: later };\n\
+             });\n\
+             const dynamic = 'make';\n\
+             const later = 42;\nconsole.log(wrapped.invoke().value);\n",
+            vec![
+                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[ (
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; }, other: 'member' };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &["eager_use", "sequenced"],
+    );
+}
+
+#[test]
+fn namespace_factory_contract_stays_conservative_for_other_member_shapes() {
+    for member_read in ["api['other']", "api.other.value"] {
+        let source = format!(
+            "import {{ api }} from './peer.js';\n\
+             const wrapped = api.make(() => ({{ field: {member_read}, value: later }}));\n\
+             const later = 42;\nconsole.log(wrapped.invoke().value);\n",
+        );
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                    logical_module("values/later", &[Member::new("later")]),
+                ],
+            )
+            .with_extra_chunks(&[(
+                "static/peer",
+                "export const api = { make(callback) { return { invoke: () => callback() }; }, other: { value: 'member' } };\n",
+            )])
+            .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+                .with_callback_factory_members("api", &["make"])
+                .build()]),
+            &["callbacks/wrapped", "values/later"],
+            &["eager_use", "sequenced"],
+        );
+    }
+}
+
+#[test]
+fn namespace_factory_contract_rejects_prototype_setter_member_values() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.make(() => ({ __proto__: api.other, value: later }));\n\
+             const later = 42;\nconsole.log(wrapped.invoke().value);\n",
+            vec![
+                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[ (
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: () => callback() }; }, other: {} };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &["eager_use", "sequenced"],
+    );
+}
+
+#[test]
+fn namespace_composed_result_invoked_early_is_rejected() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.wrap(api.make(() => later));\n\
+             const outcome = wrapped.invoke();\n\
+             const later = 42;\nconsole.log(outcome);\n",
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[Member::new("wrapped"), Member::new("outcome")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make", "wrap"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn namespace_factory_contract_does_not_trust_a_replaced_member() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             api.make = callback => callback();\n\
+             const wrapped = api.make(() => later);\n\
+             const later = 42;\nconsole.log(wrapped);\n",
+            modules(),
+        )
+        .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn pure_member_assertion_alone_does_not_defer_callback_reads() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.make(() => later);\n\
+             const later = 42;\nconsole.log(wrapped.invoke());\n",
+            modules(),
+        )
+        .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_pure_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn namespace_result_published_before_initialization_is_rejected() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.wrap(api.make(() => later));\n\
+             globalThis.saved = wrapped;\n\
+             const outcome = host();\n\
+             const later = 42;\nconsole.log(outcome);\n",
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[Member::new("wrapped"), Member::new("outcome")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make", "wrap"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn unlisted_namespace_member_stays_opaque() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const wrapped = api.other(() => later);\n\
+             const later = 42;\nconsole.log(wrapped);\n",
+            modules(),
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { other(callback) { return { invoke: () => callback() }; } };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn namespace_alias_mutation_disables_the_factory_contract() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const alias = api;\n\
+             alias.make = callback => callback();\n\
+             const wrapped = api.make(() => later);\n\
+             const later = 42;\nconsole.log(wrapped);\n",
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[Member::new("alias"), Member::new("wrapped")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn altered_retained_object_cannot_hide_an_early_accessor_read() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             const inner = api.make(() => 0);\n\
+             const configured = Object.defineProperty(inner, 'invoke', { get() { return later; } });\n\
+             const wrapped = api.wrap(inner);\n\
+             const later = 42;\nconsole.log(wrapped.invoke());\n",
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[
+                        Member::new("inner"),
+                        Member::new("configured"),
+                        Member::new("wrapped"),
+                    ],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factory_members("api", &["make", "wrap"])
+            .build()]),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
