@@ -401,6 +401,8 @@ struct Callable {
 #[derive(Debug, Clone)]
 struct LocalConstructor {
     key: Option<u32>,
+    /// No constructor body or instance fields run during direct allocation.
+    inert_allocation: bool,
     /// Parameter property reads must come from fresh plain data objects.
     property_reads: BTreeSet<usize>,
     /// Unqualified reads must resolve to local bindings, not host getters.
@@ -453,19 +455,33 @@ fn safe_constructor_assignment(
     params: &[Option<Id>],
     property_reads: &mut BTreeSet<usize>,
     binding_reads: &mut BTreeSet<Id>,
+    written_properties: &mut BTreeSet<String>,
 ) -> bool {
     match expression.unwrap_parens() {
-        Expr::Seq(seq) => seq
-            .exprs
-            .iter()
-            .all(|expr| safe_constructor_assignment(expr, params, property_reads, binding_reads)),
+        Expr::Seq(seq) => seq.exprs.iter().all(|expr| {
+            safe_constructor_assignment(
+                expr,
+                params,
+                property_reads,
+                binding_reads,
+                written_properties,
+            )
+        }),
         Expr::Assign(assign) if assign.op == AssignOp::Assign => {
             let AssignTarget::Simple(SimpleAssignTarget::Member(target)) = &assign.left else {
                 return false;
             };
-            matches!(target.obj.unwrap_parens(), Expr::This(_))
-                && matches!(&target.prop, MemberProp::Ident(property) if property.sym.as_ref() != "__proto__")
-                && safe_constructor_value(&assign.right, params, property_reads, binding_reads)
+            let MemberProp::Ident(property) = &target.prop else {
+                return false;
+            };
+            if !matches!(target.obj.unwrap_parens(), Expr::This(_))
+                || property.sym.as_ref() == "__proto__"
+                || !safe_constructor_value(&assign.right, params, property_reads, binding_reads)
+            {
+                return false;
+            }
+            written_properties.insert(property.sym.to_string());
+            true
         }
         _ => false,
     }
@@ -476,6 +492,7 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
         return None;
     }
     let mut constructor = None;
+    let mut has_instance_fields = false;
     for member in &class.body {
         match member {
             ClassMember::Constructor(ctor) if constructor.is_none() => constructor = Some(ctor),
@@ -490,13 +507,19 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
                     && !matches!(prop.key, PropName::Computed(_))
                     && prop.value.as_deref().is_none_or(|value| {
                         matches!(value.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))
-                    }) => {}
+                    }) =>
+            {
+                has_instance_fields = true
+            }
             ClassMember::PrivateProp(prop)
                 if !prop.is_static
                     && prop.decorators.is_empty()
                     && prop.value.as_deref().is_none_or(|value| {
                         matches!(value.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))
-                    }) => {}
+                    }) =>
+            {
+                has_instance_fields = true
+            }
             ClassMember::Empty(_) => {}
             _ => return None,
         }
@@ -504,6 +527,7 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
     let Some(ctor) = constructor else {
         return Some(LocalConstructor {
             key: None,
+            inert_allocation: !has_instance_fields,
             property_reads: BTreeSet::new(),
             binding_reads: BTreeSet::new(),
         });
@@ -524,6 +548,7 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
     }
     let mut property_reads = BTreeSet::new();
     let mut binding_reads = BTreeSet::new();
+    let mut written_properties = BTreeSet::new();
     for statement in &ctor.body.as_ref()?.stmts {
         let Stmt::Expr(expr) = statement else {
             return None;
@@ -533,12 +558,25 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
             &params,
             &mut property_reads,
             &mut binding_reads,
+            &mut written_properties,
         ) {
             return None;
         }
     }
+    // A getter with the same name on this class's prototype makes assignment
+    // to the fresh instance throw. All other accepted writes create ordinary
+    // own data properties under the unmodified built-in prototype premise.
+    if class.body.iter().any(|member| {
+        matches!(member, ClassMember::Method(method)
+            if !method.is_static && method.kind == MethodKind::Getter
+                && static_property_name(&method.key)
+                    .is_some_and(|name| written_properties.contains(&name)))
+    }) {
+        return None;
+    }
     Some(LocalConstructor {
         key: Some(ctor.span.lo.0),
+        inert_allocation: false,
         property_reads,
         binding_reads,
     })
@@ -1613,6 +1651,7 @@ type InvocationSignature = (
     u32,
     Vec<Values>,
     Option<CapturedContext>,
+    bool,
     u64,
     u64,
     Option<StatementOrdinal>,
@@ -2252,15 +2291,20 @@ impl Executor<'_> {
     ) -> Option<(Outcome, AbstractValue)> {
         let constructor = self.index.local_constructors.get(&key)?.clone();
         let binding = self.index.class_bindings.get(&key)?;
-        // A class used only as a direct `new` target cannot have its prototype
-        // changed by another local expression or passed to host code. An
-        // instance that escaped earlier could still expose its constructor.
-        if self.index.other_class_uses.contains(binding)
-            || (self.export_reentry_enabled && self.index.exported_bindings.contains(binding))
-            || self.tainted_classes.contains(&key)
-            || self
-                .global_escaped_callbacks
-                .contains(&AbstractValue::ClassMembers(key))
+        // A constructorless, fieldless class only allocates an instance for a
+        // direct zero-argument `new`. Even if its class object escaped, a
+        // modified prototype or deferred method cannot run during allocation.
+        // Any unknown/reassigned callee alternative still takes the ordinary
+        // opaque path in execute_call. Other constructors need the class and
+        // prototype to remain unexposed to avoid setters and method reentry.
+        let inert_allocation = constructor.inert_allocation && args.is_empty();
+        if !inert_allocation
+            && (self.index.other_class_uses.contains(binding)
+                || (self.export_reentry_enabled && self.index.exported_bindings.contains(binding))
+                || self.tainted_classes.contains(&key)
+                || self
+                    .global_escaped_callbacks
+                    .contains(&AbstractValue::ClassMembers(key)))
         {
             return None;
         }
@@ -2298,7 +2342,7 @@ impl Executor<'_> {
                 complete: true,
                 ..Outcome::default()
             },
-            |constructor_key| self.invoke(constructor_key, args.to_vec(), None),
+            |constructor_key| self.invoke(constructor_key, args.to_vec(), None, true),
         );
         let values: Values = args.iter().flatten().cloned().collect();
         let instance = AbstractValue::Instance(key, self.intern_callback_set(values));
@@ -2462,10 +2506,10 @@ impl Executor<'_> {
                     continue;
                 }
                 AbstractValue::Origin(ValueOrigin::Function(key)) => {
-                    self.invoke(key, args_for(key, self.index), None)
+                    self.invoke(key, args_for(key, self.index), None, false)
                 }
                 AbstractValue::Closure(key, captured) => {
-                    self.invoke(key, args_for(key, self.index), Some(captured))
+                    self.invoke(key, args_for(key, self.index), Some(captured), false)
                 }
                 _ => continue,
             };
@@ -2873,10 +2917,13 @@ impl Executor<'_> {
                         | AbstractValue::Undefined
                         | AbstractValue::NonCallable => {}
                         AbstractValue::Origin(ValueOrigin::Function(key)) => {
-                            returns.extend(self.invoke(key, args.clone(), None).returns);
+                            returns.extend(self.invoke(key, args.clone(), None, false).returns);
                         }
                         AbstractValue::Closure(key, captured) => {
-                            returns.extend(self.invoke(key, args.clone(), Some(captured)).returns);
+                            returns.extend(
+                                self.invoke(key, args.clone(), Some(captured), false)
+                                    .returns,
+                            );
                         }
                         AbstractValue::ObjectAssign => {
                             returns.extend(args.first().cloned().unwrap_or_else(unknown));
@@ -2942,6 +2989,7 @@ impl Executor<'_> {
         key: u32,
         args: Vec<Values>,
         captured: Option<CapturedContext>,
+        fresh_checked_constructor: bool,
     ) -> Outcome {
         let Some((callable_owner, callable_opaque)) = self
             .index
@@ -2963,6 +3011,7 @@ impl Executor<'_> {
             key,
             args.clone(),
             captured.clone(),
+            fresh_checked_constructor,
             self.reachability.revision,
             self.prefix_revision,
             self.current_top_owner,
@@ -3039,13 +3088,21 @@ impl Executor<'_> {
         // opaque calls; if source order put a write afterward, this only adds
         // a conservative callback possibility.
         self.apply_member_value_writes(&callable.member_value_writes, &env, &env);
-        self.promote_callback_result_writes(
-            &callable.callback_result_writes,
-            &env,
-            &env,
-            callable.owner,
-            &mut outcome,
-        );
+        // local_constructor checked every assignment as a static property
+        // write to a fresh `this`, with a safe right-hand value and no
+        // prototype getter collision. That receiver cannot publish a stored
+        // callback or invoke a setter. The generic lanes represent `this` as
+        // unknown and would otherwise promote lazy callback bodies after any
+        // earlier opaque call.
+        if !fresh_checked_constructor {
+            self.promote_callback_result_writes(
+                &callable.callback_result_writes,
+                &env,
+                &env,
+                callable.owner,
+                &mut outcome,
+            );
+        }
         for call in &callable.calls {
             self.execute_call(call, &env, &env, &mut outcome);
         }
@@ -3061,7 +3118,7 @@ impl Executor<'_> {
         if callable.dynamic_property_effect {
             writes.push((None, None));
         }
-        if !self.fresh_mutation_callables.contains(&key) {
+        if !fresh_checked_constructor && !self.fresh_mutation_callables.contains(&key) {
             self.promote_property_writes(&writes, callable.owner, &mut outcome);
         }
         self.active.remove(&active_invocation);
@@ -3223,7 +3280,7 @@ impl Executor<'_> {
                     }
                 }
                 AbstractValue::Origin(ValueOrigin::Function(key)) if !call.is_new => {
-                    let nested = self.invoke(key, args.clone(), None);
+                    let nested = self.invoke(key, args.clone(), None, false);
                     self.apply_rebind_effects(&nested.effects.rebinds);
                     outcome.effects.reads.extend(nested.effects.reads);
                     outcome.effects.rebinds.extend(nested.effects.rebinds);
@@ -3236,7 +3293,7 @@ impl Executor<'_> {
                     outcome.complete &= nested.complete;
                 }
                 AbstractValue::Closure(key, captured) if !call.is_new => {
-                    let nested = self.invoke(key, args.clone(), Some(captured));
+                    let nested = self.invoke(key, args.clone(), Some(captured), false);
                     self.apply_rebind_effects(&nested.effects.rebinds);
                     outcome.effects.reads.extend(nested.effects.reads);
                     outcome.effects.rebinds.extend(nested.effects.rebinds);
