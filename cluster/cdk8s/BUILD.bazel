@@ -1298,6 +1298,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":flux",
+        ":manifest_roots",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
@@ -1309,6 +1310,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":flux",
+        ":manifest_roots",
         ":terraform",
         "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
