@@ -219,7 +219,7 @@ Gateway model-list handlers and schemas used in the compatibility table were che
 - [L1] LiteLLM v1.103.0 release: <https://github.com/BerriAI/litellm/releases/tag/v1.103.0>
 - [L2] LiteLLM proxy API, providers, streaming, health, and metrics documentation: <https://docs.litellm.ai/docs/>
 - [L3] LiteLLM Langfuse integration documentation: <https://docs.litellm.ai/docs/observability/langfuse>
-- [L4] Current checked-in routes, tracing settings, Crossplane keys, and BuildBuddy sync in the fixed replacement plan: [llm_gateway_replacement.md](llm_gateway_replacement.md), [proxy.py](../../cdk8s/litellm/proxy.py), [Crossplane key definitions](../../cdk8s/litellm/crossplane_keys.py), [BuildBuddy sync](../../../tf/gitops/litellm-buildbuddy-sync/main.tf)
+- [L4] Current checked-in routes, tracing settings, Crossplane keys, and BuildBuddy sync in the fixed replacement plan: [llm_gateway_replacement.md](llm_gateway_replacement.md), [proxy.py](../../../cdk8s/litellm/proxy.py), [Crossplane key definitions](../../../cdk8s/litellm/crossplane_keys.py), [BuildBuddy sync](../../../../tf/gitops/litellm-buildbuddy-sync/main.tf)
 - [L5] LiteLLM core and enterprise license boundary: <https://github.com/BerriAI/litellm/blob/v1.103.0/LICENSE>
 - [L6] LiteLLM v1.106.3 latest release: <https://github.com/BerriAI/litellm/releases/tag/v1.106.3>
 - [L7] LiteLLM main-branch commit history: <https://github.com/BerriAI/litellm/commits/main/>
@@ -241,7 +241,7 @@ Gateway model-list handlers and schemas used in the compatibility table were che
 - [G3] Anthropic Claude Apps Gateway AWS model and upstream configuration: <https://github.com/anthropics/claude-code/blob/v2.1.310/examples/gateway/aws/gateway.yaml.example>
 - [G4] Anthropic Claude Gateway GCP deployment example: <https://github.com/anthropics/claude-code/blob/v2.1.310/examples/gateway/gcp/README.md>
 - [G5] Anthropic Claude Gateway GCP model and upstream configuration: <https://github.com/anthropics/claude-code/blob/v2.1.310/examples/gateway/gcp/gateway.yaml.example>
-- [G6] This repository's Claude Code gateway wrapper and model discovery setting: [gateway.nix](../../../nix/home/claude_code/gateway.nix)
+- [G6] This repository's Claude Code gateway wrapper and model discovery setting: [gateway.nix](../../../../nix/home/claude_code/gateway.nix)
 - [G7] Anthropic Claude Apps Gateway overview, supported upstreams, and per-deployment `GET /protocol` reference: <https://code.claude.com/docs/en/claude-apps-gateway>
 - [G8] Anthropic Claude Apps Gateway configuration: model catalog served at `/v1/models` and managed model access: <https://code.claude.com/docs/en/claude-apps-gateway-config#models>
 - [G9] Anthropic Claude Code gateway compatibility guide: Messages paths and `/v1/models` discovery request and response shape: <https://code.claude.com/docs/en/llm-gateway-protocol#model-discovery>
@@ -328,7 +328,7 @@ Gateway model-list handlers and schemas used in the compatibility table were che
 [G3]: https://github.com/anthropics/claude-code/blob/v2.1.310/examples/gateway/aws/gateway.yaml.example
 [G4]: https://github.com/anthropics/claude-code/blob/v2.1.310/examples/gateway/gcp/README.md
 [G5]: https://github.com/anthropics/claude-code/blob/v2.1.310/examples/gateway/gcp/gateway.yaml.example
-[G6]: ../../../nix/home/claude_code/gateway.nix
+[G6]: ../../../../nix/home/claude_code/gateway.nix
 [G7]: https://code.claude.com/docs/en/claude-apps-gateway
 [G8]: https://code.claude.com/docs/en/claude-apps-gateway-config#models
 [G9]: https://code.claude.com/docs/en/llm-gateway-protocol#model-discovery
