@@ -1526,6 +1526,28 @@ function standardRows(
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+/** A tool run with a consecutive group of empty reasoning summaries between its calls. */
+function consecutiveReasoningRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(70, null),
+    item(10, "reasoning-group-tool-before", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Bash",
+      arguments: JSON.stringify({ command: "agentplane actions submit sandbox/exec" }),
+    }),
+    item(20, "reasoning-group-empty-1", ItemKind.REASONING, "", { threadId }),
+    item(30, "reasoning-group-empty-2", ItemKind.REASONING, "", { threadId }),
+    item(40, "reasoning-group-empty-3", ItemKind.REASONING, "", { threadId }),
+    item(50, "reasoning-group-tool-after", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Bash",
+      arguments: JSON.stringify({ command: "agentplane actions submit kubernetes_admin/pods_log" }),
+    }),
+    item(60, "reasoning-group-answer", ItemKind.ASSISTANT_TEXT, "The log check is complete.", { threadId }),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
 function failedRows(threadId: string, afterContent: boolean): Record<string, unknown>[] {
   const error = "Test model request failed: HTTP 429. Quota exhausted for this fixture.";
   const event = toJson(
@@ -3388,6 +3410,9 @@ const visualHarness = {
   },
   standardHistory(longPreview: boolean, longBody: boolean): void {
     threadEntityRows = (id) => (id === THREADS[2].id ? statesRows(id) : standardRows(id, longPreview, longBody));
+  },
+  consecutiveReasoningHistory(): void {
+    threadEntityRows = consecutiveReasoningRows;
   },
   commandProgress(): void {
     threadEntityRows = commandProgressRows;
