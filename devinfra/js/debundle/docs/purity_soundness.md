@@ -121,16 +121,20 @@ before construction. See [Set construction and `Set.prototype.add`](https://tc39
 and the [Array iterator](https://tc39.es/ecma262/2024/multipage/indexed-collections.html#sec-array.prototype-@@iterator).
 
 Fresh inline arrays keep the existing element-purity checks in purity
-classification. Synchronous callback analysis uses the shared span proof only
-for inline primitive-literal arrays and the checked const-alias chains above.
-It leaves other array elements opaque: a pure function or object can still be
-stored in the resulting Set and called by a later consumer. This also means a
-plain-data member such as `mapping.key` remains conservative here until the
-analysis can prove its value primitive, even when the existing purity
-classifier proves the read itself has no accessor effect. Nested callable
-bodies remain conservative. Shadowed `Set`, spreads, holes, effectful or
-unknown alias elements, and any escaped or mutated alias remain outside the
-alias admission.
+classification. Synchronous callback analysis also admits a chunk-top
+`const result = new Set([table.key])` when `table` resolves to exactly one
+chunk-top `const` object literal and its own static `key` has a primitive
+literal value after any duplicate-property overrides. The existing PlainData
+escape/write scan must admit that table as unchanged ordinary data. This
+separately proves the member read cannot run an accessor and its result cannot
+be a callback or iterator. The array is freshly constructed at that call;
+the proof does not apply to nested callable bodies or to array aliases whose
+elements are member reads.
+
+Other array elements remain opaque: a pure function or object can still be
+stored in the resulting Set and called by a later consumer. Shadowed `Set`,
+spreads, holes, getters, proxies, function-valued or unknown properties, and
+mutated or escaped tables remain conservative.
 
 ## `PURE_STATIC_PROPS` — disposal symbols
 
@@ -337,6 +341,19 @@ fromEntries}` single argument with `Object` unshadowed, the vetted
   identity is tracked; the scan checks aliases and disqualifies `X`
   when one is passed to an unknown consumer or used at a mutation
   site. Other return shapes remain escapes.
+
+- **Primitive member values do not expose their receiver.** The escape scan
+  distinguishes an exact static member read on a chunk-top `const` object
+  from passing the object's identity. The cached initializer must be an
+  ordinary object literal with an own primitive literal value at that key
+  after duplicate-key replacement. Binding IDs distinguish local shadows.
+  Reads of those values, including inside a formatted message, do not expose
+  the receiver to a consumer. The whole-chunk mutation, alias and escape scan
+  still runs: a write or an actual object escape invalidates the candidate.
+  Computed keys, spreads, accessors, nonprimitive values and method results
+  retain conservative escape handling. An empty value-flow result alone is
+  not a primitive proof: some unsupported expressions also have no tracked
+  object origin.
 
 - **Re-bind soundness for `let`.** Reads on `X` after a re-bind see
   the new plain-literal value; reads before still saw the old
