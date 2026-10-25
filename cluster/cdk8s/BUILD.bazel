@@ -1775,6 +1775,7 @@ py_test(
         "//cluster:generated_manifests",
         "//cluster:parked_generated_manifests",
         "//cluster/k8s:cluster_all_files",
+        "//cluster/k8s/agentplane-staging:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",

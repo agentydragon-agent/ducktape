@@ -55,7 +55,7 @@ py_library(
 py_library(
     name = "app",
     srcs = ["app.py"],
-    data = ["//cluster/k8s:authentik_blueprints"],
+    data = ["//cluster/k8s/authentik/app/blueprints:authentik_blueprints"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":db",
@@ -150,7 +150,7 @@ py_library(
 py_test(
     name = "test_blueprint_contracts",
     srcs = ["test_blueprint_contracts.py"],
-    data = ["//cluster/k8s:authentik_blueprints"],
+    data = ["//cluster/k8s/authentik/app/blueprints:authentik_blueprints"],
     deps = [
         "//util/bazel:runfiles",
         "@pypi//pydantic",
