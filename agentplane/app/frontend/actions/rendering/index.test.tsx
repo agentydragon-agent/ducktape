@@ -778,6 +778,36 @@ const cardDecisionButtonCases: Array<{
   },
   {
     group: "github",
+    name: "push_files",
+    args: {
+      owner: "example",
+      repo: "service",
+      branch: "docs",
+      message: "docs: update guide",
+      files: [{ path: "docs/guide.md", content: "Reviewable documentation content." }],
+    },
+    visible: ["Push 1 file to docs in example/service", "docs: update guide", "docs/guide.md"],
+  },
+  {
+    group: "github",
+    name: "delete_file",
+    args: {
+      owner: "example",
+      repo: "service",
+      path: "docs/old-guide.md",
+      message: "docs: remove old guide",
+      branch: "docs",
+    },
+    visible: ["Delete docs/old-guide.md in example/service", "docs", "docs: remove old guide"],
+  },
+  {
+    group: "github",
+    name: "create_branch",
+    args: { owner: "example", repo: "service", branch: "docs", from_branch: "devel" },
+    visible: ["Create branch docs from devel in example/service"],
+  },
+  {
+    group: "github",
     name: "create_pull_request",
     args: {
       owner: "example",
@@ -861,31 +891,31 @@ describe("card decision buttons capability", () => {
     expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", includeSpamTrash: true })).toBe(false);
   });
 
-  it("requires full review for PR descriptions, hidden defaults, and unknown actions", () => {
-    const pr = cardDecisionButtonCases.find((candidate) => candidate.group === "github");
+  it("offers card decisions for complete PR calls and rejects unknown actions", () => {
+    const pr = cardDecisionButtonCases.find((candidate) => candidate.name === "create_pull_request");
     if (pr === undefined) throw new Error("missing pull request fixture");
     expect(
       actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })
-    ).toBe(false);
+    ).toBe(true);
     expect(
       actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, { ...pr.args, title: "x".repeat(121) })
-    ).toBe(false);
+    ).toBe(true);
     expect(
       actionOffersCardDecisionButtons(
         { group: pr.group, name: pr.name },
         { ...pr.args, reviewers: Array(5).fill("reviewer") }
       )
-    ).toBe(false);
+    ).toBe(true);
     expect(actionOffersCardDecisionButtons(SSH_EXEC, SSH_EXEC_ARGUMENTS)).toBe(false);
     expect(actionOffersCardDecisionButtons({ group: "__proto__", name: "constructor" }, {})).toBe(false);
   });
 
-  it("still renders a long PR description for review while withholding the card decision buttons", async () => {
-    const pr = cardDecisionButtonCases.find((candidate) => candidate.group === "github");
+  it("renders a long PR description while offering card decision buttons", async () => {
+    const pr = cardDecisionButtonCases.find((candidate) => candidate.name === "create_pull_request");
     if (pr === undefined) throw new Error("missing pull request fixture");
     const args = { ...pr.args, body: "important text" };
 
-    expect(actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, args)).toBe(false);
+    expect(actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, args)).toBe(true);
     const container = await mount(renderPaneOpened({ group: pr.group, name: pr.name }, args));
     expect(container.textContent).toContain("important text");
   });

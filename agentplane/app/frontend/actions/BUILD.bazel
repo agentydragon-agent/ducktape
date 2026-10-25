@@ -29,6 +29,7 @@ ts_library(
     srcs = [
         "schemas/github/create_branch.ts",
         "schemas/github/create_pull_request.ts",
+        "schemas/github/delete_file.ts",
         "schemas/github/push_files.ts",
         "schemas/github/update_pull_request.ts",
     ],
