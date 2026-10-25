@@ -292,6 +292,32 @@ the declaration. Later writes to that binding do not replace the superclass
 captured by the class. Unsupported or uncertain heritage retains the generic
 fallback.
 
+A pure initializer that calls a uniquely known local function can retain an
+unpublished callback graph in a fresh ordinary record without making that
+initializer a speculative reachability root. The function must have simple
+parameters, no synchronous calls, writes, dynamic scope, defaults, or other
+effects, and a single return value modeled as a plain data record. Its values
+may be parameters, local or inline functions, primitives, or nested records
+of the same shape. Arguments must be inline functions or primitives. The call
+and its eager dependencies still run normally; any later export, write, or
+invocation of the result restores its callback reachability.
+
+A direct local wrapper call may also retain callbacks in a fresh checked class
+instance without publishing them. The wrapper must have one return containing
+only checked local `new` allocations, simple parameters, no other calls or
+effects, and a unique stable identity. Inputs must be fresh plain-data records,
+inline functions, or primitives. A fresh record may contain a dense fresh array
+of these inputs or initialized, exact own primitive members of a stable,
+single-initializer TS enum object. Enum reads retain their eager dependencies;
+mutation, escape, holes, spreads, and unknown keys retain conservative
+reachability. Nested allocations must be inert; constructor
+property reads must resolve to own data or safe missing properties under A11.
+The initializer, wrapper, and class owners still contribute actual synchronous
+effects and ordering. Their execution alone does not expose deferred methods or
+make them available as host accessors. Later invocation or publication of the
+result restores those capabilities. Unsupported constructor paths retain
+conservative reachability.
+
 At-init callback analysis also records possible implicit primitive conversions
 from arithmetic, relational and loose-equality operators, the left operand of
 `in`, numeric unary operators, updates and non-logical compound assignments.
@@ -450,6 +476,10 @@ The allocation and assignment values must run no user code, and the instance
 must remain private throughout that run. Unsupported constructors, fields,
 receivers, dynamic scope, and intervening statements retain the conservative
 write checks.
+For that exact top-level own-field write, the same proof excludes a setter
+effect from unknown-call reachability. The assignment remains an actual
+top-level effect; nested callable writes and later receiver mutations retain
+their usual accessor checks.
 For a fresh top-level object literal that visibly contains the namespace and
 has static ordinary own data properties,
 the checker distinguishes the container's identity from namespace values held
@@ -498,6 +528,37 @@ Without an assertion, source inference recognizes only immutable exported
 function declarations with one simple identifier parameter. The body must
 only return a zero-argument function or arrow that only calls that parameter
 with no arguments. Reassigned bindings and dynamic scopes remain opaque.
+
+`chunk_analysis_options.<chunk>.deferred_global_publications` names audited
+browser-global data slots, for example `{globalThis: [inspectState]}` or
+`{window: [inspectState]}`. A listed slot must be an ordinary inert own data
+property, or an absent slot whose creation cannot invoke an inherited setter,
+at the write. The object must permit the write. No host, importer, or source
+consumer may use its stored function or class during synchronous
+initialization of this chunk.
+The analyzer admits only a whole top-level direct assignment of a known local
+function/class, or the same `window.slot = value` assignment behind a checked
+`typeof window` guard. It rejects ambiguous aliases, visible global-root
+replacement, dynamic global access, additional source mentions of the slot
+(including through another builtin
+global alias), and visible global-object escapes. The certificate delays only
+the callback-availability consequence of that exact write. RHS evaluation,
+eager reads, property mutation, ordinary effects, and source-order constraints
+remain. Independent exports or other publications of the same value retain
+their own reentry behavior. A spec author must audit the host's property
+descriptor and all consumers; source checks alone cannot establish either
+host fact.
+An earlier anonymous, zero-argument synchronous function IIFE with a discarded
+result may use a local global-object alias before the certified write if that
+alias and every derived value stay inside the invocation. Ordinary calls with
+the alias, nested
+callbacks, returns, dynamic direct member access, and certified-slot access
+through the alias retain the conservative fallback.
+Primitive-valued operator results cannot carry the global-object identity.
+The synthetic protocol call for a literal-key `in` check on a direct builtin
+global root does not publish that root as a value; its possible host or proxy
+effects remain in synchronous effect analysis. Dynamic keys, aliases, ordinary
+calls, and visible root replacement retain the conservative publication guard.
 
 ## Local-effect decorator annotations
 
@@ -556,6 +617,16 @@ into the package island. These explain the stripper's conservative classificatio
 they do not assert that every reported dependency executes synchronously.
 
 ## Native collection callback effects
+
+An unexported `const` facade built by the exact nested
+`Object.freeze(Object.defineProperty({__proto__: null, ...ownData},
+Symbol.toStringTag, {value: primitive}))` shape retains its stored values
+without invoking them. The `Object` and `Symbol` intrinsics must be intact;
+keys and descriptor fields must be static own data, with no spread, accessor,
+computed key, or intervening call. The analyzer keeps the facade's object
+identity and property values, so a later call or publication still exposes its
+stored callbacks. The proof changes only construction-time callback reachability;
+ordinary eager dependencies, effects, and ordering remain.
 
 Bounded synchronous analysis can execute a known callback for direct one-callback
 `forEach`, `filter`, and `map` calls over a retained untainted dense ordinary

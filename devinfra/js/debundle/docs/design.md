@@ -861,6 +861,12 @@ actual top-level caller as their promotion owner, and memoized invocations
 include that caller and the reachability revision. A static data-property
 write to a proved fresh local function retains the same A11 fast path. This
 keeps unrelated returned closures deferred when no setter can be reached.
+The adjacent fresh-value proof also identifies a top-level write to an
+initialized own data field of a constructorless local class instance. That
+write cannot invoke an inherited setter, even after an earlier unknown call.
+Its assignment and execution-order effects remain. Callable-body writes and
+writes after deletion, descriptor replacement, or an intervening statement
+still use the accessor fallback.
 
 A closed inline mutation IIFE can also prove its receiver fresh at that call,
 independently of whether the returned object escapes later. The shared enum-IIFE
@@ -913,6 +919,28 @@ constructor and member calls remain unknown and take the conservative path. Gene
 also take that path because their parameter defaults execute at call time
 while their bodies wait for iteration; spread arguments may likewise execute
 iterator code before the callee runs.
+
+A single-binding top-level call to a uniquely known local wrapper can produce
+an unpublished checked instance graph. A source certificate requires one
+returned `new` expression; all nested `new` expressions must use inert local
+classes, and the wrapper's indexed calls must be exactly those allocations.
+The wrapper accepts only simple parameters bound to inline functions, primitive
+values, or fresh plain-data records. A record may contain a dense fresh array
+of the same inputs. An exact named member read from a single-initializer TS
+enum IIFE is admitted only after initialization when its binding is stable
+PlainData and that member is an own primitive data property. The ordinary
+prototype guard also applies. Array holes and spreads, enum mutation or
+escape, and unknown member keys retain conservative reachability. Admitted
+member reads still contribute their ordinary eager dependencies and execution
+effects. The same constructor eligibility checks
+used by actual execution validate each class, and constructor property reads
+must resolve to own data or a safe missing property under A11. The analyzer
+executes the wrapper and constructors normally and keeps their synchronous
+effects and source ordering. For this certified initializer only, those executed
+owners are not treated as published callable or accessor capabilities. A later
+call, escape, or export of the result follows the ordinary instance value model.
+If actual execution is incomplete, reachability falls back to the initializer
+and its checked owners. Unsupported shapes keep ordinary roots.
 
 The same call-site pass recognizes an ordinary unshadowed `new Map` over one
 inline dense array whose entries are inline dense two-element arrays. Evaluating
@@ -1029,6 +1057,30 @@ The evaluator skips only opaque callback promotion for the admitted call. It kee
 the result `Unknown`, visits argument effects, and leaves purity/S-chain
 classification unchanged. Construction, aliases, computed/optional lookups,
 uncertain arguments, and changed member identities use the ordinary fallback.
+
+**Audited deferred browser-global publication.**
+`chunk_analysis_options.<chunk>.deferred_global_publications` certifies an
+ordinary inert own data slot on `globalThis` or `window`, or an absent slot
+whose creation cannot invoke an inherited setter and is permitted by the
+object. It also certifies no synchronous host/importer/source consumption of
+the stored capability before this chunk finishes initialization. It does not
+make the write or its RHS pure. A
+structurally checked whole assignment of a known function/class, optionally
+behind a checked `typeof window` guard, keeps all eager dataflow and ordering
+effects but does not put that stored capability into the opaque-call callback
+pool or possible setter pool. A direct call, independent export, separate
+publication, source read, ambiguous alias, global-root replacement, dynamic
+global access, or visible descriptor installation uses the conservative path.
+The host descriptor and external-consumer conditions are author-audited; they
+are not inferred from the source scan or intrinsic-integrity assumption.
+Primitive operator results and the synthetic `in` protocol call with a
+literal key and direct global-object RHS do not themselves publish the global
+object as a value. The operator and operand effects still execute and
+participate in ordinary reentry analysis.
+An earlier anonymous, zero-argument synchronous function IIFE with a
+discarded result can use a confined local alias to the global object before
+the certified publication. Its alias and derived values cannot leave that
+invocation, access the certified slot, or reach an uncertain call.
 
 **Audited callback-factory exports.**
 `chunk_export_purity.<defining chunk>.callback_factory_exports` and

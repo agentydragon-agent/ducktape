@@ -4,6 +4,7 @@
 use super::statement_facts::SynchronousCalls;
 use super::value_flow::{Values as FlowValues, static_prop as static_string_prop};
 use super::*;
+use spec::BuiltinGlobalRoot;
 use std::cmp::Ordering;
 use std::sync::Arc;
 use swc_common::{Spanned, SyntaxContext};
@@ -134,6 +135,15 @@ struct FromEntriesMappedProof {
     key: String,
     map_call_site: CallSite,
     object_intrinsic: Id,
+}
+
+/// A fresh, private Vite/Rollup style facade. Both intrinsic calls return the
+/// same ordinary object; its stored callable fields remain reachable if the
+/// facade is later published or consumed.
+struct FrozenNamespaceProof {
+    freeze_site: CallSite,
+    define_site: CallSite,
+    stored_bindings: BTreeSet<Id>,
 }
 
 #[derive(Debug, Clone)]
@@ -480,9 +490,10 @@ fn fresh_value_writes(
     facts: &NamespaceValueFacts,
     factory_imports: &BTreeSet<Id>,
     factory_members: &BTreeMap<Id, BTreeSet<String>>,
-) -> BTreeSet<StatementOrdinal> {
+) -> (BTreeSet<StatementOrdinal>, BTreeSet<StatementOrdinal>) {
     let mut active: Option<(Id, FreshValue)> = None;
     let mut writes = BTreeSet::new();
+    let mut instance_field_writes = BTreeSet::new();
     for (ordinal, step) in steps.iter().enumerate() {
         match step {
             Some(FreshValueStep::Allocate {
@@ -535,11 +546,20 @@ fn fresh_value_writes(
                 }) =>
             {
                 writes.insert(StatementOrdinal(ordinal));
+                if active
+                    .as_ref()
+                    .is_some_and(|(_, value)| matches!(value, FreshValue::Instance(_)))
+                {
+                    // A constructorless local class defined this own data
+                    // field before the adjacent write. An inherited setter
+                    // cannot observe the assignment.
+                    instance_field_writes.insert(StatementOrdinal(ordinal));
+                }
             }
             _ => active = None,
         }
     }
-    writes
+    (writes, instance_field_writes)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1764,6 +1784,7 @@ struct Callable {
     created_after_parent_await: bool,
     params: Vec<Parameter>,
     reads: BTreeSet<Id>,
+    bare_reads: BTreeSet<Id>,
     rebinds: BTreeSet<Id>,
     calls: Vec<Call>,
     local_assignments: Vec<(Id, ValueExpr)>,
@@ -1791,7 +1812,7 @@ struct LocalConstructor {
     /// Own data fields written by the checked constructor body.
     own_fields: BTreeSet<String>,
     /// Parameter property reads must come from fresh plain data objects.
-    property_reads: BTreeSet<usize>,
+    property_reads: BTreeSet<(usize, String)>,
     /// Unqualified reads must resolve to local bindings, not host getters.
     binding_reads: BTreeSet<Id>,
 }
@@ -1799,7 +1820,7 @@ struct LocalConstructor {
 fn safe_constructor_value(
     expression: &Expr,
     params: &[Option<Id>],
-    property_reads: &mut BTreeSet<usize>,
+    property_reads: &mut BTreeSet<(usize, String)>,
     binding_reads: &mut BTreeSet<Id>,
 ) -> bool {
     match expression.unwrap_parens() {
@@ -1826,7 +1847,10 @@ fn safe_constructor_value(
             else {
                 return false;
             };
-            property_reads.insert(index);
+            let MemberProp::Ident(property) = &member.prop else {
+                unreachable!()
+            };
+            property_reads.insert((index, property.sym.to_string()));
             true
         }
         Expr::Bin(bin) if matches!(bin.op, BinaryOp::NullishCoalescing | BinaryOp::EqEqEq) => {
@@ -1840,7 +1864,7 @@ fn safe_constructor_value(
 fn safe_constructor_assignment(
     expression: &Expr,
     params: &[Option<Id>],
-    property_reads: &mut BTreeSet<usize>,
+    property_reads: &mut BTreeSet<(usize, String)>,
     binding_reads: &mut BTreeSet<Id>,
     written_properties: &mut BTreeSet<String>,
 ) -> bool {
@@ -1978,6 +2002,7 @@ impl Default for Callable {
             created_after_parent_await: false,
             params: Vec::new(),
             reads: BTreeSet::new(),
+            bare_reads: BTreeSet::new(),
             rebinds: BTreeSet::new(),
             calls: Vec::new(),
             local_assignments: Vec::new(),
@@ -2126,6 +2151,323 @@ struct FreshErrorWriteClaim {
     local_read: Option<Id>,
 }
 
+#[derive(Clone)]
+struct DeferredGlobalPublication {
+    root: BuiltinGlobalRoot,
+    receiver_id: Id,
+    property: String,
+    value: ValueExpr,
+}
+
+fn builtin_global_root(ident: &Ident) -> Option<BuiltinGlobalRoot> {
+    match ident.sym.as_ref() {
+        "globalThis" => Some(BuiltinGlobalRoot::GlobalThis),
+        "window" => Some(BuiltinGlobalRoot::Window),
+        _ => None,
+    }
+}
+
+fn is_global_receiver(expression: &Expr, names: &BTreeSet<&str>) -> bool {
+    match expression.unwrap_parens() {
+        Expr::Ident(ident) => names.contains(ident.sym.as_ref()),
+        Expr::Member(member) => {
+            matches!(
+                static_prop(&member.prop).as_deref(),
+                Some("globalThis" | "window" | "self" | "frames" | "top")
+            ) && is_global_receiver(&member.obj, names)
+        }
+        _ => false,
+    }
+}
+
+fn exposes_global_receiver(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
+    match value {
+        ValueExpr::Binding(id) => names.contains(id.0.as_ref()),
+        ValueExpr::Member(receiver, property, _) => {
+            // A direct global property read is not publication of the global
+            // receiver. Projection through any other value can carry one:
+            // `({root: globalThis}).root` must stay an escape.
+            if matches!(receiver.as_ref(), ValueExpr::Binding(id) if names.contains(id.0.as_ref()))
+            {
+                property.as_deref().is_some_and(|property| {
+                    matches!(
+                        property,
+                        "globalThis" | "window" | "self" | "frames" | "top"
+                    )
+                })
+            } else {
+                exposes_global_receiver(receiver, names)
+            }
+        }
+        ValueExpr::Alternatives(values) => values
+            .iter()
+            .any(|value| exposes_global_receiver(value, names)),
+        ValueExpr::ObjectLiteral(_, properties) => properties
+            .iter()
+            .any(|(_, value)| exposes_global_receiver(value, names)),
+        ValueExpr::Call(_, args, _) | ValueExpr::New(_, args) => args
+            .iter()
+            .any(|value| exposes_global_receiver(value, names)),
+        // Operators can inspect or coerce their operands, but their result
+        // cannot be the global object. Calls arising from those operands are
+        // checked separately below.
+        ValueExpr::Primitive(_) => false,
+        _ => false,
+    }
+}
+
+fn call_mutates_global_slot(call: &Call, names: &BTreeSet<&str>) -> bool {
+    matches!(&call.callee, ValueExpr::Member(receiver, Some(property), _)
+        if matches!(property.as_str(), "__defineSetter__" | "__defineGetter__")
+            && exposes_global_receiver(receiver, names))
+}
+
+fn call_exposes_global_receiver(
+    call: &Call,
+    names: &BTreeSet<&str>,
+    certified_root_ids: &BTreeSet<Id>,
+) -> bool {
+    if call_mutates_global_slot(call, names) {
+        return true;
+    }
+    // The retained `in` protocol call models possible proxy/host effects;
+    // it does not pass its RHS to a user function. A literal key against a
+    // direct, unshadowed builtin global root cannot publish that root. Keep
+    // the protocol call itself for ordinary effect and reentry analysis.
+    if call.kind == CallKind::InProtocol
+        && matches!(call.args.as_slice(),
+            [ValueExpr::Binding(receiver), ValueExpr::NonCallable]
+                if names.contains(receiver.0.as_ref())
+                    && certified_root_ids.contains(receiver))
+    {
+        return false;
+    }
+    call.args
+        .iter()
+        .any(|value| exposes_global_receiver(value, names))
+}
+
+fn uses_any_binding(value: &ValueExpr, ids: &BTreeSet<Id>) -> bool {
+    let mut bindings = BTreeSet::new();
+    value.bindings(&mut bindings);
+    !bindings.is_disjoint(ids)
+}
+
+fn same_property_or_fresh(value: &ValueExpr, alias: &Id, property: &str) -> bool {
+    match value {
+        ValueExpr::Member(receiver, Some(read), _)
+            if read == property
+                && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == alias) =>
+        {
+            true
+        }
+        ValueExpr::ObjectLiteral(_, properties) => properties.is_empty(),
+        ValueExpr::Alternatives(options) => options
+            .iter()
+            .all(|value| same_property_or_fresh(value, alias, property)),
+        ValueExpr::NonCallable | ValueExpr::Undefined | ValueExpr::Primitive(_) => true,
+        _ => false,
+    }
+}
+
+fn confined_prepublication_alias(
+    index: &ExecutionIndex,
+    key: u32,
+    alias: &Id,
+    first_publication: StatementOrdinal,
+    protected: &BTreeSet<String>,
+) -> bool {
+    let Some(callable) = index.callables.get(&key) else {
+        return false;
+    };
+    let owner = callable.owner;
+    if owner >= first_publication
+        || index.discarded_sync_iifes[owner.0] != Some(key)
+        || callable.opaque
+        || !callable.params.is_empty()
+        || !callable.returns.is_empty()
+        || callable.reads.iter().any(|id| id.0 == "arguments")
+        || callable.bare_reads.contains(alias)
+        || callable.rebinds.contains(alias)
+        || index.callables.iter().any(|(other_key, other)| {
+            other.owner == owner && *other_key != key
+                || other.owner != owner && other.reads.contains(alias)
+        })
+        || callable
+            .local_assignments
+            .iter()
+            .filter(|(id, _)| id == alias)
+            .count()
+            != 1
+    {
+        return false;
+    }
+    let forbidden = |property: &str| {
+        protected.contains(property)
+            || matches!(
+                property,
+                "__proto__"
+                    | "prototype"
+                    | "constructor"
+                    | "globalThis"
+                    | "window"
+                    | "self"
+                    | "frames"
+                    | "top"
+                    | "__defineSetter__"
+                    | "__defineGetter__"
+            )
+    };
+    if index.callable_member_reads.get(&key).is_some_and(|reads| {
+        reads.iter().any(|(receiver, property)| {
+            matches!(receiver, ValueExpr::Binding(id) if id == alias)
+                && property.as_deref().is_none_or(&forbidden)
+        })
+    }) {
+        return false;
+    }
+    let mut derived = BTreeSet::from([alias.clone()]);
+    loop {
+        let before = derived.len();
+        for (id, value) in &callable.local_assignments {
+            if uses_any_binding(value, &derived) {
+                derived.insert(id.clone());
+            }
+        }
+        if derived.len() == before {
+            break;
+        }
+    }
+    for call in &callable.calls {
+        if call.kind == CallKind::Call && uses_any_binding(&call.callee, &derived)
+            || matches!(call.kind, CallKind::Call | CallKind::New)
+                && call.args.iter().any(|arg| uses_any_binding(arg, &derived))
+        {
+            return false;
+        }
+        if call.kind == CallKind::New
+            && uses_any_binding(&call.callee, &derived)
+            && !matches!(&call.callee,
+                ValueExpr::Member(receiver, Some(property), _)
+                    if property == "Error"
+                        && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == alias)
+                        && call.args.is_empty())
+        {
+            return false;
+        }
+    }
+    callable.callback_result_writes.iter().all(|write| {
+        if let ValueExpr::Binding(id) = &write.receiver
+            && id == alias
+        {
+            let Some(property) = write.property.as_deref() else {
+                return false;
+            };
+            !forbidden(property) && same_property_or_fresh(&write.value, alias, property)
+        } else if uses_any_binding(&write.receiver, &derived) {
+            // A derived receiver may be an alias, but this entire invocation
+            // finishes before publication. Only primitive writes can survive.
+            matches!(
+                write.value,
+                ValueExpr::NonCallable | ValueExpr::Undefined | ValueExpr::Primitive(_)
+            )
+        } else {
+            !uses_any_binding(&write.value, &derived)
+        }
+    })
+}
+
+fn deferred_global_assignment(expression: &Expr) -> Option<DeferredGlobalPublication> {
+    let Expr::Assign(assignment) = expression.unwrap_parens() else {
+        return None;
+    };
+    let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left else {
+        return None;
+    };
+    let (Expr::Ident(receiver), MemberProp::Ident(property)) =
+        (member.obj.unwrap_parens(), &member.prop)
+    else {
+        return None;
+    };
+    if assignment.op != AssignOp::Assign
+        || !matches!(
+            assignment.right.unwrap_parens(),
+            Expr::Arrow(_) | Expr::Fn(_) | Expr::Ident(_)
+        )
+    {
+        return None;
+    }
+    Some(DeferredGlobalPublication {
+        root: builtin_global_root(receiver)?,
+        receiver_id: receiver.to_id(),
+        property: property.sym.to_string(),
+        value: ValueExpr::from_expr(&assignment.right),
+    })
+}
+
+fn typeof_window_guard(expression: &Expr) -> bool {
+    let Expr::Bin(guard) = expression.unwrap_parens() else {
+        return false;
+    };
+    let Expr::Unary(left) = guard.left.unwrap_parens() else {
+        return false;
+    };
+    if left.op != UnaryOp::TypeOf
+        || !matches!(left.arg.unwrap_parens(), Expr::Ident(id) if id.sym == "window")
+    {
+        return false;
+    }
+    matches!((guard.op, guard.right.unwrap_parens()),
+        (BinaryOp::Lt, Expr::Lit(Lit::Str(value))) if value.value == "u"
+    ) || matches!((guard.op, guard.right.unwrap_parens()),
+        (BinaryOp::NotEq | BinaryOp::NotEqEq, Expr::Lit(Lit::Str(value))) if value.value == "undefined"
+    )
+}
+
+fn deferred_global_publication(item: &ModuleItem) -> Option<DeferredGlobalPublication> {
+    let ModuleItem::Stmt(Stmt::Expr(statement)) = item else {
+        return None;
+    };
+    let expression = statement.expr.unwrap_parens();
+    if let Expr::Bin(binary) = expression
+        && binary.op == BinaryOp::LogicalAnd
+        && typeof_window_guard(&binary.left)
+    {
+        return deferred_global_assignment(&binary.right)
+            .filter(|publication| publication.root == BuiltinGlobalRoot::Window);
+    }
+    deferred_global_assignment(expression)
+        .filter(|publication| publication.root == BuiltinGlobalRoot::GlobalThis)
+}
+
+fn discarded_synchronous_iife(item: &ModuleItem) -> Option<u32> {
+    let ModuleItem::Stmt(Stmt::Expr(statement)) = item else {
+        return None;
+    };
+    let value = match statement.expr.unwrap_parens() {
+        Expr::Unary(unary) if matches!(unary.op, UnaryOp::Bang | UnaryOp::Void) => {
+            unary.arg.unwrap_parens()
+        }
+        value => value,
+    };
+    let Expr::Call(call) = value else {
+        return None;
+    };
+    let Callee::Expr(callee) = &call.callee else {
+        return None;
+    };
+    let Expr::Fn(function) = callee.unwrap_parens() else {
+        return None;
+    };
+    (function.ident.is_none()
+        && call.args.is_empty()
+        && !function.function.is_async
+        && !function.function.is_generator
+        && function.function.decorators.is_empty()
+        && function.function.params.is_empty())
+    .then_some(function.function.span.lo.0)
+}
+
 struct DestructuringMemberWrite {
     receiver: ValueExpr,
     /// The whole source (including defaults) over-approximates the target value.
@@ -2174,6 +2516,7 @@ impl NamespacePrivacy {
 struct ExecutionIndex {
     owner: StatementOrdinal,
     current: Option<u32>,
+    allowed_local_member_receiver: Option<u32>,
     past_await: bool,
     may_skip_await_depth: u32,
     conditional_depth: u32,
@@ -2189,6 +2532,7 @@ struct ExecutionIndex {
     other_class_uses: BTreeSet<Id>,
     safe_class_target: Option<Id>,
     plain_data_objects: BTreeSet<u32>,
+    null_proto_data_objects: BTreeSet<u32>,
     exact_object_spread_copies: BTreeSet<u32>,
     map_entry_arrays: BTreeSet<u32>,
     dense_array_literals: BTreeMap<u32, usize>,
@@ -2203,6 +2547,7 @@ struct ExecutionIndex {
     mapped_array_map_calls: BTreeMap<CallSite, FromEntriesMappedProof>,
     plain_array_bindings: BTreeSet<String>,
     mutated_intrinsic_roots: IntrinsicRoots,
+    symbol_intrinsic_mutated: bool,
     reassigned_map: bool,
     namespace_privacy: NamespacePrivacy,
     fresh_error_claims: Vec<FreshErrorWriteClaim>,
@@ -2215,13 +2560,22 @@ struct ExecutionIndex {
     unindexed_accessor_owners: BTreeSet<StatementOrdinal>,
     top_calls: Vec<Vec<Call>>,
     top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
+    fresh_instance_field_writes: BTreeSet<StatementOrdinal>,
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     top_definite_initializers: Vec<BTreeSet<Id>>,
+    const_call_owners: BTreeSet<StatementOrdinal>,
     top_member_value_writes: Vec<Vec<(Id, Option<String>, ValueExpr)>>,
     top_callback_result_writes: Vec<Vec<CallbackResultWrite>>,
     top_exported_values: Vec<Vec<ValueExpr>>,
     top_metadata_decorations: Vec<Option<MetadataDecorateCall>>,
+    deferred_global_candidates: Vec<Option<DeferredGlobalPublication>>,
+    discarded_sync_iifes: Vec<Option<u32>>,
+    deferred_global_certificates: BTreeSet<StatementOrdinal>,
+    deferred_global_requested: bool,
+    global_slot_mentions: BTreeMap<String, usize>,
+    dynamic_global_member: bool,
+    global_alias_written: bool,
     imported_bindings: BTreeSet<Id>,
     hoisted_bindings: BTreeMap<Id, u32>,
     exported_hoisted_functions: BTreeSet<u32>,
@@ -2247,6 +2601,7 @@ impl Default for ExecutionIndex {
         Self {
             owner: StatementOrdinal(0),
             current: None,
+            allowed_local_member_receiver: None,
             past_await: false,
             may_skip_await_depth: 0,
             conditional_depth: 0,
@@ -2262,6 +2617,7 @@ impl Default for ExecutionIndex {
             other_class_uses: BTreeSet::new(),
             safe_class_target: None,
             plain_data_objects: BTreeSet::new(),
+            null_proto_data_objects: BTreeSet::new(),
             exact_object_spread_copies: BTreeSet::new(),
             map_entry_arrays: BTreeSet::new(),
             dense_array_literals: BTreeMap::new(),
@@ -2276,6 +2632,7 @@ impl Default for ExecutionIndex {
             mapped_array_map_calls: BTreeMap::new(),
             plain_array_bindings: BTreeSet::new(),
             mutated_intrinsic_roots: IntrinsicRoots::new(),
+            symbol_intrinsic_mutated: false,
             reassigned_map: false,
             namespace_privacy: NamespacePrivacy::default(),
             fresh_error_claims: Vec::new(),
@@ -2288,13 +2645,22 @@ impl Default for ExecutionIndex {
             unindexed_accessor_owners: BTreeSet::new(),
             top_calls: Vec::new(),
             top_property_writes: Vec::new(),
+            fresh_instance_field_writes: BTreeSet::new(),
             top_dynamic_property_receivers: Vec::new(),
             top_assignments: Vec::new(),
             top_definite_initializers: Vec::new(),
+            const_call_owners: BTreeSet::new(),
             top_member_value_writes: Vec::new(),
             top_callback_result_writes: Vec::new(),
             top_exported_values: Vec::new(),
             top_metadata_decorations: Vec::new(),
+            deferred_global_candidates: Vec::new(),
+            discarded_sync_iifes: Vec::new(),
+            deferred_global_certificates: BTreeSet::new(),
+            deferred_global_requested: false,
+            global_slot_mentions: BTreeMap::new(),
+            dynamic_global_member: false,
+            global_alias_written: false,
             imported_bindings: BTreeSet::new(),
             hoisted_bindings: BTreeMap::new(),
             exported_hoisted_functions: BTreeSet::new(),
@@ -2338,6 +2704,13 @@ impl ExecutionIndex {
                 .iter()
                 .map(|item| metadata_decorate_call(item.as_module_item(), &hints.known_effects))
                 .collect(),
+            deferred_global_candidates: vec![None; body.len()],
+            discarded_sync_iifes: if hints.deferred_global_publications.is_empty() {
+                Vec::new()
+            } else {
+                vec![None; body.len()]
+            },
+            deferred_global_requested: !hints.deferred_global_publications.is_empty(),
             global_object_names: super::global_object::unshadowed_global_object_aliases(body),
             plain_array_bindings: plain_array_bindings.clone(),
             no_sync_callback_members: hints.no_sync_callback_members.clone(),
@@ -2395,6 +2768,12 @@ impl ExecutionIndex {
         }
         for (ordinal, item) in body.iter().enumerate() {
             fresh_steps.push(fresh_value_step(item.as_module_item()));
+            if index.deferred_global_requested {
+                index.deferred_global_candidates[ordinal] =
+                    deferred_global_publication(item.as_module_item());
+                index.discarded_sync_iifes[ordinal] =
+                    discarded_synchronous_iife(item.as_module_item());
+            }
             index.owner = StatementOrdinal(ordinal);
             index.past_await = false;
             index.may_skip_await_depth = 0;
@@ -2516,6 +2895,41 @@ impl ExecutionIndex {
             ));
         }
         index.mutated_intrinsic_roots = mutated_intrinsics.clone();
+        // The frozen-facade proof also reads Symbol.toStringTag. Reuse the
+        // retained assignment and mutation receivers to reject a visible
+        // replacement through either the builtin or a simple local alias.
+        if !index.null_proto_data_objects.is_empty() && !index.const_call_owners.is_empty() {
+            let mut symbol_aliases = BTreeSet::<Id>::new();
+            let symbol_root = |value: &ValueExpr, aliases: &BTreeSet<Id>| match value {
+                ValueExpr::Binding(id) => id.0.as_ref() == "Symbol" || aliases.contains(id),
+                ValueExpr::Member(receiver, Some(property), _)
+                    if property == "Symbol"
+                        && matches!(receiver.as_ref(), ValueExpr::Binding(id)
+                            if index.global_object_names.contains(id.0.as_ref())) =>
+                {
+                    true
+                }
+                _ => false,
+            };
+            loop {
+                let before = symbol_aliases.len();
+                for (id, value) in &namespace_assignments {
+                    if symbol_root(value, &symbol_aliases) {
+                        symbol_aliases.insert(id.clone());
+                    }
+                }
+                if symbol_aliases.len() == before {
+                    break;
+                }
+            }
+            index.symbol_intrinsic_mutated = namespace_assignments
+                .iter()
+                .any(|(id, _)| id.0.as_ref() == "Symbol")
+                || index
+                    .intrinsic_mutation_receivers
+                    .iter()
+                    .any(|receiver| symbol_root(receiver, &symbol_aliases));
+        }
         let mut claim_counts = BTreeMap::<FreshErrorWriteSite, usize>::new();
         if !index.fresh_error_claims.is_empty()
             && !index.callback_factory_members.is_empty()
@@ -2747,7 +3161,7 @@ impl ExecutionIndex {
             // The fresh result is private until these adjacent writes finish.
             // Only currently admitted factories can establish that provenance;
             // removing a producer must invalidate proofs depending on its result.
-            let fresh_writes = if index.dynamic_scope_owners.is_empty() {
+            let (fresh_writes, instance_field_writes) = if index.dynamic_scope_owners.is_empty() {
                 fresh_value_writes(
                     &fresh_steps,
                     &namespace_value_facts,
@@ -2755,8 +3169,9 @@ impl ExecutionIndex {
                     &factory_members,
                 )
             } else {
-                BTreeSet::new()
+                (BTreeSet::new(), BTreeSet::new())
             };
+            index.fresh_instance_field_writes = instance_field_writes;
             let keep_audited_members = |id: &Id, members: &BTreeSet<String>| {
                 if namespace_family.is_empty() {
                     keep_namespace(id, members, &fresh_writes)
@@ -2794,6 +3209,112 @@ impl ExecutionIndex {
                 break;
             }
         }
+        if index.deferred_global_requested {
+            let first_publication = index
+                .deferred_global_candidates
+                .iter()
+                .position(|candidate| {
+                    candidate.as_ref().is_some_and(|candidate| {
+                        hints
+                            .deferred_global_publications
+                            .get(&candidate.root)
+                            .is_some_and(|slots| slots.contains(&candidate.property))
+                    })
+                })
+                .map(StatementOrdinal)
+                .unwrap_or(StatementOrdinal(0));
+            let protected: BTreeSet<String> = hints
+                .deferred_global_publications
+                .values()
+                .flat_map(|slots| slots.iter().cloned())
+                .collect();
+            let certified_root_ids: BTreeSet<Id> = index
+                .deferred_global_candidates
+                .iter()
+                .flatten()
+                .filter(|candidate| {
+                    let name = match candidate.root {
+                        BuiltinGlobalRoot::GlobalThis => "globalThis",
+                        BuiltinGlobalRoot::Window => "window",
+                    };
+                    index.global_object_names.contains(name)
+                        && hints
+                            .deferred_global_publications
+                            .get(&candidate.root)
+                            .is_some_and(|slots| slots.contains(&candidate.property))
+                })
+                .map(|candidate| candidate.receiver_id.clone())
+                .collect();
+            let global_root_exposed = index
+                .top_assignments
+                .iter()
+                .flatten()
+                .any(|(_, value)| exposes_global_receiver(value, &index.global_object_names))
+                || index
+                    .top_exported_values
+                    .iter()
+                    .flatten()
+                    .any(|value| exposes_global_receiver(value, &index.global_object_names))
+                || index.top_calls.iter().flatten().any(|call| {
+                    call_exposes_global_receiver(
+                        call,
+                        &index.global_object_names,
+                        &certified_root_ids,
+                    )
+                })
+                || index.callables.iter().any(|(key, callable)| {
+                    callable.local_assignments.iter().any(|(id, value)| {
+                        exposes_global_receiver(value, &index.global_object_names)
+                            && !confined_prepublication_alias(
+                                &index,
+                                *key,
+                                id,
+                                first_publication,
+                                &protected,
+                            )
+                    }) || callable
+                        .returns
+                        .iter()
+                        .any(|value| exposes_global_receiver(value, &index.global_object_names))
+                        || callable.calls.iter().any(|call| {
+                            call_exposes_global_receiver(
+                                call,
+                                &index.global_object_names,
+                                &certified_root_ids,
+                            )
+                        })
+                });
+            if index.dynamic_scope_owners.is_empty()
+                && !index.dynamic_global_member
+                && !index.global_alias_written
+                && !global_root_exposed
+            {
+                for (owner, candidate) in index.deferred_global_candidates.iter().enumerate() {
+                    let Some(candidate) = candidate else { continue };
+                    let root_name = match candidate.root {
+                        BuiltinGlobalRoot::GlobalThis => "globalThis",
+                        BuiltinGlobalRoot::Window => "window",
+                    };
+                    if !index.global_object_names.contains(root_name)
+                        || !hints
+                            .deferred_global_publications
+                            .get(&candidate.root)
+                            .is_some_and(|slots| slots.contains(&candidate.property))
+                        || index.global_slot_mentions.get(&candidate.property) != Some(&1)
+                        || candidate.property == "__proto__"
+                        || !index.top_calls[owner].is_empty()
+                        || index.top_property_writes[owner].len() != 1
+                        || index.top_member_value_writes[owner].len() != 1
+                        || index.top_callback_result_writes[owner].len() != 1
+                    {
+                        continue;
+                    }
+                    index
+                        .deferred_global_certificates
+                        .insert(StatementOrdinal(owner));
+                }
+            }
+        }
         index
     }
 
@@ -2801,6 +3322,16 @@ impl ExecutionIndex {
         let Some(declaration) = var_decl_of_item(item) else {
             return;
         };
+        if declaration.kind == VarDeclKind::Const
+            && matches!(declaration.decls.as_slice(), [declarator]
+                if matches!(declarator.init.as_deref().map(Expr::unwrap_parens), Some(Expr::Call(call))
+                    if matches!(&call.callee, Callee::Expr(callee)
+                        if matches!(callee.unwrap_parens(), Expr::Member(member)
+                            if matches!(member.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Object")
+                                && matches!(&member.prop, MemberProp::Ident(prop) if prop.sym == "freeze")))))
+        {
+            self.const_call_owners.insert(self.owner);
+        }
         if declaration.kind == VarDeclKind::Var {
             for declarator in &declaration.decls {
                 if declarator.init.is_some()
@@ -3199,13 +3730,20 @@ impl Visit for ExecutionIndex {
         if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) {
             self.exact_object_spread_copies.insert(object.span.lo.0);
         }
-        let plain_data = object.props.iter().all(|property| match property {
+        let mut null_prototype = 0;
+        let static_data = object.props.iter().all(|property| match property {
             PropOrSpread::Spread(_) => false,
             PropOrSpread::Prop(property) => match property.as_ref() {
-                Prop::KeyValue(pair) => {
-                    static_property_name(&pair.key).is_some()
-                        && static_property_name(&pair.key).as_deref() != Some("__proto__")
-                }
+                Prop::KeyValue(pair) => match static_property_name(&pair.key).as_deref() {
+                    Some("__proto__")
+                        if matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Null(_))) =>
+                    {
+                        null_prototype += 1;
+                        true
+                    }
+                    Some("__proto__") | None => false,
+                    Some(_) => true,
+                },
                 Prop::Shorthand(id) => id.sym.as_ref() != "__proto__",
                 // Ordinary method syntax installs an own data property. Its
                 // body is only stored here, so parameter property reads by a
@@ -3218,8 +3756,12 @@ impl Visit for ExecutionIndex {
                 _ => false,
             },
         });
-        if plain_data {
-            self.plain_data_objects.insert(object.span.lo.0);
+        if static_data {
+            if null_prototype == 0 {
+                self.plain_data_objects.insert(object.span.lo.0);
+            } else if null_prototype == 1 {
+                self.null_proto_data_objects.insert(object.span.lo.0);
+            }
         }
         let mut primitive_property_counts = BTreeMap::<String, usize>::new();
         let mut primitive_property_values = BTreeSet::<String>::new();
@@ -3245,7 +3787,7 @@ impl Visit for ExecutionIndex {
                 }
             }
         }
-        if plain_data {
+        if static_data && null_prototype == 0 {
             for (name, count) in primitive_property_counts {
                 if count == 1 && primitive_property_values.contains(&name) {
                     self.primitive_data_properties
@@ -3588,6 +4130,12 @@ impl Visit for ExecutionIndex {
         {
             let callable = self.callables.get_mut(&key).unwrap();
             callable.reads.insert(ident.to_id());
+            if self.deferred_global_requested
+                && self.discarded_sync_iifes[self.owner.0] == Some(key)
+                && self.allowed_local_member_receiver != Some(ident.span.lo.0)
+            {
+                callable.bare_reads.insert(ident.to_id());
+            }
             if self.literal_depth > 0 {
                 callable.literal_captures.insert(ident.to_id());
                 if self.factory_member_value_depth == 0 {
@@ -3598,6 +4146,15 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_member_expr(&mut self, member: &MemberExpr) {
+        if self.deferred_global_requested
+            && is_global_receiver(&member.obj, &self.global_object_names)
+        {
+            if let Some(property) = static_prop(&member.prop) {
+                *self.global_slot_mentions.entry(property).or_default() += 1;
+            } else {
+                self.dynamic_global_member = true;
+            }
+        }
         if !self.member_write_sites.contains(&member.span.into())
             && let Some(key) = self.current
         {
@@ -3608,7 +4165,19 @@ impl Visit for ExecutionIndex {
         }
         let previous = self.namespace_privacy.allowed_read;
         self.namespace_privacy.allowed_read = self.namespace_privacy.read_receiver(member);
+        let previous_local_receiver = self.allowed_local_member_receiver;
+        if self.deferred_global_requested
+            && self
+                .current
+                .is_some_and(|key| self.discarded_sync_iifes[self.owner.0] == Some(key))
+        {
+            self.allowed_local_member_receiver = match (member.obj.unwrap_parens(), &member.prop) {
+                (Expr::Ident(id), MemberProp::Ident(_)) => Some(id.span.lo.0),
+                _ => None,
+            };
+        }
         member.obj.visit_with(self);
+        self.allowed_local_member_receiver = previous_local_receiver;
         self.namespace_privacy.allowed_read = previous;
         member.prop.visit_with(self);
         if !self.member_write_sites.contains(&member.span.into())
@@ -3782,6 +4351,23 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_assign_expr(&mut self, assignment: &AssignExpr) {
+        if self.deferred_global_requested {
+            self.global_alias_written |= match &assignment.left {
+                AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
+                    self.global_object_names.contains(binding.id.sym.as_ref())
+                }
+                AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+                    is_global_receiver(&member.obj, &self.global_object_names)
+                        && static_prop(&member.prop).is_some_and(|property| {
+                            matches!(
+                                property.as_str(),
+                                "globalThis" | "window" | "self" | "frames" | "top"
+                            )
+                        })
+                }
+                _ => false,
+            };
+        }
         if matches!(&assignment.left,
             AssignTarget::Simple(SimpleAssignTarget::Ident(binding))
                 if binding.id.sym == "Map")
@@ -4339,6 +4925,8 @@ struct Executor<'a> {
     flow: &'a ChunkValueFlow,
     set_iterable_proof: &'a SetIterableProof,
     shadowed: &'a BTreeSet<&'static str>,
+    /// Stable own primitive fields, admitted using canonical rebind facts.
+    enum_data_members: BTreeMap<Id, BTreeSet<String>>,
     top_bindings: BTreeSet<Id>,
     binding_owner: BTreeMap<Id, StatementOrdinal>,
     owner_read_closure: FactsOwnerReadClosure,
@@ -4350,7 +4938,13 @@ struct Executor<'a> {
     exported_owners: BTreeSet<StatementOrdinal>,
     prior_reachability_roots: Option<BTreeSet<StatementOrdinal>>,
     current_top_owner: Option<StatementOrdinal>,
+    /// Owners executed while building a certified unpublished instance graph.
+    /// Their synchronous effects still run; execution alone does not expose
+    /// the wrapper or the classes' deferred callable members to the host.
+    private_constructor_result_owners: BTreeSet<StatementOrdinal>,
     prior_effect_owners: BTreeSet<StatementOrdinal>,
+    accepted_deferred_global_writes: BTreeSet<StatementOrdinal>,
+    frozen_namespace_calls: BTreeSet<CallSite>,
     reachability: ReachabilityState,
     mutable_captures: BTreeSet<Id>,
     prefix_values: Context,
@@ -4391,6 +4985,86 @@ struct ValidatedMetadataDecoration {
 }
 
 impl Executor<'_> {
+    fn closed_enum_member_read(&self, value: &ValueExpr) -> bool {
+        let ValueExpr::Member(receiver, Some(property), _) = value else {
+            return false;
+        };
+        let ValueExpr::Binding(binding) = receiver.as_ref() else {
+            return false;
+        };
+        self.initialized_bindings.contains(binding)
+            && self
+                .enum_data_members
+                .get(binding)
+                .is_some_and(|keys| keys.contains(property))
+    }
+
+    fn ordinary_object_prototype_intact(&self) -> bool {
+        self.index.dynamic_scope_owners.is_empty()
+            && !self
+                .index
+                .mutated_intrinsic_roots
+                .iter()
+                .any(|root| matches!(root, IntrinsicRoot::GlobalObject | IntrinsicRoot::Object))
+    }
+
+    fn standard_object_prototype_property(property: &str) -> bool {
+        matches!(
+            property,
+            "constructor"
+                | "__proto__"
+                | "__defineGetter__"
+                | "__defineSetter__"
+                | "__lookupGetter__"
+                | "__lookupSetter__"
+                | "hasOwnProperty"
+                | "isPrototypeOf"
+                | "propertyIsEnumerable"
+                | "toLocaleString"
+                | "toString"
+                | "valueOf"
+        )
+    }
+
+    /// A certified private constructor may read a missing field on its fresh
+    /// plain-data input. Keep this precision within that constructor call:
+    /// other paths can join a fresh object with a live imported or published
+    /// value, and their ordinary member-read fallback must remain conservative.
+    /// A11 also excludes an inherited user getter unless a visible mutation
+    /// has invalidated the ordinary Object.prototype assumption.
+    fn absent_plain_data_property(&self, object: u32, property: &str) -> bool {
+        if self.private_constructor_result_owners.is_empty()
+            || Self::standard_object_prototype_property(property)
+            || !self.index.plain_data_objects.contains(&object)
+            || self.tainted_objects.contains(&object)
+            || !self.ordinary_object_prototype_intact()
+        {
+            return false;
+        }
+        self.prefix_object_properties
+            .get(&object)
+            .is_some_and(|properties| {
+                !properties.contains_key(&None)
+                    && !properties.contains_key(&Some(property.to_owned()))
+            })
+    }
+
+    fn accepts_deferred_global_write(&mut self, owner: StatementOrdinal, env: &Context) -> bool {
+        if !self.index.deferred_global_certificates.contains(&owner) {
+            return false;
+        }
+        let Some(candidate) = &self.index.deferred_global_candidates[owner.0] else {
+            return false;
+        };
+        let values = self.evaluate(&candidate.value, env, env);
+        matches!(
+            values.iter().collect::<Vec<_>>().as_slice(),
+            [AbstractValue::Closure(_, _)]
+                | [AbstractValue::Origin(
+                    ValueOrigin::Function(_) | ValueOrigin::Class(_)
+                )]
+        )
+    }
     fn ordinary_data_properties(
         &self,
         values: &Values,
@@ -4985,12 +5659,166 @@ impl Executor<'_> {
         roots
     }
 
+    fn private_frozen_namespace(&self, fact: &StatementFacts) -> Option<FrozenNamespaceProof> {
+        if !matches!(fact.kind, StatementKind::VarDecl)
+            || !fact.purity.is_pure()
+            || fact.declared.len() != 1
+            || !self.index.const_call_owners.contains(&fact.ordinal)
+            || self.exported_owners.contains(&fact.ordinal)
+            || self.reachability.incomplete
+            || !self.index.dynamic_scope_owners.is_empty()
+            || self.index.opaque_top.contains(&fact.ordinal)
+            || !self.index.top_property_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_member_value_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_callback_result_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_exported_values[fact.ordinal.0].is_empty()
+            || self.shadowed.contains("Object")
+            || self.shadowed.contains("Symbol")
+            || self.index.symbol_intrinsic_mutated
+            || self
+                .index
+                .mutated_intrinsic_roots
+                .iter()
+                .any(|root| matches!(root, IntrinsicRoot::GlobalObject | IntrinsicRoot::Object))
+        {
+            return None;
+        }
+        let [(binding, ValueExpr::Call(freeze_callee, freeze_args, freeze_site))] =
+            self.index.top_assignments[fact.ordinal.0].as_slice()
+        else {
+            return None;
+        };
+        if !fact.declared.contains(binding)
+            || self.index.exported_bindings.contains(binding)
+            || !self.index.top_definite_initializers[fact.ordinal.0].contains(binding)
+        {
+            return None;
+        }
+        let ValueExpr::Member(freeze_receiver, Some(freeze_method), true) = freeze_callee.as_ref()
+        else {
+            return None;
+        };
+        let ValueExpr::Binding(object_intrinsic) = freeze_receiver.as_ref() else {
+            return None;
+        };
+        if freeze_method != "freeze" || object_intrinsic.0.as_ref() != "Object" {
+            return None;
+        }
+        if self.flow.is_declared(object_intrinsic) {
+            return None;
+        }
+        let [ValueExpr::Call(define_callee, define_args, define_site)] = freeze_args.as_slice()
+        else {
+            return None;
+        };
+        if !matches!(define_callee.as_ref(),
+            ValueExpr::Member(receiver, Some(method), true)
+                if method == "defineProperty"
+                    && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == object_intrinsic))
+        {
+            return None;
+        }
+        let [
+            ValueExpr::ObjectLiteral(object, fields),
+            ValueExpr::Member(symbol_receiver, Some(tag), true),
+            ValueExpr::ObjectLiteral(descriptor, descriptor_fields),
+        ] = define_args.as_slice()
+        else {
+            return None;
+        };
+        let ValueExpr::Binding(symbol) = symbol_receiver.as_ref() else {
+            return None;
+        };
+        if symbol.0.as_ref() != "Symbol"
+            || tag != "toStringTag"
+            || self.flow.is_declared(symbol)
+            || !self.index.null_proto_data_objects.contains(object)
+            || !self.index.plain_data_objects.contains(descriptor)
+            || !matches!(descriptor_fields.as_slice(), [(Some(name), ValueExpr::NonCallable)] if name == "value")
+            || !self
+                .index
+                .primitive_data_properties
+                .contains(&(*descriptor, "value".to_owned()))
+        {
+            return None;
+        }
+        let mut stored_bindings = BTreeSet::new();
+        let mut names = BTreeSet::new();
+        for (name, value) in fields {
+            let Some(name) = name else {
+                if self.index.null_proto_data_objects.contains(object)
+                    && !names.contains("__proto__")
+                    && matches!(value, ValueExpr::NonCallable)
+                {
+                    names.insert("__proto__".to_owned());
+                    continue;
+                }
+                return None;
+            };
+            if !names.insert(name.clone()) {
+                return None;
+            }
+            if name == "__proto__" {
+                if !self.index.null_proto_data_objects.contains(object)
+                    || !matches!(value, ValueExpr::NonCallable)
+                {
+                    return None;
+                }
+            } else {
+                match value {
+                    ValueExpr::Origin(ValueOrigin::Function(_)) => {}
+                    ValueExpr::Binding(id) => {
+                        if !self.prefix_values.get(id).is_some_and(|values| {
+                            !values.is_empty() && !values.contains(&AbstractValue::Unavailable)
+                        }) {
+                            return None;
+                        }
+                        stored_bindings.insert(id.clone());
+                    }
+                    ValueExpr::NonCallable
+                        if self
+                            .index
+                            .primitive_data_properties
+                            .contains(&(*object, name.clone())) => {}
+                    _ => return None,
+                }
+            }
+        }
+        let mut calls = self.index.top_calls[fact.ordinal.0].iter();
+        if !calls.all(|call| {
+            !call.has_spread
+                && (call.kind == CallKind::Call
+                    && (CallSite::from(call.span) == *freeze_site
+                        || CallSite::from(call.span) == *define_site)
+                    || call.kind == CallKind::LocalMemberRead
+                        && matches!(&call.callee,
+                            ValueExpr::Member(receiver, Some(property), true)
+                                if property == "toStringTag"
+                                    && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == symbol)))
+        }) {
+            return None;
+        }
+        Some(FrozenNamespaceProof {
+            freeze_site: *freeze_site,
+            define_site: *define_site,
+            stored_bindings,
+        })
+    }
+
     fn fact_roots(
         &self,
         fact: &StatementFacts,
         metadata_target: Option<StatementOrdinal>,
+        private_constructor_result_owners: &BTreeSet<StatementOrdinal>,
+        frozen_namespace: Option<&FrozenNamespaceProof>,
     ) -> BTreeSet<StatementOrdinal> {
         let mut roots = BTreeSet::new();
+        // Storing a known callable in an author-certified inert global data
+        // slot does not make that callable executable during this prefix.
+        // Its ordinary eager read and all graph ordering edges remain intact.
+        if self.accepted_deferred_global_writes.contains(&fact.ordinal) {
+            return roots;
+        }
         // Export lists link bindings; evaluating one does not expose a value
         // whose declaration has not run yet.
         if self.index.linkage_owners.contains(&fact.ordinal) {
@@ -5003,10 +5831,13 @@ impl Executor<'_> {
         // synchronous owner closure and undo the target filter below.
         if metadata_target.is_none()
             && (self.exported_owners.contains(&fact.ordinal)
-                || !(fact.purity.is_pure()
+                || !((fact.purity.is_pure()
                     && (fact.declares_direct_function
                         || matches!(fact.kind, StatementKind::ClassDecl)
-                        || self.closed_callback_factory_result(fact))))
+                        || self.closed_callback_factory_result(fact)
+                        || self.closed_local_record_factory_result(fact)))
+                    || frozen_namespace.is_some()
+                    || !private_constructor_result_owners.is_empty()))
         {
             roots.insert(fact.ordinal);
         }
@@ -5022,11 +5853,18 @@ impl Executor<'_> {
                     fact.reads
                         .eager
                         .iter()
-                        .filter(|id| Some(*id) != inert_heritage)
+                        .filter(|id| {
+                            Some(*id) != inert_heritage
+                                && !frozen_namespace
+                                    .is_some_and(|proof| proof.stored_bindings.contains(*id))
+                        })
                         .chain(fact.rebinds.eager.iter()),
                 )
                 .into_iter()
-                .filter(|owner| Some(*owner) != metadata_target),
+                .filter(|owner| {
+                    Some(*owner) != metadata_target
+                        && !private_constructor_result_owners.contains(owner)
+                }),
         );
         roots
     }
@@ -5060,6 +5898,355 @@ impl Executor<'_> {
             && call.kind == CallKind::Call
             && !call.has_spread
             && CallSite::from(call.span) == *site
+    }
+
+    /// A return-only local function can put its arguments into a fresh
+    /// ordinary record without publishing or calling them. The initializer
+    /// still runs normally; only its result owner's speculative root is
+    /// omitted until a later read, call, write, or export exposes that value.
+    fn closed_local_record_factory_result(&self, fact: &StatementFacts) -> bool {
+        if !matches!(fact.kind, StatementKind::VarDecl)
+            || !fact.purity.is_pure()
+            || fact.declared.len() != 1
+            || self.reachability.incomplete
+            || !self.index.dynamic_scope_owners.is_empty()
+            || self.index.opaque_top.contains(&fact.ordinal)
+            || !self.index.top_property_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_member_value_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_callback_result_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_exported_values[fact.ordinal.0].is_empty()
+        {
+            return false;
+        }
+        let [(binding, ValueExpr::Call(callee, args, site))] =
+            self.index.top_assignments[fact.ordinal.0].as_slice()
+        else {
+            return false;
+        };
+        let [call] = self.index.top_calls[fact.ordinal.0].as_slice() else {
+            return false;
+        };
+        let ValueExpr::Binding(factory) = callee.as_ref() else {
+            return false;
+        };
+        let Some(&key) = self.index.hoisted_bindings.get(factory) else {
+            return false;
+        };
+        if !fact.declared.contains(binding)
+            || !self.index.top_definite_initializers[fact.ordinal.0].contains(binding)
+            || self
+                .flow
+                .values_of_binding(factory)
+                .iter()
+                .ne([ValueOrigin::Function(key)])
+            || call.kind != CallKind::Call
+            || call.has_spread
+            || CallSite::from(call.span) != *site
+            || !args.iter().all(|arg| {
+                matches!(
+                    arg,
+                    ValueExpr::Origin(ValueOrigin::Function(_)) | ValueExpr::NonCallable
+                )
+            })
+        {
+            return false;
+        }
+        let Some(callable) = self.index.callables.get(&key) else {
+            return false;
+        };
+        if callable.opaque
+            || callable.generator
+            || self.index.async_callables.contains(&key)
+            || callable.may_fall_through
+            || !callable.calls.is_empty()
+            || !callable.rebinds.is_empty()
+            || !callable.member_writes.is_empty()
+            || !callable.member_value_writes.is_empty()
+            || !callable.callback_result_writes.is_empty()
+            || callable.dynamic_property_effect
+            || !callable.escaped_bindings.is_empty()
+            || !callable.namespace_escape_values.is_empty()
+            || callable
+                .params
+                .iter()
+                .any(|param| param.binding.is_none() || param.default.is_some())
+            || callable.local_assignments.iter().any(|(id, value)| {
+                !callable.local_functions.contains(id)
+                    || !matches!(value, ValueExpr::Origin(ValueOrigin::Function(_)))
+            })
+            || callable.returns.len() != 1
+            || !matches!(callable.returns[0], ValueExpr::ObjectLiteral(..))
+        {
+            return false;
+        }
+        let allowed: BTreeSet<_> = callable
+            .params
+            .iter()
+            .filter_map(|param| param.binding.clone())
+            .chain(callable.local_functions.iter().cloned())
+            .collect();
+        callable.reads.is_subset(&allowed)
+            && self.closed_local_record_value(&callable.returns[0], &allowed)
+    }
+
+    fn closed_local_record_value(&self, value: &ValueExpr, allowed: &BTreeSet<Id>) -> bool {
+        match value {
+            ValueExpr::ObjectLiteral(key, properties) => {
+                self.index.plain_data_objects.contains(key)
+                    && properties.iter().all(|(name, value)| {
+                        name.is_some() && self.closed_local_record_value(value, allowed)
+                    })
+            }
+            ValueExpr::Binding(id) => allowed.contains(id),
+            ValueExpr::Origin(ValueOrigin::Function(_))
+            | ValueExpr::NonCallable
+            | ValueExpr::Undefined => true,
+            _ => false,
+        }
+    }
+
+    /// A locally checked constructor can retain callbacks in a fresh instance
+    /// without publishing them. This certifies the wrapper's whole return
+    /// expression before its source owner enters the reachability roots; the
+    /// ordinary executor still runs the wrapper and constructor afterward.
+    fn closed_local_constructor_factory_result(
+        &self,
+        fact: &StatementFacts,
+    ) -> Option<BTreeSet<StatementOrdinal>> {
+        if !matches!(fact.kind, StatementKind::VarDecl)
+            || fact.declared.len() != 1
+            || self.reachability.incomplete
+            || self.exported_owners.contains(&fact.ordinal)
+            || !self.ordinary_object_prototype_intact()
+            || self.index.opaque_top.contains(&fact.ordinal)
+            || !self.index.top_property_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_member_value_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_callback_result_writes[fact.ordinal.0].is_empty()
+            || !self.index.top_exported_values[fact.ordinal.0].is_empty()
+        {
+            return None;
+        }
+        let [(binding, ValueExpr::Call(callee, args, site))] =
+            self.index.top_assignments[fact.ordinal.0].as_slice()
+        else {
+            return None;
+        };
+        // Proven enum own-field reads are retained in the normal top-level
+        // executor and eager facts, but cannot invoke a getter or callback.
+        let calls: Vec<_> = self.index.top_calls[fact.ordinal.0]
+            .iter()
+            .filter(|call| {
+                call.kind != CallKind::LocalMemberRead
+                    || !self.closed_enum_member_read(&call.callee)
+            })
+            .collect();
+        let [call] = calls.as_slice() else {
+            return None;
+        };
+        let ValueExpr::Binding(factory) = callee.as_ref() else {
+            return None;
+        };
+        let &key = self.index.hoisted_bindings.get(factory)?;
+        if !fact.declared.contains(binding)
+            || !self.index.top_definite_initializers[fact.ordinal.0].contains(binding)
+            || self.index.exported_bindings.contains(binding)
+            || self.index.exported_bindings.contains(factory)
+            || self
+                .global_escaped_callbacks
+                .contains(&AbstractValue::Origin(ValueOrigin::Function(key)))
+            || self
+                .flow
+                .values_of_binding(factory)
+                .iter()
+                .ne([ValueOrigin::Function(key)])
+            || !self.prefix_values.get(factory).is_some_and(|values| {
+                values.len() == 1
+                    && values.contains(&AbstractValue::Origin(ValueOrigin::Function(key)))
+            })
+            || call.kind != CallKind::Call
+            || call.has_spread
+            || CallSite::from(call.span) != *site
+            || !args.iter().all(|arg| self.closed_constructor_input(arg))
+        {
+            return None;
+        }
+        let callable = self.index.callables.get(&key)?;
+        if callable.opaque
+            || callable.generator
+            || self.index.async_callables.contains(&key)
+            || callable.may_fall_through
+            || !callable.rebinds.is_empty()
+            || !callable.local_assignments.is_empty()
+            || !callable.member_writes.is_empty()
+            || !callable.member_value_writes.is_empty()
+            || !callable.callback_result_writes.is_empty()
+            || callable.dynamic_property_effect
+            || !callable.escaped_bindings.is_empty()
+            || !callable.namespace_escape_values.is_empty()
+            || callable.returns.len() != 1
+            || callable.params.len() != args.len()
+            || callable
+                .params
+                .iter()
+                .any(|param| param.binding.is_none() || param.default.is_some())
+        {
+            return None;
+        }
+        let params: BTreeMap<_, _> = callable
+            .params
+            .iter()
+            .zip(args)
+            .map(|(param, arg)| (param.binding.clone().unwrap(), arg))
+            .collect();
+        let mut class_reads = BTreeSet::new();
+        let mut allocations = BTreeMap::new();
+        let checked_return = self.checked_constructor_return(
+            &callable.returns[0],
+            &params,
+            false,
+            &mut class_reads,
+            &mut allocations,
+        );
+        if !checked_return {
+            return None;
+        }
+        let allowed_reads: BTreeSet<_> = params.keys().cloned().chain(class_reads).collect();
+        if !callable.reads.is_subset(&allowed_reads) {
+            return None;
+        }
+        let mut indexed_allocations = BTreeMap::new();
+        for nested in &callable.calls {
+            let ValueExpr::Binding(class) = &nested.callee else {
+                return None;
+            };
+            let class_key = self.stable_local_class_key(class)?;
+            if nested.kind != CallKind::New || nested.has_spread {
+                return None;
+            }
+            *indexed_allocations
+                .entry((class_key, nested.args.len()))
+                .or_insert(0) += 1;
+        }
+        if allocations != indexed_allocations {
+            return None;
+        }
+        let mut owners = BTreeSet::from([callable.owner]);
+        for (class_key, _) in allocations.keys() {
+            owners.insert(*self.index.class_owners.get(class_key)?);
+        }
+        Some(owners)
+    }
+
+    fn closed_constructor_input(&self, value: &ValueExpr) -> bool {
+        match value {
+            ValueExpr::ObjectLiteral(key, properties) => {
+                if let Some(elements) = self.index.array_elements.get(key) {
+                    return self.index.dense_array_literals.contains_key(key)
+                        && elements.iter().all(|element| {
+                            element.as_ref().is_some_and(|element| {
+                                !element.spread && self.closed_constructor_input(&element.value)
+                            })
+                        });
+                }
+                self.index.plain_data_objects.contains(key)
+                    && properties
+                        .iter()
+                        .all(|(name, value)| name.is_some() && self.closed_constructor_input(value))
+            }
+            ValueExpr::Member(..) => self.closed_enum_member_read(value),
+            ValueExpr::Primitive(operands) => operands
+                .iter()
+                .all(|operand| matches!(operand, ValueExpr::NonCallable | ValueExpr::Undefined)),
+            ValueExpr::Origin(ValueOrigin::Function(_))
+            | ValueExpr::NonCallable
+            | ValueExpr::Undefined => true,
+            _ => false,
+        }
+    }
+
+    fn stable_local_class_key(&self, binding: &Id) -> Option<u32> {
+        let values = self.prefix_values.get(binding)?;
+        let [AbstractValue::Origin(ValueOrigin::Class(key))] =
+            values.iter().collect::<Vec<_>>().as_slice()
+        else {
+            return None;
+        };
+        (self.initialized_bindings.contains(binding)
+            && self.index.class_bindings.get(key) == Some(binding))
+        .then_some(*key)
+    }
+
+    fn checked_constructor_return(
+        &self,
+        value: &ValueExpr,
+        params: &BTreeMap<Id, &ValueExpr>,
+        nested: bool,
+        class_reads: &mut BTreeSet<Id>,
+        allocations: &mut BTreeMap<(u32, usize), usize>,
+    ) -> bool {
+        let ValueExpr::New(callee, args) = value else {
+            return false;
+        };
+        let ValueExpr::Binding(class) = callee.as_ref() else {
+            return false;
+        };
+        let Some(key) = self.stable_local_class_key(class) else {
+            return false;
+        };
+        let Some(constructor) = self.eligible_local_constructor(key, args.len()) else {
+            return false;
+        };
+        if nested && !constructor.inert_allocation {
+            return false;
+        }
+        class_reads.insert(class.clone());
+        *allocations.entry((key, args.len())).or_insert(0) += 1;
+        for arg in args {
+            match arg {
+                ValueExpr::New(..) => {
+                    if !self.checked_constructor_return(arg, params, true, class_reads, allocations)
+                    {
+                        return false;
+                    }
+                }
+                ValueExpr::Binding(binding) => {
+                    if !params
+                        .get(binding)
+                        .is_some_and(|value| self.closed_constructor_input(value))
+                    {
+                        return false;
+                    }
+                }
+                other if self.closed_constructor_input(other) => {}
+                _ => return false,
+            }
+        }
+        for (index, property) in &constructor.property_reads {
+            let Some(arg) = args.get(*index) else {
+                return false;
+            };
+            let source = match arg {
+                ValueExpr::Binding(binding) => {
+                    let Some(value) = params.get(binding) else {
+                        return false;
+                    };
+                    *value
+                }
+                other => other,
+            };
+            let ValueExpr::ObjectLiteral(object, properties) = source else {
+                return false;
+            };
+            if !self.index.plain_data_objects.contains(object)
+                || (!properties
+                    .iter()
+                    .any(|(name, _)| name.as_deref() == Some(property))
+                    && Self::standard_object_prototype_property(property))
+            {
+                return false;
+            }
+        }
+        true
     }
 
     fn inert_class_heritage_binding<'a>(&'a self, fact: &StatementFacts) -> Option<&'a Id> {
@@ -5176,6 +6363,9 @@ impl Executor<'_> {
     }
 
     fn record_executed_owner(&mut self, owner: StatementOrdinal) {
+        if self.private_constructor_result_owners.contains(&owner) {
+            return;
+        }
         if self.reachability.unknown_call_seen {
             self.extend_reachable_owners([owner]);
         } else if let Some(roots) = &mut self.prior_reachability_roots {
@@ -5200,7 +6390,12 @@ impl Executor<'_> {
         }
         let mut possible_owners = outcome.executed_owners.clone();
         possible_owners.insert(owner);
-        possible_owners.extend(self.prior_effect_owners.iter().copied());
+        possible_owners.extend(
+            self.prior_effect_owners
+                .iter()
+                .copied()
+                .filter(|candidate| !self.accepted_deferred_global_writes.contains(candidate)),
+        );
         for (receiver, _) in writes {
             if let Some(receiver) = receiver
                 && let Some(binding_owner) = self.binding_owner.get(receiver)
@@ -5476,6 +6671,7 @@ impl Executor<'_> {
         env: &Context,
         captures: &Context,
         certified_data_receivers: &BTreeSet<u32>,
+        deferred_global_write: bool,
     ) {
         for (receiver, property, expression) in writes {
             let receivers = self.evaluate(&ValueExpr::Binding(receiver.clone()), env, captures);
@@ -5483,6 +6679,9 @@ impl Executor<'_> {
             for receiver in receivers {
                 match receiver {
                     AbstractValue::GlobalObject | AbstractValue::ArrayIntrinsic => {
+                        if deferred_global_write && receiver == AbstractValue::GlobalObject {
+                            continue;
+                        }
                         self.array_intrinsic_mutated |= receiver == AbstractValue::ArrayIntrinsic;
                         self.taint_objects(&values);
                         let callbacks = self.callback_values(&values);
@@ -5646,12 +6845,8 @@ impl Executor<'_> {
         }
     }
 
-    fn construct_local_class(
-        &mut self,
-        key: u32,
-        args: &[Values],
-    ) -> Option<(Outcome, AbstractValue)> {
-        let constructor = self.index.local_constructors.get(&key)?.clone();
+    fn eligible_local_constructor(&self, key: u32, arg_count: usize) -> Option<&LocalConstructor> {
+        let constructor = self.index.local_constructors.get(&key)?;
         let binding = self.index.class_bindings.get(&key)?;
         // A constructorless, fieldless class only allocates an instance for a
         // direct zero-argument `new`. Even if its class object escaped, a
@@ -5659,11 +6854,12 @@ impl Executor<'_> {
         // Any unknown/reassigned callee alternative still takes the ordinary
         // opaque path in execute_call. Other constructors need the class and
         // prototype to remain unexposed to avoid setters and method reentry.
-        let inert_allocation = constructor.inert_allocation && args.is_empty();
+        let inert_allocation = constructor.inert_allocation && arg_count == 0;
         if !inert_allocation
             && (self.index.other_class_uses.contains(binding)
                 || (self.export_reentry_enabled && self.index.exported_bindings.contains(binding))
                 || self.tainted_classes.contains(&key)
+                || !self.ordinary_object_prototype_intact()
                 || self
                     .global_escaped_callbacks
                     .contains(&AbstractValue::ClassMembers(key)))
@@ -5677,6 +6873,15 @@ impl Executor<'_> {
         {
             return None;
         }
+        Some(constructor)
+    }
+
+    fn construct_local_class(
+        &mut self,
+        key: u32,
+        args: &[Values],
+    ) -> Option<(Outcome, AbstractValue)> {
+        let constructor = self.eligible_local_constructor(key, args.len())?.clone();
         if self.export_reentry_enabled {
             let exported: Values = self
                 .index
@@ -5686,7 +6891,7 @@ impl Executor<'_> {
                 .collect();
             self.taint_objects(&exported);
         }
-        for index in &constructor.property_reads {
+        for (index, _) in &constructor.property_reads {
             let values = args.get(*index)?;
             if values.is_empty()
                 || !values.iter().all(|value| {
@@ -6546,6 +7751,8 @@ impl Executor<'_> {
                                 if let Some(property) = property {
                                     if let Some(found) = properties.get(&Some(property.clone())) {
                                         values.extend(found.iter().cloned());
+                                    } else if self.absent_plain_data_property(object_id, property) {
+                                        values.insert(AbstractValue::Undefined);
                                     } else {
                                         values.insert(AbstractValue::Unknown);
                                     }
@@ -6580,6 +7787,9 @@ impl Executor<'_> {
                 values
             }
             ValueExpr::Call(callee, args, span) => {
+                if self.frozen_namespace_calls.contains(span) {
+                    return self.evaluate(&args[0], env, captures);
+                }
                 if let Some((proof, _, _, _, _)) = self.array_iteration_plan(*span, env, captures) {
                     return if proof.method == ArrayIterationMethod::ForEach {
                         BTreeSet::from([AbstractValue::Undefined])
@@ -6923,6 +8133,7 @@ impl Executor<'_> {
             &env,
             &env,
             &certified_data_receivers,
+            false,
         );
         // local_constructor checked every assignment as a static property
         // write to a fresh `this`, with a safe right-hand value and no
@@ -7003,6 +8214,13 @@ impl Executor<'_> {
         captures: &Context,
         outcome: &mut Outcome,
     ) {
+        if call.kind == CallKind::Call
+            && self
+                .frozen_namespace_calls
+                .contains(&CallSite::from(call.span))
+        {
+            return;
+        }
         if matches!(
             call.kind,
             CallKind::InProtocol
@@ -7043,6 +8261,11 @@ impl Executor<'_> {
             return;
         }
         if call.kind == CallKind::LocalMemberRead {
+            if !self.private_constructor_result_owners.is_empty()
+                && self.closed_enum_member_read(&call.callee)
+            {
+                return;
+            }
             let ValueExpr::Member(receiver, property, _) = &call.callee else {
                 unreachable!()
             };
@@ -7055,7 +8278,10 @@ impl Executor<'_> {
                             && !self.dense_arrays.contains_key(object))
                             || !self.prefix_object_properties.get(object).is_some_and(
                                 |properties| {
-                                    property.is_some() && properties.contains_key(property)
+                                    property.as_ref().is_some_and(|property| {
+                                        properties.contains_key(&Some(property.clone()))
+                                            || self.absent_plain_data_property(*object, property)
+                                    })
                                 },
                             ))
                 }
@@ -7493,6 +8719,35 @@ pub(crate) struct SynchronousCallProofs<'a> {
     pub(crate) graph: &'a ChunkCodeGraph,
 }
 
+/// Finalize enum own-key candidates with the already collected binding-write
+/// facts. The recognized initializer may contain its own `X || (X = {})`
+/// write; any other eager or deferred rebind can change the exact key set.
+pub(crate) fn stable_ts_enum_named_data_members(
+    graph: &ChunkCodeGraph,
+    facts: &[StatementFacts],
+) -> BTreeMap<Id, BTreeSet<String>> {
+    let candidates = graph.ts_enum_named_data_candidates();
+    if candidates.is_empty() {
+        return BTreeMap::new();
+    }
+    let mut unstable = BTreeSet::new();
+    for fact in facts {
+        for binding in fact.rebinds.eager.iter().chain(&fact.rebinds.lazy) {
+            if candidates
+                .get(binding)
+                .is_some_and(|candidate| candidate.initializer_owner != fact.ordinal)
+            {
+                unstable.insert(binding.clone());
+            }
+        }
+    }
+    candidates
+        .iter()
+        .filter(|(binding, _)| !unstable.contains(*binding))
+        .map(|(binding, candidate)| (binding.clone(), candidate.own_primitive_keys.clone()))
+        .collect()
+}
+
 pub(crate) fn annotate_synchronous_calls(
     body: &[TopLevelItemView<'_>],
     flow: &ChunkValueFlow,
@@ -7649,12 +8904,14 @@ pub(crate) fn annotate_synchronous_calls(
         );
         initialized_bindings.insert(binding.clone());
     }
+    let enum_data_members = stable_ts_enum_named_data_members(proofs.graph, facts);
     let mut executor = Executor {
         index: &index,
         facts,
         flow,
         set_iterable_proof: proofs.set_iterable,
         shadowed,
+        enum_data_members,
         top_bindings,
         binding_owner: facts
             .iter()
@@ -7669,7 +8926,10 @@ pub(crate) fn annotate_synchronous_calls(
         exported_owners,
         prior_reachability_roots: Some(initial_export_roots),
         current_top_owner: None,
+        private_constructor_result_owners: BTreeSet::new(),
         prior_effect_owners: BTreeSet::new(),
+        accepted_deferred_global_writes: BTreeSet::new(),
+        frozen_namespace_calls: BTreeSet::new(),
         reachability: ReachabilityState::default(),
         mutable_captures: index
             .callables
@@ -7731,6 +8991,9 @@ pub(crate) fn annotate_synchronous_calls(
         executor.fallback_outcome = Outcome::default();
         executor.fallback_callback_sizes = None;
         executor.fallback_local_owners.clear();
+        executor.private_constructor_result_owners = executor
+            .closed_local_constructor_factory_result(fact)
+            .unwrap_or_default();
         // A recognized metadata statement is a whole call expression. Its
         // eligibility proof is stable across this statement's preparatory
         // lanes, so use the same proof for reachability and call execution.
@@ -7745,9 +9008,23 @@ pub(crate) fn annotate_synchronous_calls(
             .and_then(|application| {
                 executor.validated_metadata_decoration(application, &top_env, &top_captures)
             });
+        let certified_deferred_write =
+            executor.accepts_deferred_global_write(fact.ordinal, &top_env);
+        if certified_deferred_write {
+            executor
+                .accepted_deferred_global_writes
+                .insert(fact.ordinal);
+        }
+        let frozen_namespace = executor.private_frozen_namespace(fact);
+        if let Some(proof) = &frozen_namespace {
+            executor.frozen_namespace_calls.insert(proof.freeze_site);
+            executor.frozen_namespace_calls.insert(proof.define_site);
+        }
         let fact_roots = executor.fact_roots(
             fact,
             prevalidated_metadata.map(|validated| validated.target_owner),
+            &executor.private_constructor_result_owners,
+            frozen_namespace.as_ref(),
         );
         if executor.reachability.unknown_call_seen {
             executor.extend_reachable_owners(fact_roots.iter().copied());
@@ -7822,15 +9099,18 @@ pub(crate) fn annotate_synchronous_calls(
             &top_env,
             &top_captures,
             &BTreeSet::new(),
+            certified_deferred_write,
         );
-        executor.promote_callback_result_writes(
-            &index.top_callback_result_writes[fact.ordinal.0],
-            &top_env,
-            &top_captures,
-            fact.ordinal,
-            &mut outcome,
-            &BTreeSet::new(),
-        );
+        if !certified_deferred_write {
+            executor.promote_callback_result_writes(
+                &index.top_callback_result_writes[fact.ordinal.0],
+                &top_env,
+                &top_captures,
+                fact.ordinal,
+                &mut outcome,
+                &BTreeSet::new(),
+            );
+        }
         let validated_metadata = prevalidated_metadata.or_else(|| {
             metadata_application.and_then(|application| {
                 executor.validated_metadata_decoration(application, &top_env, &top_captures)
@@ -7848,11 +9128,16 @@ pub(crate) fn annotate_synchronous_calls(
                 executor.execute_call(call, &top_env, &top_captures, &mut outcome);
             }
         }
-        executor.promote_property_writes(
-            &index.top_property_writes[fact.ordinal.0],
-            fact.ordinal,
-            &mut outcome,
-        );
+        // The fresh-instance proof applies only to this whole top-level
+        // assignment. Nested callable writes owned by the same statement
+        // still take the normal setter fallback when invoked later.
+        if !certified_deferred_write && !index.fresh_instance_field_writes.contains(&fact.ordinal) {
+            executor.promote_property_writes(
+                &index.top_property_writes[fact.ordinal.0],
+                fact.ordinal,
+                &mut outcome,
+            );
+        }
         let fallback = std::mem::take(&mut executor.fallback_outcome);
         if fallback.unknown_call {
             outcome.effects.reads.extend(fallback.effects.reads);
@@ -7867,15 +9152,38 @@ pub(crate) fn annotate_synchronous_calls(
         }
         outcome.complete &= !index.opaque_top.contains(&fact.ordinal);
         outcome.effects.complete = outcome.complete;
+        // A failed runtime path forfeits the prevalidated private-result proof.
+        // Keep the actual execution/effect outcome in either case.
+        if !executor.private_constructor_result_owners.is_empty()
+            && (!outcome.complete || outcome.unknown_call)
+        {
+            let owners = std::mem::take(&mut executor.private_constructor_result_owners);
+            executor.extend_reachable_owners(owners.into_iter().chain([fact.ordinal]));
+            // The source proof normally makes this unreachable. If an actual
+            // executor path fails, restore the current statement's omitted
+            // callback effects as well as all future reachability roots.
+            for owner in executor.reachability.owners.clone() {
+                executor.promote_lazy_owner(owner, fact.ordinal, &mut outcome);
+            }
+            executor.apply_rebind_effects(&outcome.effects.rebinds);
+        }
         let mut prior_effect_owners = outcome.executed_owners.clone();
-        if !fact.purity.is_pure() {
+        prior_effect_owners
+            .retain(|owner| !executor.private_constructor_result_owners.contains(owner));
+        if !fact.purity.is_pure() && executor.private_constructor_result_owners.is_empty() {
             prior_effect_owners.insert(fact.ordinal);
         }
         executor.prior_effect_owners.extend(prior_effect_owners);
         if !executor.reachability.unknown_call_seen
             && let Some(roots) = &mut executor.prior_reachability_roots
         {
-            roots.extend(outcome.executed_owners.iter().copied());
+            roots.extend(
+                outcome
+                    .executed_owners
+                    .iter()
+                    .copied()
+                    .filter(|owner| !executor.private_constructor_result_owners.contains(owner)),
+            );
         }
         effects.push(outcome.effects);
         for (id, expression) in assignments {
