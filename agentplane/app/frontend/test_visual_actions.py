@@ -136,6 +136,20 @@ EXAMPLES = (
     ),
     ActionExample(
         "github",
+        "delete_file",
+        {
+            "owner": "example",
+            "repo": "service",
+            "path": "docs/old-guide.md",
+            "message": "docs: remove old deployment guide",
+            "branch": "docs",
+        },
+        {"commit": {"sha": "0123456789abcdef0123456789abcdef01234567"}, "content": None},
+        "0123456789abcdef",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "github",
         "update_pull_request",
         {
             "owner": "example",

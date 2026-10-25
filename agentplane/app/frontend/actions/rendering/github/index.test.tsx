@@ -13,6 +13,7 @@ import {
 } from "../index";
 
 const PUSH_FILES = { group: "github", name: "push_files" };
+const DELETE_FILE = { group: "github", name: "delete_file" };
 const UPDATE_PULL_REQUEST = { group: "github", name: "update_pull_request" };
 const CREATE_BRANCH = { group: "github", name: "create_branch" };
 const CREATE_PULL_REQUEST = { group: "github", name: "create_pull_request" };
@@ -89,8 +90,34 @@ describe("GitHub push_files", () => {
     expect(fonts).toEqual([true, true, false]);
   });
 
-  it("requires full review", () => {
-    expect(actionOffersCardDecisionButtons(PUSH_FILES, args)).toBe(false);
+  it("offers card decisions for valid arguments and rejects unknown arguments", () => {
+    expect(actionOffersCardDecisionButtons(PUSH_FILES, args)).toBe(true);
+    expect(actionOffersCardDecisionButtons(PUSH_FILES, { ...args, force: true })).toBe(false);
+  });
+});
+
+describe("GitHub delete_file", () => {
+  const args = {
+    ...REPOSITORY,
+    path: "docs/test-notes.md",
+    message: "docs: remove obsolete notes",
+    branch: "test-branch",
+  };
+
+  it("shows the repository, path, branch, and commit message on the compact card", async () => {
+    const label = await mount(renderActionLabel(DELETE_FILE, args));
+    const collapsed = await mount(renderPaneCollapsed(DELETE_FILE, args));
+
+    expect(shownText(label)).toBe("Delete docs/test-notes.md in test-owner/test-repo");
+    expect(shownText(collapsed)).toContain("test-branch");
+    expect(shownText(collapsed)).toContain("docs: remove obsolete notes");
+    expect(actionCompactCardExpands(DELETE_FILE, args)).toBe(false);
+    expect(actionOffersCardDecisionButtons(DELETE_FILE, args)).toBe(true);
+  });
+
+  it("keeps unknown arguments out of the decision-capable compact card", () => {
+    expect(actionOffersCardDecisionButtons(DELETE_FILE, { ...args, sha: "unexpected" })).toBe(false);
+    expect(actionCompactCardExpands(DELETE_FILE, { ...args, sha: "unexpected" })).toBe(true);
   });
 });
 
@@ -128,8 +155,11 @@ describe("GitHub update_pull_request", () => {
     expect(shownText(collapsed)).toBe("");
   });
 
-  it("requires full review", () => {
-    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, state: "closed" })).toBe(false);
+  it("offers card decisions for changes and rejects unknown or empty calls", () => {
+    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, state: "closed" })).toBe(true);
+    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, body: "Updated description." })).toBe(true);
+    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, invisible: "must review" })).toBe(false);
+    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, base)).toBe(false);
   });
 });
 
@@ -190,5 +220,6 @@ describe("GitHub create_pull_request", () => {
     expect((await mount(renderPaneCollapsed(CREATE_PULL_REQUEST, withBody))).textContent).toContain(
       "Test description."
     );
+    expect(actionOffersCardDecisionButtons(CREATE_PULL_REQUEST, withBody)).toBe(true);
   });
 });

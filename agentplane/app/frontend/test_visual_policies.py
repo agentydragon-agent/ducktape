@@ -658,7 +658,7 @@ async def test_action_argument_fallbacks_use_json_view(
 
 
 @DESKTOP_AND_MOBILE
-async def test_compact_pr_with_description_requires_review(
+async def test_compact_pr_with_description_offers_card_decisions(
     view: VisualPage, app: AgentplaneFixture, capture_name: str
 ) -> None:
     await app.show_action_preview(
@@ -670,7 +670,7 @@ async def test_compact_pr_with_description_requires_review(
             "title": "Update docs",
             "head": "docs",
             "base": "devel",
-            "body": "Important PR description that must be read before approval.\n"
+            "body": "Important PR description visible on the compact card.\n"
             "Second paragraph explains the rollout and its verification.\n"
             "Final paragraph lists the remaining review questions.",
         },
@@ -680,15 +680,17 @@ async def test_compact_pr_with_description_requires_review(
     await _open_phone_navigation(view.page)
     collapsed_summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
     await expect(
-        collapsed_summary.get_by_text("Important PR description that must be read before approval.", exact=False)
+        collapsed_summary.get_by_text("Important PR description visible on the compact card.", exact=False)
     ).to_be_visible()
-    await expect(section.get_by_role("button", name="Approve review create pull request")).to_have_count(0)
+    await expect(section.get_by_role("button", name="Approve review create pull request")).to_be_visible()
+    await expect(section.get_by_role("button", name="Deny review create pull request")).to_be_visible()
     await view.capture(f"{capture_name}-collapsed", target=section)
     await section.get_by_role("button", name="Expand review create pull request").click()
     await expect(
-        section.get_by_text("Important PR description that must be read before approval.", exact=False)
+        section.get_by_text("Important PR description visible on the compact card.", exact=False)
     ).to_be_visible()
-    await expect(section.get_by_role("button", name="Approve review create pull request")).to_have_count(0)
+    await expect(section.get_by_role("button", name="Approve review create pull request")).to_be_visible()
+    await expect(section.get_by_role("button", name="Deny review create pull request")).to_be_visible()
     await expect(section.get_by_role("link", name="View details for review create pull request")).to_be_visible()
     await view.capture(target=section)
 
