@@ -13,7 +13,7 @@ from more_itertools import one
 from agentplane.crd_group import GROUP, VERSION
 from cluster.cdk8s.agentplane.launcher_relay import CONTROLLER_USERNAME, LAUNCHER_LABELS, LauncherRelayPolicy
 from cluster.cdk8s.agentplane.sandbox_pod import EGRESS_TOKEN_VOLUME_NAME, SIDECAR_SETTINGS_VOLUME_NAME
-from cluster.validation.kyverno.apply import KyvernoApplyResult, apply_policy
+from cluster.cdk8s.kyverno.apply import KyvernoApplyResult, apply_policy
 
 NAMESPACE = "launcher-relay-test"
 TOKEN_VOLUME = EGRESS_TOKEN_VOLUME_NAME

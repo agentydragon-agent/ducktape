@@ -11,15 +11,6 @@ exports_files(
     visibility = ["//cluster:__subpackages__"],
 )
 
-# Just the central ClusterPolicy manifests, so a per-policy test is not
-# invalidated by every unrelated manifest in the cluster (same reasoning as the
-# contract filegroups in //cluster/k8s).
-filegroup(
-    name = "kyverno_policy_files",
-    srcs = ["generated/kyverno/policies/policies.k8s.yaml"],
-    visibility = ["//cluster/validation/kyverno:__pkg__"],
-)
-
 # The closed-world generated tree (cluster/cdk8s/manifest_roots.py), whole: the parity test
 # fails on any file here the generator does not write.
 filegroup(

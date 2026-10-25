@@ -292,6 +292,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":cilium_rule_sections",
+        ":namespaces",
         ":pod_policy",
         "@pypi//cdk8s",
         "@pypi//constructs",
@@ -306,6 +307,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":fleet_rules",
+        ":namespaces",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

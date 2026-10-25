@@ -13,6 +13,7 @@ from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
 
 _GOLDILOCKS_ENABLED_LABEL = "goldilocks.fairwinds.com/enabled"
 VPA_UPDATE_MODE_LABEL = "goldilocks.fairwinds.com/vpa-update-mode"
+VPA_RESOURCE_POLICY_ANNOTATION = "goldilocks.fairwinds.com/vpa-resource-policy"
 
 
 class Vpa(StrEnum):
