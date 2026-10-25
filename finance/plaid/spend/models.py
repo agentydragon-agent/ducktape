@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime as datetime_type
+from datetime import date as date_type, datetime as datetime_type
 from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
@@ -108,7 +108,7 @@ class AllowanceConfigurationView(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     monthly_minor_units: int
-    activation_at: date
+    activation_at: date_type
     currency: str
     spending_account_count: int
     time_zone: str = "UTC"
@@ -131,16 +131,16 @@ class StatementCycle(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: Literal["statement"] = "statement"
-    start: date
-    through: date
+    start: date_type
+    through: date_type
 
 
 class ProvisionalCardPeriod(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: Literal["provisional"] = "provisional"
-    start: date
-    through: date
+    start: date_type
+    through: date_type
 
 
 class UnavailableCardPeriod(BaseModel):
@@ -254,7 +254,7 @@ class PlaidTransactionDetails(BaseModel):
     category: list[str] | None = None
     category_id: str | None = None
     original_description: str | None = None
-    authorized_date: date | None = None
+    authorized_date: date_type | None = None
     authorized_datetime: datetime_type | None = None
     datetime: datetime_type | None = None
     payment_channel: str | None = None
@@ -294,8 +294,10 @@ class SpendTransactionRow(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    date: date = Field(description="Purchase day selected in the policy time zone.")
-    plaid_date: date | None = Field(default=None, description="Original Plaid date used by statement and date-range rules.")
+    date: date_type = Field(description="Purchase day selected in the policy time zone.")
+    plaid_date: date_type | None = Field(
+        default=None, description="Original Plaid date used by statement and date-range rules."
+    )
     account_label: str
     name: str
     merchant_name: str | None

@@ -5,7 +5,7 @@ from __future__ import annotations
 import calendar
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date as date_type, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
@@ -44,7 +44,7 @@ class PeriodId(StrEnum):
     def rolling_days(self) -> int | None:
         return {self.ROLLING_7D: 7, self.ROLLING_30D: 30}.get(self)
 
-    def start(self, today: date, cycle_start: date | None = None) -> date:
+    def start(self, today: date_type, cycle_start: date_type | None = None) -> date_type:
         match self:
             case PeriodId.CREDIT_CYCLE:
                 if cycle_start is None:
@@ -53,7 +53,7 @@ class PeriodId(StrEnum):
             case PeriodId.CALENDAR_MONTH:
                 return today.replace(day=1)
             case PeriodId.YEAR_TO_DATE:
-                return date(today.year, 1, 1)
+                return date_type(today.year, 1, 1)
             case PeriodId.ROLLING_7D | PeriodId.ROLLING_30D:
                 days = self.rolling_days
                 assert days is not None
@@ -71,11 +71,11 @@ class Period(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: PeriodId
-    start: date
-    end: date
+    start: date_type
+    end: date_type
 
     @classmethod
-    def for_id(cls, period_id: PeriodId, today: date, cycle_start: date | None = None) -> Period:
+    def for_id(cls, period_id: PeriodId, today: date_type, cycle_start: date_type | None = None) -> Period:
         return cls(id=period_id, start=period_id.start(today, cycle_start), end=today)
 
 
@@ -90,7 +90,7 @@ class AllowanceSpendPeriod(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     period: Period
-    counted_from: date = Field(description="Allowance spend starts no earlier than activation.")
+    counted_from: date_type = Field(description="Allowance spend starts no earlier than activation.")
     spend_minor_units: int
 
 
@@ -154,8 +154,8 @@ class DateRange(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     type: Literal["date_range"] = "date_range"
-    start: date | None = Field(default=None, description="Inclusive first Plaid transaction date to match.")
-    end: date | None = Field(default=None, description="Inclusive last Plaid transaction date to match.")
+    start: date_type | None = Field(default=None, description="Inclusive first Plaid transaction date to match.")
+    end: date_type | None = Field(default=None, description="Inclusive last Plaid transaction date to match.")
 
     @model_validator(mode="after")
     def _valid_bounds(self) -> DateRange:
@@ -329,7 +329,7 @@ class AnalysisCategory(BaseModel):
 class AllowancePolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     monthly_minor_units: int = Field(gt=0)
-    activation_at: date
+    activation_at: date_type
     time_zone: ZoneInfo = ZoneInfo("UTC")
     spending_account_ids: set[str] = Field(min_length=1)
     currency: Literal["USD"] = "USD"
@@ -374,8 +374,8 @@ class Transaction(BaseModel):
     account_id: str
     transaction_id: str
     pending_transaction_id: str | None
-    date: date
-    authorized_date: date | None = None
+    date: date_type
+    authorized_date: date_type | None = None
     authorized_datetime: datetime | None = None
     posted_datetime: datetime | None = None
     amount: Decimal
@@ -402,7 +402,7 @@ class Transaction(BaseModel):
             return None
         return instant
 
-    def report_day(self, zone: ZoneInfo) -> date:
+    def report_day(self, zone: ZoneInfo) -> date_type:
         """Purchase day in the policy zone; date-only values are already calendar days."""
         if self.authorized_datetime is not None:
             return self.authorized_datetime.astimezone(zone).date()
@@ -454,7 +454,7 @@ class AllowanceView(BaseModel):
     status: Status
     currency: str
     monthly_minor_units: int
-    activation_at: date
+    activation_at: date_type
     time_zone: str = "UTC"
     available_minor_units: int | None
     next_credit_at: datetime | None
@@ -514,11 +514,11 @@ def matches_fields(fields: Transaction | Mapping[str, object], condition: Condit
             actual = actual.date()
         elif isinstance(actual, str):
             try:
-                actual = date.fromisoformat(actual)
+                actual = date_type.fromisoformat(actual)
             except ValueError:
                 return False
         return (
-            isinstance(actual, date)
+            isinstance(actual, date_type)
             and (condition.start is None or actual >= condition.start)
             and (condition.end is None or actual <= condition.end)
         )

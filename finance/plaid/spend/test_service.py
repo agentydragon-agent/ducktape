@@ -164,7 +164,7 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
             time_zone=zone,
             spending_account_ids={"card-time"},
             analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#D97706")},
-            rules=[],
+            rules=[Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
         ),
     )
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
