@@ -155,8 +155,11 @@ describe("GitHub update_pull_request", () => {
     expect(shownText(collapsed)).toBe("");
   });
 
-  it("requires full review", () => {
-    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, state: "closed" })).toBe(false);
+  it("offers card decisions for changes and rejects unknown or empty calls", () => {
+    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, state: "closed" })).toBe(true);
+    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, body: "Updated description." })).toBe(true);
+    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, { ...base, invisible: "must review" })).toBe(false);
+    expect(actionOffersCardDecisionButtons(UPDATE_PULL_REQUEST, base)).toBe(false);
   });
 });
 

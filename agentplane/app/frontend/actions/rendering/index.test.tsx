@@ -778,6 +778,32 @@ const cardDecisionButtonCases: Array<{
   },
   {
     group: "github",
+    name: "update_pull_request",
+    args: {
+      owner: "example",
+      repo: "service",
+      pullNumber: 42,
+      title: "Update documentation",
+      body: "Explain deployment checks and rollback steps.",
+      state: "closed",
+      base: "devel",
+      draft: true,
+      maintainer_can_modify: false,
+      reviewers: ["reviewer"],
+    },
+    visible: [
+      "Close example/service#42",
+      "replace description",
+      "change base to devel",
+      "mark as draft",
+      "disallow maintainer edits",
+      "review from reviewer",
+      "New title: Update documentation",
+      "Explain deployment checks and rollback steps.",
+    ],
+  },
+  {
+    group: "github",
     name: "push_files",
     args: {
       owner: "example",
