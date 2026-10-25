@@ -3,23 +3,35 @@
 from __future__ import annotations
 
 import runpy
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import yaml
 
 from util.bazel.runfiles import get_required_path
 
 VERIFY_DASHBOARD = runpy.run_path(str(get_required_path("_main/cluster/skills/grafana/verify_dashboard.py")))
-GENERATED_DASHBOARD_RESOURCES = get_required_path(
-    "_main/cluster/generated/monitoring/grafana-instance/grafana-instance.k8s.yaml"
-)
 
 
-def test_operator_mapping_uses_generated_dashboard_resource_and_datasource_name() -> None:
-    datasource_inputs = VERIFY_DASHBOARD["operator_datasources"](
-        GENERATED_DASHBOARD_RESOURCES, "home-network-overview.json"
+def test_operator_mapping_uses_dashboard_resource_and_datasource_name(tmp_path: Path) -> None:
+    dashboard_resources = tmp_path / "dashboard.yaml"
+    dashboard_resources.write_text(
+        yaml.safe_dump_all(
+            [
+                {
+                    "kind": "GrafanaDashboard",
+                    "metadata": {"name": "home-network-overview", "namespace": "monitoring"},
+                    "spec": {
+                        "configMapRef": {"key": "home-network-overview.json"},
+                        "datasources": [{"inputName": "DS_LOKI", "datasourceName": "Loki"}],
+                    },
+                }
+            ]
+        )
     )
+    datasource_inputs = VERIFY_DASHBOARD["operator_datasources"](dashboard_resources, "home-network-overview.json")
     assert datasource_inputs == {"DS_LOKI": "Loki"}
 
     by_name = {"Loki": {"name": "Loki", "type": "loki", "uid": "loki-live-uid"}}
