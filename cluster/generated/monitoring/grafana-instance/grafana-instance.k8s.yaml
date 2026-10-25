@@ -487,10 +487,10 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: datasource
+  folder: Cluster & Platform
   grafanaCom:
     id: 20842
     revision: 3
-  folder: Cluster & Platform
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -504,10 +504,10 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_PROMETHEUS
+  folder: Cluster & Platform
   grafanaCom:
     id: 14837
     revision: 2
-  folder: Cluster & Platform
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -521,10 +521,10 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_PROMETHEUS
+  folder: Cluster & Platform
   grafanaCom:
     id: 20417
     revision: 3
-  folder: Cluster & Platform
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -538,10 +538,10 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_PROMETHEUS
+  folder: Network
   grafanaCom:
     id: 16611
     revision: 1
-  folder: Network
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -555,10 +555,10 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_PROMETHEUS
+  folder: Cluster & Platform
   grafanaCom:
     id: 3070
     revision: 3
-  folder: Cluster & Platform
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -572,10 +572,10 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: DS_PROMETHEUS
+  folder: Nodes & Hardware
   grafanaCom:
     id: 12239
     revision: 2
-  folder: Nodes & Hardware
   instanceSelector:
     matchLabels:
       dashboards: grafana
@@ -589,10 +589,10 @@ spec:
   datasources:
     - datasourceName: Mimir
       inputName: ds_prometheus
+  folder: Nodes & Hardware
   grafanaCom:
     id: 1860
     revision: 45
-  folder: Nodes & Hardware
   instanceSelector:
     matchLabels:
       dashboards: grafana
