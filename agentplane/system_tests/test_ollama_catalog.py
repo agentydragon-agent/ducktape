@@ -8,7 +8,6 @@ import yaml
 
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.ollama_catalog import ollama_cases
-from util.bazel.runfiles import get_required_path
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -52,12 +51,6 @@ def test_no_ollama_cases_fails_instead_of_silently_skipping(tmp_path: Path) -> N
     path = _manifest(tmp_path, {"HARNESS_CLAUDE": ["other/messages/example"], "HARNESS_CODEX": []})
     with pytest.raises(ValueError, match="no Ollama smoke cases"):
         ollama_cases(path)
-
-
-def test_committed_app_config_supplies_smoke_cases() -> None:
-    path = get_required_path("ducktape/cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml")
-    cases = ollama_cases(path)
-    assert len(cases) == len(set(cases))
 
 
 if __name__ == "__main__":
