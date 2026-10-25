@@ -989,8 +989,19 @@ async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) 
 async def test_gmail_draft_history_keeps_request_and_result_together(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.GMAIL_DRAFT_HISTORY)
     await app.mount_app("/actions")
-    await _open_history_receipts(view.page)
     page = view.page
+    card = page.locator('[data-action-receipt="70000000-0000-4000-8000-000000000010"]')
+    overview = card.locator(".agentplane-action-history-compact-overview")
+    await expect(overview).to_be_visible()
+    await expect(overview.get_by_text("The release is ready.", exact=False)).to_have_count(0)
+    await expect(card.get_by_role("button", name="Receipt details", exact=True)).to_have_attribute(
+        "aria-expanded", "false"
+    )
+    await _in_viewport(card)
+    await view.check(context="Gmail draft compact history card")
+    await view.capture("gmail_draft_history_compact", target=card)
+
+    await _open_history_receipts(page)
     await expect(page.get_by_text("prepare the release email", exact=True)).to_be_visible()
     await expect(page.get_by_role("link", name="Release notes", exact=True)).to_be_visible()
     await expect(page.get_by_text("Please review it before sending.", exact=True)).to_be_visible()
