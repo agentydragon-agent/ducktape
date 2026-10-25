@@ -48,10 +48,12 @@ exports_files(
     [
         "clickhouse/cluster/public-coder-credentials.sops.yaml",
         "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
+        "haku/mailbox/nginx.conf",
         "kustomization.yaml",
     ],
     visibility = [
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/haku:__pkg__",
         "//cluster/cdk8s/haku_ci:__pkg__",
         "//cluster/validation:__pkg__",
     ],

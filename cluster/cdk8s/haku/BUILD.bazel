@@ -234,11 +234,15 @@ py_library(
 py_test(
     name = "test_mailbox",
     srcs = ["test_mailbox.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
+    data = [
+        "//cluster/k8s:haku/mailbox/nginx.conf",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":mailbox",
         "//:conftest",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",

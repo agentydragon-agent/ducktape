@@ -281,21 +281,6 @@ py_test(
 )
 
 py_test(
-    name = "test_mailbox_smtp_ingress",
-    srcs = ["test_mailbox_smtp_ingress.py"],
-    data = [
-        "//cluster:generated_manifests",
-        "//cluster/k8s:cluster_all_files",
-    ],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
     name = "test_cluster_integration",
     size = "medium",
     srcs = ["test_cluster_integration.py"],
