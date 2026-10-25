@@ -470,6 +470,7 @@ class SpendService:
             rows.append(
                 SpendTransactionRow(
                     date=day,
+                    plaid_date=transaction.date,
                     account_label=labels.get(transaction.account_id, "Account"),
                     name=transaction.name,
                     merchant_name=transaction.merchant_name,

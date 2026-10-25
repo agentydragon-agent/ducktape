@@ -33,7 +33,8 @@ authenticated detail view remain decimal strings in major units.
   which cannot reliably identify a purchase instant. Date-only values are used
   unchanged. This purchase day controls allowance activation, spend/pace windows,
   and transaction-list dates. Statement totals and classification `date_range`
-  selectors still use the original Plaid `date`. A change to an existing policy
+  selectors still use the original Plaid `date`, exposed as `plaid_date` in the
+  transaction row and its expandable details. A change to an existing policy
   shifts its next monthly credit instant; review that effect before rollout.
 - `GET /api/v1/view` returns the card and allowance view. Optional `estimate_period_id=rolling_7d|rolling_30d`
   selects the allowance forecast and spending signal; omission uses the policy default.

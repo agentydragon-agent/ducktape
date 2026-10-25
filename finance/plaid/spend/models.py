@@ -294,7 +294,8 @@ class SpendTransactionRow(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    date: date
+    date: date = Field(description="Purchase day selected in the policy time zone.")
+    plaid_date: date | None = Field(default=None, description="Original Plaid date used by statement and date-range rules.")
     account_label: str
     name: str
     merchant_name: str | None

@@ -179,6 +179,8 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
     assert view.cards[0].pending_minor_units == 0  # posted replacement supersedes pending
     assert transactions.summary.net_allowance_spend_minor_units == 2_200
     assert all(row.date == today for row in transactions.rows)
+    late_post = next(row for row in transactions.rows if row.amount_minor_units == 700)
+    assert late_post.plaid_date == today + timedelta(days=2)
     assert rolling.summary.net_allowance_spend_minor_units == 2_200
     assert len(rolling.rows) == 5
     assert min(row.date for row in rolling.rows) == activation - timedelta(days=1)
