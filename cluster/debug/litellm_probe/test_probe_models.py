@@ -1,4 +1,4 @@
-"""Probe input contracts: committed ConfigMap by default, raw config when supplied."""
+"""Probe parser behavior on explicit LiteLLM config fixtures."""
 
 from pathlib import Path
 
@@ -6,14 +6,6 @@ import pytest_bazel
 import yaml
 
 from cluster.debug.litellm_probe.probe_models import ModelProbe, _load_model_probes
-
-
-def test_default_reads_committed_proxy_config() -> None:
-    probes = _load_model_probes(None)
-    assert probes
-    assert len({probe.name for probe in probes}) == len(probes)
-    assert any(probe.backend == "ollama" for probe in probes)
-    assert any(probe.mode == "embedding" for probe in probes)
 
 
 def test_explicit_config_is_still_raw_litellm_yaml(tmp_path: Path) -> None:

@@ -4,7 +4,6 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_test")
 py_library(
     name = "probe_models",
     srcs = ["probe_models.py"],
-    data = ["//cluster/k8s/litellm/app:proxy_manifest"],
     deps = [
         "//util/bazel:runfiles",
         "@pypi//httpx",
@@ -16,7 +15,10 @@ py_library(
 
 py_binary(
     name = "probe_models_bin",
-    data = ["report.html.j2"],
+    data = [
+        "report.html.j2",
+        "//cluster/k8s/litellm/app:proxy_manifest",
+    ],
     main_module = "cluster.debug.litellm_probe.probe_models",
     deps = [":probe_models"],
 )
