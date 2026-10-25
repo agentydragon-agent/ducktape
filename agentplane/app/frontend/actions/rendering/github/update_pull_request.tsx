@@ -67,7 +67,7 @@ export const updatePullRequestPane: ArgumentsPreview = definePreview(zUpdatePull
 
 export function offersCardDecisionButtonsUpdatePullRequest(args: unknown): boolean {
   const parsed = zUpdatePullRequestArguments.safeParse(args);
-  return parsed.success && pullRequestUpdateChanges(parsed.data).length > 0;
+  return parsed.success && (parsed.data.state !== undefined || pullRequestUpdateChanges(parsed.data).length > 0);
 }
 
 export const updatePullRequestPresentation: ActionPresentation = {
