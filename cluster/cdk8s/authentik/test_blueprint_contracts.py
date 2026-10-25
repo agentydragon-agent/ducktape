@@ -1,21 +1,18 @@
-"""Authentik blueprint parsing and validation checks.
-
-Authentik SSO is configured by native blueprints under
-`cluster/k8s/authentik/app/blueprints/`. This module parses those blueprints —
-including authentik's custom `!Find`/`!KeyOf` YAML tags, which `yaml.SafeLoader`
-rejects — and holds the checks over them: that every proxy provider is assigned to
-an outpost, and that every outpost provider reference is syntactically valid and does
-not target an explicitly retired provider. Providers owned by Terraform are
-intentionally allowed in the outpost list.
-"""
+"""Contracts for the Authentik source blueprints."""
 
 from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
 
+import pytest
+import pytest_bazel
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
+
+from util.bazel.runfiles import get_required_path
+
+_BLUEPRINTS_DIR_ANCHOR = "_main/cluster/k8s/authentik/app/blueprints/embedded-outpost.yaml"
 
 
 class _BlueprintLoader(yaml.SafeLoader):
@@ -112,7 +109,7 @@ def _blueprint_entries(blueprints_dir: Path) -> list[_BlueprintEntry]:
     ]
 
 
-def check_proxy_provider_outpost_assignment(k8s_dir: Path) -> list[str]:
+def check_proxy_provider_outpost_assignment(blueprints_dir: Path) -> list[str]:
     """Every `present` authentik proxy provider must be assigned to an outpost.
 
     A proxy provider that exists but is on no outpost has no host->backend mapping: the
@@ -121,7 +118,6 @@ def check_proxy_provider_outpost_assignment(k8s_dir: Path) -> list[str]:
     the wrong host and Google rejects it with `redirect_uri_mismatch`. This guards the
     wiring that broke `haku.allegedly.works` (and, latently, `tandoor.allegedly.works`).
     """
-    blueprints_dir = k8s_dir / "authentik" / "app" / "blueprints"
     if not blueprints_dir.exists():
         raise FileNotFoundError(f"Expected {blueprints_dir} to exist")
 
@@ -158,7 +154,7 @@ def check_proxy_provider_outpost_assignment(k8s_dir: Path) -> list[str]:
     ]
 
 
-def check_outpost_provider_references(k8s_dir: Path) -> list[str]:
+def check_outpost_provider_references(blueprints_dir: Path) -> list[str]:
     """Reject malformed or explicitly retired embedded-outpost provider references.
 
     Authentik accepts a blueprint with a dangling ``!KeyOf`` reference and only
@@ -166,7 +162,6 @@ def check_outpost_provider_references(k8s_dir: Path) -> list[str]:
     are not defined in blueprints are allowed because the ownership split also has
     Terraform-managed providers; explicit ``state: absent`` tombstones are not.
     """
-    blueprints_dir = k8s_dir / "authentik" / "app" / "blueprints"
     if not blueprints_dir.exists():
         raise FileNotFoundError(f"Expected {blueprints_dir} to exist")
 
@@ -201,3 +196,29 @@ def check_outpost_provider_references(k8s_dir: Path) -> list[str]:
                     "the reference from embedded-outpost.yaml."
                 )
     return errors
+
+
+@pytest.fixture(scope="session")
+def blueprints_dir() -> Path:
+    return get_required_path(_BLUEPRINTS_DIR_ANCHOR).parent
+
+
+def test_proxy_providers_assigned_to_outpost(blueprints_dir: Path) -> None:
+    """Every present Authentik proxy provider must be assigned to an outpost.
+
+    An unassigned proxy provider (HTTPRoute present, but not on the embedded outpost)
+    302s to a login flow served on its own host, breaking Google SSO with
+    redirect_uri_mismatch — the haku.allegedly.works failure mode.
+    """
+    errors = check_proxy_provider_outpost_assignment(blueprints_dir)
+    assert not errors, "\n".join(errors)
+
+
+def test_outpost_provider_references_resolve(blueprints_dir: Path) -> None:
+    """Embedded-outpost refs are valid and do not target retired providers."""
+    errors = check_outpost_provider_references(blueprints_dir)
+    assert not errors, "\n".join(errors)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

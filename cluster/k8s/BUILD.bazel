@@ -70,17 +70,5 @@ filegroup(
 filegroup(
     name = "authentik_blueprints",
     srcs = glob(["authentik/app/blueprints/*.yaml"]),
-    visibility = [
-        "//cluster/cdk8s/authentik:__pkg__",
-        "//cluster/validation:__pkg__",
-    ],
-)
-
-filegroup(
-    name = "authentik_blueprint_contract_files",
-    srcs = [
-        "kustomization.yaml",
-        ":authentik_blueprints",
-    ],
-    visibility = ["//cluster/validation:__pkg__"],
+    visibility = ["//cluster/cdk8s/authentik:__pkg__"],
 )
