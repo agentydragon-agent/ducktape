@@ -79,17 +79,21 @@ class _FileDashboard:
 
 # `dashboards/<name>.json` beside this module, deployed as the `<name>-dashboard` ConfigMap.
 _FILE_DASHBOARDS = {
-    "flux-cluster": _FileDashboard(datasources={}),
-    "interface-flap-frequency": _FileDashboard(datasources={"DS_LOKI": "Loki", "DS_PROMETHEUS": "Mimir"}),
-    "rugged-power": _FileDashboard(datasources={"DS_PROMETHEUS": "Mimir"}),
-    "cluster-storage-io": _FileDashboard(datasources={"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}),
-    "s3-operations": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}),
-    "cluster-disk-usage": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}),
-    "piraeus-storage": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}),
-    "storage-service-details": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}),
-    "io-pressure": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}),
+    "flux-cluster": _FileDashboard(datasources={}, folder="Cluster & Platform"),
+    "interface-flap-frequency": _FileDashboard(
+        datasources={"DS_LOKI": "Loki", "DS_PROMETHEUS": "Mimir"}, folder="Network"
+    ),
+    "rugged-power": _FileDashboard(datasources={"DS_PROMETHEUS": "Mimir"}, folder="Nodes & Hardware"),
+    "cluster-storage-io": _FileDashboard(
+        datasources={"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}, folder="Storage"
+    ),
+    "s3-operations": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
+    "cluster-disk-usage": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
+    "piraeus-storage": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
+    "storage-service-details": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
+    "io-pressure": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
     # Beside the AT&T gateway exporter's own "Home gateway" dashboard.
-    "home-network-overview": _FileDashboard(datasources={"DS_LOKI": "Loki"}, folder="Home network"),
+    "home-network-overview": _FileDashboard(datasources={"DS_LOKI": "Loki"}, folder="Network"),
 }
 
 
@@ -347,30 +351,35 @@ def _dashboards(chart: Chart) -> None:
         chart,
         "cert-manager",
         datasources={"datasource": "Mimir"},
+        folder="Cluster & Platform",
         grafana_com=GrafanaDashboardSpecGrafanaCom(id=20842, revision=3),
     )
     _dashboard(
         chart,
         "authentik",
         datasources={"DS_PROMETHEUS": "Mimir"},
+        folder="Cluster & Platform",
         grafana_com=GrafanaDashboardSpecGrafanaCom(id=14837, revision=2),
     )
     _dashboard(
         chart,
         "cloudnative-pg",
         datasources={"DS_PROMETHEUS": "Mimir"},
+        folder="Cluster & Platform",
         grafana_com=GrafanaDashboardSpecGrafanaCom(id=20417, revision=3),
     )
     _dashboard(
         chart,
         "cilium-agent",
         datasources={"DS_PROMETHEUS": "Mimir"},
+        folder="Network",
         grafana_com=GrafanaDashboardSpecGrafanaCom(id=16611, revision=1),
     )
     _dashboard(
         chart,
         "etcd",
         datasources={"DS_PROMETHEUS": "Mimir"},
+        folder="Cluster & Platform",
         grafana_com=GrafanaDashboardSpecGrafanaCom(id=3070, revision=3),
     )
     # NVIDIA DCGM Exporter dashboard (power/temp/clocks, PCIe, XID). Backed by the
@@ -379,6 +388,7 @@ def _dashboards(chart: Chart) -> None:
         chart,
         "gpu",
         datasources={"DS_PROMETHEUS": "Mimir"},
+        folder="Nodes & Hardware",
         grafana_com=GrafanaDashboardSpecGrafanaCom(id=12239, revision=2),
     )
     # Upstream Node Exporter Full dashboard. Its Hardware Misc row includes
@@ -388,6 +398,7 @@ def _dashboards(chart: Chart) -> None:
         chart,
         "node-exporter-full",
         datasources={"ds_prometheus": "Mimir"},
+        folder="Nodes & Hardware",
         grafana_com=GrafanaDashboardSpecGrafanaCom(id=1860, revision=45),
     )
 
