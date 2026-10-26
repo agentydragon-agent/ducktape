@@ -1,4 +1,4 @@
-"""The flux-system Secrets the github-secrets-sync Terraform reads, copied by ESO from
+"""The flux-system Secrets the github-secrets-sync Workspace reads, copied by ESO from
 their canonical external-creds sources.
 
 Hand-written beside the generated output: `ci-age-key.sops.yaml`.

@@ -150,8 +150,8 @@ from cluster.cdk8s.github_api_proxy import (
 )
 from cluster.cdk8s.github_exporter import app as github_exporter_app
 from cluster.cdk8s.github_secrets_sync import (
-    gitops_module as github_secrets_sync_gitops_module,
     secrets as github_secrets_sync_secrets,
+    workspace as github_secrets_sync_workspace,
 )
 from cluster.cdk8s.gitlab_spike import (
     app as gitlab_spike_app,
@@ -631,6 +631,9 @@ def generate_manifests(root: Path) -> None:
                     forgejo_crossplane_roots.FINANCE_AGENT_IDENTITY,
                     forgejo_crossplane_roots.AGENTYDRAGON_REPOS_IDENTITY,
                     alloy_otlp_bearer_token.KUBERNETES_IDENTITY,
+                    github_branch_protection.KUBERNETES_IDENTITY,
+                    github_secrets_sync_workspace.KUBERNETES_IDENTITY,
+                    flux_webhook_token.KUBERNETES_IDENTITY,
                 ),
             ),
         ),
@@ -866,7 +869,7 @@ def generate_manifests(root: Path) -> None:
     github_secrets_sync_secrets_artifact = artifact(
         "github-secrets-sync-secrets", github_secrets_sync_secrets.OUTPUT_DIR
     )
-    github_secrets_sync_secrets.github_secrets_sync_secrets(
+    github_secrets_sync_secrets_kustomization = github_secrets_sync_secrets.github_secrets_sync_secrets(
         flux_chart,
         write_directory(
             root,
@@ -964,19 +967,14 @@ def generate_manifests(root: Path) -> None:
         authentik_tf_kustomization,
     )
     github_tf_artifact = artifact(github_tf.NAME, github_tf.OUTPUT_DIR)
+    # CLEANUP(added 2026-10-26): Keep these module artifacts while the old Terraform CRs
+    # finalize. Their deletion is gated on all three legacy CRs and runners being absent
+    # and all replacement Workspaces being Ready and current-generation Synced.
     github_branch_protection_module = terraform.gitops_module(github_branch_protection.NAME)
-    github_secrets_sync_module = terraform.gitops_module(github_secrets_sync_gitops_module.NAME)
+    github_secrets_sync_module = terraform.gitops_module(github_secrets_sync_workspace.NAME)
     flux_webhook_token_module = terraform.gitops_module(flux_webhook_token.NAME)
-    github_tf.github_tf(
-        flux_chart,
-        write_directory(
-            root,
-            github_tf_artifact,
-            functools.partial(github_branch_protection.chart, module=github_branch_protection_module),
-            functools.partial(github_secrets_sync_gitops_module.chart, module=github_secrets_sync_module),
-            functools.partial(flux_webhook_token.chart, module=flux_webhook_token_module),
-        ),
-        tofu_controller_kustomization,
+    github_tf_kustomization = github_tf.github_tf(
+        flux_chart, write_directory(root, github_tf_artifact), tofu_controller_kustomization
     )
     forgejo_gitops_artifact = artifact(forgejo_gitops_modules.NAME, forgejo_gitops_modules.OUTPUT_DIR)
     forgejo_gitops_kustomization = forgejo_gitops_modules.forgejo_gitops(
@@ -1188,7 +1186,7 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_pr_visuals_bucket_artifact = artifact(
         "seaweedfs-pr-visuals-bucket", seaweedfs_pr_visuals_bucket.OUTPUT_DIR
     )
-    seaweedfs_pr_visuals_bucket.seaweedfs_pr_visuals_bucket(
+    seaweedfs_pr_visuals_bucket_kustomization = seaweedfs_pr_visuals_bucket.seaweedfs_pr_visuals_bucket(
         flux_chart,
         write_directory(root, seaweedfs_pr_visuals_bucket_artifact, seaweedfs_pr_visuals_bucket.chart),
         seaweedfs_operator_kustomization,
@@ -1310,13 +1308,6 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
         seaweedfs_operator_kustomization,
     )
-    flux_webhook_artifact = artifact("flux-webhook", flux_webhook_chart.OUTPUT_DIR)
-    flux_webhook_chart.flux_webhook(
-        flux_chart,
-        write_directory(root, flux_webhook_artifact, flux_webhook_chart.chart),
-        external_secrets_operator_kustomization,
-        kyverno_kustomization,
-    )
     langfuse_artifact = artifact("langfuse", langfuse_app.OUTPUT_DIR)
     langfuse_app.langfuse(
         flux_chart,
@@ -1401,6 +1392,59 @@ def generate_manifests(root: Path) -> None:
             forgejo_images_kustomization,
             forgejo_kustomization,
         ],
+    )
+    github_branch_protection_artifact = artifact(
+        github_branch_protection.WORKSPACE_NAME, github_branch_protection.OUTPUT_DIR
+    )
+    opentofu.workspace_kustomization(
+        flux_chart,
+        github_branch_protection.WORKSPACE_NAME,
+        write_directory(root, github_branch_protection_artifact, github_branch_protection.chart),
+        github_tf_artifact,
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            github_tf_kustomization,
+            github_secrets_sync_secrets_kustomization,
+        ],
+    )
+    github_secrets_sync_artifact = artifact(
+        github_secrets_sync_workspace.WORKSPACE_NAME, github_secrets_sync_workspace.OUTPUT_DIR
+    )
+    opentofu.workspace_kustomization(
+        flux_chart,
+        github_secrets_sync_workspace.WORKSPACE_NAME,
+        write_directory(root, github_secrets_sync_artifact, github_secrets_sync_workspace.chart),
+        github_tf_artifact,
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            github_tf_kustomization,
+            github_secrets_sync_secrets_kustomization,
+            forgejo_images_kustomization,
+            seaweedfs_pr_visuals_bucket_kustomization,
+        ],
+    )
+    flux_webhook_token_artifact = artifact(flux_webhook_token.WORKSPACE_NAME, flux_webhook_token.OUTPUT_DIR)
+    flux_webhook_token_kustomization = opentofu.workspace_kustomization(
+        flux_chart,
+        flux_webhook_token.WORKSPACE_NAME,
+        write_directory(root, flux_webhook_token_artifact, flux_webhook_token.chart),
+        github_tf_artifact,
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            github_tf_kustomization,
+            github_secrets_sync_secrets_kustomization,
+        ],
+    )
+    flux_webhook_artifact = artifact("flux-webhook", flux_webhook_chart.OUTPUT_DIR)
+    flux_webhook_chart.flux_webhook(
+        flux_chart,
+        write_directory(root, flux_webhook_artifact, flux_webhook_chart.chart),
+        external_secrets_operator_kustomization,
+        kyverno_kustomization,
+        flux_webhook_token_kustomization,
     )
     haku_ci_artifact = artifact("haku-ci", haku_ci_runner.OUTPUT_DIR)
     haku_ci_kustomization = haku_ci_runner.haku_ci(
@@ -2068,6 +2112,9 @@ def generate_manifests(root: Path) -> None:
             gatus_artifact,
             github_api_proxy_artifact,
             github_tf_artifact,
+            github_branch_protection_artifact,
+            github_secrets_sync_artifact,
+            flux_webhook_token_artifact,
             github_exporter_artifact,
             att_gateway_exporter_artifact,
             att_gateway_access_code_artifact,

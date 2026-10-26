@@ -71,7 +71,7 @@ def chart(app: App) -> Chart:
     # Either event reconciles every listed resource, which is harmless: an ImageRepository
     # scan on a git push is a no-op, and so is a GitRepository reconciliation on an image push.
     #
-    # terraform/gitops/flux-webhook-token configures the GitHub webhook
+    # The Crossplane Workspace from tf/gitops/flux-webhook-token configures the webhook
     # (github_repository_webhook with events = ["push", "registry_package"]). For
     # registry_package, each GHCR package must be linked to the ducktape repo in GitHub for
     # the event to fire on this repo-level webhook.
@@ -206,7 +206,11 @@ def chart(app: App) -> Chart:
 
 
 def flux_webhook(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    external_secrets_operator: Kustomization,
+    kyverno: Kustomization,
+    github_webhook_token: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -219,5 +223,6 @@ def flux_webhook(
             external_secrets_operator,
             # Kyverno's failurePolicy: Fail webhooks admit the HTTPRoute.
             kyverno,
+            github_webhook_token,
         ),
     )
