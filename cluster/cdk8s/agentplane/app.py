@@ -237,7 +237,7 @@ class App(Construct):
             args=cli_args(
                 Settings,
                 # TODO: a separate Sandbox namespace, holding the Sandboxes, their
-                # template and the runner ServiceAccount.
+                # templates, and the ServiceAccounts the controller mints for them.
                 sandbox_namespace=namespace,
                 runner_gateway_target=runner_gateway.target(namespace),
                 runner_gateway_token_file="/var/run/secrets/agentplane-runner-gateway/token",

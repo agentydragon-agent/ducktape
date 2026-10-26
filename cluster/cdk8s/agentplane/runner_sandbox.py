@@ -1,7 +1,12 @@
 """The runner's boxes, behind the egress path every agentplane box shares (sandbox_pod.py): the
 runner SandboxTemplate (agentplane/sandbox_controller), which adds the harness runner and a state
-volume, and the ServiceAccount and fence every runner template's Pods share. staging.py adds a second
-template on the ducktape image.
+volume, and the fence every runner template's Pods share. staging.py adds a second template on the
+ducktape image.
+
+A runner template names no ServiceAccount, and the environment creates none for them: the Sandbox
+controller runs every Sandbox's Pod as the Sandbox's own account, which it owns and creates before
+the Pod (agentplane/sandbox_controller/identity.go), so an account named in a template is never
+used and would only invite the assumption that runner Pods share one.
 
 The templates' container images carry the same `unset` placeholder tag as the app's Deployment:
 kustomize's `images:` transformer patches by image name across every resource in the Kustomization,
@@ -15,7 +20,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
-from cdk8s_plus_34 import ConfigMap, ServiceAccount, k8s
+from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 
 from agentplane.crd_group import GROUP, VERSION
@@ -47,7 +52,9 @@ from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
-# Every runner template's Pod name label, and the runners' ServiceAccount and fence.
+# Every runner template's Pod name label, and the name this module's SandboxTemplate and fence carry.
+# Neither is an identity: runner Pods run as the Sandbox's own ServiceAccount (this module's
+# docstring).
 NAME = "runner"
 # Sandbox runner Pods can outlive their template revision. Keep the label they already carry so the
 # network fences continue to select existing incarnations until they are naturally replaced.
@@ -150,8 +157,8 @@ def workspace_volume_spec(
 
 
 class RunnerSandbox(Construct):
-    """The runners' ServiceAccount and template, plus the VM template and relay when enabled.
-    Fleet network and route fences are added separately. A VM workspace can name a distinct class
+    """The runners' Pod template, plus the VM template and relay when enabled. Fleet network and
+    route fences are added separately. A VM workspace can name a distinct class
     when its Block claim needs a different provisioner from the state filesystem."""
 
     def __init__(
@@ -178,10 +185,6 @@ class RunnerSandbox(Construct):
                 raise ValueError("vm_workspace_storage_class requires vm_sandboxes")
         self.env = env
         namespace = env.namespace
-        # The runner Pods' identity, with no RBAC of its own.
-        ServiceAccount(
-            self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), automount_token=False
-        )
         template = RunnerTemplate(
             self,
             "runner-template",
@@ -474,7 +477,6 @@ class RunnerTemplate(Construct):
             sandbox_pod.pod_spec(
                 self.env,
                 workload=self._runner_container(image),
-                service_account_name=NAME,
                 sidecar_settings=sidecar_settings,
                 additional_workloads=([self._executor_container(image)] if self.env.isolated_codex_executor else []),
                 # Let LINSTOR's storage-pool topology place the strict-local HDD claims.

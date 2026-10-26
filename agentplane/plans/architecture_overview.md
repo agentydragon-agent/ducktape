@@ -411,7 +411,8 @@ Held until one is chosen:
   browser. Operator: agent traces and big objects should not go into the control-plane etcd
   (2026-10-18 22:39).
 - **Which Sandbox wrote a Session.** History records the namespace, name, and controller-owned Sandbox UID
-  from the runner ServiceAccount; it checks that UID on every push and keeps the globally unique Session ID
+  from the Sandbox's own ServiceAccount, which its runner authenticates as; it checks that UID on every
+  push and keeps the globally unique Session ID
   key ([History README](../history_service/README.md#which-sandbox-wrote-a-session)).
 - **Thread** (the app's link and metadata for a Session). The app database, keyed by Session ID with
   no Sandbox column. The app carries the recorded History UID in Thread views, filters Sandbox pages by
