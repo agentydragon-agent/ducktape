@@ -24,6 +24,9 @@ tf_module(
 
 filegroup(
     name = "inline_source",
-    srcs = glob(["*.tf"]),
+    srcs = glob([
+        "*.tf",
+        "versions.tf.json",
+    ]),
     visibility = ["//cluster/cdk8s:__subpackages__"],
 )

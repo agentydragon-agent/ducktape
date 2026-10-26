@@ -65,8 +65,8 @@ The assembly needs deliberate handling for:
 
 The current root survey found no actual local module calls or Terraform file-reading
 functions. Forgejo's public keys are already embedded in HCL; Route 53's variables
-are supplied by its Workspace. `gitlab-spike` mixes HCL with `versions.tf.json` and
-needs a separate assembly decision. Remote remains an option when a root actually
+are supplied by its Workspace. `gitlab-spike` also supplies the rules_tf-generated `versions.tf.json`; the Inline
+assembler translates its provider requirements into HCL, preserving the BUILD-owned constraints. Remote remains an option when a root actually
 needs a file tree; there is no demonstrated need for it in the two current Workspaces.
 
 A Composition remains useful for a higher-level infrastructure API whose inputs

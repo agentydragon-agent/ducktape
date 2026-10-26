@@ -1,5 +1,6 @@
 """Inline OpenTofu roots from native HCL files shipped as Bazel runfiles."""
 
+import json
 from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata, Chart
@@ -52,12 +53,29 @@ WORKSPACE_HEALTH_CHECK_EXPR = KustomizationSpecHealthCheckExprs(
 def inline_module(directory: str) -> str:
     """Combine an ordinary HCL root; the consumer declares its *.tf files as data.
 
-    This does not package local modules, auxiliary files, JSON, or override semantics.
+    The rules_tf-generated versions.tf.json is translated into an HCL terraform block.
+    This does not package local modules, auxiliary files, other JSON, or override semantics.
     """
-    sources = sorted(get_required_path(own_repo_rlocation(directory)).glob("*.tf"))
+    root = get_required_path(own_repo_rlocation(directory))
+    sources = sorted(root.glob("*.tf"))
     if not sources:
         raise ValueError(f"No Terraform source files in {directory}")
-    return "\n".join(source.read_text() for source in sources)
+    module = "\n".join(source.read_text() for source in sources)
+    versions = root / "versions.tf.json"
+    if versions.exists():
+        document = json.loads(versions.read_text())
+        if set(document) != {"terraform"} or set(document["terraform"]) - {"required_providers", "required_version"}:
+            raise ValueError(f"Unsupported Inline versions configuration: {versions}")
+        settings = document["terraform"]
+        lines = ["terraform {"]
+        if "required_version" in settings:
+            lines.append(f"  required_version = {json.dumps(settings['required_version'])}")
+        lines.append("  required_providers {")
+        for name, provider in settings.get("required_providers", {}).items():
+            lines.append(f"    {name} = {json.dumps(provider)}")
+        lines.extend(["  }", "}"])
+        module += "\n" + "\n".join(lines) + "\n"
+    return module
 
 
 def secret_env(name: str, key: SecretKey) -> WorkspaceSpecForProviderEnv:
