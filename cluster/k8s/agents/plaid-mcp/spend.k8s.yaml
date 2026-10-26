@@ -182,6 +182,37 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
+  name: external-creds-reader
+  namespace: plaid-mcp
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: coinbase-api-credentials
+  namespace: plaid-mcp
+spec:
+  data:
+    - remoteRef:
+        key: coinbase-api-credentials
+        property: api_key
+      secretKey: api_key
+    - remoteRef:
+        key: coinbase-api-credentials
+        property: api_secret
+      secretKey: api_secret
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: coinbase-api-credentials
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
   name: plaid-spend
   namespace: plaid-mcp
 automountServiceAccountToken: false
@@ -263,6 +294,18 @@ spec:
                 secretKeyRef:
                   key: DATABASE_URL
                   name: plaid-mcp-db-spend
+            - name: PLAID_SPEND_COINBASE__API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: api_key
+                  name: coinbase-api-credentials
+                  optional: true
+            - name: PLAID_SPEND_COINBASE__API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: api_secret
+                  name: coinbase-api-credentials
+                  optional: true
           image: git.allegedly.works/ducktape-ci/plaid-spend:unset
           imagePullPolicy: Always
           livenessProbe:
@@ -357,10 +400,49 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   annotations:
-    description: Only the cluster Gateway may reach the Plaid spend API.
+    description: Only the cluster Gateway may reach the Plaid spend API. Outbound access is limited to the Plaid database, the Authentik Gateway, and Coinbase HTTPS.
   name: plaid-spend-ingress
   namespace: plaid-mcp
 spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: plaid-mcp-db
+            k8s:io.kubernetes.pod.namespace: plaid-mcp
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - auth.allegedly.works
+    - toFQDNs:
+        - matchName: api.coinbase.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - api.coinbase.com
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: plaid-spend
