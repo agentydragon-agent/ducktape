@@ -367,9 +367,19 @@ rules:
       - list
       - watch
   - apiGroups:
+      - litellm.crossplane.io
+    resources:
+      - keys
+      - teams
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - litellm.m.crossplane.io
     resources:
-      - "*"
+      - keys
+      - teams
     verbs:
       - get
       - list
