@@ -2,7 +2,8 @@
 
 Operator-selected, 2026-10-25 PDT. Provision fresh VM workspaces as raw block volumes and
 put both VM workspace and state claims on replicated Piraeus storage. The operator accepts
-deleting pre-existing Sandboxes for this cutover instead of implementing a converter.
+deleting selected pre-existing Sandboxes for this cutover instead of implementing a converter.
+An operator-retained legacy VM may instead remain permanently suspended, with its volumes intact.
 
 ## Provisioning contract
 
@@ -33,9 +34,9 @@ recorded identities, or assume a StorageClass edit converts data.
    Qualify the replicated class as specified in the Piraeus plan before placing agent data on it.
 2. Inventory the affected VM Sandboxes and their claim/PV identities. Save desired Sandbox
    manifests, policy selections and bootstrap configuration needed to recreate them. The
-   reset applies to VM Sandboxes affected by this template change; Pod Sandboxes and backend
-   service databases are outside its scope.
-3. Disable wake-on-send and suspend each affected Sandbox. Wait for its runner to quiesce and
+   reset applies only to selected VM Sandboxes affected by this template change; Pod Sandboxes,
+   backend service databases and explicitly retained legacy VMs are outside its scope.
+3. Disable wake-on-send and suspend each selected Sandbox. Wait for its runner to quiesce and
    for its VMI and launcher to disappear before deleting the Sandbox through the ordinary
    controller lifecycle. Let the controller and Kubernetes remove its owned claims; wait
    for deletion to finish before recreating the same name.
@@ -44,6 +45,13 @@ recorded identities, or assume a StorageClass edit converts data.
    mode, the guest ext4 mount, and runner connectivity. Write markers to state and workspace,
    then verify them after suspend/resume. A bounded move to another eligible OVH node must
    preserve both claim UIDs and markers without overlapping writers.
+
+Operator decision, 2026-10-25 PDT: preserve the existing legacy VM Sandbox selected for
+retention and its state/workspace claims and PVs. Keep `spec.running: false` and
+`spec.wakeOnSend: false`; never resume it against the changed template. Exclude it from both
+Sandbox deletion and later retained-PV cleanup. Record its identity in the private cutover
+inventory. A fresh replacement uses a different name and new claims. Retention does not
+convert its storage or relax the controller's layout-compatibility checks.
 
 The accepted reset loses the removed Sandboxes' runner/native Session persistence and their
 workspace files, including repositories and harness homes. Recreated Sandboxes have new
