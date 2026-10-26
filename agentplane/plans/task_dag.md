@@ -477,6 +477,10 @@ Codex already runs one app-server and store per Runner, and Claude one process p
 ([harness process design](../docs/runner_delivery_and_harness_design.md#harness-process-store-and-session-identity));
 the recommendation covers what remains open around them.
 
+Future central Codex hosting through sandbox exec servers, including coexistence with local modes,
+is [deferred separately](task_freezer.md#codex_central_harness--central-codex-with-sandbox-exec-servers).
+It does not gate the current placement decision or separate tool memory containment.
+
 Deliver a recommendation and proposed API shape for review; implementation and migration/retirement
 nodes follow only if selected. This does not unfreeze the broader runner durability redesign or
 authorize native-subagent implementation.
