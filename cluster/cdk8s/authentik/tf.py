@@ -1,5 +1,4 @@
-"""The Authentik-provider Terraform CRs as one Flux unit: SSO providers, agent machine access,
-Other Authentik roots are managed by Crossplane."""
+"""Remaining Authentik-provider Terraform CRs: SSO providers and agent machine access."""
 
 from __future__ import annotations
 

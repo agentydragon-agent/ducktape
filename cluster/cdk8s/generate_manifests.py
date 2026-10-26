@@ -918,6 +918,7 @@ def generate_manifests(root: Path) -> None:
     gatus_sso.resources(
         flux_chart,
         write_directory(root, gatus_sso_artifact, gatus_sso.chart),
+        authentik_tf_artifact,
         crossplane_opentofu_provider_kustomization,
         tofu_state_db_kustomization,
         authentik_tf_kustomization,
@@ -926,6 +927,7 @@ def generate_manifests(root: Path) -> None:
     alloy_otlp_bearer_token.resources(
         flux_chart,
         write_directory(root, alloy_otlp_bearer_token_artifact, alloy_otlp_bearer_token.chart),
+        authentik_tf_artifact,
         crossplane_opentofu_provider_kustomization,
         tofu_state_db_kustomization,
         authentik_tf_kustomization,
@@ -971,6 +973,7 @@ def generate_manifests(root: Path) -> None:
     forgejo_claude.resources(
         flux_chart,
         write_directory(root, forgejo_claude_artifact, forgejo_claude.chart),
+        forgejo_gitops_artifact,
         crossplane_opentofu_provider_kustomization,
         tofu_state_db_kustomization,
         forgejo_gitops_kustomization,

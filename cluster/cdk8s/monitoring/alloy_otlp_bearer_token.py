@@ -1,8 +1,10 @@
 """Inline Crossplane ownership of tf/gitops/alloy-otlp-bearer-token, preserving its existing state."""
 
 from cdk8s import App, Chart
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import opentofu, terraform
+from cluster.cdk8s import flux, opentofu, terraform
 from cluster.cdk8s.flux import (
     Kustomization,
     RenderedDirectory,
@@ -48,6 +50,7 @@ def chart(app: App) -> Chart:
 def resources(
     chart: Chart,
     directory: RenderedDirectory,
+    source: ArtifactGeneratorSpecArtifacts,
     opentofu_provider: Kustomization,
     tofu_state_db: Kustomization,
     previous_owner: Kustomization,
@@ -56,7 +59,9 @@ def resources(
     return flux_kustomization(
         chart,
         NAME,
-        previous_owner.spec.source_ref,
+        KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=source.name, namespace=flux.NAMESPACE
+        ),
         path=f"./{artifact_directory(directory.artifact)}",
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(opentofu_provider, tofu_state_db, previous_owner),
