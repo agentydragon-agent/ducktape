@@ -47,7 +47,6 @@ py_library(
         ":portfolio",
         ":portfolio_models",
         ":sustainability",
-        ":valuation_history",
         "@pypi//anyio",
         "@pypi//asyncpg",
         "@pypi//babel",
@@ -71,12 +70,6 @@ py_library(
     name = "portfolio_models",
     srcs = ["portfolio_models.py"],
     deps = ["@pypi//pydantic"],
-)
-
-py_library(
-    name = "valuation_history",
-    srcs = ["valuation_history.py"],
-    deps = [":portfolio_models"],
 )
 
 py_library(
@@ -173,17 +166,6 @@ py_test(
     deps = [
         ":settings",
         "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_valuation_history",
-    srcs = ["test_valuation_history.py"],
-    deps = [
-        ":portfolio_models",
-        ":valuation_history",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

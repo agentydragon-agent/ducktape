@@ -50,7 +50,7 @@ class ExcludedSecurity(BaseModel):
     source: Literal["plaid"]
     account_id: str = Field(min_length=1)
     security_ids: list[str] = Field(min_length=1)
-    value_multiplier: Decimal = Field(default=Decimal("1"), gt=0)
+    value_multiplier: Decimal = Field(default=Decimal(1), gt=0)
 
     @field_validator("security_ids")
     @classmethod

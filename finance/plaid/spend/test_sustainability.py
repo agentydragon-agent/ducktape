@@ -9,7 +9,15 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from finance.plaid.spend.allowance import (
-    AllowancePolicy, AnalysisCategory, Kind, NamePrefix, Rule, Transaction,
+    AllOf,
+    AllowancePolicy,
+    AnalysisCategory,
+    DateRange,
+    Kind,
+    NamePrefix,
+    Rule,
+    RuleScope,
+    Transaction,
 )
 from finance.plaid.spend.models import SpendConfiguration
 from finance.plaid.spend.portfolio_models import PlaidSourcePolicy, PortfolioPolicy, PortfolioSources, PortfolioView
@@ -36,7 +44,18 @@ def allowance() -> AllowancePolicy:
         monthly_minor_units=10_000, activation_at=date(2026, 3, 20),
         time_zone=ZoneInfo('America/Los_Angeles'), spending_account_ids={'card'},
         rules=[
-            Rule(id='confirmed-refund', condition=NamePrefix(field='name', prefix='CONFIRMED REFUND'), kind=Kind.FLEXIBLE),
+            Rule(
+                condition=AllOf(
+                    conditions=[
+                        NamePrefix(field='name', prefix='CONFIRMED REFUND'),
+                        DateRange(start=date(2026, 3, 6), end=date(2026, 3, 6)),
+                    ]
+                ),
+                kind=Kind.FLEXIBLE,
+                scope=RuleScope.ONE_OFF,
+                id='confirmed-refund',
+                description='Synthetic fixture confirms this refund on 2026-03-06.',
+            ),
             Rule(condition=NamePrefix(field='name', prefix='RENT'), kind=Kind.FIXED),
             Rule(condition=NamePrefix(field='name', prefix='TRANSFER'), kind=Kind.EXCLUDED),
             Rule(condition=NamePrefix(field='name', prefix='SHOP'), kind=Kind.FLEXIBLE),

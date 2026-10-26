@@ -899,6 +899,8 @@ async def test_sustainability_experimental_render(
     await expect(page.get_by_text("Experimental", exact=True)).to_be_visible()
     await expect(page.get_by_text("TODAY'S portfolio valuation", exact=False)).to_be_visible()
     await expect(page.get_by_text("Scenario 4: 4.5%", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Current implied draw is 1.5 percentage points above this scenario.", exact=True)).to_be_visible()
+    await expect(page.get_by_text("$2,750", exact=True)).to_be_visible()
     await expect(page.get_by_text("MANDATORY", exact=True)).to_have_count(1)
     await expect(page.get_by_text("FLEXIBLE", exact=True)).to_have_count(1)
     await expect(page.get_by_text("PROVISIONAL", exact=True)).to_have_count(1)
@@ -941,6 +943,8 @@ async def test_sustainability_stale_and_unavailable_render(
         await page.get_by_role("alert").get_by_text("Estimate unavailable", exact=False).wait_for()
         await expect(page.get_by_text("Portfolio used in the estimate", exact=True)).to_be_visible()
         await expect(page.get_by_text("Valuation unavailable", exact=True)).to_be_visible()
+        await expect(page.get_by_text("ANNUALIZED SPENDING", exact=True)).to_be_visible()
+        await expect(page.get_by_text("$48,000", exact=True)).to_be_visible()
     view.errors.assert_none(context="Sustainability")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     await view.capture(

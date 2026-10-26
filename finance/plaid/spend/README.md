@@ -101,17 +101,9 @@ All service settings use the `PLAID_SPEND_` prefix except `DATABASE_URL`:
   `PLAID_SPEND_WEB_OIDC_CLIENT_SECRET`, and `PLAID_SPEND_WEB_OIDC_SESSION_SECRET`; optional
   `PLAID_SPEND_WEB_OIDC_SESSION_SECONDS` (default 28800)
 - optional `PLAID_SPEND_HOST` and `PLAID_SPEND_PORT`
-- optional `PLAID_SPEND_COINBASE_API_KEY` and `PLAID_SPEND_COINBASE_API_SECRET`; both must be present together. The
+- optional paired `PLAID_SPEND_COINBASE__API_KEY` and `PLAID_SPEND_COINBASE__API_SECRET` settings. The
   deployed service receives these two properties from the existing view-only Coinbase credential Secret and signs
   Coinbase requests in memory.
-- optional `PLAID_SPEND_VALUATION_HISTORY_PATH`; when set, successful daily aggregate valuations are stored in a
-  private SQLite file. The deployment uses `/var/lib/plaid-spend/valuation-history.sqlite3` on a dedicated PVC.
-
-Valuation history stores the safe `PortfolioView` projection, its collection day, policy revision, and UTC observation
-time. It does not store source account or security identifiers, transactions, raw provider responses, or credentials.
-There is one updatable row per day and policy revision; an unavailable retry cannot replace a ready snapshot. The PVC
-has no automatic expiry, so snapshots remain until the volume is explicitly removed. The app's Flux owner orphans
-persistent volumes if that owner is removed.
 
 The API resolver verifies Authentik RS256 access tokens against pinned issuer/JWKS metadata and requires the configured
 audience and authorized party. The listener subscribes to committed `plaid_spend_changed` notifications from the
@@ -146,9 +138,9 @@ Enabled sources must be complete and fresh for a percentage to appear. The Coinb
 wallets and current USD spot quotes, including held quantities, not external wallets or every Coinbase product.
 The backend signs view-only GET requests in memory and refreshes its portfolio cache at most once per minute.
 
-Every historical spending point uses **today's** eligible portfolio. Coverage starts at the latest first-recorded
-transaction among selected accounts; partial windows annualize only their covered days and are labeled. This is an
-observable lower bound, not proof of complete linked spending. Asset observations, transaction posting and transfer
-settlement can arrive at different times. Private `known_issues` notes appear on the page alongside source errors.
-Daily aggregate valuation recording starts when a history path is configured; historical asset-denominator charts,
-backfill, transfer reconciliation and richer tax models remain follow-ups. No financial-account writes are performed.
+Every historical spending point uses **today's** eligible portfolio; historical asset values are not reconstructed.
+Coverage starts at the latest first-recorded transaction among selected accounts; partial windows annualize only their
+covered days and are labeled. This is an observable lower bound, not proof of complete linked spending. Asset
+observations, transaction posting and transfer settlement can arrive at different times. Private `known_issues` notes
+appear on the page alongside source errors. Historical asset-denominator charts and richer tax models remain
+follow-ups. No financial-account writes are performed.

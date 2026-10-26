@@ -5,18 +5,14 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import datetime, timedelta
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 import asyncpg
 import httpx
 import jwt
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
-from finance.plaid.spend.portfolio_models import (
-    PortfolioPolicy,
-    PortfolioView,
-    SourceValuation,
-)
+from finance.plaid.spend.portfolio_models import PortfolioPolicy, PortfolioView, SourceValuation
 
 
 _ACCOUNT_BALANCES_SQL = """
@@ -118,7 +114,7 @@ def _decimal(value: object) -> Decimal | None:
 
 
 def _minor_units(amount: Decimal) -> int:
-    return int((amount * _USD_MINOR_UNITS).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    return int((amount * _USD_MINOR_UNITS).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
 def _age_issue(as_of: datetime, now: datetime, max_age_hours: int) -> str | None:
@@ -140,8 +136,8 @@ async def _read_plaid(
 ) -> tuple[SourceValuation, int, int, int]:
     plaid = policy.sources.plaid
     selected_ids = [*plaid.asset_account_ids, *plaid.liability_account_ids]
-    expected_types = {account_id: "asset" for account_id in plaid.asset_account_ids}
-    expected_types.update({account_id: "liability" for account_id in plaid.liability_account_ids})
+    expected_types = dict.fromkeys(plaid.asset_account_ids, "asset")
+    expected_types.update(dict.fromkeys(plaid.liability_account_ids, "liability"))
     if not selected_ids:
         return _unavailable("plaid", "No Plaid accounts are selected."), 0, 0, 0
 
@@ -233,7 +229,7 @@ async def _read_plaid(
                 )
         if any(multiplier != Decimal(1) for multiplier in multipliers):
             balance = balances[account_id]
-            tolerance = max(Decimal("1"), abs(balance) * Decimal("0.01"))
+            tolerance = max(Decimal(1), abs(balance) * Decimal("0.01"))
             if abs(adjusted_total - balance) > tolerance:
                 return (
                     _unavailable("plaid", "Corrected holdings do not reconcile to the selected account balance."),

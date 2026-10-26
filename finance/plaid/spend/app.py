@@ -202,10 +202,11 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
     settings = SpendSettings()
     configuration = load_configuration(settings.config_path)
+    coinbase = settings.coinbase
     service = SpendService(
         settings.database_url, configuration, dashboard_url=settings.web_oidc_public_base_url,
-        coinbase_api_key=settings.coinbase_api_key, coinbase_api_secret=settings.coinbase_api_secret,
-        valuation_history_path=settings.valuation_history_path,
+        coinbase_api_key=coinbase.api_key if coinbase is not None else None,
+        coinbase_api_secret=coinbase.api_secret if coinbase is not None else None,
     )
     uvicorn.run(create_app(settings, service=service), host=settings.host, port=settings.port, log_level="info")
 

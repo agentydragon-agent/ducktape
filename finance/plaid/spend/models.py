@@ -23,7 +23,6 @@ from finance.plaid.spend.allowance import (
     Rule,
     TransactionPeriodId,
 )
-
 from finance.plaid.spend.sustainability import SustainabilityPolicy
 
 

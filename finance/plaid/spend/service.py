@@ -5,14 +5,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import hashlib
 import logging
-import sqlite3
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import anyio
@@ -63,7 +60,6 @@ from finance.plaid.spend.sustainability import (
     disabled_view,
     empty_portfolio,
 )
-from finance.plaid.spend.valuation_history import record_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -88,18 +84,14 @@ class SpendService:
     def __init__(
         self, database_url: str, configuration: SpendConfiguration, *, dashboard_url: str,
         coinbase_api_key: SecretStr | None = None, coinbase_api_secret: SecretStr | None = None,
-        valuation_history_path: Path | None = None,
     ) -> None:
         self._database_url = database_url
         self._configuration = configuration
         self._dashboard_url = dashboard_url
         self._coinbase_api_key = coinbase_api_key
         self._coinbase_api_secret = coinbase_api_secret
-        self._valuation_history_path = valuation_history_path
         self._portfolio_lock = asyncio.Lock()
-        self._valuation_history_error = False
         self._portfolio_cache: tuple[datetime, PortfolioView] | None = None
-        self._policy_revision = hashlib.sha256(configuration.model_dump_json().encode()).hexdigest()
         self._pool: asyncpg.Pool | None = None
         self._listening = asyncio.Event()
         self._revision = 0
@@ -124,8 +116,6 @@ class SpendService:
             try:
                 async with anyio.create_task_group() as task_group:
                     task_group.start_soon(self._listen_forever, name="plaid-spend-listener")
-                    if self._configuration.sustainability is not None and self._valuation_history_path is not None:
-                        task_group.start_soon(self._record_valuations, name="plaid-spend-valuations")
                     try:
                         yield
                     finally:
@@ -709,65 +699,45 @@ class SpendService:
         issues = []
         transactions: list[Transaction] = []
         try:
-            async with self._require_pool().acquire() as connection:
-                async with connection.transaction(isolation='repeatable_read', readonly=True):
-                    accounts = await connection.fetch(
-                        """SELECT a.account_id, a.type, l.last_synced_at
-                           FROM public.accounts a JOIN public.links l ON l.item_id = a.item_id
-                           WHERE a.account_id = ANY($1::text[]) AND a.detached_at IS NULL
-                             AND l.status = 'active'""",
-                        list(allowance.spending_account_ids),
-                    )
-                    if len(accounts) != len(allowance.spending_account_ids) or any(
-                        row['type'] not in ('credit', 'depository') or row['last_synced_at'] is None
-                        or now - row['last_synced_at'] > timedelta(hours=allowance.max_sync_age_hours)
-                        for row in accounts
-                    ):
-                        issues.append('Spending account coverage or sync freshness is unavailable.')
-                    rows = await connection.fetch(
-                        f"""SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
-                                   t.date, t.amount, t.pending, t.name, t.merchant_name,
-                                   t.pfc_primary, t.pfc_detailed, {_TRANSACTION_DATES_COLUMNS},
-                                   a.type AS account_type,
-                                   t.raw_json->>'merchant_category_code' AS merchant_category_code,
-                                   {_COUNTERPARTIES_COLUMN},
-                                   COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency
-                            FROM public.transactions t
-                            JOIN public.accounts a ON a.account_id=t.account_id AND a.item_id=t.item_id
-                            JOIN public.links l ON l.item_id=a.item_id
-                            WHERE t.account_id = ANY($1::text[]) AND t.removed IS FALSE
-                              AND a.detached_at IS NULL AND l.status='active'""",
-                        list(allowance.spending_account_ids),
-                    )
-                    transactions = [Transaction.model_validate(dict(row)) for row in rows]
+            async with (
+                self._require_pool().acquire() as connection,
+                connection.transaction(isolation='repeatable_read', readonly=True),
+            ):
+                accounts = await connection.fetch(
+                    """SELECT a.account_id, a.type, l.last_synced_at
+                       FROM public.accounts a JOIN public.links l ON l.item_id = a.item_id
+                       WHERE a.account_id = ANY($1::text[]) AND a.detached_at IS NULL
+                         AND l.status = 'active'""",
+                    list(allowance.spending_account_ids),
+                )
+                if len(accounts) != len(allowance.spending_account_ids) or any(
+                    row['type'] not in ('credit', 'depository') or row['last_synced_at'] is None
+                    or now - row['last_synced_at'] > timedelta(hours=allowance.max_sync_age_hours)
+                    for row in accounts
+                ):
+                    issues.append('Spending account coverage or sync freshness is unavailable.')
+                rows = await connection.fetch(
+                    f"""SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
+                               t.date, t.amount, t.pending, t.name, t.merchant_name,
+                               t.pfc_primary, t.pfc_detailed, {_TRANSACTION_DATES_COLUMNS},
+                               a.type AS account_type,
+                               t.raw_json->>'merchant_category_code' AS merchant_category_code,
+                               {_COUNTERPARTIES_COLUMN},
+                               COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency
+                        FROM public.transactions t
+                        JOIN public.accounts a ON a.account_id=t.account_id AND a.item_id=t.item_id
+                        JOIN public.links l ON l.item_id=a.item_id
+                        WHERE t.account_id = ANY($1::text[]) AND t.removed IS FALSE
+                          AND a.detached_at IS NULL AND l.status='active'""",
+                    list(allowance.spending_account_ids),
+                )
+                transactions = [Transaction.model_validate(dict(row)) for row in rows]
         except asyncpg.PostgresError:
             issues.append('The spending source could not be read; totals are unavailable.')
         portfolio = await self._read_current_portfolio(now)
-        result = calculate_sustainability(
+        return calculate_sustainability(
             policy, allowance, transactions, portfolio, now=now, window_days=days, source_issues=issues,
         )
-        if self._valuation_history_path is None:
-            result.known_issues.append('Daily asset valuation recording is not configured.')
-        elif self._valuation_history_error:
-            result.known_issues.append('Daily asset valuation recording failed; check storage availability.')
-        return result
-
-    async def _record_valuations(self) -> None:
-        path = self._valuation_history_path
-        if path is None:
-            return
-        while True:
-            now = datetime.now(UTC)
-            view = await self._read_current_portfolio(now)
-            try:
-                await asyncio.to_thread(
-                    record_snapshot, path, self.report_day(now).isoformat(), self._policy_revision, view, now,
-                )
-                self._valuation_history_error = False
-            except (OSError, sqlite3.Error):
-                self._valuation_history_error = True
-                logger.error('Could not persist a daily valuation snapshot; check storage availability.')
-            await anyio.sleep(3600)
 
     def _require_pool(self) -> asyncpg.Pool:
         if self._pool is None:

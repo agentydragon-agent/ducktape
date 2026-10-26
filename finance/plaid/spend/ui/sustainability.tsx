@@ -24,6 +24,25 @@ function percent(value: number | null): string {
   return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(value);
 }
 
+function percentagePoints(value: number): string {
+  return new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value);
+}
+
+function scenarioComparison(currentRate: number | null, referenceRate: number): string {
+  if (currentRate == null || !Number.isFinite(currentRate)) return "Current draw rate is unavailable.";
+  const difference = Math.round((currentRate - referenceRate) * 1000) / 10;
+  if (difference === 0) return "Current implied draw is at this scenario rate.";
+  const relation = difference > 0 ? "above" : "below";
+  return `Current implied draw is ${percentagePoints(Math.abs(difference))} percentage points ${relation} this scenario.`;
+}
+
+function monthlySpendingBudget(view: SustainabilityView, rate: number): number | null {
+  const portfolioValue = view.portfolio.net_minor_units;
+  if (portfolioValue == null || portfolioValue <= 0) return null;
+  const afterTaxRate = rate * (1 - (view.effective_tax_rate ?? 0));
+  return Math.round((portfolioValue * afterTaxRate) / 12);
+}
+
 function sourceAge(source: SustainabilitySource, generatedAt: string): string {
   if (source.as_of == null) return "Source time unavailable";
   const ageDays = Math.floor((Date.parse(generatedAt) - Date.parse(source.as_of)) / 86_400_000);
@@ -89,15 +108,52 @@ function PortfolioDetails({ portfolio, generatedAt, currency }: {
                     </Badge>
                   </Stack>
                 </Group>
-                {source.issues.length > 0 && (
+                {(source.issues ?? []).length > 0 && (
                   <Stack gap={2} mt="xs">
-                    {source.issues.map((issue) => <Text key={issue} size="xs" c="dimmed">{issue}</Text>)}
+                    {(source.issues ?? []).map((issue) => <Text key={issue} size="xs" c="dimmed">{issue}</Text>)}
                   </Stack>
                 )}
               </Paper>
             ))}
           </>
         )}
+      </Stack>
+    </Paper>
+  );
+}
+
+function SpendingComposition({ view }: { view: SustainabilityView }) {
+  return (
+    <Paper component="section" aria-labelledby="spend-composition-title" withBorder radius="lg" p="xl">
+      <Stack gap="md">
+        <Title id="spend-composition-title" order={2} size="h4">Spending in this window</Title>
+        <SimpleGrid cols={{ base: 2, sm: 2 }} spacing="md">
+          <div>
+            <Text size="xs" c="dimmed" fw={600}>MANDATORY</Text>
+            <Text size="xl" fw={700}>{money(view.mandatory_minor_units, view.currency)}</Text>
+          </div>
+          <div>
+            <Text size="xs" c="dimmed" fw={600}>FLEXIBLE</Text>
+            <Text size="xl" fw={700}>{money(view.flexible_minor_units, view.currency)}</Text>
+          </div>
+          <div>
+            <Text size="xs" c="dimmed" fw={600}>PROVISIONAL</Text>
+            <Text size="xl" fw={700}>{money(view.provisional_minor_units, view.currency)}</Text>
+          </div>
+          <div>
+            <Text size="xs" c="dimmed" fw={600}>TOTAL SPENDING</Text>
+            <Text size="xl" fw={700}>{money(view.spending_minor_units, view.currency)}</Text>
+          </div>
+          <div>
+            <Text size="xs" c="dimmed" fw={600}>ANNUALIZED SPENDING</Text>
+            <Text size="xl" fw={700}>{money(view.annualized_spending_minor_units, view.currency)}</Text>
+          </div>
+        </SimpleGrid>
+        <Divider />
+        <Text size="sm" c="dimmed">
+          Annualized from {view.covered_days} covered days in the selected lookback. These categories describe observed spending.
+          {view.status === "unavailable" && " A draw rate is unavailable because the portfolio value is not ready."}
+        </Text>
       </Stack>
     </Paper>
   );
@@ -183,15 +239,26 @@ function DrawGauge({ view }: { view: SustainabilityView }) {
                 </span>
               )}
             </div>
-            <Group gap="xs" wrap="wrap">
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
               {view.reference_draw_rates.map((rate, index) => (
-                <Badge key={`${rate}-${index}`} color="gray" variant="outline" size="sm">
-                  Scenario {index + 1}: {percent(rate)}
-                </Badge>
+                <Paper key={`${rate}-${index}`} bg="var(--mantine-color-default-hover)" radius="md" p="sm">
+                  <Stack gap={4}>
+                    <Badge color="gray" variant="outline" size="sm" w="fit-content">
+                      Scenario {index + 1}: {percent(rate)}
+                    </Badge>
+                    <Text size="sm">{scenarioComparison(headlineRate, rate)}</Text>
+                    <Text size="xs" c="dimmed">
+                      Equivalent monthly spending: <strong>{money(monthlySpendingBudget(view, rate), view.currency)}</strong>
+                      {view.effective_tax_rate == null
+                        ? " before taxes; taxes unmodeled."
+                        : ` after ${percent(view.effective_tax_rate)} modeled withdrawal tax.`}
+                    </Text>
+                  </Stack>
+                </Paper>
               ))}
-            </Group>
+            </SimpleGrid>
             <Text size="xs" c="dimmed">
-              Gauge scale ends at {percent(maximumRate)}. {overflow ? `The actual rate is ${percent(headlineRate)}; the marker is beyond the scale.` : "Reference marks are scenario comparisons, not safety thresholds or guarantees."}
+              Gauge scale ends at {percent(maximumRate)}. {overflow ? `The actual rate is ${percent(headlineRate)}; the marker is beyond the scale.` : "Reference marks are comparisons, not safety thresholds or guarantees."}
             </Text>
           </Stack>
         ) : (
@@ -323,33 +390,7 @@ export function SustainabilityPage() {
             <>
               <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
                 <DrawGauge view={view} />
-                <Paper component="section" aria-labelledby="spend-composition-title" withBorder radius="lg" p="xl">
-                  <Stack gap="md">
-                    <Title id="spend-composition-title" order={2} size="h4">Spending in this window</Title>
-                    <SimpleGrid cols={{ base: 2, sm: 2 }} spacing="md">
-                      <div>
-                        <Text size="xs" c="dimmed" fw={600}>MANDATORY</Text>
-                        <Text size="xl" fw={700}>{money(view.mandatory_minor_units, view.currency)}</Text>
-                      </div>
-                      <div>
-                        <Text size="xs" c="dimmed" fw={600}>FLEXIBLE</Text>
-                        <Text size="xl" fw={700}>{money(view.flexible_minor_units, view.currency)}</Text>
-                      </div>
-                      <div>
-                        <Text size="xs" c="dimmed" fw={600}>PROVISIONAL</Text>
-                        <Text size="xl" fw={700}>{money(view.provisional_minor_units, view.currency)}</Text>
-                      </div>
-                      <div>
-                        <Text size="xs" c="dimmed" fw={600}>TOTAL SPENDING</Text>
-                        <Text size="xl" fw={700}>{money(view.spending_minor_units, view.currency)}</Text>
-                      </div>
-                    </SimpleGrid>
-                    <Divider />
-                    <Text size="sm" c="dimmed">
-                      Annualized from {view.covered_days} covered days in the selected lookback. These categories describe the observed spending used by this estimate.
-                    </Text>
-                  </Stack>
-                </Paper>
+                <SpendingComposition view={view} />
               </SimpleGrid>
               <SustainabilityHistoryChart
                 history={view.history}
@@ -357,6 +398,9 @@ export function SustainabilityPage() {
                 currency={view.currency}
               />
             </>
+          )}
+          {view.status === "unavailable" && view.annualized_spending_minor_units != null && (
+            <SpendingComposition view={view} />
           )}
 
           <PortfolioDetails portfolio={view.portfolio} generatedAt={view.generated_at} currency={view.currency} />

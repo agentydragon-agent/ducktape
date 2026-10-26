@@ -32,7 +32,7 @@ class _FakeConnection:
     async def fetch(self, query: str, *args: object) -> list[dict[str, object]]:
         if "WITH selected_accounts" in query:
             return self.balances
-        if "WITH latest_balances" in query:
+        if "WITH latest_holding_batches" in query:
             return self.holdings
         raise AssertionError("unexpected Plaid query")
 
