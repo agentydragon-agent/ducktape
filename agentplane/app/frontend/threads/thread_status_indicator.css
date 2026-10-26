@@ -6,6 +6,11 @@
   outline-offset: 2px;
 }
 
+.agentplane-thread-status-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
 /* Every thread mark shares one fixed slot, so a row's name does not move when its thread's mark
    changes between a dot, chevrons, the warning triangle, the power icon and the archive box. The
    library icons are a little taller than the slot and overflow it evenly. */
