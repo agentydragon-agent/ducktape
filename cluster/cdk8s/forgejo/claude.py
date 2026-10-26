@@ -50,9 +50,8 @@ def resources(
     source: ArtifactGeneratorSpecArtifacts,
     opentofu_provider: Kustomization,
     tofu_state_db: Kustomization,
-    previous_owner: Kustomization,
 ) -> Kustomization:
-    """Wait for the previous bundle to finish pruning the old Terraform CR."""
+    """Apply the Workspace after its provider and state backend are ready."""
     return flux_kustomization(
         chart,
         NAME,
@@ -61,6 +60,6 @@ def resources(
         ),
         path=f"./{artifact_directory(directory.artifact)}",
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(opentofu_provider, tofu_state_db, previous_owner),
+        depends_on=flux_kustomization_depends_on_many(opentofu_provider, tofu_state_db),
         health_check_exprs=[opentofu.WORKSPACE_HEALTH_CHECK_EXPR],
     )

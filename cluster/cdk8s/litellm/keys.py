@@ -1,4 +1,4 @@
-"""Completed LiteLLM handoff retained as a Flux prune gate during Terraform finalization."""
+"""Apply the BuildBuddy credential used by the LiteLLM live-test key sync."""
 
 from __future__ import annotations
 
@@ -8,18 +8,17 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
-TF_MODULE = "litellm-keys"
 
 
 def litellm_keys_tf(
     chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization, litellm: Kustomization
 ) -> Kustomization:
-    """Keep an empty inventory owner so Flux prunes the completed Terraform CR."""
+    """Apply the credential sibling after the LiteLLM application is ready."""
     return flux_kustomization(
         chart,
         "litellm-keys-tf",
         directory,
         timeout="20m",
         depends_on=flux_kustomization_depends_on_many(tofu_controller, litellm),
-        description="Prune the completed LiteLLM Terraform handoff; retain its credential sibling and source until finalization.",
+        description="Provide the BuildBuddy org-admin API key used by LiteLLM's live-test sync.",
     )

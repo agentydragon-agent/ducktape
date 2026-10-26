@@ -31,9 +31,8 @@ AGENTYDRAGON_REPOS_NAME = _kustomization_name("forgejo-agentydragon-repos")
 
 
 def output_dir(module_name: str) -> str:
-    # The old forgejo-gitops ArtifactGenerator copies this parent recursively. Keeping
-    # replacement Kustomizations under it makes Flux's source-revision dependency gate
-    # the old Terraform CR prune before the new Workspaces run.
+    # The forgejo-gitops ArtifactGenerator copies this parent recursively; child
+    # Kustomizations consume their own paths from the shared artifact.
     return f"{GENERATED_ROOT}/forgejo/gitops/{_kustomization_name(module_name)}"
 
 

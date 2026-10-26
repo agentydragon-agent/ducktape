@@ -175,7 +175,7 @@ def workspace_kustomization(
     *,
     depends_on: Sequence[Kustomization],
 ) -> Kustomization:
-    """Share the prune gate's source so its current revision precedes Workspace adoption."""
+    """Create a Workspace Kustomization that consumes its ExternalArtifact path."""
     return flux_kustomization(
         chart,
         name,
