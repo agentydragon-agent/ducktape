@@ -1122,11 +1122,7 @@ async def test_sustainability_stale_and_unavailable_render(
         await expect(page.get_by_text("46 days old", exact=False)).to_be_visible()
         await expect(page.get_by_text("Current data issues", exact=True)).to_be_visible()
     else:
-        source_details = page.locator("details").filter(has_text="Synthetic investment source")
-    await expect(page.get_by_text("Synthetic investment source", exact=True)).to_be_hidden()
-    await source_details.locator("summary").click()
-    await expect(page.get_by_text("Synthetic investment source", exact=True)).to_be_visible()
-    await source_details.locator("summary").click()
+        await expect(page.get_by_text("Synthetic investment source", exact=True)).to_be_visible()
         await expect(page.get_by_text("Synthetic cash source", exact=True)).to_be_visible()
     view.errors.assert_none(context="Sustainability")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")

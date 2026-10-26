@@ -52,12 +52,12 @@ ts_library(
     srcs = ["SpendingHistoryChart.tsx"],
     tsconfig = ":tsconfig",
     deps = [
-        "//util/frontend:help_tooltip",
         ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/chart.js",
         "//:node_modules/react",
+        "//util/frontend:help_tooltip",
     ],
 )
 
@@ -80,13 +80,13 @@ ts_library(
     srcs = ["configuration.tsx"],
     tsconfig = ":tsconfig",
     deps = [
-        "//util/frontend:help_tooltip",
         ":rule_display",
         ":spend_display",
         ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:help_tooltip",
     ],
 )
 
@@ -95,13 +95,13 @@ ts_library(
     srcs = ["spending.tsx"],
     tsconfig = ":tsconfig",
     deps = [
-        "//util/frontend:help_tooltip",
         ":SpendingHistoryChart",
         ":spend_display",
         ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:help_tooltip",
     ],
 )
 
@@ -113,7 +113,6 @@ ts_library(
     ],
     tsconfig = ":tsconfig",
     deps = [
-        "//util/frontend:help_tooltip",
         ":rule_display",
         ":spend_display",
         ":types",
@@ -121,6 +120,7 @@ ts_library(
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:help_tooltip",
     ],
 )
 
@@ -129,13 +129,13 @@ ts_library(
     srcs = ["sustainability.tsx"],
     tsconfig = ":tsconfig",
     deps = [
-        "//util/frontend:help_tooltip",
         ":SustainabilityHistoryChart",
         ":spend_display",
         ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:help_tooltip",
     ],
 )
 

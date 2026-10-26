@@ -230,9 +230,7 @@ function PortfolioDetails({
           <>
             <Divider />
             <details
-              open={portfolio.sources.some(
-                (source) => source.status !== "ready" || (source.issues ?? []).length > 0
-              )}
+              open={portfolio.sources.some((source) => source.status !== "ready" || (source.issues ?? []).length > 0)}
             >
               <summary style={{ cursor: "pointer", fontWeight: 650 }}>
                 Source valuations ({portfolio.sources.length})
@@ -586,9 +584,8 @@ export function SustainabilityPage() {
               No other income is modeled.
             </Text>
             <Text size="xs" c="dimmed">
-              Withdrawal taxes: {view.effective_tax_rate == null
-                ? "not modeled"
-                : `${percent(view.effective_tax_rate)} modeled`}
+              Withdrawal taxes:{" "}
+              {view.effective_tax_rate == null ? "not modeled" : `${percent(view.effective_tax_rate)} modeled`}
             </Text>
           </Group>
 
@@ -628,8 +625,8 @@ export function SustainabilityPage() {
             <Stack gap="xs" mt="sm">
               <Text size="sm">
                 Spending is annualized from the covered complete days in the selected lookback. The implied draw rate
-                compares annualized spending with the current net portfolio value. Historical draw rates use today&apos;s
-                portfolio value for every date shown.
+                compares annualized spending with the current net portfolio value. Historical draw rates use
+                today&apos;s portfolio value for every date shown.
               </Text>
               <Text size="sm">
                 Account sync and transaction posting may lag. Asset snapshots from different institutions can arrive at
