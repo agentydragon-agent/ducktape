@@ -78,5 +78,3 @@ def record_snapshot(
                 """,
                 (day, policy_revision, observed_at_text, view_json),
             )
-
-
