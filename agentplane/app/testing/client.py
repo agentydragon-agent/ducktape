@@ -70,6 +70,7 @@ class Client:
     """Async context manager over one deployment of the app."""
 
     def __init__(self, *, base_url: str, token: str) -> None:
+        self.opened_sandbox_uids: set[UUID] = set()
         self._http = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             headers={"Authorization": f"Bearer {token}"},
@@ -192,7 +193,9 @@ class Client:
         answered = await self._json(
             "POST", f"/sandboxes/{name}/sessions", json=body.model_dump(mode="json", exclude_none=True)
         )
-        return ParseDict(answered, session_dispatcher_pb2.SessionOpening())
+        opening = ParseDict(answered, session_dispatcher_pb2.SessionOpening())
+        self.opened_sandbox_uids.add(UUID(opening.sandbox_uid))
+        return opening
 
     async def session_opening(self, name: str, session_id: UUID) -> session_dispatcher_pb2.SessionOpening:
         """Read the durable opening state for a Sandbox Session."""

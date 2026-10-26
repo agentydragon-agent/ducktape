@@ -140,9 +140,14 @@ def token() -> str:
 
 
 @pytest.fixture
-async def client(base_url: str, token: str) -> AsyncIterator[Client]:
+async def client(base_url: str, token: str, request: pytest.FixtureRequest) -> AsyncIterator[Client]:
     async with Client(base_url=base_url, token=token) as opened:
-        yield opened
+        try:
+            yield opened
+        finally:
+            if request.node.get_closest_marker("vm_sandboxes") is not None:
+                for uid in opened.opened_sandbox_uids:
+                    await native_artifacts.capture(opened, sandbox_uid=uid)
 
 
 @pytest.fixture(params=[runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX], ids=["claude", "codex"])
@@ -212,7 +217,7 @@ async def suspend_and_delete(client: Client, name: str, uid: UUID) -> None:
 
 
 @pytest.fixture
-async def sandbox(client: Client, request: pytest.FixtureRequest) -> AsyncIterator[Sandboxes]:
+async def sandbox(client: Client) -> AsyncIterator[Sandboxes]:
     """Creates sandboxes and deletes every one it created, whatever the test did.
 
     Deletion is refused while a sandbox runs, so each is suspended first. A sandbox that will not go
@@ -248,8 +253,4 @@ async def sandbox(client: Client, request: pytest.FixtureRequest) -> AsyncIterat
     yield create
 
     for name, uid in created:
-        try:
-            await suspend_and_delete(client, name, uid)
-        finally:
-            if request.node.get_closest_marker("vm_sandboxes") is not None:
-                await native_artifacts.capture(client, sandbox_uid=uid)
+        await suspend_and_delete(client, name, uid)
