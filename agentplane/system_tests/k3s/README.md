@@ -160,3 +160,11 @@ stack's own images import.
   Python imports by about 14 s each on the shared VM.
 - **Pod egress:** flannel `host-gw` does not translate Pod traffic, so the stack adds a `MASQUERADE` rule for the
   Pod CIDR using the `iptables` k3s ships.
+
+Guest console logs are copied continuously to `test.outputs/vm-artifacts/consoles/`, scoped by
+launcher Pod UID and container log inode. They retain Kubernetes CRI timestamps and stream markers,
+including the guest kernel, Runner and executor supervisor output. Open log descriptors preserve
+output across launcher deletion, suspension, replacement and container restarts. For VM tests, shared client fixture cleanup exports retained native frames in both directions for
+every Sandbox where that client opened a Session. Exports go to
+`test.outputs/vm-artifacts/native/<sandbox-uid>/<thread-id>.jsonl`, with archive cursors and origins;
+the adjacent JSON records the export watermark. Failed and partially observed turns are included.

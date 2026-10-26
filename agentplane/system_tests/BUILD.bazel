@@ -40,6 +40,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":native_artifacts",
         ":ollama_warmup",
         ":scripted_upstream",
         "//agentplane:sandbox_resource",
@@ -588,5 +589,15 @@ py_test(
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "native_artifacts",
+    srcs = ["native_artifacts.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
     ],
 )

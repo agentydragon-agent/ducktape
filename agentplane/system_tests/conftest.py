@@ -28,7 +28,7 @@ from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_resource import OperatingMode
-from agentplane.system_tests import scripted_upstream
+from agentplane.system_tests import native_artifacts, scripted_upstream
 from agentplane.system_tests.ollama_warmup import warm_ollama
 from util.net import Listener
 
@@ -140,9 +140,14 @@ def token() -> str:
 
 
 @pytest.fixture
-async def client(base_url: str, token: str) -> AsyncIterator[Client]:
+async def client(base_url: str, token: str, request: pytest.FixtureRequest) -> AsyncIterator[Client]:
     async with Client(base_url=base_url, token=token) as opened:
-        yield opened
+        try:
+            yield opened
+        finally:
+            if request.node.get_closest_marker("vm_sandboxes") is not None:
+                for uid in opened.opened_sandbox_uids:
+                    await native_artifacts.capture(opened, sandbox_uid=uid)
 
 
 @pytest.fixture(params=[runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX], ids=["claude", "codex"])

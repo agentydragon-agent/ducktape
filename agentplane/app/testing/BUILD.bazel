@@ -228,6 +228,7 @@ py_library(
         "//agentplane/app:presets",
         "//agentplane/app:sandbox_models",
         "//agentplane/app/threads:bridge",
+        "//agentplane/app/threads:store",
         "//agentplane/app/threads:thread_view",
         "//agentplane/egress:decisions",
         "//agentplane/proto:event_log_pb2",

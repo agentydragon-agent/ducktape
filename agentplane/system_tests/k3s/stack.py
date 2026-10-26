@@ -34,7 +34,7 @@ import yaml
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.conftest import AGENT_SERVICE_ACCOUNT, AUDIENCE
-from agentplane.system_tests.k3s import block_storage, rendered_fixture, vm_sandboxes
+from agentplane.system_tests.k3s import block_storage, guest_logs, rendered_fixture, vm_sandboxes
 from agentplane.system_tests.k3s.bootstrap import Bootstrap
 from agentplane.testing import tls
 from util.bazel.runfiles import get_required_path
@@ -596,6 +596,14 @@ def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Ite
         ).strip()
         print("memory:", run("free", "-m"))
         timeline.mark("stack ready")
+        if fixture.vm_sandboxes:
+            cleanup.enter_context(
+                guest_logs.capture(
+                    log_root=Path("/var/log/pods"),
+                    namespace=fixture.namespace,
+                    destination=undeclared_outputs_dir() / "vm-artifacts" / "consoles",
+                )
+            )
         yield Stack(k3s=k3s, namespace=fixture.namespace, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
         print(k3s.report(fixture.namespace))
         if fixture.vm_sandboxes:
