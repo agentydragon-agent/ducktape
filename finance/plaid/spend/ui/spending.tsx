@@ -18,14 +18,7 @@ import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
 import { Metric, Money, SignalLabel, time, periodLabels, type Signal } from "./spend_display";
 import { SpendingHistoryChart } from "./SpendingHistoryChart";
-import type {
-  Allowance,
-  AllowancePeriodId,
-  CardView,
-  EstimatePeriodId,
-  SpendView,
-  TransactionsView,
-} from "./types";
+import type { Allowance, AllowancePeriodId, CardView, EstimatePeriodId, SpendView, TransactionsView } from "./types";
 
 type ReversalPairResolution = NonNullable<Allowance["reversal_pairs"]>[number];
 

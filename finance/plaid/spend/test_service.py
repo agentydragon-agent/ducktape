@@ -484,7 +484,8 @@ async def test_reversal_uses_old_retained_original_and_preserves_card_statement(
     assert credit.disposition == Disposition.REVERSED
     assert credit.reversal_pair == pair
     assert credit.effective_kind == Kind.EXCLUDED
-    assert credit.rule is not None and credit.rule.kind == Kind.FLEXIBLE
+    assert credit.rule is not None
+    assert credit.rule.kind == Kind.FLEXIBLE
     assert credit.statement_minor_units == -8_000
     assert credit.allowance_minor_units == 0
     configuration = spend_service.read_configuration()

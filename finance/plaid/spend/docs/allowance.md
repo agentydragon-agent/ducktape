@@ -69,31 +69,31 @@ credit. Add the list alongside `rules` under `allowance`. `amount_exact` accepts
 can require exact opposite values:
 
 ```yaml
-  reversal_pairs:
-    - id: example-full-reversal
-      description: Synthetic example of a fully reversed purchase.
-      original:
-        type: all_of
-        conditions:
-          - type: name_prefix
-            field: merchant_name
-            prefix: EXAMPLE ORIGINAL SHOP
-          - type: amount_exact
-            value: "45.00"
-          - type: date_range
-            start: 2026-01-10
-            end: 2026-01-10
-      reversal:
-        type: all_of
-        conditions:
-          - type: name_prefix
-            field: name
-            prefix: EXAMPLE SHOP REVERSAL
-          - type: amount_exact
-            value: "-45.00"
-          - type: date_range
-            start: 2026-01-12
-            end: 2026-01-12
+reversal_pairs:
+  - id: example-full-reversal
+    description: Synthetic example of a fully reversed purchase.
+    original:
+      type: all_of
+      conditions:
+        - type: name_prefix
+          field: merchant_name
+          prefix: EXAMPLE ORIGINAL SHOP
+        - type: amount_exact
+          value: "45.00"
+        - type: date_range
+          start: 2026-01-10
+          end: 2026-01-10
+    reversal:
+      type: all_of
+      conditions:
+        - type: name_prefix
+          field: name
+          prefix: EXAMPLE SHOP REVERSAL
+        - type: amount_exact
+          value: "-45.00"
+        - type: date_range
+          start: 2026-01-12
+          end: 2026-01-12
 ```
 
 The service resolves a pair only when both selectors identify exactly one posted transaction, the amounts are exact

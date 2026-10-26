@@ -106,7 +106,8 @@ def test_reversal_removes_both_legs_but_keeps_replacement_and_normal_refunds() -
     for decision in decisions[:2]:
         assert decision.disposition == Disposition.REVERSED
         assert decision.effective_kind == Kind.EXCLUDED
-        assert decision.rule is not None and decision.rule.kind == Kind.FLEXIBLE
+        assert decision.rule is not None
+        assert decision.rule.kind == Kind.FLEXIBLE
         assert decision.reversal_pair == pair()
         assert decision.allowance_minor_units == 0
         assert not any(decision.pace_effects_minor_units.values())
@@ -139,16 +140,14 @@ def test_ambiguous_selector_does_not_exclude_any_leg(ambiguous_leg: int) -> None
         ({"pending": True}, "pending"),
         ({"account_id": "other-card"}, "same account"),
         ({"currency": "EUR"}, "currency"),
-        ({"amount": Decimal("-79")}, "equal and opposite"),
-        ({"amount": Decimal("80")}, "positive original"),
+        ({"amount": Decimal(-79)}, "equal and opposite"),
+        ({"amount": Decimal(80)}, "positive original"),
     ],
 )
 def test_inconsistent_pair_is_not_applied(changes: dict[str, object], issue: str) -> None:
     # Omit the amount guard here so ledger consistency, rather than selector matching, is exercised.
     configured = pair()
-    configured = configured.model_copy(
-        update={"reversal": AllOf(conditions=configured.reversal.conditions[:2])}
-    )
+    configured = configured.model_copy(update={"reversal": AllOf(conditions=configured.reversal.conditions[:2])})
     rows = legs()
     rows[1] = rows[1].model_copy(update=changes)
     result = resolve_reversal_pairs(policy([configured]), rows, time_zone=_ZONE, today=_NOW.date())
@@ -167,13 +166,12 @@ def test_missing_currency_means_policy_currency_and_pending_replacement_is_dedup
 
 def test_overlapping_assertions_are_both_unresolved() -> None:
     result = resolve_reversal_pairs(
-        policy([pair(), pair().model_copy(update={"id": "another-return"})]),
-        legs(),
-        time_zone=_ZONE,
-        today=_NOW.date(),
+        policy([pair(), pair().model_copy(update={"id": "another-return"})]), legs(), time_zone=_ZONE, today=_NOW.date()
     )
     assert not result.pairs_by_transaction
-    assert all(any("another reversal pair" in issue for issue in resolution.issues) for resolution in result.resolutions)
+    assert all(
+        any("another reversal pair" in issue for issue in resolution.issues) for resolution in result.resolutions
+    )
 
 
 def test_future_reversal_does_not_rewrite_history_yet() -> None:
@@ -197,8 +195,12 @@ def test_reconciled_history_has_no_artificial_credit_dip_or_original_spike(origi
         configured,
         rows,
         PortfolioView(
-            status="ready", assets_minor_units=1_000_000, liabilities_minor_units=0,
-            excluded_minor_units=0, net_minor_units=1_000_000, sources=[],
+            status="ready",
+            assets_minor_units=1_000_000,
+            liabilities_minor_units=0,
+            excluded_minor_units=0,
+            net_minor_units=1_000_000,
+            sources=[],
         ),
         time_zone=_ZONE,
         now=_NOW,
