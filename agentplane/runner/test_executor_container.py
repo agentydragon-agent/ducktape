@@ -10,6 +10,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 import pytest_bazel
@@ -19,6 +20,8 @@ from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.driver import RunnerDriver, SessionFollow
 from agentplane.runner.testing.fixtures import ModelEndpoint
+from agentplane.runner.testing.process import RunningRunner
+from agentplane.runner.testing.process_fixtures import wait_for_exit
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 from third_party.containers import debian_slim
 from util.bazel.runfiles import get_required_path
@@ -74,7 +77,7 @@ def executor_companion(tmp_path: Path) -> Iterator[ExecutorCompanion]:
     url = f"ws://127.0.0.1:{_free_port()}"
     container = (
         LoggedContainer(debian_slim.IMAGE.tag, test_name="runner-executor-companion")
-        .with_kwargs(network_mode="host", restart_policy={"Name": "always"}, mem_limit="512m", pids_limit=64)
+        .with_kwargs(network_mode="host", mem_limit="512m", pids_limit=64)
         .with_volume_mapping(str(tmp_path), str(tmp_path), mode="rw")
         .with_volume_mapping(str(runner_binary), "/runner", mode="ro")
         .with_volume_mapping(str(codex_binary.parent.parent), "/opt/codex", mode="ro")
@@ -93,15 +96,16 @@ def executor_companion(tmp_path: Path) -> Iterator[ExecutorCompanion]:
             )
         )
     )
-    started = time.monotonic()
     with container:
-        # Docker only applies restart policies after the container has been up for ten seconds.
-        # Give this generation that time before deliberately killing its PID 1 below.
-        while not socket_path.exists():
-            if time.monotonic() - started > 10:
-                raise TimeoutError("executor companion did not create its ownership socket")
-            time.sleep(0.05)
-        time.sleep(max(0, 10 - (time.monotonic() - started)))
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                _inspect_executor(socket_path)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("executor companion did not create its ownership socket") from None
+                time.sleep(0.05)
         yield ExecutorCompanion(url=url, socket=socket_path, container=container)
 
 
@@ -121,7 +125,7 @@ def config(
     return replace(runner_config, harness_environment=environment)
 
 
-async def _wait_for_owned_generation(path: Path, previous: str) -> ExecutorStatus:
+async def _wait_for_generation(path: Path, previous: str, *, owned: bool) -> ExecutorStatus:
     async with asyncio.timeout(30):
         while True:
             try:
@@ -129,17 +133,67 @@ async def _wait_for_owned_generation(path: Path, previous: str) -> ExecutorStatu
             except OSError:
                 await asyncio.sleep(0.1)
                 continue
-            if status.generation != previous and status.owned:
+            if status.generation != previous and status.owned is owned:
                 return status
             await asyncio.sleep(0.1)
 
 
-def _wait_for_marker_line(path: Path, line: str) -> None:
-    deadline = time.monotonic() + 10
-    while line not in path.read_text().splitlines():
+async def _wait_for_owned(path: Path, generation: str) -> ExecutorStatus:
+    async with asyncio.timeout(30):
+        while True:
+            try:
+                status = await asyncio.to_thread(_inspect_executor, path)
+            except OSError:
+                await asyncio.sleep(0.1)
+                continue
+            if status.generation == generation and status.owned:
+                return status
+            await asyncio.sleep(0.1)
+
+
+def _host_pid_for_marker(companion: ExecutorCompanion, marker: str) -> int | None:
+    process_table = companion.container.get_wrapped_container().top()
+    pid_column = process_table["Titles"].index("PID")
+    command_column = process_table["Titles"].index("CMD")
+    matches = [row for row in process_table["Processes"] if marker in row[command_column]]
+    if len(matches) > 1:
+        raise AssertionError(f"expected one process marked {marker!r}, found {matches}")
+    return int(matches[0][pid_column]) if matches else None
+
+
+def _wait_for_host_pid(companion: ExecutorCompanion, marker: str) -> int:
+    deadline = time.monotonic() + 30
+    while (pid := _host_pid_for_marker(companion, marker)) is None:
         if time.monotonic() >= deadline:
-            raise TimeoutError(f"{line!r} was not written to {path}")
-        time.sleep(0.05)
+            raise TimeoutError(f"process marked {marker!r} did not appear in Docker top")
+        time.sleep(0.1)
+    return pid
+
+
+def _kill_exec_server(companion: ExecutorCompanion) -> None:
+    script = """
+    for process in /proc/[0-9]*; do
+      args=$(tr '\\000' ' ' < "$process/cmdline" 2>/dev/null) || continue
+      case "$args" in
+        "/opt/codex/bin/codex exec-server --listen "*)
+          kill -KILL "${process##*/}"
+          exit 0
+          ;;
+      esac
+    done
+    exit 1
+    """
+    result = companion.container.get_wrapped_container().exec_run(["/bin/sh", "-c", script])
+    if result.exit_code:
+        raise RuntimeError(f"could not kill Codex exec-server: {result.output!r}")
+
+
+def _wait_for_container_exit(companion: ExecutorCompanion) -> None:
+    companion.container.get_wrapped_container().wait(timeout=30)
+
+
+def _start_container(companion: ExecutorCompanion) -> None:
+    companion.container.get_wrapped_container().start()
 
 
 async def _codex_process(driver: RunnerDriver) -> runner_pb2.HarnessProcessStatus:
@@ -165,53 +219,55 @@ async def _reply_to_tool(
 
 
 async def test_companion_namespace_restarts_without_restarting_codex_app_server(
+    runner: RunningRunner,
     driver: RunnerDriver,
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
-    workspace: Path,
     executor_companion: ExecutorCompanion,
 ) -> None:
     session = await driver.attach("isolated-executor", spec=spec)
-    marker = workspace / "executor-runs.txt"
-    marker_arg = shlex.quote(str(marker))
-    delayed_write = f"printf 'detached-started\\n' >> {marker_arg}; sleep 5; printf 'late\\n' >> {marker_arg}"
+    detached_marker = f"detached-child-{uuid4().hex}"
+    detached_script = "while :; do sleep 1; done"
     first_command = (
-        f"printf 'first:' >> {marker_arg}; cat /proc/1/comm >> {marker_arg}; "
-        f"setsid sh -c {shlex.quote(delayed_write)} </dev/null >/dev/null 2>&1 & "
-        "printf FIRST_TOOL_OK"
+        f"setsid sh -c {shlex.quote(detached_script)} {shlex.quote(detached_marker)} "
+        "</dev/null >/dev/null 2>&1 & printf FIRST_TOOL_OK"
     )
 
     await session.submit_input("input-1", "Run the first shell tool and report its output.")
     await _reply_to_tool(model, session, "call-first", first_command, "FIRST_DONE", "FIRST_TOOL_OK")
-    await asyncio.to_thread(_wait_for_marker_line, marker, "detached-started")
+    detached_host_pid = await asyncio.to_thread(_wait_for_host_pid, executor_companion, detached_marker)
     initial_executor = await asyncio.to_thread(_inspect_executor, executor_companion.socket)
     assert initial_executor.owned
     initial_app_server = await _codex_process(driver)
     assert initial_app_server.HasField("pid")
-    assert marker.read_text().splitlines() == ["first:runner", "detached-started"]
 
-    # Killing PID 1 produces ownership EOF; Docker restarts the private PID namespace.
-    await asyncio.to_thread(
-        executor_companion.container.get_wrapped_container().exec_run, ["/bin/sh", "-c", "kill -KILL 1"]
-    )
-    restarted_executor = await _wait_for_owned_generation(executor_companion.socket, initial_executor.generation)
-    await asyncio.sleep(5.5)
-    assert marker.read_text().splitlines() == ["first:runner", "detached-started"]
+    await asyncio.to_thread(_kill_exec_server, executor_companion)
+    await asyncio.to_thread(_wait_for_container_exit, executor_companion)
+    await asyncio.wait_for(wait_for_exit(detached_host_pid), timeout=30)
+    await asyncio.to_thread(_start_container, executor_companion)
+    restarted_executor = await _wait_for_generation(executor_companion.socket, initial_executor.generation, owned=True)
 
     recovered_app_server = await _codex_process(driver)
     assert recovered_app_server.pid == initial_app_server.pid
 
     await session.submit_input("input-2", "Run a fresh shell tool and report its output.")
-    await _reply_to_tool(
-        model,
-        session,
-        "call-second",
-        f"printf 'second\\n' >> {marker_arg}; printf SECOND_TOOL_OK",
-        "SECOND_DONE",
-        "SECOND_TOOL_OK",
-    )
+    await _reply_to_tool(model, session, "call-second", "printf SECOND_TOOL_OK", "SECOND_DONE", "SECOND_TOOL_OK")
     assert restarted_executor.generation != initial_executor.generation
-    assert marker.read_text().splitlines() == ["first:runner", "detached-started", "second"]
+    assert (await _codex_process(driver)).pid == initial_app_server.pid
+
+    await runner.crash()
+    await asyncio.to_thread(_wait_for_container_exit, executor_companion)
+    await asyncio.to_thread(_start_container, executor_companion)
+    idle_executor = await _wait_for_generation(executor_companion.socket, restarted_executor.generation, owned=False)
+    await runner.start()
+
+    session = await driver.attach("isolated-executor", spec=spec, after_cursor=session.cursor)
+    await session.submit_input("input-3", "Run a fresh shell tool and report its output.")
+    await _reply_to_tool(model, session, "call-third", "printf THIRD_TOOL_OK", "THIRD_DONE", "THIRD_TOOL_OK")
+    owned_executor = await _wait_for_owned(executor_companion.socket, idle_executor.generation)
+    assert owned_executor.generation == idle_executor.generation
+    await driver.quiesce()
+    await asyncio.to_thread(_wait_for_container_exit, executor_companion)
 
 
 if __name__ == "__main__":
