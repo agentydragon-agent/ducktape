@@ -2,9 +2,25 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount, k8s
-from crossplane_pkg_provider_crds.io.crossplane.pkg import Provider, ProviderSpec, ProviderSpecPackagePullSecrets
+from crossplane_deploymentruntimeconfig_crds.io.crossplane.pkg import (
+    DeploymentRuntimeConfig,
+    DeploymentRuntimeConfigSpec,
+    DeploymentRuntimeConfigSpecDeploymentTemplate,
+    DeploymentRuntimeConfigSpecDeploymentTemplateSpec,
+    DeploymentRuntimeConfigSpecDeploymentTemplateSpecSelector,
+    DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplate,
+    DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpec,
+    DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecContainers,
+)
+from crossplane_function_crds.io.crossplane.pkg import Function, FunctionSpec
+from crossplane_pkg_provider_crds.io.crossplane.pkg import (
+    Provider,
+    ProviderSpec,
+    ProviderSpecPackagePullSecrets,
+    ProviderSpecRuntimeConfigRef,
+)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDependsOn, KustomizationSpecHealthCheckExprs
 
 from cluster.cdk8s import flux, namespaces
@@ -204,54 +220,43 @@ def kubernetes_provider_chart(app: App) -> Chart:
         ),
         subjects=[k8s.Subject(kind="ServiceAccount", name=KUBERNETES_PROVIDER_SERVICE_ACCOUNT, namespace=NAMESPACE)],
     )
-    ApiObject(
+    DeploymentRuntimeConfig(
         chart,
         "provider-runtime-config",
-        api_version="pkg.crossplane.io/v1beta1",
-        kind="DeploymentRuntimeConfig",
         metadata=ApiObjectMetadata(name=KUBERNETES_PROVIDER_RUNTIME_CONFIG),
-    ).add_json_patch(
-        JsonPatch.add(
-            "/spec",
-            {
-                "deploymentTemplate": {
-                    "spec": {
-                        "selector": {},
-                        "template": {
-                            "spec": {
-                                "serviceAccountName": KUBERNETES_PROVIDER_SERVICE_ACCOUNT,
-                                "containers": [{"name": "package-runtime", "args": ["--enable-watches"]}],
-                            }
-                        },
-                    }
-                }
-            },
-        )
+        spec=DeploymentRuntimeConfigSpec(
+            deployment_template=DeploymentRuntimeConfigSpecDeploymentTemplate(
+                spec=DeploymentRuntimeConfigSpecDeploymentTemplateSpec(
+                    selector=DeploymentRuntimeConfigSpecDeploymentTemplateSpecSelector(),
+                    template=DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplate(
+                        spec=DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpec(
+                            service_account_name=KUBERNETES_PROVIDER_SERVICE_ACCOUNT,
+                            containers=[
+                                DeploymentRuntimeConfigSpecDeploymentTemplateSpecTemplateSpecContainers(
+                                    name="package-runtime", args=["--enable-watches"]
+                                )
+                            ],
+                        )
+                    ),
+                )
+            )
+        ),
     )
-    ApiObject(
+    Provider(
         chart,
         "provider",
-        api_version="pkg.crossplane.io/v1",
-        kind="Provider",
         metadata=ApiObjectMetadata(name="provider-kubernetes"),
-    ).add_json_patch(
-        JsonPatch.add(
-            "/spec",
-            {
-                "package": KUBERNETES_PROVIDER_PACKAGE,
-                "revisionActivationPolicy": "Automatic",
-                "runtimeConfigRef": {"name": KUBERNETES_PROVIDER_RUNTIME_CONFIG},
-            },
-        )
+        spec=ProviderSpec(
+            package=KUBERNETES_PROVIDER_PACKAGE,
+            revision_activation_policy="Automatic",
+            runtime_config_ref=ProviderSpecRuntimeConfigRef(name=KUBERNETES_PROVIDER_RUNTIME_CONFIG),
+        ),
     )
-    ApiObject(
+    Function(
         chart,
         "patch-and-transform-function",
-        api_version="pkg.crossplane.io/v1",
-        kind="Function",
         metadata=ApiObjectMetadata(name=PATCH_AND_TRANSFORM_FUNCTION),
-    ).add_json_patch(
-        JsonPatch.add("/spec", {"package": PATCH_AND_TRANSFORM_PACKAGE, "revisionActivationPolicy": "Automatic"})
+        spec=FunctionSpec(package=PATCH_AND_TRANSFORM_PACKAGE, revision_activation_policy="Automatic"),
     )
     return chart
 

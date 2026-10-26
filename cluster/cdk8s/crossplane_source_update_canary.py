@@ -2,10 +2,38 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch
+from crossplane_composition_crds.io.crossplane.apiextensions import (
+    Composition,
+    CompositionSpec,
+    CompositionSpecCompositeTypeRef,
+    CompositionSpecPipeline,
+    CompositionSpecPipelineFunctionRef,
+)
+from crossplane_xrd_crds.io.crossplane.apiextensions import (
+    CompositeResourceDefinition,
+    CompositeResourceDefinitionSpec,
+    CompositeResourceDefinitionSpecDefaultCompositionRef,
+    CompositeResourceDefinitionSpecNames,
+    CompositeResourceDefinitionSpecVersions,
+    CompositeResourceDefinitionSpecVersionsSchema,
+)
 from opentofu_providerconfig_crds.io.upbound.opentofu import ProviderConfig, ProviderConfigSpec
+from opentofu_workspace_crds.io.upbound.opentofu import (
+    Workspace,
+    WorkspaceSpec,
+    WorkspaceSpecForProvider,
+    WorkspaceSpecForProviderEnv,
+    WorkspaceSpecForProviderEnvSecretKeyRef,
+    WorkspaceSpecProviderConfigRef,
+)
+from provider_kubernetes_providerconfig_crds.io.crossplane.kubernetes import (
+    ProviderConfig as KubernetesProviderConfig,
+    ProviderConfigSpec as KubernetesProviderConfigSpec,
+    ProviderConfigSpecCredentials as KubernetesProviderConfigSpecCredentials,
+)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import crossplane, terraform
@@ -37,6 +65,7 @@ STATE_SCHEMA = terraform.gitops_state_schema(TF_MODULE_NAME)
 def _api_object_with_spec(
     chart: Chart, construct_id: str, *, api_version: str, kind: str, metadata: ApiObjectMetadata, spec: dict[str, Any]
 ) -> ApiObject:
+    """Render the dynamic composite resource kind declared by this canary's XRD."""
     obj = ApiObject(chart, construct_id, api_version=api_version, kind=kind, metadata=metadata)
     obj.add_json_patch(JsonPatch.add("/spec", spec))
     return obj
@@ -45,6 +74,75 @@ def _api_object_with_spec(
 def source_artifact() -> ArtifactGeneratorSpecArtifacts:
     """Only changes to the canary's Terraform files change this artifact's digest and URL."""
     return artifact_files(TF_ARTIFACT_NAME, TF_SOURCE_GLOB)
+
+
+def _artifact_watch_base() -> dict[str, Any]:
+    """Render provider-kubernetes Object, which cdk8s cannot import as a generated wrapper.
+
+    The CRD's kind generates a TypeScript class named `Object`, which fails jsii compilation
+    and shadows the JavaScript built-in used by the generated code.
+    """
+    base_app = App()
+    base_chart = Chart(base_app, "artifact-watch-base", disable_resource_name_hashes=True)
+    obj = ApiObject(base_chart, "artifact-watch", api_version="kubernetes.crossplane.io/v1alpha2", kind="Object")
+    obj.add_json_patch(
+        JsonPatch.add(
+            "/spec",
+            {
+                "managementPolicies": ["Observe"],
+                "providerConfigRef": {"name": KUBERNETES_PROVIDER_CONFIG_NAME},
+                "watch": True,
+                "forProvider": {
+                    "manifest": {
+                        "apiVersion": "source.toolkit.fluxcd.io/v1",
+                        "kind": "ExternalArtifact",
+                        "metadata": {"name": TF_ARTIFACT_NAME, "namespace": "ducktape-flux"},
+                    }
+                },
+            },
+        )
+    )
+    base = cast(dict[str, Any], obj.to_json())
+    base.pop("metadata", None)
+    return base
+
+
+def _workspace_base() -> dict[str, Any]:
+    """Render a typed Workspace, leaving its artifact URL for the Composition patch."""
+    base_app = App()
+    base_chart = Chart(base_app, "workspace-base", disable_resource_name_hashes=True)
+    workspace = Workspace(
+        base_chart,
+        "workspace",
+        metadata=ApiObjectMetadata(name="workspace", annotations={"crossplane.io/external-name": "default"}),
+        spec=WorkspaceSpec(
+            deletion_policy="Orphan",
+            management_policies=WORKSPACE_MANAGEMENT_POLICIES,
+            provider_config_ref=WorkspaceSpecProviderConfigRef(name=PROVIDER_CONFIG_NAME),
+            for_provider=WorkspaceSpecForProvider(
+                # WorkspaceSpecForProvider requires module. P&T fills it from the observed
+                # artifact URL, so remove this temporary value from the rendered base.
+                module="filled-by-composition",
+                source="Remote",
+                remote_pull_policy="IfNotPresent",
+                plan_args=["-lock-timeout=5m"],
+                env=[
+                    WorkspaceSpecForProviderEnv(
+                        name="PGPASSWORD",
+                        secret_key_ref=WorkspaceSpecForProviderEnvSecretKeyRef(
+                            key=terraform.STATE_DATABASE_PASSWORD.key,
+                            name=terraform.STATE_DATABASE_PASSWORD.secret.name,
+                            namespace=terraform.STATE_DATABASE_PASSWORD.secret.namespace,
+                        ),
+                    )
+                ],
+            ),
+        ),
+    )
+    base = cast(dict[str, Any], workspace.to_json())
+    base["metadata"].pop("name")
+    base["spec"]["forProvider"].pop("module")
+    return base
 
 
 def chart(app: App) -> Chart:
@@ -60,77 +158,61 @@ def chart(app: App) -> Chart:
             ),
         ),
     )
-    _api_object_with_spec(
+    KubernetesProviderConfig(
         chart,
         "kubernetes-provider-config",
-        api_version="kubernetes.crossplane.io/v1alpha1",
-        kind="ProviderConfig",
         metadata=ApiObjectMetadata(name=KUBERNETES_PROVIDER_CONFIG_NAME),
-        spec={"credentials": {"source": "InjectedIdentity"}},
+        spec=KubernetesProviderConfigSpec(
+            credentials=KubernetesProviderConfigSpecCredentials(source="InjectedIdentity")
+        ),
     )
-    _api_object_with_spec(
+    CompositeResourceDefinition(
         chart,
         "composite-resource-definition",
-        api_version="apiextensions.crossplane.io/v1",
-        kind="CompositeResourceDefinition",
         metadata=ApiObjectMetadata(name=XRD_NAME),
-        spec={
-            "group": XRD_GROUP,
-            "names": {"kind": XRD_KIND, "plural": XRD_PLURAL},
-            "defaultCompositionRef": {"name": COMPOSITION_NAME},
-            "versions": [
-                {
-                    "name": "v1alpha1",
-                    "served": True,
-                    "referenceable": True,
-                    "schema": {
-                        "openAPIV3Schema": {
+        spec=CompositeResourceDefinitionSpec(
+            group=XRD_GROUP,
+            names=CompositeResourceDefinitionSpecNames(kind=XRD_KIND, plural=XRD_PLURAL),
+            default_composition_ref=CompositeResourceDefinitionSpecDefaultCompositionRef(name=COMPOSITION_NAME),
+            versions=[
+                CompositeResourceDefinitionSpecVersions(
+                    name="v1alpha1",
+                    served=True,
+                    referenceable=True,
+                    # openAPIV3Schema is intentionally free-form JSON Schema in this CRD.
+                    schema=CompositeResourceDefinitionSpecVersionsSchema(
+                        open_apiv3_schema={
                             "type": "object",
                             "properties": {
                                 "spec": {"type": "object"},
                                 "status": {"type": "object", "properties": {"artifactURL": {"type": "string"}}},
                             },
                         }
-                    },
-                }
+                    ),
+                )
             ],
-        },
+        ),
     )
-    _api_object_with_spec(
+    Composition(
         chart,
         "composition",
-        api_version="apiextensions.crossplane.io/v1",
-        kind="Composition",
         metadata=ApiObjectMetadata(name=COMPOSITION_NAME),
-        spec={
-            "compositeTypeRef": {"apiVersion": f"{XRD_GROUP}/v1alpha1", "kind": XRD_KIND},
-            "mode": "Pipeline",
-            "pipeline": [
-                {
-                    "step": "patch-and-transform",
-                    "functionRef": {"name": crossplane.PATCH_AND_TRANSFORM_FUNCTION},
-                    "input": {
+        spec=CompositionSpec(
+            composite_type_ref=CompositionSpecCompositeTypeRef(api_version=f"{XRD_GROUP}/v1alpha1", kind=XRD_KIND),
+            mode="Pipeline",
+            pipeline=[
+                CompositionSpecPipeline(
+                    step="patch-and-transform",
+                    function_ref=CompositionSpecPipelineFunctionRef(name=crossplane.PATCH_AND_TRANSFORM_FUNCTION),
+                    # The Function schema intentionally owns this open-ended input format; its
+                    # nested managed-resource templates are JSON supplied to that function.
+                    input={
                         "apiVersion": "pt.fn.crossplane.io/v1beta1",
                         "kind": "Resources",
                         "resources": [
                             {
                                 "name": "artifact-watch",
-                                "base": {
-                                    "apiVersion": "kubernetes.crossplane.io/v1alpha2",
-                                    "kind": "Object",
-                                    "spec": {
-                                        "managementPolicies": ["Observe"],
-                                        "providerConfigRef": {"name": KUBERNETES_PROVIDER_CONFIG_NAME},
-                                        "watch": True,
-                                        "forProvider": {
-                                            "manifest": {
-                                                "apiVersion": "source.toolkit.fluxcd.io/v1",
-                                                "kind": "ExternalArtifact",
-                                                "metadata": {"name": TF_ARTIFACT_NAME, "namespace": "ducktape-flux"},
-                                            }
-                                        },
-                                    },
-                                },
+                                "base": _artifact_watch_base(),
                                 "patches": [
                                     {
                                         "type": "ToCompositeFieldPath",
@@ -141,31 +223,7 @@ def chart(app: App) -> Chart:
                             },
                             {
                                 "name": "workspace",
-                                "base": {
-                                    "apiVersion": "opentofu.upbound.io/v1beta1",
-                                    "kind": "Workspace",
-                                    "metadata": {"annotations": {"crossplane.io/external-name": "default"}},
-                                    "spec": {
-                                        "deletionPolicy": "Orphan",
-                                        "managementPolicies": WORKSPACE_MANAGEMENT_POLICIES,
-                                        "providerConfigRef": {"name": PROVIDER_CONFIG_NAME},
-                                        "forProvider": {
-                                            "source": "Remote",
-                                            "remotePullPolicy": "IfNotPresent",
-                                            "planArgs": ["-lock-timeout=5m"],
-                                            "env": [
-                                                {
-                                                    "name": "PGPASSWORD",
-                                                    "secretKeyRef": {
-                                                        "key": terraform.STATE_DATABASE_PASSWORD.key,
-                                                        "name": terraform.STATE_DATABASE_PASSWORD.secret.name,
-                                                        "namespace": terraform.STATE_DATABASE_PASSWORD.secret.namespace,
-                                                    },
-                                                }
-                                            ],
-                                        },
-                                    },
-                                },
+                                "base": _workspace_base(),
                                 "patches": [
                                     {
                                         "type": "FromCompositeFieldPath",
@@ -177,9 +235,9 @@ def chart(app: App) -> Chart:
                             },
                         ],
                     },
-                }
+                )
             ],
-        },
+        ),
     )
     _api_object_with_spec(
         chart,

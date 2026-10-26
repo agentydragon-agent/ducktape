@@ -480,6 +480,7 @@ def test_crossplane_source_update_canary_watches_its_flux_artifact(
     assert artifact_watch["base"]["spec"]["managementPolicies"] == ["Observe"]
     assert xrd["spec"]["defaultCompositionRef"] == {"name": "crossplane-source-update-canary"}
     assert artifact_watch["base"]["spec"]["watch"] is True
+    assert "metadata" not in artifact_watch["base"]
     assert artifact_watch["base"]["spec"]["forProvider"]["manifest"] == {
         "apiVersion": "source.toolkit.fluxcd.io/v1",
         "kind": "ExternalArtifact",
@@ -500,6 +501,7 @@ def test_crossplane_source_update_canary_watches_its_flux_artifact(
         "toFieldPath": "spec.forProvider.module",
         "policy": {"fromFieldPath": "Optional"},
     }
+
     reader_provider = next(
         doc
         for doc in documents

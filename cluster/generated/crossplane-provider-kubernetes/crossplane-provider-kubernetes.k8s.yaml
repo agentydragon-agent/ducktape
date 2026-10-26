@@ -44,11 +44,11 @@ spec:
       selector: {}
       template:
         spec:
-          serviceAccountName: crossplane-tf-artifact-reader
           containers:
-            - name: package-runtime
-              args:
+            - args:
                 - --enable-watches
+              name: package-runtime
+          serviceAccountName: crossplane-tf-artifact-reader
 ---
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
