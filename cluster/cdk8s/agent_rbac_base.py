@@ -231,6 +231,7 @@ def _add_cluster_roles(chart: Chart) -> None:
         ("monitoring.coreos.com", monitoring_resources),
         ("networking.k8s.io", ("ingresses", "ingressclasses", "networkpolicies")),
         ("notification.toolkit.fluxcd.io", ("receivers", "alerts", "providers")),
+        ("opentofu.m.upbound.io", ("clusterproviderconfigs", "providerconfigs", "providerconfigusages", "workspaces")),
         ("opentofu.upbound.io", ("providerconfigs", "workspaces")),
         ("ops.crossplane.io", ("cronoperations", "operations", "watchoperations")),
         ("pkg.crossplane.io", crossplane_package_resources),
