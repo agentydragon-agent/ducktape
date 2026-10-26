@@ -132,10 +132,11 @@ counted, and a negative credit matched by an `excluded` one-off is a paired tran
 refund. Keep the one-offs short: they are a ledger of reviewed corrections, not a second rule engine.
 
 When `allowance` is present, it is active. Supply a required `activation_at` ISO date (YYYY-MM-DD) as the stable
-credit-cycle anchor; null or omission is invalid. To disable the allowance, omit the entire `allowance` object. Plaid
-supplies only transaction **dates**, not trustworthy purchase times: activation uses the full UTC date, and a purchase
-dated on activation day counts in full. A full monthly credit arrives immediately on activation, again on each monthly
-anniversary in the configured time zone (clamped to month-end, always measured from the original day). Unspent credit carries forward; no
+credit-cycle anchor; null or omission is invalid. To disable the allowance, omit the entire `allowance` object. Activation
+starts at midnight in the required top-level `time_zone`; a purchase assigned to that local day counts in full. Purchase
+days follow the timestamp/date hierarchy below. A full monthly credit arrives immediately on activation, again on each
+monthly anniversary in the configured time zone (clamped to month-end, always measured from the original day).
+Unspent credit carries forward; no
 monthly reset or second credit at the first calendar-month boundary. Do not backdate the anchor expecting a clean slate;
 choose the intended first credit date. Only transactions dated on or after activation reduce the allowance or appear in
 the spending-window totals. For **pace only**, the service also reads the preceding 30 calendar days, applies the same
