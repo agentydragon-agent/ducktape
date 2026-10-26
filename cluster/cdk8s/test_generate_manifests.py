@@ -17,7 +17,7 @@ import yaml
 
 from cluster.cdk8s.generate_manifests import generate_manifests
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
-from util.bazel.runfiles import get_required_path
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _REGENERATE = "regenerate with `bb run //cluster/cdk8s:generate_manifests` and commit the result"
@@ -420,10 +420,11 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
     assert workspace["spec"]["managementPolicies"] == ["Observe", "Create", "Update"]
     assert "Delete" not in workspace["spec"]["managementPolicies"]
     assert workspace["spec"]["deletionPolicy"] == "Orphan"
-    assert workspace["spec"]["forProvider"]["source"] == "Remote"
-    assert workspace["spec"]["forProvider"]["remotePullPolicy"] == "Always"
-    assert workspace["spec"]["forProvider"]["module"] == (
-        "git::https://github.com/agentydragon/ducktape.git//tf/gitops/forgejo-agentydragon?ref=devel"
+    assert workspace["spec"]["forProvider"]["source"] == "Inline"
+    assert "remotePullPolicy" not in workspace["spec"]["forProvider"]
+    root = get_required_path(own_repo_rlocation("tf/gitops/forgejo-agentydragon"))
+    assert workspace["spec"]["forProvider"]["module"] == "\n".join(
+        source.read_text() for source in sorted(root.glob("*.tf"))
     )
     assert workspace["spec"]["forProvider"]["planArgs"] == ["-lock-timeout=5m"]
     assert workspace["spec"]["forProvider"]["env"] == [

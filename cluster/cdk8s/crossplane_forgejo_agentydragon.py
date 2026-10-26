@@ -13,7 +13,7 @@ from opentofu_workspace_crds.io.upbound.opentofu import (
     WorkspaceSpecProviderConfigRef,
 )
 
-from cluster.cdk8s import terraform
+from cluster.cdk8s import opentofu, terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -22,7 +22,6 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 TF_MODULE_NAME = "forgejo-agentydragon"
 PROVIDER_CONFIG_NAME = NAME
 WORKSPACE_NAME = TF_MODULE_NAME
-REMOTE_MODULE = f"git::https://github.com/agentydragon/ducktape.git//tf/gitops/{TF_MODULE_NAME}?ref=devel"
 STATE_SCHEMA = terraform.gitops_state_schema(TF_MODULE_NAME)
 
 
@@ -50,9 +49,8 @@ def chart(app: App) -> Chart:
             management_policies=["Observe", "Create", "Update"],
             provider_config_ref=WorkspaceSpecProviderConfigRef(name=PROVIDER_CONFIG_NAME),
             for_provider=WorkspaceSpecForProvider(
-                source="Remote",
-                module=REMOTE_MODULE,
-                remote_pull_policy="Always",
+                source="Inline",
+                module=opentofu.inline_module(f"tf/gitops/{TF_MODULE_NAME}"),
                 plan_args=["-lock-timeout=5m"],
                 env=[
                     WorkspaceSpecForProviderEnv(
