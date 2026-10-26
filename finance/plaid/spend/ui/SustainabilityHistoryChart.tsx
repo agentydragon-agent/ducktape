@@ -51,8 +51,10 @@ export function SustainabilityHistoryChart({
       point.tax_adjusted_draw_rate == null ? [] : [point.tax_adjusted_draw_rate]
     );
     const maximumRate = Math.ceil(Math.max(0.01, ...rates, ...referenceDrawRates) * 1.15 * 200) / 200;
+    const minimumRate = Math.floor(Math.min(0, ...rates) * 1.15 * 200) / 200;
     return {
       maximumRate,
+      minimumRate,
       labels: history.map((point) => shortDate(point.date)),
       datasets: [
         {
@@ -127,8 +129,7 @@ export function SustainabilityHistoryChart({
           amount: {
             type: "linear",
             position: "left",
-            min: 0,
-            ...(hasRates ? { max: chart.maximumRate } : {}),
+            ...(hasRates ? { min: chart.minimumRate, max: chart.maximumRate } : { beginAtZero: true }),
             title: { display: true, text: amountLabel },
             ticks: {
               count: 6,
@@ -140,7 +141,7 @@ export function SustainabilityHistoryChart({
             type: "linear",
             position: "right",
             display: hasRates,
-            min: 0,
+            min: chart.minimumRate,
             max: chart.maximumRate,
             title: { display: true, text: "Required withdrawal rate including taxes" },
             grid: { drawOnChartArea: false },

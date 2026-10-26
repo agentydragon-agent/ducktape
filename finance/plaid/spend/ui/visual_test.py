@@ -1069,9 +1069,7 @@ async def test_sustainability_partial_window_has_no_startup_chart(
     await _select_spend_page(page, "Sustainability")
     await expect(page.get_by_text("Partial window · 45/90 days", exact=True)).to_be_visible()
     await expect(page.get_by_text("History requires at least 90 days", exact=False)).to_be_visible()
-    await expect(page.locator('canvas[aria-label="Annual funding including taxes by day"]')).to_have_count(
-        0
-    )
+    await expect(page.locator('canvas[aria-label="Annual funding including taxes by day"]')).to_have_count(0)
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     await view.capture(
         f"sustainability-partial-window-{width}",

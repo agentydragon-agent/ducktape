@@ -630,8 +630,8 @@ export function SustainabilityPage() {
             <Stack gap="xs" mt="sm">
               <Text size="sm">
                 Spending is annualized from the covered complete days in the selected lookback. The implied draw rate
-                compares annual funding including modeled withdrawal taxes with the current net portfolio value. Historical draw rates use
-                today&apos;s portfolio value for every date shown.
+                compares annual funding including modeled withdrawal taxes with the current net portfolio value.
+                Historical draw rates use today&apos;s portfolio value for every date shown.
               </Text>
               <Text size="sm">
                 Account sync and transaction posting may lag. Asset snapshots from different institutions can arrive at
