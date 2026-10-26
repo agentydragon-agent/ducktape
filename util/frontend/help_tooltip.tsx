@@ -50,6 +50,7 @@ export function HelpTooltip({ topic, description }: { topic: string; description
         size="xs"
         variant="subtle"
         color="gray"
+        style={{ color: "inherit" }}
         aria-label={`About ${topic}`}
         onPointerEnter={(event) => {
           if (event.pointerType !== "touch") setHovered(true);

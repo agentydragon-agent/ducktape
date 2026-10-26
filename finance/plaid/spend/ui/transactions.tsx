@@ -402,15 +402,7 @@ export function TransactionsPage({
             </Title>
             <HelpTooltip
               topic="Transactions"
-              description="Recent Plaid transactions and the decisions behind allowance and card totals. Positive amounts are charges; negative amounts are credits."
-            />
-            <HelpTooltip
-              topic="Transaction classifications"
-              description="The badge shows the matching rule decision. Rules are checked in order and the first match governs the transaction. A one-off rule identifies one observed transaction with a bounded date-and-amount condition."
-            />
-            <HelpTooltip
-              topic="Allowance effect"
-              description="Shows the transaction's effect on flexible allowance spending. An em dash means there is no effect. Open a row for its disposition and matching rule."
+              description="Positive amounts are charges; negative amounts are credits. Allowance shows the spending counted against your flexible budget; an em dash means no effect. Badges show classification decisions. Open a row for its matching rule and explanation."
             />
           </Group>
         </div>
