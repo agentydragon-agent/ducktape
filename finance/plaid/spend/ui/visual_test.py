@@ -234,6 +234,18 @@ def _example_sustainability(variant: str = "ready") -> dict[str, object]:
 
 def _example_sustainability_with_partial_account_history() -> dict[str, object]:
     result = _example_sustainability()
+    annual = int((Decimal(610_000) * Decimal("365.2425") / 44).quantize(Decimal(1)))
+    draw = int((Decimal(annual) / Decimal("0.88")).quantize(Decimal(1)))
+    result.update(
+        mandatory_minor_units=380_000,
+        flexible_minor_units=205_000,
+        provisional_minor_units=25_000,
+        spending_minor_units=610_000,
+        annualized_spending_minor_units=annual,
+        estimated_annual_draw_minor_units=draw,
+        spending_draw_rate=annual / 125_000_000,
+        tax_adjusted_draw_rate=draw / 125_000_000,
+    )
     result["covered_days"] = 44
     result["period_start"] = "2026-09-01"
     result["history"] = []
