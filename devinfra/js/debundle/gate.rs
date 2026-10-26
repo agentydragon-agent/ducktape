@@ -1,10 +1,10 @@
-//! Realizability gate and factorization validation.
+//! Realizability gate and assignment validation.
 //!
 //! Builds on the `analysis` core (dependency graph, assignment, reports):
 //! quotient the dependency graph into the module dependency graph used by
 //! ESM import emission and linker-order reasoning, validate
 //! realizability (`realizability`, `validation`), and assemble the
-//! per-chunk factorization state (`chunk_analysis`,
+//! per-chunk assignment analysis (`chunk_analysis`,
 //! `assignment_analysis`). The shared ESM import ordering consumed by
 //! both the gate's simulator and the emitter lives in
 //! `esm_import_order`.
