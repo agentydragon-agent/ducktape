@@ -135,9 +135,6 @@ Update specs, reports, documentation, and actual consumers together whenever a
 wire interface changes. Do not make it a side effect of an internal rename or
 leave a second vocabulary through compatibility shims.
 
-- PR #12071: rename the unassigned decomposition policy to `PerAtomicGroup`,
-  serialized as `per_atomic_group`, with matching synthesis and output paths.
-
 ### H. Documentation and closure
 
 Keep current behavior in the spec, design docs, skills, and code sites. This plan
