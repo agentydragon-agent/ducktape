@@ -875,12 +875,7 @@ py_library(
 py_library(
     name = "github_tf",
     srcs = ["github_tf.py"],
-    deps = [
-        ":flux",
-        ":manifest_roots",
-        "//cluster/cdk8s/providers/flux:kustomization",
-        "@pypi//cdk8s",
-    ],
+    deps = [":manifest_roots"],
 )
 
 py_library(

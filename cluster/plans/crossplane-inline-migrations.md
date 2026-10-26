@@ -33,6 +33,12 @@ credential used by the live-test key sync. The retired `litellm-keys` Terraform 
 is no longer included; the separate `litellm-buildbuddy-sync` source and executable
 remain.
 
+The GitHub roots (`github-branch-protection`, `github-secrets-sync`, and
+`flux-webhook-token`) are Ready and Synced under Crossplane. Their retired Terraform
+source artifacts and empty `github-tf` gate can be removed after the gate's live
+`deletionPolicy: Orphan` is confirmed. Keep the `github-tf` artifact: the three nested
+Workspace Kustomizations still consume it.
+
 ## Reconciliation and recovery
 
 Active Workspaces keep Orphan deletion policy and Observe/Create/Update management

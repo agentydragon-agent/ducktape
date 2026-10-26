@@ -870,21 +870,6 @@ spec:
       name: tf-gitops-home-switch
       originRevision: "@repo"
     - copy:
-        - from: "@repo/tf/gitops/github-branch-protection/**"
-          to: "@artifact/tf/gitops/github-branch-protection/"
-      name: tf-gitops-github-branch-protection
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/github-secrets-sync/**"
-          to: "@artifact/tf/gitops/github-secrets-sync/"
-      name: tf-gitops-github-secrets-sync
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/flux-webhook-token/**"
-          to: "@artifact/tf/gitops/flux-webhook-token/"
-      name: tf-gitops-flux-webhook-token
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/tf/gitops/gitlab-spike/**"
           to: "@artifact/tf/gitops/gitlab-spike/"
       name: tf-gitops-gitlab-spike

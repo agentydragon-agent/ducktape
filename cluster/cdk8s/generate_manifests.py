@@ -952,15 +952,6 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
     )
     github_tf_artifact = artifact(github_tf.NAME, github_tf.OUTPUT_DIR)
-    # CLEANUP(added 2026-10-26): Keep these module artifacts while the old Terraform CRs
-    # finalize. Their deletion is gated on all three legacy CRs and runners being absent
-    # and all replacement Workspaces being Ready and current-generation Synced.
-    github_branch_protection_module = terraform.gitops_module(github_branch_protection.NAME)
-    github_secrets_sync_module = terraform.gitops_module(github_secrets_sync_workspace.NAME)
-    flux_webhook_token_module = terraform.gitops_module(flux_webhook_token.NAME)
-    github_tf_kustomization = github_tf.github_tf(
-        flux_chart, write_directory(root, github_tf_artifact), tofu_controller_kustomization
-    )
     forgejo_gitops_artifact = artifact(forgejo_gitops_modules.NAME, forgejo_gitops_modules.OUTPUT_DIR)
     forgejo_claude_artifact = artifact(forgejo_claude.NAME, forgejo_claude.OUTPUT_DIR)
     forgejo_claude_kustomization = forgejo_claude.resources(
@@ -1355,7 +1346,6 @@ def generate_manifests(root: Path) -> None:
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
-            github_tf_kustomization,
             github_secrets_sync_secrets_kustomization,
         ],
     )
@@ -1370,7 +1360,6 @@ def generate_manifests(root: Path) -> None:
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
-            github_tf_kustomization,
             github_secrets_sync_secrets_kustomization,
             forgejo_images_kustomization,
             seaweedfs_pr_visuals_bucket_kustomization,
@@ -1385,7 +1374,6 @@ def generate_manifests(root: Path) -> None:
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
-            github_tf_kustomization,
             github_secrets_sync_secrets_kustomization,
         ],
     )
@@ -2115,9 +2103,6 @@ def generate_manifests(root: Path) -> None:
             vpa_artifact,
             website_artifact,
             home_switch_module,
-            github_branch_protection_module,
-            github_secrets_sync_module,
-            flux_webhook_token_module,
             gitlab_spike_module,
             litellm_buildbuddy_sync_module,
         ],
