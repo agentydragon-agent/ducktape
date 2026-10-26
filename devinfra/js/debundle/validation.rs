@@ -5,7 +5,7 @@ use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
 
 use crate::realizability::{RealizabilityVerdict, SccRejection, check_realizability};
-use analysis::assignment_assembly::AtomicUnitConflict;
+use analysis::assignment_assembly::AtomicGroupConflict;
 use analysis::graph::{EndpointView, OwnerEdgeId, assignment_endpoints};
 use analysis::module_assignment::ModuleAssignment;
 use spec::ModulePath;
@@ -15,13 +15,13 @@ use analysis::{DepKind, ModuleId, OwnerGraph, Purity, SequencedOwnerCause, State
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
-pub struct FactorizationReport {
+pub struct AssignmentReport {
     pub cycles: Vec<CycleReport>,
-    /// Atomic factor units the spec splits across destination
+    /// Atomic factor groups the spec splits across destination
     /// modules — unrealizable by construction. Populated from
-    /// `ChunkFactorization::assembly_conflicts`; the materializer rejects any
+    /// `AssignmentAnalysis::assembly_conflicts`; the materializer rejects any
     /// spec with a non-empty list before emitting code.
-    pub atomic_unit_conflicts: Vec<AtomicUnitConflict>,
+    pub atomic_group_conflicts: Vec<AtomicGroupConflict>,
     /// Topological linearization of `I ∪ S` rooted at the entry,
     /// dependency-first. Empty when the dep graph has cycles
     /// (validation rejects). Captured here so debug tooling can
@@ -31,9 +31,9 @@ pub struct FactorizationReport {
     /// Clause-2 violations (cross-destination rebinding writes) from
     /// the realizability verdict, rendered for diagnostics. A
     /// rebinding write and the binding it reassigns belong to one
-    /// atomic factor unit, so a spec splitting them surfaces as an
-    /// `atomic_unit_conflicts` entry first — on the accept path
-    /// (`cycles` and `atomic_unit_conflicts` both empty) this list
+    /// atomic factor group, so a spec splitting them surfaces as an
+    /// `atomic_group_conflicts` entry first — on the accept path
+    /// (`cycles` and `atomic_group_conflicts` both empty) this list
     /// must be empty too, and the materializer bails if that
     /// invariant ever breaks (`validate_and_emit_reports`).
     pub cross_rebinds: Vec<String>,
@@ -141,7 +141,7 @@ pub struct CycleEdge {
     /// that issued the read). `None` when the source owner is an
     /// anonymous statement with no declared bindings — diagnostics
     /// fall back to `<anon stmt #{statement_ordinal}>` in that case.
-    /// Populated by [`validate_factorization`] from the owner graph,
+    /// Populated by [`validate_assignment`] from the owner graph,
     /// so cycle reports name *both* ends of each cut edge by binding,
     /// not only the module pair.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -345,17 +345,17 @@ fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
 /// particular, an asymmetric I-cycle that Lemma 2's source-import
 /// reversal rescues never appears here, even when another SCC in the
 /// same chunk is genuinely unrealizable.
-pub fn validate_factorization(
+pub fn validate_assignment(
     owner_graph: &OwnerGraph,
     assignment: &ModuleAssignment,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
-) -> FactorizationReport {
+) -> AssignmentReport {
     let verdict = check_realizability(owner_graph, assignment);
     let cross_rebinds = render_cross_rebinds(owner_graph, &verdict, module_path);
     if verdict.unrealizable_sccs.is_empty() {
-        return FactorizationReport {
+        return AssignmentReport {
             cycles: Vec::new(),
-            atomic_unit_conflicts: Vec::new(),
+            atomic_group_conflicts: Vec::new(),
             linker_order: Vec::new(),
             cross_rebinds,
         };
@@ -423,16 +423,16 @@ pub fn validate_factorization(
             }
         })
         .collect();
-    FactorizationReport {
+    AssignmentReport {
         cycles,
-        atomic_unit_conflicts: Vec::new(),
+        atomic_group_conflicts: Vec::new(),
         linker_order: Vec::new(),
         cross_rebinds,
     }
 }
 
 /// Render the verdict's clause-2 cross-rebind diagnoses as
-/// human-readable lines for [`FactorizationReport::cross_rebinds`].
+/// human-readable lines for [`AssignmentReport::cross_rebinds`].
 fn render_cross_rebinds(
     owner_graph: &OwnerGraph,
     verdict: &RealizabilityVerdict,
@@ -525,13 +525,13 @@ fn nonconstraining_closure_edges(
     )
 }
 
-/// Render a human-readable summary of atomic-unit conflicts for
+/// Render a human-readable summary of atomic-group conflicts for
 /// inclusion in the materializer's bail message. One block per
-/// conflict listing the unit's members and each member's claim. The
+/// conflict listing the group's members and each member's claim. The
 /// `module_path` callback resolves [`ModuleId`]s to the canonical
 /// [`ModulePath`]s the spec author recognizes.
-pub fn render_atomic_unit_conflict_summary(
-    conflicts: &[AtomicUnitConflict],
+pub fn render_atomic_group_conflict_summary(
+    conflicts: &[AtomicGroupConflict],
     module_path: &dyn Fn(ModuleId) -> ModulePath,
     owner_graph: &OwnerGraph,
 ) -> String {
@@ -556,7 +556,7 @@ pub fn render_atomic_unit_conflict_summary(
             .collect();
         conflicting_modules.sort();
         out.push_str(&format!(
-            "  atomic unit {{{}}} — claims across {{{}}}:\n",
+            "  atomic group {{{}}} — claims across {{{}}}:\n",
             member_ids.join(", "),
             conflicting_modules.join(", "),
         ));

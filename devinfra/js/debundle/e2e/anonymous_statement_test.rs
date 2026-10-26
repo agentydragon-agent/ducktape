@@ -248,7 +248,7 @@ console.log("same");"#],
 // materializer can't emit them as part of any logical module —
 // it silently leaves them in residual.
 //
-// This blocks moving bindings whose atomic unit also contains anonymous
+// This blocks moving bindings whose atomic group also contains anonymous
 // statements (decorator applications on the class prototype, runtime init
 // calls, bundle preludes). This test pins the materialization-side fix.
 //
@@ -642,7 +642,7 @@ export { X, Existing };
 // post-split statement ordinal N + (number of extra splits in
 // body[..N]).
 //
-// Without the conversion, the ChunkFactorization's destination override
+// Without the conversion, the AssignmentAnalysis's destination override
 // (which keys off `statement_ordinal`) targets the wrong owner
 // node — the materializer still emits the right body item into
 // the right module, but the realizability check sees a stale

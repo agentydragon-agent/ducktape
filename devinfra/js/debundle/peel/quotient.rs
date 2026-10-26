@@ -26,7 +26,7 @@
 //!
 //! The kernel's cycle gate is the realizability primitive itself
 //! (`gate::check_realizability(&OwnerGraph, &ModuleAssignment)` — the same
-//! predicate the materializer's `validate_factorization` computes),
+//! predicate the materializer's `validate_assignment` computes),
 //! evaluated at **module** granularity under the kernel's projection
 //! by checking whether a speculative merge's post-merge module `M`
 //! has no clause-2 or clause-3 violation touching `M`.
@@ -135,8 +135,8 @@ impl ContractRejected {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SeedContractionRejected {
-    AtomicUnit {
-        unit_id: String,
+    AtomicGroup {
+        atomic_group_id: String,
         owner_ids: Vec<String>,
         rejected_pair: (String, String),
         cycle: CycleEvidence,
@@ -155,10 +155,10 @@ pub enum SeedContractionRejected {
     AtomicReachability {
         /// The atomic-DAG edge id whose contraction was refused.
         edge_id: String,
-        source_unit_id: String,
-        target_unit_id: String,
+        source_atomic_group_id: String,
+        target_atomic_group_id: String,
         /// `(source_owner_id, target_owner_id)` — the
-        /// representative owners (lowest `OwnerIdx` in each unit at
+        /// representative owners (lowest `OwnerIdx` in each group at
         /// rejection time) whose class-level contraction tripped
         /// the gate.
         rejected_pair: (String, String),
@@ -310,7 +310,7 @@ fn projects_to_residual<'a>(
 }
 
 /// Project every live class onto a `ModuleId` — the residual
-/// `ModuleId::logical(0)` where `projects_to_residual`, otherwise a
+/// `ModuleId(0)` where `projects_to_residual`, otherwise a
 /// fresh one numbered densely from 1 in ascending `ClassId` order — and
 /// build the realizability index over the resulting owner assignment.
 /// Returns the index, the class → module map, and the next free module
@@ -321,7 +321,7 @@ fn project_classes(
     classes: &[ClassData],
     gate_residual_owners: &BTreeSet<OwnerIdx>,
 ) -> (RealizabilityIndex, BTreeMap<ClassId, ModuleId>, usize) {
-    let residual_module = ModuleId::logical(0);
+    let residual_module = ModuleId(0);
     let mut class_module_id: BTreeMap<ClassId, ModuleId> = BTreeMap::new();
     let mut next_module_idx: usize = 1;
     for (class_idx, data) in classes
@@ -337,7 +337,7 @@ fn project_classes(
         {
             residual_module
         } else {
-            let m = ModuleId::logical(next_module_idx);
+            let m = ModuleId(next_module_idx);
             next_module_idx += 1;
             m
         };
@@ -493,7 +493,7 @@ impl QuotientGraph {
 
     /// Build a quotient from a complete candidate owner assignment that
     /// already passes the shared realizability gate. The assignment is checked
-    /// here before any quotient state is returned, and structural atomic units
+    /// here before any quotient state is returned, and structural atomic groups
     /// plus residual entry declarations must remain whole.
     ///
     /// The assignment vector is indexed by `OwnerIdx`; `residual_module` must
@@ -513,7 +513,7 @@ impl QuotientGraph {
             report.nodes.len()
         );
         anyhow::ensure!(
-            residual_module == ModuleId::logical(0),
+            residual_module == ModuleId(0),
             "candidate residual module must use the entry module identity"
         );
 
@@ -533,35 +533,37 @@ impl QuotientGraph {
             .enumerate()
             .map(|(idx, node)| (node.id.as_str(), idx))
             .collect();
-        let mut owner_atomic_unit = vec![None::<usize>; report.nodes.len()];
-        for (unit_idx, unit) in report.atomic_graph.nodes.iter().enumerate() {
-            let mut unit_module = None;
-            for owner_id in &unit.owner_ids {
+        let mut owner_atomic_group = vec![None::<usize>; report.nodes.len()];
+        for (atomic_group_idx, atomic_group) in report.atomic_graph.nodes.iter().enumerate() {
+            let mut atomic_group_module = None;
+            for owner_id in &atomic_group.owner_ids {
                 let owner_idx = *owner_id_to_idx.get(owner_id.as_str()).with_context(|| {
                     format!(
-                        "atomic unit {} references unknown owner {owner_id}",
-                        unit.id
+                        "atomic group {} references unknown owner {owner_id}",
+                        atomic_group.id
                     )
                 })?;
                 anyhow::ensure!(
-                    owner_atomic_unit[owner_idx].replace(unit_idx).is_none(),
-                    "owner {owner_id} appears in more than one atomic unit"
+                    owner_atomic_group[owner_idx]
+                        .replace(atomic_group_idx)
+                        .is_none(),
+                    "owner {owner_id} appears in more than one atomic group"
                 );
                 let module = owner_modules[owner_idx];
-                if let Some(expected) = unit_module {
+                if let Some(expected) = atomic_group_module {
                     anyhow::ensure!(
                         expected == module,
-                        "candidate assignment splits structural atomic unit {}",
-                        unit.id
+                        "candidate assignment splits structural atomic group {}",
+                        atomic_group.id
                     );
                 } else {
-                    unit_module = Some(module);
+                    atomic_group_module = Some(module);
                 }
             }
         }
         anyhow::ensure!(
-            owner_atomic_unit.iter().all(Option::is_some),
-            "candidate graph has owners missing from the structural atomic units"
+            owner_atomic_group.iter().all(Option::is_some),
+            "candidate graph has owners missing from the structural atomic groups"
         );
 
         for (owner_idx, node) in report.nodes.iter().enumerate() {
@@ -619,7 +621,7 @@ impl QuotientGraph {
         quotient.class_module_id = class_module_id;
         quotient.next_module_idx = owner_modules
             .iter()
-            .map(|module| module.0.0)
+            .map(|module| module.0)
             .max()
             .unwrap_or(0)
             .saturating_add(1);
@@ -816,7 +818,7 @@ impl QuotientGraph {
                     .flat_map(|class| self.classes[class.0].members.iter()),
                 &self.gate_residual_owners,
             ) {
-            ModuleId::logical(0)
+            ModuleId(0)
         } else {
             classes
                 .iter()
@@ -824,9 +826,9 @@ impl QuotientGraph {
                     self.class_module_id
                         .get(class)
                         .copied()
-                        .filter(|module| *module != ModuleId::logical(0))
+                        .filter(|module| *module != ModuleId(0))
                 })
-                .unwrap_or_else(|| ModuleId::logical(self.next_module_idx))
+                .unwrap_or(ModuleId(self.next_module_idx))
         };
         let moved: Vec<OwnerId> = classes
             .iter()
@@ -862,8 +864,8 @@ impl QuotientGraph {
                 },
             );
         }
-        if post_module.0.0 >= self.next_module_idx {
-            self.next_module_idx = post_module.0.0 + 1;
+        if post_module.0 >= self.next_module_idx {
+            self.next_module_idx = post_module.0 + 1;
         }
         self.class_module_id.insert(winner, post_module);
         true
@@ -918,8 +920,8 @@ impl QuotientGraph {
         }
         // If `post_module` was freshly minted, bump the counter so
         // subsequent merges don't collide.
-        if post_module.0.0 >= self.next_module_idx {
-            self.next_module_idx = post_module.0.0 + 1;
+        if post_module.0 >= self.next_module_idx {
+            self.next_module_idx = post_module.0 + 1;
         }
         self.class_module_id.insert(winner, post_module);
         self.class_module_id.remove(&loser);
@@ -1197,7 +1199,7 @@ impl QuotientGraph {
     /// of both combined), except that a non-residual result reuses the
     /// winner's existing slot, else the loser's, else mints a fresh idx.
     fn projected_winner_module_after_merge(&self, winner: ClassId, loser: ClassId) -> ModuleId {
-        let residual_module = ModuleId::logical(0);
+        let residual_module = ModuleId(0);
         let winner_data = &self.classes[winner.0];
         let loser_data = &self.classes[loser.0];
         if projects_to_residual(
@@ -1217,7 +1219,7 @@ impl QuotientGraph {
                     .copied()
                     .filter(|m| *m != residual_module)
             })
-            .unwrap_or_else(|| ModuleId::logical(self.next_module_idx))
+            .unwrap_or(ModuleId(self.next_module_idx))
     }
 
     /// Compute the `ModuleAssignmentDelta::MoveOwners` deltas needed to
@@ -1258,7 +1260,7 @@ impl QuotientGraph {
             .class_module_id
             .get(&winner)
             .copied()
-            .unwrap_or(ModuleId::logical(0));
+            .unwrap_or(ModuleId(0));
         if winner_current != post_module {
             let winner_members: Vec<OwnerId> = self.classes[winner.0]
                 .members
@@ -1371,7 +1373,7 @@ impl QuotientGraph {
         self.classes[c.0].is_entry_module = false;
         // Promotion shifts the class's ModuleId from residual to a
         // fresh non-residual idx iff it was previously residual-mapped.
-        let residual_module = ModuleId::logical(0);
+        let residual_module = ModuleId(0);
         let current = self
             .class_module_id
             .get(&c)
@@ -1380,7 +1382,7 @@ impl QuotientGraph {
         if current != residual_module {
             return;
         }
-        let new_module = ModuleId::logical(self.next_module_idx);
+        let new_module = ModuleId(self.next_module_idx);
         self.next_module_idx += 1;
         let owners_to_move: Vec<OwnerId> = self.classes[c.0]
             .members
@@ -1809,37 +1811,37 @@ fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> [u8; 33] {
     key
 }
 
-/// Build the quotient after structural atomic-unit and same-module seed
+/// Build the quotient after structural atomic-group and same-module seed
 /// contractions, before atomic-DAG reachability or greedy cross-module
 /// proposals. Each accepted contraction has passed the shared
 /// realizability gate, and modules remain separate from one another.
 pub fn build_same_module_seed_quotient(
     report: &OwnerGraphReport,
-    atomic_units: &[analysis::AtomicUnitReport],
+    atomic_groups: &[analysis::AtomicGroupReport],
     spec_modules: &[SpecModuleGroup],
     cap_lines: usize,
 ) -> Result<(QuotientGraph, Vec<SeedContractionRejected>), analysis::UnresolvedOwnerEdgeEndpoint> {
     let mut q = QuotientGraph::from_report(report, cap_lines)?;
     let mut rejected = Vec::<SeedContractionRejected>::new();
 
-    // ---- Pass 1: atomic units. Canonical order: lowest OwnerIdx
-    //      member, then unit id.
-    let mut units: Vec<(&analysis::AtomicUnitReport, Option<OwnerIdx>)> = atomic_units
+    // ---- Pass 1: atomic groups. Canonical order: lowest OwnerIdx
+    //      member, then atomic group id.
+    let mut atomic_groups: Vec<(&analysis::AtomicGroupReport, Option<OwnerIdx>)> = atomic_groups
         .iter()
-        .map(|unit| {
+        .map(|atomic_group| {
             (
-                unit,
-                lowest_owner_idx(&q, unit.owner_ids.iter().map(String::as_str)),
+                atomic_group,
+                lowest_owner_idx(&q, atomic_group.owner_ids.iter().map(String::as_str)),
             )
         })
         .collect();
-    units.sort_by(|(a, ai), (b, bi)| ai.cmp(bi).then_with(|| a.id.cmp(&b.id)));
-    for (unit, _) in units {
-        let owner_idxs = resolve_owner_idxs(&q, &unit.owner_ids);
+    atomic_groups.sort_by(|(a, ai), (b, bi)| ai.cmp(bi).then_with(|| a.id.cmp(&b.id)));
+    for (atomic_group, _) in atomic_groups {
+        let owner_idxs = resolve_owner_idxs(&q, &atomic_group.owner_ids);
         for (rejected_pair, cycle) in contract_group(&mut q, &owner_idxs) {
-            rejected.push(SeedContractionRejected::AtomicUnit {
-                unit_id: unit.id.clone(),
-                owner_ids: unit.owner_ids.clone(),
+            rejected.push(SeedContractionRejected::AtomicGroup {
+                atomic_group_id: atomic_group.id.clone(),
+                owner_ids: atomic_group.owner_ids.clone(),
                 rejected_pair,
                 cycle,
             });
@@ -1876,27 +1878,27 @@ pub fn build_same_module_seed_quotient(
     Ok((q, rejected))
 }
 
-/// Apply the seeding protocol: atomic units first, then spec modules.
+/// Apply the seeding protocol: atomic groups first, then spec modules.
 /// Each forced contraction is gated by
 /// `merge_preserves_invariants`; rejected contractions push a
 /// `SeedContractionRejected` diagnostic into the returned vec and the
 /// kernel continues with the remaining contractions.
 ///
-/// Canonical order: atomic units by lowest `OwnerIdx` member (then
-/// unit id for ties); spec modules by module id lex. Within a group,
+/// Canonical order: atomic groups by lowest `OwnerIdx` member (then
+/// atomic group id for ties); spec modules by module id lex. Within a group,
 /// members merge into the lowest-`OwnerIdx` pivot in `OwnerIdx`
 /// order.
 pub fn build_seed_quotient(
     report: &OwnerGraphReport,
-    atomic_units: &[analysis::AtomicUnitReport],
+    atomic_groups: &[analysis::AtomicGroupReport],
     spec_modules: &[SpecModuleGroup],
     cap_lines: usize,
 ) -> Result<(QuotientGraph, Vec<SeedContractionRejected>), analysis::UnresolvedOwnerEdgeEndpoint> {
     let (mut q, mut rejected) =
-        build_same_module_seed_quotient(report, atomic_units, spec_modules, cap_lines)?;
+        build_same_module_seed_quotient(report, atomic_groups, spec_modules, cap_lines)?;
 
     // ---- Pass 3: atomic-DAG reachability. For each atomic-DAG
-    //      edge `u → v` whose target unit has any residual member,
+    //      edge `u → v` whose target atomic group has any residual member,
     //      contract `class(rep(u))` with `class(rep(v))` through
     //      the gated protocol; rejections fire at the per-edge
     //      granularity.
@@ -1919,25 +1921,26 @@ pub fn build_seed_quotient(
     //      edge produces at most one diagnostic). Diagnostics are
     //      emitted in canonical (atomic-DAG edge id lex) order on
     //      the final, fixed-point quotient state.
-    let atomic_edges_relevant: Vec<&analysis::AtomicUnitEdgeReport> = {
-        let unit_has_residual: std::collections::HashMap<&str, bool> = atomic_units
+    let atomic_edges_relevant: Vec<&analysis::AtomicGroupEdgeReport> = {
+        let atomic_group_has_residual: std::collections::HashMap<&str, bool> = atomic_groups
             .iter()
-            .map(|unit| {
+            .map(|atomic_group| {
                 (
-                    unit.id.as_str(),
-                    unit.destinations
+                    atomic_group.id.as_str(),
+                    atomic_group
+                        .destinations
                         .iter()
                         .any(|dest| report.is_residual(dest)),
                 )
             })
             .collect();
-        let mut edges: Vec<&analysis::AtomicUnitEdgeReport> = report
+        let mut edges: Vec<&analysis::AtomicGroupEdgeReport> = report
             .atomic_graph
             .edges
             .iter()
             .filter(|e| e.constrains_init_order && e.source != e.target)
             .filter(|e| {
-                unit_has_residual
+                atomic_group_has_residual
                     .get(e.target.as_str())
                     .copied()
                     .unwrap_or(false)
@@ -1946,17 +1949,22 @@ pub fn build_seed_quotient(
         edges.sort_by(|a, b| a.id.cmp(&b.id));
         edges
     };
-    let unit_owner_idxs: std::collections::HashMap<&str, Vec<OwnerIdx>> = atomic_units
+    let atomic_group_owner_idxs: std::collections::HashMap<&str, Vec<OwnerIdx>> = atomic_groups
         .iter()
-        .map(|unit| (unit.id.as_str(), resolve_owner_idxs(&q, &unit.owner_ids)))
+        .map(|atomic_group| {
+            (
+                atomic_group.id.as_str(),
+                resolve_owner_idxs(&q, &atomic_group.owner_ids),
+            )
+        })
         .collect();
     loop {
         let mut applied = 0usize;
         for edge in &atomic_edges_relevant {
-            let Some(source_owners) = unit_owner_idxs.get(edge.source.as_str()) else {
+            let Some(source_owners) = atomic_group_owner_idxs.get(edge.source.as_str()) else {
                 continue;
             };
-            let Some(target_owners) = unit_owner_idxs.get(edge.target.as_str()) else {
+            let Some(target_owners) = atomic_group_owner_idxs.get(edge.target.as_str()) else {
                 continue;
             };
             let (Some(&src_pivot), Some(&tgt_pivot)) =
@@ -1980,10 +1988,10 @@ pub fn build_seed_quotient(
     // Walk edges once more to record diagnostics for the pairs that
     // still cannot merge at fixed point.
     for edge in &atomic_edges_relevant {
-        let Some(source_owners) = unit_owner_idxs.get(edge.source.as_str()) else {
+        let Some(source_owners) = atomic_group_owner_idxs.get(edge.source.as_str()) else {
             continue;
         };
-        let Some(target_owners) = unit_owner_idxs.get(edge.target.as_str()) else {
+        let Some(target_owners) = atomic_group_owner_idxs.get(edge.target.as_str()) else {
             continue;
         };
         let (Some(&src_pivot), Some(&tgt_pivot)) = (source_owners.first(), target_owners.first())
@@ -2003,8 +2011,8 @@ pub fn build_seed_quotient(
         if let Err(rejection) = q.check_merge(cs, ct) {
             rejected.push(SeedContractionRejected::AtomicReachability {
                 edge_id: edge.id.clone(),
-                source_unit_id: edge.source.clone(),
-                target_unit_id: edge.target.clone(),
+                source_atomic_group_id: edge.source.clone(),
+                target_atomic_group_id: edge.target.clone(),
                 rejected_pair: owner_pair(&q, src_pivot, tgt_pivot),
                 cycle: rejection.into_cycle_evidence(),
             });
@@ -2015,7 +2023,7 @@ pub fn build_seed_quotient(
     //      assembled assignment. Catches asymmetric I-cycles and mutual
     //      constraining cycles that no individual contraction created
     //      on its own, so `modules propose` and the materializer's
-    //      `validate_factorization` agree on whether a spec is
+    //      `validate_assignment` agree on whether a spec is
     //      realizable. One O(|V|+|E|) call.
     let verdict = q.realizability_verdict();
     if !verdict.is_realizable() {

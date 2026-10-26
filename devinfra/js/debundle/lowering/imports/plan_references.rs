@@ -4,10 +4,10 @@
 
 use crate::body_facts::NaturalizedBodyFacts;
 use crate::imports::{RuntimeImportFacts, RuntimeImportInfo};
-use analysis::{BindingKind, LogicalModuleIndex, ModuleId};
+use analysis::{BindingKind, ModuleId};
 use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle};
-use gate::ChunkFactorization;
+use gate::AssignmentAnalysis;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
@@ -112,16 +112,16 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
 }
 
 pub(crate) fn collect_imported_reexports_by_module(
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
     module_count: usize,
 ) -> Vec<Vec<ImportedReexport>> {
     let mut by_module: Vec<Vec<ImportedReexport>> = (0..module_count).map(|_| Vec::new()).collect();
-    // Stable iteration order on `factorization.analysis.bindings()` (HashMap): the
+    // Stable iteration order on `factorization.analysis().bindings()` (HashMap): the
     // recorded sequence determines the emit order of
     // `import { ... }` statements per module body and we want that
     // source-level shape pinned.
     let mut sorted_bindings: Vec<(&Id, &BindingKind)> =
-        factorization.analysis.bindings().iter().collect();
+        factorization.analysis().bindings().iter().collect();
     sorted_bindings.sort_by(|a, b| a.0.0.cmp(&b.0.0));
     for (id, kind) in sorted_bindings {
         // The body of this loop refers to the sym-typed `local` name
@@ -137,7 +137,7 @@ pub(crate) fn collect_imported_reexports_by_module(
         else {
             continue;
         };
-        let ModuleId(LogicalModuleIndex(index)) = re_exporter;
+        let ModuleId(index) = re_exporter;
         let Some(reexports) = by_module.get_mut(*index) else {
             continue;
         };
@@ -154,7 +154,7 @@ pub(crate) fn collect_imported_reexports_by_module(
 pub(crate) fn plan_module_reference_needs<'a>(
     module_index: usize,
     body_facts: &NaturalizedBodyFacts,
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
     declaration_by_name: &HashMap<Id, Vec<usize>>,
     binding_assignment: &HashMap<Id, usize>,
     entry_exports_by_original_local: &HashMap<Id, EntryExport>,
@@ -167,13 +167,11 @@ pub(crate) fn plan_module_reference_needs<'a>(
         };
         let body_id = reference.emitted_id();
         let name_str = body_id.0.as_ref();
-        if let Some(ModuleId(LogicalModuleIndex(provider_index))) =
-            factorization.analysis.owner_of(original_id)
-        {
+        if let Some(ModuleId(provider_index)) = factorization.analysis().owner_of(original_id) {
             if provider_index != module_index
                 && let Some(provider) = factorization
-                    .analysis
-                    .logical_module(LogicalModuleIndex(provider_index))
+                    .analysis()
+                    .logical_module(ModuleId(provider_index))
                 && let Some(exported_name) = provider.rename_map.get(original_id)
             {
                 needs
@@ -235,14 +233,14 @@ pub(crate) fn plan_module_reference_needs<'a>(
 /// is redundant — entry is always reachable.
 fn collect_phantom_side_effect_providers(
     module_index: usize,
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
     cross_module_imports_by_provider: &BTreeMap<usize, BTreeMap<String, String>>,
     phantom_side_effect_providers: &mut BTreeSet<usize>,
 ) {
-    let module_id = ModuleId(LogicalModuleIndex(module_index));
-    let residual = factorization.assignment.residual();
-    let owner_graph = factorization.analysis.owner_graph();
-    for (owner_id, owner_module) in factorization.assignment.iter() {
+    let module_id = ModuleId(module_index);
+    let residual = factorization.assignment().residual();
+    let owner_graph = factorization.analysis().owner_graph();
+    for (owner_id, owner_module) in factorization.assignment().iter() {
         if owner_module != module_id {
             continue;
         }
@@ -251,11 +249,11 @@ fn collect_phantom_side_effect_providers(
             if !edge.reason.constrains_init_order() {
                 continue;
             }
-            let target_module = factorization.assignment.of(edge.to);
+            let target_module = factorization.assignment().of(edge.to);
             if target_module == module_id || target_module == residual {
                 continue;
             }
-            let ModuleId(LogicalModuleIndex(target_index)) = target_module;
+            let ModuleId(target_index) = target_module;
             if cross_module_imports_by_provider.contains_key(&target_index) {
                 continue;
             }

@@ -1,11 +1,11 @@
 //! Per-chunk analysis state: inputs, IR, and input-derived caches.
 //!
-//! [`FactorizationInputs`] is what's known about a chunk before propose
+//! [`AssignmentInputs`] is what's known about a chunk before propose
 //! runs — the spec-supplied logical modules, the binding catalogue,
 //! the owner graph derived from the chunk facts, and the small
 //! lookup caches that depend only on inputs. The propose algorithm
-//! consumes a `FactorizationInputs` plus a default destination to produce a
-//! [`crate::ChunkFactorization`] — the assignment-and-derived state
+//! consumes an `AssignmentInputs` plus a default destination to produce a
+//! [`crate::AssignmentAnalysis`] — the assignment-and-derived state
 //! that depends on which logical-module assignment the spec chose.
 
 use std::collections::{BTreeSet, HashMap};
@@ -14,19 +14,19 @@ use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
 use analysis::reports::owner_key;
-use analysis::{BindingKind, LogicalModuleIndex, ModuleId, OwnerGraph, PlannedModule};
+use analysis::{BindingKind, ModuleId, OwnerGraph, PlannedModule};
 
 /// Per-chunk inputs + IR + input-derived caches.
 ///
 /// Constructed once per chunk and held by reference (typically via
-/// `Arc<FactorizationInputs>`) by every [`crate::ChunkFactorization`]
-/// candidate that explores a assignment over the same owner graph.
+/// `Arc<AssignmentInputs>`) by every [`crate::AssignmentAnalysis`]
+/// candidate that explores an assignment over the same owner graph.
 /// All fields are private: the lookup tables are precomputed from the
-/// inputs at [`FactorizationInputs::build`] time, so a mutable input field
+/// inputs at [`AssignmentInputs::build`] time, so a mutable input field
 /// would silently stale the caches. Read access goes through the
 /// accessors below.
 #[derive(Debug, Clone)]
-pub struct FactorizationInputs {
+pub struct AssignmentInputs {
     chunk_id: String,
     bindings: HashMap<Id, BindingKind>,
     logical_modules: Vec<PlannedModule>,
@@ -44,8 +44,8 @@ struct BindingLookupInfo {
     owner: Option<ModuleId>,
 }
 
-impl FactorizationInputs {
-    /// Build a `FactorizationInputs` reusing a caller-supplied owner graph.
+impl AssignmentInputs {
+    /// Build an `AssignmentInputs` reusing a caller-supplied owner graph.
     /// `bindings` should already have every `Owned` binding the spec
     /// assigned and every `Imported` binding the spec re-exports.
     ///
@@ -104,13 +104,13 @@ impl FactorizationInputs {
 
     /// Canonical module identity for `id` — the [`spec::ModulePath`]
     /// every wire artifact (`owner_graph.json` module table,
-    /// `cycles.json`, `atomic_unit_conflicts.json`) and diagnostic
+    /// `cycles.json`, `atomic_group_conflicts.json`) and diagnostic
     /// uses to denote this module. Parses the in-process
     /// `PlannedModule.id` (`"<chunk_id>::<path>"`) down to the clean
     /// path; panics on an out-of-range id or unparseable identity —
     /// both are pipeline bugs, not user errors.
     pub fn module_path(&self, id: ModuleId) -> spec::ModulePath {
-        let LogicalModuleIndex(idx) = id.0;
+        let idx = id.0;
         let module = self.logical_modules.get(idx).unwrap_or_else(|| {
             panic!(
                 "ModuleId logical:{idx} out of range ({} logical modules)",
@@ -134,9 +134,9 @@ impl FactorizationInputs {
             .and_then(|info| info.owner)
     }
 
-    /// Lookup a logical module by index.
-    pub fn logical_module(&self, idx: LogicalModuleIndex) -> Option<&PlannedModule> {
-        self.logical_modules.get(idx.0)
+    /// Lookup a logical module by its dense identity.
+    pub fn logical_module(&self, id: ModuleId) -> Option<&PlannedModule> {
+        self.logical_modules.get(id.0)
     }
 
     pub fn owner_report_ids_for_bindings<'a>(
@@ -197,7 +197,7 @@ fn build_binding_lookup_by_id(
         };
         let export_name = match kind {
             BindingKind::Owned {
-                module: ModuleId(LogicalModuleIndex(idx)),
+                module: ModuleId(idx),
             } => logical_modules
                 .get(*idx)
                 .and_then(|module| module.rename_map.get(id))

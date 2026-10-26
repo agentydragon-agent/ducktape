@@ -20,6 +20,7 @@ from model_catalog.catalog import (
     GEMINI_ROUTES,
     GPT6_1_SOL_RESPONSES,
     GPT6_RESPONSES_ROUTES,
+    GPT6_SOL_RESPONSES,
     HIDDEN_ALIASES,
     OLLAMA_CHAT_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
@@ -61,6 +62,7 @@ def test_gpt_6_1_sol_is_available_to_agentplane_codex() -> None:
 
     assert route.id == "chatgpt-sub/oai-responses/gpt-6.1-sol"
     assert route in STAGING_APP_MODELS.codex
+    assert GPT6_SOL_RESPONSES not in STAGING_APP_MODELS.codex
     assert route in KEY_MODEL_LANES["gpt6_oai_lane_models"].allowed
     assert all(candidate.reasoning_efforts == expected_codex_efforts for candidate in GPT6_RESPONSES_ROUTES)
     assert model_entry(route)["model_info"] == {

@@ -1,14 +1,14 @@
 //! Chunk-analysis composer for the per-chunk pipeline.
 //!
-//! Chunk analysis is the **spec-independent** half of the per-chunk
-//! pipeline. Given a parsed chunk AST plus analysis hints +
+//! Chunk analysis is independent of module placement. Given a parsed chunk AST,
+//! explicit [`AnalysisInputs`] (including author-certified assumptions), and
 //! per-chunk owner-graph options, it produces:
 //!
 //! - per-statement static facts (declared bindings, eager/lazy reads,
 //!   side-effect summaries, purity classification, top-level-await
 //!   detection);
 //! - the owner graph derived from those facts;
-//! - the structural atomic units (owner-level SCCs of `G_atomic`),
+//! - the structural atomic groups (owner-level SCCs of `G_atomic`),
 //!   which any valid factorization must keep co-located.
 //!
 //! The composer also owns the side-effects that derive purely from
@@ -22,14 +22,16 @@
 //!   checkable input assumptions (docs/design.md A1/A3/A5; see
 //!   `chunk_admission`), including its override notices.
 //!
-//! Chunk analysis is a pure function of `(chunk_id, module, hints,
-//! owner_graph_options)` plus the spec-free `source_path` annotation,
+//! Analysis results depend on `(chunk_id, module, analysis_inputs,
+//! owner_graph_options)` plus the `source_path` annotation,
 //! the line-index callback for source-location resolution, and the
 //! caller-supplied dynamic-import resolver (the A3 admission check
 //! needs "which chunk does this specifier land in", but chunk
-//! analysis itself stays artifact-free). It does not read the spec,
-//! the assignment, chunk renames, or the unassigned-mode policy —
-//! those are materialization inputs.
+//! analysis itself stays artifact-free). It does not read the spec directly,
+//! the assignment, chunk renames, or the unassigned-mode policy. Its caller
+//! resolves author annotations into assumptions before invoking analysis; the
+//! resulting facts are conditional on those contracts. Admission diagnostics
+//! and redundant-assumption warnings are emitted by this composer.
 //!
 //! Chunk analysis is materialized only in memory, by callers
 //! (today: `materialize_logical_chunk`) that call
@@ -49,8 +51,10 @@ use anyhow::{Context, Result, bail};
 use swc_common::Span;
 use swc_ecma_ast::Module;
 
-use analysis::AnalysisHints;
-use analysis::atomic_units::{OwnerGraphAndUnits, compute_owner_graph_and_units_with};
+use analysis::AnalysisInputs;
+use analysis::atomic_groups::{
+    OwnerGraphAndAtomicGroups, compute_owner_graph_and_atomic_groups_with,
+};
 use analysis::facts::{
     ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis, analyze_chunk_with_policy,
 };
@@ -58,25 +62,25 @@ use analysis::graph::OwnerGraphOptions;
 use analysis::purity::{RedundantPureMemberReason, RedundantPurityReason};
 
 /// Output of chunk analysis: per-chunk facts, owner graph, and atomic
-/// units that do not depend on the module assignment.
+/// groups that do not depend on the module assignment.
 #[derive(Debug, Clone)]
 pub struct ChunkAnalysisOutput {
     /// Per-statement static facts plus chunk-wide flags (top-level
     /// await detection, redundant purity / pure-member hints).
     pub fact_analysis: ChunkFactAnalysis,
-    /// Owner graph + structural atomic units derived from
-    /// `fact_analysis.facts`. Carries no spec-dependent state; the
-    /// atomic units here are the *structural* class (per docs/design.md
+    /// Owner graph + structural atomic groups derived from
+    /// `fact_analysis.facts`. Carries no assignment-dependent state; the
+    /// atomic groups here are the *structural* class (per docs/design.md
     /// §"Two classes of atom") that any valid factorization must
     /// preserve.
-    pub owner_graph_and_units: OwnerGraphAndUnits,
+    pub owner_graph_and_atomic_groups: OwnerGraphAndAtomicGroups,
 }
 
 /// Run chunk analysis from a precomputed structural layer: analyze the
 /// chunk's facts, emit any redundant-purity-hint diagnostics, fail fast
 /// if the chunk has top-level `await` or fails the input-chunk
 /// admission scan, then derive the owner graph + structural atomic
-/// units. Selector resolution uses that same structural layer before
+/// groups. Selector resolution uses that same structural layer before
 /// semantic member annotations can be projected to concrete bindings,
 /// so materialization keeps one source-text walk and one final owner
 /// graph.
@@ -93,7 +97,7 @@ pub fn compute_chunk_analysis<F>(
     chunk_id: &str,
     module: &Module,
     structural: StructuralChunkAnalysis<'_>,
-    hints: &AnalysisHints,
+    hints: &AnalysisInputs,
     source_path: Option<&str>,
     line_range_for_span: F,
     owner_graph_options: OwnerGraphOptions,
@@ -126,12 +130,12 @@ where
         owner_graph_options.admission_overrides,
         resolve_dynamic_import,
     )?;
-    let owner_graph_and_units =
-        compute_owner_graph_and_units_with(&fact_analysis.facts, owner_graph_options)
+    let owner_graph_and_atomic_groups =
+        compute_owner_graph_and_atomic_groups_with(&fact_analysis.facts, owner_graph_options)
             .with_context(|| format!("building owner graph for chunk {chunk_id}"))?;
     Ok(ChunkAnalysisOutput {
         fact_analysis,
-        owner_graph_and_units,
+        owner_graph_and_atomic_groups,
     })
 }
 

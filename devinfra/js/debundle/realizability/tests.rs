@@ -8,21 +8,21 @@ use crate::counted_digraph::CountedDiGraph;
 use analysis::OwnerId;
 use analysis::facts::analyze_chunk;
 use analysis::graph::{EdgeRole, build_owner_graph_with};
-use analysis::ids::{LogicalModuleIndex, ModuleId};
+use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
-use analysis::{AnalysisHints, DepKind, OwnerGraph};
+use analysis::{AnalysisInputs, DepKind, OwnerGraph};
 use petgraph::visit::IntoNeighbors;
 use report_fixtures::{
     active_owner, owner_edge, promoted_owner_edge, residual_owner, singleton_graph,
 };
 
 fn module_id(index: usize) -> ModuleId {
-    ModuleId(LogicalModuleIndex(index))
+    ModuleId(index)
 }
 
 fn parse_and_build(source: &str) -> OwnerGraph {
     let module = raw_js_test_support::parse(source);
-    let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
+    let facts = analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None).facts;
     build_owner_graph_with(&facts, Default::default()).unwrap()
 }
 
@@ -993,7 +993,7 @@ fn assert_move_agrees_across_paths(
     owners: &[OwnerId],
     to: ModuleId,
 ) {
-    let base: Vec<usize> = index.assignment().iter().map(|(_, m)| m.0.0).collect();
+    let base: Vec<usize> = index.assignment().iter().map(|(_, m)| m.0).collect();
     let overlay = index.verdict_after_moving_owners_touching(owner_graph, owners, to);
     let ladder = index.ladder_decision_after_moving_owners_touching(owner_graph, owners, to);
     let mut post = index.assignment().clone();

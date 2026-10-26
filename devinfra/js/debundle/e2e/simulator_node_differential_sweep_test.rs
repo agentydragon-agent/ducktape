@@ -18,8 +18,8 @@ use std::collections::BTreeMap;
 
 use analysis::facts::analyze_chunk;
 use analysis::graph::build_owner_graph_with;
-use analysis::ids::{LogicalModuleIndex, ModuleId};
-use analysis::{AnalysisHints, ModuleAssignment, OwnerGraph};
+use analysis::ids::ModuleId;
+use analysis::{AnalysisInputs, ModuleAssignment, OwnerGraph};
 use debundle_e2e_support::*;
 use gate::simulated_evaluation_post_order;
 
@@ -118,7 +118,7 @@ const SWEEP: &[SweepCase] = &[
 /// `realizability::tests::parse_and_build`).
 fn parse_and_build(source: &str) -> OwnerGraph {
     let module = raw_js_test_support::parse(source);
-    let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
+    let facts = analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None).facts;
     build_owner_graph_with(&facts, Default::default()).unwrap()
 }
 
@@ -126,7 +126,7 @@ fn parse_and_build(source: &str) -> OwnerGraph {
 /// module index = position in the (alphabetical) module list,
 /// residual = the sentinel index after every named module.
 fn assignment_for(owner_graph: &OwnerGraph, case: &SweepCase) -> ModuleAssignment {
-    let residual = ModuleId(LogicalModuleIndex(case.modules.len()));
+    let residual = ModuleId(case.modules.len());
     let mut assignment = ModuleAssignment::new(owner_graph, residual);
     for (index, (module_name, bindings)) in case.modules.iter().enumerate() {
         for binding in *bindings {
@@ -139,7 +139,7 @@ fn assignment_for(owner_graph: &OwnerGraph, case: &SweepCase) -> ModuleAssignmen
                         case.name
                     )
                 });
-            assignment.set(owner.id, ModuleId(LogicalModuleIndex(index)));
+            assignment.set(owner.id, ModuleId(index));
         }
     }
     assignment
@@ -164,7 +164,7 @@ fn simulator_post_order_matches_node_evaluation_order_across_fixture_family() {
         // emitted entry file (the sweep's residual statements are all
         // anonymous, so no catchall module file materializes).
         let label_of = |module: ModuleId| -> &'static str {
-            let ModuleId(LogicalModuleIndex(index)) = module;
+            let ModuleId(index) = module;
             case.modules
                 .get(index)
                 .map(|(name, _)| *name)

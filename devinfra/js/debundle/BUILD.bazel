@@ -171,6 +171,7 @@ rust_library(
         ":selector_resolve",
         ":source_match",
         ":spec",
+        ":spec_resolution",
         "@crates//:anyhow",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
@@ -233,6 +234,29 @@ rust_test(
 )
 
 rust_library(
+    name = "reconstruction",
+    srcs = [
+        "artifacts/browser_harness_plan.rs",
+        "reconstruction.rs",
+    ],
+    compile_data = ["artifacts/harness_monitor.html"],
+    crate_root = "reconstruction.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":output_layout",
+        ":spec",
+        ":validate_emitted_exports",
+        ":vendor",
+        "@crates//:anyhow",
+        "@crates//:lol_html",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:url",
+    ],
+)
+
+rust_library(
     name = "write_tree",
     srcs = ["artifacts/write_tree.rs"],
     crate_root = "artifacts/write_tree.rs",
@@ -241,6 +265,7 @@ rust_library(
         ":artifact",
         ":identifier_rename_queue",
         ":output_layout",
+        ":reconstruction",
         "@crates//:anyhow",
     ],
 )
@@ -376,19 +401,16 @@ rust_test(
 rust_library(
     name = "emit_harness",
     srcs = ["artifacts/emit_harness.rs"],
-    compile_data = ["artifacts/harness_monitor.html"],
     crate_root = "artifacts/emit_harness.rs",
     edition = "2024",
     deps = [
         ":artifact",
         ":output_layout",
-        ":spec",
+        ":reconstruction",
         ":write_tree",
         "@crates//:anyhow",
-        "@crates//:lol_html",
         "@crates//:serde",
         "@crates//:serde_json",
-        "@crates//:url",
     ],
 )
 
@@ -415,9 +437,9 @@ rust_library(
 rust_library(
     name = "analysis",
     srcs = [
-        "analysis_hints.rs",
+        "analysis_inputs.rs",
         "assignment_assembly.rs",
-        "atomic_units.rs",
+        "atomic_groups.rs",
         "cross_module_purity.rs",
         "facts/analyze.rs",
         "facts/at_init_fallback.rs",
@@ -495,10 +517,10 @@ rust_library(
     srcs = [
         "analysis_tests/factorization_validation.rs",
         "analysis_tests/mod.rs",
-        "chunk_factorization.rs",
+        "assignment_analysis.rs",
+        "assignment_inputs.rs",
         "counted_digraph.rs",
         "esm_import_order.rs",
-        "factorization_inputs.rs",
         "gate.rs",
         "realizability/condensation_order.rs",
         "realizability/condensation_order_proptest.rs",
@@ -803,6 +825,7 @@ rust_library(
         "lowering/mod.rs",
         "lowering/module_output.rs",
         "lowering/naturalize.rs",
+        "lowering/placement.rs",
         "lowering/plans.rs",
         "lowering/rebind_fold.rs",
         "lowering/rename_ledger.rs",
@@ -823,10 +846,12 @@ rust_library(
         ":js_ast",
         ":output_layout",
         ":program_analysis",
+        ":reconstruction",
         ":selector_outcome",
         ":selector_resolve",
         ":source_match",
         ":spec",
+        ":spec_resolution",
         ":vendor",
         "@crates//:anyhow",
         "@crates//:rayon",
@@ -919,10 +944,10 @@ rust_library(
         ":prepare_chunks",
         ":prune_dead_imports",
         ":prune_module_exports",
+        ":reconstruction",
         ":spec",
         ":spec_modules",
         ":spec_tree",
-        ":validate_emitted_exports",
         ":vendor",
         ":write_tree",
         "@crates//:anyhow",
@@ -980,6 +1005,7 @@ rust_library(
         ":source_match",
         ":spec",
         ":spec_modules",
+        ":spec_resolution",
         ":spec_stats",
         ":spec_tree",
         ":yaml_edit",
@@ -1224,6 +1250,20 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:rayon",
         "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_library(
+    name = "spec_resolution",
+    srcs = ["spec_resolution.rs"],
+    crate_root = "spec_resolution.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":selector_resolve",
+        ":source_match",
+        ":spec",
+        "@crates//:anyhow",
     ],
 )
 

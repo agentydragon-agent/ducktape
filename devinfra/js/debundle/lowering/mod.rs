@@ -15,6 +15,7 @@ use artifact::{
 };
 
 use output_layout::MODULES_REPORT;
+use reconstruction::UnmatchedSpecClaim;
 
 use spec::{ChunkExportPurity, ChunkRenames, LogicalModule, UnassignedMode};
 
@@ -30,6 +31,7 @@ mod lower;
 mod materialize;
 mod module_output;
 mod naturalize;
+mod placement;
 mod plans;
 mod rebind_fold;
 pub mod rename_ledger;
@@ -48,8 +50,9 @@ use io::{prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_jso
 use materialize::{
     ChunkContext, ChunkSpec, EmissionChunkOutputs, MaterializeLogicalChunkInputs,
     claim_prepared_chunk, collect_materialized_logical_chunks, finish_logical_chunk,
-    prepare_logical_chunk, resolve_prepared_chunks,
+    prepare_logical_chunk,
 };
+use spec_resolution::solve_projected_chunks;
 
 use util::normalize_optional_relative_dir;
 
@@ -70,36 +73,11 @@ pub struct MaterializeLogicalModulesResult {
     /// declaration exists in the source chunk. Previously dropped
     /// silently — the binding would fall through to the residual and
     /// the named module's export list would be one entry short. Now
-    /// collected across every chunk so the pipeline keeps emitting
-    /// (the chunk lowers as if the spec had not claimed the missing
-    /// name), then fails at the end with the full list. See
+    /// collected across every chunk so reconstruction can diagnose
+    /// all claims (the chunk lowers as if the missing claim were absent).
+    /// Final validation rejects the full list before writing the output. See
     /// [`UnmatchedSpecClaim`].
     pub unmatched_spec_claims: Vec<UnmatchedSpecClaim>,
-}
-
-pub fn validate_logical_module_claims(
-    id: &str,
-    members: &[spec::Member],
-    source_matches: &[spec::SourceMatchClaim],
-    annotations: &BTreeMap<String, spec::BindingAnnotation>,
-) -> Result<()> {
-    let members = plans::build_members(members, source_matches, annotations, id)?;
-    exports::reject_duplicate_export_names("logical_module", id, &members)?;
-    exports::reject_duplicate_member_bindings("logical_module", id, &members)?;
-    Ok(())
-}
-
-/// A `define_logical_module` member whose `binding.name` did not
-/// resolve to a top-level declaration in the chunk. Surfaced after
-/// the pipeline finishes so the build prints every offender at once
-/// instead of failing on the first chunk.
-#[derive(Debug, Clone, Serialize)]
-pub struct UnmatchedSpecClaim {
-    pub chunk_id: String,
-    /// Claiming module, by canonical [`spec::ModulePath`].
-    pub module_path: spec::ModulePath,
-    pub binding_name: String,
-    pub export_name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -225,7 +203,7 @@ pub enum ReportEmission {
     /// Write reports only when the realizability gate rejects. Used by
     /// `debundle run --dry-run`: the accept path writes nothing (the
     /// no-output contract), but a rejection still materializes
-    /// `owner_graph.json` + `cycles.json` / `atomic_unit_conflicts.json`
+    /// `owner_graph.json` + `cycles.json` / `atomic_group_conflicts.json`
     /// so the documented `debundle gate list/describe` follow-up works.
     OnRejection(PathBuf),
 }
@@ -321,7 +299,7 @@ pub fn materialize_logical_modules(
     // Program-level pass over the selected chunks' retained static-import
     // closure: cross-module purity verdicts for each chunk's imported
     // function bindings, consumed per chunk via
-    // `AnalysisHints::imported_purities`.
+    // `AnalysisInputs::imported_purities`.
     // Fully-swapped vendor chunks stay opaque — they are excluded from
     // the emission set and their bodies are replaced by the upstream
     // package, so they must not contribute purity facts.
@@ -384,7 +362,7 @@ pub fn materialize_logical_modules(
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
     let (prepared, projections): (Vec<_>, Vec<_>) = prepared.into_iter().unzip();
-    let resolutions = resolve_prepared_chunks(&prepared, projections)?;
+    let resolutions = solve_projected_chunks(projections)?;
     let claimed = GLOBALS
         .with(|globals| {
             prepared

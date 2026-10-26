@@ -29,19 +29,19 @@ use crate::imports::{
     collect_entry_exports_by_original_local, collect_imported_reexports_by_module,
 };
 use crate::naturalize::NaturalizedModuleBody;
+use crate::placement::EmissionPlacement;
 use crate::plans::ModulePlan;
 use crate::rename_ledger::{
     RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
     SealedRenames,
 };
 use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
-use analysis::{LogicalModuleIndex, ModuleId, top_level_id};
+use analysis::{ModuleId, top_level_id};
 use anyhow::Result;
 use artifact::{
     ArtifactIndexes, ChunkBundle, ChunkId, FileMetadata, FileRole, JsFile, JsFileBody,
     SelectedModuleLowering,
 };
-use gate::ChunkFactorization;
 use js_ast::ParsedJsModule;
 use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -87,12 +87,7 @@ pub(super) struct LowerChunkAst<'a> {
 /// Held in `LowerChunkInputs::plan`.
 pub(super) struct LowerChunkPlan<'a> {
     pub(super) module_plans: &'a [ModulePlan],
-    pub(super) binding_assignment: &'a HashMap<Id, usize>,
-    /// Top-level statement ordinal → module_plan index for owners
-    /// the spec claimed as anonymous-statement members. See
-    /// `ModulePlan::anonymous_statement_ordinals`.
-    pub(super) anonymous_ordinal_assignment: &'a BTreeMap<usize, usize>,
-    pub(super) factorization: &'a ChunkFactorization,
+    pub(super) placement: &'a EmissionPlacement<'a>,
 }
 
 /// Spec-derived + chunk-AST-derived facts the lowerer consults at
@@ -160,10 +155,11 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     } = ast;
     let LowerChunkPlan {
         module_plans,
-        binding_assignment,
-        anonymous_ordinal_assignment,
-        factorization,
+        placement,
     } = plan;
+    let factorization = placement.factorization();
+    let binding_assignment = placement.bindings();
+    let anonymous_ordinal_assignment = placement.statements();
     let LowerChunkSpecFacts {
         runtime_import_facts,
         sealed_renames,
@@ -281,7 +277,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             // like the gate simulator's universal residual edges.
             if !selected_by_module[module_index].is_empty() {
                 entry_imports.push((
-                    ModuleId(LogicalModuleIndex(module_index)),
+                    ModuleId(module_index),
                     import_decl_module_item(
                         Vec::new(),
                         &relative_source(entry_file, &plan.target_file),
@@ -316,7 +312,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             }
         }
         entry_imports.push((
-            ModuleId(LogicalModuleIndex(module_index)),
+            ModuleId(module_index),
             import_decl_for_plan(
                 entry_file,
                 &plan.target_file,
@@ -360,7 +356,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         .zip(module_plans)
         .enumerate()
         .map(|(index, (body, plan))| {
-            let module = ModuleId::logical(index);
+            let module = ModuleId(index);
             NaturalizedModuleBody::prepare(
                 body,
                 plan,
@@ -572,7 +568,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             chunk_top_level_mark,
         ));
     }
-    trim_dead_named_specifiers(&mut entry_body, factorization.analysis.bindings());
+    trim_dead_named_specifiers(&mut entry_body, factorization.analysis().bindings());
     let entry_exports_by_original_local = collect_entry_exports_by_original_local(
         &entry_body,
         &entry_binding_renames,

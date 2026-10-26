@@ -18,6 +18,22 @@ semantic intent and do not change the spec unless an author explicitly applies
 an edit. A new upstream snapshot needs its own reviewed spec and exact validation
 against that snapshot.
 
+## Accepted output
+
+Unresolved claims prevent acceptance. A run may write diagnostic reports for a
+rejected spec, but writes the reconstructed JS tree, browser harness, and vendor
+assets only after final program validation. Final checks inspect the exact
+reconstructed syntax, including synthesized imports and exports and vendor
+replacement. Syntax placement must agree with the validated assignment, including
+whole-statement moves and repeated declarations. Emission consumes an immutable
+validated plan.
+
+When browser output is configured, reconstruction also resolves the HTML module
+entries and preloads against the retained chunks, prepares the bootstrap and
+rewritten HTML, and enumerates copied assets. Invalid loading topology rejects
+the plan before any accepted output is written, including during a dry run.
+The browser writer materializes those decisions without rediscovering entries.
+
 ## Entities
 
 An **entity** is one thing a spec places in a chunk: a module member, a
@@ -179,7 +195,7 @@ Warnings never stop a run.
 ## Read-only decomposition candidates
 
 Opt-in atomic-conflict coarsening joins whole candidate groups connected by
-native reported structural atomic units. It preserves the residual entry path
+native reported structural atomic groups. It preserves the residual entry path
 when a joined group contains that entry, then validates the complete assignment
 through the shared gate before blocking-SCC coarsening. Without the opt-in,
 structural conflicts stop coarsening and remain reported.

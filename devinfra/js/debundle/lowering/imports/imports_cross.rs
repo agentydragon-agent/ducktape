@@ -12,9 +12,9 @@ use super::import_emit::{
 use crate::chunk_ast::declaration_names;
 use crate::imports::EntryExport;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
-use analysis::{LogicalModuleIndex, ModuleId, top_level_id};
+use analysis::{ModuleId, top_level_id};
 use anyhow::{Result, bail};
-use gate::ChunkFactorization;
+use gate::AssignmentAnalysis;
 use js_ast::import_decl_module_item;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
@@ -64,15 +64,15 @@ impl ImportLocalRenameSink<'_> {
 pub(crate) fn cross_module_imports_for_plan(
     from_file: &str,
     imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
     sink: &mut ImportLocalRenameSink<'_>,
 ) -> Vec<(ModuleId, ModuleItem)> {
     imports_by_provider
         .into_iter()
         .filter_map(|(provider_index, bindings)| {
             factorization
-                .analysis
-                .logical_module(LogicalModuleIndex(provider_index))
+                .analysis()
+                .logical_module(ModuleId(provider_index))
                 .map(|provider| {
                     let mut minted = BTreeMap::new();
                     let scope = sink.scope();
@@ -80,7 +80,7 @@ pub(crate) fn cross_module_imports_for_plan(
                         disambiguate_import_locals(&bindings, sink.ledger, scope, &mut minted);
                     sink.submit(minted, CROSS_MODULE_IMPORT_CONTRIBUTOR);
                     (
-                        ModuleId(LogicalModuleIndex(provider_index)),
+                        ModuleId(provider_index),
                         import_decl_for_plan(
                             from_file,
                             &provider.target_file,
@@ -110,17 +110,17 @@ pub(crate) fn cross_module_imports_for_plan(
 pub(crate) fn phantom_side_effect_imports(
     from_file: &str,
     phantom_providers: BTreeSet<usize>,
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
 ) -> Vec<(ModuleId, ModuleItem)> {
     phantom_providers
         .into_iter()
         .filter_map(|provider_index| {
             let provider = factorization
-                .analysis
-                .logical_module(LogicalModuleIndex(provider_index))?;
+                .analysis()
+                .logical_module(ModuleId(provider_index))?;
             let source = super::import_emit::relative_source(from_file, &provider.target_file);
             Some((
-                ModuleId(LogicalModuleIndex(provider_index)),
+                ModuleId(provider_index),
                 import_decl_module_item(Vec::new(), &source),
             ))
         })

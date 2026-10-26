@@ -19,7 +19,7 @@
 > `import` / `export` declarations. There is no init-wrapper
 > machinery, no closure pass, no implicit binding pulls — every
 > owned binding is named explicitly in the spec, and `Imported`
-> bindings flow through `FactorizationInputs.bindings` /
+> bindings flow through `AssignmentInputs.bindings` /
 > `BindingKind::Imported`, carrying the single re-exporting module
 > and public name that claimed it. Anonymous (empty-`declared`)
 > top-level statements have no name to address as a member; a
@@ -89,6 +89,12 @@ classification, side-effect graph construction, top-level-await
 detection, dependency-graph cycles.
 
 ### Conditionally-correct optimizations
+
+`AnalysisAssumptions` carries author-certified contracts, including declared
+purity, callback behavior, and audited global publication. `AnalysisInputs` pairs
+those assertions with imported call summaries and the caller's local-effect
+policy. Imported summaries may depend on assertions in their defining chunks;
+neither author assertions nor imported summaries are unconditional source facts.
 
 Soundness does not require every inference to hold for arbitrary JS. An
 inference may be **conditionally correct** — sound only when the input
@@ -538,7 +544,7 @@ verdict ("Emit-side responsibilities").
 The predicate has two forms:
 
 1. **The pure function `check_realizability`**, `O(N + M)` per call. The
-   validator (`validate_factorization`) calls it on the spec's actual
+   validator (`validate_assignment`) calls it on the spec's actual
    assignment; a non-empty verdict stops materialization.
 2. **`RealizabilityIndex`**, a stateful index over a working assignment for
    callers that ask many hypothetical questions — the peel kernel
@@ -576,7 +582,7 @@ asymmetric `(eager forward, lazy back)` I-cycles that the
    `RealizabilityIndex` over the class projection: each class is one
    `ModuleId`, except that classes made only of residual-destined owners
    (and not anchored to an existing module) share the residual
-   `ModuleId::logical(0)`. Every committed mutation — `contract`, the
+   `ModuleId(0)`. Every committed mutation — `contract`, the
    `is_pre_existing_module` promotion in `set_class_pre_existing_module` —
    applies the matching `ModuleAssignmentDelta::MoveOwners` to the index.
 3. The speculative queries — the boolean `merge_preserves_invariants` and the
@@ -1287,7 +1293,7 @@ Phase-2 evaluation order matching the constraining-edge linearization;
 Pass 2 (below) checks that it does.
 
 The materializer computes the source-import order on
-`esm_import_order::EsmImportOrder` (held by `ChunkFactorization`)
+`esm_import_order::EsmImportOrder` (held by `AssignmentAnalysis`)
 to drive this. The algorithm:
 
 1. Compute SCCs of the full quotient `I ∪ S` via Tarjan.
@@ -1391,7 +1397,7 @@ evaluates without TDZ.
 
 Because Lemma 2 is implemented in the materializer and the
 gate's simulator decides asymmetric I-SCCs precisely, the
-validator (`validate_factorization` in
+validator (`validate_assignment` in
 `validation.rs`) and read-only planner
 checks share the realizability primitive's verdict — a
 `peelable_now` proposal is a peel the gate accepts and Node will
@@ -1844,7 +1850,7 @@ appears first (DFS goes deepest into the first import). The
 resulting DFS post-order is `L`. ∎
 
 **Implementation.** `esm_import_order::EsmImportOrder` (held on
-`ChunkFactorization`, see "Lemma 2: entry-side import ordering"
+`AssignmentAnalysis`, see "Lemma 2: entry-side import ordering"
 above) computes `L` from the constraining-edge subgraph's toposort,
 reversed within each `I ∪ S` SCC so that the cycle dependent is
 imported first and DFS unwinds through the dependency.
@@ -2053,7 +2059,7 @@ chunk, not a vertex of any chunk's owner graph.
 
 The natural lift — union every chunk's I-graph, with `Imported` bindings
 contributing cross-chunk edges, and require the union to pass the gate — is
-not implemented: `validate_factorization` takes one chunk's owner graph, so a
+not implemented: `validate_assignment` takes one chunk's owner graph, so a
 cycle among user chunks (two code-split chunks importing each other) is
 outside its view. In practice vendor chunks are leaves — they don't import
 from us — so they add no edges into user chunks; a vendor chunk that
@@ -2066,19 +2072,20 @@ The per-chunk pipeline is two halves with sharply different
 dependencies:
 
 - **Chunk analysis** (spec-independent): parse → per-statement facts →
-  owner graph → structural atomic units. Pure function of
+  owner graph → structural atomic groups. Pure function of
   `(source bytes, analysis hints, OwnerGraphOptions)`. The composer
   is `chunk_analysis::compute_chunk_analysis`, returning a
   `chunk_analysis::ChunkAnalysisOutput` — distinct from the `gate`
-  crate's `FactorizationInputs` — that bundles `ChunkFactAnalysis` (facts +
+  crate's `AssignmentInputs` — that bundles `ChunkFactAnalysis` (facts +
   top-level-await detection + redundant-hint warnings) with the
-  `OwnerGraphAndUnits` derived from those facts.
+  `OwnerGraphAndAtomicGroups` derived from those facts.
 - **Materialization** (spec-dependent): assemble the assignment from the
   spec's binding claims, run the realizability gate, lower to ESM. This is
-  `lowering::materialize_logical_modules`; per chunk it runs
-  `prepare_logical_chunk`, then `resolve_prepared_chunks` (selector
-  resolution, joint across chunks), then `finish_logical_chunk` (chunk
-  analysis, assignment assembly, the gate, lowering).
+  `lowering::materialize_logical_modules`; `spec_resolution` compiles claims
+  into requests, projects each chunk's eligible entities, and solves the
+  projections jointly. Lowering prepares assignment state before projection,
+  applies resolved claims afterward, then `finish_logical_chunk` performs
+  chunk analysis, assignment assembly, the gate, and lowering.
 
 The materializer is the composition of both, and chunk analysis is computed
 in memory at one call site in `finish_logical_chunk`. The boundary is
@@ -2104,10 +2111,10 @@ diagnostic paths. They differ only in _where_ the cycle appears
 requires. Both reject the same broad property: "some pair (or set)
 of bindings is forced to co-locate, and the spec splits them."
 
-| Atom class       | Where the cycle lives                                                 | Detector                                         | Diagnostic                                                                                                   |
-| ---------------- | --------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| **Structural**   | SCC of `G_atomic` on the **owner graph** — independent of any spec    | `compute_atomic_units`                           | `AtomicUnitConflict` — names the unit's owners + the modules the spec routes them to + the `DepKind` causes  |
-| **Spec-induced** | SCC of `I ∪ S` on the **module quotient** under the spec's assignment | `check_realizability` + `validate_factorization` | `CycleReport` — names the binding pair(s) on each cut edge, the source and target modules, and the edge kind |
+| Atom class       | Where the cycle lives                                                 | Detector                                      | Diagnostic                                                                                                    |
+| ---------------- | --------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Structural**   | SCC of `G_atomic` on the **owner graph** — independent of any spec    | `compute_atomic_groups`                       | `AtomicGroupConflict` — names the group's owners + the modules the spec routes them to + the `DepKind` causes |
+| **Spec-induced** | SCC of `I ∪ S` on the **module quotient** under the spec's assignment | `check_realizability` + `validate_assignment` | `CycleReport` — names the binding pair(s) on each cut edge, the source and target modules, and the edge kind  |
 
 `G_atomic` over owners is acyclic-by-quotient on the chunker's
 original output: bundlers can't emit JavaScript that TDZs at runtime
@@ -2119,7 +2126,7 @@ a rebind nested ≥2 closures deep or past an `await` — joins
 `G_atomic` bidirectionally like the other rebinds because ESM
 imports are read-only whenever the write fires, but it does NOT
 constrain init order: it is excluded from the constraining-edge
-subgraph the realizability gate and the I-graph use.) Any spec assignment that routes the unit's
+subgraph the realizability gate and the I-graph use.) Any spec assignment that routes the group's
 owners to different modules is invalid — `assemble_assignment`
 detects this before the materializer touches the quotient. **No
 information about the spec is required to identify a structural
@@ -2172,7 +2179,7 @@ compute structural atoms = SCC(G_atomic over owners)
 apply spec assignment + assemble_assignment
   ↓
   ├── if any structural atom is split across modules:
-  │   reject with AtomicUnitConflict (owner-level blame)
+  │   reject with AtomicGroupConflict (owner-level blame)
   ↓
 quotient owner graph by dest(owner) → I, R, S
   ↓
@@ -2209,8 +2216,8 @@ Five layers, bottom-up:
    mutation produces. Each
    edge records whether it constrains init/materialization order.
 2. **Atomic graph** — SCC condensation of the constraining-edge
-   subgraph of the owner graph; a DAG of atomic units
-   (`compute_atomic_units`). Each unit is the smallest set of
+   subgraph of the owner graph; a DAG of atomic groups
+   (`compute_atomic_groups`). Each group is the smallest set of
    owners a valid module assignment may not split. Surfaced in
    `owner_graph.json.atomic_graph`.
 3. **Spec assignment** — the author's current mapping of owners
@@ -2224,7 +2231,7 @@ Five layers, bottom-up:
    `atomic_graph`. **Not** emitted by `debundle run`; they are a
    read-only planner projection.
 
-When debugging planner output, start with the atomic unit. If an
+When debugging planner output, start with the atomic group. If an
 assignment would split a unit, the assignment is wrong regardless
 of how plausible the binding names look. If a proposal is too
 broad, inspect the atomic-DAG edges that close it and decide
@@ -2237,8 +2244,8 @@ The spec's explicit claims are resolved against the owner graph in
 `assignment_assembly.rs`. The rules are deliberately strict:
 
 - Two different logical modules may not claim owners from the same
-  atomic unit.
-- A module claim that only covers part of an atomic unit is a
+  atomic group.
+- A module claim that only covers part of an atomic group is a
   conflict, not an implicit request to move the rest.
 - Unclaimed owners default to the synthesized residual module.
 - The materializer consumes only the final explicit assignment; it
@@ -2246,7 +2253,7 @@ The spec's explicit claims are resolved against the owner graph in
 
 If the explicit assignment is inconsistent, `debundle run` rejects
 and emits diagnostic side outputs (`cycles.json` or
-`atomic_unit_conflicts.json` under `reports/tree/<chunk-id>/`).
+`atomic_group_conflicts.json` under `reports/tree/<chunk-id>/`).
 
 ## Spec explicitness and diagnostics
 
@@ -2282,13 +2289,13 @@ has its `owner` named in the spec or defaults to
 the residual module. Empty-`declared` (anonymous) statements
 default to the residual module unless explicitly claimed by a logical
 module's `anonymous_statements` shape selector. There is no
-implicit pulling: when an atomic unit or planner proposal includes
+implicit pulling: when an atomic group or planner proposal includes
 anonymous statements, the spec author copies their source into
 `anonymous_statements` (one entry per claimed statement); the
 materializer never silently co-moves an anonymous statement into a peeled module.
 When a chunk has no explicit logical modules, `inline_in_entry` keeps the
 whole statement sequence in the entry. In `catchall_file`, unclaimed named
-bindings land in the catchall. Anonymous owners in a catchall atomic unit and
+bindings land in the catchall. Anonymous owners in a catchall atomic group and
 anonymous predecessors required by its side-effect ordering edges also land
 there; other unclaimed anonymous statements can stay in the entry after peeled
 modules. This preserves valid splits where a later anonymous statement must
@@ -2310,7 +2317,7 @@ behalf of the spec author.
 Each materialized chunk has reports under `reports/tree/<chunk_id>/`.
 `owner_graph.json` carries the detailed owner graph, current module quotient,
 and embedded atomic DAG. Compact validation status is folded into
-`chunk.json`; `cycles.json` and `atomic_unit_conflicts.json` are emitted only
+`chunk.json`; `cycles.json` and `atomic_group_conflicts.json` are emitted only
 for rejection cases.
 
 When an output emitter materializes executable JavaScript, root reports live
@@ -2337,9 +2344,9 @@ use the owner graph and source bodies for drill-down.
 1. Spec author writes / edits a spec — possibly partial.
 2. Pipeline runs the validator. The report flags:
    - **Cycles** in the explicit-only assignment, if any.
-   - **Atomic-unit conflicts** when the spec splits an indivisible unit.
+   - **Atomic-group conflicts** when the spec splits an indivisible unit.
    - **Atomic DAG facts** in `owner_graph.json` for planning the next peel.
-3. Spec author resolves: first fix any validation cycles or atomic-unit
+3. Spec author resolves: first fix any validation cycles or atomic-group
    conflicts; then use `debundle modules propose`, `atoms`, `coverage`,
    `describe`, and `inspect-source --id` to choose explicit owner sets for new
    spec modules with good public names.
@@ -2355,7 +2362,7 @@ implicit transformation in the middle.
 The same owner graph drives the next-spec workflow. A pipeline that
 only reports whether the current spec passed forces spec authors into
 speculative edit/build/test loops. `debundle run` therefore emits the
-atomic-unit DAG in `owner_graph.json`, and the top-level read-only
+atomic-group DAG in `owner_graph.json`, and the top-level read-only
 queries (`debundle modules propose`, `atoms`, `coverage`, `describe`,
 `inspect-source --id`, `scc`, `cluster`, `graph-summary`) compute advisory
 views from that stable graph.
@@ -2578,27 +2585,29 @@ reinterpret `effect:` independently.
 
 ### Pipeline trajectory
 
-The pipeline (`pipeline.rs`) is a fixed composition over three layers:
+The pipeline (`pipeline.rs`) separates source preparation, reconstruction,
+validation, and writing:
 
-- **Classify (input space).** Load + prepare (one parallel per-chunk
-  parse computing shallow program facts), then one read-only vendor
-  resolution pass (`build_vendor_resolution_plan`) that validates every
-  `vendor` mark, resolves boundary mappings / swap targets / per-symbol
-  tables, and runs the plan-time consumer gate before anything is
-  written. Spec selectors always match prepare-time input-space ASTs;
-  nothing mutates them.
-- **Plan.** Lowering plans plus the `VendorResolutionPlan` as the
-  single resolution oracle for import construction — both lowering's
-  per-plan directive construction and the emission-time rewriting of
-  non-lowered files consult it.
-- **Emit.** `materialize_logical_modules` is the single artifact
-  mutation wave; `apply_emission_rewrites` then performs the
-  pass-through directive rewrite (specifier canonicalization,
-  boundary-rename mapping, partial-swap consumer surgery) and computes
-  each partially-swapped vendor chunk's residual (self-rewrite + strip)
-  as one function body. Fully-swapped chunks are an emission-set
-  exclusion, not an artifact removal; wrappers / facades / manifests
-  are emission outputs.
+- **Prepare and resolve.** Load and parse source chunks once, compute shallow
+  facts, and resolve selectors against that input syntax. One read-only
+  `VendorResolutionPlan` resolves and validates replacement marks, boundary
+  mappings, package targets, and input-space consumer shapes.
+- **Reconstruct.** Plan assignment and linkage, lower selected syntax, then apply
+  cross-chunk naming, pass-through directive rewrites, vendor residual stripping,
+  and dead import/export pruning. All construction paths consult the same vendor
+  oracle. Fully swapped chunks are excluded from emission; replacement wrappers
+  and facades remain planned outputs. For browser output, prepare the HTML entry
+  and preload targets, bootstrap, rewritten HTML, and asset destinations before
+  final acceptance, including in dry runs.
+- **Validate.** Consume the final `ReconstructionPlan`, checking synthesized
+  partial-swap consumers, duplicate public exports, and unresolved claims. Return
+  an immutable `ValidatedPlan` only on acceptance. These final checks supplement
+  assignment realizability and input-space vendor checks.
+- **Write.** Tree and browser writers require `ValidatedPlan`; vendor assets use
+  the same accepted plan. No body transformation runs after validation. Rejection
+  reports are diagnostic output and do not require an accepted plan. The browser
+  writer copies the planned assets and writes the prepared HTML and bootstrap;
+  it does not resolve loading topology or parse source HTML.
 
 Preparation returns `SourceProgram`, which owns prepared chunks and their
 matching indexes. Resolution and vendor planning borrow it immutably. Lowering
@@ -2606,16 +2615,24 @@ consumes its source bundle; a pass-through run instead converts it directly to
 `EmissionFiles`, reusing the indexes without rebuilding them. The mutable indexed
 file container is private to these phase types.
 
-The emission boundary is `EmissionFiles`: lowering finalizes lowered and
-pass-through chunk files into this owned output set; cross-chunk import
-naturalization, vendor emission rewrites, dead-import/export pruning and
-final export validation run against that set, then tree/harness writers read
-it. Its output-path indexes are built once after lowering changes entry and
-module paths and retained across body-only passes behind an indexed-layout
-check. No disk reparse or pipeline splice into the prepared input artifact
-occurs. `EmissionFiles` currently uses `ChunkBundle` internally as the file
-container for existing transformation helpers; that does not change which
-phase owns the files.
+During assignment construction, `ChunkPlanBuilder::bindings_catalogue` is the
+authoritative destination of each declared or imported binding. Its spelling
+index stores binding identities and resolves destinations through the catalogue.
+Module plans carry export names and comments. Rebind analysis obtains an
+owned-only destination projection when needed; each construction update changes
+the catalogue once. After realizability validation, `EmissionPlacement` derives
+binding and whole-statement placement from the accepted `ModuleAssignment` and
+checks that declaration sites, import metadata, and whole-statement requests agree.
+Lowering consumes that immutable placement and its associated graph.
+
+`EmissionFiles` owns reconstructed syntax while body transformations are still
+allowed. Its output-path indexes are built once after lowering changes entry and
+module paths, then retained across body-only passes behind an indexed-layout
+check. Final validation consumes these files and the vendor plan; writers obtain
+both files and full-swap exclusions from the resulting `ValidatedPlan`. No disk
+reparse or splice back into prepared source occurs. `EmissionFiles` currently
+uses `ChunkBundle` internally for existing transformation helpers; phase ownership
+is explicit in its enclosing types.
 
 ## Anonymous-statement selectors
 
@@ -2655,7 +2672,7 @@ target-local effect on the class/prototype binding. That makes the
 anonymous statement a required companion of the class owner for
 materialization and factorize. The author still
 materializes it with `anonymous_statements:` because it has no binding
-name, but the atomic-unit closure that contains the class also covers
+name, but the atomic-group closure that contains the class also covers
 the anon owner, so a proposal containing the class also contains the
 anonymous owner (listed under `anonymous_statement_owner_ids`, or
 `extension_owner_ids` when it extends an existing module) and the
@@ -2720,7 +2737,7 @@ An owner with no declared binding belongs to the residual module unless a
 module claims it through `anonymous_statements`.
 `assignment_assembly::compute_owner_claims` resolves those claims (each module's
 `anonymous_statement_ordinals`) into the assignment that
-`ChunkFactorization::build_with` quotients by, so the gate sees the module dep
+`AssignmentAnalysis::build_with` quotients by, so the gate sees the module dep
 graph the materializer will emit. Without that resolution, an anon owner with a
 constraining in-edge from a peeled named owner would create a fake
 cross-module edge, and the validator would reject a spec whose closure the
@@ -2859,7 +2876,7 @@ invariants:
    <../validation.rs>) — collapses owners by destination, aggregates edge
    reasons, and runs the realizability gate over the result; a rejection
    aborts the pipeline with the cycle evidence.
-3. **Diagnostics projections** — cycle evidence, atomic-unit conflicts,
+3. **Diagnostics projections** — cycle evidence, atomic-group conflicts,
    and atomic graph reports are projections of the same owner graph +
    quotient, not separate heuristic analyses.
 4. **Source-order emission** — each module's body in source order;
@@ -2937,10 +2954,10 @@ tripwire: lowering can synthesize consumer directives inside
 materialized module bodies (`BindingKind::Imported` re-export
 imports, `export … from` re-exports in moved bodies) that have no
 live rewrite at the construction site and that the plan-time gate —
-which enumerates input-space directives — cannot see. Retiring it
-requires construction-site coverage plus fixtures first (see
-ARCHITECTURE_BACKLOG.md "Post-strip consumer scan retirement
-condition").
+which enumerates input-space directives — cannot see. Retiring the scan
+requires those construction paths to consult the `VendorResolutionPlan`
+(rewrite or reject before output) and fixtures proving the synthesized
+directive shapes fail without the post-strip check.
 
 Over-restriction is the accepted failure mode for both gates: a
 namespace consumer that happens to read only non-swapped members is
@@ -3029,10 +3046,10 @@ A `logical_modules` member whose binding selector names no top-level
 declaration in the chunk is recorded as an `UnmatchedSpecClaim`
 (<../lowering/materialize/plan_builder.rs>); lowering continues as if the
 member were absent, so the claim neither moves the binding nor adds an export.
-After emit, vendor swaps and reports — so the generated tree and every
-chunk's offenders are available — the pipeline fails with the full list across
-chunks (<../pipeline.rs>): the named binding fell into the residual sweep and
-the destination module is one export short.
+Final validation rejects the full list across chunks before writing the accepted
+JS tree, browser harness, or vendor assets (<../reconstruction.rs>). Diagnostic
+reports remain available for inspection. The named destination would otherwise
+be one export short.
 
 A module whose members are all `import_specifier` claims owns no bindings and
 emits a re-export-only file (re-imports and re-exports, no owned code).
@@ -3131,19 +3148,29 @@ the dep graph captures that read without special-case logic. If the spec also
 gives `mod_a` an at-init read of something in `mod_b`, the cycle is mutual and
 rejected.
 
-## FactorizationInputs + ChunkFactorization: owner graph plus quotient
+## AssignmentInputs + AssignmentAnalysis: owner graph plus quotient
 
 The runtime data structures the validator and emitter both consume are a pair:
-the `gate` crate's per-chunk `FactorizationInputs` (inputs + IR; distinct from
+the `gate` crate's per-chunk `AssignmentInputs` (inputs + IR; distinct from
 `chunk_analysis::ChunkAnalysisOutput`, the spec-independent composer output) and a
-`ChunkFactorization` wrapping it (assignment + derived realizability views).
+`AssignmentAnalysis` wrapping it (assignment + derived realizability views).
 Together they carry the chunk's statement facts, the binding catalogue, the
 explicit logical modules, the owner graph, and the module dep graph derived by
 quotienting that owner graph under the spec assignment.
 
-Statement facts feed the owner graph (stored on `FactorizationInputs`), and the
+Statement facts feed the owner graph (stored on `AssignmentInputs`), and the
 module dep graph is a quotient of that owner graph under the current spec
-assignment (stored on `ChunkFactorization`).
+assignment (stored on `AssignmentAnalysis`).
+
+`AssignmentAnalysis::validate_for_emission` returns a `ValidatedAssignment` only
+when atomic-group, schedule, and cross-destination rebinding checks pass. Lowering
+requires this immutable borrow of the checked assignment. Assignment inputs and
+derived graph views are private and exposed only through immutable accessors, so
+callers cannot change the assignment independently of its cached import order or
+quotient. Rejection reports remain
+available to diagnostics without constructing an emission capability. This checks
+the assignment and shared import order; vendor consumer and final export checks
+still run on the emitted files.
 
 Both are keyed per-chunk; the chunk is contextual within the
 analysis, so binding keys collapse to just `name`.
@@ -3198,11 +3225,11 @@ re-export module).
 
 ### Rejected: one assignment-optional chunk IR
 
-Folding `ChunkFactorization` into `FactorizationInputs` as one IR with optional
+Folding `AssignmentAnalysis` into `AssignmentInputs` as one IR with optional
 assignment state looks like it removes a layer, but the two-layer shape is
-already in place: `FactorizationInputs` is the assignment-free IR, `ChunkFactorization`
-adds the applied assignment, and `validate()` derives `FactorizationReport` from
-it. Removing the `Arc<FactorizationInputs>` boundary touches the whole
+already in place: `AssignmentInputs` is the assignment-free IR, `AssignmentAnalysis`
+adds the applied assignment, and `validate()` derives `AssignmentReport` from
+it. Removing the `Arc<AssignmentInputs>` boundary touches the whole
 materializer/emitter path for no behavior change, so the layers stay.
 
 ### Identifiers are typed, not stringly-typed
@@ -3211,8 +3238,8 @@ A string that identifies a thing of a known kind gets a newtype; untyped
 `String` is reserved for free-form text (error messages, log lines, the
 actual JavaScript identifier _as text_). The identifier types live in
 <../ids.rs> and <../graph/>: `ChunkId` (an index interned by `ChunkTable`),
-`LogicalModuleIndex`, `ModuleId` (a `LogicalModuleIndex` wrapper — the
-in-process module handle), `StatementOrdinal`, `OwnerId` and `OwnerEdgeId`. A
+`ModuleId` (the in-process dense module handle), `StatementOrdinal`,
+`OwnerId` and `OwnerEdgeId`. A
 module's public identity is `spec::ModulePath`, never a `ModuleId`
 (<wire_format.md>). Artifact metadata follows the same rule: `FileRole` is a
 typed enum (`entry`, `module`, `runtime` in JSON via snake_case serde). Do not
@@ -3311,10 +3338,10 @@ rosters live in the directories, not here):
 - <../graph/> — owner graph, `ModuleQuotient`, and the canonical I-graph
   builders.
 - <../realizability/mod.rs> — the realizability gate (`check_realizability`).
-- <../validation.rs> — `validate_factorization`: renders the verdict as cycle
+- <../validation.rs> — `validate_assignment`: renders the verdict as cycle
   reports.
 - <../lowering/> — main splitting transform.
-- <../atomic_units.rs> — owner-level hard colocation units.
+- <../atomic_groups.rs> — owner-level hard colocation groups.
 
 ## Conventions for updating this doc
 

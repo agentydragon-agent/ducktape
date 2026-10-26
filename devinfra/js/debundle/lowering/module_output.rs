@@ -28,7 +28,7 @@ use anyhow::{Result, bail};
 use artifact::{
     ChunkId, FileMetadata, FileRole, JsFile, JsFileBody, SelectedModuleLowering, join_module_path,
 };
-use gate::ChunkFactorization;
+use gate::AssignmentAnalysis;
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
@@ -39,7 +39,7 @@ const LOWERING_FILE_PRAGMA: &str =
 const LOWERING_GENERATOR_HEADER: &str = "// @ducktape-generator selected_module_lowering";
 
 struct ModuleOutputContext<'a> {
-    factorization: &'a ChunkFactorization,
+    factorization: &'a AssignmentAnalysis,
     runtime_ast: &'a ParsedJsModule,
     chunk_top_level_mark: swc_common::Mark,
     chunk_id: &'a str,
@@ -51,7 +51,7 @@ pub(super) struct ModuleEmissionInputs<'a> {
     pub(super) index: usize,
     pub(super) plan: &'a ModulePlan,
     pub(super) naturalized: NaturalizedModuleBody,
-    pub(super) factorization: &'a ChunkFactorization,
+    pub(super) factorization: &'a AssignmentAnalysis,
     pub(super) declaration_by_name: &'a HashMap<Id, Vec<usize>>,
     pub(super) binding_assignment: &'a HashMap<Id, usize>,
     pub(super) runtime_import_facts: &'a RuntimeImportFacts,
@@ -125,7 +125,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     // the ledger's taken-name set is seeded with every name bound
     // anywhere in the body so mints stay capture-free, and the sealed
     // projection below is the rename map the body renamer applies.
-    let module = ModuleId::logical(index);
+    let module = ModuleId(index);
     let module_local_names = collect_local_binding_names(&body);
     let mut import_ledger = RenameLedger::default();
     import_ledger.seed_taken(
@@ -235,7 +235,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         let mut cache = source_import_cache
             .lock()
             .expect("source_import_cache poisoned");
-        // Imports peeled with their atomic unit still use source-chunk URLs.
+        // Imports peeled with their atomic group still use source-chunk URLs.
         // Rebase those before adding imports already emitted for this target.
         for item in &mut body {
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
@@ -262,7 +262,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     // (the emitted entry file — always the ESM DFS root, so its slot
     // in the list is a runtime no-op, but it still gets its shared-
     // ordering position for determinism).
-    let residual_module = factorization.assignment.residual();
+    let residual_module = factorization.assignment().residual();
     intra_chunk_imports.extend(
         residual_entry_import_items
             .into_iter()
@@ -360,7 +360,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         }
     }
     // ImportSpecifier-bound members (`BindingKind::Imported` in
-    // `factorization.analysis.bindings()`): for each `Imported` binding whose
+    // `factorization.analysis().bindings()`): for each `Imported` binding whose
     // `re_exported_by` map names this module, emit a re-import
     // (using the local name as the alias) plus mirror the
     // public-name export. Per-destination relative paths are
@@ -468,7 +468,7 @@ fn build_module_output(
         .collect();
     let owner_ids = context
         .factorization
-        .analysis
+        .analysis()
         .owner_report_ids_for_bindings(binding_ids.iter());
     // Module-level `comment:` from the spec lands at the very top of
     // the emitted file (above the lowerer's pragma block), separated

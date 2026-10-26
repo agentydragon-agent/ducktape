@@ -1,4 +1,4 @@
-//! Per-chunk materialization: take an `OwnerGraphAndUnits` + spec plan, run the
+//! Per-chunk materialization: take an `OwnerGraphAndAtomicGroups` + spec plan, run the
 //! chunk through `lower_chunk`, and emit a `MaterializedLogicalChunk` whose
 //! files/applied/report stay separate from the source bundle until the
 //! finalized emit-stage file set is constructed.
@@ -10,11 +10,10 @@ mod plan_builder;
 use std::io::Write;
 
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
-use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext, SelectorModules};
-use selector_resolve::Resolution;
+use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 
 use super::io::write_chunk_report_json;
-use super::util::{render_atomic_unit_cause_guidance, target_file_for_request};
+use super::util::{render_atomic_group_cause_guidance, target_file_for_request};
 use crate::chunk_ast::{ChunkAstAnalysis, analyze_chunk_ast};
 use crate::chunk_renames::collect_chunk_renames;
 use crate::imports::{ArtifactSourceImportResolutionCache, VendorReimportOracle};
@@ -23,19 +22,17 @@ use crate::lower::{
     LoweredChunk, lower_chunk,
 };
 use crate::naturalize::collect_plan_export_rename_intents;
-use crate::plans::{
-    LogicalRequest, MemberRequest, ModulePlan, known_effect_from_member_effect,
-    logical_requests_for_chunk,
-};
+use crate::placement::EmissionPlacement;
+use crate::plans::ModulePlan;
 use crate::rebind_fold::compute_rebind_folds;
 use crate::rename_ledger::{RenameLedger, SealValidation};
 use crate::{
     ChunkModulesCounts, ChunkModulesReport, ExportReentryReport, FinalModuleContent,
     ReportEmission, RequestedLogicalModule,
 };
-use analysis::facts::ExportReentryPolicy;
+use analysis::facts::{ExportReentryPolicy, StructuralChunkAnalysis};
 use analysis::{
-    AnalysisHints, LocalEffectPolicy, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
+    AnalysisAssumptions, AnalysisInputs, LocalEffectPolicy, ModuleId, OwnerGraphAndAtomicGroups,
     OwnerGraphOptions, PlannedModule, top_level_id,
 };
 use anyhow::{Context, Result, bail};
@@ -45,13 +42,20 @@ use artifact::{
     normalize_module_path,
 };
 use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_analysis};
-use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle_summary};
+use gate::{
+    AssignmentAnalysis, ValidatedAssignment, render_atomic_group_conflict_summary,
+    render_cycle_summary,
+};
 use js_ast::{ParsedJsModule, statement_ordinal_for_body_index};
 use output_layout::{
-    ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, EXPORT_REENTRY_REPORT, OWNER_GRAPH_REPORT,
+    ATOMIC_GROUP_CONFLICTS_REPORT, CYCLES_REPORT, EXPORT_REENTRY_REPORT, OWNER_GRAPH_REPORT,
     SELECTOR_DIAGNOSTICS_REPORT,
 };
 use spec::{ChunkRenames, InitializerPurity, LogicalModule, MemberPurity, UnassignedMode};
+use spec_resolution::{
+    LogicalRequest, MemberRequest, ProjectedChunk, ResolvedChunk, known_effect_from_member_effect,
+    logical_requests_for_chunk, project_chunk,
+};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
@@ -133,9 +137,8 @@ pub(super) struct MaterializedLogicalChunk {
     pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
 }
 
-/// A chunk up to the selector resolve, which every chunk shares: its plan
-/// with everything claimed that does not need the resolve, and its selector
-/// entities.
+/// Lowering state prepared before the shared spec-resolution service projects
+/// and solves selector entities.
 pub(super) struct PreparedLogicalChunk<'a> {
     context: ChunkContext<'a>,
     spec: ChunkSpec<'a>,
@@ -149,16 +152,22 @@ pub(super) struct PreparedLogicalChunk<'a> {
     requests: Vec<LogicalRequest>,
     explicit_requests: Vec<LogicalRequest>,
     builder: ChunkPlanBuilder,
-    selectors: selector_resolve::Chunk<'a>,
-    selector_modules: SelectorModules,
-    declared_hints: AnalysisHints,
+    declared_assumptions: AnalysisAssumptions,
 }
 
-/// Plans `inputs`' chunk up to the selector resolve and projects its
-/// selector entities.
+/// A prepared chunk after exact selector resolution has claimed its selected
+/// members and anonymous statements. The structural facts are retained for the
+/// hint-sensitive analysis that follows claim application.
+pub(super) struct ClaimedLogicalChunk<'a> {
+    prepared: PreparedLogicalChunk<'a>,
+    structural_analysis: StructuralChunkAnalysis<'a>,
+}
+
+/// Prepare one chunk's lowering state and project its eligible selector
+/// requests through the shared spec-resolution service.
 pub(super) fn prepare_logical_chunk(
     inputs: MaterializeLogicalChunkInputs<'_>,
-) -> Result<(PreparedLogicalChunk<'_>, selector_resolve::Projection)> {
+) -> Result<(PreparedLogicalChunk<'_>, ProjectedChunk<'_>)> {
     let MaterializeLogicalChunkInputs { context, spec } = inputs;
     let ChunkContext {
         artifact,
@@ -268,13 +277,13 @@ pub(super) fn prepare_logical_chunk(
     // over the hint-free structural facts.
     let selectors =
         selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, structural_analysis);
-    let selector_modules = builder.selector_modules(
+    let resolved_members = builder.selector_member_indices(
         &explicit_requests,
         chunk_top_level_mark,
         &ast_analysis.declaration_by_name,
     );
     emit_debundle_progress(chunk_id, "project_selectors", "start");
-    let projection = selectors.project(&selector_modules.modules)?;
+    let projected = project_chunk(selectors, &explicit_requests, resolved_members)?;
     emit_debundle_progress(chunk_id, "project_selectors", "end");
     Ok((
         PreparedLogicalChunk {
@@ -290,46 +299,28 @@ pub(super) fn prepare_logical_chunk(
             requests,
             explicit_requests,
             builder,
-            selectors,
-            selector_modules,
-            declared_hints: AnalysisHints::default(),
+            declared_assumptions: AnalysisAssumptions::default(),
         },
-        projection,
+        projected,
     ))
-}
-
-/// Resolves every prepared chunk's selector entities as one program: one
-/// resolution per chunk, in order.
-pub(super) fn resolve_prepared_chunks(
-    chunks: &[PreparedLogicalChunk<'_>],
-    projections: Vec<selector_resolve::Projection>,
-) -> Result<Vec<Resolution>> {
-    selector_resolve::solve(
-        chunks
-            .iter()
-            .zip(projections)
-            .map(|(chunk, projection)| {
-                (
-                    &chunk.selectors,
-                    chunk.selector_modules.modules.as_slice(),
-                    projection,
-                )
-            })
-            .collect(),
-    )
 }
 
 /// Resolve source-selected bindings before the cross-chunk purity oracle runs.
 /// The same resolved hints are later used by this chunk's owner analysis.
-pub(super) fn claim_prepared_chunk(
-    mut prepared: PreparedLogicalChunk<'_>,
-    resolution: Resolution,
-) -> Result<PreparedLogicalChunk<'_>> {
+pub(super) fn claim_prepared_chunk<'a>(
+    mut prepared: PreparedLogicalChunk<'a>,
+    resolved: ResolvedChunk<'a>,
+) -> Result<ClaimedLogicalChunk<'a>> {
+    let ResolvedChunk {
+        resolution,
+        resolved_members,
+        structural_analysis,
+    } = resolved;
     let chunk_top_level_mark = prepared.runtime_ast.top_level_mark;
     prepared.builder.claim_resolution(
         &prepared.explicit_requests,
-        &prepared.selector_modules,
         resolution,
+        resolved_members,
         chunk_top_level_mark,
         prepared.context.chunk_id,
         &prepared.runtime_ast.module.body,
@@ -342,29 +333,36 @@ pub(super) fn claim_prepared_chunk(
     prepared
         .builder
         .adopt_bindings_of_claimed_anonymous_statements(&prepared.ast_analysis.declarations);
-    prepared.declared_hints = collect_analysis_hints(
+    prepared.declared_assumptions = collect_analysis_assumptions(
         &prepared.explicit_requests,
         &prepared.builder,
         prepared.spec.chunk_renames.get(prepared.context.chunk_id),
         &prepared.runtime_ast.module,
     )?;
-    Ok(prepared)
+    Ok(ClaimedLogicalChunk {
+        prepared,
+        structural_analysis,
+    })
 }
 
-impl PreparedLogicalChunk<'_> {
+impl ClaimedLogicalChunk<'_> {
     pub(super) fn declared_pure_new(&self) -> (&str, &BTreeSet<String>) {
         (
-            self.context.chunk_id,
-            &self.declared_hints.declared_pure_new,
+            self.prepared.context.chunk_id,
+            &self.prepared.declared_assumptions.declared_pure_new,
         )
     }
 }
 
 /// Analyze, plan and lower a chunk whose selector claims are already resolved.
 pub(super) fn finish_logical_chunk(
-    prepared: PreparedLogicalChunk<'_>,
+    claimed: ClaimedLogicalChunk<'_>,
     cross_module_purities: &super::cross_module::CrossModulePurities,
 ) -> Result<MaterializedLogicalChunk> {
+    let ClaimedLogicalChunk {
+        prepared,
+        structural_analysis,
+    } = claimed;
     let PreparedLogicalChunk {
         context,
         spec,
@@ -377,8 +375,7 @@ pub(super) fn finish_logical_chunk(
         ast_analysis,
         requests,
         mut builder,
-        selectors,
-        declared_hints,
+        declared_assumptions,
         ..
     } = prepared;
     let ChunkContext {
@@ -405,7 +402,6 @@ pub(super) fn finish_logical_chunk(
         pre_existing_public_export_names,
         ..
     } = ast_analysis;
-    let structural_analysis = selectors.into_structural();
     let chunk_top_level_mark = runtime_ast.top_level_mark;
     // Fetched before hints assembly: `local_property_effects` selects
     // the facts pass's local-effect policy, which travels in the hints.
@@ -430,9 +426,12 @@ pub(super) fn finish_logical_chunk(
         Some(_) => DynamicImportTarget::OtherChunk,
         None => DynamicImportTarget::External,
     };
-    let analysis_hints: AnalysisHints = {
-        let mut hints = declared_hints;
-        hints.imported_purities = cross_module_purities
+    let analysis_inputs: AnalysisInputs = {
+        let mut inputs = AnalysisInputs {
+            assumptions: declared_assumptions,
+            ..AnalysisInputs::default()
+        };
+        inputs.imported_purities = cross_module_purities
             .bindings
             .get(chunk_id)
             .cloned()
@@ -442,7 +441,8 @@ pub(super) fn finish_logical_chunk(
         // member annotations and cross-module assertions coexist.
         if let Some(member_sets) = cross_module_purities.members.get(chunk_id) {
             for (binding, members) in member_sets {
-                hints
+                inputs
+                    .assumptions
                     .declared_pure_members
                     .entry(binding.clone())
                     .or_default()
@@ -452,13 +452,20 @@ pub(super) fn finish_logical_chunk(
         // Definition-side `fluent_exports` assertions projected onto this
         // chunk's local import bindings (deep-purity chain roots).
         if let Some(fluent) = cross_module_purities.fluent.get(chunk_id) {
-            hints.fluent_bindings.extend(fluent.iter().cloned());
+            inputs
+                .assumptions
+                .fluent_bindings
+                .extend(fluent.iter().cloned());
         }
         if let Some(constructors) = cross_module_purities.constructors.get(chunk_id) {
-            hints.declared_pure_new.extend(constructors.iter().cloned());
+            inputs
+                .assumptions
+                .declared_pure_new
+                .extend(constructors.iter().cloned());
         }
         if let Some(callback_factories) = cross_module_purities.callback_factories.get(chunk_id) {
-            hints
+            inputs
+                .assumptions
                 .callback_factories
                 .extend(callback_factories.iter().cloned());
         }
@@ -466,7 +473,8 @@ pub(super) fn finish_logical_chunk(
             .inline_callback_factories
             .get(chunk_id)
         {
-            hints
+            inputs
+                .assumptions
                 .inline_callback_factories
                 .extend(factories.iter().cloned());
         }
@@ -474,39 +482,55 @@ pub(super) fn finish_logical_chunk(
             .namespace_independent_members
             .get(chunk_id)
         {
-            hints.namespace_independent_members.extend(members.clone());
+            inputs
+                .assumptions
+                .namespace_independent_members
+                .extend(members.clone());
         }
         if let Some(members) = cross_module_purities.callback_factory_members.get(chunk_id) {
-            hints.callback_factory_members.extend(members.clone());
+            inputs
+                .assumptions
+                .callback_factory_members
+                .extend(members.clone());
         }
         if let Some(members) = cross_module_purities.no_reentry_members.get(chunk_id) {
-            hints.no_reentry_members.extend(members.clone());
+            inputs
+                .assumptions
+                .no_reentry_members
+                .extend(members.clone());
         }
         if let Some(members) = cross_module_purities
             .no_reentry_record_members
             .get(chunk_id)
         {
-            hints.no_reentry_record_members.extend(members.clone());
+            inputs
+                .assumptions
+                .no_reentry_record_members
+                .extend(members.clone());
         }
         if let Some(bindings) = cross_module_purities.no_reentry_exports.get(chunk_id) {
-            hints.no_reentry_exports.extend(bindings.iter().cloned());
+            inputs
+                .assumptions
+                .no_reentry_exports
+                .extend(bindings.iter().cloned());
         }
         if owner_graph_options.local_property_effects {
-            hints.local_effect_policy = LocalEffectPolicy::LocalPropertyWrites;
+            inputs.local_effect_policy = LocalEffectPolicy::LocalPropertyWrites;
         }
-        hints.trusted_dataflow_summaries = owner_graph_options.trusted_dataflow_summaries;
-        hints.deferred_global_publications =
+        inputs.assumptions.trusted_dataflow_summaries =
+            owner_graph_options.trusted_dataflow_summaries;
+        inputs.assumptions.deferred_global_publications =
             owner_graph_options.deferred_global_publications.clone();
-        hints
+        inputs
     };
     // Chunk analysis: hint-sensitive facts, owner graph, and structural
-    // atomic units. See `chunk_analysis/mod.rs` for the current implementation.
+    // atomic groups. See `chunk_analysis/mod.rs` for the current implementation.
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
     let chunk_analysis = compute_chunk_analysis(
         chunk_id,
         &runtime_ast.module,
         structural_analysis,
-        &analysis_hints,
+        &analysis_inputs,
         Some(&source_path),
         |span| line_index.line_range_and_start_column_for_span(span),
         owner_graph_options,
@@ -519,7 +543,7 @@ pub(super) fn finish_logical_chunk(
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
     let ChunkAnalysisOutput {
         fact_analysis: analysis,
-        owner_graph_and_units: precomputed,
+        owner_graph_and_atomic_groups: precomputed,
     } = chunk_analysis;
     apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
     if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
@@ -543,7 +567,6 @@ pub(super) fn finish_logical_chunk(
     // owned state from here on.
     let ChunkPlan {
         module_plans,
-        binding_assignment,
         bindings_catalogue,
         anonymous_ordinal_assignment,
         unmatched_spec_claims,
@@ -587,7 +610,7 @@ pub(super) fn finish_logical_chunk(
             )
         })
         .collect();
-    let factorization = ChunkFactorization::build_with(
+    let factorization = AssignmentAnalysis::build_with(
         chunk_id.to_string(),
         precomputed,
         bindings_catalogue,
@@ -595,13 +618,18 @@ pub(super) fn finish_logical_chunk(
         factorization_chunk_renames,
         default_destination,
     );
-    let factorization_report = factorization.validate();
-    validate_and_emit_reports(
+    let validated_assignment = validate_and_emit_reports(
         chunk_id,
         report_emission,
         &factorization,
-        &factorization_report,
         &export_reentry_reports[&chunk_id_interned],
+    )?;
+
+    let placement = EmissionPlacement::from_validated(
+        &validated_assignment,
+        &runtime_ast.module.body,
+        module_plans.len(),
+        &anonymous_ordinal_assignment,
     )?;
 
     let lowered = lower_chunk(LowerChunkInputs {
@@ -623,9 +651,7 @@ pub(super) fn finish_logical_chunk(
         },
         plan: LowerChunkPlan {
             module_plans: &module_plans,
-            binding_assignment: &binding_assignment,
-            anonymous_ordinal_assignment: &anonymous_ordinal_assignment,
-            factorization: &factorization,
+            placement: &placement,
         },
         spec_facts: LowerChunkSpecFacts {
             runtime_import_facts: &runtime_import_facts,
@@ -646,13 +672,13 @@ pub(super) fn finish_logical_chunk(
         build_final_module_report(&module_plans, &factorization, chunk_top_level_mark);
     let directory_dependency_facts = build_directory_dependency_facts(chunk_id, &factorization);
     let validation = ChunkValidationSummary {
-        linker_order: factorization_report.linker_order.clone(),
+        linker_order: validated_assignment.report().linker_order.clone(),
     };
     let report = ChunkModulesReport {
         chunk_id: chunk_id.to_string(),
         counts: ChunkModulesCounts {
             applied: applied.len(),
-            selected_owners: binding_assignment.len(),
+            selected_owners: placement.bindings().len(),
         },
         final_module_contents: final_modules,
         requested_logical_modules: requests
@@ -680,7 +706,7 @@ pub(super) fn finish_logical_chunk(
     })
 }
 
-/// Rebind-fold composer: fold rebind-only atomic units into their
+/// Rebind-fold composer: fold rebind-only atomic groups into their
 /// explicit destination. Bridges the pure
 /// `compute_rebind_folds` decision in `lowering/rebind_fold.rs` over the chunk's
 /// post-seed assignment (managed by `ChunkPlanBuilder`) into the
@@ -689,18 +715,18 @@ pub(super) fn finish_logical_chunk(
 /// This runs after the seed phases of assignment construction
 /// (explicit requests, destructure pull, residual sweep) and before
 /// `synthesize_mini_factors`. The decision step is spec-independent —
-/// it only inspects the chunk-analysis owner graph + atomic units, the
+/// it only inspects the chunk-analysis owner graph + atomic groups, the
 /// builder's binding→plan assignment, and the residual landing-site
 /// index — so it lives in the `analysis` crate; this thin composer
 /// owns the application of those decisions to the builder's
 /// `ModulePlan` list.
 fn apply_rebind_folds_from_chunk_analysis(
     builder: &mut ChunkPlanBuilder,
-    precomputed: &OwnerGraphAndUnits,
+    precomputed: &OwnerGraphAndAtomicGroups,
 ) {
     let folds = compute_rebind_folds(
         precomputed,
-        builder.binding_assignment(),
+        &builder.owned_binding_destinations(),
         builder.residual_plan_index(),
     );
     builder.apply_rebind_folds(folds);
@@ -741,7 +767,7 @@ fn project_factorization_modules_with_sentinel(
                     )
                 })
                 .collect(),
-            // ChunkFactorization's owner graph uses post-comma-list-split
+            // AssignmentAnalysis's owner graph uses post-comma-list-split
             // `StatementOrdinal`s; convert body indices here so the
             // destination override targets the right owner node (an
             // anon body item is always a single post-split position,
@@ -766,31 +792,38 @@ fn project_factorization_modules_with_sentinel(
         rename_map: HashMap::new(),
         anonymous_statement_ordinals: Vec::new(),
     });
-    Ok((logical_modules, ModuleId(LogicalModuleIndex(sentinel_idx))))
+    Ok((logical_modules, ModuleId(sentinel_idx)))
 }
 
-/// Collect `AnalysisHints` from binding annotations. These are semantic
+/// Collect `AnalysisAssumptions` from binding annotations. These are semantic
 /// trust assertions, not ownership claims.
-fn collect_analysis_hints(
+fn collect_analysis_assumptions(
     explicit_requests: &[LogicalRequest],
     builder: &ChunkPlanBuilder,
     chunk_renames: Option<&ChunkRenames>,
     module: &Module,
-) -> Result<AnalysisHints> {
-    let mut hints = AnalysisHints::default();
+) -> Result<AnalysisAssumptions> {
+    let mut assumptions = AnalysisAssumptions::default();
     for (request_index, req) in explicit_requests.iter().enumerate() {
         for m in &req.members {
-            collect_member_analysis_hints(request_index, req, m, builder, module, &mut hints)?;
+            collect_member_analysis_assumptions(
+                request_index,
+                req,
+                m,
+                builder,
+                module,
+                &mut assumptions,
+            )?;
         }
     }
-    collect_chunk_rename_analysis_hints(chunk_renames, module, &mut hints)?;
-    Ok(hints)
+    collect_chunk_rename_analysis_assumptions(chunk_renames, module, &mut assumptions)?;
+    Ok(assumptions)
 }
 
-fn collect_chunk_rename_analysis_hints(
+fn collect_chunk_rename_analysis_assumptions(
     chunk_renames: Option<&ChunkRenames>,
     module: &Module,
-    hints: &mut AnalysisHints,
+    assumptions: &mut AnalysisAssumptions,
 ) -> Result<()> {
     let Some(chunk_renames) = chunk_renames else {
         return Ok(());
@@ -819,63 +852,67 @@ fn collect_chunk_rename_analysis_hints(
                 bindings.len()
             );
         }
-        collect_binding_annotation_hints(hints, &bindings[0], annotation, module)?;
+        collect_binding_annotation_hints(assumptions, &bindings[0], annotation, module)?;
     }
     Ok(())
 }
 
 fn collect_binding_annotation_hints(
-    hints: &mut AnalysisHints,
+    assumptions: &mut AnalysisAssumptions,
     binding: &str,
     annotation: &spec::BindingAnnotation,
     module: &Module,
 ) -> Result<()> {
     if annotation.initializer_purity == InitializerPurity::Pure {
         validate_initializer_purity_target(module, binding)?;
-        hints.declared_pure_initializers.insert(binding.to_string());
+        assumptions
+            .declared_pure_initializers
+            .insert(binding.to_string());
     }
     if annotation.purity == MemberPurity::Pure {
-        hints.declared_pure.insert(binding.to_string());
+        assumptions.declared_pure.insert(binding.to_string());
     }
     if annotation.purity == MemberPurity::PureNew {
-        hints.declared_pure_new.insert(binding.to_string());
+        assumptions.declared_pure_new.insert(binding.to_string());
     }
     if !annotation.pure_members.is_empty() {
-        hints
+        assumptions
             .declared_pure_members
             .entry(binding.to_string())
             .or_default()
             .extend(annotation.pure_members.iter().cloned());
     }
     if !annotation.no_sync_callback_members.is_empty() {
-        hints
+        assumptions
             .no_sync_callback_members
             .entry(binding.to_string())
             .or_default()
             .extend(annotation.no_sync_callback_members.iter().cloned());
     }
     if let Some(effect) = known_effect_from_member_effect(annotation.effect) {
-        hints.known_effects.insert(binding.to_string(), effect);
+        assumptions
+            .known_effects
+            .insert(binding.to_string(), effect);
     }
     Ok(())
 }
 
-fn collect_member_analysis_hints(
+fn collect_member_analysis_assumptions(
     request_index: usize,
     request: &LogicalRequest,
     member: &MemberRequest,
     builder: &ChunkPlanBuilder,
     module: &Module,
-    hints: &mut AnalysisHints,
+    assumptions: &mut AnalysisAssumptions,
 ) -> Result<()> {
-    if !member.has_analysis_hints() {
+    if !member.has_analysis_assumptions() {
         return Ok(());
     }
     if let Some(binding) = builder.resolved_binding_for_member(request_index, member) {
         if member.initializer_purity == InitializerPurity::Pure {
             validate_initializer_purity_target(module, &binding)?;
         }
-        member.collect_hints_for_binding(hints, &binding);
+        member.collect_assumptions_for_binding(assumptions, &binding);
         return Ok(());
     }
     if !builder.fail_fast() {
@@ -996,7 +1033,7 @@ fn pattern_binds_name(pattern: &Pat, binding: &str) -> bool {
     }
 }
 
-/// Write per-chunk validation reports (owner graph, atomic-unit
+/// Write per-chunk validation reports (owner graph, atomic-group
 /// conflicts, cycles) and bail with a human-readable summary when
 /// the spec is unrealizable.
 ///
@@ -1004,14 +1041,18 @@ fn pattern_binds_name(pattern: &Pat, binding: &str) -> bool {
 /// --dry-run` mode) the accept path writes nothing, but a rejection
 /// still writes `owner_graph.json` plus the rejection evidence so
 /// the documented `debundle gate list/describe` follow-up works.
-fn validate_and_emit_reports(
+fn validate_and_emit_reports<'a>(
     chunk_id: &str,
     report_emission: &ReportEmission,
-    factorization: &ChunkFactorization,
-    factorization_report: &::gate::FactorizationReport,
+    factorization: &'a AssignmentAnalysis,
     export_reentry_report: &ExportReentryReport,
-) -> Result<()> {
-    let rejected = !factorization_report.atomic_unit_conflicts.is_empty()
+) -> Result<ValidatedAssignment<'a>> {
+    let validation = factorization.validate_for_emission();
+    let factorization_report = match &validation {
+        Ok(assignment) => assignment.report(),
+        Err(report) => report,
+    };
+    let rejected = !factorization_report.atomic_group_conflicts.is_empty()
         || !factorization_report.cycles.is_empty();
     // Full mode writes the owner graph unconditionally; OnRejection
     // writes it only alongside rejection evidence (`gate describe`
@@ -1036,33 +1077,34 @@ fn validate_and_emit_reports(
             export_reentry_report,
         )?;
     }
-    if !factorization_report.atomic_unit_conflicts.is_empty() {
+    if !factorization_report.atomic_group_conflicts.is_empty() {
         if let Some(report_out_dir) = report_out_dir {
             // Project onto the wire shape: owners as `"owner:N"`,
             // modules as canonical `ModulePath` — the same entity
             // keys `owner_graph.json` uses, so the file joins
             // against the owner graph without string surgery.
-            let wire = ::analysis::AtomicUnitConflictReport::from_conflicts(
-                &factorization_report.atomic_unit_conflicts,
-                &|id| factorization.analysis.module_path(id),
-                factorization.analysis.owner_graph(),
+            let wire = ::analysis::AtomicGroupConflictReport::from_conflicts(
+                &factorization_report.atomic_group_conflicts,
+                &|id| factorization.analysis().module_path(id),
+                factorization.analysis().owner_graph(),
             );
             write_chunk_report_json(
                 report_out_dir,
                 chunk_id,
-                ATOMIC_UNIT_CONFLICTS_REPORT,
+                ATOMIC_GROUP_CONFLICTS_REPORT,
                 &wire,
             )?;
         }
-        let summary = render_atomic_unit_conflict_summary(
-            &factorization_report.atomic_unit_conflicts,
-            &|id| factorization.analysis.module_path(id),
-            factorization.analysis.owner_graph(),
+        let summary = render_atomic_group_conflict_summary(
+            &factorization_report.atomic_group_conflicts,
+            &|id| factorization.analysis().module_path(id),
+            factorization.analysis().owner_graph(),
         );
-        let causes = render_atomic_unit_cause_guidance(&factorization_report.atomic_unit_conflicts);
+        let causes =
+            render_atomic_group_cause_guidance(&factorization_report.atomic_group_conflicts);
         bail!(
-            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-factor-unit conflict(s) — the spec assigns members of one atomic factor unit to different destination modules, forming a cycle in the module dep graph that the constraining-edge SCC analysis says is unrealizable. Atomic factor units come from `G_atomic` SCC over the owner graph (docs/design.md §\"Two classes of atom\"); every member must co-locate. {causes}Resolve by reconciling each unit's claims into a single destination. Full evidence written to reports/tree/{chunk_id}/atomic_unit_conflicts.json; owner graph written to reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
-            n = factorization_report.atomic_unit_conflicts.len(),
+            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-group conflict(s) — the spec assigns members of one atomic group to different destination modules, forming a cycle in the module dependency graph that the constraining-edge SCC analysis says is unrealizable. Atomic groups come from `G_atomic` SCCs over the owner graph (docs/design.md §\"Two classes of atom\"); every member must co-locate. {causes}Resolve by reconciling each group's claims into one destination. Full evidence written to reports/tree/{chunk_id}/atomic_group_conflicts.json; owner graph written to reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
+            n = factorization_report.atomic_group_conflicts.len(),
         );
     }
     if !factorization_report.cycles.is_empty() {
@@ -1084,19 +1126,23 @@ fn validate_and_emit_reports(
     }
     // Defense-in-depth on the accept path: a cross-destination
     // rebinding write (clause 2) always co-locates with its target in
-    // one atomic factor unit, so a spec splitting them must have
-    // produced an `atomic_unit_conflicts` bail above. Reaching this
-    // point with a non-empty clause-2 verdict means the atomic-unit
+    // one atomic factor group, so a spec splitting them must have
+    // produced an `atomic_group_conflicts` bail above. Reaching this
+    // point with a non-empty clause-2 verdict means the atomic-group
     // glue and the realizability gate disagree — refuse to emit
     // rather than materialize a bundle that reassigns an ESM import.
     if !factorization_report.cross_rebinds.is_empty() {
         bail!(
-            "materialize_logical_modules: chunk {chunk_id} — realizability verdict carries {n} cross-destination rebind(s) but no atomic-unit conflict or blocking SCC was reported; this should be unreachable (rebinding writes co-locate with their target via atomic factor units). Rebinds:\n  {rebinds}",
+            "materialize_logical_modules: chunk {chunk_id} — realizability verdict carries {n} cross-destination rebind(s) but no atomic-group conflict or blocking SCC was reported; this should be unreachable (rebinding writes co-locate with their target via atomic factor groups). Rebinds:\n  {rebinds}",
             n = factorization_report.cross_rebinds.len(),
             rebinds = factorization_report.cross_rebinds.join("\n  "),
         );
     }
-    Ok(())
+    validation.map_err(|_| {
+        anyhow::anyhow!(
+            "chunk {chunk_id}: assignment validation rejected without a rendered diagnostic"
+        )
+    })
 }
 
 /// Build the per-plan `FinalModuleContent` rows for `ChunkModulesReport`.
@@ -1104,7 +1150,7 @@ fn validate_and_emit_reports(
 /// resulting JSON is deterministic across runs.
 fn build_final_module_report(
     module_plans: &[ModulePlan],
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
     chunk_top_level_mark: swc_common::Mark,
 ) -> Vec<FinalModuleContent> {
     module_plans
@@ -1119,7 +1165,7 @@ fn build_final_module_report(
                 .map(|name| top_level_id(name, chunk_top_level_mark))
                 .collect();
             let owner_ids = factorization
-                .analysis
+                .analysis()
                 .owner_report_ids_for_bindings(binding_ids.iter());
             FinalModuleContent {
                 binding_names,
@@ -1136,12 +1182,12 @@ fn build_final_module_report(
 
 fn build_directory_dependency_facts(
     chunk_id: &str,
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
 ) -> Vec<DirectoryDependencyFact> {
     let mut facts = Vec::new();
-    for edge in factorization.analysis.owner_graph().iter_edges() {
-        let source_module = factorization.assignment.of(edge.from);
-        let target_module = factorization.assignment.of(edge.to);
+    for edge in factorization.analysis().owner_graph().iter_edges() {
+        let source_module = factorization.assignment().of(edge.from);
+        let target_module = factorization.assignment().of(edge.to);
         if source_module == target_module {
             continue;
         }
@@ -1155,7 +1201,7 @@ fn build_directory_dependency_facts(
             format!(
                 "{}#{}",
                 target_file,
-                factorization.analysis.export_name_for(id)
+                factorization.analysis().export_name_for(id)
             )
         });
         facts.push(DirectoryDependencyFact {
@@ -1177,11 +1223,11 @@ fn build_directory_dependency_facts(
 
 fn module_output_file(
     chunk_id: &str,
-    factorization: &ChunkFactorization,
+    factorization: &AssignmentAnalysis,
     module: ModuleId,
 ) -> Option<String> {
     factorization
-        .analysis
-        .logical_module(module.0)
+        .analysis()
+        .logical_module(module)
         .map(|logical| join_module_path(&[chunk_id, &logical.target_file]))
 }
