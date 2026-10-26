@@ -181,12 +181,15 @@ function PortfolioDetails({
       <Stack gap="md">
         <Group justify="space-between" align="flex-start" gap="sm">
           <div>
-            <Title id="portfolio-title" order={2} size="h4">
-              Portfolio used in the estimate
-            </Title>
-            <Text size="sm" c="dimmed" mt={4}>
-              Current net value used as the draw-rate denominator.
-            </Text>
+            <Group gap="xs">
+              <Title id="portfolio-title" order={2} size="h4">
+                Portfolio used in the estimate
+              </Title>
+              <HelpTooltip
+                topic="portfolio value"
+                description="Current net value is the denominator used to calculate the implied draw rate, including for earlier dates in the history chart."
+              />
+            </Group>
           </div>
           <Badge color={portfolio.status === "ready" ? "blue" : "gray"} variant="light">
             {portfolio.status === "ready" ? "Valuation available" : "Valuation unavailable"}
@@ -280,9 +283,15 @@ function SpendingComposition({ view }: { view: SustainabilityView }) {
   return (
     <Paper component="section" aria-labelledby="spend-composition-title" withBorder radius="lg" p="xl">
       <Stack gap="md">
-        <Title id="spend-composition-title" order={2} size="h4">
-          Spending in this window
-        </Title>
+        <Group gap="xs">
+          <Title id="spend-composition-title" order={2} size="h4">
+            Spending in this window
+          </Title>
+          <HelpTooltip
+            topic="spending annualization"
+            description={`Annualized from ${view.covered_days} covered complete days in the selected lookback. These categories describe observed spending; annualization projects that daily average over a year.`}
+          />
+        </Group>
         <SimpleGrid cols={{ base: 2, sm: 2 }} spacing="md">
           <div>
             <Text size="xs" c="dimmed" fw={600}>
@@ -325,12 +334,11 @@ function SpendingComposition({ view }: { view: SustainabilityView }) {
             </Text>
           </div>
         </SimpleGrid>
-        <Divider />
-        <Text size="sm" c="dimmed">
-          Annualized from {view.covered_days} covered days in the selected lookback. These categories describe observed
-          spending.
-          {view.status === "unavailable" && " A draw rate is unavailable because the portfolio value is not ready."}
-        </Text>
+        {view.status === "unavailable" && (
+          <Text size="sm" c="dimmed">
+            A draw rate is unavailable because the portfolio value is not ready.
+          </Text>
+        )}
       </Stack>
     </Paper>
   );
@@ -438,10 +446,15 @@ function DrawGauge({ view }: { view: SustainabilityView }) {
               {view.reference_draw_rates.map((rate, index) => (
                 <Paper key={`${rate}-${index}`} bg="var(--mantine-color-default-hover)" radius="md" p="sm">
                   <Stack gap={4}>
-                    <Badge color="gray" variant="outline" size="sm" w="fit-content">
-                      Scenario {index + 1}: {percent(rate)}
-                    </Badge>
-                    <Text size="sm">{scenarioComparison(headlineRate, rate)}</Text>
+                    <Group gap="xs">
+                      <Badge color="gray" variant="outline" size="sm" w="fit-content">
+                        Scenario {index + 1}: {percent(rate)}
+                      </Badge>
+                      <HelpTooltip
+                        topic={`scenario ${index + 1} comparison`}
+                        description={`${scenarioComparison(headlineRate, rate)} Reference scenarios are comparisons, not safety thresholds or guarantees.`}
+                      />
+                    </Group>
                     <Text size="xs" c="dimmed">
                       Equivalent monthly spending:{" "}
                       <strong>{money(monthlySpendingBudget(view, rate), view.currency)}</strong>
@@ -453,12 +466,20 @@ function DrawGauge({ view }: { view: SustainabilityView }) {
                 </Paper>
               ))}
             </SimpleGrid>
-            <Text size="xs" c="dimmed">
-              Gauge scale ends at {percent(maximumRate)}.{" "}
-              {overflow
-                ? `The actual rate is ${percent(headlineRate)}; the marker is beyond the scale.`
-                : "Reference marks are comparisons, not safety thresholds or guarantees."}
-            </Text>
+            <Group gap="xs">
+              <Text size="xs" c="dimmed">
+                Scale: 0–{percent(maximumRate)}
+              </Text>
+              <HelpTooltip
+                topic="draw gauge scale"
+                description="The gauge compares the implied draw rate with the configured reference scenarios. Reference marks are comparisons, not safety thresholds or guarantees. Rates above the scale are shown with an overflow arrow."
+              />
+            </Group>
+            {overflow && (
+              <Text size="xs" c="dimmed">
+                The actual rate is {percent(headlineRate)}; the marker is beyond the scale.
+              </Text>
+            )}
           </Stack>
         ) : (
           <Text size="sm" c="dimmed">

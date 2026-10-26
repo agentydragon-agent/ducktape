@@ -962,9 +962,6 @@ async def test_sustainability_experimental_render(
     await expect(page.get_by_text("Experimental", exact=True)).to_be_visible()
     await expect(page.get_by_text("TODAY'S portfolio valuation", exact=False)).to_be_visible()
     await expect(page.get_by_text("Scenario 4: 4.5%", exact=True)).to_be_visible()
-    await expect(
-        page.get_by_text("Current implied draw is 1.5 percentage points above this scenario.", exact=True)
-    ).to_be_visible()
     await expect(page.get_by_text("$2,750", exact=True)).to_be_visible()
     scenario_marker = page.get_by_role("button", name="Scenario 1: 3% draw rate")
     await expect(scenario_marker).to_be_visible()
@@ -986,6 +983,25 @@ async def test_sustainability_experimental_render(
         full_page=True,
         animations="disabled",
     )
+
+    for topic, explanation in [
+        ("portfolio value", "Current net value is the denominator"),
+        ("spending annualization", "Annualized from 90 covered complete days"),
+        ("scenario 1 comparison", "Current implied draw is 1.5 percentage points above this scenario."),
+        ("draw gauge scale", "Reference marks are comparisons, not safety thresholds or guarantees."),
+    ]:
+        help_button = page.get_by_role("button", name=f"About {topic}", exact=True)
+        await help_button.focus()
+        tooltip = page.get_by_role("tooltip").filter(has_text=explanation)
+        await _expect_tooltip_rendered(tooltip)
+        await view.capture(
+            f"sustainability-help-{topic.replace(' ', '-')}-{width}",
+            label=f"{width}px {topic} help",
+            full_page=True,
+            animations="disabled",
+        )
+        await page.keyboard.press("Escape")
+        await expect(tooltip).to_be_hidden()
 
     history = page.get_by_role("region", name="Spending and funding history")
     await expect(history.get_by_text("90-day trailing average, annualized", exact=True)).to_be_visible()
