@@ -25,13 +25,20 @@ local block device establishes the attachment contract, not those storage-servic
 
 ## Cutover
 
+Operator scope update, 2026-10-25 PDT: a fresh VM trial may proceed after basic live checks of
+deployed configuration, storage health/headroom, and disposable VM boot with state/workspace
+write/read. Skip node-loss, quorum/fencing, expansion, cross-node movement and recovery drills
+for this trial. The broader Piraeus qualification remains outstanding; this exception does
+not declare its recovery or movement properties qualified.
+
 The implementation changes the existing `runner-vm` template in place. Existing workspace
 claims record `RawDiskImage` on `Filesystem` storage; the controller must continue rejecting
 their use with a `BlockFilesystem` template. Do not edit their creation records, clear their
 recorded identities, or assume a StorageClass edit converts data.
 
-1. Pass raw-block VM boot, write/read, suspend/resume and retained-identity acceptance on RBE.
-   Qualify the replicated class as specified in the Piraeus plan before placing agent data on it.
+1. Raw-block VM boot, write/read, suspend/resume and retained-identity acceptance passed on RBE.
+   Complete the basic live checks above before the next fresh VM trial. Full replicated-class
+   qualification stays in the Piraeus plan and does not gate this operator-authorized trial.
 2. Inventory the affected VM Sandboxes and their claim/PV identities. Save desired Sandbox
    manifests, policy selections and bootstrap configuration needed to recreate them. The
    reset applies only to selected VM Sandboxes affected by this template change; Pod Sandboxes,
@@ -42,9 +49,9 @@ recorded identities, or assume a StorageClass edit converts data.
    for deletion to finish before recreating the same name.
 4. Activate the new template and recreate the selected Sandboxes. Check new Sandbox/PVC UIDs,
    the replicated StorageClass on both claims, `Block` workspace mode, `Filesystem` state
-   mode, the guest ext4 mount, and runner connectivity. Write markers to state and workspace,
-   then verify them after suspend/resume. A bounded move to another eligible OVH node must
-   preserve both claim UIDs and markers without overlapping writers.
+   mode, the guest ext4 mount, and runner connectivity. Write and read markers in state and
+   workspace. Suspend/resume and retained identities have RBE coverage; a live cross-node move
+   is deferred to the broader storage qualification and does not gate this trial.
 
 Operator decision, 2026-10-25 PDT: preserve the existing legacy VM Sandbox selected for
 retention and its state/workspace claims and PVs. Keep `spec.running: false` and
