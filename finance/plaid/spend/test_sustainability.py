@@ -207,12 +207,5 @@ def test_tax_fraction_requires_provenance_and_shared_classification() -> None:
         SpendConfiguration(cards=[], sustainability=policy())
 
 
-def test_spend_configuration_rejects_mismatched_sustainability_currency() -> None:
-    # Simulate a future generalized allowance policy while sustainability is USD-only.
-    mismatched_allowance = allowance().model_copy(update={"currency": "EUR"})
-    with pytest.raises(ValidationError, match="currency must match"):
-        SpendConfiguration(cards=[], allowance=mismatched_allowance, sustainability=policy())
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

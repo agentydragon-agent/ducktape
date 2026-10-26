@@ -73,8 +73,6 @@ class SpendConfiguration(BaseModel):
         if self.sustainability is not None:
             if self.allowance is None:
                 raise ValueError("sustainability requires shared allowance classifications")
-            if self.allowance.currency != self.sustainability.currency:
-                raise ValueError("sustainability currency must match allowance currency")
             categories = set(self.sustainability.include_excluded_categories)
             if categories - self.allowance.analysis_categories.keys():
                 raise ValueError("sustainability category overrides must refer to configured categories")

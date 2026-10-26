@@ -147,6 +147,7 @@ py_test(
     name = "test_portfolio",
     srcs = ["test_portfolio.py"],
     deps = [
+        ":conftest",
         ":portfolio",
         ":portfolio_models",
         "//:conftest",
@@ -257,6 +258,7 @@ py_test(
     srcs = ["test_sustainability.py"],
     deps = [
         ":allowance",
+        ":conftest",
         ":models",
         ":portfolio_models",
         ":sustainability",
