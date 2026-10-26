@@ -45,7 +45,10 @@ use artifact::{
     normalize_module_path,
 };
 use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_analysis};
-use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle_summary};
+use gate::{
+    ChunkFactorization, ValidatedAssignment, render_atomic_unit_conflict_summary,
+    render_cycle_summary,
+};
 use js_ast::{ParsedJsModule, statement_ordinal_for_body_index};
 use output_layout::{
     ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, EXPORT_REENTRY_REPORT, OWNER_GRAPH_REPORT,
@@ -595,12 +598,10 @@ pub(super) fn finish_logical_chunk(
         factorization_chunk_renames,
         default_destination,
     );
-    let factorization_report = factorization.validate();
-    validate_and_emit_reports(
+    let validated_assignment = validate_and_emit_reports(
         chunk_id,
         report_emission,
         &factorization,
-        &factorization_report,
         &export_reentry_reports[&chunk_id_interned],
     )?;
 
@@ -625,7 +626,7 @@ pub(super) fn finish_logical_chunk(
             module_plans: &module_plans,
             binding_assignment: &binding_assignment,
             anonymous_ordinal_assignment: &anonymous_ordinal_assignment,
-            factorization: &factorization,
+            validated_assignment: &validated_assignment,
         },
         spec_facts: LowerChunkSpecFacts {
             runtime_import_facts: &runtime_import_facts,
@@ -646,7 +647,7 @@ pub(super) fn finish_logical_chunk(
         build_final_module_report(&module_plans, &factorization, chunk_top_level_mark);
     let directory_dependency_facts = build_directory_dependency_facts(chunk_id, &factorization);
     let validation = ChunkValidationSummary {
-        linker_order: factorization_report.linker_order.clone(),
+        linker_order: validated_assignment.report().linker_order.clone(),
     };
     let report = ChunkModulesReport {
         chunk_id: chunk_id.to_string(),
@@ -700,7 +701,7 @@ fn apply_rebind_folds_from_chunk_analysis(
 ) {
     let folds = compute_rebind_folds(
         precomputed,
-        builder.binding_assignment(),
+        &builder.owned_binding_destinations(),
         builder.residual_plan_index(),
     );
     builder.apply_rebind_folds(folds);
@@ -1004,13 +1005,17 @@ fn pattern_binds_name(pattern: &Pat, binding: &str) -> bool {
 /// --dry-run` mode) the accept path writes nothing, but a rejection
 /// still writes `owner_graph.json` plus the rejection evidence so
 /// the documented `debundle gate list/describe` follow-up works.
-fn validate_and_emit_reports(
+fn validate_and_emit_reports<'a>(
     chunk_id: &str,
     report_emission: &ReportEmission,
-    factorization: &ChunkFactorization,
-    factorization_report: &::gate::FactorizationReport,
+    factorization: &'a ChunkFactorization,
     export_reentry_report: &ExportReentryReport,
-) -> Result<()> {
+) -> Result<ValidatedAssignment<'a>> {
+    let validation = factorization.validate_for_emission();
+    let factorization_report = match &validation {
+        Ok(assignment) => assignment.report(),
+        Err(report) => report,
+    };
     let rejected = !factorization_report.atomic_unit_conflicts.is_empty()
         || !factorization_report.cycles.is_empty();
     // Full mode writes the owner graph unconditionally; OnRejection
@@ -1044,8 +1049,8 @@ fn validate_and_emit_reports(
             // against the owner graph without string surgery.
             let wire = ::analysis::AtomicUnitConflictReport::from_conflicts(
                 &factorization_report.atomic_unit_conflicts,
-                &|id| factorization.analysis.module_path(id),
-                factorization.analysis.owner_graph(),
+                &|id| factorization.analysis().module_path(id),
+                factorization.analysis().owner_graph(),
             );
             write_chunk_report_json(
                 report_out_dir,
@@ -1056,8 +1061,8 @@ fn validate_and_emit_reports(
         }
         let summary = render_atomic_unit_conflict_summary(
             &factorization_report.atomic_unit_conflicts,
-            &|id| factorization.analysis.module_path(id),
-            factorization.analysis.owner_graph(),
+            &|id| factorization.analysis().module_path(id),
+            factorization.analysis().owner_graph(),
         );
         let causes = render_atomic_unit_cause_guidance(&factorization_report.atomic_unit_conflicts);
         bail!(
@@ -1096,7 +1101,11 @@ fn validate_and_emit_reports(
             rebinds = factorization_report.cross_rebinds.join("\n  "),
         );
     }
-    Ok(())
+    validation.map_err(|_| {
+        anyhow::anyhow!(
+            "chunk {chunk_id}: assignment validation rejected without a rendered diagnostic"
+        )
+    })
 }
 
 /// Build the per-plan `FinalModuleContent` rows for `ChunkModulesReport`.
@@ -1119,7 +1128,7 @@ fn build_final_module_report(
                 .map(|name| top_level_id(name, chunk_top_level_mark))
                 .collect();
             let owner_ids = factorization
-                .analysis
+                .analysis()
                 .owner_report_ids_for_bindings(binding_ids.iter());
             FinalModuleContent {
                 binding_names,
@@ -1139,9 +1148,9 @@ fn build_directory_dependency_facts(
     factorization: &ChunkFactorization,
 ) -> Vec<DirectoryDependencyFact> {
     let mut facts = Vec::new();
-    for edge in factorization.analysis.owner_graph().iter_edges() {
-        let source_module = factorization.assignment.of(edge.from);
-        let target_module = factorization.assignment.of(edge.to);
+    for edge in factorization.analysis().owner_graph().iter_edges() {
+        let source_module = factorization.assignment().of(edge.from);
+        let target_module = factorization.assignment().of(edge.to);
         if source_module == target_module {
             continue;
         }
@@ -1155,7 +1164,7 @@ fn build_directory_dependency_facts(
             format!(
                 "{}#{}",
                 target_file,
-                factorization.analysis.export_name_for(id)
+                factorization.analysis().export_name_for(id)
             )
         });
         facts.push(DirectoryDependencyFact {
@@ -1181,7 +1190,7 @@ fn module_output_file(
     module: ModuleId,
 ) -> Option<String> {
     factorization
-        .analysis
+        .analysis()
         .logical_module(module)
         .map(|logical| join_module_path(&[chunk_id, &logical.target_file]))
 }
