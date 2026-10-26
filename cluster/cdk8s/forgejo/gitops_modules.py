@@ -18,7 +18,6 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/forgejo/gitops"
 def chart(
     app: App,
     *,
-    claude: ArtifactGeneratorSpecArtifacts,
     haku_state: ArtifactGeneratorSpecArtifacts,
     budget_ledger: ArtifactGeneratorSpecArtifacts,
     cpap_data: ArtifactGeneratorSpecArtifacts,
@@ -27,19 +26,12 @@ def chart(
 ) -> Chart:
     """One CR per module, each reading the artifact its keyword names (`terraform.gitops_module`)."""
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    claude_tf = terraform.gitops_terraform(chart, "claude", module=claude, variables=None)
-    # forgejo_collaborator.claude grants read to the claude agent account, so the
-    # forgejo-claude module (which provisions that user) must apply first.
-    haku_state_tf = terraform.gitops_terraform(
-        chart, "haku-state", module=haku_state, variables=None, depends_on=[claude_tf]
-    )
+    # The existing claude account is managed by Crossplane. Fresh bootstrap may
+    # retry these grants until its Workspace becomes Ready.
+    haku_state_tf = terraform.gitops_terraform(chart, "haku-state", module=haku_state, variables=None)
     # Collaborator grants reference service users provisioned by these modules.
-    terraform.gitops_terraform(
-        chart, "budget-ledger", module=budget_ledger, variables=None, depends_on=[claude_tf, haku_state_tf]
-    )
-    terraform.gitops_terraform(
-        chart, "cpap-data", module=cpap_data, variables=None, depends_on=[claude_tf, haku_state_tf]
-    )
+    terraform.gitops_terraform(chart, "budget-ledger", module=budget_ledger, variables=None, depends_on=[haku_state_tf])
+    terraform.gitops_terraform(chart, "cpap-data", module=cpap_data, variables=None, depends_on=[haku_state_tf])
     terraform.gitops_terraform(
         chart,
         "agentydragon-repos",

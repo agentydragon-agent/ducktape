@@ -10,6 +10,7 @@
 # gazelle:resolve py agentplane_policyset_crds //agentplane/crds:policyset
 # gazelle:resolve py cilium_crds //cluster/cdk8s/providers/cilium:ciliumnetworkpolicy
 # gazelle:resolve py crossplane_pkg_provider_crds //cluster/cdk8s/providers/crossplane:provider
+# gazelle:resolve py crossplane_deploymentruntimeconfig_crds //cluster/cdk8s/providers/crossplane:deploymentruntimeconfig
 # gazelle:resolve py opentofu_providerconfig_crds //cluster/cdk8s/providers/crossplane:opentofu_providerconfig
 # gazelle:resolve py opentofu_workspace_crds //cluster/cdk8s/providers/crossplane:opentofu_workspace
 # gazelle:resolve py flux_helm //cluster/cdk8s/providers/flux:helmrelease
@@ -1271,6 +1272,7 @@ py_library(
         ":helm",
         ":manifest_roots",
         ":namespaces",
+        ":opentofu_runtime",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
@@ -1287,7 +1289,29 @@ py_library(
     name = "opentofu",
     srcs = ["opentofu.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = ["//util/bazel:runfiles"],
+    deps = [
+        ":secret_ref",
+        ":terraform",
+        "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
+        "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "opentofu_runtime",
+    srcs = ["opentofu_runtime.py"],
+    deps = [
+        ":config_format",
+        ":opentofu",
+        "//cluster/cdk8s/providers/crossplane:deploymentruntimeconfig",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
 )
 
 py_library(
@@ -1299,8 +1323,8 @@ py_library(
         ":flux",
         ":opentofu",
         ":route53",
+        ":secret_ref",
         ":terraform",
-        "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "@pypi//cdk8s",
         "@pypi//pydantic",
@@ -1316,8 +1340,6 @@ py_library(
         ":flux",
         ":opentofu",
         ":terraform",
-        "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
-        "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "@pypi//cdk8s",
     ],
 )
@@ -1644,6 +1666,7 @@ py_library(
         "//cluster/cdk8s/forgejo:app",
         "//cluster/cdk8s/forgejo:budget_namespace",
         "//cluster/cdk8s/forgejo:cache",
+        "//cluster/cdk8s/forgejo:claude",
         "//cluster/cdk8s/forgejo:db",
         "//cluster/cdk8s/forgejo:flux_kustomizations",
         "//cluster/cdk8s/forgejo:gitops_modules",

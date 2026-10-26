@@ -37,3 +37,11 @@ cdk8s_import(
     module_path = "io/upbound/opentofu",
     visibility = ["//cluster/cdk8s:__subpackages__"],
 )
+
+cdk8s_import(
+    name = "deploymentruntimeconfig",
+    crd = "@crossplane_deploymentruntimeconfig_crd//file",
+    module_name = "crossplane_deploymentruntimeconfig_crds",
+    module_path = "io/crossplane/pkg",
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)

@@ -152,3 +152,19 @@ py_library(
         "@pypi//cdk8s_plus_34",
     ],
 )
+
+py_library(
+    name = "claude",
+    srcs = ["claude.py"],
+    data = ["//tf/gitops/forgejo-claude:inline_source"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:opentofu",
+        "//cluster/cdk8s:terraform",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+    ],
+)

@@ -1,0 +1,267 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opentofu-gatus-sso
+  namespace: crossplane-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-gatus-sso-impersonate
+  namespace: crossplane-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - opentofu-gatus-sso
+    resources:
+      - serviceaccounts
+    verbs:
+      - impersonate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc8df07623b0b80545efe4020365280ea65b8cfbe57
+  namespace: crossplane-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-gatus-sso-impersonate
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-opentofu
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-gatus-sso
+  namespace: authentik
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - authentik-bootstrap
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc8db99b3338fdffe4d52dbad80aca158a1efcd8ad2
+  namespace: authentik
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-gatus-sso
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: opentofu-gatus-sso
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-gatus-sso
+  namespace: gatus
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - gatus-oidc-secret
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc8db99b3338fdffe4d52dbad80aca158a1efcd8ad2
+  namespace: gatus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-gatus-sso
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: opentofu-gatus-sso
+    namespace: crossplane-system
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: crossplane-gatus-sso
+spec:
+  backendFile: |
+    conn_str = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+    schema_name = "gatus_sso"
+  configuration: |
+    terraform {
+      backend "pg" {}
+    }
+    provider "kubernetes" {
+      config_path = "/etc/opentofu/kubernetes/opentofu-gatus-sso"
+    }
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: Workspace
+metadata:
+  annotations:
+    crossplane.io/external-name: default
+  name: gatus-sso
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    env:
+      - name: PGPASSWORD
+        secretKeyRef:
+          key: password
+          name: tofu-state-db-credentials
+          namespace: flux-system
+    module: |+
+      terraform {
+        required_version = ">= 1.0"
+
+        required_providers {
+          authentik = {
+            source  = "goauthentik/authentik"
+            version = "~> 2026.8.0"
+          }
+          kubernetes = {
+            source  = "hashicorp/kubernetes"
+            version = "~> 3.0"
+          }
+        }
+      }
+
+      data "kubernetes_secret" "authentik_bootstrap" {
+        metadata {
+          name      = "authentik-bootstrap"
+          namespace = "authentik"
+        }
+      }
+
+      provider "authentik" {
+        url   = "http://authentik-server.authentik.svc.cluster.local"
+        token = data.kubernetes_secret.authentik_bootstrap.data["AUTHENTIK_BOOTSTRAP_TOKEN"]
+      }
+
+      # --- Flows and signing key (looked up, not managed) ---
+
+      data "authentik_flow" "implicit_consent" {
+        slug = "default-provider-authorization-implicit-consent"
+      }
+
+      data "authentik_flow" "invalidation" {
+        slug = "default-provider-invalidation-flow"
+      }
+
+      data "authentik_certificate_key_pair" "self_signed" {
+        name = "authentik Self-signed Certificate"
+      }
+
+      data "authentik_property_mapping_provider_scope" "openid" {
+        managed = "goauthentik.io/providers/oauth2/scope-openid"
+      }
+
+      data "authentik_property_mapping_provider_scope" "email" {
+        managed = "goauthentik.io/providers/oauth2/scope-email"
+      }
+
+      data "authentik_property_mapping_provider_scope" "profile" {
+        managed = "goauthentik.io/providers/oauth2/scope-profile"
+      }
+
+      data "authentik_group" "admins" {
+        name = "authentik Admins"
+      }
+
+      # --- OAuth2 Provider ---
+      # client_secret omitted — Authentik auto-generates it.
+
+      resource "authentik_provider_oauth2" "gatus" {
+        name               = "gatus"
+        client_id          = "gatus"
+        client_type        = "confidential"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://status.allegedly.works/authorization-code/callback"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      # --- Application ---
+
+      resource "authentik_application" "gatus" {
+        name              = "Gatus"
+        slug              = "gatus"
+        protocol_provider = authentik_provider_oauth2.gatus.id
+        meta_description  = "Gatus Health Monitoring"
+        meta_icon         = "https://cdn.simpleicons.org/statuspage"
+        meta_launch_url   = "https://status.allegedly.works"
+        open_in_new_tab   = true
+      }
+
+      # --- Access Policy ---
+
+      resource "authentik_policy_binding" "gatus_admins" {
+        target = authentik_application.gatus.uuid # .id is slug, not UUID; API requires UUID
+        group  = data.authentik_group.admins.id
+        order  = 0
+      }
+
+      # --- K8s Secret for Gatus OIDC config ---
+
+      resource "kubernetes_secret" "gatus_oidc" {
+        metadata {
+          name      = "gatus-oidc-secret"
+          namespace = "gatus"
+        }
+
+        data = {
+          GATUS_CLIENT_SECRET = authentik_provider_oauth2.gatus.client_secret
+        }
+      }
+
+
+    planArgs:
+      - -lock-timeout=5m
+    source: Inline
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+  providerConfigRef:
+    name: crossplane-gatus-sso

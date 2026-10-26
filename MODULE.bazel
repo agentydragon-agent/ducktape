@@ -1173,6 +1173,14 @@ http_file(
     urls = ["https://raw.githubusercontent.com/crossplane/crossplane/v2.4.2/cluster/crds/pkg.crossplane.io_providers.yaml"],
 )
 
+# Match Crossplane core; runtime configuration supplies scoped Kubernetes clients.
+http_file(
+    name = "crossplane_deploymentruntimeconfig_crd",
+    downloaded_file_path = "pkg.crossplane.io_deploymentruntimeconfigs.yaml",
+    sha256 = "43ac451d27247eb141bd9c12bc9739ecf1e02fc0a42e19eb210edf2350b8d731",
+    urls = ["https://raw.githubusercontent.com/crossplane/crossplane/v2.4.2/cluster/crds/pkg.crossplane.io_deploymentruntimeconfigs.yaml"],
+)
+
 # Crossplane LiteLLM CRDs used by cluster/cdk8s/providers/litellm. The local package build applies
 # a read-cycle fix only; these schemas remain the ones from the adapter's v2.1.0 base revision.
 http_file(
