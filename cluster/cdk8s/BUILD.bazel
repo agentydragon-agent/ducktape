@@ -1284,11 +1284,20 @@ py_library(
 )
 
 py_library(
+    name = "opentofu",
+    srcs = ["opentofu.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = ["//util/bazel:runfiles"],
+)
+
+py_library(
     name = "route53_domain_delegation",
     srcs = ["route53_domain_delegation.py"],
+    data = ["//tf/gitops/route53-domain-delegation:inline_source"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
+        ":opentofu",
         ":route53",
         ":terraform",
         "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
@@ -1301,9 +1310,11 @@ py_library(
 py_library(
     name = "crossplane_forgejo_agentydragon",
     srcs = ["crossplane_forgejo_agentydragon.py"],
+    data = ["//tf/gitops/forgejo-agentydragon:inline_source"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
+        ":opentofu",
         ":terraform",
         "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",

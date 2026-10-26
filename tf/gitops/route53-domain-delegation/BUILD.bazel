@@ -17,3 +17,10 @@ tf_module(
     ],
     providers_versions = ":providers",
 )
+
+# Native HCL read by cdk8s when rendering the Inline Workspace.
+filegroup(
+    name = "inline_source",
+    srcs = glob(["*.tf"]),
+    visibility = ["//cluster/cdk8s:__pkg__"],
+)

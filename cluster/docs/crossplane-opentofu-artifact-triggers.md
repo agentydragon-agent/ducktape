@@ -11,8 +11,9 @@ The existing Crossplane OpenTofu roots are `tf/gitops/forgejo-agentydragon` and
 `tf/gitops/route53-domain-delegation`. Both appear suitable for Inline. LiteLLM keys
 are now native Crossplane LiteLLM resources, not OpenTofu Workspaces.
 
-The Inline migration is separate from the canary removal. Until it lands, the two
-existing Workspaces still use mutable Git URLs and `remotePullPolicy: Always`.
+Both existing Workspaces render Inline HCL from their roots through cdk8s. The
+`inline_source` filegroups package their `.tf` files as Bazel runfiles, so source edits
+are inputs to manifest synthesis and its parity check.
 
 ## Source-change path
 
@@ -137,3 +138,19 @@ After the separate Inline migration merges, verify both existing Workspaces repo
 `Synced=True` and `Ready=True`, retain their state identities, and expose the expected
 non-sensitive outputs. A later harmless source edit can exercise the update path;
 Route 53 registration and delegation must not be changed just to test triggering.
+
+### One-time Remote-to-Inline cutover
+
+provider-opentofu v1.1.10 writes Inline source to `main.tf` in the existing per-UID
+working directory. It does not remove the old Remote root's other `.tf` files. An
+existing warm runtime may therefore report duplicate declarations after the source
+mode changes. Once Flux has applied **both** Inline Workspace specs, restart the
+OpenTofu provider deployment to discard its ephemeral container filesystem, then
+confirm both Workspaces reconcile from the retained PostgreSQL backend. The deployed
+provider has no persistent volume mounted for `/tofu`. Do not delete or recreate the
+Workspaces, change their external names, or remove backend state to clear this cache.
+
+A restart before both spec changes is insufficient: a still-Remote Workspace could
+repopulate its directory. This is a one-time migration step, not part of future
+source-change delivery. A cold provider runtime writes the complete Inline module
+without requiring a repository download.
