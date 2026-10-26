@@ -268,7 +268,8 @@ def kubernetes_provider(chart: Chart, directory: RenderedDirectory, crossplane: 
         KUBERNETES_PROVIDER_KUSTOMIZATION_NAME,
         directory,
         timeout="15m",
-        prune=False,
+        # Enable garbage collection before removing this canary-only installation.
+        prune=True,
         wait=True,
         health_check_exprs=[_PROVIDER_HEALTH, _FUNCTION_HEALTH],
         depends_on=[flux_kustomization_depends_on(crossplane)],
