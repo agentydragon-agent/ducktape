@@ -57,7 +57,10 @@ STAGING_NAMESPACE = "agentplane-staging"
 AGENT_SERVICE_ACCOUNT = "agentplane-agent"
 AUDIENCE = "agentplane"
 
-# The Pod SandboxTemplate every deployment offers, and the VM one of a deployment that runs VM Sandboxes.
+# The SandboxTemplates a stack under test offers. Each deployment names its own Pod execution
+# environment, so these are the k3s fixture's names (agentplane/system_tests/k3s/fixture_chart.py);
+# staging names its Pod one `runner-ducktape`. The system tests import neither cdk8s module, so a
+# rename lands in both places.
 POD_TEMPLATE = "runner"
 VM_TEMPLATE = "runner-vm"
 # A VM Sandbox's working directory: the guest's runner takes only a child of its workspace root.

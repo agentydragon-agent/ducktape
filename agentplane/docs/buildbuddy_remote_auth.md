@@ -7,12 +7,12 @@ alternative, not a prerequisite for the staging stopgap.
 
 ## Staging-only direct-key stopgap
 
-The staging `runner-ducktape` template projects the existing canonical BuildBuddy key through
+The staging runner SandboxTemplate (`runner-ducktape`, `cluster/cdk8s/agentplane/staging.py`) projects the existing canonical BuildBuddy key through
 ESO into its **workload container only**. The launcher consumes the projected file via
 `BBR_BUILDBUDDY_API_KEY_FILE` for real `bbr` runs.
 The existing BuildBuddy egress policy still limits the sandbox's destination hosts. This does **not** keep the key secret from agent-controlled sandbox code or the
 BuildBuddy-hosted runner: `bb remote` embeds it in the hosted Bazel command. It must not be
-represented as credential isolation, and the generic runner and egress sidecar do not mount
+represented as credential isolation, and the egress sidecar does not mount
 it. Revoking the canonical key affects all its consumers; this change does not introduce
 a new key or a new credential lifecycle.
 

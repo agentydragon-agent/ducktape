@@ -250,12 +250,12 @@ The current Claude message's block map and unconfirmed inputs remain in memory.
 
 ## Ducktape development image
 
-`nix build .#runner-ducktape-image` builds the opt-in `runner-ducktape` container. It reuses
-this runner, both harnesses, and the sandbox substrate, adding `preCommitPackages` from the
-shared flake tool definitions and the repo-configured Gazelle. This includes `bb`, `bbr`,
+`nix build .#runner-ducktape-image` builds the `runner-ducktape` container every staging Pod Sandbox
+runs. It reuses this runner, both harnesses, and the sandbox substrate, adding `preCommitPackages`
+from the shared flake tool definitions and the repo-configured Gazelle. This includes `bb`, `bbr`,
 Bazelisk, pre-commit and the pinned formatters without duplicating their package/version list.
-The generic image is `runner` (`nix build .#runner-image`); `runner-ducktape` adds tools
-without changing the runner executable or internal service-account/network-policy identities.
+Tools arrive without changing the runner executable or the internal service-account and
+network-policy identities, so it stays the environment's one Pod execution environment.
 
 `nix build .#checks.x86_64-linux.runner-ducktape-tools` exercises representative repository
 hooks in a sandboxed Nix derivation, using the exact tool closure included in the image. The

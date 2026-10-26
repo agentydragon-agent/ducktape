@@ -1,7 +1,9 @@
 """The runner's boxes, behind the egress path every agentplane box shares (sandbox_pod.py): the
 runner SandboxTemplate (agentplane/sandbox_controller), which adds the harness runner and a state
-volume, and the fence every runner template's Pods share. staging.py adds a second template on the
-ducktape image.
+volume, and the fence its Pods share. Each deployment names and images its own Pod execution
+environments: a `RunnerTemplate` takes the SandboxTemplate name it offers and the image it runs, and
+a deployment adds as many as it offers (staging one, on the ducktape tools image; the k3s fixture one,
+on an image of its own). Every one of them shares this module's fence, which selects Pods by label.
 
 A runner template names no ServiceAccount, and the environment creates none for them: the Sandbox
 controller runs every Sandbox's Pod as the Sandbox's own account, which it owns and creates before
@@ -52,14 +54,13 @@ from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
-# Every runner template's Pod name label, and the name this module's SandboxTemplate and fence carry.
-# Neither is an identity: runner Pods run as the Sandbox's own ServiceAccount (this module's
-# docstring).
+# The fence's name, and the Pod name label every runner SandboxTemplate carries. Neither is an
+# identity: runner Pods run as the Sandbox's own ServiceAccount (this module's docstring). The label is
+# what the fence selects on, so a deployment's own template joins it without naming the fence.
 NAME = "runner"
 # Sandbox runner Pods can outlive their template revision. Keep the label they already carry so the
 # network fences continue to select existing incarnations until they are naturally replaced.
 _POD_LABEL_NAME = "agentplane-runner"
-_IMAGE = "git.allegedly.works/ducktape-ci/runner"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _STORAGE_CLASS = "piraeus-hdd-local"
 _LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
@@ -83,13 +84,42 @@ _EXECUTOR_DIR = "/run/agentplane/executor"
 _EXECUTOR_SOCKET = f"{_EXECUTOR_DIR}/control.sock"
 _EXECUTOR_URL = "ws://127.0.0.1:4501"
 _EXECUTOR_CONTAINER_NAME = "codex-executor"
-_BUILDBUDDY_SECRET = "buildbuddy-api-key"
-_BUILDBUDDY_MOUNT = "/run/buildbuddy"
 _CONFIG_VOLUME = "runner-config"
 # The bearers a Session presents: the placeholders the agentplane-workload and the notifications
 # EgressCredentials derive from their names, which the egress proxy substitutes.
 _WORKLOAD_PLACEHOLDER = "agentplane-credential-agentplane-workload"
 _NOTIFICATIONS_PLACEHOLDER = "agentplane-credential-agentplane-notifications-workload"
+
+
+@dataclass(frozen=True)
+class KeyFile:
+    """One Secret a runner's workload containers read as a file: the Secret to project, where to mount
+    it, the key's file there, and the environment variable naming that file for the runner and for the
+    harness children it spawns. A deployment's caller supplies these (staging's BuildBuddy key is one);
+    the template never names a credential itself, and never projects one into the egress sidecar, which
+    holds a Session's own bearers."""
+
+    secret_name: str
+    mount_path: str
+    file_name: str
+    env_var: str
+
+    @property
+    def path(self) -> str:
+        return f"{self.mount_path}/{self.file_name}"
+
+    def volume(self) -> k8s.Volume:
+        return k8s.Volume(
+            name=self.secret_name,
+            # 0440: readable through the workload's fsGroup, never world-readable.
+            secret=k8s.SecretVolumeSource(secret_name=self.secret_name, default_mode=288),
+        )
+
+    def mount(self) -> k8s.VolumeMount:
+        return k8s.VolumeMount(name=self.secret_name, mount_path=self.mount_path, read_only=True)
+
+    def env(self) -> k8s.EnvVar:
+        return k8s.EnvVar(name=self.env_var, value=self.path)
 
 
 @dataclass(frozen=True)
@@ -157,9 +187,9 @@ def workspace_volume_spec(
 
 
 class RunnerSandbox(Construct):
-    """The runners' Pod template, plus the VM template and relay when enabled. Fleet network and
-    route fences are added separately. A VM workspace can name a distinct class
-    when its Block claim needs a different provisioner from the state filesystem."""
+    """The environment's Pod execution environment, plus the VM template and relay when enabled. Fleet
+    network and route fences are added separately. A VM workspace can name a distinct class when its
+    Block claim needs a different provisioner from the state filesystem."""
 
     def __init__(
         self,
@@ -167,6 +197,9 @@ class RunnerSandbox(Construct):
         id: str,
         env: Environment,
         *,
+        name: str,
+        image: str,
+        key_files: Sequence[KeyFile] = (),
         vm_workspace_storage_class: str | None = None,
         egress_api_service: ServiceRef | None = None,
         storage_class: str = _STORAGE_CLASS,
@@ -189,8 +222,9 @@ class RunnerSandbox(Construct):
             self,
             "runner-template",
             env,
-            name="runner",
-            image=_IMAGE,
+            name=name,
+            image=image,
+            key_files=key_files,
             storage_class=storage_class,
             runner_resources=runner_resources,
             executor_resources=executor_resources,
@@ -246,7 +280,11 @@ class RunnerSandbox(Construct):
 
 
 class RunnerTemplate(Construct):
-    """Shared runner Pod and storage wiring, with optional isolated Codex execution."""
+    """One Pod execution environment: the runner Pod and storage wiring, as SandboxTemplate `name`, on
+    image `image`. `key_files` are the caller's Secrets to project into its workload containers; the
+    egress sidecar holds a Session's bearers and gets none of them. Isolated Codex execution adds a
+    companion container with its own PID namespace. A deployment adds one of these per execution
+    environment it offers, and names it in the launch presets its app config publishes."""
 
     def __init__(
         self,
@@ -256,8 +294,7 @@ class RunnerTemplate(Construct):
         *,
         name: str,
         image: str,
-        buildbuddy_secret: bool = False,
-        extra_harness_env: Sequence[str] = (),
+        key_files: Sequence[KeyFile] = (),
         storage_class: str = _STORAGE_CLASS,
         runner_resources: k8s.ResourceRequirements | None = None,
         executor_resources: k8s.ResourceRequirements | None = None,
@@ -269,10 +306,11 @@ class RunnerTemplate(Construct):
     ) -> None:
         super().__init__(scope, id)
         self.env = env
+        self.name = name
+        self.image = image
+        self.key_files = tuple(key_files)
         self.config_map_name = f"{name}-config"
         self.egress_api_service = egress_api_service
-        self.buildbuddy_secret = buildbuddy_secret
-        self.extra_harness_env = extra_harness_env
         self.storage_class = storage_class
         self.runner_resources = runner_resources
         self.executor_resources = executor_resources
@@ -284,7 +322,7 @@ class RunnerTemplate(Construct):
         if not env.isolated_codex_executor and executor_resources is not None:
             raise ValueError("executor_resources cannot be set when isolated Codex execution is disabled")
         # The SandboxTemplate's spec: its `pod`, and the `stateVolume` the VM template shares.
-        self.spec = self._add_sandbox_template(name=name, image=image)
+        self.spec = self._add_sandbox_template()
 
     def _execution_mounts(self) -> list[k8s.VolumeMount]:
         return [
@@ -312,10 +350,10 @@ class RunnerTemplate(Construct):
             failure_threshold=1,
         )
 
-    def _executor_container(self, image: str) -> k8s.Container:
+    def _executor_container(self) -> k8s.Container:
         return k8s.Container(
             name=_EXECUTOR_CONTAINER_NAME,
-            image=f"{image}:{_PLACEHOLDER_TAG}",
+            image=f"{self.image}:{_PLACEHOLDER_TAG}",
             command=[f"{_RUNNER_DIR}/bin/agentplane-runner"],
             args=[
                 "--executor-container",
@@ -329,15 +367,7 @@ class RunnerTemplate(Construct):
             working_dir=_STATE_DIR,
             security_context=sandbox_pod.workload_security_context(),
             env=sandbox_pod.workload_environment(
-                self.env,
-                [
-                    *sandbox_pod.egress_env(),
-                    *(
-                        [k8s.EnvVar(name="BBR_BUILDBUDDY_API_KEY_FILE", value=f"{_BUILDBUDDY_MOUNT}/api-key")]
-                        if self.buildbuddy_secret
-                        else []
-                    ),
-                ],
+                self.env, [*sandbox_pod.egress_env(), *(key.env() for key in self.key_files)]
             ),
             resources=self.executor_resources
             or k8s.ResourceRequirements(
@@ -350,15 +380,11 @@ class RunnerTemplate(Construct):
                 *self._execution_mounts(),
                 *self._isolated_executor_mounts(),
                 *sandbox_pod.platform_control_mounts(),
-                *(
-                    [k8s.VolumeMount(name=_BUILDBUDDY_SECRET, mount_path=_BUILDBUDDY_MOUNT, read_only=True)]
-                    if self.buildbuddy_secret
-                    else []
-                ),
+                *(key.mount() for key in self.key_files),
             ],
         )
 
-    def _runner_container(self, image: str) -> k8s.Container:
+    def _runner_container(self) -> k8s.Container:
         # Images own PATH and inherited defaults; templates explicitly choose HOME.
         # Both Pod and VM configurations use the same explicit inheritance/override contract.
         harness_env = list(
@@ -368,7 +394,7 @@ class RunnerTemplate(Construct):
                     *self.env.sandbox_workload_env,
                     *(var.name for var in sandbox_pod.egress_env()),
                     *self.agent_cli_env,
-                    *self.extra_harness_env,
+                    *(key.env_var for key in self.key_files),
                 ]
             )
         )
@@ -402,7 +428,7 @@ class RunnerTemplate(Construct):
         )
         return k8s.Container(
             name="runner",
-            image=f"{image}:{_PLACEHOLDER_TAG}",
+            image=f"{self.image}:{_PLACEHOLDER_TAG}",
             command=[f"{_RUNNER_DIR}/bin/agentplane-runner"],
             args=["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE],
             # The runner works in absolute paths. This is for a command exec'd in: the sandbox
@@ -418,11 +444,7 @@ class RunnerTemplate(Construct):
                             self.env.namespace, "agentplane-runner", endpoint=platform_routes.telemetry_endpoint()
                         ).items()
                     ),
-                    *(
-                        [k8s.EnvVar(name="BBR_BUILDBUDDY_API_KEY_FILE", value=f"{_BUILDBUDDY_MOUNT}/api-key")]
-                        if self.buildbuddy_secret
-                        else []
-                    ),
+                    *(key.env() for key in self.key_files),
                     # On the container and not just on the harness children the runner spawns.
                     *sandbox_pod.egress_env(),
                     *(k8s.EnvVar(name=name, value=value) for name, value in self.agent_cli_env.items()),
@@ -445,11 +467,7 @@ class RunnerTemplate(Construct):
                 k8s.VolumeMount(name=_CONFIG_VOLUME, mount_path=CONFIG_FILE, sub_path="runner.json", read_only=True),
                 *(self._isolated_executor_mounts() if self.env.isolated_codex_executor else []),
                 *sandbox_pod.platform_control_mounts(),
-                *(
-                    [k8s.VolumeMount(name=_BUILDBUDDY_SECRET, mount_path=_BUILDBUDDY_MOUNT, read_only=True)]
-                    if self.buildbuddy_secret
-                    else []
-                ),
+                *(key.mount() for key in self.key_files),
             ],
         )
 
@@ -470,15 +488,15 @@ class RunnerTemplate(Construct):
             listen_address=(f"{bind_host}:{sandbox_pod.SIDECAR_LISTEN_PORT}" if listen_host is not None else None),
         )
 
-    def _add_sandbox_template(self, *, name: str, image: str) -> dict[str, Any]:
-        sidecar_settings = self._add_sidecar_settings(name=f"{name}-egress-sidecar")
+    def _add_sandbox_template(self) -> dict[str, Any]:
+        sidecar_settings = self._add_sidecar_settings(name=f"{self.name}-egress-sidecar")
         pod = sandbox_pod.render_pod_template(
             {**_LABELS, **telemetry.EMITTER_RUNNER_CLASS_LABELS},
             sandbox_pod.pod_spec(
                 self.env,
-                workload=self._runner_container(image),
+                workload=self._runner_container(),
                 sidecar_settings=sidecar_settings,
-                additional_workloads=([self._executor_container(image)] if self.env.isolated_codex_executor else []),
+                additional_workloads=([self._executor_container()] if self.env.isolated_codex_executor else []),
                 # Let LINSTOR's storage-pool topology place the strict-local HDD claims.
                 workload_volumes=[
                     k8s.Volume(
@@ -495,19 +513,7 @@ class RunnerTemplate(Construct):
                         if self.env.isolated_codex_executor
                         else []
                     ),
-                    *(
-                        [
-                            k8s.Volume(
-                                name=_BUILDBUDDY_SECRET,
-                                secret=k8s.SecretVolumeSource(
-                                    secret_name=_BUILDBUDDY_SECRET,
-                                    default_mode=288,  # 0440; readable via fsGroup 1000
-                                ),
-                            )
-                        ]
-                        if self.buildbuddy_secret
-                        else []
-                    ),
+                    *(key.volume() for key in self.key_files),
                 ],
                 sidecar_resources=self.sidecar_resources,
                 image_pull_secret_name=self.image_pull_secret_name,
@@ -535,6 +541,6 @@ class RunnerTemplate(Construct):
             "sandboxtemplate",
             api_version=f"{GROUP}/{VERSION}",
             kind="SandboxTemplate",
-            metadata=ApiObjectMetadata(name=name, namespace=self.env.namespace),
+            metadata=ApiObjectMetadata(name=self.name, namespace=self.env.namespace),
         ).add_json_patch(JsonPatch.add("/spec", spec))
         return spec

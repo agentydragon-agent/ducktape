@@ -70,6 +70,6 @@ jobs:
       # Starts each harness the runner SandboxTemplate names, once, as the image's own user, and
       # checks the repository tools. Nothing here runs a turn, and the system tests run a Bazel-built
       # runner image of their own: this image's first turn is on staging.
-      smoke: bash agentplane/runner/ducktape_image_smoke.sh runner-ducktape
+      smoke: bash agentplane/runner/ducktape_image_smoke.sh
     secrets:
       SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}

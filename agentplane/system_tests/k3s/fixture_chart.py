@@ -89,6 +89,13 @@ from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, OLLAMA_QWEN_IQ
 
 RUNNER_GATEWAY = "runner-gateway"
 SESSION_DISPATCHER = "session-dispatcher"
+# The fixture's one Pod execution environment. Nothing outside the fixture names it -- no live Sandbox
+# or preset does -- so unlike staging's it is the fixture's own to rename.
+POD_TEMPLATE = "runner"
+# The image it runs: //agentplane/system_tests/k3s:runner_image, or its harnesses variant, which
+# stack.py imports into containerd under this reference. The runner binary itself still comes from the
+# runner disk image, as in staging.
+RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/runner"
 RUNNER_GATEWAY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
 QUEUE_MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
 DISPATCHER_PORT = 8080
@@ -205,7 +212,7 @@ def environment(*, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORI
             thread_presets={launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)},
             sandbox_presets={
                 launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(
-                    template=runner_sandbox.NAME, policy_sets=[egress.PACKAGES_POLICY]
+                    template=POD_TEMPLATE, policy_sets=[egress.PACKAGES_POLICY]
                 )
             },
             egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
@@ -428,6 +435,8 @@ def build_chart(
         chart,
         "runner-sandbox",
         env,
+        name=POD_TEMPLATE,
+        image=RUNNER_IMAGE,
         egress_api_service=agent_api,
         storage_class="local-path",
         vm_workspace_storage_class=block_storage.STORAGE_CLASS if env.vm_sandboxes else None,

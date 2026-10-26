@@ -15,7 +15,8 @@ from agentplane.runner.harness import Harness
 
 # The names of the objects other modules create. `settings()` below grants the public-coder
 # preset its baseline policies, so it refers to them; each comes from the module that creates the
-# policy answering to it, so a preset names a policy without repeating the string.
+# policy answering to it, so a preset names a policy without repeating the string. The Pod execution
+# environment a preset launches on is the caller's: `settings()` takes its name.
 from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
@@ -92,6 +93,7 @@ def model_catalog(models: HarnessRoutes) -> ModelCatalog:
 def settings(
     *,
     namespace: str,
+    sandbox_template: str,
     models: HarnessRoutes,
     thread_preset_codex_model: Route,
     connection_service_url: HttpEndpointUrl,
@@ -129,7 +131,7 @@ def settings(
         sandbox_presets={
             "public-coder": SandboxPreset(
                 title="Public coder",
-                template="runner",
+                template=sandbox_template,
                 policy_sets=[
                     BASIC_POLICY,
                     PACKAGES_POLICY,

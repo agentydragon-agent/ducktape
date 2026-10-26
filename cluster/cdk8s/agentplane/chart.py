@@ -1,9 +1,15 @@
 """The objects a deployed Agentplane environment has, as one chart. `staging.chart` calls this and
 adds its environment-only objects to what it returns; that is what generate_manifests (writes it to
 disk) and the tests (synthesize it in memory via `cdk8s.Testing`) build.
+
+The caller names the Pod execution environment the chart offers and the image it runs
+(`runner_name`, `runner_image`), plus any Secret a runner workload reads as a file
+(`runner_key_files`); the chart itself takes a side in none of that.
 """
 
 from __future__ import annotations
+
+from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from constructs import Construct
@@ -54,7 +60,15 @@ class Namespace(Construct):
         )
 
 
-def environment_chart(app: App, env: Environment, *, db: database.DbProps) -> Chart:
+def environment_chart(
+    app: App,
+    env: Environment,
+    *,
+    db: database.DbProps,
+    runner_name: str,
+    runner_image: str,
+    runner_key_files: Sequence[runner_sandbox.KeyFile] = (),
+) -> Chart:
     """The shared objects. The fleet rules attach as a synth-time validation, so a caller
     may keep adding objects to the returned chart and they are still checked."""
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
@@ -136,6 +150,9 @@ def environment_chart(app: App, env: Environment, *, db: database.DbProps) -> Ch
         chart,
         "runner-sandbox",
         env,
+        name=runner_name,
+        image=runner_image,
+        key_files=runner_key_files,
         image_pull_secret_name=sandbox_pod.SECRET_NAME,
         control_service=runner_gateway.runner_control(env.namespace),
         egress_api_service=egress.agent_api(env.namespace),

@@ -353,11 +353,6 @@ spec:
       name: rtl-tcp
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'runner'
-      kind: ImageRepository
-      name: runner
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'runner-ducktape'
       kind: ImageRepository
       name: runner-ducktape

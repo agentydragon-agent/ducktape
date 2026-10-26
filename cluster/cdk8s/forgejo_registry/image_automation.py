@@ -93,7 +93,6 @@ IMAGES = (
     "props-registry-proxy",
     "public-coder-agent",
     "rtl-tcp",
-    "runner",
     "runner-ducktape",
     "ssh-mcp",
     "stalwart",
