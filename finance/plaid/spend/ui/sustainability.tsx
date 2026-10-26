@@ -360,7 +360,7 @@ function AccountHistoryCoverage({ accounts }: { accounts: AccountCoverage[] }) {
         {unavailable.length > 0 && (
           <Alert color="yellow" title="Unavailable account history">
             <Text size="sm">
-              Unavailable dates are not new spending and are not treated as zero. In this requested window: {" "}
+              Missing history stays unknown. In this requested window:{" "}
               {unavailable
                 .map((account) => `${account.account_label} (${account.unknown_days_in_window} days unavailable)`)
                 .join(" · ")}
@@ -368,9 +368,6 @@ function AccountHistoryCoverage({ accounts }: { accounts: AccountCoverage[] }) {
             </Text>
           </Alert>
         )}
-        <Text size="sm" c="dimmed">
-          Expand coverage evidence to review per-account boundaries and available sources.
-        </Text>
         <details>
           <summary style={{ cursor: "pointer", fontWeight: 650 }}>
             Coverage evidence for {accounts.length} accounts
@@ -428,9 +425,7 @@ function AccountHistoryCoverage({ accounts }: { accounts: AccountCoverage[] }) {
                       First recorded transaction: {account.first_recorded_on}.
                     </Text>
                   )}
-                  <Text size="sm">
-                    Unavailable history in requested window: {account.unknown_days_in_window} days.
-                  </Text>
+                  <Text size="sm">Unavailable history in requested window: {account.unknown_days_in_window} days.</Text>
                 </Stack>
               </details>
             ))}

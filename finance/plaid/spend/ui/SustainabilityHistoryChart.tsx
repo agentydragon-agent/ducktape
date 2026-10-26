@@ -171,8 +171,8 @@ export function SustainabilityHistoryChart({
             {windowDays}-day trailing average, annualized
           </Text>
           <Text size="xs" c="dimmed">
-            Complete calendar days ending on each date; shorter startup windows are omitted. Gaps indicate windows
-            with unavailable account history.
+            Complete calendar days ending on each date; shorter startup windows are omitted. Gaps indicate windows with
+            unavailable account history.
           </Text>
           <Text size="xs" c="dimmed">
             Withdrawal percentages include taxes and use TODAY&apos;S portfolio valuation for every date shown.
@@ -201,8 +201,8 @@ export function SustainabilityHistoryChart({
         </Group>
         {history.length === 0 ? (
           <Text size="sm" c="dimmed">
-            History requires at least {windowDays} consecutive days of covered spending history. Select a shorter window to
-            see available history.
+            History requires at least {windowDays} consecutive days of covered spending history. Select a shorter window
+            to see available history.
           </Text>
         ) : !canPlot ? (
           <Text size="sm" c="dimmed">

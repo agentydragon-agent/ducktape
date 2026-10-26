@@ -254,11 +254,7 @@ def _example_sustainability_with_partial_account_history() -> dict[str, object]:
             "account_label": "Example card",
             "first_recorded_on": "2026-08-15",
             "opening": None,
-            "coverage": {
-                "complete_from": "2026-08-15",
-                "source": "Synthetic statement archive",
-                "as_of": "2026-10-14",
-            },
+            "coverage": {"complete_from": "2026-08-15", "source": "Synthetic statement archive", "as_of": "2026-10-14"},
             "unknown_days_in_window": 29,
         },
     ]
@@ -1177,7 +1173,7 @@ async def test_sustainability_partial_window_has_no_startup_chart(
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
     await expect(page.get_by_text("Partial window · 45/90 days", exact=True)).to_be_visible()
-    await expect(page.get_by_text("History requires at least 90 days", exact=False)).to_be_visible()
+    await expect(page.get_by_text("History requires at least 90 consecutive days", exact=False)).to_be_visible()
     await expect(page.locator('canvas[aria-label="Annual funding including taxes by day"]')).to_have_count(0)
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     await view.capture(
@@ -1206,14 +1202,12 @@ async def test_sustainability_account_history_coverage_render(
 
     coverage = page.get_by_role("region", name="Account history coverage")
     await expect(coverage).to_be_visible()
-    await expect(coverage.get_by_role("alert")).to_contain_text("Unavailable dates are not new spending")
+    await expect(coverage.get_by_role("alert")).to_contain_text("Missing history stays unknown")
     await expect(coverage.get_by_role("alert")).to_contain_text("Example checking (43 days unavailable)")
     await expect(coverage.get_by_role("alert")).to_contain_text("Example card (29 days unavailable)")
     await expect(coverage.get_by_text("Coverage evidence for 2 accounts", exact=True)).to_be_visible()
 
-    await expect(
-        coverage.get_by_text("Approximate opening range: 2026-07-20 to 2026-07-27", exact=True)
-    ).to_be_hidden()
+    await expect(coverage.get_by_text("Approximate opening range: 2026-07-20 to 2026-07-27", exact=True)).to_be_hidden()
     await coverage.locator("details").first.locator(":scope > summary").click()
     account_rows = coverage.locator("details details")
     checking = account_rows.filter(has_text="Example checking")
@@ -1257,9 +1251,7 @@ async def test_sustainability_history_survives_current_coverage_gap(
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
     await expect(page.get_by_role("alert").get_by_text("Estimate unavailable", exact=False)).to_be_visible()
-    await expect(
-        page.get_by_text("0 of 90 days covered · 2026-07-17 through 2026-10-14", exact=False)
-    ).to_be_visible()
+    await expect(page.get_by_text("0 of 90 days covered · 2026-07-17 through 2026-10-14", exact=False)).to_be_visible()
     await expect(page.get_by_text("Valuation available", exact=True)).to_be_visible()
     await expect(page.get_by_text("Withdrawal taxes: 12% modeled", exact=True)).to_be_visible()
     coverage = page.get_by_role("region", name="Account history coverage")

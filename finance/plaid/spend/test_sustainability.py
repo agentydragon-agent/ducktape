@@ -286,9 +286,7 @@ def test_opening_and_complete_history_cover_zero_spending_without_transactions()
             as_of=date(2026, 3, 31),
         ),
         coverage=DocumentedHistory(
-            complete_from=date(2026, 2, 1),
-            source="Synthetic complete-history confirmation.",
-            as_of=date(2026, 3, 31),
+            complete_from=date(2026, 2, 1), source="Synthetic complete-history confirmation.", as_of=date(2026, 3, 31)
         ),
     )
 
@@ -311,9 +309,7 @@ def test_opening_and_complete_history_cover_zero_spending_without_transactions()
 def test_documented_history_alone_covers_an_empty_account() -> None:
     evidence = AccountHistory(
         coverage=DocumentedHistory(
-            complete_from=date(2026, 1, 1),
-            source="Synthetic complete-history confirmation.",
-            as_of=date(2026, 3, 31),
+            complete_from=date(2026, 1, 1), source="Synthetic complete-history confirmation.", as_of=date(2026, 3, 31)
         )
     )
 
@@ -337,19 +333,13 @@ def test_multiple_accounts_combine_transaction_and_documented_coverage() -> None
             as_of=date(2026, 3, 31),
         ),
         coverage=DocumentedHistory(
-            complete_from=date(2026, 2, 1),
-            source="Synthetic complete-history confirmation.",
-            as_of=date(2026, 3, 31),
+            complete_from=date(2026, 2, 1), source="Synthetic complete-history confirmation.", as_of=date(2026, 3, 31)
         ),
     )
     result = evaluate_account_history(
         [
             transaction(
-                date(2026, 1, 1),
-                "5000",
-                "TRANSFER",
-                key="synthetic-old-account-transfer",
-                account_id=old_account,
+                date(2026, 1, 1), "5000", "TRANSFER", key="synthetic-old-account-transfer", account_id=old_account
             ),
             transaction(date(2026, 1, 2), "10", key="synthetic-old-account-purchase", account_id=old_account),
             transaction(date(2026, 2, 5), "20", key="synthetic-new-account-purchase", account_id=new_account),
@@ -396,8 +386,7 @@ def test_opening_alone_leaves_a_gap_until_first_recorded_transaction() -> None:
         )
     )
     result = evaluate_account_history(
-        [transaction(date(2026, 3, 1), "10", key="synthetic-first-transaction")],
-        account_history={"card": evidence},
+        [transaction(date(2026, 3, 1), "10", key="synthetic-first-transaction")], account_history={"card": evidence}
     )
 
     assert result.period_start == date(2026, 3, 1)
@@ -434,9 +423,7 @@ def test_history_keeps_covered_windows_nulls_gap_windows_and_resumes_after_full_
             as_of=date(2026, 3, 31),
         ),
         coverage=DocumentedHistory(
-            complete_from=date(2026, 3, 1),
-            source="Synthetic complete-history confirmation.",
-            as_of=date(2026, 3, 31),
+            complete_from=date(2026, 3, 1), source="Synthetic complete-history confirmation.", as_of=date(2026, 3, 31)
         ),
     )
     result = evaluate_account_history(
@@ -502,9 +489,7 @@ def test_headline_annualizes_only_the_latest_contiguous_coverage_suffix() -> Non
             as_of=date(2026, 3, 31),
         ),
         coverage=DocumentedHistory(
-            complete_from=date(2026, 3, 1),
-            source="Synthetic complete-history confirmation.",
-            as_of=date(2026, 3, 31),
+            complete_from=date(2026, 3, 1), source="Synthetic complete-history confirmation.", as_of=date(2026, 3, 31)
         ),
     )
     result = evaluate_account_history(
@@ -520,8 +505,7 @@ def test_headline_annualizes_only_the_latest_contiguous_coverage_suffix() -> Non
 
 
 @pytest.mark.parametrize(
-    ("contradiction_day", "expected_spending"),
-    [(date(2026, 3, 15), 3000), (date(2026, 4, 1), 1000)],
+    ("contradiction_day", "expected_spending"), [(date(2026, 3, 15), 3000), (date(2026, 4, 1), 1000)]
 )
 def test_preopening_transaction_invalidates_rates_but_keeps_spending_and_hides_ids(
     contradiction_day: date, expected_spending: int
@@ -538,12 +522,7 @@ def test_preopening_transaction_invalidates_rates_but_keeps_spending_and_hides_i
     )
     result = evaluate_account_history(
         [
-            transaction(
-                contradiction_day,
-                "20",
-                key="synthetic-opening-conflict",
-                account_id=contradictory_account,
-            ),
+            transaction(contradiction_day, "20", key="synthetic-opening-conflict", account_id=contradictory_account),
             transaction(date(2026, 3, 15), "10", key="synthetic-retained-purchase", account_id=observed_account),
         ],
         account_history={contradictory_account: evidence},
@@ -569,9 +548,7 @@ def test_account_history_keys_must_be_selected_spending_accounts() -> None:
     unselected_account = "synthetic-unselected-account-key"
     evidence = AccountHistory(
         coverage=DocumentedHistory(
-            complete_from=date(2026, 1, 1),
-            source="Synthetic complete-history confirmation.",
-            as_of=date(2026, 3, 31),
+            complete_from=date(2026, 1, 1), source="Synthetic complete-history confirmation.", as_of=date(2026, 3, 31)
         )
     )
 
@@ -596,19 +573,12 @@ def test_account_history_evidence_requires_ordered_bounds_and_provenance() -> No
         )
     with pytest.raises(ValidationError, match="history coverage cannot start"):
         DocumentedHistory(
-            complete_from=date(2026, 4, 1),
-            source="Synthetic complete-history confirmation.",
-            as_of=date(2026, 3, 31),
+            complete_from=date(2026, 4, 1), source="Synthetic complete-history confirmation.", as_of=date(2026, 3, 31)
         )
     with pytest.raises(ValidationError):
         AccountHistory()
     with pytest.raises(ValidationError):
-        AccountOpening(
-            earliest=date(2026, 2, 1),
-            latest=date(2026, 2, 1),
-            source="   ",
-            as_of=date(2026, 3, 31),
-        )
+        AccountOpening(earliest=date(2026, 2, 1), latest=date(2026, 2, 1), source="   ", as_of=date(2026, 3, 31))
     with pytest.raises(ValidationError):
         AccountOpening.model_validate(
             {
@@ -618,11 +588,7 @@ def test_account_history_evidence_requires_ordered_bounds_and_provenance() -> No
             }
         )
     with pytest.raises(ValidationError):
-        DocumentedHistory(
-            complete_from=date(2026, 1, 1),
-            source="   ",
-            as_of=date(2026, 3, 31),
-        )
+        DocumentedHistory(complete_from=date(2026, 1, 1), source="   ", as_of=date(2026, 3, 31))
 
 
 @pytest.mark.parametrize("rate", [-0.1, 1.0, float("nan"), float("inf")])
