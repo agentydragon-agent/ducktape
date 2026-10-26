@@ -106,6 +106,7 @@ def send_to(group: str) -> str:
 def config(
     *,
     namespace: str,
+    sandbox_template: str,
     models: HarnessRoutes,
     action_federation: ActionFederationSettings,
     connection_service_url: HttpEndpointUrl,
@@ -114,6 +115,7 @@ def config(
 ) -> AppSettingsConfig:
     cfg = settings(
         namespace=namespace,
+        sandbox_template=sandbox_template,
         models=models,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
@@ -184,7 +186,7 @@ def config(
     )
     cfg.sandbox_presets["haku"] = SandboxPreset(
         title="Haku",
-        template="runner",
+        template=sandbox_template,
         # These policies are what a *launch* is granted, independent of which
         # caller/ServiceAccount stamps it.
         policy_sets=[
@@ -219,7 +221,7 @@ def config(
     )
     cfg.sandbox_presets["finance-agent"] = SandboxPreset(
         title="Finance agent",
-        template="runner",
+        template=sandbox_template,
         policy_sets=[
             BASIC_POLICY,
             PACKAGES_POLICY,
@@ -250,7 +252,6 @@ def config(
     cfg.thread_presets["public-coder-ducktape-codex"] = thread
     sandbox = public_coder.model_copy(deep=True)
     sandbox.title = "Public coder / ducktape"
-    sandbox.template = "runner-ducktape"
     sandbox.thread_preset = "public-coder-ducktape-codex"
     cfg.sandbox_presets["public-coder-ducktape"] = sandbox
     for group, presets in INBOX_GROUPS.items():

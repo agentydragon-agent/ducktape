@@ -252,7 +252,8 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert app_uri.path == "/app"
     assert not any(doc["kind"] == "Secret" and doc["metadata"]["name"] == "postgres-electric" for doc in docs)
 
-    template = _resource(docs, "SandboxTemplate", "runner")
+    # The fixture's one Pod execution environment, on its local-path storage.
+    template = _resource(docs, "SandboxTemplate", fixture_chart.POD_TEMPLATE)
     assert template["spec"]["stateVolume"]["claim"]["storageClassName"] == "local-path"
 
     for name, expected_image in (

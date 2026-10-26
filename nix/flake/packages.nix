@@ -119,13 +119,6 @@ ducktapePkgs
     inherit pkgs;
     binary = artifacts.agentplane-cli;
   };
-  # agentplane's runner image: the sandbox image plus nixpkgs' Claude Code and Codex
-  # (agentplane/runner/image.nix). The runner and CLI come from the runner disk image.
-  # Build: nix build .#runner-image
-  # Load:  docker load < result
-  runner-image = import ../../agentplane/runner/image.nix {
-    inherit pkgs pkgsUnstable;
-  };
   # Shared by the image and its Nix check, so validation cannot drift to another tool list.
   # Size reference: runner-ducktape:devel-20261008225612-c58bc67 measured 5.93 GiB
   # unpacked (whole image, not just these tools), with a 1.86 GiB Kubernetes image size.

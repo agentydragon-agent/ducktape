@@ -75,7 +75,7 @@ from cluster.cdk8s.agentplane.environment import (
 )
 from cluster.cdk8s.agentplane.generation import ManifestLayout
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
-from cluster.cdk8s.agentplane.runner_sandbox import RunnerTemplate
+from cluster.cdk8s.agentplane.runner_sandbox import KeyFile
 from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
@@ -165,6 +165,19 @@ _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
 _LITELLM_KEY_SECRET = "litellm-key-agentplane-staging"
 _OIDC_SESSION_SECRET = "agentplane-staging-session-secret"
 _CONNECTION_SERVICE = mcp_edge.service(STAGING_NAMESPACE)
+# staging's one Pod execution environment, and the ducktape tools image it runs; `image-pins/` selects
+# the published tag. Live Sandboxes and presets name this template, so it keeps the name it shipped with.
+POD_TEMPLATE = "runner-ducktape"
+_RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/runner-ducktape"
+# The canonical BuildBuddy key, projected into the runner's workload containers for real `bbr` runs and
+# named there for the harnesses it spawns (agentplane/docs/buildbuddy_remote_auth.md's stopgap). ESO
+# copies the secret below; the egress policy still bounds where the key can travel.
+_BUILDBUDDY_KEY = KeyFile(
+    secret_name="buildbuddy-api-key",
+    mount_path="/run/buildbuddy",
+    file_name="api-key",
+    env_var="BBR_BUILDBUDDY_API_KEY_FILE",
+)
 
 # The token the app exchanges its login for, and the one the Action Service accepts
 # from operators: the same Authentik application.
@@ -360,6 +373,7 @@ ENV = Environment(
     ),
     app_config=staging_config.config(
         namespace=STAGING_NAMESPACE,
+        sandbox_template=POD_TEMPLATE,
         models=STAGING_APP_MODELS,
         action_federation=_ACTION_FEDERATION,
         connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
@@ -522,6 +536,9 @@ def chart(app: App) -> Chart:
         db=DbProps(
             instances=2, wal_archive=True, profile=cnpg.OVH_PIRAEUS_SSD, size="16Gi", resize_in_use_volumes=True
         ),
+        runner_name=POD_TEMPLATE,
+        runner_image=_RUNNER_IMAGE,
+        runner_key_files=(_BUILDBUDDY_KEY,),
     )
     NetworkPolicy(
         chart,
@@ -530,24 +547,15 @@ def chart(app: App) -> Chart:
         endpoint_selector=app_component.service(ENV.namespace).pods.selector,
         egress=[_CONNECTION_SERVICE.egress()],
     )
-    # Reuse the canonical key via ESO; do not grant the sandbox ServiceAccount get-secrets RBAC.
+    # Reuse the canonical key via ESO; do not grant the sandbox ServiceAccount get-secrets RBAC. The
+    # runner template projects `_BUILDBUDDY_KEY` into its workload containers only.
     credential_external_secret(
         chart,
         namespace=STAGING_NAMESPACE,
-        target="buildbuddy-api-key",
+        target=_BUILDBUDDY_KEY.secret_name,
         source="buildbuddy-api-key",
-        key="api-key",
+        key=_BUILDBUDDY_KEY.file_name,
         store=EXTERNAL_CREDS_STORE,
-    )
-    RunnerTemplate(
-        chart,
-        "ducktape-runner-template",
-        ENV,
-        name="runner-ducktape",
-        image="git.allegedly.works/ducktape-ci/runner-ducktape",
-        buildbuddy_secret=True,
-        extra_harness_env=("BBR_BUILDBUDDY_API_KEY_FILE",),
-        image_pull_secret_name=SANDBOX_SECRET_NAME,
     )
     notification_service = notifications.service(STAGING_NAMESPACE)
     https_route(

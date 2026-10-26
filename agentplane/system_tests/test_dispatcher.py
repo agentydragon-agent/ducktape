@@ -19,7 +19,7 @@ from agentplane.proto import runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cluster import api_client, kubectl
-from agentplane.system_tests.conftest import namespace
+from agentplane.system_tests.conftest import POD_TEMPLATE, namespace
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -260,7 +260,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                     "apiVersion": SANDBOX_API_VERSION,
                     "kind": "Sandbox",
                     "metadata": {"name": sandbox, "namespace": namespace()},
-                    "spec": {"template": "runner", "running": False, "policySets": policies},
+                    "spec": {"template": POD_TEMPLATE, "running": False, "policySets": policies},
                 },
             )
         )
@@ -499,7 +499,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                 "apiVersion": SANDBOX_API_VERSION,
                 "kind": "Sandbox",
                 "metadata": {"name": sandbox, "namespace": namespace()},
-                "spec": {"template": "runner", "running": False, "wakeOnSend": True, "policySets": policies},
+                "spec": {"template": POD_TEMPLATE, "running": False, "wakeOnSend": True, "policySets": policies},
             },
         )
     )

@@ -1308,6 +1308,12 @@ workflows, the `ducktape-ci/runner*` image repositories with their Flux image po
 from `RUNNER_RENAME`, which names the process; do not hold either for the other. Renamed template and
 image names reach live Sandboxes and Flux pins, so land it as an image-before-config sequence.
 
+Scope note (2026-10-26): the generic `runner` Pod tools image and its SandboxTemplate are gone; a
+deployment names its own Pod execution environment (`cluster/cdk8s/agentplane/staging.py`'s
+`POD_TEMPLATE`, `runner-ducktape`), and the k3s fixture names its own `runner`. What remains here is
+renaming staging's image and the VM guest for what they hold, plus the k3s fixture's Bazel-built runner
+image reference.
+
 ### `HISTORY_SERVICE_RENAME` — History as a transcript service
 
 **Decision, unscheduled (operator, 2026-10-20 04:05 UTC: "consider maybe").** Consider renaming the

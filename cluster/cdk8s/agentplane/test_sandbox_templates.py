@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from copy import deepcopy
 from dataclasses import replace
 from typing import Any, cast
 
@@ -65,14 +64,15 @@ def test_all_sandbox_workloads_use_shared_environment_defaults(staging_manifests
         timezone = next(item for item in workload["env"] if item["name"] == "TZ")
         assert timezone["value"] == "America/Los_Angeles"
 
-    runner = next(template for template in templates if template["metadata"]["name"] == "runner")
-    config = Configuration.model_validate(_runner_configuration(staging_manifests, runner["spec"]["pod"]["spec"]))
+    # One Pod execution environment: no plain runner template beside the ducktape one.
+    assert [template["metadata"]["name"] for template in templates] == [staging.POD_TEMPLATE]
+    config = Configuration.model_validate(_runner_configuration(staging_manifests, templates[0]["spec"]["pod"]["spec"]))
     assert "TZ" in config.harness_environment.inherit
     assert "TZDIR" in config.harness_environment.inherit
 
 
 def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_manifests: list[dict[str, Any]]) -> None:
-    template = _by_name(staging_manifests, "SandboxTemplate", "runner")
+    template = _by_name(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
     pod = template["spec"]["pod"]["spec"]
     containers = {container["name"]: container for container in pod["containers"]}
     runner = containers["runner"]
@@ -130,7 +130,10 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
 
     executor_mount_names = set(executor_mounts.values())
     assert executor_mounts["/run/agentplane/config/kubeconfig"] == "tool-config"
-    assert executor_mount_names.isdisjoint({"egress-token", "runner-config", "buildbuddy-api-key"})
+    # The executor shares the BuildBuddy key, which `bbr` in a Codex shell needs; the runner's own
+    # config and the sidecar's token are its alone.
+    assert "buildbuddy-api-key" in executor_mount_names
+    assert executor_mount_names.isdisjoint({"egress-token", "runner-config"})
     executor_env = {variable["name"]: variable["value"] for variable in executor["env"]}
     runner_env = {variable["name"]: variable["value"] for variable in runner["env"]}
     for name in (*sandbox_pod.PROXY_VAR_NAMES, *sandbox_pod.NO_PROXY_VAR_NAMES, *sandbox_pod.CA_BUNDLE_VAR_NAMES):
@@ -174,14 +177,16 @@ def test_environment_cannot_configure_resources_for_a_disabled_executor() -> Non
         _runner_pod(isolated_executor=False, runner_resources=resources, executor_resources=resources)
 
 
-def test_ducktape_template_projects_buildbuddy_key_to_runner_and_executor(
+def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
-    templates = {doc["metadata"]["name"]: doc for doc in _templates(staging_manifests)}
-    app_config = one(
-        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
-    )
-    presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
+    """The canonical key reaches the runner container and its isolated executor, and by name the harness
+    children the runner spawns (agentplane/docs/buildbuddy_remote_auth.md). The egress sidecar, which
+    holds a Session's bearers, gets neither. Every launch preset names this one template."""
+    presets = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])[
+        "sandbox_presets"
+    ]
+    assert {preset["template"] for preset in presets.values()} == {staging.POD_TEMPLATE}
     key_copies = [
         doc
         for doc in staging_manifests
@@ -189,59 +194,29 @@ def test_ducktape_template_projects_buildbuddy_key_to_runner_and_executor(
         and doc["metadata"]["name"] == "buildbuddy-api-key"
         and doc["metadata"]["namespace"] == staging.ENV.namespace
     ]
-    assert presets["public-coder-ducktape"]["template"] == "runner-ducktape"
     assert len(key_copies) == 1
     copy = key_copies[0]
     assert copy["spec"]["data"] == [
         {"remoteRef": {"key": "buildbuddy-api-key", "property": "api-key"}, "secretKey": "api-key"}
     ]
     assert copy["spec"]["secretStoreRef"]["name"] == "kubernetes-external-creds-secret-store"
-    generic = templates["runner"]["spec"]
-    specialized = deepcopy(templates["runner-ducktape"]["spec"])
-    generic_containers = {container["name"]: container for container in generic["pod"]["spec"]["containers"]}
-    specialized_containers = {container["name"]: container for container in specialized["pod"]["spec"]["containers"]}
-    container = specialized_containers["runner"]
-    assert container["image"] == "git.allegedly.works/ducktape-ci/runner-ducktape:unset"
-    container["image"] = generic_containers["runner"]["image"]
-    specialized_containers["codex-executor"]["image"] = generic_containers["codex-executor"]["image"]
-    pod = specialized["pod"]["spec"]
+
+    pod = one(_templates(staging_manifests))["spec"]["pod"]["spec"]
+    containers = {container["name"]: container for container in pod["containers"]}
     secret = next(volume for volume in pod["volumes"] if volume["name"] == "buildbuddy-api-key")
     assert secret["secret"] == {"secretName": "buildbuddy-api-key", "defaultMode": 288}
-    pod["volumes"].remove(secret)
-    mount = next(mount for mount in container["volumeMounts"] if mount["name"] == "buildbuddy-api-key")
-    assert mount == {"name": "buildbuddy-api-key", "mountPath": "/run/buildbuddy", "readOnly": True}
-    container["volumeMounts"].remove(mount)
-    executor = specialized_containers["codex-executor"]
-    executor_mount = next(mount for mount in executor["volumeMounts"] if mount["name"] == "buildbuddy-api-key")
-    assert executor_mount == {"name": "buildbuddy-api-key", "mountPath": "/run/buildbuddy", "readOnly": True}
-    executor["volumeMounts"].remove(executor_mount)
-    sidecar = specialized_containers["egress-sidecar"]
+    for name in ("runner", "codex-executor"):
+        mount = next(mount for mount in containers[name]["volumeMounts"] if mount["name"] == "buildbuddy-api-key")
+        assert mount == {"name": "buildbuddy-api-key", "mountPath": "/run/buildbuddy", "readOnly": True}
+        key_file = next(env for env in containers[name]["env"] if env["name"] == "BBR_BUILDBUDDY_API_KEY_FILE")
+        assert key_file["value"] == "/run/buildbuddy/api-key"
+    sidecar = containers["egress-sidecar"]
     assert all(mount["name"] != "buildbuddy-api-key" for mount in sidecar["volumeMounts"])
-    key_file = next(env for env in container["env"] if env["name"] == "BBR_BUILDBUDDY_API_KEY_FILE")
-    assert key_file["value"] == "/run/buildbuddy/api-key"
-    container["env"].remove(key_file)
-    executor_key_file = next(env for env in executor["env"] if env["name"] == "BBR_BUILDBUDDY_API_KEY_FILE")
-    assert executor_key_file["value"] == "/run/buildbuddy/api-key"
-    executor["env"].remove(executor_key_file)
-    generic_config = _runner_configuration(staging_manifests, generic["pod"]["spec"])
-    specialized_config = _runner_configuration(staging_manifests, pod)
-    specialized_config["harness_environment"]["inherit"].remove("BBR_BUILDBUDDY_API_KEY_FILE")
-    assert specialized_config == generic_config
-    config_volume = one(volume for volume in pod["volumes"] if volume["name"] == "runner-config")
-    config_volume["configMap"]["name"] = "runner-config"
+    assert all(env["name"] != "BBR_BUILDBUDDY_API_KEY_FILE" for env in sidecar.get("env", []))
+    config = _runner_configuration(staging_manifests, pod)
+    assert "BBR_BUILDBUDDY_API_KEY_FILE" in config["harness_environment"]["inherit"]
     settings = next(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
-    generic_settings = next(
-        volume for volume in generic["pod"]["spec"]["volumes"] if volume["name"] == "egress-sidecar-settings"
-    )
-    # Each template owns its sidecar settings ConfigMap; the specialization adds none.
-    assert settings["configMap"]["name"] == "runner-ducktape-egress-sidecar"
-    assert (
-        _by_name(staging_manifests, "ConfigMap", settings["configMap"]["name"])["data"]
-        == _by_name(staging_manifests, "ConfigMap", generic_settings["configMap"]["name"])["data"]
-    )
-    settings["configMap"]["name"] = generic_settings["configMap"]["name"]
-    # No extra authority in generic runners or the egress sidecar.
-    assert specialized == generic
+    assert settings["configMap"]["name"] == f"{staging.POD_TEMPLATE}-egress-sidecar"
 
 
 def test_staging_app_config_offers_ollama_smoke_routes(staging_manifests: list[dict[str, Any]]) -> None:
@@ -260,7 +235,7 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
             dict[str, Any], yaml.safe_load(_by_name(staging_manifests, "ConfigMap", name)["data"]["settings.yaml"])
         )
 
-    runner_settings = settings("runner-egress-sidecar")
+    runner_settings = settings(f"{staging.POD_TEMPLATE}-egress-sidecar")
     launcher_settings = settings("launcher-relay-egress-sidecar")
     assert "listen_address" not in runner_settings
     assert launcher_settings["listen_address"] == "0.0.0.0:3128"
@@ -284,10 +259,9 @@ def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifest
         {"apiGroups": [""], "resourceNames": ["sandbox-tool-config"], "resources": ["configmaps"], "verbs": ["get"]}
     ]
 
-    runner = next(template for template in _templates(staging_manifests) if template["metadata"]["name"] == "runner")
-    volumes = runner["spec"]["pod"]["spec"]["volumes"]
+    volumes = one(_templates(staging_manifests))["spec"]["pod"]["spec"]["volumes"]
     config_maps = {volume["name"]: volume["configMap"]["name"] for volume in volumes if "configMap" in volume}
-    assert config_maps["runner-config"] == "runner-config"
+    assert config_maps["runner-config"] == f"{staging.POD_TEMPLATE}-config"
     assert config_maps["tool-config"] == "sandbox-tool-config"
 
 

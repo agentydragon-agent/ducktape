@@ -119,7 +119,9 @@ def test_staging_uses_the_replicated_class_for_both_vm_claims_and_keeps_pod_stor
     assert vm_state["claim"]["storageClassName"] == staging.ENV.vm_storage_class
 
     runner_template = one(
-        doc for doc in staging_manifests if doc["kind"] == "SandboxTemplate" and doc["metadata"]["name"] == "runner"
+        doc
+        for doc in staging_manifests
+        if doc["kind"] == "SandboxTemplate" and doc["metadata"]["name"] == staging.POD_TEMPLATE
     )
     pod_state = runner_template["spec"]["stateVolume"]
     assert pod_state["claim"]["storageClassName"] != vm_state["claim"]["storageClassName"]
