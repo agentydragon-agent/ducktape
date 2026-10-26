@@ -85,6 +85,7 @@ spec:
         - litellm
         - monitoring
         - nix-cache
+        - plaid-mcp
         - tana-mcp
   provider:
     kubernetes:

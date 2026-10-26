@@ -231,7 +231,7 @@ spec:
         name: plaid_ro
         passwordSecret:
           name: plaid-mcp-db-readonly
-      - comment: Read-only runtime role for plaid-spend's four Plaid source tables.
+      - comment: Read-only runtime role for plaid-spend.
         ensure: present
         login: true
         name: plaid_spend
