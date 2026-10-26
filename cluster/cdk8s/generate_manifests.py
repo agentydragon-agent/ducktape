@@ -957,6 +957,18 @@ def generate_manifests(root: Path) -> None:
     forgejo_gitops_kustomization = forgejo_gitops_modules.forgejo_gitops(
         flux_chart, write_directory(root, forgejo_gitops_artifact), tofu_controller_kustomization
     )
+    # CLEANUP: Retain these source artifacts while the old tofu-controller Terraform CRs
+    # finalize. tofu-controller resolves sourceRef before normal finalization, even with
+    # destroy=false. Remove only after all five legacy CRs are absent and all five
+    # replacement Workspaces report Ready=True and current-generation Synced=True after
+    # PR #12109 rolls out.
+    forgejo_legacy_gitops_artifacts = (
+        artifact("tf-gitops-haku-state", f"{ducktape_flux.TF_GITOPS_ROOT}/haku-state"),
+        artifact("tf-gitops-budget-ledger", f"{ducktape_flux.TF_GITOPS_ROOT}/budget-ledger"),
+        artifact("tf-gitops-cpap-data", f"{ducktape_flux.TF_GITOPS_ROOT}/cpap-data"),
+        artifact("tf-gitops-forgejo-agentydragon-repos", f"{ducktape_flux.TF_GITOPS_ROOT}/forgejo-agentydragon-repos"),
+        artifact("tf-gitops-finance-agent", f"{ducktape_flux.TF_GITOPS_ROOT}/finance-agent"),
+    )
     forgejo_claude_artifact = artifact(forgejo_claude.NAME, forgejo_claude.OUTPUT_DIR)
     forgejo_claude_kustomization = forgejo_claude.resources(
         flux_chart,
@@ -2006,6 +2018,7 @@ def generate_manifests(root: Path) -> None:
             flux_image_automation_forgejo_artifact,
             flux_webhook_artifact,
             forgejo_gitops_artifact,
+            *forgejo_legacy_gitops_artifacts,
             budget_namespace_artifact,
             gaffer_private_source_artifact,
             gatus_artifact,

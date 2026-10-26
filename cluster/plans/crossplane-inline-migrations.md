@@ -33,6 +33,16 @@ generation check applies to Synced; Ready has no observed-generation requirement
 This prevents Flux's generic kstatus check from treating `Synced=True` alone as Ready
 when the Workspace has not reported `Ready=True`.
 
+Keep the five legacy `tf-gitops-*` ArtifactGenerator outputs while the old
+tofu-controller Terraform CRs finalize. tofu-controller resolves the CR's source before
+normal finalization even when destruction is disabled, so removing an artifact early
+can strand its CR. A `CLEANUP` tombstone in `generate_manifests.py` lists the retained
+artifacts and the removal gate. Remove them only after all five legacy Terraform CRs
+(`haku-state`, `budget-ledger`, `cpap-data`, `agentydragon-repos`, and `finance-agent`)
+are absent and all five replacement Workspaces report `Ready=True` plus
+current-generation `Synced=True` after PR #12109 rolls out. This artifact cleanup is a
+separate follow-up; the migration does not recreate the legacy Terraform CRs.
+
 After merging the application-root migration, verify:
 
 - `authentik-tf` and `forgejo-gitops` reached their new revision and pruned the three old
