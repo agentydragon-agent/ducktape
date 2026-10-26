@@ -70,10 +70,12 @@ flowchart LR
       direction LR
       subgraph sandbox[Sandbox Pod]
         runner[Runner + native drivers]
+        podexec[Codex executor container]
         sidecar[Egress sidecar]
       end
       subgraph vm_guest[VM guest]
         guest[Guest runner + native drivers]
+        vmexec[Codex executor cgroup]
       end
       subgraph vm_sandbox[VM launcher Pod]
         relay[Egress relay]
@@ -109,6 +111,10 @@ flowchart LR
     policy --> k8s
     sandboxctl --> k8s
     sandboxctl --> gw
+    runner -->|local WebSocket, isolated mode| podexec
+    podexec --> sidecar
+    guest -->|local WebSocket, isolated mode| vmexec
+    vmexec --> relay
     runner --> sidecar --> egress
     guest --> relay --> egress
     runner -.->|RunnerControl.Connect| sidecar

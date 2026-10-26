@@ -45,6 +45,7 @@ type Runner struct {
 	bootstrapMu sync.Mutex
 	sessions    map[string]*Session
 	codex       *codexServer
+	executor    *codexExecutor
 	changes     chan struct{}
 	fatal       chan error
 	idleSince   *timestamppb.Timestamp
@@ -57,12 +58,38 @@ type Runner struct {
 }
 
 func New(config Config) (*Runner, error) {
+	if config.CodexExecutor != nil {
+		if config.Codex == nil {
+			return nil, errors.New("Codex executor requires a configured Codex harness")
+		}
+		if err := config.CodexExecutor.validate(config.ProcessIsolation); err != nil {
+			return nil, err
+		}
+	}
+	if _, present := config.HarnessEnvironment["CODEX_EXEC_SERVER_URL"]; present {
+		return nil, errors.New("CODEX_EXEC_SERVER_URL is owned by Runner executor configuration")
+	}
 	owner, err := OpenStateOwner(config.StateDir)
 	if err != nil {
 		return nil, err
 	}
 	if config.ProcessIsolation != nil {
 		if err := config.ProcessIsolation.Prepare(); err != nil {
+			_ = owner.Close()
+			return nil, err
+		}
+	}
+	if config.CodexExecutor != nil && config.CodexExecutor.Isolation != nil {
+		if err := config.CodexExecutor.Isolation.Prepare(); err != nil {
+			_ = owner.Close()
+			return nil, err
+		}
+	}
+	if config.CodexExecutor != nil && config.CodexExecutor.ContainerSocket != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		err := fenceExecutorContainer(ctx, config.CodexExecutor.ContainerSocket, "")
+		cancel()
+		if err != nil {
 			_ = owner.Close()
 			return nil, err
 		}
@@ -74,6 +101,9 @@ func New(config Config) (*Runner, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Runner{config: config, owner: owner, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, sessions: map[string]*Session{}, changes: make(chan struct{}), fatal: make(chan error, 1)}
+	if config.CodexExecutor != nil {
+		r.executor = newCodexExecutor(r, *config.CodexExecutor)
+	}
 	if config.Codex != nil {
 		r.codex = newCodexServer(r, *config.Codex)
 	}
@@ -843,6 +873,9 @@ func (r *Runner) stopSessions(ctx context.Context, sessions []*Session, seal boo
 	}
 	if r.codex != nil {
 		errs = append(errs, r.codex.stop(ctx))
+	}
+	if r.executor != nil {
+		errs = append(errs, r.executor.stop(ctx))
 	}
 	for _, s := range sessions {
 		errs = append(errs, s.reconcilePending(ctx))

@@ -125,6 +125,26 @@ budget for an isolated process purpose, while the parent aggregate remains autho
 - `ListSessions` returns every session in the state directory with its spec, harness state,
   setup state, active turn, and last cursor, so a client that keeps no record of its own finds them again.
 
+## Isolated Codex execution
+
+- Deployment selects local tools or one isolated executor shared by every Codex Session. Runner
+  configures the app-server's `CODEX_EXEC_SERVER_URL`; failed isolated execution never falls back to
+  local tools. Claude execution is unchanged.
+- In VMs the executor and native harnesses have separate sibling cgroup budgets under the Runner
+  service. In Pods the executor companion is PID 1 in a separate container with a private PID namespace
+  and Kubernetes resource limits. Workspace and runtime paths are shared under the same Sandbox principal.
+- Runner starts the executor before the app-server and probes RPC progress with deadlines. Server exit
+  or an unresponsive dispatcher fences its work and restarts the executor with bounded backoff. A
+  failed tool's side effects remain uncertain; Runner never replays it. Executor loss does not itself
+  emit `HarnessExited` for the app-server.
+- Startup fences previous executor work before opening Session stores. Quiesce fences the executor
+  before journal seals; shutdown fences it before releasing state ownership. VM supervisors retain
+  inherited ownership through cgroup cleanup. Pod ownership-connection loss exits the executor
+  container, and a new idle container generation proves the runtime cleaned up detached descendants.
+  Failed cleanup prevents sealing and starting a successor.
+- Code-mode workers, MCP helpers and external daemons are outside the executor budget in the pinned
+  Codex release. Details and configuration: [Codex executor isolation](docs/codex_executor.md).
+
 ## Runner control stream
 
 - The runner dials the Runner Gateway's [runner control stream](../docs/runner_control.md) at

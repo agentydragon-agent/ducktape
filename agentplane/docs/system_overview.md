@@ -53,6 +53,31 @@ The runner opens the long-lived `RunnerControl.Connect` stream through its Pod's
 the VM launcher's relay. The Gateway sends `Runner` RPC calls back through that existing stream,
 and responses return there; neither Pod accepts an inbound Gateway connection.
 
+## Codex execution inside a Sandbox
+
+```mermaid
+flowchart LR
+    subgraph pod[Sandbox Pod]
+        runner[Runner and Codex app-server]
+        exec[Executor companion and exec-server]
+        runner -->|Unix ownership connection| exec
+        runner -->|loopback WebSocket tools| exec
+    end
+    subgraph vm[VM guest]
+        guest[Runner and native supervisor]
+        harness[Codex app-server: harness cgroup]
+        vmexec[exec-server: executor cgroup]
+        guest -->|supervision and kill fence| vmexec
+        guest -->|supervision| harness
+        harness -->|loopback WebSocket tools| vmexec
+    end
+```
+
+The Pod executor has a private PID namespace and Kubernetes resource limits. The VM executor has a
+sibling cgroup budget. Both share the Sandbox's identity and filesystem paths with the harness.
+Runner owns restart and fences old commands before reopening Session state or sealing journals.
+Local execution remains a deployment mode. See [executor isolation](../runner/docs/codex_executor.md).
+
 ## Telemetry
 
 ```mermaid

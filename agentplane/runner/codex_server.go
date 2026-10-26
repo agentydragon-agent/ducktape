@@ -98,6 +98,14 @@ func (c *codexServer) host(ctx context.Context, s *Session) (*codexProcess, erro
 }
 
 func (c *codexServer) start(ctx context.Context, s *Session) error {
+	if c.runner.executor != nil {
+		startup, cancel := context.WithTimeout(ctx, 30*time.Second)
+		err := c.runner.executor.ensure(startup)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("Codex executor startup: %w", err)
+		}
+	}
 	command, err := codex.ServerCommand(c.launch)
 	if err != nil {
 		return err
@@ -110,6 +118,9 @@ func (c *codexServer) start(ctx context.Context, s *Session) error {
 		env = map[string]string{}
 	}
 	maps.Copy(env, codex.ServerEnvironment(c.launch, c.store))
+	if c.runner.executor != nil {
+		env["CODEX_EXEC_SERVER_URL"] = c.runner.executor.config.URL
+	}
 	initialize, initialized, err := codex.InitializeFrames()
 	if err != nil {
 		return err
