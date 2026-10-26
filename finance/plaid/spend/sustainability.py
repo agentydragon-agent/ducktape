@@ -11,7 +11,14 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
-from finance.plaid.spend.allowance import AllowancePolicy, Kind, Transaction, matching_rule, superseded_pending_keys
+from finance.plaid.spend.allowance import (
+    AllowancePolicy,
+    Kind,
+    Transaction,
+    matching_rule,
+    resolve_reversal_pairs,
+    superseded_pending_keys,
+)
 from finance.plaid.spend.portfolio_models import PortfolioPolicy, PortfolioView
 
 _YEAR_DAYS = Decimal("365.2425")
@@ -243,6 +250,12 @@ def calculate_sustainability(
     end = today - timedelta(days=1)
     requested_start = today - timedelta(days=window_days)
     issues = list(source_issues)
+    reversals = resolve_reversal_pairs(allowance, transactions, time_zone=time_zone, today=today)
+    issues.extend(
+        f"Reversal pair {resolution.pair_id}: {issue}"
+        for resolution in reversals.resolutions
+        for issue in resolution.issues
+    )
     superseded = superseded_pending_keys(transactions)
     days_by_account: dict[str, list[date_type]] = defaultdict(list)
     daily: dict[date_type, list[int]] = defaultdict(lambda: [0, 0, 0])
@@ -265,6 +278,8 @@ def calculate_sustainability(
             continue
         if transaction.currency not in (None, policy.currency):
             other_currency += int(requested_start <= day <= end)
+            continue
+        if (transaction.account_id, transaction.transaction_id) in reversals.pairs_by_transaction:
             continue
         rule = matching_rule(transaction, allowance.rules)
         if (

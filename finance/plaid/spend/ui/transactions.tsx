@@ -41,6 +41,7 @@ const dispositionText = {
   pace_only: "Pace only · before allowance start",
   fixed: "Mandatory · outside allowance",
   excluded: "Excluded from allowance",
+  reversed: "Full reversal · excluded from allowance",
   held_refund: "Refund held for review",
   superseded_pending: "Pending version replaced by posted charge",
   other_currency: "Different currency · outside allowance",
@@ -72,6 +73,7 @@ const dispositionKindText = {
 } satisfies Record<RuleKind, string>;
 
 function classificationForRow(row: TransactionRow): { label: string; color: string } {
+  if (row.disposition === "reversed") return { label: "Full reversal", color: "teal" };
   if (row.disposition === "held_refund") return { label: "Refund held", color: "orange" };
   if (row.disposition === "superseded_pending") return { label: "Superseded", color: "gray" };
   if (row.disposition === "other_currency") return { label: "Other currency", color: "gray" };
@@ -283,6 +285,30 @@ function TransactionDetails({ row, currency }: { row: TransactionRow; currency: 
           row.disposition === "counted" &&
           " This charge is counted as flexible while its classification is reviewed."}
       </Text>
+      {row.reversal_pair && (
+        <Stack gap="xs" aria-label={`Full reversal pair ${row.reversal_pair.id}`}>
+          <Group gap="xs" wrap="wrap">
+            <Badge color="teal" variant="light">
+              Full reversal pair
+            </Badge>
+            <Badge color={row.amount_minor_units > 0 ? "blue" : "teal"} variant="light">
+              {row.amount_minor_units > 0 ? "Original debit" : "Reversal credit"}
+            </Badge>
+            <Text size="sm" fw={650} style={{ overflowWrap: "anywhere" }}>
+              {row.reversal_pair.id}
+            </Text>
+          </Group>
+          <Text size="sm" c="dimmed">
+            {row.reversal_pair.description}
+          </Text>
+          <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+            <strong>Original debit selector:</strong> {ruleConditionText(row.reversal_pair.original)}
+          </Text>
+          <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+            <strong>Reversal credit selector:</strong> {ruleConditionText(row.reversal_pair.reversal)}
+          </Text>
+        </Stack>
+      )}
       {row.rule && (
         <Stack gap={2}>
           <Group gap="xs" wrap="wrap">
@@ -295,7 +321,11 @@ function TransactionDetails({ row, currency }: { row: TransactionRow; currency: 
               </Badge>
             )}
           </Group>
-          <Text size="sm">{dispositionKindText[row.rule.kind]}</Text>
+          <Text size="sm">
+            {row.reversal_pair
+              ? "Classification rule is shown as context; the full reversal pair controls the zero allowance effect."
+              : dispositionKindText[row.rule.kind]}
+          </Text>
           {row.rule.id && (
             <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
               {row.rule.id}

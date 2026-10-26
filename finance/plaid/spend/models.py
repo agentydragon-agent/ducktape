@@ -21,6 +21,7 @@ from finance.plaid.spend.allowance import (
     Period,
     PeriodId,
     PlaidCounterparty,
+    ReversalPair,
     Rule,
     TransactionPeriodId,
 )
@@ -133,6 +134,7 @@ class AllowanceConfigurationView(BaseModel):
     max_sync_age_hours: int
     forecast_basis_period_id: PeriodId
     rules: list[Rule]
+    reversal_pairs: list[ReversalPair] = Field(default_factory=list)
     analysis_categories: dict[str, AnalysisCategory]
 
 
@@ -329,9 +331,10 @@ class SpendTransactionRow(BaseModel):
         default=None, description="1-based position in the ordered rule list; the first match governs."
     )
     rule: Rule | None = None
+    reversal_pair: ReversalPair | None = None
     effective_kind: Kind | None = Field(
         default=None,
-        description="The matched rule's kind, resolved server-side; null for an unmatched default-flexible purchase.",
+        description="Resolved accounting kind: excluded for a confirmed reversal, else the rule's kind or null.",
     )
     allowance_minor_units: int
     pace_effects: list[PaceEffect]

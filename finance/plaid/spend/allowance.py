@@ -140,7 +140,7 @@ class CategoryExact(BaseModel):
 class AmountExact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     type: Literal["amount_exact"] = "amount_exact"
-    value: str = Field(pattern=r"^\d+(\.\d{1,4})?$")
+    value: str = Field(pattern=r"^-?\d+(\.\d{1,4})?$")
 
 
 class AmountSign(BaseModel):
@@ -243,6 +243,18 @@ def _is_identity(condition: Condition) -> bool:
     return not isinstance(condition, DateRange | AmountSign)
 
 
+def _validate_observed_selector(condition: Condition, subject: str) -> None:
+    if not isinstance(condition, AllOf):
+        raise ValueError(f"{subject} must be an all_of of conditions")
+    window = next((part for part in condition.conditions if isinstance(part, DateRange)), None)
+    if window is None or window.start is None or window.end is None:
+        raise ValueError(f"{subject} requires a bounded date_range with both start and end")
+    if (window.end - window.start).days > _MAX_ONE_OFF_WINDOW_DAYS:
+        raise ValueError(f"{subject} window must span at most {_MAX_ONE_OFF_WINDOW_DAYS} days")
+    if not any(_is_identity(part) for part in condition.conditions):
+        raise ValueError(f"{subject} requires a name, category, amount, field, or counterparty condition")
+
+
 class RuleScope(StrEnum):
     """What a rule claims to be about: a recurring pattern, or one observed transaction."""
 
@@ -294,19 +306,34 @@ class Rule(BaseModel):
             raise ValueError("a one_off rule requires an id: a key to cite the correction by")
         if self.description is None:
             raise ValueError("a one_off rule requires a description: why this is the right classification")
-        if not isinstance(self.condition, AllOf):
-            raise ValueError("a one_off condition must be an all_of of conditions")
-        window = next((part for part in self.condition.conditions if isinstance(part, DateRange)), None)
-        if window is None or window.start is None or window.end is None:
-            raise ValueError("a one_off requires a bounded date_range with both start and end")
-        if (window.end - window.start).days > _MAX_ONE_OFF_WINDOW_DAYS:
-            raise ValueError(
-                f"a one_off window must span at most {_MAX_ONE_OFF_WINDOW_DAYS} days; "
-                "use a pattern rule for a standing classification"
-            )
-        if not any(_is_identity(part) for part in self.condition.conditions):
-            raise ValueError("a one_off requires a name, category, amount, field, or counterparty condition")
+        _validate_observed_selector(self.condition, "a one_off")
         return self
+
+
+class ReversalPair(BaseModel):
+    """An asserted full reversal, addressed by two bounded, uniquely matching selectors."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(min_length=3, max_length=60, pattern=r"^[a-z0-9][a-z0-9._/-]*$")
+    description: str = Field(min_length=1, max_length=240)
+    original: AllOf
+    reversal: AllOf
+
+    @model_validator(mode="after")
+    def _bounded_selectors(self) -> ReversalPair:
+        _validate_observed_selector(self.original, "original selector")
+        _validate_observed_selector(self.reversal, "reversal selector")
+        return self
+
+
+class ReversalPairResolution(BaseModel):
+    """Safe reconciliation result. Empty issues confirms both legs; otherwise neither is adjusted."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    pair_id: str
+    issues: list[str]
 
 
 class AnalysisCategory(BaseModel):
@@ -335,6 +362,9 @@ class AllowancePolicy(BaseModel):
     rules: list[Rule] = Field(
         min_length=1, description="Ordered decisions, most specific first: the first match governs the transaction."
     )
+    reversal_pairs: list[ReversalPair] = Field(
+        default_factory=list, description="Confirmed full reversals, reconciled against all retained selected history."
+    )
     max_sync_age_hours: int = Field(default=72, ge=1, le=720)
     forecast_basis_period_id: PeriodId = PeriodId.ROLLING_7D
     analysis_categories: dict[str, AnalysisCategory] = Field(
@@ -357,6 +387,9 @@ class AllowancePolicy(BaseModel):
         keyed = [rule.id for rule in self.rules if rule.id is not None]
         if len(keyed) != len(set(keyed)):
             raise ValueError("rules must have unique ids")
+        pair_ids = [pair.id for pair in self.reversal_pairs]
+        if len(pair_ids) != len(set(pair_ids)):
+            raise ValueError("reversal pairs must have unique ids")
         missing = {
             category
             for rule in self.rules
@@ -424,6 +457,7 @@ class Disposition(StrEnum):
     PACE_ONLY = "pace_only"
     FIXED = "fixed"
     EXCLUDED = "excluded"
+    REVERSED = "reversed"
     HELD_REFUND = "held_refund"
     SUPERSEDED_PENDING = "superseded_pending"
     OTHER_CURRENCY = "other_currency"
@@ -437,14 +471,17 @@ class TransactionDecision:
     disposition: Disposition
     allowance_minor_units: int
     pace_effects_minor_units: dict[PeriodId, int]
+    reversal_pair: ReversalPair | None = None
 
     @property
     def effective_kind(self) -> Kind | None:
-        """The kind that governs this transaction: the first matching rule's, else default-flexible (None).
+        """The accounting kind: confirmed reversals are excluded; otherwise the first rule's or default-flexible.
 
         The review tally, the transaction rows, and every client read this instead of re-deriving which
         decision won, so there is one answer to "what kind is this money" and it comes from the matcher.
         """
+        if self.reversal_pair is not None:
+            return Kind.EXCLUDED
         return self.rule.kind if self.rule is not None else None
 
 
@@ -469,6 +506,7 @@ class AllowanceView(BaseModel):
     last_synced_at: datetime | None
     note: str | None = None
     prior_carry_minor_units: int = 0
+    reversal_pairs: list[ReversalPairResolution] = Field(default_factory=list)
 
 
 def month_anniversary(start: datetime, months: int) -> datetime:
@@ -566,6 +604,71 @@ def superseded_pending_keys(transactions: list[Transaction]) -> set[tuple[str, s
     }
 
 
+@dataclass(frozen=True)
+class ResolvedReversals:
+    pairs_by_transaction: dict[tuple[str, str], ReversalPair]
+    resolutions: list[ReversalPairResolution]
+
+
+def resolve_reversal_pairs(
+    policy: AllowancePolicy, transactions: list[Transaction], *, time_zone: ZoneInfo, today: date_type
+) -> ResolvedReversals:
+    """Validate assertions before windowing: a later return removes the original from every consumption window.
+
+    Missing/ambiguous/inconsistent assertions leave ordinary conservative accounting in force. Never use
+    a credit in isolation, an unposted leg, or a future-dated row as proof of a reversed purchase.
+    """
+    superseded = superseded_pending_keys(transactions)
+    retained = {
+        (transaction.account_id, transaction.transaction_id): transaction
+        for transaction in transactions
+        if transaction.account_id in policy.spending_account_ids
+        and transaction.date <= today
+        and transaction.report_day(time_zone) <= today
+        and not (transaction.pending and (transaction.account_id, transaction.transaction_id) in superseded)
+    }
+    matches = [
+        (
+            {key for key, transaction in retained.items() if matches_fields(transaction, pair.original)},
+            {key for key, transaction in retained.items() if matches_fields(transaction, pair.reversal)},
+        )
+        for pair in policy.reversal_pairs
+    ]
+    claims: dict[tuple[str, str], set[int]] = {}
+    for index, (originals, reversals) in enumerate(matches):
+        for key in originals | reversals:
+            claims.setdefault(key, set()).add(index)
+    pairs_by_transaction = {}
+    resolutions = []
+    for pair, (originals, reversals) in zip(policy.reversal_pairs, matches, strict=True):
+        issues = []
+        for role, keys in (("Original", originals), ("Reversal", reversals)):
+            if len(keys) != 1:
+                issues.append(f"{role} selector matched {len(keys)} retained transactions; exactly one is required.")
+            elif retained[next(iter(keys))].pending:
+                issues.append(f"{role} transaction is still pending.")
+        if any(len(claims[key]) > 1 for key in originals | reversals):
+            issues.append("A transaction also matches another reversal pair.")
+        if len(originals) == len(reversals) == 1:
+            original = retained[next(iter(originals))]
+            reversal = retained[next(iter(reversals))]
+            if originals == reversals:
+                issues.append("Original and reversal must be distinct transactions.")
+            if original.amount <= 0 or reversal.amount >= 0 or original.amount != -reversal.amount:
+                issues.append("Amounts must be equal and opposite, with a positive original and a negative reversal.")
+            if original.account_id != reversal.account_id:
+                issues.append("Transactions must belong to the same account.")
+            if (original.currency or policy.currency) != policy.currency or (
+                reversal.currency or policy.currency
+            ) != policy.currency:
+                issues.append("Both transactions must use the policy currency.")
+        if not issues:
+            for key in originals | reversals:
+                pairs_by_transaction[key] = pair
+        resolutions.append(ReversalPairResolution(pair_id=pair.id, issues=issues))
+    return ResolvedReversals(pairs_by_transaction=pairs_by_transaction, resolutions=resolutions)
+
+
 def calculate(
     policy: AllowancePolicy,
     transactions: list[Transaction],
@@ -594,6 +697,7 @@ def calculate(
     included: list[Purchase] = []
     rolling_periods = tuple(period_id for period_id in PeriodId if period_id.rolling_days is not None)
     today = local_now.date()
+    reversals = resolve_reversal_pairs(policy, transactions, time_zone=zone, today=today)
     rolling_starts = {period_id: period_id.start(today) for period_id in rolling_periods}
     positive_by_period = dict.fromkeys(rolling_periods, 0)
     unmatched_count_by_period = dict.fromkeys(rolling_periods, 0)
@@ -607,6 +711,7 @@ def calculate(
         *,
         allowance_minor_units: int = 0,
         pace_effects_minor_units: dict[PeriodId, int] | None = None,
+        reversal_pair: ReversalPair | None = None,
     ) -> None:
         if decisions is not None:
             decisions.append(
@@ -617,6 +722,7 @@ def calculate(
                     disposition=disposition,
                     allowance_minor_units=allowance_minor_units,
                     pace_effects_minor_units=pace_effects_minor_units or dict.fromkeys(rolling_periods, 0),
+                    reversal_pair=reversal_pair,
                 )
             )
 
@@ -632,6 +738,10 @@ def calculate(
             continue
         # First match wins, so a one_off placed above the patterns it corrects governs this transaction.
         rule = matching_rule(transaction, policy.rules)
+        pair = reversals.pairs_by_transaction.get((transaction.account_id, transaction.transaction_id))
+        if pair is not None:
+            record(transaction, rule, Disposition.REVERSED, reversal_pair=pair)
+            continue
         if rule is not None and rule.kind in (Kind.FIXED, Kind.EXCLUDED):
             record(transaction, rule, Disposition.FIXED if rule.kind == Kind.FIXED else Disposition.EXCLUDED)
             continue
@@ -759,4 +869,5 @@ def calculate(
         spending_signal=signal,
         last_synced_at=last_synced_at,
         prior_carry_minor_units=(credits - 1) * policy.monthly_minor_units - (posted + pending - current_cycle_spend),
+        reversal_pairs=reversals.resolutions,
     )

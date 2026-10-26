@@ -61,6 +61,54 @@ allowance:
 An inclusive `date_range` condition accepts `start`, `end`, or both as ISO dates. Combine it with a merchant condition
 and, when needed, `amount_exact` in an `all_of` rule to limit a historical classification without a Plaid transaction ID.
 
+## Explicit full reversal pairs
+
+Use `reversal_pairs` for a confirmed, full posted reversal of a purchase. Each pair has a stable `id`, a `description`,
+and two existing transaction conditions: `original` selects the positive debit, and `reversal` selects the negative
+credit. Add the list alongside `rules` under `allowance`. `amount_exact` accepts signed amounts, so the two selectors
+can require exact opposite values:
+
+```yaml
+  reversal_pairs:
+    - id: example-full-reversal
+      description: Synthetic example of a fully reversed purchase.
+      original:
+        type: all_of
+        conditions:
+          - type: name_prefix
+            field: merchant_name
+            prefix: EXAMPLE ORIGINAL SHOP
+          - type: amount_exact
+            value: "45.00"
+          - type: date_range
+            start: 2026-01-10
+            end: 2026-01-10
+      reversal:
+        type: all_of
+        conditions:
+          - type: name_prefix
+            field: name
+            prefix: EXAMPLE SHOP REVERSAL
+          - type: amount_exact
+            value: "-45.00"
+          - type: date_range
+            start: 2026-01-12
+            end: 2026-01-12
+```
+
+The service resolves a pair only when both selectors identify exactly one posted transaction, the amounts are exact
+opposites, and both transactions use the allowance currency and belong to the same account. A transaction cannot be
+used by more than one pair; overlaps make the affected pairs unresolved. Pending or future-dated candidates, missing or
+ambiguous matches, amount or currency mismatches, and different accounts also leave the pair unresolved. Partial refunds
+are not full reversals and must not be paired.
+
+Resolved pairs exclude both legs from the allowance and pace calculations while retaining their ordinary classification
+rule and category as context. Statement-cycle card totals remain based on the transactions as received. Unresolved pairs
+suppress neither leg: each transaction follows the existing classification and refund handling independently, and the
+Spending page shows each issue even when the allowance is otherwise ready. Review the selectors or transactions before
+relying on an unresolved pair's totals. Pair matching is an explicit, conservative exception; it does not infer a
+relationship from merchant names or amount alone.
+
 ## One rule type, ordered: patterns and one-offs
 
 ```yaml
@@ -122,14 +170,15 @@ handful of transactions inside the window.
 
 Because there is one decision type, one number reports where a classification came from: `rule_number` is a rule's
 1-based position in the ordered list, whether it is a pattern or a one-off. Each transaction row also reports the
-resolved `effective_kind` — the matched rule's kind, or null for an unmatched default-flexible purchase — so the
-review tally and every display read one server-side answer to "what kind is this money" instead of re-deriving which
-tier won. The Configuration tab lists one ordered rule list, with a **One-off** badge on the entries that carry a
-bounded match.
+resolved `effective_kind` — the matched rule's kind, `excluded` for a successfully resolved reversal pair, or null for
+an unmatched default-flexible purchase — so the review tally and every display read one server-side answer to "what kind
+is this money" instead of re-deriving which tier won. The Configuration tab lists one ordered rule list, with a
+**One-off** badge on the entries that carry a bounded match.
 
-Accounting is the same for both scopes: `fixed`/`excluded` leave the allowance, `flexible` and `review` remain
-counted, and a negative credit matched by an `excluded` one-off is a paired transfer leg rather than an unmatched
-refund. Keep the one-offs short: they are a ledger of reviewed corrections, not a second rule engine.
+Accounting is the same for both scopes: `fixed`/`excluded` leave the allowance, and `flexible` and `review` remain
+counted. An `excluded` rule alone does not establish that a negative credit reverses a particular purchase; only a
+successfully resolved `reversal_pairs` definition verifies that linkage and excludes both legs. Keep the one-offs short:
+they are a ledger of reviewed corrections, not a second rule engine.
 
 When `allowance` is present, it is active. Supply a required `activation_at` ISO date (YYYY-MM-DD) as the stable
 credit-cycle anchor; null or omission is invalid. To disable the allowance, omit the entire `allowance` object. Activation

@@ -254,6 +254,21 @@ py_library(
 )
 
 py_test(
+    name = "test_reversals",
+    srcs = ["test_reversals.py"],
+    deps = [
+        ":allowance",
+        ":conftest",
+        ":portfolio_models",
+        ":sustainability",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_sustainability",
     srcs = ["test_sustainability.py"],
     deps = [

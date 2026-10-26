@@ -23,6 +23,7 @@ from finance.plaid.spend.allowance import (
     AllOf,
     AllowanceSpendPeriod,
     AllowanceView,
+    AmountExact,
     AmountSign,
     AnalysisCategory,
     AnyOf,
@@ -39,6 +40,8 @@ from finance.plaid.spend.allowance import (
     PeriodId,
     PlaidCounterparty,
     RecordedPacePeriod,
+    ReversalPair,
+    ReversalPairResolution,
     Rule,
     RuleScope,
     Status,
@@ -365,6 +368,46 @@ def dashboard_url() -> Iterator[str]:
     def index() -> FileResponse:
         return FileResponse(_UI_DIR / "index.html")
 
+    def example_full_reversal_pair() -> ReversalPair:
+        return ReversalPair(
+            id="example-full-reversal",
+            description="Synthetic example of a fully reversed purchase.",
+            original=AllOf(
+                conditions=[
+                    NameContains(field="name", substring="EXAMPLE OWN ACCOUNT TRANSFER"),
+                    AmountExact(value="120.00"),
+                    DateRange(start=date(2026, 10, 11), end=date(2026, 10, 11)),
+                ]
+            ),
+            reversal=AllOf(
+                conditions=[
+                    NameContains(field="name", substring="EXAMPLE OWN ACCOUNT REVERSAL"),
+                    AmountExact(value="-120.00"),
+                    DateRange(start=date(2026, 10, 12), end=date(2026, 10, 12)),
+                ]
+            ),
+        )
+
+    def example_unresolved_reversal_pair() -> ReversalPair:
+        return ReversalPair(
+            id="example-reversal-needs-review",
+            description="Synthetic selector with no matching original transaction.",
+            original=AllOf(
+                conditions=[
+                    NameContains(field="name", substring="EXAMPLE MISSING ORIGINAL"),
+                    AmountExact(value="15.50"),
+                    DateRange(start=date(2026, 10, 7), end=date(2026, 10, 7)),
+                ]
+            ),
+            reversal=AllOf(
+                conditions=[
+                    NameContains(field="name", substring="EXAMPLE MISSING REVERSAL"),
+                    AmountExact(value="-15.50"),
+                    DateRange(start=date(2026, 10, 8), end=date(2026, 10, 8)),
+                ]
+            ),
+        )
+
     def example_allowance(warmup: bool = False, estimate_period_id: EstimatePeriodId | None = None) -> AllowanceView:
         today = date(2026, 10, 15)
         estimate_period_id = estimate_period_id or PeriodId.ROLLING_7D
@@ -422,6 +465,13 @@ def dashboard_url() -> Iterator[str]:
             spending_signal=PaceAlert.UNAVAILABLE if warmup else PaceAlert.NORMAL,
             last_synced_at=datetime(2026, 10, 15, 11, tzinfo=UTC),
             prior_carry_minor_units=0 if warmup else 5000,
+            reversal_pairs=[
+                ReversalPairResolution(pair_id="example-full-reversal", issues=[]),
+                ReversalPairResolution(
+                    pair_id="example-reversal-needs-review",
+                    issues=["Original selector matched 0 retained transactions; exactly one is required."],
+                ),
+            ],
         )
 
     @app.get("/api/v1/view", response_model=SpendView)
@@ -533,6 +583,7 @@ def dashboard_url() -> Iterator[str]:
                     "shipping": AnalysisCategory(label="Document shipping", color="#0F766E"),
                     "travel": AnalysisCategory(label="Holiday travel", color="#7C3AED"),
                 },
+                reversal_pairs=[example_full_reversal_pair(), example_unresolved_reversal_pair()],
             ),
         )
 
@@ -656,9 +707,10 @@ def dashboard_url() -> Iterator[str]:
                 currency="USD",
                 pending=False,
                 allowance_in_scope=True,
-                disposition=Disposition.EXCLUDED,
+                disposition=Disposition.REVERSED,
                 rule_number=3,
                 effective_kind=Kind.EXCLUDED,
+                reversal_pair=example_full_reversal_pair(),
                 rule=Rule(
                     condition=AllOf(
                         conditions=[
@@ -680,6 +732,36 @@ def dashboard_url() -> Iterator[str]:
                 statement_reason=None,
                 pfc_primary="TRANSFER_OUT",
                 pfc_detailed="TRANSFER_OUT_OTHER",
+                merchant_category_code=None,
+                category=AnalysisCategoryView(id="unclassified", label="Unclassified", color="#D97706"),
+            ),
+            SpendTransactionRow(
+                date=date(2026, 10, 12),
+                account_label="Example checking",
+                name="EXAMPLE OWN ACCOUNT REVERSAL",
+                merchant_name=None,
+                amount_minor_units=-12_000,
+                currency="USD",
+                pending=False,
+                allowance_in_scope=True,
+                disposition=Disposition.REVERSED,
+                rule_number=2,
+                effective_kind=Kind.EXCLUDED,
+                reversal_pair=example_full_reversal_pair(),
+                rule=Rule(
+                    condition=NamePrefix(field="name", prefix="EXAMPLE OWN ACCOUNT"),
+                    kind=Kind.REVIEW,
+                    description="Synthetic rule classification retained as context for the reversal.",
+                ),
+                allowance_minor_units=0,
+                pace_effects=[
+                    PaceEffect(period_id=period_id, amount_minor_units=0)
+                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
+                ],
+                statement_minor_units=None,
+                statement_reason=None,
+                pfc_primary="TRANSFER_IN",
+                pfc_detailed="TRANSFER_IN_OTHER",
                 merchant_category_code=None,
                 category=AnalysisCategoryView(id="unclassified", label="Unclassified", color="#D97706"),
             ),
@@ -803,6 +885,11 @@ async def test_spending_decision_render(
     )
     await expect(page.get_by_role("alert").get_by_text("2 charges ($15) need review")).to_have_count(1)
     await expect(page.get_by_role("heading", name="Can I afford this?")).to_have_count(1)
+    pair_review = page.get_by_role("alert").filter(has_text="Full reversal pairs need review")
+    await expect(pair_review.get_by_text("example-reversal-needs-review", exact=False)).to_be_visible()
+    await expect(
+        pair_review.get_by_text("Original selector matched 0 retained transactions", exact=False)
+    ).to_be_visible()
     await expect(page.get_by_text("7 days", exact=True)).to_have_count(1)
     await expect(page.locator('span[title="$12.50"]').first).to_be_attached()
     await expect(page.locator('span[title="$200.00"]').first).to_be_attached()
@@ -957,8 +1044,12 @@ async def test_review_rule_configuration_render(
     await expect(
         page.get_by_text("Own-account funding leg, confirmed by the owner 2026-10-04.", exact=True)
     ).to_have_count(1)
-    await expect(page.get_by_text("Transaction name contains", exact=False)).to_have_count(1)
     await expect(page.get_by_text("Date is 2026-10-03", exact=False)).to_have_count(1)
+    await page.get_by_text("Full reversal pairs", exact=True).wait_for()
+    await page.get_by_text("example-full-reversal", exact=True).wait_for()
+    await page.get_by_text("example-reversal-needs-review", exact=True).wait_for()
+    await expect(page.get_by_text("Original debit", exact=True)).to_have_count(2)
+    await expect(page.get_by_text("Reversal credit", exact=True)).to_have_count(2)
     view.errors.assert_none(context="Spend")
     image = f"configuration-review-{width}.png"
     await view.capture(
@@ -971,7 +1062,7 @@ async def _open_transaction_details(page: Page, rows: Locator, width: int) -> No
     await page.get_by_text("Allowance bridge", exact=True).wait_for()
     if width >= 992:
         await rows.locator("tbody tr[data-transaction-row]").filter(has_text="UPS").click()
-        await expect(rows.locator("tbody tr")).to_have_count(6)
+        await expect(rows.locator("tbody tr")).to_have_count(7)
     else:
         await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))
     await rows.get_by_text("Required document shipping for a synthetic example.").wait_for()
@@ -1002,11 +1093,11 @@ async def test_transaction_explanations_render(
     await expect(rows.get_by_text("Refund held", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("Document shipping", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("Holiday travel", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Full reversal", exact=True)).to_have_count(2)
     await expect(rows.locator('[data-category-id="travel"]')).to_have_count(1)
-    await expect(rows.get_by_text("Excluded (one-off)", exact=True)).to_have_count(1)
     await expect(page.get_by_text("1 · $15", exact=True)).to_have_count(1)
     if width >= 992:
-        await expect(rows.locator("tbody tr")).to_have_count(5)
+        await expect(rows.locator("tbody tr")).to_have_count(6)
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = f"transactions-{width}.png"
@@ -1019,7 +1110,7 @@ async def test_transaction_explanations_render(
         expanded.removesuffix(".png"), label=f"{width}px rule explanation", full_page=True, animations="disabled"
     )
     await page.get_by_text("Review", exact=True).click()
-    await page.get_by_text("Showing 2 of 5", exact=True).wait_for()
+    await page.get_by_text("Showing 2 of 6", exact=True).wait_for()
     await expect(rows.get_by_text("UPS", exact=True)).to_have_count(0)
     await expect(rows.get_by_text("EXAMPLE OWN ACCOUNT TRANSFER", exact=True)).to_have_count(0)
     await expect(rows.get_by_text("Confirm the purchase before netting this refund.")).not_to_be_visible()
@@ -1028,6 +1119,47 @@ async def test_transaction_explanations_render(
     await view.capture(
         review.removesuffix(".png"), label=f"{width}px review filter", full_page=True, animations="disabled"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_full_reversal_transaction_explanation(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Transactions")
+    rows = page.get_by_role("table") if width >= 992 else page.locator(".mantine-Accordion-root").first
+
+    async def toggle_transaction(name: str) -> None:
+        if width >= 992:
+            await rows.locator("tr[data-transaction-row]").filter(has_text=name).click()
+        else:
+            await rows.get_by_role("button", name=name, exact=False).click()
+
+    await toggle_transaction("EXAMPLE OWN ACCOUNT TRANSFER")
+    original = page.get_by_label("Full reversal pair example-full-reversal")
+    await expect(original).to_be_visible()
+    await expect(original.get_by_text("Original debit", exact=True)).to_be_visible()
+    await expect(original.get_by_text("Original debit selector:", exact=False)).to_be_visible()
+    await expect(original.get_by_text("Reversal credit selector:", exact=False)).to_be_visible()
+    await expect(page.get_by_text("Classification rule is shown as context", exact=False)).to_be_visible()
+    await expect(page.get_by_text("Allowance balance effect: $0", exact=False)).to_be_visible()
+    await view.capture(
+        f"full-reversal-transaction-explanation-{width}",
+        label=f"{width}px full reversal explanation",
+        full_page=True,
+        animations="disabled",
+    )
+
+    await toggle_transaction("EXAMPLE OWN ACCOUNT TRANSFER")
+    await toggle_transaction("EXAMPLE OWN ACCOUNT REVERSAL")
+    reversal = page.get_by_label("Full reversal pair example-full-reversal")
+    await expect(reversal).to_be_visible()
+    await expect(reversal.get_by_text("Reversal credit", exact=True)).to_be_visible()
+    await expect(
+        page.get_by_text("Synthetic rule classification retained as context for the reversal.")
+    ).to_be_visible()
 
 
 @pytest.mark.asyncio
