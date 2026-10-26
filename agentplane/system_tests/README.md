@@ -82,9 +82,11 @@ The result is written to the target's `test.outputs/vm-workspace-ownership.json`
 ## Workspace storage layout
 
 `test_storage` is a model-free fixture for the
-built-in Pod `DirectoryTree` and VM `RawDiskImage`/ext4 workspace paths. It checks Sandbox-owned
-PVC identity and layout records, marker bytes across suspend/resume, refusal of an incompatible
-claim before workload start, and retained data after VM replacement. It creates only its own
+built-in Pod `DirectoryTree` and VM `BlockFilesystem`/ext4 workspace paths. The VM workspace uses
+the k3s stack's static loop-backed raw block class while VM state remains on local-path filesystem
+storage. It checks Sandbox-owned PVC identity, `Block` volume mode and layout records, marker bytes
+across suspend/resume, refusal of an incompatible claim before workload start, and retained data
+after VM replacement. It creates only its own
 Sandbox, template and workload, then removes them through UID-preconditioned lifecycle operations.
 It refuses a stack that already has Sandboxes. `test_storage` and `test_storage_vm` (`manual`) run the
 Pod and VM cases on stacks of their own:
@@ -93,7 +95,9 @@ Pod and VM cases on stacks of their own:
 bbr test //agentplane/system_tests:test_storage //agentplane/system_tests:test_storage_vm
 ```
 
-The targets write `test.outputs/storage-{pod-directory,vm-raw}.json`.
+The targets write `test.outputs/storage-{pod-directory,vm-raw}.json`. `test_suspend_resume_vm` uses
+the same block-backed VM fixture while verifying the runner's persisted native sessions across the
+launcher replacement.
 
 ## Suspend and resume
 

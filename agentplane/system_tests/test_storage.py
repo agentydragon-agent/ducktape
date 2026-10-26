@@ -19,6 +19,7 @@ from agentplane.crd_group import GROUP, VERSION
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cluster import api_client, kubectl
 from agentplane.system_tests.conftest import POD_TEMPLATE, VM_TEMPLATE, namespace
+from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 BOUND_SECONDS = 300
@@ -170,11 +171,15 @@ async def _volumes(name: str, uid: str) -> dict:
             "name": state["metadata"]["name"],
             "uid": state["metadata"]["uid"],
             "pv": state["spec"]["volumeName"],
+            "storage_class": state["spec"]["storageClassName"],
+            "volume_mode": state["spec"].get("volumeMode", "Filesystem"),
         },
         "workspace": {
             "name": workspace["metadata"]["name"],
             "uid": workspace["metadata"]["uid"],
             "pv": workspace["spec"]["volumeName"],
+            "storage_class": workspace["spec"]["storageClassName"],
+            "volume_mode": workspace["spec"].get("volumeMode", "Filesystem"),
             "record": record,
         },
     }
@@ -309,6 +314,23 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, case
         await _condition(name, "Bootstrapped")
         old_incarnation = (await _object(f"sandboxes.{GROUP}", name))["status"]["incarnation"]
         before = await _volumes(name, uid)
+        if vm:
+            workspace_pv = await _object("pv", before["workspace"]["pv"])
+            assert before["state"]["storage_class"] == "local-path"
+            assert before["state"]["volume_mode"] == "Filesystem"
+            assert before["workspace"]["storage_class"] == STORAGE_CLASS
+            assert before["workspace"]["volume_mode"] == workspace_pv["spec"]["volumeMode"] == "Block"
+            assert workspace_pv["spec"]["local"]["path"].startswith("/dev/loop")
+            assert json.loads(before["workspace"]["record"])["layout"] == {
+                "type": "BlockFilesystem",
+                "filesystem": "ext4",
+            }
+            evidence["raw_block_pv"] = {
+                "name": workspace_pv["metadata"]["name"],
+                "path": workspace_pv["spec"]["local"]["path"],
+                "capacity": workspace_pv["spec"]["capacity"]["storage"],
+                "volume_mode": workspace_pv["spec"]["volumeMode"],
+            }
         workload = await _object("virtualmachine" if vm else "pod", name)
         workload_uid = workload["metadata"]["uid"]
         workload_spec = workload["spec"]["template"]["spec"] if vm else workload["spec"]
