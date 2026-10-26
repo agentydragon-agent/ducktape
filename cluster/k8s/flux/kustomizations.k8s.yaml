@@ -4143,7 +4143,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Retire the Terraform-owned LiteLLM resources before Crossplane recreates them.
+    description: Prune the completed LiteLLM Terraform handoff; retain its credential sibling and source until finalization.
   name: litellm-keys-tf
   namespace: ducktape-flux
 spec:
@@ -4171,7 +4171,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Own LiteLLM teams and virtual keys in Crossplane after the provider, proxy, and Tofu handoff are ready.
+    description: Own LiteLLM teams and virtual keys in Crossplane after the provider and proxy are ready.
   name: litellm-crossplane-keys
   namespace: ducktape-flux
 spec:
@@ -4183,8 +4183,6 @@ spec:
     - name: crossplane-provider-litellm
       namespace: ducktape-flux
     - name: litellm
-      namespace: ducktape-flux
-    - name: litellm-keys-tf
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/litellm/crossplane-keys
