@@ -1,0 +1,296 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opentofu-forgejo-images
+  namespace: crossplane-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-forgejo-images-impersonate
+  namespace: crossplane-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - opentofu-forgejo-images
+    resources:
+      - serviceaccounts
+    verbs:
+      - impersonate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc8cc6e35118f0bf380a0b1356fe842f9d2908060aa
+  namespace: crossplane-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-forgejo-images-impersonate
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-opentofu
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-forgejo-images
+  namespace: forgejo
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - forgejo-admin-password
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc870cbabe5ac50b5a305d1de4f267c5c99211ba4b2
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-forgejo-images
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: opentofu-forgejo-images
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-forgejo-images
+  namespace: forgejo-images
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - forgejo-images-creds
+    resources:
+      - secrets
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resourceNames:
+      - webhook-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc870cbabe5ac50b5a305d1de4f267c5c99211ba4b2
+  namespace: forgejo-images
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-forgejo-images
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: opentofu-forgejo-images
+    namespace: crossplane-system
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: crossplane-forgejo-images
+spec:
+  backendFile: |
+    conn_str = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+    schema_name = "forgejo_images"
+  configuration: |
+    terraform {
+      backend "pg" {}
+    }
+    provider "kubernetes" {
+      config_path = "/etc/opentofu/kubernetes/opentofu-forgejo-images"
+    }
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: Workspace
+metadata:
+  annotations:
+    crossplane.io/external-name: default
+  name: forgejo-images
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    env:
+      - name: PGPASSWORD
+        secretKeyRef:
+          key: password
+          name: tofu-state-db-credentials
+          namespace: flux-system
+    module: |
+      # Forgejo registry tenant for ducktape CI-built in-cluster images.
+      #
+      # Creates a dedicated `ducktape-ci` Forgejo user that owns CI-pushed images
+      # (git.allegedly.works/ducktape-ci/<image>, e.g. codex-pod). Its password is the
+      # shared value in the SOPS-provisioned `forgejo-images-creds` Secret, so CI push
+      # (secrets/ci/forgejo-images-registry.sops.yaml) and the kubelet/Flux pull
+      # credential (the same Secret, distributed by ESO into consuming namespaces)
+      # all authenticate as this user. Deliberately no proxy (unlike props): clients
+      # talk to Forgejo directly.
+
+      data "kubernetes_secret" "forgejo_admin" {
+        metadata {
+          name      = "forgejo-admin-password"
+          namespace = "forgejo"
+        }
+      }
+
+      data "kubernetes_secret" "images_creds" {
+        metadata {
+          name      = "forgejo-images-creds"
+          namespace = "forgejo-images"
+        }
+      }
+
+      locals {
+        images_user = "ducktape-ci"
+      }
+
+      provider "forgejo" {
+        host     = var.forgejo_url
+        username = data.kubernetes_secret.forgejo_admin.data["username"]
+        password = data.kubernetes_secret.forgejo_admin.data["password"]
+      }
+
+      resource "forgejo_user" "images" {
+        login                = local.images_user
+        email                = "ducktape-ci@allegedly.works"
+        password             = data.kubernetes_secret.images_creds.data["password"]
+        must_change_password = false
+        visibility           = "private"
+      }
+
+      # A webhook on the ducktape-ci user that fires when CI pushes an image, so Flux scans the new
+      # tag at once instead of on the 5m ImageRepository poll. A user-level hook fires for packages
+      # linked to no repository, which every ducktape-ci image is; a repository-scoped hook would
+      # need each package linked to a repository first.
+      #
+      # The Receiver it calls (cluster/cdk8s/forgejo_registry/chart.py) serves /hook/<sha256 of token, receiver
+      # name and namespace> and checks no signature: the unguessable path is the secret. An External
+      # Secrets `Password` generator mints the token once and never refreshes it, since a new token
+      # changes that path; it is read here from the namespace it is minted into.
+      data "kubernetes_secret" "webhook_token" {
+        metadata {
+          name      = var.webhook_token_secret
+          namespace = var.receiver_namespace
+        }
+      }
+
+      # The svalabs/forgejo provider has no webhook resource for a user. `/user/hooks` acts for the
+      # authenticated user, so this provider authenticates as ducktape-ci rather than as the admin.
+      provider "restapi" {
+        uri                  = var.forgejo_url
+        username             = local.images_user
+        password             = data.kubernetes_secret.images_creds.data["password"]
+        id_attribute         = "id"
+        write_returns_object = true
+      }
+
+      # Forgejo refuses to deliver to private addresses, so the hook targets the Receivers' public host.
+      resource "restapi_object" "package_webhook" {
+        path          = "/api/v1/user/hooks"
+        update_method = "PATCH"
+        data = jsonencode({
+          type   = "forgejo"
+          active = true
+          events = ["package"]
+          config = {
+            content_type = "json"
+            url          = "https://${var.webhook_host}/hook/${sha256(join("", [data.kubernetes_secret.webhook_token.data["token"], var.receiver_name, var.receiver_namespace]))}"
+          }
+        })
+        ignore_all_server_changes = true
+
+        depends_on = [forgejo_user.images]
+      }
+
+      # The retired agent-workspaces ExternalSecret previously owned this Secret.
+      # CLEANUP(added 2026-09-11): Remove only after every forgejo_images state has
+      # forgotten kubernetes_secret.agent_workspaces_pull; this block does not destroy it.
+      removed {
+        from = kubernetes_secret.agent_workspaces_pull
+        lifecycle {
+          destroy = false
+        }
+      }
+
+
+      terraform {
+        required_version = ">= 1.0"
+
+        required_providers {
+          forgejo = {
+            source  = "svalabs/forgejo"
+            version = "~> 1.5"
+          }
+          kubernetes = {
+            source  = "hashicorp/kubernetes"
+            version = "~> 3.0"
+          }
+          restapi = {
+            source  = "mastercard/restapi"
+            version = "~> 2.0"
+          }
+        }
+      }
+
+      variable "forgejo_url" {
+        description = "Forgejo internal cluster API URL"
+        type        = string
+        default     = "http://forgejo-http.forgejo:3000"
+      }
+
+      variable "webhook_host" {
+        description = "Public host of the Flux Receivers; the host Forgejo's package webhook calls"
+        type        = string
+      }
+
+      variable "receiver_name" {
+        description = "The Flux Receiver the package webhook triggers; its webhook path derives from its name and namespace"
+        type        = string
+      }
+
+      variable "receiver_namespace" {
+        description = "Namespace of that Receiver, where the webhook token Secret is written"
+        type        = string
+      }
+
+      variable "webhook_token_secret" {
+        description = "Name of the Secret holding the webhook token, which the Receiver reads"
+        type        = string
+      }
+    planArgs:
+      - -lock-timeout=5m
+    source: Inline
+    vars:
+      - key: webhook_host
+        value: flux-webhook.allegedly.works
+      - key: receiver_name
+        value: receiver
+      - key: receiver_namespace
+        value: forgejo-images
+      - key: webhook_token_secret
+        value: webhook-token
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+  providerConfigRef:
+    name: crossplane-forgejo-images

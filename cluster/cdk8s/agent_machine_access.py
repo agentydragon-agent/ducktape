@@ -21,10 +21,12 @@ def chart(app: App) -> Chart:
         namespace="agents-infra",
         read=[],
         write=[
+            # keep-sorted start
             "agentplane-grocy-sf-readonly",
             "haku-client-credentials",
             "haku-mail-client-credentials",
             "kubectl-sandbox-client-credentials",
+            # keep-sorted end
         ],
     )
     opentofu.secret_access(
@@ -34,11 +36,13 @@ def chart(app: App) -> Chart:
         namespace="authentik",
         read=["authentik-bootstrap"],
         write=[
+            # keep-sorted start
             "aiquota-oidc",
             "grocy-mcp-oidc-sf",
             "grocy-mcp-oidc-vallejo",
             "haku-console-oidc",
             "tana-mcp-facade-oidc",
+            # keep-sorted end
         ],
     )
     opentofu.gitops_workspace(

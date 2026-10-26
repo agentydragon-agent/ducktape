@@ -20,12 +20,15 @@ def chart(app: App) -> Chart:
         identity=identity,
         namespace="authentik",
         read=[
+            # keep-sorted start
             "authentik-auragon-google-email",
             "authentik-bootstrap",
             "authentik-google-oauth",
             "authentik-user-password",
+            # keep-sorted end
         ],
         write=[
+            # keep-sorted start
             "agentplane-mcp-oauth",
             "agentplane-oidc",
             "airlock-oidc-config",
@@ -41,6 +44,7 @@ def chart(app: App) -> Chart:
             "plaid-link-oidc-config",
             "plaid-spend-web-oidc-config",
             "props-oidc-config",
+            # keep-sorted end
         ],
     )
     opentofu.secret_access(

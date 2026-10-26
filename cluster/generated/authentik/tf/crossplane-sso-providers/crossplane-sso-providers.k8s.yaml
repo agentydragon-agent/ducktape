@@ -1,0 +1,1945 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opentofu-sso-providers
+  namespace: crossplane-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-sso-providers-impersonate
+  namespace: crossplane-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - opentofu-sso-providers
+    resources:
+      - serviceaccounts
+    verbs:
+      - impersonate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc898e7b68264abea078530cc0224fa60dc81894131
+  namespace: crossplane-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-sso-providers-impersonate
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-opentofu
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-sso-providers
+  namespace: authentik
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - authentik-auragon-google-email
+    resources:
+      - secrets
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resourceNames:
+      - authentik-bootstrap
+    resources:
+      - secrets
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resourceNames:
+      - authentik-google-oauth
+    resources:
+      - secrets
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resourceNames:
+      - authentik-user-password
+    resources:
+      - secrets
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resourceNames:
+      - agentplane-mcp-oauth
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - agentplane-oidc
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - airlock-oidc-config
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - claude-session-sync-oidc
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - cli-proxy-api-admin-oidc
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - forgejo-oauth-client-secret
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - gitlab-spike-oidc
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - grafana-oidc-config
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - headlamp-oidc-secret
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - langfuse-oidc-config
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - matrix-oidc-config
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - paperless-sso-providers
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-link-oidc-config
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-spend-web-oidc-config
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - props-oidc-config
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc8666f97fbfa68c6cff3b5e8b380c38946a7b9c77a
+  namespace: authentik
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-sso-providers
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: opentofu-sso-providers
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-sso-providers
+  namespace: study-casino
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - study-casino-oidc
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc8666f97fbfa68c6cff3b5e8b380c38946a7b9c77a
+  namespace: study-casino
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-sso-providers
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: opentofu-sso-providers
+    namespace: crossplane-system
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: crossplane-sso-providers
+spec:
+  backendFile: |
+    conn_str = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+    schema_name = "sso_providers"
+  configuration: |
+    terraform {
+      backend "pg" {}
+    }
+    provider "kubernetes" {
+      config_path = "/etc/opentofu/kubernetes/opentofu-sso-providers"
+    }
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: Workspace
+metadata:
+  annotations:
+    crossplane.io/external-name: default
+  name: sso-providers
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    env:
+      - name: PGPASSWORD
+        secretKeyRef:
+          key: password
+          name: tofu-state-db-credentials
+          namespace: flux-system
+    module: |
+      # Domain-matched brand for allegedly.works.
+      #
+      # Historically paired with a `custom-authentication-flow` (no-MFA) so that
+      # direct logins at auth.allegedly.works bypassed Authentik's built-in
+      # `default-authentication-mfa-validation` stage. That custom flow was
+      # deleted in 2026-04 in favor of the built-in `default-authentication-flow`
+      # with the MFA validation stage patched to `not_configured_action: skip`
+      # (see cluster/k8s/authentik/app/blueprints/users.yaml). Net effect is
+      # identical for users without MFA enrolled; per-user MFA still enforces
+      # when configured. With the custom flow gone, the brand no longer needs
+      # `flow_authentication` — Authentik falls back to default-authentication-flow.
+
+      resource "authentik_brand" "allegedly_works" {
+        domain         = "allegedly.works"
+        default        = false
+        branding_title = "allegedly.works"
+
+        # Authentik stores its bundled asset paths here when unset, and the provider
+        # diffs them against the omitted attributes, so every plan would PUT the brand.
+        lifecycle {
+          ignore_changes = [branding_logo, branding_favicon]
+        }
+      }
+
+      # SSO OAuth2 providers managed by Terraform.
+      #
+      # Replaces blueprint+Vault+ESO chains for SSO applications. TF creates each
+      # Authentik provider (which owns the client_secret), then writes the resulting
+      # K8s Secrets into the authentik namespace. Reflector mirrors them to consumer
+      # namespaces.
+
+      terraform {
+        required_version = ">= 1.0"
+
+        required_providers {
+          authentik = {
+            source = "goauthentik/authentik"
+            # Authentik is pinned to 2026.8.x in the cluster. Keep the provider on
+            # the matching minor line; `~> 2026.8` would also admit later provider
+            # releases whose API schema is incompatible with the 2026.8 server.
+            version = "~> 2026.8.0"
+          }
+          kubernetes = {
+            source  = "hashicorp/kubernetes"
+            version = "~> 3.0"
+          }
+          random = {
+            source  = "hashicorp/random"
+            version = "~> 3.6"
+          }
+        }
+      }
+
+      data "kubernetes_secret" "authentik_bootstrap" {
+        metadata {
+          name      = "authentik-bootstrap"
+          namespace = "authentik"
+        }
+      }
+
+      data "kubernetes_secret" "authentik_user_password" {
+        metadata {
+          name      = "authentik-user-password"
+          namespace = "authentik"
+        }
+      }
+
+      data "kubernetes_secret" "auragon_google_email" {
+        metadata {
+          name      = "authentik-auragon-google-email"
+          namespace = "authentik"
+        }
+      }
+
+      provider "authentik" {
+        url   = var.authentik_url_override != "" ? var.authentik_url_override : "http://authentik-server.authentik.svc.cluster.local"
+        token = data.kubernetes_secret.authentik_bootstrap.data["AUTHENTIK_BOOTSTRAP_TOKEN"]
+      }
+
+      # --- Shared data sources ---
+
+      data "authentik_flow" "implicit_consent" {
+        slug = "default-provider-authorization-implicit-consent"
+      }
+
+      data "authentik_flow" "invalidation" {
+        slug = "default-provider-invalidation-flow"
+      }
+
+      data "authentik_group" "admins" {
+        name = "authentik Admins"
+      }
+
+      data "authentik_user" "akadmin" {
+        username = "akadmin"
+      }
+
+      resource "authentik_user" "agentydragon" {
+        username = "agentydragon"
+        name     = "Rai"
+        email    = "agentydragon@gmail.com"
+        password = data.kubernetes_secret.authentik_user_password.data["USER_PASSWORD"]
+      }
+
+      # Read the managed user's server-assigned UID and UUID for OIDC identity linking.
+      data "authentik_user" "agentydragon" {
+        pk = tonumber(authentik_user.agentydragon.id)
+      }
+
+      # Google OAuth-only user. Email is SOPS-encrypted — sourced from
+      # authentik-auragon-google-email secret so it stays out of plaintext git.
+      # Matches via user_matching_mode = "email_link" on authentik_source_oauth.google.
+      resource "authentik_user" "auragon" {
+        username = "auragon"
+        name     = "auragon"
+        email    = data.kubernetes_secret.auragon_google_email.data["AURAGON_GOOGLE_EMAIL"]
+      }
+
+      resource "authentik_group" "authentik_admins" {
+        name         = "authentik Admins"
+        is_superuser = true
+        users        = [data.authentik_user.akadmin.pk, tonumber(authentik_user.agentydragon.id)]
+      }
+
+      resource "authentik_group" "grafana_admins" {
+        name  = "Grafana Admins"
+        users = [tonumber(authentik_user.agentydragon.id)]
+      }
+
+      # Forgejo site admins. The Forgejo OIDC source
+      # (cluster/cdk8s/forgejo/app.py) maps this group's name -- carried in
+      # the `groups` claim emitted by the default `profile` scope mapping -- to Forgejo
+      # site-admin on login. Keep the name in sync with `adminGroup` there.
+      resource "authentik_group" "forgejo_admins" {
+        name  = "forgejo-admins"
+        users = [tonumber(authentik_user.agentydragon.id)]
+      }
+
+      resource "authentik_group" "home_assistant_admins" {
+        name  = "home-assistant-admins"
+        users = [tonumber(authentik_user.agentydragon.id)]
+      }
+
+      resource "authentik_group" "home_assistant_users" {
+        name = "home-assistant-users"
+        users = [
+          tonumber(authentik_user.agentydragon.id),
+          tonumber(authentik_user.auragon.id),
+        ]
+      }
+
+      resource "authentik_group" "study_casino" {
+        name = "study-casino"
+        users = [
+          tonumber(authentik_user.agentydragon.id),
+          tonumber(authentik_user.auragon.id),
+        ]
+      }
+
+      data "authentik_certificate_key_pair" "self_signed" {
+        name = "authentik Self-signed Certificate"
+      }
+
+      data "authentik_property_mapping_provider_scope" "openid" {
+        managed = "goauthentik.io/providers/oauth2/scope-openid"
+      }
+
+      data "authentik_property_mapping_provider_scope" "email" {
+        managed = "goauthentik.io/providers/oauth2/scope-email"
+      }
+
+      data "authentik_property_mapping_provider_scope" "profile" {
+        managed = "goauthentik.io/providers/oauth2/scope-profile"
+      }
+
+      data "authentik_property_mapping_provider_scope" "offline_access" {
+        managed = "goauthentik.io/providers/oauth2/scope-offline_access"
+      }
+
+
+      # Action-only JWT-bearer target. See agentplane/docs/operator_federation.md for
+      # the pinned Authentik/provider source proving the shared subject mode and grant.
+      # Native provider federation preserves the AccessToken's database user; the
+      # target provider policy is the authorization boundary. The client_id is the Action
+      # audience and the application slug its issuer path, both pinned by
+      # `cluster/cdk8s/agentplane/staging.py`.
+      resource "authentik_provider_oauth2" "agentplane_actions" {
+        name                  = "agentplane-staging-actions"
+        client_id             = "agentplane-staging-actions"
+        client_type           = "confidential"
+        authorization_flow    = data.authentik_flow.implicit_consent.id
+        invalidation_flow     = data.authentik_flow.invalidation.id
+        signing_key           = data.authentik_certificate_key_pair.self_signed.id
+        access_token_validity = "minutes=1"
+        issuer_mode           = "per_provider"
+        # Match the login provider so the same Authentik user has the same `sub` after exchange.
+        sub_mode = "hashed_user_id"
+
+        jwt_federation_providers = [authentik_provider_oauth2.agentplane_staging.id]
+        jwt_federation_sources   = []
+        property_mappings        = [data.authentik_property_mapping_provider_scope.openid.id]
+        # No interactive redirects. The generated client secret is never distributed.
+      }
+
+      # TODO(authentik-meta-hide): Now that the 2026.8 provider is active, consider
+      # `meta_hide = true`; this action-only federation target is not a user-facing
+      # launcher entry. Verify this changes presentation only.
+      resource "authentik_application" "agentplane_actions" {
+        name              = "Agentplane staging Actions"
+        slug              = "agentplane-staging-actions"
+        protocol_provider = authentik_provider_oauth2.agentplane_actions.id
+        meta_description  = "Action decisions with the operator's own federated Authentik identity"
+      }
+
+      # Authentik 2026.2.1's native client-credentials grant checks target policy with
+      # the source token's user. The Action Service independently verifies the target
+      # issuer, audience, signature, and expiry; it does not duplicate that policy.
+      resource "authentik_policy_binding" "agentplane_actions_access" {
+        target = authentik_application.agentplane_actions.uuid
+        user   = tonumber(authentik_user.agentydragon.id)
+        order  = 0
+      }
+
+      locals {
+        agentplane_actions_issuer = "https://auth.allegedly.works/application/o/${authentik_application.agentplane_actions.slug}/"
+      }
+
+      # External MCP authentication is separate from app login and operator federation.
+      resource "authentik_provider_oauth2" "agentplane_mcp" {
+        name                       = "agentplane-staging-mcp"
+        client_id                  = "agentplane-staging-mcp"
+        client_type                = "confidential"
+        authorization_flow         = data.authentik_flow.implicit_consent.id
+        invalidation_flow          = data.authentik_flow.invalidation.id
+        signing_key                = data.authentik_certificate_key_pair.self_signed.id
+        issuer_mode                = "per_provider"
+        sub_mode                   = "user_uuid"
+        include_claims_in_id_token = true
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.offline_access.id,
+        ]
+        allowed_redirect_uris = [{
+          matching_mode     = "strict"
+          url               = "${local.agentplane_mcp_origin}/auth/callback"
+          redirect_uri_type = "authorization"
+        }]
+      }
+
+      resource "authentik_application" "agentplane_mcp" {
+        name              = "Agentplane staging MCP"
+        slug              = "agentplane-staging-mcp"
+        protocol_provider = authentik_provider_oauth2.agentplane_mcp.id
+        meta_description  = "External MCP enrollment with operator consent in the Agentplane integration app"
+      }
+
+      resource "authentik_policy_binding" "agentplane_mcp_access" {
+        target = authentik_application.agentplane_mcp.uuid
+        user   = tonumber(authentik_user.agentydragon.id)
+        order  = 0
+      }
+
+      resource "random_password" "agentplane_mcp_signing_key" {
+        length  = 64
+        special = false
+        lifecycle {
+          prevent_destroy = true
+        }
+      }
+
+      resource "random_id" "agentplane_mcp_encryption_key" {
+        byte_length = 32
+        lifecycle {
+          prevent_destroy = true
+        }
+      }
+
+      locals {
+        agentplane_mcp_origin = "https://agentplane-actions-staging.allegedly.works"
+        agentplane_mcp_issuer = "https://auth.allegedly.works/application/o/${authentik_application.agentplane_mcp.slug}/"
+        agentplane_mcp_oauth = {
+          config_url                  = "${local.agentplane_mcp_issuer}.well-known/openid-configuration"
+          upstream_client_id          = authentik_provider_oauth2.agentplane_mcp.client_id
+          upstream_client_secret_file = "/etc/agentplane-mcp/client-secret"
+          base_url                    = local.agentplane_mcp_origin
+          integration_app_url         = "https://agentplane-staging.allegedly.works"
+          jwt_signing_key_file        = "/etc/agentplane-mcp/jwt-signing-key"
+          encryption_key_file         = "/etc/agentplane-mcp/encryption-key"
+          upstream_issuer             = local.agentplane_mcp_issuer
+          upstream_subject            = data.authentik_user.agentydragon.uuid
+          # The Actions provider issues `sub_mode = "hashed_user_id"` tokens, whose subject is the
+          # user's `uid`, not the `uuid` the MCP provider above issues.
+          approving_operator = {
+            issuer  = local.agentplane_actions_issuer
+            subject = data.authentik_user.agentydragon.uid
+          }
+        }
+      }
+
+      resource "kubernetes_secret" "agentplane_mcp_oauth" {
+        metadata {
+          name      = "agentplane-mcp-oauth"
+          namespace = "authentik"
+          annotations = {
+            description                                                     = "Agentplane external MCP client, stable token signing key and encrypted OAuth storage key"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "agentplane-staging"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "agentplane-staging"
+          }
+        }
+        data = {
+          oauth           = jsonencode(local.agentplane_mcp_oauth)
+          client-secret   = authentik_provider_oauth2.agentplane_mcp.client_secret
+          jwt-signing-key = random_password.agentplane_mcp_signing_key.result
+          # Fernet requires URL-safe base64 of exactly 32 bytes, retaining padding.
+          encryption-key = replace(replace(random_id.agentplane_mcp_encryption_key.b64_std, "+", "-"), "/", "_")
+        }
+        lifecycle {
+          precondition {
+            condition     = data.authentik_user.agentydragon.uuid != "" && data.authentik_user.agentydragon.uid != ""
+            error_message = "The MCP operator must have authoritative Authentik uuid and uid subjects."
+          }
+        }
+      }
+
+      # Agentplane staging — OIDC login for the integration app (agentplane-staging.allegedly.works)
+      #
+      # The app is the relying party (authlib + a signed session cookie; see agentplane/app/oidc.py).
+      # The application slug is the per-provider issuer path, which the app pins the id token's `iss`
+      # against, so `agentplane-staging` cannot be renamed without changing the app's configured issuer
+      # and login JWKS URI (`cluster/cdk8s/agentplane/staging.py`).
+
+      resource "authentik_provider_oauth2" "agentplane_staging" {
+        name               = "agentplane-staging-oauth2"
+        client_id          = "agentplane-staging"
+        client_type        = "confidential"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        # Both the login and Action providers emit the same managed user uid, so the
+        # exchange preserves identity without a provider-specific subject mapping.
+        sub_mode                   = "hashed_user_id"
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        # The profile scope supplies display names only; authorization uses issuer + sub.
+        # offline_access issues the refresh token that renews the short-lived access token the app's
+        # Action federation presents, for as long as the app's own session lasts.
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.offline_access.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://agentplane-staging.allegedly.works/auth/callback"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "agentplane_staging" {
+        name              = "Agentplane staging"
+        slug              = "agentplane-staging"
+        protocol_provider = authentik_provider_oauth2.agentplane_staging.id
+        meta_description  = "Agentplane integration app on staging - sandboxes running Claude Code and Codex on the cheap-experiments key"
+        meta_launch_url   = "https://agentplane-staging.allegedly.works"
+        open_in_new_tab   = true
+      }
+
+      # Who may log in. Authentik's binding is the whole allowlist: the app treats any identity this
+      # issuer signs as an operator, so widening access here is what grants it.
+      resource "authentik_policy_binding" "agentplane_staging_access" {
+        target = authentik_application.agentplane_staging.uuid
+        user   = tonumber(authentik_user.agentydragon.id)
+        order  = 0
+      }
+
+      resource "kubernetes_secret" "agentplane_staging_oidc" {
+        metadata {
+          name      = "agentplane-oidc"
+          namespace = "authentik"
+          annotations = {
+            description                                                     = "Agentplane staging OAuth client credentials and operator session secret"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "agentplane-staging"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "agentplane-staging"
+          }
+        }
+
+        data = {
+          client-id     = authentik_provider_oauth2.agentplane_staging.client_id
+          client-secret = authentik_provider_oauth2.agentplane_staging.client_secret
+        }
+      }
+
+      # Airlock — server-side OIDC login for the OAuth credential broker.
+      # The backend exchanges the authorization code and signs an HttpOnly session
+      # cookie; the browser never receives Authentik access or ID tokens.
+
+      resource "authentik_provider_oauth2" "airlock" {
+        name               = "airlock-server"
+        client_id          = "airlock-server"
+        client_type        = "confidential"
+        grant_types        = ["authorization_code"]
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+        access_token_validity      = "hours=24"
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://airlock.allegedly.works/auth/callback"
+            redirect_uri_type = "authorization"
+          }
+        ]
+      }
+
+      resource "authentik_application" "airlock" {
+        name              = "Airlock"
+        slug              = "airlock-server"
+        protocol_provider = authentik_provider_oauth2.airlock.id
+        meta_description  = "OAuth credential broker"
+        meta_launch_url   = "https://airlock.allegedly.works"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "airlock_admins" {
+        target = authentik_application.airlock.uuid
+        group  = data.authentik_group.admins.id
+        order  = 0
+      }
+
+      resource "kubernetes_secret" "airlock_oidc" {
+        metadata {
+          name      = "airlock-oidc-config"
+          namespace = "authentik"
+          annotations = {
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "airlock"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "airlock"
+          }
+        }
+
+        data = {
+          client-id     = authentik_provider_oauth2.airlock.client_id
+          client-secret = authentik_provider_oauth2.airlock.client_secret
+        }
+      }
+
+      # The Claude session sync's pairing page (claude-session-sync.allegedly.works) handles its own
+      # Authentik login: the app owns the OIDC code exchange and keeps only a signed, short-lived cookie.
+      # The page pairs a Claude OAuth grant, so it is scoped to the account owner only, twice: this
+      # application's policy binding and the allowed `sub` the app itself checks.
+      # cluster/cdk8s/claude_session_sync/app.py consumes the Secret below and spells the same origin.
+
+      resource "random_password" "claude_session_sync_session_secret" {
+        length  = 64
+        special = false
+      }
+
+      resource "authentik_provider_oauth2" "claude_session_sync" {
+        name               = "claude-session-sync-oidc"
+        client_id          = "claude-session-sync"
+        client_type        = "confidential"
+        grant_types        = ["authorization_code"]
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+        # The app's allowlist below is this same immutable numeric user ID.
+        sub_mode              = "user_id"
+        access_token_validity = "hours=1"
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://claude-session-sync.allegedly.works/auth/callback"
+            redirect_uri_type = "authorization"
+          }
+        ]
+      }
+
+      resource "authentik_application" "claude_session_sync" {
+        name              = "Claude session sync"
+        slug              = "claude-session-sync"
+        protocol_provider = authentik_provider_oauth2.claude_session_sync.id
+        meta_description  = "Pair the Claude Code session sync and watch it mirror sessions into Postgres"
+        meta_launch_url   = "https://claude-session-sync.allegedly.works/"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "claude_session_sync_owner_only" {
+        target = authentik_application.claude_session_sync.uuid
+        user   = tonumber(authentik_user.agentydragon.id)
+        order  = 0
+      }
+
+      # Reflector mirrors this into the app's namespace. The keys are the environment variables of the
+      # web app's `WebSettings` (devinfra/claude/session_export/settings.py), which the Deployment reads
+      # from them one by one.
+      resource "kubernetes_secret" "claude_session_sync_oidc" {
+        metadata {
+          name      = "claude-session-sync-oidc"
+          namespace = "authentik"
+          annotations = {
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "claude-session-sync"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "claude-session-sync"
+          }
+        }
+
+        data = {
+          SESSION_SYNC_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/claude-session-sync/"
+          SESSION_SYNC_OIDC_CLIENT_ID       = authentik_provider_oauth2.claude_session_sync.client_id
+          SESSION_SYNC_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.claude_session_sync.client_secret
+          SESSION_SYNC_OIDC_SESSION_SECRET  = random_password.claude_session_sync_session_secret.result
+          SESSION_SYNC_OIDC_ALLOWED_SUBJECT = tostring(authentik_user.agentydragon.id)
+        }
+      }
+
+      # CLIProxyAPI's built-in management UI/API (cli-proxy-api-admin.allegedly.works) — mints
+      # and recovers the Codex/Claude OAuth sessions backing OpenClaw's chatgpt-sub/oai-responses/*
+      # models. cluster/k8s/cli-proxy-api/README.md "Remote recovery" has the recovery flow.
+      #
+      # The backend owns the OIDC code exchange and browser session. Model API keys
+      # and the management key used by AIQuota remain independent of browser authentication.
+      #
+      # Scoped to the account owner only: this UI mints OAuth credentials against personal
+      # ChatGPT/Claude accounts, so nobody else who might pass Authentik login should reach it.
+
+      resource "authentik_provider_oauth2" "cli_proxy_api_admin" {
+        name                  = "cli-proxy-api-admin-oidc"
+        client_id             = "cli-proxy-api-admin"
+        client_type           = "confidential"
+        authorization_flow    = data.authentik_flow.implicit_consent.id
+        invalidation_flow     = data.authentik_flow.invalidation.id
+        signing_key           = data.authentik_certificate_key_pair.self_signed.id
+        access_token_validity = "hours=1"
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+        # The backend allowlist below uses this same immutable numeric user ID.
+        sub_mode = "user_id"
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+        ]
+        allowed_redirect_uris = [
+          # Keep the running v7 pod's callback valid until the v8 image has rolled out.
+          # Remove this entry after that rollout; the v8 backend does not serve this path.
+          {
+            matching_mode     = "strict"
+            url               = "https://cli-proxy-api-admin.allegedly.works/v0/management/callback"
+            redirect_uri_type = "authorization"
+          },
+          {
+            matching_mode     = "strict"
+            url               = "https://cli-proxy-api-admin.allegedly.works/v8/management/auth/oidc/callback"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "cli_proxy_api_admin" {
+        name              = "CLIProxyAPI Admin"
+        slug              = "cli-proxy-api-admin"
+        protocol_provider = authentik_provider_oauth2.cli_proxy_api_admin.id
+        meta_description  = "CLIProxyAPI management UI: mint/refresh the Codex and Claude OAuth sessions"
+        meta_launch_url   = "https://cli-proxy-api-admin.allegedly.works/management.html"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "cli_proxy_api_admin_owner_only" {
+        target = authentik_application.cli_proxy_api_admin.uuid
+        user   = tonumber(authentik_user.agentydragon.id)
+        order  = 0
+      }
+
+      resource "kubernetes_secret" "cli_proxy_api_admin_oidc" {
+        metadata {
+          name      = "cli-proxy-api-admin-oidc"
+          namespace = "authentik"
+          annotations = {
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "cli-proxy-api"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "cli-proxy-api"
+          }
+        }
+
+        data = {
+          MANAGEMENT_OIDC_ISSUER           = "https://auth.allegedly.works/application/o/cli-proxy-api-admin/"
+          MANAGEMENT_OIDC_CLIENT_ID        = authentik_provider_oauth2.cli_proxy_api_admin.client_id
+          MANAGEMENT_OIDC_CLIENT_SECRET    = authentik_provider_oauth2.cli_proxy_api_admin.client_secret
+          MANAGEMENT_OIDC_REDIRECT_URL     = "https://cli-proxy-api-admin.allegedly.works/v8/management/auth/oidc/callback"
+          MANAGEMENT_OIDC_ALLOWED_SUBJECTS = tostring(authentik_user.agentydragon.id)
+        }
+      }
+
+      # Forgejo — OIDC login for the git server
+
+      resource "authentik_provider_oauth2" "forgejo" {
+        name               = "forgejo-oauth2"
+        client_id          = "forgejo"
+        client_type        = "confidential"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://git.allegedly.works/user/oauth2/authentik/callback"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "forgejo" {
+        name              = "Forgejo"
+        slug              = "forgejo"
+        protocol_provider = authentik_provider_oauth2.forgejo.id
+        meta_description  = "Forgejo Git Repository Management"
+        meta_publisher    = "Forgejo"
+        meta_icon         = "https://cdn.simpleicons.org/forgejo"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "forgejo_admins" {
+        target = authentik_application.forgejo.uuid
+        group  = data.authentik_group.admins.id
+        order  = 0
+      }
+
+      # Forgejo helm chart expects keys named "key" (client_id) and "secret" (client_secret).
+      resource "kubernetes_secret" "forgejo_oauth" {
+        metadata {
+          name      = "forgejo-oauth-client-secret"
+          namespace = "authentik"
+          annotations = {
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "forgejo,flux-system"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "forgejo,flux-system"
+          }
+        }
+
+        data = {
+          key    = authentik_provider_oauth2.forgejo.client_id
+          secret = authentik_provider_oauth2.forgejo.client_secret
+        }
+      }
+
+      # GitLab's OIDC subject uses Authentik's stable user UID; the GitLab module
+      # reads the same UID from the reflected identity Secret before linking it.
+      resource "authentik_provider_oauth2" "gitlab_spike" {
+        name               = "gitlab-spike-oauth2"
+        client_id          = "gitlab-spike"
+        client_type        = "confidential"
+        grant_types        = ["authorization_code"]
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        sub_mode                   = "hashed_user_id"
+        include_claims_in_id_token = true
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://gitlab-spike.allegedly.works/users/auth/openid_connect/callback"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "gitlab_spike" {
+        name              = "GitLab Spike"
+        slug              = "gitlab-spike"
+        protocol_provider = authentik_provider_oauth2.gitlab_spike.id
+        meta_description  = "GitLab replacement spike"
+        meta_publisher    = "GitLab"
+      }
+
+      resource "authentik_policy_binding" "gitlab_spike_agentydragon" {
+        target = authentik_application.gitlab_spike.uuid
+        user   = tonumber(authentik_user.agentydragon.id)
+        order  = 0
+      }
+
+      # The chart consumes `provider`; the Terraform GitLab module consumes the
+      # actual stable subject and account attributes from the same reflected Secret.
+      resource "kubernetes_secret_v1" "gitlab_spike_oidc" {
+        metadata {
+          name      = "gitlab-spike-oidc"
+          namespace = "authentik"
+          annotations = {
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "gitlab-spike"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "gitlab-spike"
+          }
+        }
+
+        data = {
+          provider = yamlencode({
+            name  = "openid_connect"
+            label = "Authentik"
+            args = {
+              name               = "openid_connect"
+              scope              = ["openid", "profile", "email"]
+              response_type      = "code"
+              issuer             = "https://auth.allegedly.works/application/o/gitlab-spike/"
+              discovery          = true
+              client_auth_method = "query"
+              uid_field          = "sub"
+              client_options = {
+                identifier   = authentik_provider_oauth2.gitlab_spike.client_id
+                secret       = authentik_provider_oauth2.gitlab_spike.client_secret
+                redirect_uri = "https://gitlab-spike.allegedly.works/users/auth/openid_connect/callback"
+              }
+            }
+          })
+          subject  = data.authentik_user.agentydragon.uid
+          username = data.authentik_user.agentydragon.username
+          email    = data.authentik_user.agentydragon.email
+          name     = data.authentik_user.agentydragon.name
+        }
+      }
+
+      # Grafana — OIDC login for the monitoring dashboard
+
+      resource "authentik_provider_oauth2" "grafana" {
+        name               = "grafana-oauth2"
+        client_id          = "grafana"
+        client_type        = "confidential"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://grafana.allegedly.works/login/generic_oauth"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "grafana" {
+        name              = "Grafana"
+        slug              = "grafana"
+        protocol_provider = authentik_provider_oauth2.grafana.id
+        meta_icon         = "https://cdn.simpleicons.org/grafana"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "grafana_admins" {
+        target = authentik_application.grafana.uuid
+        group  = data.authentik_group.admins.id
+        order  = 0
+      }
+
+      resource "kubernetes_secret" "grafana_oidc" {
+        metadata {
+          name      = "grafana-oidc-config"
+          namespace = "authentik"
+          annotations = {
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "monitoring"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "monitoring"
+          }
+        }
+
+        data = {
+          GF_AUTH_GENERIC_OAUTH_CLIENT_ID     = authentik_provider_oauth2.grafana.client_id
+          GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET = authentik_provider_oauth2.grafana.client_secret
+        }
+      }
+
+      # Headlamp — OIDC login for the Kubernetes dashboard
+
+      resource "authentik_provider_oauth2" "headlamp" {
+        name               = "headlamp"
+        client_id          = "headlamp"
+        client_type        = "confidential"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+        # Authentik defaults to 10-minute access tokens; Headlamp refreshes them on API requests.
+        access_token_validity = "hours=24"
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.offline_access.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://headlamp.allegedly.works/oidc-callback"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "headlamp" {
+        name              = "Headlamp"
+        slug              = "headlamp"
+        protocol_provider = authentik_provider_oauth2.headlamp.id
+        meta_description  = "Kubernetes cluster UI"
+        meta_launch_url   = "https://headlamp.allegedly.works"
+        meta_icon         = "https://raw.githubusercontent.com/kubernetes-sigs/headlamp/main/frontend/public/android-chrome-512x512.png"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "headlamp_admins" {
+        target = authentik_application.headlamp.uuid
+        group  = data.authentik_group.admins.id
+        order  = 0
+      }
+
+      resource "kubernetes_secret" "headlamp_oidc" {
+        metadata {
+          name      = "headlamp-oidc-secret"
+          namespace = "authentik"
+          annotations = {
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "headlamp"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "headlamp"
+          }
+        }
+
+        data = {
+          OIDC_CLIENT_ID     = authentik_provider_oauth2.headlamp.client_id
+          OIDC_CLIENT_SECRET = authentik_provider_oauth2.headlamp.client_secret
+          OIDC_ISSUER_URL    = "https://auth.allegedly.works/application/o/headlamp/"
+          OIDC_SCOPES        = "profile,email,offline_access"
+        }
+      }
+
+      # Home Assistant — public OIDC client with authorization-code flow and PKCE.
+      # The client has no secret to distribute. Home Assistant keeps its native auth
+      # provider enabled as a break-glass path if Authentik is unavailable.
+
+      resource "authentik_provider_oauth2" "home_assistant" {
+        name               = "home-assistant-oauth2"
+        client_id          = "home-assistant"
+        client_type        = "public"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://home.allegedly.works/auth/oidc/callback"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "home_assistant" {
+        name              = "Home Assistant"
+        slug              = "home-assistant"
+        protocol_provider = authentik_provider_oauth2.home_assistant.id
+        meta_icon         = "https://cdn.simpleicons.org/homeassistant"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "home_assistant_users" {
+        target = authentik_application.home_assistant.uuid
+        group  = authentik_group.home_assistant_users.id
+        order  = 0
+      }
+
+      # Langfuse — OIDC login for the LLM observability dashboard
+      # (langfuse.allegedly.works)
+      #
+      # Langfuse is a NextAuth relying party that speaks generic OIDC via its
+      # AUTH_CUSTOM_* env vars. This provider mints the confidential client; the
+      # client_id/secret are written to a K8s secret in the authentik namespace and
+      # reflected into the langfuse namespace, where the HelmRelease consumes them as
+      # AUTH_CUSTOM_CLIENT_ID / AUTH_CUSTOM_CLIENT_SECRET. Login is gated to the
+      # admins group; email/password login is disabled in the chart (SSO-only).
+
+      resource "authentik_provider_oauth2" "langfuse" {
+        name               = "langfuse-oauth2"
+        client_id          = "langfuse"
+        client_type        = "confidential"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://langfuse.allegedly.works/api/auth/callback/custom"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "langfuse" {
+        name              = "Langfuse"
+        slug              = "langfuse"
+        protocol_provider = authentik_provider_oauth2.langfuse.id
+        meta_description  = "LLM observability and tracing dashboard"
+        meta_launch_url   = "https://langfuse.allegedly.works"
+        meta_icon         = "https://cdn.simpleicons.org/langfuse"
+      }
+
+      # Gate login to the admins group (which contains agentydragon). Authentik is
+      # the sole authentication path, so this binding is the access boundary.
+      resource "authentik_policy_binding" "langfuse_admins" {
+        target = authentik_application.langfuse.uuid
+        group  = data.authentik_group.admins.id
+        order  = 0
+      }
+
+      resource "kubernetes_secret" "langfuse_oidc" {
+        metadata {
+          name      = "langfuse-oidc-config"
+          namespace = "authentik"
+          annotations = {
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "langfuse"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "langfuse"
+          }
+        }
+
+        data = {
+          client-id     = authentik_provider_oauth2.langfuse.client_id
+          client-secret = authentik_provider_oauth2.langfuse.client_secret
+        }
+      }
+
+      # Matrix — OIDC login for Element Web / Synapse
+
+      resource "authentik_provider_oauth2" "matrix" {
+        name               = "matrix-oauth2"
+        client_id          = "matrix"
+        client_type        = "confidential"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://matrix.allegedly.works/_synapse/client/oidc/callback"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "matrix" {
+        name              = "Element"
+        slug              = "matrix"
+        protocol_provider = authentik_provider_oauth2.matrix.id
+        meta_description  = "Matrix Chat (Element Web)"
+        meta_launch_url   = "https://chat.allegedly.works"
+        meta_icon         = "https://cdn.simpleicons.org/element"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "matrix_admins" {
+        target = authentik_application.matrix.uuid
+        group  = data.authentik_group.admins.id
+        order  = 0
+      }
+
+      # Secret reflected to matrix namespace; consumed by Matrix HelmRelease via valuesFrom.
+      resource "kubernetes_secret" "matrix_oidc" {
+        metadata {
+          name      = "matrix-oidc-config"
+          namespace = "authentik"
+          annotations = {
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "matrix"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "matrix"
+          }
+        }
+
+        data = {
+          # Synapse reads this via HelmRelease valuesFrom (key: values.yaml).
+          # The {{ }} templates are Synapse Jinja2 — not HCL interpolation.
+          "values.yaml" = <<-EOT
+            extraConfig:
+              oidc_providers:
+                - idp_id: authentik
+                  idp_name: "Authentik SSO"
+                  issuer: "https://auth.allegedly.works/application/o/matrix/"
+                  client_id: "${authentik_provider_oauth2.matrix.client_id}"
+                  client_secret: "${authentik_provider_oauth2.matrix.client_secret}"
+                  discover: true
+                  scopes:
+                    - openid
+                    - profile
+                    - email
+                  allow_existing_users: true
+                  enable_registration: true
+                  user_mapping_provider:
+                    config:
+                      localpart_template: "{{ user.preferred_username }}"
+                      display_name_template: "{{ user.name }}"
+                      email_template: "{{ user.email }}"
+          EOT
+        }
+      }
+
+      # Paperless-ngx — OIDC login for the document management system.
+      # Single-user (agentydragon): access and Django superuser status are gated by the
+      # dedicated `paperless_admins` group. The Paperless bootstrap Job creates the
+      # matching local groups and their permissions; Authentik owns membership.
+
+      resource "authentik_group" "paperless_admins" {
+        name  = "paperless_admins"
+        users = [tonumber(authentik_user.agentydragon.id)]
+      }
+
+      # Paperless's group synchronizer expects the claim values to be names of existing
+      # local Django groups. Keep this mapping app-specific rather than exposing every
+      # Authentik group to Paperless.
+      resource "authentik_property_mapping_provider_scope" "paperless_groups" {
+        name       = "paperless-groups"
+        scope_name = "groups"
+        expression = <<-EXPR
+          authentik_groups = [group.name for group in request.user.ak_groups.all()]
+          if "paperless_admins" in authentik_groups:
+              return {"groups": ["paperless_admins"]}
+          return {"groups": []}
+        EXPR
+      }
+
+      resource "authentik_provider_oauth2" "paperless" {
+        name               = "paperless-oauth2"
+        client_id          = "paperless"
+        client_type        = "confidential"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          authentik_property_mapping_provider_scope.paperless_groups.id,
+        ]
+
+        # django-allauth openid_connect callback (provider_id = "authentik").
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://paperless.allegedly.works/accounts/oidc/authentik/login/callback/"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "paperless" {
+        name              = "Paperless-ngx"
+        slug              = "paperless"
+        protocol_provider = authentik_provider_oauth2.paperless.id
+        meta_description  = "Document management system"
+        meta_publisher    = "Paperless-ngx"
+        meta_icon         = "https://raw.githubusercontent.com/paperless-ngx/paperless-ngx/main/resources/logo/web/svg/square.svg"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "paperless_admins" {
+        target = authentik_application.paperless.uuid
+        group  = authentik_group.paperless_admins.id
+        order  = 0
+      }
+
+      # Paperless reads PAPERLESS_SOCIALACCOUNT_PROVIDERS as a JSON blob.
+      resource "kubernetes_secret" "paperless_sso_providers" {
+        metadata {
+          name      = "paperless-sso-providers"
+          namespace = "authentik"
+          annotations = {
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "paperless"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "paperless"
+          }
+        }
+
+        data = {
+          providers = jsonencode({
+            openid_connect = {
+              OAUTH_PKCE_ENABLED = true
+              SCOPE              = ["openid", "profile", "email", "groups"]
+              APPS = [{
+                provider_id = "authentik"
+                name        = "Log in via Authentik"
+                client_id   = authentik_provider_oauth2.paperless.client_id
+                secret      = authentik_provider_oauth2.paperless.client_secret
+                settings = {
+                  server_url     = "https://auth.allegedly.works/application/o/paperless/.well-known/openid-configuration"
+                  fetch_userinfo = true
+                }
+              }]
+            }
+          })
+        }
+      }
+
+      # Plaid Link's app handles its own Authentik login. The browser receives only a
+      # signed, short-lived session cookie; OAuth tokens and the client secret stay server-side.
+
+      resource "random_password" "plaid_link_session_secret" {
+        length  = 64
+        special = false
+      }
+
+      resource "authentik_provider_oauth2" "plaid_link" {
+        name               = "plaid-link-oidc"
+        client_id          = "plaid-link"
+        client_type        = "confidential"
+        grant_types        = ["authorization_code"]
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+        access_token_validity      = "hours=24"
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://plaid-mcp.allegedly.works/auth/callback"
+            redirect_uri_type = "authorization"
+          }
+        ]
+      }
+
+      # The Authentik blueprint created this Application when Plaid used proxy auth.
+      # Import it so the existing group binding and launch tile keep the same app identity.
+      import {
+        to = authentik_application.plaid_link
+        id = "plaid-link"
+      }
+
+      resource "authentik_application" "plaid_link" {
+        name              = "Plaid Link"
+        slug              = "plaid-link"
+        protocol_provider = authentik_provider_oauth2.plaid_link.id
+        meta_description  = "Human Plaid Link management UI for the synced Plaid database"
+        meta_launch_url   = "https://plaid-mcp.allegedly.works/link"
+        open_in_new_tab   = true
+      }
+
+      # ESO reads this exact Secret through a get-only Role in the authentik namespace
+      # and writes the app-scoped copy into plaid-mcp.
+      resource "kubernetes_secret" "plaid_link_oidc" {
+        metadata {
+          name      = "plaid-link-oidc-config"
+          namespace = "authentik"
+          annotations = {
+            description = "OIDC client and session signing keys for Plaid Link"
+          }
+        }
+
+        data = {
+          client_id      = authentik_provider_oauth2.plaid_link.client_id
+          client_secret  = authentik_provider_oauth2.plaid_link.client_secret
+          session_secret = random_password.plaid_link_session_secret.result
+        }
+      }
+
+      # Plaid Spend uses a public native OAuth client for GNOME. The server computes
+      # one shared view from the SOPS-managed cluster card configuration.
+
+      resource "authentik_provider_oauth2" "plaid_spend_desktop" {
+        name               = "plaid-spend-desktop-oauth2"
+        client_id          = "plaid-spend-desktop"
+        client_type        = "public"
+        grant_types        = ["authorization_code", "refresh_token"]
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        sub_mode                   = "user_uuid"
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+        access_token_validity      = "minutes=15"
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.offline_access.id,
+        ]
+
+        allowed_redirect_uris = [{
+          matching_mode     = "strict"
+          url               = "http://127.0.0.1:43821/callback"
+          redirect_uri_type = "authorization"
+        }]
+      }
+
+      resource "authentik_application" "plaid_spend_desktop" {
+        name              = "Plaid Spend Desktop"
+        slug              = "plaid-spend-desktop"
+        protocol_provider = authentik_provider_oauth2.plaid_spend_desktop.id
+        meta_description  = "Native GNOME indicator for the shared Plaid card spend view"
+        meta_launch_url   = "https://plaid-spend.allegedly.works/"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "plaid_spend_desktop_access" {
+        target = authentik_application.plaid_spend_desktop.uuid
+        user   = tonumber(authentik_user.agentydragon.id)
+        order  = 0
+      }
+
+      # The web UI is a confidential server-side client. The browser keeps only the
+      # short-lived signed session cookie; the OIDC tokens and client secret stay here.
+      resource "random_password" "plaid_spend_web_session_secret" {
+        length  = 64
+        special = false
+      }
+
+      resource "authentik_provider_oauth2" "plaid_spend_web" {
+        name               = "plaid-spend-web-oidc"
+        client_id          = "plaid-spend-web"
+        client_type        = "confidential"
+        grant_types        = ["authorization_code"]
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+        access_token_validity      = "hours=24"
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+        ]
+
+        allowed_redirect_uris = [{
+          matching_mode     = "strict"
+          url               = "https://plaid-spend.allegedly.works/auth/callback"
+          redirect_uri_type = "authorization"
+        }]
+      }
+
+      resource "authentik_application" "plaid_spend_web" {
+        name              = "Plaid Spend"
+        slug              = "plaid-spend-web"
+        protocol_provider = authentik_provider_oauth2.plaid_spend_web.id
+        meta_description  = "Browser view of the shared Plaid card spend data"
+        meta_launch_url   = "https://plaid-spend.allegedly.works/"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "plaid_spend_web_access" {
+        target = authentik_application.plaid_spend_web.uuid
+        user   = tonumber(authentik_user.agentydragon.id)
+        order  = 0
+      }
+
+      # ESO grants plaid-mcp access to this one Secret only, then mirrors it into the
+      # service namespace for the web process.
+      resource "kubernetes_secret" "plaid_spend_web_oidc" {
+        metadata {
+          name      = "plaid-spend-web-oidc-config"
+          namespace = "authentik"
+          annotations = {
+            description = "OIDC client and session signing keys for Plaid Spend web login"
+          }
+        }
+
+        data = {
+          client_id      = authentik_provider_oauth2.plaid_spend_web.client_id
+          client_secret  = authentik_provider_oauth2.plaid_spend_web.client_secret
+          session_secret = random_password.plaid_spend_web_session_secret.result
+        }
+      }
+
+      # Props — OIDC login for the eval dashboard (props.allegedly.works)
+      #
+      # The props backend is the OIDC relying party (authlib + session cookie); see
+      # props/backend/oidc.py. This provider mints the confidential client; the
+      # client_id/secret and a generated session-signing secret are written to a K8s
+      # secret in the authentik namespace and reflected into the props namespace,
+      # where the Deployment consumes them as PROPS_OIDC_* env vars.
+
+      resource "authentik_provider_oauth2" "props" {
+        name               = "props-oauth2"
+        client_id          = "props"
+        client_type        = "confidential"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://props.allegedly.works/auth/callback"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "props" {
+        name              = "Props"
+        slug              = "props"
+        protocol_provider = authentik_provider_oauth2.props.id
+        meta_description  = "LLM critic evaluation dashboard"
+        meta_launch_url   = "https://props.allegedly.works"
+      }
+
+      # Gate login to the admins group (which contains agentydragon). The backend
+      # additionally checks the email against PROPS_OIDC_ADMIN_EMAILS (defense in depth).
+      resource "authentik_policy_binding" "props_admins" {
+        target = authentik_application.props.uuid
+        group  = data.authentik_group.admins.id
+        order  = 0
+      }
+
+      # Signs the props session cookie (Starlette SessionMiddleware secret_key).
+      # Generated here so it lives with the client credentials and rotates together.
+      resource "random_password" "props_session_secret" {
+        length  = 64
+        special = false
+      }
+
+      resource "kubernetes_secret" "props_oidc" {
+        metadata {
+          name      = "props-oidc-config"
+          namespace = "authentik"
+          annotations = {
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "props"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "props"
+          }
+        }
+
+        data = {
+          client-id      = authentik_provider_oauth2.props.client_id
+          client-secret  = authentik_provider_oauth2.props.client_secret
+          session-secret = random_password.props_session_secret.result
+        }
+      }
+
+      # Study Casino — OIDC confidential client (Authorization Code flow)
+      #
+      # The casino handles its own OIDC flow (login/callback/logout endpoints),
+      # so it no longer needs the Authentik embedded proxy outpost. This file owns
+      # the full Authentik setup: OAuth2 provider, application, and policy bindings,
+      # plus the k8s Secret the pod reads for credentials.
+
+      resource "random_password" "study_casino_session_secret" {
+        length  = 48
+        special = false # only alphanumeric — no quoting issues in env vars
+      }
+
+      resource "random_password" "study_casino_rng_secret" {
+        length  = 64
+        special = false # only alphanumeric — no quoting issues in env vars
+      }
+
+      resource "authentik_provider_oauth2" "study_casino" {
+        name      = "study-casino"
+        client_id = "study-casino"
+        # confidential — the backend does the code exchange, client_secret stays server-side
+        client_type        = "confidential"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+        access_token_validity      = "hours=1"
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://casino.allegedly.works/auth/callback"
+            redirect_uri_type = "authorization"
+          }
+        ]
+      }
+
+      # The application was created by the blueprint before TF took over management
+      # (PR #1411). Import adopts the existing object; TF will reconcile attrs.
+      # Policy bindings below may create duplicates of blueprint-created bindings —
+      # those orphans are harmless and can be cleaned from the Authentik admin UI.
+      import {
+        to = authentik_application.study_casino
+        id = "study-casino"
+      }
+
+      resource "authentik_application" "study_casino" {
+        name              = "Study Casino"
+        slug              = "study-casino"
+        protocol_provider = authentik_provider_oauth2.study_casino.id
+        meta_description  = "Habit-tracking casino (personal)"
+        meta_launch_url   = "https://casino.allegedly.works"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "study_casino_admins" {
+        target = authentik_application.study_casino.uuid
+        group  = data.authentik_group.admins.id
+        order  = 0
+      }
+
+      resource "authentik_policy_binding" "study_casino_users" {
+        target = authentik_application.study_casino.uuid
+        group  = authentik_group.study_casino.id
+        order  = 1
+      }
+
+      resource "kubernetes_secret" "study_casino_oidc" {
+        metadata {
+          name      = "study-casino-oidc"
+          namespace = "study-casino"
+          annotations = {
+            description = "OIDC client credentials and session secret for the Study Casino app"
+          }
+        }
+
+        data = {
+          oidc_client_secret = authentik_provider_oauth2.study_casino.client_secret
+          session_secret     = random_password.study_casino_session_secret.result
+          rng_secret         = random_password.study_casino_rng_secret.result
+        }
+      }
+
+      # Google OAuth Source — "Sign in with Google" for Authentik
+      #
+      # Security model: We trust Google to authenticate users. If Google says
+      # user@example.com logged in, we accept that and link to the corresponding
+      # authentik user (if it exists with a matching email).
+      #
+      # - user_matching_mode = "email_link": On first Google login, auto-link
+      #   to existing authentik user with matching email. Creates the connection.
+      # - No new users are created — only pre-existing users can log in via Google.
+
+      # Read client secret from K8s secret (client ID is inlined)
+      data "kubernetes_secret" "google_oauth" {
+        metadata {
+          name      = "authentik-google-oauth"
+          namespace = "authentik"
+        }
+      }
+
+      locals {
+        google_client_id     = "230253529789-0rci9kjfqagfg9eg53kuckrbcoc74ahr.apps.googleusercontent.com"
+        google_client_secret = try(data.kubernetes_secret.google_oauth.data["GOOGLE_OAUTH_CLIENT_SECRET"], "")
+      }
+
+      data "authentik_flow" "default_source_authentication" {
+        count = local.google_client_id != "" ? 1 : 0
+        slug  = "default-source-authentication"
+      }
+
+      resource "authentik_source_oauth" "google" {
+        count = local.google_client_id != "" ? 1 : 0
+
+        name                = "Google"
+        slug                = "google"
+        provider_type       = "google"
+        authorization_url   = "https://accounts.google.com/o/oauth2/v2/auth"
+        access_token_url    = "https://oauth2.googleapis.com/token"
+        profile_url         = "https://openidconnect.googleapis.com/v1/userinfo"
+        oidc_jwks_url       = "https://www.googleapis.com/oauth2/v3/certs"
+        consumer_key        = local.google_client_id
+        consumer_secret     = local.google_client_secret
+        authentication_flow = data.authentik_flow.default_source_authentication[0].id
+        # On first Google login, link to existing user with matching email
+        # If user doesn't exist in authentik, login fails (no auto-creation)
+        user_matching_mode = "email_link"
+      }
+
+      # The Google source is wired into the login UI via a blueprint patch on the
+      # built-in `default-authentication-identification` stage — see
+      # cluster/k8s/authentik/app/blueprints/users.yaml. No dedicated stage or
+      # binding is needed here.
+
+      variable "authentik_url_override" {
+        type        = string
+        description = "Optional local override for the Authentik API URL."
+        default     = ""
+      }
+    planArgs:
+      - -lock-timeout=5m
+    source: Inline
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+  providerConfigRef:
+    name: crossplane-sso-providers
