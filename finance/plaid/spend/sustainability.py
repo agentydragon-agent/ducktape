@@ -351,7 +351,7 @@ def calculate_sustainability(
         issues.append(
             "Net refunds exceed purchases in this window; do not interpret a negative pace as sustainable income."
         )
-    history = []
+    history: list[SustainabilityHistoryPoint] = []
     # Reuse the same complete-day bounds and rounding as the headline. Every
     # historical point uses today's eligible assets, never reconstructed holdings.
     # A rolling-window series starts only once that entire window is covered.
