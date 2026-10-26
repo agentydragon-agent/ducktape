@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	execMode                    = "--agentplane-runner-exec"
-	workspaceMode               = "--agentplane-runner-workspace"
-	guestResourcePropertiesMode = "--guest-resource-properties"
+	execMode                 = "--agentplane-runner-exec"
+	workspaceMode            = "--agentplane-runner-workspace"
+	vmResourcePropertiesMode = "--vm-resource-properties"
 
 	parentLivenessFDDefault = 3
 	nativePIDFDDefault      = 4
@@ -45,18 +45,18 @@ func InternalMode(args []string) (handled bool, exitCode int) {
 		return true, ExecMain(args[1:])
 	case workspaceMode:
 		return true, WorkspaceMain(args[1:])
-	case guestResourcePropertiesMode:
-		return true, GuestResourcePropertiesMain(args[1:])
+	case vmResourcePropertiesMode:
+		return true, VMResourcePropertiesMain(args[1:])
 	default:
 		return false, 0
 	}
 }
 
-// GuestResourcePropertiesMain validates the read-only VM seed and prints the
+// VMResourcePropertiesMain validates the read-only VM seed and prints the
 // systemd properties that may be applied to the Runner service.
-func GuestResourcePropertiesMain(args []string) int {
+func VMResourcePropertiesMain(args []string) int {
 	if len(args) != 1 || args[0] == "" {
-		fmt.Fprintln(os.Stderr, "--guest-resource-properties requires one guest config path")
+		fmt.Fprintln(os.Stderr, "--vm-resource-properties requires one guest config path")
 		return 64
 	}
 	properties, err := guestResourceSystemdProperties(args[0])

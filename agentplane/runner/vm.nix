@@ -25,20 +25,15 @@ let
   workspaceDevice = "/dev/disk/by-id/virtio-workspace";
   workspaceDir = "/state/workspaces";
   runtimeDir = "/run/agentplane";
-  # The runner disk's mount point. The Go runner puts its bin directory on the harness PATH
-  # (guest.go), and //agentplane/runner:disk_image builds the disk.
+  # The Runner disk's mount point. runner.json includes its bin directory in harness PATH;
+  # //agentplane/runner:disk_image builds the disk.
   runnerDir = "${runtimeDir}/runner";
-  # The Go runner reads these files from runtimeDir. Each lives on
-  # the KubeVirt ConfigMap disk of serial `agentplane-<disk>`, mounted at `${runtimeDir}/<disk>`.
-  seedDiskOf = {
-    "config.json" = "config";
-    "kubeconfig" = "config";
-    "runner.env" = "config";
-    "launch.json" = "launch";
-    "ca-certificates.crt" = "trust";
-    "ca-certificates.p12" = "trust";
+  # Pod and VM expose the same logical directories. Values are KubeVirt disk serial suffixes.
+  seedDisks = {
+    config = "config";
+    sandbox = "launch";
+    trust = "trust";
   };
-  seedDisks = lib.unique (lib.attrValues seedDiskOf);
   # virtiofsd's identity (above); the Go runner runs harnesses as this user.
   agentUser = "agent";
   agentId = 107;
@@ -76,11 +71,11 @@ let
   # for these units, would show.
   consoleAutologinIs =
     autologin:
-    "${pkgs.jq}/bin/jq 'if (.console_autologin == true) == ${lib.boolToString autologin} then empty else (\"\" | halt_error(1)) end' ${runtimeDir}/config.json";
+    "${pkgs.jq}/bin/jq 'if (.console_autologin == true) == ${lib.boolToString autologin} then empty else (\"\" | halt_error(1)) end' ${runtimeDir}/config/vm.json";
   applyRunnerResourceLimits = pkgs.writeShellScript "agentplane-runner-resource-limits" ''
     set -eu
     properties="$(
-      ${runnerDir}/bin/agentplane-runner-vm --guest-resource-properties ${runtimeDir}/config.json
+      ${runnerDir}/bin/agentplane-runner --vm-resource-properties ${runtimeDir}/config/vm.json
     )"
     set --
     while IFS= read -r property; do
@@ -236,23 +231,21 @@ in
   }
   # KubeVirt builds a ConfigMap disk as an ISO 9660 image with Rock Ridge names. `nofail` leaves a
   # missing disk to the runner, which requires its mount, rather than to local-fs.target.
-  // lib.listToAttrs (
-    map (
-      disk:
-      lib.nameValuePair "${runtimeDir}/${disk}" {
-        device = "/dev/disk/by-id/virtio-agentplane-${disk}";
-        fsType = "iso9660";
-        noCheck = true;
-        options = [
-          "ro"
-          "nosuid"
-          "nodev"
-          "noexec"
-          "nofail"
-        ];
-      }
-    ) seedDisks
-  );
+  // lib.mapAttrs' (
+    directory: serial:
+    lib.nameValuePair "${runtimeDir}/${directory}" {
+      device = "/dev/disk/by-id/virtio-agentplane-${serial}";
+      fsType = "iso9660";
+      noCheck = true;
+      options = [
+        "ro"
+        "nosuid"
+        "nodev"
+        "noexec"
+        "nofail"
+      ];
+    }
+  ) seedDisks;
 
   # Ownership, the setgid mode and inherited harness access are persistent tmpfiles policy rather
   # than imperative chown/chmod/setfacl commands. The service below reapplies it after the mount.
@@ -263,10 +256,7 @@ in
     "d ${workspaceDir}/.home 0700 ${agentUser} ${agentUser} -"
     "z ${workspaceDir}/.home 0700 ${agentUser} ${agentUser} -"
     "d ${runtimeDir} 0755 root root -"
-  ]
-  ++ lib.mapAttrsToList (
-    file: disk: "L ${runtimeDir}/${file} - - - - ${runtimeDir}/${disk}/${file}"
-  ) seedDiskOf;
+  ];
 
   systemd.services.agentplane-workspace = {
     description = "Give the harness user the Agentplane workspace";
@@ -298,7 +288,7 @@ in
       workspaceDir
       runnerDir
     ]
-    ++ map (disk: "${runtimeDir}/${disk}") seedDisks;
+    ++ map (directory: "${runtimeDir}/${directory}") (lib.attrNames seedDisks);
     path = [
       pkgs.coreutils
       pkgs.systemd
@@ -308,9 +298,9 @@ in
       OPENAI_API_KEY = "agentplane-credential-agentplane-workload";
     };
     serviceConfig = {
-      EnvironmentFile = "${runtimeDir}/runner.env";
+      EnvironmentFile = "${runtimeDir}/config/runner.env";
       Type = "simple";
-      ExecStart = "${runnerDir}/bin/agentplane-runner-vm";
+      ExecStart = "${runnerDir}/bin/agentplane-runner --config ${runtimeDir}/config/runner.json --launch-file ${runtimeDir}/sandbox/launch.json";
       UMask = "0007";
       Restart = "on-failure";
       RestartSec = "2s";

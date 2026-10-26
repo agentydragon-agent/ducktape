@@ -18,7 +18,6 @@ alias(
 
 # The runner and `agentplane` CLI, in one image that a Pod mounts as an image volume (`bin/`) and a
 # runner VM attaches as a KubeVirt containerDisk (`disk/runner.img`, an erofs of the same `bin/`).
-# The guest executes `agentplane-runner-vm`.
 pkg_tar(
     name = "disk_bin",
     srcs = [
@@ -27,7 +26,6 @@ pkg_tar(
     ],
     mode = "0755",
     package_dir = "/bin",
-    symlinks = {"agentplane-runner-vm": "agentplane-runner"},
 )
 
 erofs_image(
@@ -570,5 +568,24 @@ go_test(
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_sys//unix",
+    ],
+)
+
+py_library(
+    name = "configuration",
+    srcs = ["configuration.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_configuration",
+    srcs = ["test_configuration.py"],
+    deps = [
+        ":configuration",
+        ":conftest",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

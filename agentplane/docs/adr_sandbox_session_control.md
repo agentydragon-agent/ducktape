@@ -197,7 +197,7 @@ ingress has acknowledged it.
 
 **Lameduck belongs to an incarnation.** A runner restart inside an incarnation (a crashed runner container, a guest
 reboot in the same VMI) keeps the runner quiesced; a new incarnation on the same state volume starts unquiesced. The
-runner records the state under `--state-dir`, which is the state volume and therefore outlives the incarnation, so the
+runner records the state under configured `state_dir`, which is the state volume and therefore outlives the incarnation, so the
 marker names the incarnation it was entered in:
 
 - **Incarnation identity.** The runner does not choose it. The gateway already authenticates the

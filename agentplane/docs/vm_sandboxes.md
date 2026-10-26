@@ -112,7 +112,7 @@ harness alive when its tools exceed their budget also requires a separate tool m
 The subsequent conversation-recovery failure is addressed separately in
 [PR #11091](https://github.com/agentydragon/ducktape/pull/11091).
 
-- The VM template and guest runner share the strict version-2 `GuestResources` seed. The template
+- The VM template and guest runner share the typed `GuestResources` policy. The template
   takes its KubeVirt memory request and vCPU count from that object; an `ExecStartPre` reads the same
   seed and applies the Runner systemd caps after the ConfigMap disk is mounted and before the Runner
   starts. The staging template specifies:

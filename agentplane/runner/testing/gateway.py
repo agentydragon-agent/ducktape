@@ -17,8 +17,8 @@ from agentplane.grpc.tunnel import TunnelCaller
 from agentplane.history_service import runner_ingress_pb2, runner_ingress_pb2_grpc
 from agentplane.proto import event_log_pb2, grpc_tunnel_pb2
 from agentplane.runner import runner_service_pb2_grpc
+from agentplane.runner.configuration import Endpoint
 from agentplane.runner_gateway import runner_control_pb2, runner_control_pb2_grpc
-from agentplane.sandboxes.guest_config import Endpoint
 
 # gazelle:include_dep @pypi//protobuf
 

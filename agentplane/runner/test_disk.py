@@ -1,8 +1,4 @@
-"""The runner disk holds what the VM guest and a runner Pod execute.
-
-Neither runs in CI, so this pins the paths they start: the guest's systemd unit runs
-`bin/agentplane-runner-vm` and a Pod runs `bin/agentplane-runner`.
-"""
+"""The shared runner disk supplies the executable both Pods and VMs start."""
 
 import os
 import subprocess
@@ -28,7 +24,6 @@ def test_runner_disk_holds_the_executables(tmp_path: Path) -> None:
 
     for name in ("agentplane", "agentplane-runner"):
         assert os.access(tmp_path / "bin" / name, os.X_OK)
-    assert (tmp_path / "bin/agentplane-runner-vm").readlink() == Path("agentplane-runner")
 
 
 if __name__ == "__main__":

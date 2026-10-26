@@ -36,42 +36,15 @@ def _resources() -> dict[str, object]:
 
 
 def _config(**updates: object) -> GuestConfig:
-    values: dict[str, object] = {
-        "version": 2,
-        "control": {"target": "test-gateway.test:7100", "bearer": "test-control-placeholder"},
-        "ingress": {"target": "test-history.test:8081", "bearer": "test-ingress-placeholder"},
-        "resources": _resources(),
-        "llm_base_url": "http://llm-ingress.agentplane.svc.cluster.local:8080",
-        "proxy_url": "http://10.0.2.2:3128",
-        "platform_instructions": "Test platform guidance.",
-    }
-    return GuestConfig.model_validate(values | updates)
+    return GuestConfig.model_validate({"version": 3, "resources": _resources(), **updates})
 
 
-def test_guest_seed_serializes_origin_urls_without_trailing_slashes() -> None:
-    config = _config(llm_base_url="HTTPS://LLM.Example:8443/", proxy_url="http://Proxy.Example:3128/")
-
-    serialized = json.loads(config.model_dump_json())
-
-    assert serialized == {
-        "version": 2,
-        "control": {"target": "test-gateway.test:7100", "bearer": "test-control-placeholder"},
-        "ingress": {"target": "test-history.test:8081", "bearer": "test-ingress-placeholder"},
+def test_boot_configuration_contains_only_vm_policy() -> None:
+    assert json.loads(_config().model_dump_json()) == {
+        "version": 3,
         "resources": {**_resources(), "executor": None},
-        "llm_base_url": "https://llm.example:8443",
-        "proxy_url": "http://proxy.example:3128",
-        "platform_instructions": "Test platform guidance.",
         "console_autologin": False,
-        "harness_env": None,
     }
-
-
-def test_harness_env_reaches_the_guest_seed_only_when_set() -> None:
-    assert "harness_env" not in json.loads(_config().model_dump_json(exclude_defaults=True))
-
-    seeded = json.loads(_config(harness_env={"EXAMPLE_NAME": "value"}).model_dump_json(exclude_defaults=True))
-
-    assert seeded["harness_env"] == {"EXAMPLE_NAME": "value"}
 
 
 def test_guest_resource_budgets_are_typed_and_fit_guest_headroom() -> None:
@@ -109,17 +82,9 @@ def test_executor_budget_shares_outer_service_headroom(memory: int, cpu: int, pi
 @pytest.mark.parametrize(
     "updates",
     [
-        {"version": 1},
-        {"control": {"target": "test-gateway.test:7100"}},
-        {"ingress": {"target": "", "bearer": "test-ingress-placeholder"}},
-        {"llm_base_url": "ftp://model.test"},
-        {"llm_base_url": "model.test"},
-        {"proxy_url": "http://proxy.test:65536"},
-        {"proxy_url": "http://proxy.test:0"},
-        {"llm_base_url": "https://user:password@model.test"},
-        {"llm_base_url": "https://model.test/v1"},
-        {"proxy_url": "http://proxy.test/path"},
-        {"platform_instructions": ""},
+        {"version": 2},
+        {"control": {"target": "test:7100", "bearer": "placeholder"}},
+        {"platform_instructions": "moved to runner.json"},
         {"resources": {**_resources(), "service_memory_max_bytes": 1_610_612_736}},
         {"resources": {**_resources(), "aggregate": _limits(memory=805_306_367, pids=768)}},
         {"unexpected": "value"},
