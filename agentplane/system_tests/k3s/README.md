@@ -141,6 +141,8 @@ follow-up turn. That command runs in the same executor leaf and reports exit zer
 to `test.outputs/vm-codex-oom.json`, alongside the guest console and scripted upstream requests.
 The test guest runs a root observer outside the Runner subtree to publish read-only snapshots of
 executor limits and OOM counters. Tool processes retain production's UID and cgroup permissions.
+The executor aggregate's hierarchical OOM counter proves the constrained subtree, while the leaf's
+victim counter proves the single kill: either the aggregate or leaf limit can trigger first.
 This exercises the test guest's kernel and production Runner/Codex binaries; it does not run the
 production NixOS systemd unit or force exec-server death/restart.
 

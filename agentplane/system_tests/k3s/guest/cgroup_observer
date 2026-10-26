@@ -16,14 +16,15 @@ while :; do
 		read -r swap <"$group/memory.swap.max" || continue
 		read -r oom_group <"$group/memory.oom.group" || continue
 		case "$limit:$swap" in *max*) continue ;; esac
+		executor_oom=$(awk '$1 == "oom" {print $2}' "$service/executors/memory.events") || continue
 		events=$(awk '
 			$1 == "oom" {oom = $2}
 			$1 == "oom_kill" {kill = $2}
 			$1 == "oom_group_kill" {group_kill = $2}
 			END {printf "\"oom\":%d,\"oom_kill\":%d,\"oom_group_kill\":%d", oom, kill, group_kill}
 		' "$group/memory.events") || continue
-		printf '{"cgroup":"%s","sample":%s,"max":%s,"swap_max":%s,"oom_group":%s,%s}\n' \
-			"${group#/sys/fs/cgroup}" "$sample" "$limit" "$swap" "$oom_group" "$events" >"$destination/.snapshot"
+		printf '{"cgroup":"%s","sample":%s,"max":%s,"swap_max":%s,"oom_group":%s,"executor_oom":%s,%s}\n' \
+			"${group#/sys/fs/cgroup}" "$sample" "$limit" "$swap" "$oom_group" "$executor_oom" "$events" >"$destination/.snapshot"
 		mv "$destination/.snapshot" "$destination/${group##*/}.json"
 	done
 	sleep 0.25

@@ -61,6 +61,7 @@ class _MemoryEvidence(BaseModel):
     max: int
     swap_max: int
     oom_group: int
+    executor_oom: int
     oom: int
     oom_kill: int
     oom_group_kill: int
@@ -193,7 +194,9 @@ async def test_codex_tool_oom_preserves_runner_and_app_server(
         assert "VM_OOM_FOLLOWUP_OK" in output.output
         assert after.cgroup == before.cgroup
         assert after.max == before.max
-        assert after.oom > before.oom
+        # Either aggregate or leaf can hit its memory limit first. The aggregate's hierarchical
+        # counter proves a memcg OOM in the executor subtree; the leaf counts its actual victims.
+        assert after.executor_oom > before.executor_oom
         assert after.oom_kill == before.oom_kill + 1
         assert after.oom_group_kill == 0
         assert not followup.resumed
