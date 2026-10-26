@@ -57,6 +57,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/chart.js",
         "//:node_modules/react",
+        "//util/frontend:help_tooltip",
     ],
 )
 
@@ -85,6 +86,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:help_tooltip",
     ],
 )
 
@@ -99,6 +101,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:help_tooltip",
     ],
 )
 
@@ -117,6 +120,7 @@ ts_library(
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:help_tooltip",
     ],
 )
 
@@ -131,6 +135,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:help_tooltip",
     ],
 )
 

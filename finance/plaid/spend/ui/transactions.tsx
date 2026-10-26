@@ -20,6 +20,7 @@ import {
 import IconChevronDown from "@tabler/icons-react/dist/esm/icons/IconChevronDown.mjs";
 import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRight.mjs";
 
+import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { Metric, Money, money, periodLabels, time } from "./spend_display";
 import { ruleConditionText, ruleKindDisplay } from "./rule_display";
 import type {
@@ -305,11 +306,6 @@ function TransactionDetails({ row, currency }: { row: TransactionRow; currency: 
               {row.rule.description}
             </Text>
           )}
-          {row.rule.scope === "one_off" && (
-            <Text size="xs" c="dimmed">
-              One observed transaction, named by a bounded date-and-amount match rather than a Plaid transaction id.
-            </Text>
-          )}
           {row.category && (
             <Text size="xs" c="dimmed">
               Analysis category: {categoryForRow(row)}
@@ -400,13 +396,15 @@ export function TransactionsPage({
     <Stack gap="lg">
       <Group justify="space-between" align="flex-start" gap="md">
         <div>
-          <Title order={1} size="h3">
-            Transactions
-          </Title>
-          <Text size="sm" c="dimmed" mt="xs">
-            Recent Plaid transactions and the decisions behind your allowance and card totals. Positive amounts are
-            charges; negative amounts are credits.
-          </Text>
+          <Group gap="xs" align="center">
+            <Title order={1} size="h3">
+              Transactions
+            </Title>
+            <HelpTooltip
+              topic="Transactions"
+              description="Positive amounts are charges; negative amounts are credits. Allowance shows the spending counted against your flexible budget; an em dash means no effect. Badges show classification decisions. Open a row for its matching rule and explanation."
+            />
+          </Group>
         </div>
         <Badge color="gray" variant="light">
           Read only
@@ -527,8 +525,24 @@ export function TransactionsPage({
                     <Table.Th>Merchant</Table.Th>
                     <Table.Th>Account</Table.Th>
                     <Table.Th>Category</Table.Th>
-                    <Table.Th ta="right">Amount</Table.Th>
-                    <Table.Th ta="right">Allowance</Table.Th>
+                    <Table.Th ta="right">
+                      <Group gap={4} justify="flex-end" wrap="nowrap">
+                        Amount
+                        <HelpTooltip
+                          topic="Transaction amount"
+                          description="Positive amounts are charges; negative amounts are credits."
+                        />
+                      </Group>
+                    </Table.Th>
+                    <Table.Th ta="right">
+                      <Group gap={4} justify="flex-end" wrap="nowrap">
+                        Allowance
+                        <HelpTooltip
+                          topic="Allowance effect"
+                          description="Shows the transaction's effect on flexible allowance spending. An em dash means there is no effect. Open a row for its disposition and matching rule."
+                        />
+                      </Group>
+                    </Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 {shown.map(({ row, index }) => {

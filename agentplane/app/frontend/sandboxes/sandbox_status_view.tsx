@@ -9,7 +9,7 @@ import {
   type SandboxView,
   type ThreadView,
 } from "../client";
-import { HelpTooltip } from "../help_tooltip";
+import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { IdleSuspendInput } from "./idle_suspend";
 import { JsonView } from "../json_view";
 import { deleting } from "./lifecycle";

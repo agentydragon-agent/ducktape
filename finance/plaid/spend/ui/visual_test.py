@@ -687,7 +687,10 @@ async def test_spending_decision_render(
     await page.locator("canvas[aria-label]").wait_for()
     await page.get_by_text("$200", exact=True).wait_for()
     await expect(page.get_by_role("heading", name="Flexible spending", level=1)).to_have_count(1)
+    await expect(page.get_by_text("Earlier purchases inform this graph", exact=False)).to_be_hidden()
+    await page.get_by_text("How this chart works", exact=True).click()
     await expect(page.get_by_text("Earlier purchases inform this graph", exact=False)).to_be_visible()
+    await page.get_by_text("How this chart works", exact=True).click()
     assert await page.evaluate(
         """() => {
             const chart = document.getElementById("spending-history-title");
@@ -841,6 +844,11 @@ async def test_review_rule_configuration_render(
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Configuration")
+    rule_notes = page.locator("details").filter(
+        has_text="Unverified credit; inspect the earlier purchase before netting it."
+    )
+    await expect(rule_notes.locator("summary")).to_be_visible()
+    await rule_notes.locator("summary").click()
     await page.get_by_text("Unverified credit; inspect the earlier purchase before netting it.").wait_for()
     await expect(page.get_by_text("Review", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Amount is negative AND (Transaction name starts with", exact=False)).to_have_count(1)
@@ -965,7 +973,11 @@ async def test_sustainability_experimental_render(
     await expect(page.get_by_text("FLEXIBLE", exact=True)).to_have_count(1)
     await expect(page.get_by_text("PROVISIONAL", exact=True)).to_have_count(1)
     await expect(page.get_by_text("No other income is modeled.", exact=False)).to_be_visible()
+    source_details = page.locator("details").filter(has_text="Synthetic investment source")
+    await expect(page.get_by_text("Synthetic investment source", exact=True)).to_be_hidden()
+    await source_details.locator("summary").click()
     await expect(page.get_by_text("Synthetic investment source", exact=True)).to_be_visible()
+    await source_details.locator("summary").click()
     assert any(url.endswith("/api/v1/sustainability") for url in requests)
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     await view.capture(
@@ -1120,6 +1132,44 @@ async def test_sustainability_stale_and_unavailable_render(
         full_page=True,
         animations="disabled",
     )
+
+
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_contextual_help_keyboard_and_hover(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    help_button = page.get_by_role("button", name="About Estimate window", exact=True)
+    await expect(help_button).to_be_visible()
+    tooltip = page.get_by_role("tooltip")
+    await expect(tooltip).to_be_hidden()
+    await help_button.focus()
+    await _expect_tooltip_rendered(tooltip)
+    await expect(tooltip).to_contain_text("recorded spending pace and balance forecast")
+    await view.capture(f"spending-help-{width}", label=f"{width}px keyboard help", animations="disabled")
+    await page.keyboard.press("Escape")
+    await _expect_tooltip_hidden(tooltip)
+    await page.keyboard.press("Tab")
+    await help_button.hover()
+    await _expect_tooltip_rendered(tooltip)
+    await page.mouse.move(0, 0)
+    await _expect_tooltip_hidden(tooltip)
+    view.errors.assert_none(context="Spend help")
+
+
+async def test_contextual_help_touch(touch_page: Page, dashboard_url: str) -> None:
+    await touch_page.goto(dashboard_url, wait_until="domcontentloaded")
+    help_button = touch_page.get_by_role("button", name="About Estimate window", exact=True)
+    tooltip = touch_page.get_by_role("tooltip")
+    await help_button.tap()
+    await _expect_tooltip_rendered(tooltip)
+    await help_button.tap()
+    await _expect_tooltip_hidden(tooltip)
+    await help_button.tap()
+    await _expect_tooltip_rendered(tooltip)
+    await touch_page.get_by_role("heading", name="Flexible spending", exact=True).tap()
+    await _expect_tooltip_hidden(tooltip)
 
 
 async def test_accordion_readiness_ignores_unrelated_animations(page: Page) -> None:

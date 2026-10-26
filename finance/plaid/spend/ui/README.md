@@ -17,3 +17,9 @@ account display names and show counterparties, with named Plaid Transactions fie
 can contain account and transaction IDs, so they are available only through the authenticated route. The purchase
 estimate is advisory only. Verify layout in an authenticated browser after deployment before calling visual regressions
 resolved.
+
+Explanatory copy uses progressive disclosure: short definitions sit beside their labels in the shared
+`//util/frontend:help_tooltip` component, while longer chart and calculation explanations live in expandable sections.
+Values, units, selected periods, tax treatment, experimental status and current data problems remain visible. Help is
+available by hover, keyboard focus or tap, with Escape and outside-pointer dismissal. Keep general methodology out of
+repeated per-metric captions; keep transaction-specific classification reasons in the existing expanded row details.
