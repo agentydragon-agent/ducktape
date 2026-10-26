@@ -12,9 +12,9 @@ from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import Agent
 from agentplane.system_tests.conftest import VM_TEMPLATE, VM_WORKING_DIRECTORY, Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from agentplane.testing.scripted_model import Text
+from agentplane.testing.scripted_model import ShellCall, Text
 
-PING = "Say exactly the word PING and nothing else. Do not use any tool."
+PING = "Run a shell command, then say exactly PING."
 
 
 @pytest.mark.vm_sandboxes
@@ -28,7 +28,13 @@ async def test_a_vm_sandbox_runs_a_turn(
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=offered_model, cwd=VM_WORKING_DIRECTORY)
     async with asyncio.TaskGroup() as turns:
         turn = turns.create_task(agent.run(PING))
-        await model.reply(await model.request(), Text("PING"))
+        await model.reply(await model.request(), ShellCall("vm-cgroup", "cat /proc/self/cgroup"))
+        result = await model.request()
+        (output,) = result.tool_outputs
+        assert output.call_id == "vm-cgroup"
+        subtree = "executors" if harness == runner_pb2.HARNESS_CODEX else "workloads"
+        assert output.contains(f"/agentplane-runner.service/{subtree}/process-")
+        await model.reply(result, Text("PING"))
     # The scripted reply is the thread's answer: the guest's model traffic came back through the launcher.
     assert "PING" in turn.result().answer, turn.result().transcript
 
