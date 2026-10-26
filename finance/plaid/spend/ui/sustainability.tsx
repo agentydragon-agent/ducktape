@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Alert,
   Badge,
@@ -71,6 +71,90 @@ function ScenarioTooltip({
           : `After ${percent(view.effective_tax_rate)} modeled withdrawal tax.`}
       </Text>
     </Stack>
+  );
+}
+
+function ScenarioMarker({
+  view,
+  rate,
+  index,
+  currentRate,
+  style,
+}: {
+  view: SustainabilityView;
+  rate: number;
+  index: number;
+  currentRate: number | null;
+  style: CSSProperties;
+}) {
+  const markerRef = useRef<HTMLButtonElement>(null);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const opened = hovered || focused || pinned;
+
+  useEffect(() => {
+    if (!opened) return;
+
+    const dismissOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || markerRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest('[role="tooltip"]')) return;
+      setHovered(false);
+      setFocused(false);
+      setPinned(false);
+    };
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setHovered(false);
+      setFocused(false);
+      setPinned(false);
+    };
+
+    document.addEventListener("pointerdown", dismissOnOutsidePointer);
+    document.addEventListener("keydown", dismissOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOnOutsidePointer);
+      document.removeEventListener("keydown", dismissOnEscape);
+    };
+  }, [opened]);
+
+  return (
+    <Tooltip
+      opened={opened}
+      label={<ScenarioTooltip view={view} rate={rate} index={index} currentRate={currentRate} />}
+      events={{ hover: false, focus: false, touch: false }}
+      multiline
+      w={260}
+      withArrow
+      position="top"
+    >
+      <button
+        ref={markerRef}
+        type="button"
+        aria-label={`Scenario ${index + 1}: ${percent(rate)} draw rate`}
+        onPointerEnter={(event) => {
+          if (event.pointerType !== "touch") setHovered(true);
+        }}
+        onPointerLeave={() => setHovered(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => {
+          setFocused(false);
+          setPinned(false);
+        }}
+        onClick={() => {
+          if (pinned) {
+            setFocused(false);
+            setPinned(false);
+          } else {
+            setPinned(true);
+          }
+        }}
+        style={style}
+      >
+        {percent(rate)}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -305,41 +389,32 @@ function DrawGauge({ view }: { view: SustainabilityView }) {
                 />
               </div>
               {view.reference_draw_rates.map((rate, index) => (
-                <Tooltip
+                <ScenarioMarker
                   key={`${rate}-${index}`}
-                  label={<ScenarioTooltip view={view} rate={rate} index={index} currentRate={headlineRate} />}
-                  events={{ hover: true, focus: true, touch: true }}
-                  multiline
-                  w={260}
-                  withArrow
-                  position="top"
-                >
-                  <button
-                    type="button"
-                    aria-label={`Scenario ${index + 1}: ${percent(rate)} draw rate`}
-                    style={{
-                      position: "absolute",
-                      left: `${Math.max(0, Math.min(100, (rate / maximumRate) * 100))}%`,
-                      top: index % 2 === 0 ? 0 : 39,
-                      transform: "translateX(-50%)",
-                      zIndex: 1,
-                      minWidth: 36,
-                      minHeight: 24,
-                      padding: "2px 5px",
-                      borderRadius: 6,
-                      border: "1px solid var(--mantine-color-default-border)",
-                      background: "var(--mantine-color-body)",
-                      color: "var(--mantine-color-text)",
-                      font: "inherit",
-                      fontSize: 12,
-                      fontWeight: 650,
-                      lineHeight: 1.2,
-                      cursor: "help",
-                    }}
-                  >
-                    {percent(rate)}
-                  </button>
-                </Tooltip>
+                  view={view}
+                  rate={rate}
+                  index={index}
+                  currentRate={headlineRate}
+                  style={{
+                    position: "absolute",
+                    left: `${Math.max(0, Math.min(100, (rate / maximumRate) * 100))}%`,
+                    top: index % 2 === 0 ? 0 : 39,
+                    transform: "translateX(-50%)",
+                    zIndex: 1,
+                    minWidth: 36,
+                    minHeight: 24,
+                    padding: "2px 5px",
+                    borderRadius: 6,
+                    border: "1px solid var(--mantine-color-default-border)",
+                    background: "var(--mantine-color-body)",
+                    color: "var(--mantine-color-text)",
+                    font: "inherit",
+                    fontSize: 12,
+                    fontWeight: 650,
+                    lineHeight: 1.2,
+                    cursor: "help",
+                  }}
+                />
               ))}
               {overflow && (
                 <span

@@ -240,6 +240,23 @@ async def _select_spend_page(page: Page, label: str) -> None:
         await page.get_by_role("tab", name=label).click()
 
 
+async def _expect_tooltip_rendered(tooltip: Locator) -> None:
+    await expect(tooltip).to_be_visible()
+    await expect(tooltip).to_have_css("opacity", "1")
+    fits_viewport = await tooltip.evaluate(
+        """(element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.left >= 0 &&
+            rect.bottom <= window.innerHeight && rect.right <= window.innerWidth;
+        }"""
+    )
+    assert fits_viewport, "tooltip is clipped by the viewport"
+
+
+async def _expect_tooltip_hidden(tooltip: Locator) -> None:
+    await expect(tooltip).to_have_css("opacity", "0")
+
+
 @pytest.fixture(scope="module")
 def dashboard_url() -> Iterator[str]:
     app = FastAPI()
@@ -959,15 +976,27 @@ async def test_sustainability_experimental_render(
     )
 
     await scenario_marker.hover()
-    scenario_tooltip = page.get_by_role("tooltip")
+    scenario_tooltip = page.get_by_role("tooltip").filter(has_text="Scenario 1: 3% draw rate")
+    await _expect_tooltip_rendered(scenario_tooltip)
     await expect(scenario_tooltip).to_contain_text("Scenario 1: 3% draw rate")
     await expect(scenario_tooltip).to_contain_text("Supported monthly spending (USD/month):")
     await expect(scenario_tooltip).to_contain_text("$2,750")
     await expect(scenario_tooltip).to_contain_text("1.5 percentage points above this scenario")
     await expect(scenario_tooltip).to_contain_text("After 12% modeled withdrawal tax.")
+    if width == 1280:
+        await view.capture(
+            "sustainability-scenario-tooltip-desktop",
+            label="1280px scenario details opened by hovering the 3% marker",
+            full_page=True,
+            animations="disabled",
+        )
     await page.mouse.move(0, 0)
+    await _expect_tooltip_hidden(scenario_tooltip)
     await scenario_marker.focus()
-    await expect(scenario_tooltip).to_be_visible()
+    await page.keyboard.press("Tab")
+    await page.keyboard.press("Shift+Tab")
+    await expect(scenario_marker).to_be_focused()
+    await _expect_tooltip_rendered(scenario_tooltip)
     if width == 390:
         await view.capture(
             "sustainability-scenario-tooltip-mobile",
@@ -975,6 +1004,8 @@ async def test_sustainability_experimental_render(
             full_page=True,
             animations="disabled",
         )
+        await page.keyboard.press("Escape")
+        await _expect_tooltip_hidden(scenario_tooltip)
     view.errors.assert_none(context="Sustainability")
 
     async with page.expect_response(lambda response: "window_days=30" in response.url):
@@ -995,6 +1026,7 @@ async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, d
     await expect(marker).to_be_visible()
     await marker.tap()
     tooltip = touch_page.get_by_role("tooltip")
+    await _expect_tooltip_rendered(tooltip)
     await expect(tooltip).to_contain_text("Scenario 1: 3% draw rate")
     await expect(tooltip).to_contain_text("Supported monthly spending (USD/month):")
     await expect(tooltip).to_contain_text("After 12% modeled withdrawal tax.")
@@ -1004,6 +1036,16 @@ async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, d
         full_page=True,
         animations="disabled",
     )
+    await touch_page.get_by_role("heading", name="Sustainability", exact=True).tap()
+    await _expect_tooltip_hidden(tooltip)
+    await marker.tap()
+    await _expect_tooltip_rendered(tooltip)
+    await marker.tap()
+    await _expect_tooltip_hidden(tooltip)
+    await marker.tap()
+    await _expect_tooltip_rendered(tooltip)
+    await touch_page.keyboard.press("Escape")
+    await _expect_tooltip_hidden(tooltip)
 
 
 async def test_sustainability_short_gauge_fill_render(page: Page, view: VisualPage, dashboard_url: str) -> None:
