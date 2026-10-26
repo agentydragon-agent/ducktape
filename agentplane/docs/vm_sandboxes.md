@@ -61,8 +61,12 @@ lost.
   mounted at `/run/agentplane/runner`, and the harness `PATH` lists its `bin` after the system
   profile. A runner or CLI release republishes only that small disk. The harnesses and tools are
   still in the guest image.
-- The deployed `runner-vm` template declares a Sandbox-owned `RawDiskImage` workspace with ext4.
-  Its claim survives stop/start and replacement of the VM object. The Pod runner uses a
+- VM workspace disks contain ext4 and are owned by the Sandbox. `BlockFilesystem` exposes a raw
+  block PVC; `RawDiskImage` stores the virtual disk in a filesystem PVC. The claim survives
+  stop/start and replacement of the VM object. The selected
+  [replicated block-storage cutover](../plans/vm_block_storage.md) provisions fresh VM claims
+  and resets affected existing Sandboxes with the operator's acceptance; it does not convert
+  retained image-file workspaces. The Pod runner uses a
   Sandbox-owned `DirectoryTree` workspace. Custom VM templates may still declare generic
   DataVolume disks; those remain VM-owned and are not managed workspace declarations. The guest
   mounts its workspace disk with `autoFormat`: `systemd-makefs` creates the ext4 only when `blkid`
