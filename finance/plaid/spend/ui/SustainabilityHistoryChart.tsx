@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { Paper, Stack, Text, Title } from "@mantine/core";
+import { Group, Paper, Stack, Text, Title } from "@mantine/core";
 import {
   BarController,
   BarElement,
@@ -14,6 +14,13 @@ import {
 
 import { money } from "./spend_display";
 import type { SustainabilityHistory } from "./types";
+
+const SERIES_COLORS = {
+  annualizedSpending: "#1971C2",
+  spendingDrawRate: "#E8590C",
+  taxAdjustedDrawRate: "#6741D9",
+  referenceScenario: "#868E96",
+};
 
 Chart.register(
   BarController,
@@ -46,6 +53,18 @@ export function SustainabilityHistoryChart({
   currency: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const legendItems = [
+    { label: "Annualized spending", color: SERIES_COLORS.annualizedSpending, lineStyle: "solid" },
+    ...(history.some((point) => point.spending_draw_rate != null)
+      ? [{ label: "Spending-only draw rate", color: SERIES_COLORS.spendingDrawRate, lineStyle: "solid" }]
+      : []),
+    ...(history.some((point) => point.tax_adjusted_draw_rate != null)
+      ? [{ label: "Tax-adjusted draw rate", color: SERIES_COLORS.taxAdjustedDrawRate, lineStyle: "dashed" }]
+      : []),
+    ...(referenceDrawRates.length > 0
+      ? [{ label: "Reference scenarios", color: SERIES_COLORS.referenceScenario, lineStyle: "dotted" }]
+      : []),
+  ];
   const chart = useMemo(() => {
     const rateValues = history.flatMap((point) =>
       [point.spending_draw_rate, point.tax_adjusted_draw_rate].filter((value): value is number => value != null)
@@ -57,8 +76,8 @@ export function SustainabilityHistoryChart({
         type: "line" as const,
         label: "Annualized spending",
         data: history.map((point) => point.annualized_spending_minor_units),
-        borderColor: "#1971C2",
-        backgroundColor: "#1971C2",
+        borderColor: SERIES_COLORS.annualizedSpending,
+        backgroundColor: SERIES_COLORS.annualizedSpending,
         borderWidth: 2,
         pointRadius: 0,
         pointHitRadius: 8,
@@ -69,8 +88,8 @@ export function SustainabilityHistoryChart({
         type: "line" as const,
         label: "Spending-only draw rate",
         data: history.map((point) => point.spending_draw_rate),
-        borderColor: "#E8590C",
-        backgroundColor: "#E8590C",
+        borderColor: SERIES_COLORS.spendingDrawRate,
+        backgroundColor: SERIES_COLORS.spendingDrawRate,
         borderWidth: 2,
         pointRadius: 0,
         pointHitRadius: 8,
@@ -81,8 +100,8 @@ export function SustainabilityHistoryChart({
         type: "line" as const,
         label: "Tax-adjusted draw rate",
         data: history.map((point) => point.tax_adjusted_draw_rate),
-        borderColor: "#6741D9",
-        backgroundColor: "#6741D9",
+        borderColor: SERIES_COLORS.taxAdjustedDrawRate,
+        backgroundColor: SERIES_COLORS.taxAdjustedDrawRate,
         borderWidth: 2,
         borderDash: [5, 3],
         pointRadius: 0,
@@ -94,7 +113,7 @@ export function SustainabilityHistoryChart({
         type: "line" as const,
         label: `Reference scenario ${index + 1} (${percent(rate)})`,
         data: history.map(() => rate),
-        borderColor: "#868E96",
+        borderColor: SERIES_COLORS.referenceScenario,
         borderWidth: 1,
         borderDash: [2, 4],
         pointRadius: 0,
@@ -166,6 +185,17 @@ export function SustainabilityHistoryChart({
           <Text size="xs" c="dimmed" mt={4}>
             Draw rates use TODAY&apos;S portfolio valuation as the denominator for every date shown.
           </Text>
+          <Group gap="md" mt="xs" wrap="wrap" role="list" aria-label="Chart legend">
+            {legendItems.map((item) => (
+              <Group key={item.label} gap={6} wrap="nowrap" role="listitem">
+                <span
+                  aria-hidden="true"
+                  style={{ borderTop: `2px ${item.lineStyle} ${item.color}`, display: "inline-block", width: 20 }}
+                />
+                <Text size="xs">{item.label}</Text>
+              </Group>
+            ))}
+          </Group>
         </div>
         {history.length === 0 ? (
           <Text size="sm" c="dimmed">
