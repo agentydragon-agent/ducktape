@@ -2073,6 +2073,7 @@ metadata:
   name: github-tf
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: tofu-controller
       namespace: ducktape-flux
