@@ -227,6 +227,14 @@ spec:
               protocol: TCP
     - fromEndpoints:
         - matchLabels:
+            io.cilium.k8s.policy.serviceaccount: crossplane-opentofu
+            k8s:io.kubernetes.pod.namespace: crossplane-system
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
             k8s:io.kubernetes.pod.namespace: monitoring
       toPorts:
         - ports:

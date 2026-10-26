@@ -22,7 +22,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, opentofu
 from cluster.cdk8s.authentik import db
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
@@ -262,6 +262,14 @@ def _network_policy(chart: Chart) -> None:
             IngressRule.from_endpoints(_namespace_source(NAMESPACE), ports=[_HTTP, _HTTPS, _METRICS]),
             # tofu-controller's tf-runner calls the Authentik API.
             IngressRule.from_endpoints(_namespace_source("flux-system"), ports=[_HTTP]),
+            # Cilium sees the provider pod's identity, not its impersonated root ServiceAccounts.
+            IngressRule.from_endpoints(
+                {
+                    **_namespace_source(opentofu.NAMESPACE),
+                    "io.cilium.k8s.policy.serviceaccount": opentofu.RUNTIME_SERVICE_ACCOUNT,
+                },
+                ports=[_HTTP],
+            ),
             # Grafana OIDC token exchange and Prometheus scraping.
             IngressRule.from_endpoints(_namespace_source("monitoring"), ports=[_HTTP, _METRICS]),
             # Gatus liveness probes.
