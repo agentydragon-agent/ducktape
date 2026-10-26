@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import date as date_type, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
@@ -158,6 +159,7 @@ def calculate_sustainability(
     transactions: list[Transaction],
     portfolio: PortfolioView,
     *,
+    time_zone: ZoneInfo,
     now: datetime,
     window_days: int,
     source_issues: list[str],
@@ -166,7 +168,7 @@ def calculate_sustainability(
         raise ValueError("now must be timezone-aware")
     if window_days not in policy.display.windows_days:
         raise ValueError("window must be configured")
-    today = now.astimezone(allowance.time_zone).date()
+    today = now.astimezone(time_zone).date()
     end = today - timedelta(days=1)
     requested_start = today - timedelta(days=window_days)
     issues = list(source_issues)
@@ -177,7 +179,7 @@ def calculate_sustainability(
     for transaction in transactions:
         if transaction.account_id not in allowance.spending_account_ids:
             continue
-        day = transaction.report_day(allowance.time_zone)
+        day = transaction.report_day(time_zone)
         if day > end:
             continue
         if transaction.pending and (transaction.account_id, transaction.transaction_id) in superseded:
@@ -268,7 +270,7 @@ def calculate_sustainability(
     return SustainabilityView(
         generated_at=now,
         status="ready" if ready else "unavailable",
-        time_zone=allowance.time_zone.key,
+        time_zone=time_zone.key,
         window_days=window_days,
         available_windows_days=policy.display.windows_days,
         period_start=start,

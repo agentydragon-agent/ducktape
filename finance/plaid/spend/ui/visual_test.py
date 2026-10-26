@@ -95,6 +95,21 @@ async def page(playwright: Playwright, request: pytest.FixtureRequest) -> AsyncI
 
 
 @pytest.fixture
+async def touch_page(playwright: Playwright, request: pytest.FixtureRequest) -> AsyncIterator[Page]:
+    capture_name = request.node.name.removeprefix("test_")
+    async with (
+        deterministic_browser_context(
+            playwright,
+            viewport={"width": 390, "height": 844},
+            frozen_now_ms=_FROZEN_NOW_MS,
+            has_touch=True,
+        ) as context,
+        playwright_trace(context, undeclared_outputs_dir(), capture_name),
+    ):
+        yield await context.new_page()
+
+
+@pytest.fixture
 def view(page: Page) -> VisualPage:
     return VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend")
 
@@ -121,18 +136,30 @@ async def _expand_accordion(control: Locator) -> None:
 def _example_sustainability(variant: str = "ready") -> dict[str, object]:
     stale = variant == "stale"
     unavailable = variant == "unavailable"
+    tax_unmodeled = variant == "tax_unmodeled"
+    low_draw = variant == "low_draw"
     portfolio_unavailable = stale or unavailable
     portfolio_net = None if portfolio_unavailable else 125_000_000
-    annualized_spending = 4_951_065
+    annualized_spending = 600_621 if low_draw else 4_951_065
+    effective_tax_rate = None if tax_unmodeled else 0.12
 
     def rates_for(annualized: int) -> tuple[float | None, float | None]:
         if portfolio_net is None:
             return None, None
-        tax_adjusted = int((Decimal(annualized) / Decimal("0.88")).quantize(Decimal(1)))
+        if effective_tax_rate is None:
+            return annualized / portfolio_net, None
+        tax_adjusted = int(
+            (Decimal(annualized) / (Decimal(1) - Decimal(str(effective_tax_rate)))).quantize(Decimal(1))
+        )
         return annualized / portfolio_net, tax_adjusted / portfolio_net
 
     history = []
-    for day, annualized in (("2026-10-12", 4_700_000), ("2026-10-13", 4_850_000), ("2026-10-14", annualized_spending)):
+    history_values = (
+        (570_000, 585_000, annualized_spending)
+        if low_draw
+        else (4_700_000, 4_850_000, annualized_spending)
+    )
+    for day, annualized in zip(("2026-10-12", "2026-10-13", "2026-10-14"), history_values, strict=True):
         spending_rate, tax_adjusted_rate = rates_for(annualized)
         history.append(
             {
@@ -145,6 +172,16 @@ def _example_sustainability(variant: str = "ready") -> dict[str, object]:
         )
 
     spending_draw_rate, tax_adjusted_draw_rate = rates_for(annualized_spending)
+    estimated_annual_draw = (
+        None
+        if portfolio_unavailable or effective_tax_rate is None
+        else int(
+            (Decimal(annualized_spending) / (Decimal(1) - Decimal(str(effective_tax_rate)))).quantize(Decimal(1))
+        )
+    )
+    mandatory, flexible, provisional, total = (
+        (92_000, 50_000, 6_000, 148_000) if low_draw else (760_000, 410_000, 50_000, 1_220_000)
+    )
     return {
         "generated_at": "2026-10-15T12:00:00Z",
         "status": "unavailable" if portfolio_unavailable else "ready",
@@ -155,17 +192,21 @@ def _example_sustainability(variant: str = "ready") -> dict[str, object]:
         "period_start": "2026-07-17",
         "period_end": "2026-10-14",
         "covered_days": 90,
-        "mandatory_minor_units": 760000,
-        "flexible_minor_units": 410000,
-        "provisional_minor_units": 50000,
-        "spending_minor_units": 1220000,
+        "mandatory_minor_units": mandatory,
+        "flexible_minor_units": flexible,
+        "provisional_minor_units": provisional,
+        "spending_minor_units": total,
         "annualized_spending_minor_units": annualized_spending,
-        "estimated_annual_draw_minor_units": None if portfolio_unavailable else 5_626_210,
+        "estimated_annual_draw_minor_units": estimated_annual_draw,
         "spending_draw_rate": spending_draw_rate,
         "tax_adjusted_draw_rate": tax_adjusted_draw_rate,
-        "effective_tax_rate": 0.12,
-        "tax_assumption_note": "Synthetic fixture tax assumption; actual tax treatment depends on account and income details.",
-        "tax_assumption_as_of": "2026-01-01",
+        "effective_tax_rate": effective_tax_rate,
+        "tax_assumption_note": (
+            None
+            if tax_unmodeled
+            else "Synthetic fixture tax assumption; actual tax treatment depends on account and income details."
+        ),
+        "tax_assumption_as_of": None if tax_unmodeled else "2026-01-01",
         "reference_draw_rates": [0.03, 0.035, 0.04, 0.045],
         "portfolio": {
             "status": "unavailable" if portfolio_unavailable else "ready",
@@ -334,6 +375,7 @@ def dashboard_url() -> Iterator[str]:
     @app.get("/api/v1/configuration", response_model=SpendConfigurationView)
     def configuration() -> SpendConfigurationView:
         return SpendConfigurationView(
+            time_zone="UTC",
             cards=[
                 CardConfigurationView(
                     label="Example card", enabled=True, limit_minor_units=None, alert_threshold_percent=None
@@ -907,13 +949,15 @@ async def test_sustainability_experimental_render(
         page.get_by_text("Current implied draw is 1.5 percentage points above this scenario.", exact=True)
     ).to_be_visible()
     await expect(page.get_by_text("$2,750", exact=True)).to_be_visible()
+    scenario_marker = page.get_by_role("button", name="Scenario 1: 3% draw rate")
+    await expect(scenario_marker).to_be_visible()
+    await expect(scenario_marker).to_have_text("3%")
     await expect(page.get_by_text("MANDATORY", exact=True)).to_have_count(1)
     await expect(page.get_by_text("FLEXIBLE", exact=True)).to_have_count(1)
     await expect(page.get_by_text("PROVISIONAL", exact=True)).to_have_count(1)
     await expect(page.get_by_text("No other income is modeled.", exact=False)).to_be_visible()
     await expect(page.get_by_text("Synthetic investment source", exact=True)).to_be_visible()
     assert any(url.endswith("/api/v1/sustainability") for url in requests)
-    view.errors.assert_none(context="Sustainability")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     await view.capture(
         f"sustainability-ready-{width}",
@@ -922,11 +966,95 @@ async def test_sustainability_experimental_render(
         animations="disabled",
     )
 
+    await scenario_marker.hover()
+    scenario_tooltip = page.get_by_role("tooltip")
+    await expect(scenario_tooltip).to_contain_text("Scenario 1: 3% draw rate")
+    await expect(scenario_tooltip).to_contain_text("Supported monthly spending (USD/month):")
+    await expect(scenario_tooltip).to_contain_text("$2,750")
+    await expect(scenario_tooltip).to_contain_text("1.5 percentage points above this scenario")
+    await expect(scenario_tooltip).to_contain_text("After 12% modeled withdrawal tax.")
+    await page.mouse.move(0, 0)
+    await scenario_marker.focus()
+    await expect(scenario_tooltip).to_be_visible()
+    if width == 390:
+        await view.capture(
+            "sustainability-scenario-tooltip-mobile",
+            label="390px scenario details opened from the 3% marker",
+            full_page=True,
+            animations="disabled",
+        )
+    view.errors.assert_none(context="Sustainability")
+
     async with page.expect_response(lambda response: "window_days=30" in response.url):
         await page.get_by_text("30 days", exact=True).click()
     await expect(page.get_by_text("30 of 30 days covered", exact=False)).to_be_visible()
     assert any("/api/v1/sustainability?window_days=30" in url for url in requests)
     view.errors.assert_none(context="Sustainability")
+
+
+async def test_sustainability_scenario_marker_supports_touch(
+    touch_page: Page, dashboard_url: str
+) -> None:
+    async def serve_ready(route: Route) -> None:
+        await route.fulfill(json=_example_sustainability())
+
+    await touch_page.route("**/api/v1/sustainability*", serve_ready)
+    await touch_page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(touch_page, "Sustainability")
+    marker = touch_page.get_by_role("button", name="Scenario 1: 3% draw rate")
+    await expect(marker).to_be_visible()
+    await marker.tap()
+    tooltip = touch_page.get_by_role("tooltip")
+    await expect(tooltip).to_contain_text("Scenario 1: 3% draw rate")
+    await expect(tooltip).to_contain_text("Supported monthly spending (USD/month):")
+    await expect(tooltip).to_contain_text("After 12% modeled withdrawal tax.")
+    await VisualPage(touch_page, output_dir=undeclared_outputs_dir(), title="Spend").capture(
+        "sustainability-scenario-touch-tooltip",
+        label="Scenario details opened by tapping the 3% marker",
+        full_page=True,
+        animations="disabled",
+    )
+
+
+async def test_sustainability_short_gauge_fill_render(
+    page: Page, view: VisualPage, dashboard_url: str
+) -> None:
+    async def serve_low_draw(route: Route) -> None:
+        await route.fulfill(json=_example_sustainability("low_draw"))
+
+    await page.route("**/api/v1/sustainability*", serve_low_draw)
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Sustainability")
+    gauge = page.get_by_role("region", name="Tax-adjusted implied draw rate")
+    await expect(gauge.get_by_text("0.5%", exact=True)).to_be_visible()
+    await expect(page.get_by_role("button", name="Scenario 1: 3% draw rate")).to_be_visible()
+    await view.capture(
+        "sustainability-short-gauge-fill",
+        label="Synthetic 0.5% implied rate with a short gauge fill",
+        full_page=True,
+        animations="disabled",
+    )
+    view.errors.assert_none(context="Sustainability short fill")
+
+
+async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
+    page: Page, view: VisualPage, dashboard_url: str
+) -> None:
+    async def serve_tax_unmodeled(route: Route) -> None:
+        await route.fulfill(json=_example_sustainability("tax_unmodeled"))
+
+    await page.route("**/api/v1/sustainability*", serve_tax_unmodeled)
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Sustainability")
+    await page.get_by_text("Spending-only implied draw rate · taxes unmodeled", exact=True).wait_for()
+    marker = page.get_by_role("button", name="Scenario 1: 3% draw rate")
+    await marker.hover()
+    tooltip = page.get_by_role("tooltip")
+    await expect(tooltip).to_contain_text("Supported monthly spending (USD/month):")
+    await expect(tooltip).to_contain_text("$3,125")
+    await expect(tooltip).to_contain_text("1.0 percentage points above this scenario")
+    await expect(tooltip).to_contain_text("Before taxes; withdrawal taxes are not modeled.")
+    view.errors.assert_none(context="Sustainability with unmodeled tax")
 
 
 @pytest.mark.parametrize("variant", ["stale", "unavailable"])

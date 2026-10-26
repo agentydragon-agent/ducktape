@@ -42,7 +42,7 @@ class _Reader:
         return SpendView(generated_at=datetime(2026, 10, 15, tzinfo=UTC), cards=[])
 
     def read_configuration(self) -> SpendConfigurationView:
-        return SpendConfigurationView(cards=[], allowance=None)
+        return SpendConfigurationView(time_zone="UTC", cards=[], allowance=None)
 
     async def read_transactions(self, period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransactionsView:
         today = date(2026, 10, 15)

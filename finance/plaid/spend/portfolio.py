@@ -137,6 +137,9 @@ async def _read_plaid(
     selected_ids = [*plaid.asset_account_ids, *plaid.liability_account_ids]
     expected_types = dict.fromkeys(plaid.asset_account_ids, "asset")
     expected_types.update(dict.fromkeys(plaid.liability_account_ids, "liability"))
+    required_holding_accounts = {
+        exclusion.account_id for exclusion in policy.excluded_securities
+    } | {correction.account_id for correction in plaid.holding_value_corrections}
     if not selected_ids:
         return _unavailable("plaid", "No Plaid accounts are selected."), 0, 0, 0
 
@@ -144,8 +147,8 @@ async def _read_plaid(
         async with pool.acquire() as connection:
             account_rows = await connection.fetch(_ACCOUNT_BALANCES_SQL, selected_ids)
             holding_rows: list[asyncpg.Record] = []
-            if policy.excluded_securities:
-                account_ids = sorted({exclusion.account_id for exclusion in policy.excluded_securities})
+            if required_holding_accounts:
+                account_ids = sorted(required_holding_accounts)
                 holding_rows = await connection.fetch(_EXCLUDED_HOLDINGS_SQL, account_ids)
     except asyncpg.PostgresError, OSError, TimeoutError:
         return _unavailable("plaid", "The Plaid mirror could not be read."), 0, 0, 0
@@ -174,59 +177,75 @@ async def _read_plaid(
         balances[account_id] = amount
         balance_times[account_id] = captured_at
 
-    requested_positions = {
-        (exclusion.account_id, security_id): exclusion
+    excluded_positions = {
+        (exclusion.account_id, security_id)
         for exclusion in policy.excluded_securities
         for security_id in exclusion.security_ids
+    }
+    correction_by_position = {
+        (correction.account_id, security_id): correction
+        for correction in plaid.holding_value_corrections
+        for security_id in correction.security_ids
     }
     holding_by_position: dict[tuple[str, str], asyncpg.Record] = {}
     holdings_by_account: dict[str, list[asyncpg.Record]] = {}
     for row in holding_rows:
         position = (str(row["account_id"]), str(row["security_id"]))
         if position in holding_by_position:
-            return _unavailable("plaid", "An excluded holding has an ambiguous observation."), 0, 0, 0
+            return _unavailable("plaid", "A selected holding has an ambiguous observation."), 0, 0, 0
         holding_by_position[position] = row
         holdings_by_account.setdefault(position[0], []).append(row)
 
-    for account_id in {exclusion.account_id for exclusion in policy.excluded_securities}:
+    for account_id in required_holding_accounts:
         account_holdings = holdings_by_account.get(account_id)
         if not account_holdings:
-            return _unavailable("plaid", "An excluded holding has no complete observation batch."), 0, 0, 0
+            return _unavailable("plaid", "A selected account has no complete holding observation batch."), 0, 0, 0
         capture_times = {row["captured_at"] for row in account_holdings}
         if len(capture_times) != 1:
-            return _unavailable("plaid", "An excluded holding batch has inconsistent observation times."), 0, 0, 0
+            return _unavailable("plaid", "A holding batch has inconsistent observation times."), 0, 0, 0
         holding_as_of = next(iter(capture_times))
         if not isinstance(holding_as_of, datetime):
-            return _unavailable("plaid", "An excluded holding has no usable USD value observation."), 0, 0, 0
+            return _unavailable("plaid", "A holding has no usable value observation."), 0, 0, 0
         issue = _age_issue(holding_as_of, now, plaid.max_age_hours)
         if issue is not None:
             return _unavailable("plaid", issue), 0, 0, 0
         if abs(balance_times[account_id] - holding_as_of) > timedelta(hours=min(plaid.max_age_hours, 24)):
             return _unavailable("plaid", "Account balances and holdings are too far apart to reconcile."), 0, 0, 0
 
+    configured_positions = excluded_positions | set(correction_by_position)
+    if configured_positions.difference(holding_by_position):
+        return (
+            _unavailable(
+                "plaid",
+                "A configured holding selector is absent from the latest observation; its current value is unknown.",
+            ),
+            0,
+            0,
+            0,
+        )
+
     excluded_amount = Decimal(0)
     observation_times = list(balance_times.values())
     excluded_by_account: dict[str, Decimal] = {}
+    correction_account_ids = {correction.account_id for correction in plaid.holding_value_corrections}
     for account_id, account_holdings in holdings_by_account.items():
         adjusted_total = Decimal(0)
-        multipliers: list[Decimal] = []
         for row in account_holdings:
             position = (account_id, str(row["security_id"]))
             holding_value = _decimal(row["institution_value"])
             if holding_value is None:
-                return _unavailable("plaid", "An excluded holding batch has an unusable value."), 0, 0, 0
+                return _unavailable("plaid", "A holding batch has an unusable value."), 0, 0, 0
             if row["holding_currency"] != "USD":
-                return _unavailable("plaid", "An excluded holding does not have a confirmed USD value."), 0, 0, 0
-            exclusion = requested_positions.get(position)
-            multiplier = exclusion.value_multiplier if exclusion is not None else Decimal(1)
-            adjusted_total += holding_value * multiplier
-            multipliers.append(multiplier)
-            if exclusion is not None:
-                excluded_amount += holding_value * multiplier
+                return _unavailable("plaid", "A holding does not have a confirmed USD value."), 0, 0, 0
+            correction = correction_by_position.get(position)
+            adjusted_value = holding_value * correction.value_multiplier if correction is not None else holding_value
+            adjusted_total += adjusted_value
+            if position in excluded_positions:
+                excluded_amount += adjusted_value
                 excluded_by_account[account_id] = (
-                    excluded_by_account.get(account_id, Decimal(0)) + holding_value * multiplier
+                    excluded_by_account.get(account_id, Decimal(0)) + adjusted_value
                 )
-        if any(multiplier != Decimal(1) for multiplier in multipliers):
+        if account_id in correction_account_ids:
             balance = balances[account_id]
             tolerance = max(Decimal(1), abs(balance) * Decimal("0.01"))
             if abs(adjusted_total - balance) > tolerance:
@@ -273,10 +292,38 @@ def _coinbase_jwt(api_key: SecretStr, api_secret: SecretStr, *, now: datetime, m
     return token.decode("ascii") if isinstance(token, bytes) else token
 
 
+class CoinbaseClient:
+    """Authenticated read-only Coinbase API client."""
+
+    def __init__(self, *, api_key: SecretStr, api_secret: SecretStr) -> None:
+        self._api_key = api_key
+        self._api_secret = api_secret
+
+    async def get_accounts_page(
+        self, client: httpx.AsyncClient, *, now: datetime, cursor: str
+    ) -> _CoinbaseAccountsPage:
+        params = {"limit": "250"}
+        if cursor:
+            params["cursor"] = cursor
+        token = _coinbase_jwt(
+            self._api_key, self._api_secret, now=now, method="GET", path=_COINBASE_ACCOUNTS_PATH
+        )
+        response = await client.get(
+            _COINBASE_ACCOUNTS_URL, params=params, headers={"Authorization": f"Bearer {token}"}
+        )
+        response.raise_for_status()
+        return _CoinbaseAccountsPage.model_validate(response.json())
+
+    async def get_spot_price(self, client: httpx.AsyncClient, *, asset: str) -> _CoinbaseSpotPriceData:
+        response = await client.get(_COINBASE_PRICE_URL.format(asset=asset))
+        response.raise_for_status()
+        return _CoinbaseSpotPrice.model_validate(response.json()).data
+
+
 async def _read_coinbase(
-    *, now: datetime, api_key: SecretStr | None, api_secret: SecretStr | None
+    *, now: datetime, coinbase_client: CoinbaseClient | None
 ) -> tuple[SourceValuation, int]:
-    if api_key is None or api_secret is None:
+    if coinbase_client is None:
         return _unavailable("coinbase", "Coinbase is enabled but its view-only credentials are unavailable."), 0
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
@@ -284,15 +331,7 @@ async def _read_coinbase(
             cursors: set[str] = set()
             cursor = ""
             while True:
-                params = {"limit": "250"}
-                if cursor:
-                    params["cursor"] = cursor
-                token = _coinbase_jwt(api_key, api_secret, now=now, method="GET", path=_COINBASE_ACCOUNTS_PATH)
-                response = await client.get(
-                    _COINBASE_ACCOUNTS_URL, params=params, headers={"Authorization": f"Bearer {token}"}
-                )
-                response.raise_for_status()
-                page = _CoinbaseAccountsPage.model_validate(response.json())
+                page = await coinbase_client.get_accounts_page(client, now=now, cursor=cursor)
                 accounts.extend(page.accounts)
                 if not page.has_next:
                     break
@@ -323,9 +362,7 @@ async def _read_coinbase(
 
             prices: dict[str, Decimal] = {"USD": Decimal(1)}
             for currency in sorted(currencies):
-                response = await client.get(_COINBASE_PRICE_URL.format(asset=currency))
-                response.raise_for_status()
-                price = _CoinbaseSpotPrice.model_validate(response.json()).data
+                price = await coinbase_client.get_spot_price(client, asset=currency)
                 amount = _decimal(price.amount)
                 if price.base != currency or price.currency != "USD" or amount is None or amount <= 0:
                     return _unavailable("coinbase", "Coinbase returned a malformed USD spot quote."), 0
@@ -354,8 +391,7 @@ async def read_portfolio(
     policy: PortfolioPolicy,
     *,
     now: datetime,
-    coinbase_api_key: SecretStr | None = None,
-    coinbase_api_secret: SecretStr | None = None,
+    coinbase_client: CoinbaseClient | None = None,
 ) -> PortfolioView:
     """Read selected holdings and return a fail-closed USD portfolio view."""
     if now.tzinfo is None or now.utcoffset() is None:
@@ -378,9 +414,7 @@ async def read_portfolio(
             excluded_minor_units += plaid_excluded
 
     if policy.sources.coinbase.enabled:
-        coinbase_source, coinbase_assets = await _read_coinbase(
-            now=now, api_key=coinbase_api_key, api_secret=coinbase_api_secret
-        )
+        coinbase_source, coinbase_assets = await _read_coinbase(now=now, coinbase_client=coinbase_client)
         sources.append(coinbase_source)
         if coinbase_source.status == "unavailable":
             sources_ready = False

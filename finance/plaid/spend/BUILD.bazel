@@ -9,6 +9,7 @@ py_library(
     deps = [
         ":allowance",
         ":models",
+        ":portfolio",
         ":service",
         ":settings",
         ":sustainability",
@@ -50,7 +51,6 @@ py_library(
         "@pypi//anyio",
         "@pypi//asyncpg",
         "@pypi//babel",
-        "@pypi//pydantic",
     ],
 )
 

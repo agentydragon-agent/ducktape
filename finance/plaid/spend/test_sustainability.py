@@ -46,7 +46,6 @@ def allowance() -> AllowancePolicy:
     return AllowancePolicy(
         monthly_minor_units=10_000,
         activation_at=date(2026, 3, 20),
-        time_zone=ZoneInfo("America/Los_Angeles"),
         spending_account_ids={"card"},
         rules=[
             Rule(
@@ -122,6 +121,7 @@ def test_total_consumption_includes_precommitment_mandatory_and_pending_once() -
             transaction(date(2026, 4, 1), "900", key="today"),
         ],
         portfolio(),
+        time_zone=ZoneInfo("America/Los_Angeles"),
         now=_NOW,
         window_days=90,
         source_issues=[],
@@ -151,6 +151,7 @@ def test_partial_window_uses_actual_covered_days_and_pacific_instant() -> None:
             transaction(date(2026, 4, 1), "10", key="cross-midnight", instant=datetime(2026, 4, 1, 6, tzinfo=UTC)),
         ],
         portfolio(),
+        time_zone=ZoneInfo("America/Los_Angeles"),
         now=_NOW,
         window_days=90,
         source_issues=[],
@@ -169,6 +170,7 @@ def test_missing_portfolio_preserves_observed_spending_without_showing_rate() ->
         allowance(),
         [transaction(date(2026, 1, 1), "10")],
         portfolio(ready=False),
+        time_zone=ZoneInfo("America/Los_Angeles"),
         now=_NOW,
         window_days=90,
         source_issues=[],
@@ -185,6 +187,7 @@ def test_stale_spending_does_not_produce_a_funding_estimate() -> None:
         allowance(),
         [transaction(date(2026, 1, 1), "10")],
         portfolio(),
+        time_zone=ZoneInfo("America/Los_Angeles"),
         now=_NOW,
         window_days=90,
         source_issues=["Spending source is stale."],
@@ -204,7 +207,7 @@ def test_tax_fraction_requires_provenance_and_shared_classification() -> None:
     with pytest.raises(ValidationError, match="dated assumption"):
         WithdrawalTax(rate=0.2)
     with pytest.raises(ValidationError, match="requires shared"):
-        SpendConfiguration(cards=[], sustainability=policy())
+        SpendConfiguration(time_zone=ZoneInfo("UTC"), cards=[], sustainability=policy())
 
 
 if __name__ == "__main__":

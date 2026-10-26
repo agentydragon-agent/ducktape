@@ -13,6 +13,7 @@ import {
   Stack,
   Text,
   Title,
+  Tooltip,
 } from "@mantine/core";
 
 import { money, time } from "./spend_display";
@@ -41,6 +42,36 @@ function monthlySpendingBudget(view: SustainabilityView, rate: number): number |
   if (portfolioValue == null || portfolioValue <= 0) return null;
   const afterTaxRate = rate * (1 - (view.effective_tax_rate ?? 0));
   return Math.round((portfolioValue * afterTaxRate) / 12);
+}
+
+function ScenarioTooltip({
+  view,
+  rate,
+  index,
+  currentRate,
+}: {
+  view: SustainabilityView;
+  rate: number;
+  index: number;
+  currentRate: number | null;
+}) {
+  return (
+    <Stack gap={4}>
+      <Text size="sm" fw={650}>
+        Scenario {index + 1}: {percent(rate)} draw rate
+      </Text>
+      <Text size="xs">
+        Supported monthly spending ({view.currency}/month):{" "}
+        <strong>{money(monthlySpendingBudget(view, rate), view.currency)}</strong>
+      </Text>
+      <Text size="xs">{scenarioComparison(currentRate, rate)}</Text>
+      <Text size="xs">
+        {view.effective_tax_rate == null
+          ? "Before taxes; withdrawal taxes are not modeled."
+          : `After ${percent(view.effective_tax_rate)} modeled withdrawal tax.`}
+      </Text>
+    </Stack>
+  );
 }
 
 function sourceAge(source: SustainabilitySource, generatedAt: string): string {
@@ -250,44 +281,65 @@ function DrawGauge({ view }: { view: SustainabilityView }) {
         {view.reference_draw_rates.length > 0 ? (
           <Stack gap="xs">
             <div
-              role="img"
-              aria-label={`Implied draw ${percent(headlineRate)} on a ${percent(maximumRate)} gauge; reference scenarios: ${view.reference_draw_rates.map(percent).join(", ")}`}
-              style={{ height: 28, position: "relative", margin: "6px 4px" }}
+              role="group"
+              aria-label={`Implied draw gauge; current rate ${percent(headlineRate)}, scale ends at ${percent(maximumRate)}`}
+              style={{ height: 64, position: "relative", margin: "6px 4px" }}
             >
               <div
                 style={{
                   position: "absolute",
-                  inset: "6px 0",
+                  inset: "22px 0 28px",
                   borderRadius: 999,
                   background: "var(--mantine-color-default-hover)",
                   border: "1px solid var(--mantine-color-default-border)",
+                  overflow: "hidden",
                 }}
-              />
-              <div
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  top: 6,
-                  bottom: 6,
-                  width: `${fillWidth}%`,
-                  borderRadius: 999,
-                  background: "var(--mantine-color-blue-6)",
-                }}
-              />
-              {view.reference_draw_rates.map((rate, index) => (
+              >
                 <div
-                  key={`${rate}-${index}`}
-                  aria-hidden="true"
                   style={{
                     position: "absolute",
-                    left: `${Math.max(0, Math.min(100, (rate / maximumRate) * 100))}%`,
-                    top: 0,
-                    bottom: 0,
-                    width: 2,
-                    background: "var(--mantine-color-dark-5)",
-                    transform: "translateX(-1px)",
+                    inset: 0,
+                    width: `${fillWidth}%`,
+                    background: "var(--mantine-color-blue-6)",
                   }}
                 />
+              </div>
+              {view.reference_draw_rates.map((rate, index) => (
+                <Tooltip
+                  key={`${rate}-${index}`}
+                  label={<ScenarioTooltip view={view} rate={rate} index={index} currentRate={headlineRate} />}
+                  events={{ hover: true, focus: true, touch: true }}
+                  multiline
+                  w={260}
+                  withArrow
+                  position="top"
+                >
+                  <button
+                    type="button"
+                    aria-label={`Scenario ${index + 1}: ${percent(rate)} draw rate`}
+                    style={{
+                      position: "absolute",
+                      left: `${Math.max(0, Math.min(100, (rate / maximumRate) * 100))}%`,
+                      top: index % 2 === 0 ? 0 : 39,
+                      transform: "translateX(-50%)",
+                      zIndex: 1,
+                      minWidth: 36,
+                      minHeight: 24,
+                      padding: "2px 5px",
+                      borderRadius: 6,
+                      border: "1px solid var(--mantine-color-default-border)",
+                      background: "var(--mantine-color-body)",
+                      color: "var(--mantine-color-text)",
+                      font: "inherit",
+                      fontSize: 12,
+                      fontWeight: 650,
+                      lineHeight: 1.2,
+                      cursor: "help",
+                    }}
+                  >
+                    {percent(rate)}
+                  </button>
+                </Tooltip>
               ))}
               {overflow && (
                 <span

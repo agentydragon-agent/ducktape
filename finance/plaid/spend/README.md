@@ -22,10 +22,10 @@ service publishes their generated schema at `/openapi.json`; the browser generat
 values calculated by the service are integer currency minor units. Original Plaid transaction amounts in the
 authenticated detail view remain decimal strings in major units.
 
-- Allowance policies may set `time_zone` to an IANA zone (default `UTC`). The
-  zone determines the local midnight for 7d/30d and calendar periods, the
-  monthly-credit anniversary, and the transaction-date cutoff for reports;
-  `generated_at`, sync timestamps, and duration-based freshness stay UTC.
+- The shared spend configuration requires a root-level `time_zone` IANA zone.
+  It determines local midnight for card, allowance, and sustainability reports,
+  including when the allowance is disabled; `generated_at`, sync timestamps,
+  and duration-based freshness stay UTC.
   Purchase days prefer Plaid's offset-bearing `authorized_datetime` converted
   to that zone, then `authorized_date`, then offset-bearing `datetime` (posting
   instant) converted to that zone, then `date`. Missing, malformed, naive, or
@@ -117,9 +117,10 @@ policy; no payment rail is controlled.
 ## Experimental sustainability
 
 `GET /api/v1/sustainability?window_days=90` and `/#/sustainability` show total mandatory, flexible and provisional
-consumption annualized over complete days in the allowance timezone. Optional private `sustainability` configuration
-selects the lookback windows, scenario reference rates, eligible asset/liability accounts, exact `excluded_securities`,
-Coinbase inclusion, documented effective withdrawal-tax assumptions, and known coverage issues. Without this section
+consumption annualized over complete days in the configured `time_zone`. Optional private `sustainability` configuration
+selects the lookback windows, scenario reference rates, eligible asset/liability accounts, exact
+`sources.plaid.holding_value_corrections` and `excluded_securities` selectors, Coinbase inclusion, documented effective
+withdrawal-tax assumptions, and known coverage issues. Without this section
 the page reports that the feature is unconfigured. Its classification rules and spending accounts come from the
 existing allowance; history includes purchases before the allowance's activation date. Identified transfers, card
 repayments and other excluded flows do not count as consumption. Explicit `include_excluded_categories` overrides
@@ -132,11 +133,14 @@ annual funding is `annualized spending / (1 - rate)`. A supplied rate requires a
 ratios assume no other income. The reference markers are scenarios, not guarantees of lifetime sustainability.
 
 Portfolio value is selected gross USD assets minus signed liabilities minus the current value of explicitly excluded
-security positions. Holdings are not added to their account balances. A private exclusion's `value_multiplier` can
-state a quote-unit convention; a non-unit multiplier requires corrected account holdings to reconcile to its balance.
-Enabled sources must be complete and fresh for a percentage to appear. The Coinbase source covers returned brokerage
+security positions. Holdings are not added to their account balances. Each Plaid holding-value correction selects an
+exact account and one or more security IDs with a positive finite `value_multiplier`. Corrected holdings in that
+account must reconcile to its balance. Exclusions contain selectors only; a matching correction is applied before an
+excluded holding is subtracted, and corrections can also apply to included holdings. Enabled sources must be complete
+and fresh for a percentage to appear. The Coinbase source covers returned brokerage
 wallets and current USD spot quotes, including held quantities, not external wallets or every Coinbase product.
-The backend signs view-only GET requests in memory and refreshes its portfolio cache at most once per minute.
+The backend signs view-only GET requests in memory, caches ready valuations for 60 seconds, and retries unavailable
+reads on the next request.
 
 Every historical spending point uses **today's** eligible portfolio; historical asset values are not reconstructed.
 Coverage starts at the latest first-recorded transaction among selected accounts; partial windows annualize only their

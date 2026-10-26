@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from pydantic import SecretStr, ValidationError
 
 from finance.plaid.spend import portfolio
-from finance.plaid.spend.portfolio import read_portfolio
+from finance.plaid.spend.portfolio import CoinbaseClient, read_portfolio
 from finance.plaid.spend.portfolio_models import PortfolioPolicy
 
 
@@ -57,13 +57,19 @@ def _pool(connection: _FakeConnection) -> asyncpg.Pool:
     return cast(asyncpg.Pool, _FakePool(connection))
 
 
-def _policy(*, coinbase_enabled: bool = False, excluded: list[dict[str, object]] | None = None) -> PortfolioPolicy:
+def _policy(
+    *,
+    coinbase_enabled: bool = False,
+    excluded: list[dict[str, object]] | None = None,
+    corrections: list[dict[str, object]] | None = None,
+) -> PortfolioPolicy:
     return PortfolioPolicy.model_validate(
         {
             "sources": {
                 "plaid": {
                     "asset_account_ids": ["asset-checking", "asset-brokerage"],
                     "liability_account_ids": ["card-account"],
+                    "holding_value_corrections": corrections or [],
                 },
                 "coinbase": {"enabled": coinbase_enabled},
             },
@@ -94,6 +100,10 @@ def _coinbase_test_key() -> str:
     ).decode("ascii")
 
 
+def _coinbase_client(api_key: str, api_secret: str) -> CoinbaseClient:
+    return CoinbaseClient(api_key=SecretStr(api_key), api_secret=SecretStr(api_secret))
+
+
 def _use_coinbase_mock_transport(
     monkeypatch: pytest.MonkeyPatch, respond: Callable[[httpx.Request], httpx.Response]
 ) -> None:
@@ -118,9 +128,15 @@ async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_
                 "source": "plaid",
                 "account_id": "asset-brokerage",
                 "security_ids": ["security-fake-1"],
-                "value_multiplier": 2.0,
             }
-        ]
+        ],
+        corrections=[
+            {
+                "account_id": "asset-brokerage",
+                "security_ids": ["security-fake-1"],
+                "value_multiplier": 2,
+            }
+        ],
     )
     connection = _FakeConnection(
         balances=[
@@ -151,13 +167,11 @@ async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_
 
 
 @pytest.mark.asyncio
-async def test_multiplier_reconciles_all_holdings_across_independent_capture_times() -> None:
+async def test_correction_reconciles_included_holdings_across_independent_capture_times() -> None:
     now = datetime.now(UTC)
     policy = _policy(
-        excluded=[
+        corrections=[
             {
-                "label": "adjusted-position",
-                "source": "plaid",
                 "account_id": "asset-brokerage",
                 "security_ids": ["security-fake-1"],
                 "value_multiplier": 100,
@@ -190,8 +204,8 @@ async def test_multiplier_reconciles_all_holdings_across_independent_capture_tim
 
     assert view.status == "ready"
     assert view.assets_minor_units == 300_000
-    assert view.excluded_minor_units == 100_000
-    assert view.net_minor_units == 200_000
+    assert view.excluded_minor_units == 0
+    assert view.net_minor_units == 300_000
     assert view.sources[0].as_of == now - timedelta(minutes=15)
     assert view.sources[0].issues == [
         "Plaid account and holding observations were captured at meaningfully different times."
@@ -199,7 +213,43 @@ async def test_multiplier_reconciles_all_holdings_across_independent_capture_tim
 
 
 @pytest.mark.asyncio
-async def test_missing_excluded_position_in_a_newer_complete_batch_is_zero() -> None:
+async def test_corrected_holdings_that_do_not_reconcile_fail_closed() -> None:
+    now = datetime.now(UTC)
+    policy = _policy(
+        corrections=[
+            {
+                "account_id": "asset-brokerage",
+                "security_ids": ["security-fake-1"],
+                "value_multiplier": 2,
+            }
+        ]
+    )
+    connection = _FakeConnection(
+        balances=[
+            _balance("asset-checking", 1000, now),
+            _balance("asset-brokerage", 2000, now, account_type="investment"),
+            _balance("card-account", 0, now, account_type="credit"),
+        ],
+        holdings=[
+            {
+                "account_id": "asset-brokerage",
+                "security_id": "security-fake-1",
+                "captured_at": now,
+                "institution_value": 100,
+                "holding_currency": "USD",
+            }
+        ],
+    )
+
+    view = await read_portfolio(_pool(connection), policy, now=now)
+
+    assert view.status == "unavailable"
+    assert view.net_minor_units is None
+    assert "Corrected holdings do not reconcile" in view.sources[0].issues[0]
+
+
+@pytest.mark.asyncio
+async def test_missing_excluded_position_with_other_holdings_fails_closed() -> None:
     now = datetime.now(UTC)
     balance_time = now - timedelta(minutes=5)
     holdings_time = now - timedelta(minutes=15)
@@ -232,9 +282,47 @@ async def test_missing_excluded_position_in_a_newer_complete_batch_is_zero() -> 
 
     view = await read_portfolio(_pool(connection), policy, now=now)
 
-    assert view.status == "ready"
-    assert view.excluded_minor_units == 0
-    assert view.net_minor_units == 300_000
+    assert view.status == "unavailable"
+    assert view.net_minor_units is None
+    assert "current value is unknown" in view.sources[0].issues[0]
+
+
+@pytest.mark.asyncio
+async def test_missing_correction_position_with_other_holdings_fails_closed() -> None:
+    now = datetime.now(UTC)
+    balance_time = now - timedelta(minutes=5)
+    holdings_time = now - timedelta(minutes=15)
+    policy = _policy(
+        corrections=[
+            {
+                "account_id": "asset-brokerage",
+                "security_ids": ["security-fake-1"],
+                "value_multiplier": 2,
+            }
+        ]
+    )
+    connection = _FakeConnection(
+        balances=[
+            _balance("asset-checking", 1000, balance_time),
+            _balance("asset-brokerage", 2000, balance_time, account_type="investment"),
+            _balance("card-account", 0, balance_time, account_type="credit"),
+        ],
+        holdings=[
+            {
+                "account_id": "asset-brokerage",
+                "security_id": "security-still-held",
+                "captured_at": holdings_time,
+                "institution_value": 2000,
+                "holding_currency": "USD",
+            }
+        ],
+    )
+
+    view = await read_portfolio(_pool(connection), policy, now=now)
+
+    assert view.status == "unavailable"
+    assert view.net_minor_units is None
+    assert "current value is unknown" in view.sources[0].issues[0]
 
 
 @pytest.mark.asyncio
@@ -389,8 +477,7 @@ async def test_coinbase_paginates_and_values_held_balances_with_usd_quotes(monke
         _pool(_FakeConnection(balances=[])),
         policy,
         now=now,
-        coinbase_api_key=SecretStr("organizations/test/apiKeys/key"),
-        coinbase_api_secret=SecretStr(private_key),
+        coinbase_client=_coinbase_client("organizations/test/apiKeys/key", private_key),
     )
 
     assert view.status == "ready"
@@ -409,6 +496,12 @@ async def test_coinbase_paginates_and_values_held_balances_with_usd_quotes(monke
         request.headers.get("authorization") for request in requests if request.url.path.endswith("/accounts")
     }
     assert len(account_authorizations) == 2
+    assert all(request.method == "GET" for request in requests)
+    assert all(
+        "authorization" not in request.headers
+        for request in requests
+        if request.url.path.startswith("/v2/prices/")
+    )
     assert any(request.url.path == "/v2/prices/USDC-USD/spot" for request in requests)
     assert any(request.url.params.get("cursor") == "opaque-test-cursor" for request in requests)
 
@@ -450,8 +543,7 @@ async def test_coinbase_zero_balance_wallet_does_not_request_an_unsupported_asse
         _pool(_FakeConnection(balances=[])),
         policy,
         now=now,
-        coinbase_api_key=SecretStr("organizations/test/apiKeys/key"),
-        coinbase_api_secret=SecretStr(private_key),
+        coinbase_client=_coinbase_client("organizations/test/apiKeys/key", private_key),
     )
 
     assert view.status == "ready"
@@ -477,8 +569,7 @@ async def test_coinbase_cursor_without_next_page_token_fails_closed(monkeypatch:
         _pool(_FakeConnection(balances=[])),
         policy,
         now=now,
-        coinbase_api_key=SecretStr("test-key"),
-        coinbase_api_secret=SecretStr(private_key),
+        coinbase_client=_coinbase_client("test-key", private_key),
     )
 
     assert view.status == "unavailable"
@@ -507,6 +598,60 @@ def test_portfolio_policy_rejects_overlapping_account_and_security_selectors() -
                     "account_id": "asset-brokerage",
                     "security_ids": ["duplicate-security"],
                 },
+            ]
+        )
+
+    with pytest.raises(ValidationError, match="must not overlap"):
+        _policy(
+            corrections=[
+                {
+                    "account_id": "asset-brokerage",
+                    "security_ids": ["same-security"],
+                    "value_multiplier": 2,
+                },
+                {
+                    "account_id": "asset-brokerage",
+                    "security_ids": ["same-security"],
+                    "value_multiplier": 3,
+                },
+            ]
+        )
+
+    with pytest.raises(ValidationError, match="selected asset account"):
+        _policy(
+            corrections=[
+                {
+                    "account_id": "card-account",
+                    "security_ids": ["security-fake-1"],
+                    "value_multiplier": 2,
+                }
+            ]
+        )
+
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        _policy(
+            excluded=[
+                {
+                    "label": "selector-only",
+                    "source": "plaid",
+                    "account_id": "asset-brokerage",
+                    "security_ids": ["security-fake-1"],
+                    "value_multiplier": 2,
+                }
+            ]
+        )
+
+
+@pytest.mark.parametrize("multiplier", [0, -1, float("nan"), float("inf"), float("-inf")])
+def test_holding_value_correction_multiplier_must_be_positive_and_finite(multiplier: float) -> None:
+    with pytest.raises(ValidationError):
+        _policy(
+            corrections=[
+                {
+                    "account_id": "asset-brokerage",
+                    "security_ids": ["security-fake-1"],
+                    "value_multiplier": multiplier,
+                }
             ]
         )
 

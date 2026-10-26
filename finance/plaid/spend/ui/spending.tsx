@@ -220,7 +220,7 @@ function AllowancePanel({
             </Text>
             <Divider color="teal.6" />
             <Text size="sm">
-              Allowance began: {allowance.activation_at} at midnight ({allowance.time_zone ?? "UTC"})
+              Allowance began: {allowance.activation_at} at midnight ({allowance.time_zone})
             </Text>
             <Text size="sm">Next credit: {time(allowance.next_credit_at)}</Text>
             <Text size="xs" c="teal.0">

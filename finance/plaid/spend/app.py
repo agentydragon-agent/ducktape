@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from finance.plaid.spend.allowance import EstimatePeriodId, PeriodId, TransactionPeriodId
 from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView, load_configuration
+from finance.plaid.spend.portfolio import CoinbaseClient
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
 from finance.plaid.spend.sustainability import SustainabilityView
@@ -208,12 +209,14 @@ def main() -> None:
     settings = SpendSettings()
     configuration = load_configuration(settings.config_path)
     coinbase = settings.coinbase
+    coinbase_client = (
+        CoinbaseClient(api_key=coinbase.api_key, api_secret=coinbase.api_secret) if coinbase is not None else None
+    )
     service = SpendService(
         settings.database_url,
         configuration,
         dashboard_url=settings.web_oidc_public_base_url,
-        coinbase_api_key=coinbase.api_key if coinbase is not None else None,
-        coinbase_api_secret=coinbase.api_secret if coinbase is not None else None,
+        coinbase_client=coinbase_client,
     )
     uvicorn.run(create_app(settings, service=service), host=settings.host, port=settings.port, log_level="info")
 

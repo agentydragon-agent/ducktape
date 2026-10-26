@@ -7,6 +7,7 @@ from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -61,8 +62,9 @@ class CardConfig(BaseModel):
 
 
 class SpendConfiguration(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
 
+    time_zone: ZoneInfo
     cards: list[CardConfig]
     allowance: AllowancePolicy | None = None
     sustainability: SustainabilityPolicy | None = None
@@ -126,7 +128,6 @@ class AllowanceConfigurationView(BaseModel):
     activation_at: date_type
     currency: str
     spending_account_count: int
-    time_zone: str = "UTC"
     max_sync_age_hours: int
     forecast_basis_period_id: PeriodId
     rules: list[Rule]
@@ -138,6 +139,7 @@ class SpendConfigurationView(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    time_zone: str
     cards: list[CardConfigurationView]
     allowance: AllowanceConfigurationView | None
 

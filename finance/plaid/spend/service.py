@@ -10,12 +10,10 @@ from collections import defaultdict
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from zoneinfo import ZoneInfo
 
 import anyio
 import asyncpg
 from babel.numbers import get_currency_precision
-from pydantic import SecretStr
 
 from finance.plaid.spend.allowance import (
     AllowanceView,
@@ -51,8 +49,8 @@ from finance.plaid.spend.models import (
     TransactionPeriodSummary,
     UnavailableCardPeriod,
 )
-from finance.plaid.spend.portfolio import read_portfolio
-from finance.plaid.spend.portfolio_models import PortfolioView
+from finance.plaid.spend.portfolio import CoinbaseClient, read_portfolio
+from finance.plaid.spend.portfolio_models import PortfolioView, SourceValuation
 from finance.plaid.spend.sustainability import (
     SustainabilityView,
     calculate_sustainability,
@@ -86,14 +84,12 @@ class SpendService:
         configuration: SpendConfiguration,
         *,
         dashboard_url: str,
-        coinbase_api_key: SecretStr | None = None,
-        coinbase_api_secret: SecretStr | None = None,
+        coinbase_client: CoinbaseClient | None = None,
     ) -> None:
         self._database_url = database_url
         self._configuration = configuration
         self._dashboard_url = dashboard_url
-        self._coinbase_api_key = coinbase_api_key
-        self._coinbase_api_secret = coinbase_api_secret
+        self._coinbase_client = coinbase_client
         self._portfolio_lock = asyncio.Lock()
         self._portfolio_cache: tuple[datetime, PortfolioView] | None = None
         self._pool: asyncpg.Pool | None = None
@@ -128,10 +124,7 @@ class SpendService:
                 self._pool = None
 
     def report_day(self, instant: datetime) -> date:
-        """Policy-local reporting date; UTC when no allowance is configured."""
-        policy = self._configuration.allowance
-        zone = policy.time_zone if policy else UTC
-        return instant.astimezone(zone).date()
+        return instant.astimezone(self._configuration.time_zone).date()
 
     def subscribe(self) -> asyncio.Queue[None]:
         queue: asyncio.Queue[None] = asyncio.Queue(maxsize=1)
@@ -146,7 +139,6 @@ class SpendService:
             allowance = AllowanceConfigurationView(
                 monthly_minor_units=policy.monthly_minor_units,
                 activation_at=policy.activation_at,
-                time_zone=policy.time_zone.key,
                 currency=policy.currency,
                 spending_account_count=len(policy.spending_account_ids),
                 max_sync_age_hours=policy.max_sync_age_hours,
@@ -155,6 +147,7 @@ class SpendService:
                 analysis_categories=policy.analysis_categories,
             )
         return SpendConfigurationView(
+            time_zone=configuration.time_zone.key,
             cards=[
                 CardConfigurationView(
                     label=card.label,
@@ -454,7 +447,7 @@ class SpendService:
         rows: list[SpendTransactionRow] = []
         seen: set[tuple[str, str]] = set()
 
-        zone = allowance_policy.time_zone if allowance_policy else ZoneInfo("UTC")
+        zone = self._configuration.time_zone
 
         def add_row(transaction: Transaction, decision: TransactionDecision | None) -> None:
             day = transaction.report_day(zone)
@@ -612,7 +605,7 @@ class SpendService:
                     currency=policy.currency,
                     monthly_minor_units=policy.monthly_minor_units,
                     activation_at=policy.activation_at,
-                    time_zone=policy.time_zone.key,
+                    time_zone=self._configuration.time_zone.key,
                     available_minor_units=None,
                     next_credit_at=None,
                     posted_minor_units=0,
@@ -666,6 +659,7 @@ class SpendService:
         return calculate(
             policy,
             [Transaction.model_validate(dict(row)) for row in rows],
+            time_zone=self._configuration.time_zone,
             now=now,
             last_synced_at=last_synced,
             decisions=decisions,
@@ -685,13 +679,27 @@ class SpendService:
                     self._require_pool(),
                     policy.portfolio,
                     now=now,
-                    coinbase_api_key=self._coinbase_api_key,
-                    coinbase_api_secret=self._coinbase_api_secret,
+                    coinbase_client=self._coinbase_client,
                 )
             except asyncpg.PostgresError:
-                # This boundary surfaces failure without leaking SQL or identifiers.
-                view = empty_portfolio()
-            self._portfolio_cache = (now, view)
+                view = PortfolioView(
+                    status="unavailable",
+                    net_minor_units=None,
+                    assets_minor_units=None,
+                    liabilities_minor_units=None,
+                    excluded_minor_units=None,
+                    sources=[
+                        SourceValuation(
+                            name="plaid",
+                            status="unavailable",
+                            amount_minor_units=None,
+                            as_of=None,
+                            issues=["The Plaid mirror could not be read."],
+                        )
+                    ],
+                )
+            if view.status == "ready":
+                self._portfolio_cache = (now, view)
             return view
 
     async def read_sustainability(self, window_days: int | None = None) -> SustainabilityView:
@@ -699,7 +707,7 @@ class SpendService:
         policy = self._configuration.sustainability
         allowance = self._configuration.allowance
         if policy is None or allowance is None:
-            return disabled_view(now, allowance.time_zone.key if allowance else "UTC", self.report_day(now))
+            return disabled_view(now, self._configuration.time_zone.key, self.report_day(now))
         days = window_days if window_days is not None else policy.display.default_window_days
         if days not in policy.display.windows_days:
             raise ValueError("window must be configured")
@@ -744,7 +752,14 @@ class SpendService:
             issues.append("The spending source could not be read; totals are unavailable.")
         portfolio = await self._read_current_portfolio(now)
         return calculate_sustainability(
-            policy, allowance, transactions, portfolio, now=now, window_days=days, source_issues=issues
+            policy,
+            allowance,
+            transactions,
+            portfolio,
+            time_zone=self._configuration.time_zone,
+            now=now,
+            window_days=days,
+            source_issues=issues,
         )
 
     def _require_pool(self) -> asyncpg.Pool:
