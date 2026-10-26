@@ -203,6 +203,7 @@ def _add_cluster_roles(chart: Chart) -> None:
         # reconciliation, without granting arbitrary Kustomization patches.
         ("kustomize.toolkit.fluxcd.io", ("kustomizations",)),
         ("kyverno.io", ("clusterpolicies", "policies", "policyreports", "clusterpolicyreports")),
+        ("litellm.crossplane.io", ("keys", "teams")),
         ("litellm.m.crossplane.io", ("*",)),
         ("metrics.k8s.io", ("pods", "nodes")),
         # No nodes/proxy, even get-only: the kubelet authorizes a WebSocket /exec handshake as

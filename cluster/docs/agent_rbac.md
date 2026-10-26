@@ -76,11 +76,13 @@ GrafanaDashboard, and all objects in the Crossplane API groups `apiextensions.cr
 `ops.crossplane.io`, `pkg.crossplane.io`, `protection.crossplane.io`, `opentofu.upbound.io`,
 `opentofu.m.upbound.io`, and `litellm.m.crossplane.io`. This includes compositions, XRDs,
 operations, packages, runtime configs, OpenTofu provider configs, provider config usages and
-Workspaces, and LiteLLM provider configs, keys, teams, and organizations. All object fields are
-readable, including `EnvironmentConfig.data` and OpenTofu Workspace outputs, so secret values must
-stay out of inline fields. The role does not grant reads on Kubernetes Secrets or direct access to
-an OpenTofu state backend. It also excludes ConfigMaps, Pod logs, Pod exec, and `nodes/proxy`; the apiserver
-authorization review subresources allow `create` only to query permissions and persist no object.
+Workspaces, and LiteLLM provider configs, keys, teams, and organizations. It also reads `keys` and
+`teams` in the legacy cluster-scoped `litellm.crossplane.io` API group. All object
+fields are readable, including `EnvironmentConfig.data` and OpenTofu Workspace outputs, so secret
+values must stay out of inline fields. The role does not grant reads on Kubernetes Secrets or direct
+access to an OpenTofu state backend. It also excludes ConfigMaps, Pod logs, Pod exec, and `nodes/proxy`;
+the apiserver authorization review subresources allow `create` only to query permissions and persist
+no object.
 Static agent identities on the shared binding receive it directly. Managed public-coder,
 finance-agent, and Haku sandboxes select it through their presets. The generator is the
 resource-list source of truth.
