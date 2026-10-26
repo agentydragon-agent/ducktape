@@ -1,37 +1,13 @@
-import { useEffect, useMemo, useRef } from "react";
-import { Group, Paper, Stack, Text, Title } from "@mantine/core";
-import {
-  BarController,
-  BarElement,
-  CategoryScale,
-  Chart,
-  LinearScale,
-  LineController,
-  LineElement,
-  PointElement,
-  Tooltip,
-} from "chart.js";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Group, Paper, Stack, Switch, Text, Title } from "@mantine/core";
+import { CategoryScale, Chart, LinearScale, LineController, LineElement, PointElement, Tooltip } from "chart.js";
 
 import { money } from "./spend_display";
 import type { SustainabilityHistory } from "./types";
 
-const SERIES_COLORS = {
-  annualizedSpending: "#1971C2",
-  spendingDrawRate: "#E8590C",
-  taxAdjustedDrawRate: "#6741D9",
-  referenceScenario: "#868E96",
-};
+const SERIES_COLORS = { funding: "#6741D9", referenceScenario: "#868E96" };
 
-Chart.register(
-  BarController,
-  BarElement,
-  CategoryScale,
-  LinearScale,
-  LineController,
-  LineElement,
-  PointElement,
-  Tooltip
-);
+Chart.register(CategoryScale, LinearScale, LineController, LineElement, PointElement, Tooltip);
 
 function percent(value: number): string {
   return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(value);
@@ -48,86 +24,74 @@ export function SustainabilityHistoryChart({
   referenceDrawRates,
   currency,
   windowDays,
+  portfolioMinorUnits,
+  effectiveTaxRate,
 }: {
   history: SustainabilityHistory[];
   referenceDrawRates: number[];
   currency: string;
   windowDays: number;
+  portfolioMinorUnits: number | null;
+  effectiveTaxRate: number | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [includeTaxes, setIncludeTaxes] = useState(true);
+  const hasRates = effectiveTaxRate != null && portfolioMinorUnits != null && portfolioMinorUnits > 0;
+  const amountPerRate = hasRates ? portfolioMinorUnits * (includeTaxes ? 1 : 1 - effectiveTaxRate) : 1;
+  const amountLabel = includeTaxes ? "Annual funding including taxes" : "Annual spending excluding taxes";
+  const canPlot = history.length > 0 && (!includeTaxes || hasRates);
   const legendItems = [
-    { label: "Annualized spending", color: SERIES_COLORS.annualizedSpending, lineStyle: "solid" },
-    ...(history.some((point) => point.spending_draw_rate != null)
-      ? [{ label: "Spending-only draw rate", color: SERIES_COLORS.spendingDrawRate, lineStyle: "solid" }]
-      : []),
-    ...(history.some((point) => point.tax_adjusted_draw_rate != null)
-      ? [{ label: "Tax-adjusted draw rate", color: SERIES_COLORS.taxAdjustedDrawRate, lineStyle: "dashed" }]
-      : []),
-    ...(referenceDrawRates.length > 0
-      ? [{ label: "Reference scenarios", color: SERIES_COLORS.referenceScenario, lineStyle: "dotted" }]
+    { label: amountLabel, color: SERIES_COLORS.funding, lineStyle: "solid" },
+    ...(hasRates && referenceDrawRates.length > 0
+      ? [{ label: "Reference withdrawal scenarios", color: SERIES_COLORS.referenceScenario, lineStyle: "dotted" }]
       : []),
   ];
   const chart = useMemo(() => {
-    const rateValues = history.flatMap((point) =>
-      [point.spending_draw_rate, point.tax_adjusted_draw_rate].filter((value): value is number => value != null)
+    const rates = history.flatMap((point) =>
+      point.tax_adjusted_draw_rate == null ? [] : [point.tax_adjusted_draw_rate]
     );
-    const maximumRate = Math.max(0.05, ...rateValues, ...referenceDrawRates) * 1.15;
-    const labels = history.map((point) => shortDate(point.date));
-    const datasets = [
-      {
-        type: "line" as const,
-        label: "Annualized spending",
-        data: history.map((point) => point.annualized_spending_minor_units),
-        borderColor: SERIES_COLORS.annualizedSpending,
-        backgroundColor: SERIES_COLORS.annualizedSpending,
-        borderWidth: 2,
-        pointRadius: history.length === 1 ? 3 : 0,
-        pointHitRadius: 8,
-        spanGaps: false,
-        yAxisID: "amount",
-      },
-      {
-        type: "line" as const,
-        label: "Spending-only draw rate",
-        data: history.map((point) => point.spending_draw_rate),
-        borderColor: SERIES_COLORS.spendingDrawRate,
-        backgroundColor: SERIES_COLORS.spendingDrawRate,
-        borderWidth: 2,
-        pointRadius: history.length === 1 ? 3 : 0,
-        pointHitRadius: 8,
-        spanGaps: false,
-        yAxisID: "rate",
-      },
-      {
-        type: "line" as const,
-        label: "Tax-adjusted draw rate",
-        data: history.map((point) => point.tax_adjusted_draw_rate),
-        borderColor: SERIES_COLORS.taxAdjustedDrawRate,
-        backgroundColor: SERIES_COLORS.taxAdjustedDrawRate,
-        borderWidth: 2,
-        borderDash: [5, 3],
-        pointRadius: history.length === 1 ? 3 : 0,
-        pointHitRadius: 8,
-        spanGaps: false,
-        yAxisID: "rate",
-      },
-      ...referenceDrawRates.map((rate, index) => ({
-        type: "line" as const,
-        label: `Reference scenario ${index + 1} (${percent(rate)})`,
-        data: history.map(() => rate),
-        borderColor: SERIES_COLORS.referenceScenario,
-        borderWidth: 1,
-        borderDash: [2, 4],
-        pointRadius: 0,
-        pointHitRadius: 4,
-        yAxisID: "rate",
-      })),
-    ];
-    return { labels, datasets, maximumRate };
-  }, [history, referenceDrawRates]);
+    const maximumRate = Math.ceil(Math.max(0.01, ...rates, ...referenceDrawRates) * 1.15 * 200) / 200;
+    const minimumRate = Math.floor(Math.min(0, ...rates) * 1.15 * 200) / 200;
+    return {
+      maximumRate,
+      minimumRate,
+      labels: history.map((point) => shortDate(point.date)),
+      datasets: [
+        {
+          type: "line" as const,
+          label: amountLabel,
+          // Keep one canonical rate scale when taxes are modeled. The toggle
+          // changes dollar units, not the rate, bounds, or apparent volatility.
+          data: history.map((point) =>
+            hasRates ? point.tax_adjusted_draw_rate : point.annualized_spending_minor_units
+          ),
+          borderColor: SERIES_COLORS.funding,
+          backgroundColor: SERIES_COLORS.funding,
+          borderWidth: 2,
+          pointRadius: history.length === 1 ? 3 : 0,
+          pointHitRadius: 8,
+          spanGaps: false,
+          yAxisID: "amount",
+        },
+        ...(hasRates
+          ? referenceDrawRates.map((rate, index) => ({
+              type: "line" as const,
+              label: `Reference scenario ${index + 1} (${percent(rate)})`,
+              data: history.map(() => rate),
+              borderColor: SERIES_COLORS.referenceScenario,
+              borderWidth: 1,
+              borderDash: [2, 4],
+              pointRadius: 0,
+              pointHitRadius: 4,
+              yAxisID: "amount",
+            }))
+          : []),
+      ],
+    };
+  }, [amountLabel, hasRates, history, referenceDrawRates]);
 
   useEffect(() => {
-    if (!canvasRef.current || history.length === 0) return;
+    if (!canvasRef.current || !canPlot) return;
     const instance = new Chart(canvasRef.current, {
       type: "line",
       data: { labels: chart.labels, datasets: chart.datasets },
@@ -139,16 +103,23 @@ export function SustainabilityHistoryChart({
           tooltip: {
             callbacks: {
               label: (context) => {
-                const value = Number(context.parsed.y);
-                if (!Number.isFinite(value)) return `${context.dataset.label}: unavailable`;
-                const formatted =
-                  context.dataset.yAxisID === "amount"
-                    ? `${context.dataset.label}: ${money(value, currency)}`
-                    : `${context.dataset.label}: ${percent(value)}`;
-                const coveredDays = history[context.dataIndex]?.covered_days;
-                return context.dataset.yAxisID === "amount" && coveredDays != null
-                  ? `${formatted} · based on ${coveredDays} covered days`
-                  : formatted;
+                const value = context.parsed.y;
+                if (value == null || !Number.isFinite(value)) return `${context.dataset.label}: unavailable`;
+                if (context.datasetIndex > 0) return `${context.dataset.label}: ${percent(value)}`;
+                const point = history[context.dataIndex];
+                const lines = [
+                  `Annual spending excluding taxes: ${money(point.annualized_spending_minor_units, currency)}`,
+                ];
+                if (hasRates && portfolioMinorUnits != null && point.annualized_spending_minor_units != null) {
+                  const funding = Math.round(value * portfolioMinorUnits);
+                  lines.push(
+                    `Estimated withdrawal taxes: ${money(funding - point.annualized_spending_minor_units, currency)}`,
+                    `Annual funding including taxes: ${money(funding, currency)}`,
+                    `Required withdrawal rate including taxes: ${percent(value)}`
+                  );
+                }
+                lines.push(`Based on ${point.covered_days} complete calendar days`);
+                return lines;
               },
             },
           },
@@ -158,58 +129,81 @@ export function SustainabilityHistoryChart({
           amount: {
             type: "linear",
             position: "left",
-            title: { display: true, text: "Annualized spending" },
-            ticks: { callback: (value) => money(Number(value), currency) },
+            ...(hasRates ? { min: chart.minimumRate, max: chart.maximumRate } : { beginAtZero: true }),
+            title: { display: true, text: amountLabel },
+            ticks: {
+              count: 6,
+              autoSkip: false,
+              callback: (value) => money(Number(value) * amountPerRate, currency),
+            },
           },
           rate: {
             type: "linear",
             position: "right",
-            min: 0,
+            display: hasRates,
+            min: chart.minimumRate,
             max: chart.maximumRate,
-            title: { display: true, text: "Implied draw rate" },
+            title: { display: true, text: "Required withdrawal rate including taxes" },
             grid: { drawOnChartArea: false },
-            ticks: { callback: (value) => percent(Number(value)) },
+            ticks: { count: 6, autoSkip: false, callback: (value) => percent(Number(value)) },
           },
         },
         animation: false,
       },
     });
     return () => instance.destroy();
-  }, [chart, currency, history.length]);
+  }, [amountLabel, amountPerRate, canPlot, chart, currency, hasRates, history, portfolioMinorUnits]);
 
   return (
     <Paper component="section" aria-labelledby="sustainability-history-title" withBorder radius="lg" p="lg">
       <Stack gap="sm">
         <div>
           <Title id="sustainability-history-title" order={2} size="h4">
-            Spending and implied draw history
+            Spending and funding history
           </Title>
-          <Text size="xs" c="dimmed" mt={4}>
-            Draw rates use TODAY&apos;S portfolio valuation as the denominator for every date shown.
+          <Text size="sm" mt={4}>
+            {windowDays}-day trailing average, annualized
           </Text>
           <Text size="xs" c="dimmed">
-            Each point uses {windowDays} complete days. Shorter startup windows are omitted.
+            Complete calendar days ending on each date; shorter startup windows are omitted.
           </Text>
-          <Group gap="md" mt="xs" wrap="wrap" role="list" aria-label="Chart legend">
-            {legendItems.map((item) => (
-              <Group key={item.label} gap={6} wrap="nowrap" role="listitem">
-                <span
-                  aria-hidden="true"
-                  style={{ borderTop: `2px ${item.lineStyle} ${item.color}`, display: "inline-block", width: 20 }}
-                />
-                <Text size="xs">{item.label}</Text>
-              </Group>
-            ))}
-          </Group>
+          <Text size="xs" c="dimmed">
+            Withdrawal percentages include taxes and use TODAY&apos;S portfolio valuation for every date shown.
+          </Text>
         </div>
+        <Switch
+          label="Include withdrawal taxes in dollar amounts"
+          checked={includeTaxes}
+          onChange={(event) => setIncludeTaxes(event.currentTarget.checked)}
+        />
+        <Text size="xs" c="dimmed">
+          {effectiveTaxRate == null
+            ? "Withdrawal taxes are not modeled; funding amounts and withdrawal percentages are unavailable."
+            : `Modeled withdrawal tax: ${percent(effectiveTaxRate)} of gross funding. Switching dollar amounts keeps the same tax-inclusive withdrawal percentage.`}
+        </Text>
+        <Group gap="md" wrap="wrap" role="list" aria-label="Chart legend">
+          {legendItems.map((item) => (
+            <Group key={item.label} gap={6} wrap="nowrap" role="listitem">
+              <span
+                aria-hidden="true"
+                style={{ borderTop: `2px ${item.lineStyle} ${item.color}`, display: "inline-block", width: 20 }}
+              />
+              <Text size="xs">{item.label}</Text>
+            </Group>
+          ))}
+        </Group>
         {history.length === 0 ? (
           <Text size="sm" c="dimmed">
             History requires at least {windowDays} days of common recorded spending history. Select a shorter window to
             see available history.
           </Text>
+        ) : !canPlot ? (
+          <Text size="sm" c="dimmed">
+            Turn off withdrawal taxes in dollar amounts to view spending excluding taxes.
+          </Text>
         ) : (
-          <div style={{ height: 300, minWidth: 0, position: "relative" }}>
-            <canvas ref={canvasRef} aria-label="Annualized spending and implied draw rates by day" role="img" />
+          <div style={{ height: 320, minWidth: 0, position: "relative" }}>
+            <canvas ref={canvasRef} aria-label={amountLabel + " by day"} role="img" />
           </div>
         )}
       </Stack>

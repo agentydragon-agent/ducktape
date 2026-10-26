@@ -40,8 +40,8 @@ function scenarioComparison(currentRate: number | null, referenceRate: number): 
 
 function monthlySpendingBudget(view: SustainabilityView, rate: number): number | null {
   const portfolioValue = view.portfolio.net_minor_units;
-  if (portfolioValue == null || portfolioValue <= 0) return null;
-  const afterTaxRate = rate * (1 - (view.effective_tax_rate ?? 0));
+  if (portfolioValue == null || portfolioValue <= 0 || view.effective_tax_rate == null) return null;
+  const afterTaxRate = rate * (1 - view.effective_tax_rate);
   return Math.round((portfolioValue * afterTaxRate) / 12);
 }
 
@@ -68,7 +68,7 @@ function ScenarioTooltip({
       <Text size="xs">{scenarioComparison(currentRate, rate)}</Text>
       <Text size="xs">
         {view.effective_tax_rate == null
-          ? "Before taxes; withdrawal taxes are not modeled."
+          ? "Spending comparison unavailable; withdrawal taxes are not modeled."
           : `After ${percent(view.effective_tax_rate)} modeled withdrawal tax.`}
       </Text>
     </Stack>
@@ -337,14 +337,8 @@ function SpendingComposition({ view }: { view: SustainabilityView }) {
 }
 
 function DrawGauge({ view }: { view: SustainabilityView }) {
-  const headlineRate = view.tax_adjusted_draw_rate ?? view.spending_draw_rate;
-  const rateLabel =
-    view.tax_adjusted_draw_rate != null
-      ? "Tax-adjusted implied draw rate"
-      : "Spending-only implied draw rate · taxes unmodeled";
-  const annualDraw = view.estimated_annual_draw_minor_units ?? view.annualized_spending_minor_units;
-  const annualDrawLabel =
-    view.estimated_annual_draw_minor_units != null ? "Estimated annual draw" : "Annualized spending · taxes unmodeled";
+  const headlineRate = view.tax_adjusted_draw_rate;
+  const rateLabel = "Tax-adjusted implied draw rate";
   const maximumRate = Math.max(0.05, ...view.reference_draw_rates.filter(Number.isFinite)) * 1.2;
   const overflow = headlineRate != null && headlineRate > maximumRate;
   const fillWidth = headlineRate == null ? 0 : Math.max(0, Math.min(100, (headlineRate / maximumRate) * 100));
@@ -368,9 +362,15 @@ function DrawGauge({ view }: { view: SustainabilityView }) {
           </Badge>
         </Group>
         <Text size="sm" c="dimmed">
-          {annualDrawLabel}: <strong>{money(annualDraw, view.currency)}</strong>
+          Estimated annual funding including taxes:{" "}
+          <strong>{money(view.estimated_annual_draw_minor_units, view.currency)}</strong>
           {view.effective_tax_rate != null && ` · estimated effective tax rate ${percent(view.effective_tax_rate)}`}
         </Text>
+        {view.effective_tax_rate == null && (
+          <Text size="sm" c="dimmed">
+            Withdrawal taxes are not modeled; the required funding and draw rate are unavailable.
+          </Text>
+        )}
         {view.reference_draw_rates.length > 0 ? (
           <Stack gap="xs">
             <div
@@ -446,7 +446,7 @@ function DrawGauge({ view }: { view: SustainabilityView }) {
                       Equivalent monthly spending:{" "}
                       <strong>{money(monthlySpendingBudget(view, rate), view.currency)}</strong>
                       {view.effective_tax_rate == null
-                        ? " before taxes; taxes unmodeled."
+                        ? " · withdrawal taxes are not modeled."
                         : ` after ${percent(view.effective_tax_rate)} modeled withdrawal tax.`}
                     </Text>
                   </Stack>
@@ -614,6 +614,8 @@ export function SustainabilityPage() {
                 referenceDrawRates={view.reference_draw_rates}
                 currency={view.currency}
                 windowDays={view.window_days}
+                portfolioMinorUnits={view.portfolio.net_minor_units}
+                effectiveTaxRate={view.effective_tax_rate}
               />
             </>
           )}
@@ -628,8 +630,8 @@ export function SustainabilityPage() {
             <Stack gap="xs" mt="sm">
               <Text size="sm">
                 Spending is annualized from the covered complete days in the selected lookback. The implied draw rate
-                compares annualized spending with the current net portfolio value. Historical draw rates use
-                today&apos;s portfolio value for every date shown.
+                compares annual funding including modeled withdrawal taxes with the current net portfolio value.
+                Historical draw rates use today&apos;s portfolio value for every date shown.
               </Text>
               <Text size="sm">
                 Account sync and transaction posting may lag. Asset snapshots from different institutions can arrive at

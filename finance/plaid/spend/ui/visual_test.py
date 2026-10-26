@@ -958,7 +958,7 @@ async def test_sustainability_experimental_render(
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
     await page.get_by_text("Tax-adjusted implied draw rate", exact=True).wait_for()
-    await page.locator('canvas[aria-label="Annualized spending and implied draw rates by day"]').wait_for()
+    await page.locator('canvas[aria-label="Annual funding including taxes by day"]').wait_for()
     await expect(page.get_by_text("Experimental", exact=True)).to_be_visible()
     await expect(page.get_by_text("TODAY'S portfolio valuation", exact=False)).to_be_visible()
     await expect(page.get_by_text("Scenario 4: 4.5%", exact=True)).to_be_visible()
@@ -986,6 +986,24 @@ async def test_sustainability_experimental_render(
         full_page=True,
         animations="disabled",
     )
+
+    history = page.get_by_role("region", name="Spending and funding history")
+    await expect(history.get_by_text("90-day trailing average, annualized", exact=True)).to_be_visible()
+    await expect(history.get_by_text("Spending-only draw rate", exact=True)).to_have_count(0)
+    include_taxes = history.get_by_label("Include withdrawal taxes in dollar amounts")
+    await expect(include_taxes).to_be_checked()
+    await include_taxes.uncheck()
+    await expect(include_taxes).not_to_be_checked()
+    await expect(history.get_by_text("Annual spending excluding taxes", exact=True)).to_be_visible()
+    await expect(history.get_by_role("img", name="Annual spending excluding taxes by day")).to_be_visible()
+    await view.capture(
+        f"sustainability-spending-excluding-taxes-{width}",
+        label=f"{width}px spending dollars excluding taxes with tax-inclusive withdrawal percentages",
+        full_page=True,
+        animations="disabled",
+    )
+    await include_taxes.check()
+    await expect(history.get_by_role("img", name="Annual funding including taxes by day")).to_be_visible()
 
     await scenario_marker.hover()
     scenario_tooltip = page.get_by_role("tooltip").filter(has_text="Scenario 1: 3% draw rate")
@@ -1023,6 +1041,7 @@ async def test_sustainability_experimental_render(
     async with page.expect_response(lambda response: "window_days=30" in response.url):
         await page.get_by_text("30 days", exact=True).click()
     await expect(page.get_by_text("30 of 30 days covered", exact=False)).to_be_visible()
+    await expect(history.get_by_text("30-day trailing average, annualized", exact=True)).to_be_visible()
     assert any("/api/v1/sustainability?window_days=30" in url for url in requests)
     view.errors.assert_none(context="Sustainability")
 
@@ -1050,9 +1069,7 @@ async def test_sustainability_partial_window_has_no_startup_chart(
     await _select_spend_page(page, "Sustainability")
     await expect(page.get_by_text("Partial window · 45/90 days", exact=True)).to_be_visible()
     await expect(page.get_by_text("History requires at least 90 days", exact=False)).to_be_visible()
-    await expect(page.locator('canvas[aria-label="Annualized spending and implied draw rates by day"]')).to_have_count(
-        0
-    )
+    await expect(page.locator('canvas[aria-label="Annual funding including taxes by day"]')).to_have_count(0)
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     await view.capture(
         f"sustainability-partial-window-{width}",
@@ -1124,14 +1141,28 @@ async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
     await page.route("**/api/v1/sustainability*", serve_tax_unmodeled)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
-    await page.get_by_text("Spending-only implied draw rate · taxes unmodeled", exact=True).wait_for()
+    gauge = page.get_by_role("region", name="Tax-adjusted implied draw rate")
+    await expect(gauge.get_by_text("Unavailable", exact=True).first).to_be_visible()
+    await expect(page.get_by_text("Spending-only implied draw rate", exact=False)).to_have_count(0)
     marker = page.get_by_role("button", name="Scenario 1: 3% draw rate")
     await marker.hover()
     tooltip = page.get_by_role("tooltip")
     await expect(tooltip).to_contain_text("Supported monthly spending (USD/month):")
-    await expect(tooltip).to_contain_text("$3,125")
-    await expect(tooltip).to_contain_text("1.0 percentage points above this scenario")
-    await expect(tooltip).to_contain_text("Before taxes; withdrawal taxes are not modeled.")
+    await expect(tooltip).to_contain_text("Unavailable")
+    await expect(tooltip).to_contain_text("Current draw rate is unavailable.")
+    await expect(tooltip).to_contain_text("Spending comparison unavailable; withdrawal taxes are not modeled.")
+    await page.mouse.move(0, 0)
+    history = page.get_by_role("region", name="Spending and funding history")
+    await expect(history.get_by_role("img")).to_have_count(0)
+    await history.get_by_label("Include withdrawal taxes in dollar amounts").uncheck()
+    await expect(history.get_by_role("img", name="Annual spending excluding taxes by day")).to_be_visible()
+    await expect(history.get_by_text("Reference withdrawal scenarios", exact=True)).to_have_count(0)
+    await view.capture(
+        "sustainability-spending-without-tax-model",
+        label="Consumption dollars available while tax-inclusive funding rates remain unavailable",
+        full_page=True,
+        animations="disabled",
+    )
     view.errors.assert_none(context="Sustainability with unmodeled tax")
 
 

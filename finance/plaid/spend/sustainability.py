@@ -226,9 +226,7 @@ def calculate_sustainability(
             f"{other_currency} transactions in other currencies are not converted; spending coverage is incomplete."
         )
     if policy.withdrawal_tax.rate is None:
-        issues.append(
-            "Withdrawal taxes are not modeled; the displayed spending-only rate understates tax-inclusive funding needs."
-        )
+        issues.append("Withdrawal taxes are not modeled; tax-inclusive funding and draw rates are unavailable.")
     source_ready = (
         not source_issues and len(covered_starts) == len(allowance.spending_account_ids) and other_currency == 0
     )
