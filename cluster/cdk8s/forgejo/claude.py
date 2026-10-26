@@ -3,12 +3,18 @@
 from cdk8s import App, Chart
 
 from cluster.cdk8s import opentofu, terraform
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    Kustomization,
+    RenderedDirectory,
+    artifact_directory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "crossplane-forgejo-claude"
 TF_MODULE_NAME = "forgejo-claude"
-OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
+OUTPUT_DIR = f"{GENERATED_ROOT}/forgejo/gitops/{NAME}"
 KUBERNETES_IDENTITY = "opentofu-forgejo-claude"
 
 
@@ -47,7 +53,8 @@ def resources(
     return flux_kustomization(
         chart,
         NAME,
-        directory,
+        previous_owner.spec.source_ref,
+        path=f"./{artifact_directory(directory.artifact)}",
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(opentofu_provider, tofu_state_db, previous_owner),
     )

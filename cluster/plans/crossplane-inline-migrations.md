@@ -18,7 +18,10 @@ workspace. No state export, import, password rotation, or repository recreation 
 part of a migration. Keep native HCL resource addresses and legacy `removed` blocks.
 
 Flux prunes each old tofu-controller Terraform CR with resource destruction disabled
-before the replacement Workspace's Kustomization runs. The replacement has Orphan
+before the replacement Workspace's Kustomization runs. Old and new Kustomizations
+share one ExternalArtifact, with the new output in a separate nested path. Flux's
+built-in dependency check then requires the old owner to have applied the current
+artifact revision, rather than accepting Ready from an earlier revision. The replacement has Orphan
 deletion policy and Observe/Create/Update management policies. Those policies prevent
 Workspace deletion from destroying infrastructure; HCL edits can still delete resources.
 

@@ -3,12 +3,18 @@
 from cdk8s import App, Chart
 
 from cluster.cdk8s import opentofu, terraform
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    Kustomization,
+    RenderedDirectory,
+    artifact_directory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "crossplane-gatus-sso"
 TF_MODULE_NAME = "gatus-sso"
-OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
+OUTPUT_DIR = f"{GENERATED_ROOT}/authentik/tf/{NAME}"
 KUBERNETES_IDENTITY = "opentofu-gatus-sso"
 
 
@@ -45,7 +51,8 @@ def resources(
     return flux_kustomization(
         chart,
         NAME,
-        directory,
+        previous_owner.spec.source_ref,
+        path=f"./{artifact_directory(directory.artifact)}",
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(opentofu_provider, tofu_state_db, previous_owner),
     )
