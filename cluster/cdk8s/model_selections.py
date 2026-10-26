@@ -10,6 +10,7 @@ from model_catalog.catalog import (
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_SONNET,
     GPT6_RESPONSES_ROUTES,
+    GPT6_SOL_RESPONSES,
     OLLAMA_OPENAI_ROUTES,
     OLLAMA_QWEN_IQ4XS_128K,
     OLLAMA_QWEN_IQ4XS_256K,
@@ -45,9 +46,12 @@ _AGENTPLANE_OLLAMA_OPENAI_ROUTES = tuple(
     route for route in OLLAMA_OPENAI_ROUTES if route != OLLAMA_QWEN_IQ4XS_128K.openai
 )
 
+# GPT-6 Sol remains served for other clients, but Agentplane exposes GPT-6.1 Sol instead.
+_AGENTPLANE_GPT6_RESPONSES_ROUTES = tuple(route for route in GPT6_RESPONSES_ROUTES if route != GPT6_SOL_RESPONSES)
+
 STAGING_APP_MODELS = HarnessRoutes(
     claude=_AGENTPLANE_ANTIGRAVITY_ROUTES,
-    codex=(*GPT6_RESPONSES_ROUTES, *_AGENTPLANE_ANTIGRAVITY_ROUTES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES),
+    codex=(*_AGENTPLANE_GPT6_RESPONSES_ROUTES, *_AGENTPLANE_ANTIGRAVITY_ROUTES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES),
 )
 
 # Client context budgets, not inferred from Ollama num_ctx or provider limits. The ingress serves
