@@ -1,55 +1,82 @@
-# Crossplane inline migration status
+# Crossplane provisioning migration
 
-The application roots (`gatus-sso`, `forgejo-claude`, and
-`alloy-otlp-bearer-token`) and five Forgejo roots (`haku-state`, `budget-ledger`,
-`cpap-data`, `finance-agent`, and `forgejo-agentydragon-repos`) have completed their
-handoffs to Crossplane OpenTofu Workspaces. The SSO/access roots and Forgejo registry
-Terraform root were also migrated. Each Workspace uses its existing PostgreSQL schema
-and OpenTofu `default` workspace; state export/import, credential rotation, and
-infrastructure recreation were not part of these migrations.
+Umbrella tracker: [#5943](https://github.com/agentydragon/ducktape/issues/5943).
 
-## Retired gates and source artifacts
+## Deployed baseline
 
-This change removes the empty Flux Kustomizations that owned the retired Terraform
-objects, plus ArtifactGenerator entries for Terraform roots whose handoffs have
-completed. Before removing those entries, live checks confirmed the old Terraform
-objects were absent and replacement Workspaces were Ready and Synced for their current
-generations.
+The completed migrations preserve each root's PostgreSQL schema, OpenTofu `default`
+workspace, resource addresses and credentials. The last live checks during the migration
+batches found these Inline Workspaces `Ready=True` and `Synced=True` for their current
+generations:
 
-The `authentik-tf` and `forgejo-gitops` Kustomizations are no longer used as prune gates.
-Their ArtifactGenerator sources remain because the nested Workspace directories still
-consume files from those source trees. The five legacy Forgejo `tf-gitops-*` source
-artifacts have been removed after the old Terraform objects were absent and all five
-replacement Workspaces were current and healthy.
+| Area          | Workspaces                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------------ |
+| Access / SSO  | `agent-machine-access`, `gatus-sso`, `sso-providers`                                                   |
+| Applications  | `alloy-otlp-bearer-token`, `budget-ledger`, `cpap-data`, `finance-agent`                               |
+| Forgejo       | `forgejo-agentydragon`, `forgejo-agentydragon-repos`, `forgejo-claude`, `forgejo-images`, `haku-state` |
+| GitHub / Flux | `github-branch-protection`, `github-secrets-sync`, `flux-webhook-token`                                |
+| DNS           | `route53-domain-delegation`                                                                            |
 
-GitLab's attempted inline migration was rolled back by PR #12133 after its generated
-Terraform version file was found missing. The original Terraform owner is restored and
-Ready at its current generation. Its GitOps and Terraform Kustomizations had applied
-the same artifact revision before the empty Workspace prune gate was removed. The
-GitLab Terraform module, state, credentials, and native resource addresses remain.
+LiteLLM keys and teams use native Crossplane resources; the legacy `litellm-keys`
+Terraform object is retired. These are separate from the OpenTofu Workspaces.
 
-The LiteLLM `litellm-keys-tf` Kustomization remains because it applies the BuildBuddy
-credential used by the live-test key sync. The retired `litellm-keys` Terraform source
-is no longer included; the separate `litellm-buildbuddy-sync` source and executable
-remain.
+cdk8s embeds native root HCL into Inline Workspaces. Changes to the root's rendered
+configuration update the Workspace spec and trigger reconciliation without fetching the
+monorepo in the provider. Periodic drift planning remains enabled.
 
-The GitHub roots (`github-branch-protection`, `github-secrets-sync`, and
-`flux-webhook-token`) are Ready and Synced under Crossplane. Their retired Terraform
-source artifacts and empty `github-tf` gate can be removed after the gate's live
-`deletionPolicy: Orphan` is confirmed. Keep the `github-tf` artifact: the three nested
-Workspace Kustomizations still consume it.
+## Remaining tofu-controller roots
 
-## Reconciliation and recovery
+| Root                      | Required work                                                                                                                                                                     | Scheduling                                                          |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `thrive-scrape`           | Add private manifest generation and per-root runtime/RBAC; preserve the existing state schema and credentials during ownership handoff. Keep source and Inline manifests private. | Next ordinary application candidate; source investigation complete. |
+| `home-switch`             | Preserve human approval of a specific plan, home-network runtime placement and CA mount.                                                                                          | Design the approval/runtime workflow before migration.              |
+| `infra-drift`             | Preserve targeted, plan-only OVH drift checks and handle local modules, files and provisioners.                                                                                   | Separate source and drift-reporting design.                         |
+| `gitlab-spike`            | Resolve generated JSON configuration/dependencies through a native supported source path, without hand-written replacement HCL.                                                   | Explicitly postponed; tofu-controller ownership restored by #12133. |
+| `litellm-buildbuddy-sync` | Review the live-test credential sync separately.                                                                                                                                  | Explicitly skipped by the operator for now.                         |
 
-Active Workspaces keep Orphan deletion policy and Observe/Create/Update management
-policies so deleting a Workspace does not destroy its managed infrastructure. HCL
-changes can still delete resources. Workspace Kustomizations use a health check that
-requires `Synced=True` for the current generation and `Ready=True`.
+The bootstrap root under `cluster/terraform` has a separate lifecycle; it is not
+implicitly part of this in-cluster controller migration.
 
-If a future replacement fails, keep the old Terraform object absent while diagnosing.
-To return ownership, pause Crossplane reconciliation, remove the Workspace with Orphan
-policy, verify it no longer owns the state, then restore the old Terraform object. Keep
-the original state schema and `default` workspace throughout.
+## Remaining cross-cutting work
 
-Other parked roots and roots with executable or mixed-format dependencies remain
-outside these completed migrations.
+- Audit the isolation boundary. Per-root impersonated Kubernetes identities scope ordinary
+  API requests, but the shared provider process is not an execution sandbox. Shared
+  backend and credential access still need an explicit isolation assessment.
+- Resolve or accept [#12157](https://github.com/agentydragon/ducktape/issues/12157):
+  existing-state adoption can persist `Synced=True` on the first reconcile but delay
+  `Ready` and checksum until the next drift poll (roughly ten minutes). Evidence points
+  to [crossplane-runtime#791](https://github.com/crossplane/crossplane-runtime/issues/791);
+  the proposed [#804](https://github.com/crossplane/crossplane-runtime/pull/804) was closed
+  unmerged. Missing `Ready` does not establish that planning/application has not happened.
+- Decide the migration boundary for exceptional roots before retiring tofu-controller.
+  Remove controller, runner, RBAC and source plumbing only once no live roots depend on
+  them.
+
+## Handoff and cleanup gates
+
+Active Workspaces use `deletionPolicy: Orphan` and Observe/Create/Update management
+policies. Deleting a Workspace preserves managed infrastructure; changing HCL can still
+delete resources. Flux health checks require `Ready=True` and current-generation
+`Synced=True`.
+
+For each remaining migration:
+
+1. Establish the root's source packaging, runtime identity and necessary grants.
+2. Stop the old state writer before enabling the replacement; preserve the PostgreSQL
+   schema, `default` workspace and resource addresses.
+3. Verify replacement readiness and intended resource changes before retiring the old
+   Terraform object's prune gate and source artifact.
+4. Set and verify the outer Flux gate's own `deletionPolicy: Orphan` before removing it.
+   Removing an empty parent root can expose nested manifests to recursive discovery;
+   see [the lifecycle warning](../docs/cdk8s.md). Workspace Orphan policy alone does not
+   stop Flux from deleting the Workspace object.
+
+To return ownership after a failed handoff, pause Crossplane reconciliation, remove the
+Workspace with Orphan policy, verify it no longer owns the state, then restore the old
+Terraform object. Never run both writers concurrently.
+
+Completed migration gates and obsolete per-root artifacts have been removed, including
+GitHub cleanup in #12148 / #12149. Keep the shared `authentik-tf`, `forgejo-gitops` and
+`github-tf` artifacts while nested Workspace Kustomizations consume them. The
+`litellm-keys-tf` Kustomization still applies the credential used by
+`litellm-buildbuddy-sync`; it is not an obsolete gate.
