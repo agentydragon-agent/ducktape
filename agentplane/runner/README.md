@@ -57,8 +57,8 @@ workspace tools and CA certificates are supplied by the runtime image.
 ## Codex executor container
 
 Runner Pods can run Codex command execution through a companion container in the same Pod. The runner
-retains the Codex app-server and journals; the companion owns `codex exec-server` as PID 1 in its
-private container PID namespace. The runner claims the companion over a Unix socket before Codex
+retains the Codex app-server and journals; the companion runs as PID 1 and supervises
+`codex exec-server` in its private container PID namespace. The runner claims the companion over a Unix socket before Codex
 starts and fences it before replacing a lost process. A companion exit or failed health probe lets
 Kubernetes restart that container with a fresh PID namespace; the runner never replays an in-flight
 command. `Environment.isolated_codex_executor` controls this Pod-template policy and can be disabled
