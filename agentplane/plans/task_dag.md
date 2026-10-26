@@ -979,7 +979,10 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 flowchart TD
     DECLARATIVE_SESSIONS_DESIGN[Decision, unscheduled: Flux-managed Sessions and subscriptions]
     SUBSCRIPTION_AUTHORIZATION_DESIGN[Subscription authorization decision, section 2] -. related authority design .-> DECLARATIVE_SESSIONS_DESIGN
-    STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
+    VM_REPLICATED_BLOCK_WORKSPACE[In flight: provision replicated raw-block VM workspaces]
+    VM_BLOCK_STORAGE_CUTOVER[Blocked: reset affected VM Sandboxes onto replicated storage]
+    VM_REPLICATED_BLOCK_WORKSPACE --> VM_BLOCK_STORAGE_CUTOVER
+    STATE_VOLUME_BLOCK[Deferred: block storage for Pod and VM state and workspace]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
@@ -991,13 +994,12 @@ flowchart TD
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
-    NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
-    STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
+    STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Deferred: retire the superseded state attachment]
     IDLE_SUSPEND_UI_DRIVE[Operator: remaining VM idle-suspend/send-to-wake UI drive]
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
@@ -1032,17 +1034,34 @@ manifest for a Session with GitHub/webhook subscriptions, and independently fini
 nodes with focused reconciliation/restart, duplicate-prevention and authorization acceptance.
 Recording this idea does not schedule implementation.
 
-### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
+### `VM_REPLICATED_BLOCK_WORKSPACE` — provision replicated raw-block VM workspaces
 
-**Blocked on `NODE_LOCAL_BLOCK_STORAGE`.** Replace the VM's virtiofs
-state attachment with a declared disk layout once suitable node-local storage exists. The state
-PVC holds journals and native harness persistence under `/state/sessions`, separately from the
-workspace. A disk would remove virtiofs's `107:107` ownership constraint; check all callers before
-changing the guest and Pod UIDs. A Pod filesystem mount and a VM disk are not interchangeable just
-because the provisioner supports block storage. Specify supported attachments and reject
-incompatible kind changes; conversion is deferred, not a prerequisite for fresh provisioning.
-Use an explicit incompatible cutoff for existing Sandboxes, in a separate data-drop PR; the
-operator accepted dropping them rather than requiring migration. Gate guest behavior on the VM image and the runner disk it mounts, then activate templates.
+**In flight; public-coder session, 2026-10-25 PDT, operator-selected.** Change `runner-vm` to
+`BlockFilesystem`/ext4 on a `Block` claim. Staging puts both VM claims on
+`piraeus-ssd-2-autodiskful`; state remains `DirectoryTree`/`Filesystem` through virtiofs and
+Pod templates are unchanged. Exit: template and generated-manifest checks plus real raw-block
+VM write/read, suspend/resume and retained-identity acceptance on RBE. See
+[selected plan](vm_block_storage.md).
+
+### `VM_BLOCK_STORAGE_CUTOVER` — reset affected VM Sandboxes onto replicated storage
+
+**Blocked on `VM_REPLICATED_BLOCK_WORKSPACE`; operational hold on the replicated class's
+[Piraeus qualification](../../cluster/docs/plans/piraeus_production.md).** The operator accepts
+deleting pre-existing affected Sandboxes instead of implementing storage conversion
+(2026-10-25 PDT). Inventory and reset only those VM Sandboxes through their normal lifecycle;
+recreate with fresh matching claims, then verify state/workspace persistence and a bounded
+stop/start move across eligible OVH nodes. Preserve unrelated Sandboxes and backend service
+data. The [cutover procedure](vm_block_storage.md#cutover) records the exact accepted loss,
+retained PV handling and rollback limits. A code merge alone does not complete this rollout.
+
+### `STATE_VOLUME_BLOCK` — block storage for Pod and VM state and workspace
+
+**Deferred; operator, 2026-10-25 PDT: eventual endpoint, todos for later.** Both execution kinds
+eventually use block-backed state and workspace storage, including replacing the VM state
+virtiofs attachment. Select PVC modes and Pod mount/format ownership explicitly; preserve
+journals, native harness homes, permissions, suspension and kind-compatibility checks. Virtio
+remains the VM disk transport. This is independent of all-node local provisioning and does not
+gate the selected VM workspace cutover. Details: [deferred endpoint](vm_block_storage.md#deferred-endpoint).
 
 ### `NODE_LOCAL_BLOCK_STORAGE` — node-local block volumes on every node
 
@@ -1056,14 +1075,15 @@ or the explicit layout contract for workspace PVCs.
 
 ### `STATE_VOLUME_VIRTIOFS_RETIRE` — delete the superseded state attachment
 
-**Blocked on `STATE_VOLUME_BLOCK` acceptance/activation and old workloads gone.** Remove VM state
+**Deferred with `STATE_VOLUME_BLOCK`; revisit after its acceptance/activation and old workloads are gone.** Remove VM state
 virtiofs mounts, guest ownership/UID workarounds used only by them, old template paths and tests/docs.
 Keep unrelated virtiofs uses where live callers still need them. Verify Pod/VM state persistence on
 the selected explicit layouts before retiring the path; data drops stay in a separate cutoff PR.
 
 ### `VOLUME_LAYOUT_CONVERSION` — explicit offline volume conversion
 
-**Unscheduled, much later; operator, 2026-10-13 PDT.** Conversion is an accepted future option,
+**Unscheduled, much later; operator, 2026-10-13 PDT.** The 2026-10-25 VM block-storage cutover
+uses an accepted Sandbox reset and needs no converter. General conversion remains a future option,
 not work for #10440 or a gate on its rollout. Until implemented, incompatible layout changes are
 rejected. When scheduled, design a stopped-Sandbox operation with an explicit destination layout,
 verified data/metadata preservation, crash-safe binding switch and separately authorized source
@@ -1086,9 +1106,10 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `WORKSPACE_NODE_PORTABILITY` — move a workspace between nodes
 
-**Unscheduled; operator, 2026-10-13 PDT: even later.** A reasonably fast, node-portable workspace, or
-node portability by copying: volsync from node to node, through S3 on SeaweedFS or directly, while the
-Sandbox is suspended. Node-local volumes stay the default; this only moves them.
+**Unscheduled for remaining node-local workspaces; operator, 2026-10-13 PDT: even later.**
+The selected VM path is replicated Piraeus storage in `VM_BLOCK_STORAGE_CUTOVER`. For other
+node-local volumes, consider portability by copying through VolSync, object storage or directly
+while the Sandbox is suspended. This broader copy-based path does not gate replicated VM storage.
 
 ### `SANDBOX_ARCHIVE` — a suspended Sandbox archived to object storage
 
