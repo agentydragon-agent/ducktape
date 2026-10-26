@@ -288,7 +288,9 @@ async def _read_coinbase(
                 if cursor:
                     params["cursor"] = cursor
                 token = _coinbase_jwt(api_key, api_secret, now=now, method="GET", path=_COINBASE_ACCOUNTS_PATH)
-                response = await client.get(_COINBASE_ACCOUNTS_URL, params=params, headers={"Authorization": f"Bearer {token}"})
+                response = await client.get(
+                    _COINBASE_ACCOUNTS_URL, params=params, headers={"Authorization": f"Bearer {token}"}
+                )
                 response.raise_for_status()
                 page = _CoinbaseAccountsPage.model_validate(response.json())
                 accounts.extend(page.accounts)

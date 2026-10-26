@@ -164,7 +164,9 @@ py_test(
     name = "test_settings",
     srcs = ["test_settings.py"],
     deps = [
+        ":conftest",
         ":settings",
+        "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -258,19 +260,6 @@ py_test(
         ":models",
         ":portfolio_models",
         ":sustainability",
-        "//:conftest",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_settings",
-    srcs = ["test_settings.py"],
-    deps = [
-        ":conftest",
-        ":settings",
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
