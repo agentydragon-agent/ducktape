@@ -1962,26 +1962,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: authentik-tf
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/authentik/tf
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: authentik-tf
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: crossplane-sso-providers
   namespace: ducktape-flux
 spec:
@@ -1989,8 +1969,6 @@ spec:
     - name: crossplane-provider-opentofu
       namespace: ducktape-flux
     - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: authentik-tf
       namespace: ducktape-flux
     - name: authentik
       namespace: ducktape-flux
@@ -2020,8 +1998,6 @@ spec:
       namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
-    - name: authentik-tf
-      namespace: ducktape-flux
     - name: crossplane-sso-providers
       namespace: ducktape-flux
   healthCheckExprs:
@@ -2050,8 +2026,6 @@ spec:
       namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
-    - name: authentik-tf
-      namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
       current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
@@ -2077,8 +2051,6 @@ spec:
     - name: crossplane-provider-opentofu
       namespace: ducktape-flux
     - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: authentik-tf
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
@@ -2118,26 +2090,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: forgejo-gitops
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/forgejo/gitops
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: forgejo-gitops
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: crossplane-forgejo-claude
   namespace: ducktape-flux
 spec:
@@ -2145,8 +2097,6 @@ spec:
     - name: crossplane-provider-opentofu
       namespace: ducktape-flux
     - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: forgejo-gitops
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
@@ -2175,8 +2125,6 @@ spec:
     - name: crossplane-provider-opentofu
       namespace: ducktape-flux
     - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: forgejo-gitops
       namespace: ducktape-flux
     - name: crossplane-forgejo-claude
       namespace: ducktape-flux
@@ -2208,8 +2156,6 @@ spec:
       namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
-    - name: forgejo-gitops
-      namespace: ducktape-flux
     - name: crossplane-haku-state
       namespace: ducktape-flux
   healthCheckExprs:
@@ -2239,8 +2185,6 @@ spec:
     - name: crossplane-provider-opentofu
       namespace: ducktape-flux
     - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: forgejo-gitops
       namespace: ducktape-flux
     - name: crossplane-haku-state
       namespace: ducktape-flux
@@ -2272,8 +2216,6 @@ spec:
       namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
-    - name: forgejo-gitops
-      namespace: ducktape-flux
     - name: crossplane-haku-state
       namespace: ducktape-flux
   healthCheckExprs:
@@ -2304,8 +2246,6 @@ spec:
       namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
-    - name: forgejo-gitops
-      namespace: ducktape-flux
     - name: crossplane-haku-state
       namespace: ducktape-flux
   healthCheckExprs:
@@ -2327,7 +2267,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Take over forgejo-agentydragon from tofu-controller using its existing PostgreSQL state; the dependency on forgejo-gitops serializes the controller handoff.
+    description: Manage Forgejo SSH keys with their existing OpenTofu state.
   name: crossplane-forgejo-agentydragon
   namespace: ducktape-flux
 spec:
@@ -2335,8 +2275,6 @@ spec:
     - name: crossplane-provider-opentofu
       namespace: ducktape-flux
     - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: forgejo-gitops
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
@@ -2803,32 +2741,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: crossplane-gitlab-spike
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: crossplane-provider-opentofu
-      namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
-  healthCheckExprs:
-    - apiVersion: opentofu.upbound.io/v1beta1
-      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
-      kind: Workspace
-  interval: 10m
-  path: ./cluster/generated/gitlab-spike/gitops/crossplane-gitlab-spike
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: gitlab-spike-gitops
-    namespace: ducktape-flux
-  timeout: 20m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: gitlab-spike-gitops
   namespace: ducktape-flux
 spec:
@@ -2839,8 +2751,6 @@ spec:
     - name: tofu-controller
       namespace: ducktape-flux
     - name: forgejo
-      namespace: ducktape-flux
-    - name: crossplane-gitlab-spike
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/gitlab-spike/gitops
@@ -4253,7 +4163,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Prune the completed LiteLLM Terraform handoff; retain its credential sibling and source until finalization.
+    description: Provide the BuildBuddy org-admin API key used by LiteLLM's live-test sync.
   name: litellm-keys-tf
   namespace: ducktape-flux
 spec:
