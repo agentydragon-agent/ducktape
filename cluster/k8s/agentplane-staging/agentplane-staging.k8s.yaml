@@ -3932,13 +3932,6 @@ spec:
               protocol: TCP
 ---
 apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: runner
-  namespace: agentplane-staging
-automountServiceAccountToken: false
----
-apiVersion: v1
 kind: ConfigMap
 metadata:
   name: runner-egress-sidecar
@@ -4258,7 +4251,6 @@ spec:
         runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: runner
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
       volumes:
@@ -7162,7 +7154,6 @@ spec:
         runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: runner
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
       volumes:

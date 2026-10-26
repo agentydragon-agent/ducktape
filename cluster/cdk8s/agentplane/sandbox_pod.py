@@ -328,7 +328,6 @@ def pod_spec(
     *,
     workload: k8s.Container,
     additional_workloads: Sequence[k8s.Container] = (),
-    service_account_name: str | None,
     sidecar_settings: SettingsFile,
     node_selector: Mapping[str, str] | None = None,
     workload_volumes: Sequence[k8s.Volume] = (),
@@ -339,7 +338,8 @@ def pod_spec(
     """`workload` beside the egress sidecar, as uid 1000, with no ServiceAccount token in the Pod: the
     projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
     several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
-    `service_account_name` is the template's own; whoever creates a box from it may replace it.
+    A box names no account of its own: whoever creates one from this shape sets the identity it runs
+    as (the Sandbox controller the Sandbox's own, the sandbox Actions the caller's).
     `additional_workloads` are other workload containers, before the egress sidecar. `sidecar_settings`
     is the sidecar's settings file (`add_sidecar_settings`), and `workload_volumes`
     are Pod volumes the workload mounts beyond the egress path's own. `node_selector` is the optional
@@ -371,7 +371,6 @@ def pod_spec(
             [k8s.LocalObjectReference(name=image_pull_secret_name)] if image_pull_secret_name is not None else None
         ),
         node_selector=dict(node_selector) if node_selector is not None else None,
-        service_account_name=service_account_name,
         # Do not let a runner or command process inspect another container's processes.
         share_process_namespace=False,
         termination_grace_period_seconds=60,
