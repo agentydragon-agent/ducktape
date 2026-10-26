@@ -83,7 +83,8 @@ export function ThreadNoticeBadge({
         className="agentplane-thread-list-row-notices"
         data-state={error === undefined ? "pending" : "error"}
         variant="filled"
-        color="red.4"
+        // Muted: the count is the agent's backlog, not a call on the operator's attention.
+        color={error === undefined ? "gray.5" : "red.4"}
         aria-label={lines.join(". ")}
         style={live ? undefined : { opacity: 0.5 }}
       >
