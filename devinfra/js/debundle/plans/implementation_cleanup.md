@@ -22,42 +22,23 @@ the spec, design docs, or code. Documents outside this plan must not link here.
 
 ## Remaining work
 
-### 3. Finish terminology adoption
-
-PR #12129 carries the remaining report/namespace cutover and current-schema skill
-recipes.
-
-- Distinguish the authored residual namespace, the unassigned destination policy,
-  and the physical entry destination. Trace readers before deciding the wire
-  representation; preserve semantics through any paired public/private cutover.
-- Audit old graph/source-unit vocabulary in live code, docs, BUILD interfaces,
-  and skills. Preserve legitimate distinct concepts rather than replacing words
-  mechanically.
-
-### 4. Separate responsibility clusters
-
-PRs #12131 and #12130 carry the execution-analysis and artifact splits.
-
-- `facts/sync_effects.rs`: separate abstract-value representation, execution
-  indexing/collection, and interpretation. Keep their algorithms and analysis
-  ownership intact; expose narrow internal interfaces rather than blanket
-  visibility or sibling glob imports.
-- `artifacts/artifact.rs`: move metrics and report construction out of the
-  program containers. Update live imports, BUILD declarations, docs, and callers
-  in the same change; do not retain convenience re-exports.
-
 ### 5. Validate and audit completion
 
-- Let each PR run its affected CI; use focused Bazel builds/tests for iteration
-  and uncertainty. Check named Rust libraries so lint aspects run too.
-- Run the public Debundle suite and packaged skill checks on the combined head.
-- Compare generated JavaScript against the working downstream control, run normal
-  regeneration, and retain the established browser/runtime acceptance controls.
-- Record rejected and unverified registered corpus controls separately. Preserve
-  existing structural metric findings, rules, exemptions, and baselines.
-- Audit the final tree for redundant wrappers, terminology drift, misplaced
-  responsibilities, stale docs, and transitional interfaces. Resolve findings
-  within this scope before declaring completion.
+Public implementation PRs #12125, #12127, #12129, #12130, and #12131 have
+landed with their required CI green. Combined public suite, optimized build, and
+JavaScript-equivalence evidence live in `perf/large_web_corpus_baseline.md`.
+
+The final audit corrections are in PR #12138. The paired downstream pin update
+is open: producer and metrics builds succeeded, the normal writer executed
+locally with no generated-JavaScript diff, and all six established runtime
+controls passed. Its acceptance record separates historical rejected and
+unverified registered-corpus results from the fresh exact-pin checks. Existing
+structural metric findings, rules, exemptions, and baselines are unchanged.
+
+- Land PR #12138 after its final-head CI passes.
+- Land the paired downstream pin update. Track its hosted CI limitation in that
+  PR separately from the successful direct Bazel validation.
+- Delete this ledger after these final merge gates are met.
 
 ## Completion criteria
 
