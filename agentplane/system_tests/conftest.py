@@ -191,20 +191,24 @@ async def wait_until_running(client: Client, name: str) -> SandboxView:
 async def suspend_and_delete(client: Client, name: str, uid: UUID) -> None:
     await client.suspend_sandbox(name)
     # Deletion admission reads effective mode, which the controller publishes after the spec write.
+    delete_requested = False
     async with asyncio.timeout(SANDBOX_READY_SECONDS), aclosing(client.sandbox_snapshots()) as snapshots:
         async for snapshot in snapshots:
             if not snapshot.watch.fresh:
                 continue
             view = next((view for view in snapshot.sandboxes if view.name == name), None)
             if view is None:
+                if delete_requested:
+                    return
                 continue
             if view.uid != uid:
                 raise SandboxNotReadyError(f"{name} has been replaced: expected {uid}, observed {view.uid}")
-            if view.operating_mode is OperatingMode.SUSPENDED:
-                break
-        else:
-            raise SandboxNotReadyError(f"{name}'s stream ended before observing suspension")
-    await client.delete_sandbox(name)
+            if not delete_requested and view.operating_mode is OperatingMode.SUSPENDED:
+                await client.delete_sandbox(name)
+                # The delete response only accepts the request. Keep controllers and kubelet alive
+                # until the finalizer has removed the VM/Pod and released its volumes.
+                delete_requested = True
+        raise SandboxNotReadyError(f"{name}'s stream ended before observing deletion")
 
 
 @pytest.fixture

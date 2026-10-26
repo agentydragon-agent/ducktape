@@ -45,7 +45,7 @@ from agentplane.app.settings import AppSettingsConfig
 from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import launch_preset, probe_credential, runtime_grant, send_grant
-from agentplane.system_tests.k3s import dex, fixture_database
+from agentplane.system_tests.k3s import block_storage, dex, fixture_database
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, Models, PublicLiteLLM
 from cluster.cdk8s import agent_access_profiles as access
@@ -430,6 +430,7 @@ def build_chart(
         env,
         egress_api_service=agent_api,
         storage_class="local-path",
+        vm_workspace_storage_class=block_storage.STORAGE_CLASS if env.vm_sandboxes else None,
         runner_resources=k8s.ResourceRequirements(
             requests={
                 "cpu": k8s.Quantity.from_string(Cpu.millis(500).amount),

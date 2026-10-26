@@ -18,6 +18,7 @@ from agentplane.app.settings import Settings as AppSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner_gateway.settings import Settings
 from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendered_fixture
+from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
 from util.bazel.runfiles import get_required_path
@@ -271,7 +272,6 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     build_pod = _resource(docs, "PodTemplate", "sandbox-build")["template"]["spec"]
     home = next(volume for volume in build_pod["volumes"] if volume["name"] == "home")
     assert home["emptyDir"]["sizeLimit"] == "20Gi"
-
     # Dex accepts the operator's password: its hash is bcrypt of the password the Secret hands the test,
     # at no less than the cost Dex requires.
     assert fixture.mcp_fixtures is not None
@@ -329,6 +329,19 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert {name for rule in token_rules for name in rule["resourceNames"]} == {
         account.split("/")[1] for account in mintable_accounts
     }
+
+
+def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
+    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
+    template = _resource(fixture.objects, "SandboxTemplate", "runner-vm")["spec"]
+    state = template["stateVolume"]
+    workspace = template["workspaceVolume"]
+
+    assert state["claim"]["storageClassName"] == "local-path"
+    assert state["claim"].get("volumeMode", "Filesystem") == "Filesystem"
+    assert workspace["layout"] == {"type": "BlockFilesystem", "filesystem": "ext4"}
+    assert workspace["claim"]["storageClassName"] == STORAGE_CLASS
+    assert workspace["claim"]["volumeMode"] == "Block"
 
 
 if __name__ == "__main__":

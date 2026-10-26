@@ -165,6 +165,9 @@ class Environment:
     # Whether this environment has VM Sandboxes: the runner VM template (runner_vm.py) and the egress
     # relay for their KubeVirt launchers (launcher_relay.py).
     vm_sandboxes: bool
+    # Optional StorageClass for both claims owned by a VM Sandbox. If unset, they use the runner
+    # template's state claim class.
+    vm_storage_class: str | None = None
     # Guest sizing and Runner cgroup budgets shared by the VM template and guest config seed.
     vm_resources: GuestResources | None = None
     # Whether runner Pods delegate Codex command execution to a companion with its own PID namespace.
@@ -185,3 +188,10 @@ class Environment:
     # these through harness_environment.values; undeclared Runner variables reach no harness.
     # Nixpkgs glibc needs TZDIR to resolve the deployment's TZ against the image's zoneinfo.
     harness_inherited_env: Sequence[str] = ("TZDIR",)
+
+    def __post_init__(self) -> None:
+        if self.vm_storage_class is not None:
+            if not self.vm_storage_class:
+                raise ValueError("vm_storage_class cannot be empty")
+            if not self.vm_sandboxes:
+                raise ValueError("vm_storage_class requires vm_sandboxes")

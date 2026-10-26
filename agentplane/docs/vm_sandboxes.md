@@ -61,18 +61,20 @@ lost.
   mounted at `/run/agentplane/runner`, and the harness `PATH` lists its `bin` after the system
   profile. A runner or CLI release republishes only that small disk. The harnesses and tools are
   still in the guest image.
-- VM workspace disks contain ext4 and are owned by the Sandbox. `BlockFilesystem` exposes a raw
-  block PVC; `RawDiskImage` stores the virtual disk in a filesystem PVC. The claim survives
-  stop/start and replacement of the VM object. The selected
-  [replicated block-storage cutover](../plans/vm_block_storage.md) provisions fresh VM claims
-  and resets affected existing Sandboxes with the operator's acceptance; it does not convert
-  retained image-file workspaces. The Pod runner uses a
-  Sandbox-owned `DirectoryTree` workspace. Custom VM templates may still declare generic
-  DataVolume disks; those remain VM-owned and are not managed workspace declarations. The guest
-  mounts its workspace disk with `autoFormat`: `systemd-makefs` creates the ext4 only when `blkid`
-  finds no filesystem or swap signature, so any other filesystem fails to mount instead of being
-  rewritten. A disk with data but no signature, or with only a partition table, is formatted too; the
-  layouts never produce one, and a zero-scan helper that refused it was dropped for that.
+- The deployed `runner-vm` template declares a Sandbox-owned `BlockFilesystem` workspace with ext4
+  directly on a block PVC. `RawDiskImage` remains supported for custom VM workspace claims backed
+  by a filesystem PVC. The workspace claim survives stop/start and replacement of the VM object.
+  The VM's separate state PVC remains a `DirectoryTree` on a `Filesystem` claim, attached through
+  virtiofs; staging puts both VM claims on `piraeus-ssd-2-autodiskful`. The Pod runner keeps its
+  Sandbox-owned `DirectoryTree` workspace and existing storage class. The selected
+  [replicated block-storage cutover](../plans/vm_block_storage.md) provisions fresh VM claims and
+  resets affected existing Sandboxes with the operator's acceptance; it does not convert retained
+  image-file workspaces. Custom VM templates may also declare generic DataVolume disks; those
+  remain VM-owned and are not managed workspace declarations. The guest mounts its workspace disk
+  with `autoFormat`: `systemd-makefs` creates the ext4 only when `blkid` finds no filesystem or
+  swap signature, so any other filesystem fails to mount instead of being rewritten. A disk with
+  data but no signature, or with only a partition table, is formatted too; the layouts never produce
+  one, and a zero-scan helper that refused it was dropped for that.
 - Stopping and starting a VM creates a new VMI on the same VM and disks. The VM supports neither live
   migration nor RAM suspension.
 - Commands reach a VM Sandbox only through the control stream. There is no guest exec path; `virt-launcher`

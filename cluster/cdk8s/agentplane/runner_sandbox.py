@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
 from cdk8s_plus_34 import ConfigMap, ServiceAccount, k8s
@@ -132,22 +132,27 @@ def pods(namespace: str) -> Pods:
 
 
 def workspace_volume_spec(
-    state_volume: dict[str, Any], *, layout_type: str, filesystem: str | None = None
+    state_volume: dict[str, Any],
+    *,
+    layout_type: Literal["DirectoryTree", "RawDiskImage", "BlockFilesystem"],
+    storage_class: str | None = None,
 ) -> dict[str, Any]:
-    """The Sandbox-owned workspace claim uses the runner's storage class and requested size."""
-    layout = {"type": layout_type}
-    if filesystem is not None:
-        layout["filesystem"] = filesystem
-    return {
-        "name": _WORKSPACE_VOLUME_NAME,
-        "claim": {**state_volume["claim"], "volumeMode": "Filesystem"},
-        "layout": layout,
-    }
+    """The workspace claim follows the state claim, with layout-derived volume mode and optional class."""
+    layout: dict[str, str] = {"type": layout_type}
+    if layout_type != "DirectoryTree":
+        layout["filesystem"] = "ext4"
+    claim = {**state_volume["claim"], "volumeMode": "Block" if layout_type == "BlockFilesystem" else "Filesystem"}
+    if storage_class is not None:
+        if not storage_class:
+            raise ValueError("storage_class cannot be empty")
+        claim["storageClassName"] = storage_class
+    return {"name": _WORKSPACE_VOLUME_NAME, "claim": claim, "layout": layout}
 
 
 class RunnerSandbox(Construct):
     """The runners' ServiceAccount and template, plus the VM template and relay when enabled.
-    Fleet network and route fences are added separately."""
+    Fleet network and route fences are added separately. A VM workspace can name a distinct class
+    when its Block claim needs a different provisioner from the state filesystem."""
 
     def __init__(
         self,
@@ -155,6 +160,7 @@ class RunnerSandbox(Construct):
         id: str,
         env: Environment,
         *,
+        vm_workspace_storage_class: str | None = None,
         egress_api_service: ServiceRef | None = None,
         storage_class: str = _STORAGE_CLASS,
         runner_resources: k8s.ResourceRequirements | None = None,
@@ -165,6 +171,11 @@ class RunnerSandbox(Construct):
         control_service: ServiceRef | None = None,
     ) -> None:
         super().__init__(scope, id)
+        if vm_workspace_storage_class is not None:
+            if not vm_workspace_storage_class:
+                raise ValueError("vm_workspace_storage_class cannot be empty")
+            if not env.vm_sandboxes:
+                raise ValueError("vm_workspace_storage_class requires vm_sandboxes")
         self.env = env
         namespace = env.namespace
         # The runner Pods' identity, with no RBAC of its own.
@@ -194,14 +205,24 @@ class RunnerSandbox(Construct):
                 runner_pod=template.spec["pod"],
                 settings_config_map=template.add_launcher_relay_settings(name="launcher-relay-egress-sidecar"),
             )
+            # VM claim storage is separate from the runner Pod's state claim. Copy it before
+            # selecting the VM class so the Pod template keeps its own storage policy.
+            state_volume = template.spec["stateVolume"]
+            state_claim = {**state_volume["claim"], "volumeMode": "Filesystem"}
+            if env.vm_storage_class is not None:
+                state_claim["storageClassName"] = env.vm_storage_class
+            vm_state_volume = {**state_volume, "claim": state_claim}
+            workspace_storage_class = vm_workspace_storage_class
+            if workspace_storage_class is None:
+                workspace_storage_class = env.vm_storage_class
             runner_vm.RunnerVmTemplate(
                 self,
                 "runner-vm-template",
                 env,
                 labels={**_LABELS, **telemetry.EMITTER_RUNNER_CLASS_LABELS},
-                state_volume=template.spec["stateVolume"],
+                state_volume=vm_state_volume,
                 workspace_volume=workspace_volume_spec(
-                    template.spec["stateVolume"], layout_type="RawDiskImage", filesystem="ext4"
+                    vm_state_volume, layout_type="BlockFilesystem", storage_class=workspace_storage_class
                 ),
                 platform_instructions=platform_instructions(env, egress_api_service=egress_api_service),
                 harness_env=template.agent_cli_env,
