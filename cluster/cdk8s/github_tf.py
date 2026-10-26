@@ -1,5 +1,4 @@
-"""The GitHub-provider Terraform CRs as one Flux unit: ducktape's branch protection, the GitHub
-Actions secrets sync and Flux's webhook token."""
+"""The retired GitHub Terraform bundle retained as a Flux prune gate."""
 
 from __future__ import annotations
 

@@ -15,10 +15,12 @@ This Terraform module manages branch protection for
 - Pull requests are required so required checks can run, but the solo-repo
   review count is zero.
 
-The module runs from Flux at `cluster/generated/github-tf/` and
-authenticates with `flux-system/github-secrets-sync-pat`. That PAT needs
-GitHub Administration read/write because GitHub exposes rulesets under the
-repository-administration API.
+Crossplane runs this root from the `github-branch-protection` PostgreSQL schema
+and the default workspace. Its Flux Kustomization is nested under the retired
+`github-tf` prune gate. It authenticates with
+`flux-system/github-secrets-sync-pat`. That PAT needs GitHub Administration
+read/write because GitHub exposes rulesets under the repository-administration
+API.
 
 ## Bypass Actors
 

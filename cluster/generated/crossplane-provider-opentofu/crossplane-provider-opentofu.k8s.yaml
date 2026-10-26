@@ -99,6 +99,25 @@ data:
           cluster: cluster
           user: opentofu-finance-agent
     current-context: root
+  opentofu-flux-webhook-token: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-flux-webhook-token
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-flux-webhook-token
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-flux-webhook-token
+    current-context: root
   opentofu-forgejo-agentydragon-repos: |
     apiVersion: v1
     kind: Config
@@ -174,6 +193,44 @@ data:
         context:
           cluster: cluster
           user: opentofu-gatus-sso
+    current-context: root
+  opentofu-github-branch-protection: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-github-branch-protection
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-github-branch-protection
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-github-branch-protection
+    current-context: root
+  opentofu-github-secrets-sync: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-github-secrets-sync
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-github-secrets-sync
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-github-secrets-sync
     current-context: root
   opentofu-haku-state: |
     apiVersion: v1

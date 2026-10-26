@@ -1,7 +1,7 @@
 # GitHub Actions Secrets Sync
 #
-# Syncs GitHub Actions credentials from Kubernetes. Managed by
-# tofu-controller (15m interval).
+# Syncs GitHub Actions credentials from Kubernetes. Managed by the Crossplane
+# OpenTofu provider.
 #
 # SOPS_AGE_KEY lets privileged CI decrypt CI-only credentials from git.
 # BUILDBUDDY_API_KEY is synchronized separately so build/test jobs can receive
@@ -128,7 +128,7 @@ resource "github_actions_secret" "pr_visuals_secret_key" {
 
 # --- GitHub Actions Variables ---
 
-# The variable predates Terraform ownership. Import it so tofu-controller adopts
+# The variable predates Terraform ownership. Import it so the OpenTofu provider adopts
 # the existing GitHub Actions variable instead of trying to create a duplicate.
 import {
   to = github_actions_variable.props_registry_url

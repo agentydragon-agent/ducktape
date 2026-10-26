@@ -863,9 +863,11 @@ py_library(
 py_library(
     name = "github_branch_protection",
     srcs = ["github_branch_protection.py"],
+    data = ["//tf/gitops/github-branch-protection:inline_source"],
     deps = [
+        ":manifest_roots",
+        ":opentofu",
         ":terraform",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -1686,8 +1688,8 @@ py_library(
         "//cluster/cdk8s/github_api_proxy:flux_kustomizations",
         "//cluster/cdk8s/github_api_proxy:proxy",
         "//cluster/cdk8s/github_exporter:app",
-        "//cluster/cdk8s/github_secrets_sync:gitops_module",
         "//cluster/cdk8s/github_secrets_sync:secrets",
+        "//cluster/cdk8s/github_secrets_sync:workspace",
         "//cluster/cdk8s/gitlab_spike:app",
         "//cluster/cdk8s/gitlab_spike:benchmark",
         "//cluster/cdk8s/gitlab_spike:bootstrap",
