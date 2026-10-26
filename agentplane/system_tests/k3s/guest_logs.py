@@ -33,9 +33,9 @@ def _copy(log_root: Path, namespace: str, destination: Path, stop: threading.Eve
                     retained = files.enter_context(os.fdopen(os.dup(source.fileno()), "rb"))
                     streams.append((retained, files.enter_context(target.open("wb"))))
                     opened.add(identity)
-            for source, target in streams:
-                shutil.copyfileobj(source, target)
-                target.flush()
+            for reader, writer in streams:
+                shutil.copyfileobj(reader, writer)
+                writer.flush()
             if stop.is_set():
                 return
             stop.wait(0.1)
