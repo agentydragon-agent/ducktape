@@ -2803,31 +2803,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: gitlab-spike-gitops
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: gitlab-spike-bootstrap
-      namespace: ducktape-flux
-    - name: tofu-controller
-      namespace: ducktape-flux
-    - name: forgejo
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/gitlab-spike/gitops
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: gitlab-spike-gitops
-    namespace: ducktape-flux
-  timeout: 15m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: crossplane-gitlab-spike
   namespace: ducktape-flux
 spec:
@@ -2835,8 +2810,6 @@ spec:
     - name: crossplane-provider-opentofu
       namespace: ducktape-flux
     - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: gitlab-spike-gitops
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
@@ -2856,11 +2829,38 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: gitlab-spike-gitops
+  namespace: ducktape-flux
+spec:
+  deletionPolicy: Orphan
+  dependsOn:
+    - name: gitlab-spike-bootstrap
+      namespace: ducktape-flux
+    - name: tofu-controller
+      namespace: ducktape-flux
+    - name: forgejo
+      namespace: ducktape-flux
+    - name: crossplane-gitlab-spike
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/gitlab-spike/gitops
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: gitlab-spike-gitops
+    namespace: ducktape-flux
+  timeout: 15m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: gitlab-spike-integrations
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: crossplane-gitlab-spike
+    - name: gitlab-spike-gitops
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
