@@ -2,10 +2,14 @@
 
 from collections.abc import Sequence
 
-from cdk8s import ApiObjectMetadata
+from cdk8s import ApiObjectMetadata, Chart
 from cdk8s_plus_34 import ApiResource, Role, RolePolicyRule, Secret, ServiceAccount
 from constructs import Construct
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    KustomizationSpecHealthCheckExprs,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
 from opentofu_providerconfig_crds.io.upbound.opentofu import ProviderConfig, ProviderConfigSpec
 from opentofu_workspace_crds.io.upbound.opentofu import (
     Workspace,
@@ -16,8 +20,16 @@ from opentofu_workspace_crds.io.upbound.opentofu import (
     WorkspaceSpecForProviderVars,
     WorkspaceSpecProviderConfigRef,
 )
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import terraform
+from cluster.cdk8s import flux, terraform
+from cluster.cdk8s.flux import (
+    Kustomization,
+    RenderedDirectory,
+    artifact_directory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.secret_ref import SecretKey
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
@@ -153,3 +165,26 @@ def secret_access(
         ],
     )
     role.bind(identity)
+
+
+def workspace_kustomization(
+    chart: Chart,
+    name: str,
+    directory: RenderedDirectory,
+    source: ArtifactGeneratorSpecArtifacts,
+    *,
+    depends_on: Sequence[Kustomization],
+) -> Kustomization:
+    """Share the prune gate's source so its current revision precedes Workspace adoption."""
+    return flux_kustomization(
+        chart,
+        name,
+        KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=source.name, namespace=flux.NAMESPACE
+        ),
+        path=f"./{artifact_directory(directory.artifact)}",
+        decryption=directory.decryption,
+        timeout="20m",
+        depends_on=flux_kustomization_depends_on_many(*depends_on),
+        health_check_exprs=[WORKSPACE_HEALTH_CHECK_EXPR],
+    )

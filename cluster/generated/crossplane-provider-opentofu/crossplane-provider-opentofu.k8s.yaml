@@ -4,6 +4,25 @@ metadata:
   name: opentofu-kubernetes-clients
   namespace: crossplane-system
 data:
+  opentofu-agent-machine-access: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-agent-machine-access
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-agent-machine-access
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-agent-machine-access
+    current-context: root
   opentofu-alloy-otlp-bearer-token: |
     apiVersion: v1
     kind: Config
@@ -118,6 +137,25 @@ data:
           cluster: cluster
           user: opentofu-forgejo-claude
     current-context: root
+  opentofu-forgejo-images: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-forgejo-images
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-forgejo-images
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-forgejo-images
+    current-context: root
   opentofu-gatus-sso: |
     apiVersion: v1
     kind: Config
@@ -137,6 +175,25 @@ data:
           cluster: cluster
           user: opentofu-gatus-sso
     current-context: root
+  opentofu-gitlab-spike: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-gitlab-spike
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-gitlab-spike
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-gitlab-spike
+    current-context: root
   opentofu-haku-state: |
     apiVersion: v1
     kind: Config
@@ -155,6 +212,25 @@ data:
         context:
           cluster: cluster
           user: opentofu-haku-state
+    current-context: root
+  opentofu-sso-providers: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-sso-providers
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-sso-providers
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-sso-providers
     current-context: root
 immutable: false
 ---

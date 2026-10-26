@@ -1,15 +1,17 @@
 """Deployment order for the GitLab evaluation instance and its proof integrations."""
 
+import json
+
 from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
 )
+from opentofu_workspace_crds.io.upbound.opentofu import WorkspaceSpecForProviderVars
 from pydantic import BaseModel
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import terraform
+from cluster.cdk8s import opentofu, terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.gitlab_spike import runner
@@ -18,6 +20,9 @@ from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 GITOPS_NAME = "gitlab-spike-gitops"
 GITOPS_DIR = f"{GENERATED_ROOT}/gitlab-spike/gitops"
+WORKSPACE_NAME = "crossplane-gitlab-spike"
+WORKSPACE_DIR = f"{GITOPS_DIR}/{WORKSPACE_NAME}"
+KUBERNETES_IDENTITY = "opentofu-gitlab-spike"
 INTEGRATIONS_NAME = "gitlab-spike-integrations"
 INTEGRATIONS_DIR = f"{GENERATED_ROOT}/gitlab-spike/integrations"
 
@@ -30,20 +35,43 @@ class Variables(BaseModel):
     human_ssh_keys: dict[str, SshKey]
 
 
-def gitops_chart(app: App, *, module: ArtifactGeneratorSpecArtifacts) -> Chart:
-    chart = Chart(app, GITOPS_NAME, disable_resource_name_hashes=True)
-    terraform.gitops_terraform(
-        chart,
-        "terraform",
-        module=module,
-        variables=Variables(
-            human_ssh_keys={
-                host: SshKey(
-                    key=get_required_path(own_repo_rlocation(f"ssh_keys/{host}-forgejo.pub")).read_text().strip()
-                )
-                for host in ("atlas", "iguana", "rugged", "wyrm2")
-            }
+def workspace_chart(app: App) -> Chart:
+    chart = Chart(app, WORKSPACE_NAME, disable_resource_name_hashes=True)
+    identity = opentofu.kubernetes_service_account(chart, KUBERNETES_IDENTITY)
+    for namespace, reads, writes in (
+        ("forgejo", ["forgejo-admin-password"], []),
+        (
+            "gitlab-spike",
+            ["gitlab-bootstrap-token", "gitlab-spike-oidc"],
+            ["gitlab-spike-proof", "gitlab-spike-benchmark-token", "forgejo-spike-benchmark"],
         ),
+        ("flux-system", [], ["gitlab-spike-git", "gitlab-spike-webhook", "gitlab-spike-registry"]),
+        ("gitlab-spike-demo", [], ["gitlab-spike-registry"]),
+        ("gitlab-spike-ci", [], ["gitlab-spike-runner"]),
+    ):
+        opentofu.secret_access(
+            chart, f"{namespace}-secrets", identity=identity, namespace=namespace, read=reads, write=writes
+        )
+    variables = Variables(
+        human_ssh_keys={
+            host: SshKey(key=get_required_path(own_repo_rlocation(f"ssh_keys/{host}-forgejo.pub")).read_text().strip())
+            for host in ("atlas", "iguana", "rugged", "wyrm2")
+        }
+    )
+    opentofu.gitops_workspace(
+        chart,
+        "workspace",
+        name="gitlab-spike",
+        provider_config_name=WORKSPACE_NAME,
+        schema=terraform.gitops_state_schema("gitlab-spike"),
+        directory="tf/gitops/gitlab-spike",
+        management_policies=["Observe", "Create", "Update"],
+        kubernetes_identity=KUBERNETES_IDENTITY,
+        variables=[
+            WorkspaceSpecForProviderVars(
+                key="human_ssh_keys", value=json.dumps(variables.model_dump()["human_ssh_keys"])
+            )
+        ],
     )
     return chart
 

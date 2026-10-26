@@ -52,6 +52,7 @@ from cluster.cdk8s import (
     ntfy,
     nvidia_device_plugin,
     nvidia_runtimeclass,
+    opentofu,
     piraeus,
     platform_monitoring,
     proxmox_proxy,
@@ -619,6 +620,10 @@ def generate_manifests(root: Path) -> None:
             functools.partial(
                 crossplane.opentofu_provider_chart,
                 kubernetes_identities=(
+                    sso_providers.KUBERNETES_IDENTITY,
+                    agent_machine_access.KUBERNETES_IDENTITY,
+                    gitlab_spike_flux.KUBERNETES_IDENTITY,
+                    forgejo_images.KUBERNETES_IDENTITY,
                     gatus_sso.KUBERNETES_IDENTITY,
                     forgejo_claude.KUBERNETES_IDENTITY,
                     forgejo_crossplane_roots.HAKU_STATE_IDENTITY,
@@ -908,17 +913,38 @@ def generate_manifests(root: Path) -> None:
         user_agentydragon_kustomization,
     )
     authentik_tf_artifact = artifact(authentik_tf.NAME, authentik_tf.OUTPUT_DIR)
+    # CLEANUP(added 2026-10-26): Keep these four legacy source artifacts until their
+    # Terraform CRs are absent and replacement Workspaces are Ready and current-generation Synced.
     sso_providers_module = terraform.gitops_module(sso_providers.NAME)
     agent_machine_access_module = terraform.gitops_module(agent_machine_access.NAME)
     authentik_tf_kustomization = authentik_tf.authentik_tf(
+        flux_chart, write_directory(root, authentik_tf_artifact), tofu_controller_kustomization
+    )
+    sso_providers_artifact = artifact(sso_providers.WORKSPACE_NAME, sso_providers.OUTPUT_DIR)
+    sso_providers_kustomization = opentofu.workspace_kustomization(
         flux_chart,
-        write_directory(
-            root,
-            authentik_tf_artifact,
-            functools.partial(sso_providers.chart, module=sso_providers_module),
-            functools.partial(agent_machine_access.chart, module=agent_machine_access_module),
-        ),
-        tofu_controller_kustomization,
+        sso_providers.WORKSPACE_NAME,
+        write_directory(root, sso_providers_artifact, sso_providers.chart),
+        authentik_tf_artifact,
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            authentik_tf_kustomization,
+            authentik_kustomization,
+        ],
+    )
+    agent_machine_access_artifact = artifact(agent_machine_access.WORKSPACE_NAME, agent_machine_access.OUTPUT_DIR)
+    opentofu.workspace_kustomization(
+        flux_chart,
+        agent_machine_access.WORKSPACE_NAME,
+        write_directory(root, agent_machine_access_artifact, agent_machine_access.chart),
+        authentik_tf_artifact,
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            authentik_tf_kustomization,
+            sso_providers_kustomization,
+        ],
     )
     gatus_sso_artifact = artifact(gatus_sso.NAME, gatus_sso.OUTPUT_DIR)
     gatus_sso.resources(
@@ -1206,7 +1232,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         write_directory(root, gitlab_spike_app_artifact, gitlab_spike_app.chart),
         gitlab_spike_dependencies_kustomization,
-        authentik_tf_kustomization,
+        sso_providers_kustomization,
     )
     gitlab_spike_bootstrap_artifact = artifact(gitlab_spike_bootstrap.NAME, gitlab_spike_bootstrap.OUTPUT_DIR)
     gitlab_spike_bootstrap_kustomization = gitlab_spike_flux.bootstrap(
@@ -1218,14 +1244,22 @@ def generate_manifests(root: Path) -> None:
     gitlab_spike_gitops_artifact = artifact(gitlab_spike_flux.GITOPS_NAME, gitlab_spike_flux.GITOPS_DIR)
     gitlab_spike_gitops_kustomization = gitlab_spike_flux.gitops(
         flux_chart,
-        write_directory(
-            root,
-            gitlab_spike_gitops_artifact,
-            functools.partial(gitlab_spike_flux.gitops_chart, module=gitlab_spike_module),
-        ),
+        write_directory(root, gitlab_spike_gitops_artifact),
         gitlab_spike_bootstrap_kustomization,
         tofu_controller_kustomization,
         forgejo_kustomization,
+    )
+    gitlab_spike_workspace_artifact = artifact(gitlab_spike_flux.WORKSPACE_NAME, gitlab_spike_flux.WORKSPACE_DIR)
+    gitlab_spike_workspace_kustomization = opentofu.workspace_kustomization(
+        flux_chart,
+        gitlab_spike_flux.WORKSPACE_NAME,
+        write_directory(root, gitlab_spike_workspace_artifact, gitlab_spike_flux.workspace_chart),
+        gitlab_spike_gitops_artifact,
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            gitlab_spike_gitops_kustomization,
+        ],
     )
     gitlab_spike_integrations_artifact = artifact(
         gitlab_spike_flux.INTEGRATIONS_NAME, gitlab_spike_flux.INTEGRATIONS_DIR
@@ -1239,7 +1273,7 @@ def generate_manifests(root: Path) -> None:
             gitlab_spike_delivery.chart,
             gitlab_spike_benchmark.chart,
         ),
-        gitlab_spike_gitops_kustomization,
+        gitlab_spike_workspace_kustomization,
     )
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
     matrix_kustomization = matrix.matrix(
@@ -1346,17 +1380,25 @@ def generate_manifests(root: Path) -> None:
     )
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images_module = terraform.gitops_module(forgejo_images.NAME)
-    forgejo_images.forgejo_images(
+    forgejo_images_kustomization = forgejo_images.forgejo_images(
         flux_chart,
         # The SOPS sibling (the tenant's canonical registry credential) turns on Flux decryption.
-        write_directory(
-            root,
-            forgejo_images_artifact,
-            functools.partial(forgejo_images.chart, module=forgejo_images_module),
-            siblings=["registry-creds.sops.yaml"],
-        ),
+        write_directory(root, forgejo_images_artifact, forgejo_images.chart, siblings=["registry-creds.sops.yaml"]),
         external_secrets_operator_kustomization,
         tofu_controller_kustomization,
+    )
+    forgejo_images_workspace_artifact = artifact(forgejo_images.WORKSPACE_NAME, forgejo_images.WORKSPACE_DIR)
+    opentofu.workspace_kustomization(
+        flux_chart,
+        forgejo_images.WORKSPACE_NAME,
+        write_directory(root, forgejo_images_workspace_artifact, forgejo_images.workspace_chart),
+        forgejo_images_artifact,
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            forgejo_images_kustomization,
+            forgejo_kustomization,
+        ],
     )
     haku_ci_artifact = artifact("haku-ci", haku_ci_runner.OUTPUT_DIR)
     haku_ci_kustomization = haku_ci_runner.haku_ci(
@@ -1927,6 +1969,8 @@ def generate_manifests(root: Path) -> None:
             claude_rbac_artifact,
             authentik_artifact,
             authentik_tf_artifact,
+            sso_providers_artifact,
+            agent_machine_access_artifact,
             cert_manager_artifact,
             cert_manager_environment_artifact,
             cnpg_artifact,
@@ -1942,8 +1986,10 @@ def generate_manifests(root: Path) -> None:
             gitlab_spike_app_artifact,
             gitlab_spike_bootstrap_artifact,
             gitlab_spike_gitops_artifact,
+            gitlab_spike_workspace_artifact,
             gitlab_spike_integrations_artifact,
             forgejo_images_artifact,
+            forgejo_images_workspace_artifact,
             gateway_artifact,
             kyverno_artifact,
             litellm_keys_tf_artifact,

@@ -48,6 +48,16 @@ spec:
       name: authentik-tf
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/authentik/tf/crossplane-sso-providers/**"
+          to: "@artifact/cluster/generated/authentik/tf/crossplane-sso-providers/"
+      name: crossplane-sso-providers
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/authentik/tf/crossplane-agent-machine-access/**"
+          to: "@artifact/cluster/generated/authentik/tf/crossplane-agent-machine-access/"
+      name: crossplane-agent-machine-access
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/cert-manager/app/**"
           to: "@artifact/cluster/generated/cert-manager/app/"
       name: cert-manager
@@ -123,6 +133,11 @@ spec:
       name: gitlab-spike-gitops
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/gitlab-spike/gitops/crossplane-gitlab-spike/**"
+          to: "@artifact/cluster/generated/gitlab-spike/gitops/crossplane-gitlab-spike/"
+      name: crossplane-gitlab-spike
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/gitlab-spike/integrations/**"
           to: "@artifact/cluster/generated/gitlab-spike/integrations/"
       name: gitlab-spike-integrations
@@ -131,6 +146,11 @@ spec:
         - from: "@repo/cluster/k8s/forgejo-images/**"
           to: "@artifact/cluster/k8s/forgejo-images/"
       name: forgejo-images
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/k8s/forgejo-images/crossplane-forgejo-images/**"
+          to: "@artifact/cluster/k8s/forgejo-images/crossplane-forgejo-images/"
+      name: crossplane-forgejo-images
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/gateway/**"
