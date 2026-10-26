@@ -181,6 +181,7 @@ def _add_cluster_roles(chart: Chart) -> None:
         # keep-sorted start
         ("", core_api_resources),
         ("admissionregistration.k8s.io", ("mutatingwebhookconfigurations", "validatingwebhookconfigurations")),
+        ("apiextensions.crossplane.io", ("*",)),
         ("apiextensions.k8s.io", ("customresourcedefinitions",)),
         ("apps", ("deployments", "replicasets", "statefulsets", "daemonsets")),
         ("autoscaling", ("horizontalpodautoscalers",)),
@@ -202,6 +203,7 @@ def _add_cluster_roles(chart: Chart) -> None:
         # reconciliation, without granting arbitrary Kustomization patches.
         ("kustomize.toolkit.fluxcd.io", ("kustomizations",)),
         ("kyverno.io", ("clusterpolicies", "policies", "policyreports", "clusterpolicyreports")),
+        ("litellm.m.crossplane.io", ("*",)),
         ("metrics.k8s.io", ("pods", "nodes")),
         # No nodes/proxy, even get-only: the kubelet authorizes a WebSocket /exec handshake as
         # `get` on nodes/proxy, so the grant is command execution in any pod on the node.
@@ -209,9 +211,13 @@ def _add_cluster_roles(chart: Chart) -> None:
         ("monitoring.coreos.com", monitoring_resources),
         ("networking.k8s.io", ("ingresses", "ingressclasses", "networkpolicies")),
         ("notification.toolkit.fluxcd.io", ("receivers", "alerts", "providers")),
-        ("opentofu.upbound.io", ("workspaces",)),
+        ("opentofu.m.upbound.io", ("*",)),
+        ("opentofu.upbound.io", ("*",)),
+        ("ops.crossplane.io", ("*",)),
+        ("pkg.crossplane.io", ("*",)),
         ("policy", ("poddisruptionbudgets",)),
         ("postgresql.cnpg.io", ("clusters", "backups", "scheduledbackups")),
+        ("protection.crossplane.io", ("*",)),
         ("redis.redis.opstreelabs.in", ("redisreplications",)),
         ("scheduling.k8s.io", ("priorityclasses",)),
         ("source.toolkit.fluxcd.io", ("gitrepositories", "helmrepositories", "ocirepositories", "helmcharts")),
@@ -220,6 +226,9 @@ def _add_cluster_roles(chart: Chart) -> None:
         (_RBAC_GROUP, ("roles", "rolebindings", "clusterroles", "clusterrolebindings")),
         # keep-sorted end
     )
+    # All objects in these groups are readable, including arbitrary EnvironmentConfig data and
+    # OpenTofu Workspace outputs. Keep secret values out of inline fields; this role grants no
+    # core Secret access or direct access to an OpenTofu state backend.
     diagnostics_rules: list[k8s.PolicyRule] = []
     for api_group, resources in diagnostics_read_grants:
         diagnostics_rules.append(_read(api_group, *resources))
