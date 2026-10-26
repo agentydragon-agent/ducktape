@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount, k8s
 from external_secrets_crds.io.external_secrets import (
@@ -188,12 +190,8 @@ def _deployment(chart: Chart) -> None:
                     service_account_name=_NAME,
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
-                    security_context=k8s.PodSecurityContext(
-                        seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
-                    ),
-                    volumes=[
-                        k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=POLICY_SECRET)),
-                    ],
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
+                    volumes=[k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=POLICY_SECRET))],
                     containers=[
                         k8s.Container(
                             name=_NAME,
@@ -229,7 +227,7 @@ def _deployment(chart: Chart) -> None:
                                 ),
                             ],
                             volume_mounts=[
-                                k8s.VolumeMount(name="config", mount_path=str(_CONFIG_PATH.parent), read_only=True),
+                                k8s.VolumeMount(name="config", mount_path=str(_CONFIG_PATH.parent), read_only=True)
                             ],
                             resources=_resources(),
                             readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=5, period_seconds=10),
