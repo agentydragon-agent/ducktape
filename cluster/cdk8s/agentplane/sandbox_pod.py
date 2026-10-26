@@ -23,6 +23,7 @@ from agentplane.egress import sidecar_config
 from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.egress.resources import placeholder_of
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
+from agentplane.runner.configuration import CA_BUNDLE, JAVA_TRUST_STORE, KUBECONFIG
 from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
 from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
@@ -56,9 +57,9 @@ _SIDECAR_SETTINGS_PATH = "/etc/agentplane-egress-sidecar/settings.yaml"
 _EGRESS_CA_VOLUME_NAME = "egress-ca"
 _MITM_PROXY_URL = f"http://127.0.0.1:{SIDECAR_LISTEN_PORT}"
 _NO_PROXY_HOSTS = "127.0.0.1,localhost"
-_CA_BUNDLE_PATH = "/etc/ssl/certs/ca-certificates.crt"
-# Where Debian's JDKs keep the system trust store; Bazel's embedded JDK reads it only when told to.
-_JAVA_TRUST_STORE_PATH = "/etc/ssl/certs/java/cacerts"
+_CA_BUNDLE_PATH = str(CA_BUNDLE)
+# Shared Java trust store; Bazel's embedded JDK reads it only when told to.
+_JAVA_TRUST_STORE_PATH = JAVA_TRUST_STORE
 # Configuration files for the box's tools, one key each, mounted file by file.
 TOOL_CONFIG_MAP_NAME = "sandbox-tool-config"
 TOOL_CONFIG_READER_ROLE_NAME = "agentplane-sandbox-tool-config-reader"
@@ -69,7 +70,7 @@ _BAZELRC_KEY = "bazel.bazelrc"
 _KUBECONFIG_KEY = "kubeconfig"
 # Outside the home directory: a subPath mount creates its missing parents as root, and kubectl keeps
 # its cache under ~/.kube.
-_KUBECONFIG_PATH = "/etc/kubernetes/kubeconfig"
+_KUBECONFIG_PATH = KUBECONFIG
 PROXY_VAR_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
 NO_PROXY_VAR_NAMES = ("NO_PROXY", "no_proxy")
 CA_BUNDLE_VAR_NAMES = ("SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "REQUESTS_CA_BUNDLE")
@@ -133,6 +134,13 @@ def proxy_trust_mounts() -> list[k8s.VolumeMount]:
     """The proxy CA at system and Java trust paths, without the Sandbox API identity."""
     return [
         *egress_proxy_mounts(),
+        # System trust also covers tools which do not read CA environment variables.
+        k8s.VolumeMount(
+            name=_EGRESS_CA_VOLUME_NAME,
+            mount_path="/etc/ssl/certs/ca-certificates.crt",
+            sub_path=egress.CA_BUNDLE_KEY,
+            read_only=True,
+        ),
         k8s.VolumeMount(
             name=_EGRESS_CA_VOLUME_NAME,
             mount_path=_JAVA_TRUST_STORE_PATH,

@@ -11,11 +11,11 @@ from uuid import uuid4
 
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner import runner_service_pb2_grpc
+from agentplane.runner.configuration import Endpoint
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.process_fixtures import wait_for_exit
-from agentplane.sandboxes.guest_config import Endpoint
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 

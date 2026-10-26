@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from dataclasses import replace
 from typing import Any, cast
@@ -14,6 +15,7 @@ from cdk8s_plus_34 import k8s
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
+from agentplane.runner.configuration import CONFIG_FILE, LAUNCH_FILE, Configuration
 from cluster.cdk8s.agentplane import sandbox_pod, staging
 from cluster.cdk8s.agentplane.runner_sandbox import RunnerTemplate
 from cluster.cdk8s.pod_policy import workload_kind
@@ -26,6 +28,12 @@ def _templates(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
     return one(doc for doc in docs if doc["kind"] == kind and doc["metadata"]["name"] == name)
+
+
+def _runner_configuration(docs: list[dict[str, Any]], pod: dict[str, Any]) -> dict[str, Any]:
+    volume = one(volume for volume in pod["volumes"] if volume["name"] == "runner-config")
+    config_map = _by_name(docs, "ConfigMap", volume["configMap"]["name"])
+    return cast(dict[str, Any], json.loads(config_map["data"]["runner.json"]))
 
 
 def _runner_pod(
@@ -58,11 +66,9 @@ def test_all_sandbox_workloads_use_shared_environment_defaults(staging_manifests
         assert timezone["value"] == "America/Los_Angeles"
 
     runner = next(template for template in templates if template["metadata"]["name"] == "runner")
-    args = runner["spec"]["pod"]["spec"]["containers"][0]["args"]
-    assert any(args[index : index + 2] == ["--harness-env", "TZ"] for index in range(len(args) - 1))
-    # TZDIR's value belongs to the sandbox image, but a harness child starts from only what the
-    # runner declares, so the runner has to name it: left off, the child reads every TZ as UTC.
-    assert any(args[index : index + 2] == ["--harness-inherit-env", "TZDIR"] for index in range(len(args) - 1))
+    config = Configuration.model_validate(_runner_configuration(staging_manifests, runner["spec"]["pod"]["spec"]))
+    assert "TZ" in config.harness_environment.inherit
+    assert "TZDIR" in config.harness_environment.inherit
 
 
 def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_manifests: list[dict[str, Any]]) -> None:
@@ -77,13 +83,13 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     assert pod["securityContext"]["runAsUser"] == pod["securityContext"]["runAsGroup"] == 1000
     assert executor["securityContext"] == runner["securityContext"]
     assert [container["name"] for container in pod["containers"]] == ["runner", "codex-executor", "egress-sidecar"]
-    runner_args = runner["args"]
-    executor_url_index = runner_args.index("--codex-executor-url")
-    assert runner_args[executor_url_index : executor_url_index + 2] == ["--codex-executor-url", "ws://127.0.0.1:4501"]
-    assert runner_args[executor_url_index + 2 : executor_url_index + 4] == [
-        "--codex-executor-socket",
-        "/run/agentplane/executor/control.sock",
-    ]
+    assert runner["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
+    config = _runner_configuration(staging_manifests, pod)
+    assert config["executor"] == {
+        "kind": "container",
+        "url": "ws://127.0.0.1:4501",
+        "socket": "/run/agentplane/executor/control.sock",
+    }
     assert executor["command"] == ["/run/agentplane/runner/bin/agentplane-runner"]
     assert executor["args"] == [
         "--executor-container",
@@ -114,8 +120,9 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
         "/tmp",
         "/run/agentplane/executor",
         "/etc/ssl/certs/ca-certificates.crt",
-        "/etc/ssl/certs/java/cacerts",
-        "/etc/kubernetes/kubeconfig",
+        "/run/agentplane/trust/ca-certificates.crt",
+        "/run/agentplane/trust/ca-certificates.p12",
+        "/run/agentplane/config/kubeconfig",
     ):
         assert runner_mounts[path] == executor_mounts[path]
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
@@ -123,8 +130,8 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
         assert "emptyDir" in volumes[runner_mounts[path]]
 
     executor_mount_names = set(executor_mounts.values())
-    assert executor_mounts["/etc/kubernetes/kubeconfig"] == "tool-config"
-    assert executor_mount_names.isdisjoint({"egress-token", "platform-instructions", "buildbuddy-api-key"})
+    assert executor_mounts["/run/agentplane/config/kubeconfig"] == "tool-config"
+    assert executor_mount_names.isdisjoint({"egress-token", "runner-config", "buildbuddy-api-key"})
     executor_env = {variable["name"]: variable["value"] for variable in executor["env"]}
     runner_env = {variable["name"]: variable["value"] for variable in runner["env"]}
     for name in (*sandbox_pod.PROXY_VAR_NAMES, *sandbox_pod.NO_PROXY_VAR_NAMES, *sandbox_pod.CA_BUNDLE_VAR_NAMES):
@@ -158,8 +165,7 @@ def test_environment_can_keep_codex_execution_inside_the_runner() -> None:
     pod = _runner_pod(isolated_executor=False, runner_resources=runner_resources, executor_resources=None)
     containers = {container["name"]: container for container in pod["containers"]}
     assert "codex-executor" not in containers
-    assert "--codex-executor-url" not in containers["runner"]["args"]
-    assert "--codex-executor-socket" not in containers["runner"]["args"]
+    assert containers["runner"]["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
     assert {"home", "tmp", "codex-executor"}.isdisjoint({volume["name"] for volume in pod["volumes"]})
 
 
@@ -218,10 +224,12 @@ def test_ducktape_template_projects_buildbuddy_key_to_runner_and_executor(
     executor_key_file = next(env for env in executor["env"] if env["name"] == "BBR_BUILDBUDDY_API_KEY_FILE")
     assert executor_key_file["value"] == "/run/buildbuddy/api-key"
     executor["env"].remove(executor_key_file)
-    args = container["args"]
-    i = args.index("BBR_BUILDBUDDY_API_KEY_FILE")
-    assert args[i - 1] == "--harness-env"
-    del args[i - 1 : i + 1]
+    generic_config = _runner_configuration(staging_manifests, generic["pod"]["spec"])
+    specialized_config = _runner_configuration(staging_manifests, pod)
+    specialized_config["harness_environment"]["inherit"].remove("BBR_BUILDBUDDY_API_KEY_FILE")
+    assert specialized_config == generic_config
+    config_volume = one(volume for volume in pod["volumes"] if volume["name"] == "runner-config")
+    config_volume["configMap"]["name"] = "runner-config"
     settings = next(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
     generic_settings = next(
         volume for volume in generic["pod"]["spec"]["volumes"] if volume["name"] == "egress-sidecar-settings"
@@ -280,7 +288,7 @@ def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifest
     runner = next(template for template in _templates(staging_manifests) if template["metadata"]["name"] == "runner")
     volumes = runner["spec"]["pod"]["spec"]["volumes"]
     config_maps = {volume["name"]: volume["configMap"]["name"] for volume in volumes if "configMap" in volume}
-    assert config_maps["platform-instructions"] == "runner-platform-instructions"
+    assert config_maps["runner-config"] == "runner-config"
     assert config_maps["tool-config"] == "sandbox-tool-config"
 
 

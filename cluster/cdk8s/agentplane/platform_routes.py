@@ -72,20 +72,6 @@ def sidecar_routes(
     }
 
 
-def runner_args(namespace: str) -> list[str]:
-    control_route, ingress_route = control(namespace), ingress(namespace)
-    return [
-        "--control-target",
-        control_route.local_target,
-        "--control-bearer",
-        ROUTE_BEARER,
-        "--ingress-target",
-        ingress_route.local_target,
-        "--ingress-bearer",
-        ROUTE_BEARER,
-    ]
-
-
 def telemetry_endpoint(*, host: str = "127.0.0.1") -> str:
     """The OTLP/gRPC endpoint on the sidecar route, in the caller's network namespace."""
     return f"http://{host}:{telemetry_route().listen_port}"

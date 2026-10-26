@@ -14,6 +14,8 @@ from cdk8s import (
 )
 from more_itertools import one
 
+from agentplane.runner.configuration import Configuration
+from agentplane.sandboxes.guest_config import GuestConfig
 from cluster.cdk8s.agentplane import runner_vm, staging
 
 HARNESS_ENV = {"EXAMPLE_SERVICE_URL": "http://service.test"}
@@ -41,7 +43,8 @@ def _runner_vm_manifests(*, console_autologin: bool) -> dict[str, dict[str, Any]
     )
     sandbox_template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
     return {
-        "config": cast(dict[str, Any], json.loads(config_map["data"]["config.json"])),
+        "config": cast(dict[str, Any], json.loads(config_map["data"]["vm.json"])),
+        "runner": cast(dict[str, Any], json.loads(config_map["data"]["runner.json"])),
         "sandbox_template": sandbox_template,
     }
 
@@ -50,16 +53,19 @@ def _guest_config(*, console_autologin: bool) -> dict[str, Any]:
     return _runner_vm_manifests(console_autologin=console_autologin)["config"]
 
 
-@pytest.mark.parametrize(("console_autologin", "rendered"), [(True, True), (False, None)])
-def test_console_autologin_reaches_the_guest_config_only_when_enabled(
-    console_autologin: bool, rendered: bool | None
-) -> None:
-    # An image that predates the field rejects it, so a disabled environment must not render it.
+@pytest.mark.parametrize(("console_autologin", "rendered"), [(True, True), (False, False)])
+def test_console_autologin_reaches_the_guest_config_only_when_enabled(console_autologin: bool, rendered: bool) -> None:
     assert _guest_config(console_autologin=console_autologin).get("console_autologin") == rendered
 
 
 def test_harness_env_reaches_the_guest_config() -> None:
-    assert _guest_config(console_autologin=False)["harness_env"] == HARNESS_ENV
+    rendered = _runner_vm_manifests(console_autologin=False)
+    runner = Configuration.model_validate(rendered["runner"])
+    boot = GuestConfig.model_validate(rendered["config"])
+    assert all(runner.harness_environment.values[name] == value for name, value in HARNESS_ENV.items())
+    assert runner.isolation is not None
+    assert runner.isolation.aggregate == boot.resources.aggregate
+    assert runner.isolation.process == boot.resources.process
 
 
 def test_vm_size_and_guest_seed_share_the_configured_resources() -> None:

@@ -239,6 +239,7 @@ py_library(
         "//agentplane/app:settings",
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:policyset",
+        "//agentplane/runner:configuration",
         "//agentplane/sandboxes:guest_config",
         "//agentplane/system_tests:launch_preset",
         "//agentplane/system_tests:probe_credential",

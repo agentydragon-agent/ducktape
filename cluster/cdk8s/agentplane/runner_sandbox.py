@@ -19,6 +19,15 @@ from cdk8s_plus_34 import ConfigMap, ServiceAccount, k8s
 from constructs import Construct
 
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.runner import configuration
+from agentplane.runner.configuration import (
+    CONFIG_FILE,
+    LAUNCH_FILE,
+    Configuration,
+    ContainerExecutor,
+    Endpoint,
+    Harness,
+)
 from agentplane.runner.platform_instructions import render_platform_instructions
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
@@ -46,7 +55,7 @@ _IMAGE = "git.allegedly.works/ducktape-ci/runner"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _STORAGE_CLASS = "piraeus-hdd-local"
 _LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
-# Shared by the runner's --state-dir flag, its container volumeMount, and the
+# Shared by the Runner configuration, its container volumeMount, and the
 # SandboxTemplate's state volume -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
 # The runner disk image's `bin/` (//agentplane/runner:disk_image): the runner and the `agentplane`
@@ -68,13 +77,7 @@ _EXECUTOR_URL = "ws://127.0.0.1:4501"
 _EXECUTOR_CONTAINER_NAME = "codex-executor"
 _BUILDBUDDY_SECRET = "buildbuddy-api-key"
 _BUILDBUDDY_MOUNT = "/run/buildbuddy"
-# The deployment-wide instructions every Session starts with, as a ConfigMap the runner container mounts.
-_PLATFORM_INSTRUCTIONS_CONFIG_MAP = "runner-platform-instructions"
-_PLATFORM_INSTRUCTIONS_KEY = "platform-instructions.md"
-_PLATFORM_INSTRUCTIONS_VOLUME = "platform-instructions"
-_PLATFORM_INSTRUCTIONS_DIR = "/etc/agentplane/platform-instructions"
-# Where the Sandbox controller mounts the Sandbox's launch ConfigMap (agentplane/sandbox_controller/launch.go).
-_LAUNCH_FILE = "/run/agentplane/sandbox/launch.json"
+_CONFIG_VOLUME = "runner-config"
 # The bearers a Session presents: the placeholders the agentplane-workload and the notifications
 # EgressCredentials derive from their names, which the egress proxy substitutes.
 _WORKLOAD_PLACEHOLDER = "agentplane-credential-agentplane-workload"
@@ -167,13 +170,6 @@ class RunnerSandbox(Construct):
         ServiceAccount(
             self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), automount_token=False
         )
-        instructions = platform_instructions(env, egress_api_service=egress_api_service)
-        ConfigMap(
-            self,
-            "platform-instructions",
-            metadata=ApiObjectMetadata(name=_PLATFORM_INSTRUCTIONS_CONFIG_MAP, namespace=namespace),
-            data={_PLATFORM_INSTRUCTIONS_KEY: instructions},
-        )
         template = RunnerTemplate(
             self,
             "runner-template",
@@ -248,6 +244,8 @@ class RunnerTemplate(Construct):
     ) -> None:
         super().__init__(scope, id)
         self.env = env
+        self.config_map_name = f"{name}-config"
+        self.egress_api_service = egress_api_service
         self.buildbuddy_secret = buildbuddy_secret
         self.extra_harness_env = extra_harness_env
         self.storage_class = storage_class
@@ -336,18 +334,11 @@ class RunnerTemplate(Construct):
         )
 
     def _runner_container(self, image: str) -> k8s.Container:
-        # The environment a harness child starts from: a bare NAME takes the runner's
-        # value, NAME=value sets one. The routing vars are named rather than set, so the
-        # container env below is where they are written once and everything in the Pod
-        # agrees -- a harness child by this passthrough, anything else by inheritance.
-        # Deployment-wide workload defaults share the same allowlist and are added by
-        # sandbox_pod.workload_environment when the container is built. Names the image owns are
-        # listed separately, on --harness-inherit-env, so this invocation forwards them without
-        # repeating a value the deployment has no business choosing.
+        # Images own PATH and inherited defaults; templates explicitly choose HOME.
+        # Both Pod and VM configurations use the same explicit inheritance/override contract.
         harness_env = list(
             dict.fromkeys(
                 [
-                    "HOME",
                     "PATH",
                     *self.env.sandbox_workload_env,
                     *(var.name for var in sandbox_pod.egress_env()),
@@ -356,39 +347,37 @@ class RunnerTemplate(Construct):
                 ]
             )
         )
-        args = [
-            "--state-dir",
-            _STATE_DIR,
-            # Where the runner image (agentplane/runner/image.nix) links nixpkgs' harnesses.
-            "--claude-binary",
-            "/bin/claude",
-            "--anthropic-base-url",
-            "$(LITELLM_URL)",
-            "--codex-binary",
-            "/bin/codex",
-            "--openai-base-url",
-            "$(LITELLM_URL)/v1",
-            *(
-                ["--codex-executor-url", _EXECUTOR_URL, "--codex-executor-socket", _EXECUTOR_SOCKET]
-                if self.env.isolated_codex_executor
-                else []
+        control = platform_routes.control(self.env.namespace, service=self.control_service)
+        ingress = platform_routes.ingress(self.env.namespace)
+        llm_url = llm_ingress.proxied_url(self.env.namespace)
+        config = Configuration(
+            version=1,
+            state_dir=_STATE_DIR,
+            initialization_cwd=_STATE_DIR,
+            control=Endpoint(target=control.local_target, bearer=platform_routes.ROUTE_BEARER),
+            ingress=Endpoint(target=ingress.local_target, bearer=platform_routes.ROUTE_BEARER),
+            platform_instructions=platform_instructions(self.env, egress_api_service=self.egress_api_service),
+            harness_environment=configuration.Environment(
+                inherit=tuple(dict.fromkeys((*self.env.harness_inherited_env, *harness_env))),
+                values={"HOME": _HOME_DIR},
             ),
-            # The Runner Gateway and the ingress, over the sidecar's platform routes.
-            *platform_routes.runner_args(self.env.namespace),
-            "--launch-file",
-            _LAUNCH_FILE,
-            "--platform-instructions-file",
-            f"{_PLATFORM_INSTRUCTIONS_DIR}/{_PLATFORM_INSTRUCTIONS_KEY}",
-        ]
-        for entry in harness_env:
-            args.extend(["--harness-env", entry])
-        for name in self.env.harness_inherited_env:
-            args.extend(["--harness-inherit-env", name])
+            claude=Harness(binary="/bin/claude", base_url=llm_url, token_env="ANTHROPIC_AUTH_TOKEN"),
+            codex=Harness(binary="/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"),
+            executor=ContainerExecutor(url=_EXECUTOR_URL, socket=_EXECUTOR_SOCKET)
+            if self.env.isolated_codex_executor
+            else None,
+        )
+        ConfigMap(
+            self,
+            "runner-config",
+            metadata=ApiObjectMetadata(name=self.config_map_name, namespace=self.env.namespace),
+            data={"runner.json": config.model_dump_json(exclude_none=True)},
+        )
         return k8s.Container(
             name="runner",
             image=f"{image}:{_PLACEHOLDER_TAG}",
             command=[f"{_RUNNER_DIR}/bin/agentplane-runner"],
-            args=args,
+            args=["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE],
             # The runner works in absolute paths. This is for a command exec'd in: the sandbox
             # Actions' `runner` boxes start there unless the caller names a directory.
             working_dir=_STATE_DIR,
@@ -396,7 +385,6 @@ class RunnerTemplate(Construct):
             env=sandbox_pod.workload_environment(
                 self.env,
                 [
-                    k8s.EnvVar(name="LITELLM_URL", value=llm_ingress.proxied_url(self.env.namespace)),
                     *(
                         k8s.EnvVar(name=key, value=value)
                         for key, value in telemetry.service_environment(
@@ -427,9 +415,7 @@ class RunnerTemplate(Construct):
             ),
             volume_mounts=[
                 *self._execution_mounts(),
-                k8s.VolumeMount(
-                    name=_PLATFORM_INSTRUCTIONS_VOLUME, mount_path=_PLATFORM_INSTRUCTIONS_DIR, read_only=True
-                ),
+                k8s.VolumeMount(name=_CONFIG_VOLUME, mount_path=CONFIG_FILE, sub_path="runner.json", read_only=True),
                 *(self._isolated_executor_mounts() if self.env.isolated_codex_executor else []),
                 *sandbox_pod.platform_control_mounts(),
                 *(
@@ -473,10 +459,7 @@ class RunnerTemplate(Construct):
                         name=_RUNNER_VOLUME_NAME,
                         image=k8s.ImageVolumeSource(reference=runner_vm.RUNNER_DISK_IMAGE, pull_policy="IfNotPresent"),
                     ),
-                    k8s.Volume(
-                        name=_PLATFORM_INSTRUCTIONS_VOLUME,
-                        config_map=k8s.ConfigMapVolumeSource(name=_PLATFORM_INSTRUCTIONS_CONFIG_MAP),
-                    ),
+                    k8s.Volume(name=_CONFIG_VOLUME, config_map=k8s.ConfigMapVolumeSource(name=self.config_map_name)),
                     *(
                         [
                             k8s.Volume(name=_HOME_VOLUME_NAME, empty_dir=k8s.EmptyDirVolumeSource()),

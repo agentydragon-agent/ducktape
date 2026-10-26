@@ -18,6 +18,7 @@ from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import bearer, dial
 from agentplane.history_service.testing.go_service import WRITER
+from agentplane.runner.configuration import Endpoint
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.gateway import Gateway
@@ -26,7 +27,6 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
-from agentplane.sandboxes.guest_config import Endpoint
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer

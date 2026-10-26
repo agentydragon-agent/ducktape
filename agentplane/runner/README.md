@@ -47,7 +47,7 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   JSON encoding rather than reproducing the former Python runner's formatting.
 - `config.go`, `guest.go` and `cli.go`: explicit child environment and launch
   configuration. `cmd/main.go` dispatches internal process modes before service startup.
-  `agentplane-runner-vm` is a symlink to this same executable. The [Runner configuration inventory](CONFIGURATION.md)
+  Pods and VMs invoke the same executable with explicit `--config` and `--launch-file` arguments. The [Runner configuration inventory](CONFIGURATION.md)
   documents the public flags, configuration sources and VM paths for Pod and VM deployments.
 
 The production build target is `//agentplane/runner/cmd:agentplane-runner`, shipped in `//agentplane/runner:disk_image`.
