@@ -710,18 +710,23 @@ class SpendService:
             raise ValueError("window must be configured")
         issues = []
         transactions: list[Transaction] = []
+        account_labels = dict(self._configuration.account_labels)
+        account_labels.update({card.account_id: card.label for card in self._configuration.cards})
         try:
             async with (
                 self._require_pool().acquire() as connection,
                 connection.transaction(isolation="repeatable_read", readonly=True),
             ):
                 accounts = await connection.fetch(
-                    """SELECT a.account_id, a.type, l.last_synced_at
+                    """SELECT a.account_id, a.type, l.institution_name, l.last_synced_at
                        FROM public.accounts a JOIN public.links l ON l.item_id = a.item_id
                        WHERE a.account_id = ANY($1::text[]) AND a.detached_at IS NULL
                          AND l.status = 'active'""",
                     list(allowance.spending_account_ids),
                 )
+                for row in accounts:
+                    if row["institution_name"]:
+                        account_labels.setdefault(row["account_id"], f"{row['institution_name']} {row['type']}")
                 if len(accounts) != len(allowance.spending_account_ids) or any(
                     row["type"] not in ("credit", "depository")
                     or row["last_synced_at"] is None
@@ -757,6 +762,7 @@ class SpendService:
             now=now,
             window_days=days,
             source_issues=issues,
+            account_labels=account_labels,
         )
 
     def _require_pool(self) -> asyncpg.Pool:

@@ -143,12 +143,40 @@ percentage. Tooltips separate spending, estimated withdrawal taxes, gross fundin
 Without a tax model, explicitly selecting spending shows dollars alone, with no reference-rate lines or percentage
 axis. This linear conversion relies on the current fixed effective tax fraction and current portfolio denominator.
 
-The headline annualizes the available common history when it is shorter than the selected lookback, with a partial
-window label. Historical chart points require the entire selected window: a 30-day point includes its endpoint and
+The headline annualizes the latest contiguous covered suffix ending yesterday when it is shorter than the selected
+lookback, with a partial window label. It never averages disjoint known days across unknown history. Historical chart
+points require the entire selected window: a 30-day point includes its endpoint and
 the preceding 29 complete days. Startup windows are omitted to avoid annualizing one or two days of monthly bills.
-An account's first recorded transaction establishes an inferred history boundary, not its opening date; selecting a
-recently opened or sparsely used account can shorten common coverage. Earlier history requires verified source or
-account-lifecycle evidence before treating absent transactions as zero spending.
+Later windows crossing missing coverage are null, leaving visible gaps; earlier complete windows remain available
+even when the current headline has no covered suffix.
+
+By default, an account's first recorded transaction establishes an inferred history boundary, not its opening date.
+Optional private `sustainability.account_history` entries separate account-opening evidence from documented complete
+history. Keys must identify selected spending accounts. Both evidence types require a nonblank source and an `as_of`
+date; neither Link creation nor requested Plaid history depth proves completeness. For example (synthetic only):
+
+```yaml
+account_history:
+  example-new-card:
+    opening:
+      earliest: 2025-05-10
+      latest: 2025-05-14
+      source: User-reported approximate account opening, based on bank documents.
+      as_of: 2025-07-01
+    coverage:
+      complete_from: 2025-05-10
+      source: Independently verified complete history from account opening.
+      as_of: 2025-07-01
+```
+
+Dates strictly before the earliest possible opening are known zero. Opening evidence alone leaves any interval from
+that bound to the first recorded transaction unknown. A documented `complete_from` replaces the inferred boundary;
+it is an explicit assertion of completeness, not a date derived automatically from successful sync. An unused account
+can therefore have known coverage without transactions. A transaction predating the earliest opening bound is retained
+and raises an evidence conflict that blocks funding estimates, including when observed on the current incomplete day.
+The page identifies limiting accounts and expands their boundaries and evidence without exposing account IDs.
+Plaid's Item-wide `HISTORICAL_UPDATE_COMPLETE` status confirms backfill completion, while `has_more=false` confirms
+pagination drained; neither supplies an account's earliest available date.
 
 Portfolio value is selected gross USD assets minus signed liabilities minus the current value of explicitly excluded
 security positions. Holdings are not added to their account balances. Each Plaid holding-value correction selects an
@@ -161,8 +189,8 @@ The backend signs view-only GET requests in memory, caches ready valuations for 
 reads on the next request.
 
 Every historical spending point uses **today's** eligible portfolio; historical asset values are not reconstructed.
-Coverage starts at the latest first-recorded transaction among selected accounts; partial windows annualize only their
-covered days and are labeled. This is an observable lower bound, not proof of complete linked spending. Asset
+Partial windows annualize only their contiguous covered days and are labeled. Inferred transaction boundaries are
+not proof of complete linked spending. Asset
 observations, transaction posting and transfer settlement can arrive at different times. Private `known_issues` notes
 appear on the page alongside source errors. Historical asset-denominator charts and richer tax models remain
 follow-ups. No financial-account writes are performed.

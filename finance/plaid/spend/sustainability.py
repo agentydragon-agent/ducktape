@@ -56,6 +56,52 @@ class WithdrawalTax(BaseModel):
         return self
 
 
+class AccountOpening(BaseModel):
+    """Dated evidence of account existence, independently of imported history."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    earliest: date_type
+    latest: date_type
+    source: str = Field(min_length=1, pattern=r"\S")
+    as_of: date_type
+
+    @model_validator(mode="after")
+    def _ordered_bounds(self) -> AccountOpening:
+        if self.earliest > self.latest:
+            raise ValueError("account opening bounds must be ordered")
+        return self
+
+
+class DocumentedHistory(BaseModel):
+    """Explicit assertion of complete history from a date, with provenance."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    complete_from: date_type
+    source: str = Field(min_length=1, pattern=r"\S")
+    as_of: date_type
+
+    @model_validator(mode="after")
+    def _dated_coverage(self) -> DocumentedHistory:
+        if self.complete_from > self.as_of:
+            raise ValueError("history coverage cannot start after its evidence date")
+        return self
+
+
+class AccountHistory(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    opening: AccountOpening | None = None
+    coverage: DocumentedHistory | None = None
+
+    @model_validator(mode="after")
+    def _has_evidence(self) -> AccountHistory:
+        if self.opening is None and self.coverage is None:
+            raise ValueError("account history requires opening or coverage evidence")
+        return self
+
+
 class SustainabilityPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -66,6 +112,15 @@ class SustainabilityPolicy(BaseModel):
     include_excluded_categories: list[str] = Field(default_factory=list)
     confirmed_refund_rule_ids: list[str] = Field(default_factory=list)
     known_issues: list[str] = Field(default_factory=list)
+    account_history: dict[str, AccountHistory] = Field(default_factory=dict)
+
+
+class SpendingAccountCoverage(BaseModel):
+    account_label: str
+    first_recorded_on: date_type | None
+    opening: AccountOpening | None
+    coverage: DocumentedHistory | None
+    unknown_days_in_window: int
 
 
 class SustainabilityHistoryPoint(BaseModel):
@@ -102,6 +157,7 @@ class SustainabilityView(BaseModel):
     history: list[SustainabilityHistoryPoint]
     issues: list[str]
     known_issues: list[str]
+    account_coverage: list[SpendingAccountCoverage] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -113,6 +169,20 @@ class Consumption:
     @property
     def total(self) -> int:
         return self.mandatory + self.flexible + self.provisional
+
+
+@dataclass(frozen=True)
+class _AccountCoverage:
+    first_recorded: date_type | None
+    evidence: AccountHistory | None
+
+    def covers(self, day: date_type) -> bool:
+        if self.evidence is not None:
+            if self.evidence.opening is not None and day < self.evidence.opening.earliest:
+                return True
+            if self.evidence.coverage is not None:
+                return day >= self.evidence.coverage.complete_from
+        return self.first_recorded is not None and day >= self.first_recorded
 
 
 def empty_portfolio() -> PortfolioView:
@@ -163,6 +233,7 @@ def calculate_sustainability(
     now: datetime,
     window_days: int,
     source_issues: list[str],
+    account_labels: dict[str, str] | None = None,
 ) -> SustainabilityView:
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
@@ -175,17 +246,23 @@ def calculate_sustainability(
     superseded = superseded_pending_keys(transactions)
     days_by_account: dict[str, list[date_type]] = defaultdict(list)
     daily: dict[date_type, list[int]] = defaultdict(lambda: [0, 0, 0])
+    contradictory_accounts: set[str] = set()
     held_refunds = other_currency = 0
     for transaction in transactions:
         if transaction.account_id not in allowance.spending_account_ids:
             continue
         day = transaction.report_day(time_zone)
-        if day > end:
+        if day > today:
             continue
         if transaction.pending and (transaction.account_id, transaction.transaction_id) in superseded:
             continue
         # Even a transfer establishes that a source has some recorded history.
         days_by_account[transaction.account_id].append(day)
+        evidence = policy.account_history.get(transaction.account_id)
+        if evidence is not None and evidence.opening is not None and day < evidence.opening.earliest:
+            contradictory_accounts.add(transaction.account_id)
+        if day > end:
+            continue
         if transaction.currency not in (None, policy.currency):
             other_currency += int(requested_start <= day <= end)
             continue
@@ -205,17 +282,49 @@ def calculate_sustainability(
         )
         daily[day][bucket] += amount
 
-    covered_starts = [
-        min(days_by_account[account]) for account in allowance.spending_account_ids if days_by_account[account]
-    ]
-    if len(covered_starts) != len(allowance.spending_account_ids):
-        issues.append("Some spending accounts have no recorded history before the cutoff; coverage is unknown.")
-    coverage_start = max(covered_starts) if covered_starts else today
-    start = max(requested_start, coverage_start)
-    covered_days = max(0, (end - start).days + 1)
+    account_coverage = []
+    boundaries = []
+    for index, account in enumerate(sorted(allowance.spending_account_ids), start=1):
+        first_recorded = min(days_by_account[account]) if days_by_account[account] else None
+        evidence = policy.account_history.get(account)
+        boundary = _AccountCoverage(first_recorded, evidence)
+        boundaries.append(boundary)
+        label = (account_labels or {}).get(account, f"Spending account {index}")
+        if account in contradictory_accounts:
+            issues.append(
+                f"{label}: a recorded transaction predates the earliest possible opening; "
+                "resolve the evidence conflict before using funding estimates."
+            )
+        account_coverage.append(
+            SpendingAccountCoverage(
+                account_label=label,
+                first_recorded_on=first_recorded,
+                opening=evidence.opening if evidence else None,
+                coverage=evidence.coverage if evidence else None,
+                unknown_days_in_window=sum(
+                    not boundary.covers(requested_start + timedelta(days=offset)) for offset in range(window_days)
+                ),
+            )
+        )
+
+    # Evaluate account evidence once per calendar day across the chart and its
+    # lookback, then reuse the mask for the headline and every rolling window.
+    first_coverage_day = today - timedelta(days=365 + window_days - 1)
+    covered_dates = {
+        first_coverage_day + timedelta(days=offset)
+        for offset in range((today - first_coverage_day).days)
+        if all(boundary.covers(first_coverage_day + timedelta(days=offset)) for boundary in boundaries)
+    }
+    # Only the covered suffix ending yesterday can support the current pace.
+    # Summing disjoint known days would hide a gap in which spending is unknown.
+    start = today
+    while start > requested_start and start - timedelta(days=1) in covered_dates:
+        start -= timedelta(days=1)
+    covered_days = (today - start).days
     if covered_days < window_days:
         issues.append(
-            f"Only {covered_days} of {window_days} days have common recorded history; annualization uses those days."
+            f"Only {covered_days} of {window_days} days have contiguous covered history ending yesterday; "
+            "annualization uses those days."
         )
     if held_refunds:
         issues.append(
@@ -227,9 +336,7 @@ def calculate_sustainability(
         )
     if policy.withdrawal_tax.rate is None:
         issues.append("Withdrawal taxes are not modeled; tax-inclusive funding and draw rates are unavailable.")
-    source_ready = (
-        not source_issues and len(covered_starts) == len(allowance.spending_account_ids) and other_currency == 0
-    )
+    source_ready = not source_issues and not contradictory_accounts and other_currency == 0
     net = portfolio.net_minor_units if portfolio.status == "ready" else None
     if portfolio.status != "ready":
         issues.append("Portfolio coverage or freshness is unavailable; see source details.")
@@ -249,23 +356,25 @@ def calculate_sustainability(
     # historical point uses today's eligible assets, never reconstructed holdings.
     # A rolling-window series starts only once that entire window is covered.
     # Annualizing its first one or two days amplifies monthly bills into spikes.
-    chart_start = max(coverage_start + timedelta(days=window_days - 1), today - timedelta(days=365))
-    chart_day = chart_start
+    chart_day = today - timedelta(days=365)
     while chart_day <= end:
         point_start = chart_day - timedelta(days=window_days - 1)
-        point_days = window_days
+        point_days = sum(point_start + timedelta(days=offset) in covered_dates for offset in range(window_days))
         point_total = sum(sum(values) for day, values in daily.items() if point_start <= day <= chart_day)
-        point_annual = _annualize(point_total, point_days) if source_ready else None
+        point_annual = _annualize(point_total, window_days) if source_ready and point_days == window_days else None
         point_draw = _tax_adjust(point_annual, policy.withdrawal_tax.rate)
-        history.append(
-            SustainabilityHistoryPoint(
-                date=chart_day,
-                covered_days=point_days,
-                annualized_spending_minor_units=point_annual,
-                spending_draw_rate=point_annual / net if ready and point_annual is not None and net else None,
-                tax_adjusted_draw_rate=point_draw / net if ready and point_draw is not None and net else None,
+        # Omit incomplete startup windows; retain later nulls to break the line
+        # across unknown history, including a gap that reaches the present.
+        if history or point_days == window_days:
+            history.append(
+                SustainabilityHistoryPoint(
+                    date=chart_day,
+                    covered_days=point_days,
+                    annualized_spending_minor_units=point_annual,
+                    spending_draw_rate=point_annual / net if point_annual is not None and net and net > 0 else None,
+                    tax_adjusted_draw_rate=point_draw / net if point_draw is not None and net and net > 0 else None,
+                )
             )
-        )
         chart_day += timedelta(days=1)
     return SustainabilityView(
         generated_at=now,
@@ -273,7 +382,7 @@ def calculate_sustainability(
         time_zone=time_zone.key,
         window_days=window_days,
         available_windows_days=policy.display.windows_days,
-        period_start=start,
+        period_start=start if covered_days else requested_start,
         period_end=end,
         covered_days=covered_days,
         mandatory_minor_units=consumption.mandatory,
@@ -292,6 +401,7 @@ def calculate_sustainability(
         history=history,
         issues=issues,
         known_issues=policy.known_issues,
+        account_coverage=account_coverage,
     )
 
 

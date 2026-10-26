@@ -550,8 +550,9 @@ async def test_portfolio_read_retries_failure_and_caches_ready_result(
     assert attempts == 2
 
 
+@pytest.mark.parametrize("label_source", ["institution", "private", "card"])
 async def test_read_sustainability_uses_postgres_transactions_for_each_window(
-    connection: asyncpg.Connection, postgres_url: str, monkeypatch: pytest.MonkeyPatch
+    connection: asyncpg.Connection, postgres_url: str, monkeypatch: pytest.MonkeyPatch, label_source: str
 ) -> None:
     now = datetime.now(UTC)
     zone = ZoneInfo("America/Los_Angeles")
@@ -613,6 +614,15 @@ async def test_read_sustainability_uses_postgres_transactions_for_each_window(
         connection, spending_account_id, item_id, "synthetic-current-day", today, 999, category="FIXED"
     )
     config = _sustainability_configuration(today, spending_account_id)
+    expected_label = "Example Bank credit"
+    if label_source == "private":
+        expected_label = "Synthetic selected spending account"
+        config = config.model_copy(update={"account_labels": {spending_account_id: expected_label}})
+    elif label_source == "card":
+        expected_label = "Synthetic configured card"
+        config = config.model_copy(
+            update={"cards": [CardConfig(account_id=spending_account_id, label=expected_label, enabled=False)]}
+        )
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
 
     async def read_portfolio(_now: datetime) -> PortfolioView:
@@ -634,6 +644,10 @@ async def test_read_sustainability_uses_postgres_transactions_for_each_window(
     assert default.spending_minor_units == 5_700
     assert default.history[-1].date == yesterday
     assert default.history[-1].covered_days == 90
+    assert len(default.account_coverage) == 1
+    assert default.account_coverage[0].account_label == expected_label
+    assert default.account_coverage[0].first_recorded_on == date(today.year - 1, 1, 1)
+    assert default.account_coverage[0].unknown_days_in_window == 0
 
     assert alternative.status == "ready"
     assert alternative.window_days == 30

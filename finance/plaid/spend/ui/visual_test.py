@@ -223,12 +223,104 @@ def _example_sustainability(variant: str = "ready") -> dict[str, object]:
             ],
         },
         "history": history,
+        "account_coverage": [],
         "issues": ["Synthetic source has delayed updates."] if stale or unavailable else [],
         "known_issues": [
             "Synthetic fixture: investment values are illustrative and can lag market changes.",
             "No income outside observed spending and portfolio sources is represented.",
         ],
     }
+
+
+def _example_sustainability_with_partial_account_history() -> dict[str, object]:
+    result = _example_sustainability()
+    result["covered_days"] = 44
+    result["period_start"] = "2026-09-01"
+    result["history"] = []
+    result["account_coverage"] = [
+        {
+            "account_label": "Example checking",
+            "first_recorded_on": "2026-09-01",
+            "opening": {
+                "earliest": "2026-07-20",
+                "latest": "2026-07-27",
+                "source": "Synthetic account archive",
+                "as_of": "2026-10-14",
+            },
+            "coverage": None,
+            "unknown_days_in_window": 43,
+        },
+        {
+            "account_label": "Example card",
+            "first_recorded_on": "2026-08-15",
+            "opening": None,
+            "coverage": {
+                "complete_from": "2026-08-15",
+                "source": "Synthetic statement archive",
+                "as_of": "2026-10-14",
+            },
+            "unknown_days_in_window": 29,
+        },
+    ]
+    return result
+
+
+def _example_sustainability_with_historical_coverage_gap() -> dict[str, object]:
+    result = _example_sustainability()
+    result.update(
+        status="unavailable",
+        covered_days=0,
+        period_start="2026-07-17",
+        mandatory_minor_units=0,
+        flexible_minor_units=0,
+        provisional_minor_units=0,
+        spending_minor_units=0,
+        annualized_spending_minor_units=None,
+        estimated_annual_draw_minor_units=None,
+        spending_draw_rate=None,
+        tax_adjusted_draw_rate=None,
+    )
+    result["account_coverage"] = [
+        {
+            "account_label": "Example new account",
+            "first_recorded_on": None,
+            "opening": {
+                "earliest": "2026-10-10",
+                "latest": "2026-10-14",
+                "source": "Synthetic opening archive",
+                "as_of": "2026-10-14",
+            },
+            "coverage": None,
+            "unknown_days_in_window": 5,
+        }
+    ]
+    result["history"] = [
+        {
+            "date": "2026-10-08",
+            "covered_days": 90,
+            "annualized_spending_minor_units": 4_700_000,
+            "spending_draw_rate": 0.0376,
+            "tax_adjusted_draw_rate": 0.0427272727,
+        },
+        {
+            "date": "2026-10-09",
+            "covered_days": 90,
+            "annualized_spending_minor_units": 4_850_000,
+            "spending_draw_rate": 0.0388,
+            "tax_adjusted_draw_rate": 0.0440909091,
+        },
+        *[
+            {
+                "date": f"2026-10-{day:02}",
+                "covered_days": 89 - (day - 10),
+                "annualized_spending_minor_units": None,
+                "spending_draw_rate": None,
+                "tax_adjusted_draw_rate": None,
+            }
+            for day in range(10, 15)
+        ],
+    ]
+    return result
 
 
 async def _select_spend_page(page: Page, label: str) -> None:
@@ -962,6 +1054,7 @@ async def test_sustainability_experimental_render(
     await expect(page.get_by_text("Experimental", exact=True)).to_be_visible()
     await expect(page.get_by_text("TODAY'S portfolio valuation", exact=False)).to_be_visible()
     await expect(page.get_by_text("Scenario 4: 4.5%", exact=True)).to_be_visible()
+    await expect(page.get_by_role("region", name="Account history coverage")).to_have_count(0)
     await expect(page.get_by_text("$2,750", exact=True)).to_be_visible()
     scenario_marker = page.get_by_role("button", name="Scenario 1: 3% draw rate")
     await expect(scenario_marker).to_be_visible()
@@ -1094,6 +1187,95 @@ async def test_sustainability_partial_window_has_no_startup_chart(
         animations="disabled",
     )
     view.errors.assert_none(context="Sustainability partial window")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_sustainability_account_history_coverage_render(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
+    async def serve_partial_coverage(route: Route) -> None:
+        await route.fulfill(json=_example_sustainability_with_partial_account_history())
+
+    await page.route("**/api/v1/sustainability*", serve_partial_coverage)
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Sustainability")
+    await expect(page.get_by_text("Partial window · 44/90 days", exact=True)).to_be_visible()
+    await expect(page.locator('canvas[aria-label="Annual funding including taxes by day"]')).to_have_count(0)
+
+    coverage = page.get_by_role("region", name="Account history coverage")
+    await expect(coverage).to_be_visible()
+    await expect(coverage.get_by_role("alert")).to_contain_text("Unavailable dates are not new spending")
+    await expect(coverage.get_by_role("alert")).to_contain_text("Example checking (43 days unavailable)")
+    await expect(coverage.get_by_role("alert")).to_contain_text("Example card (29 days unavailable)")
+    await expect(coverage.get_by_text("Coverage evidence for 2 accounts", exact=True)).to_be_visible()
+
+    await expect(
+        coverage.get_by_text("Approximate opening range: 2026-07-20 to 2026-07-27", exact=True)
+    ).to_be_hidden()
+    await coverage.locator("details").first.locator(":scope > summary").click()
+    account_rows = coverage.locator("details details")
+    checking = account_rows.filter(has_text="Example checking")
+    await checking.locator("summary").click()
+    await expect(
+        checking.get_by_text("Approximate opening range: 2026-07-20 to 2026-07-27", exact=True)
+    ).to_be_visible()
+    await expect(
+        checking.get_by_text("Evidence: Synthetic account archive · as of 2026-10-14.", exact=False)
+    ).to_be_visible()
+    await expect(
+        checking.get_by_text("Inferred history boundary from first recorded transaction: 2026-09-01", exact=True)
+    ).to_be_visible()
+
+    card = account_rows.filter(has_text="Example card")
+    await card.locator("summary").click()
+    await expect(card.get_by_text("Documented complete history from 2026-08-15", exact=True)).to_be_visible()
+    await expect(
+        card.get_by_text("Evidence: Synthetic statement archive · as of 2026-10-14.", exact=False)
+    ).to_be_visible()
+    await expect(card.get_by_text("First recorded transaction: 2026-08-15.", exact=True)).to_be_visible()
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    view.errors.assert_none(context="Sustainability account history coverage")
+    await view.capture(
+        f"sustainability-account-history-coverage-{width}",
+        label=f"{width}px partial requested window with inferred and documented account history",
+        full_page=True,
+        animations="disabled",
+    )
+
+
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_sustainability_history_survives_current_coverage_gap(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
+    async def serve_historical_gap(route: Route) -> None:
+        await route.fulfill(json=_example_sustainability_with_historical_coverage_gap())
+
+    await page.route("**/api/v1/sustainability*", serve_historical_gap)
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Sustainability")
+    await expect(page.get_by_role("alert").get_by_text("Estimate unavailable", exact=False)).to_be_visible()
+    await expect(
+        page.get_by_text("0 of 90 days covered · 2026-07-17 through 2026-10-14", exact=False)
+    ).to_be_visible()
+    await expect(page.get_by_text("Valuation available", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Withdrawal taxes: 12% modeled", exact=True)).to_be_visible()
+    coverage = page.get_by_role("region", name="Account history coverage")
+    await expect(coverage.get_by_role("alert")).to_contain_text("Example new account (5 days unavailable)")
+
+    history = page.get_by_role("region", name="Spending and funding history")
+    await expect(history.get_by_text("90-day trailing average, annualized", exact=True)).to_be_visible()
+    await expect(history.get_by_role("img", name="Annual funding including taxes by day")).to_be_visible()
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    view.errors.assert_none(context="Sustainability current coverage gap with historical values")
+    await view.capture(
+        f"sustainability-history-current-coverage-gap-{width}",
+        label=f"{width}px older complete history with a current unavailable coverage gap",
+        full_page=True,
+        animations="disabled",
+    )
 
 
 async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, dashboard_url: str) -> None:

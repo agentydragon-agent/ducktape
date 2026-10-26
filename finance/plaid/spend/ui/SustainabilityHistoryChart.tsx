@@ -68,7 +68,13 @@ export function SustainabilityHistoryChart({
           borderColor: SERIES_COLORS.funding,
           backgroundColor: SERIES_COLORS.funding,
           borderWidth: 2,
-          pointRadius: history.length === 1 ? 3 : 0,
+          pointRadius: history.map((point, index) =>
+            point.annualized_spending_minor_units != null &&
+            history[index - 1]?.annualized_spending_minor_units == null &&
+            history[index + 1]?.annualized_spending_minor_units == null
+              ? 3
+              : 0
+          ),
           pointHitRadius: 8,
           spanGaps: false,
           yAxisID: "amount",
@@ -165,7 +171,8 @@ export function SustainabilityHistoryChart({
             {windowDays}-day trailing average, annualized
           </Text>
           <Text size="xs" c="dimmed">
-            Complete calendar days ending on each date; shorter startup windows are omitted.
+            Complete calendar days ending on each date; shorter startup windows are omitted. Gaps indicate windows
+            with unavailable account history.
           </Text>
           <Text size="xs" c="dimmed">
             Withdrawal percentages include taxes and use TODAY&apos;S portfolio valuation for every date shown.
@@ -194,7 +201,7 @@ export function SustainabilityHistoryChart({
         </Group>
         {history.length === 0 ? (
           <Text size="sm" c="dimmed">
-            History requires at least {windowDays} days of common recorded spending history. Select a shorter window to
+            History requires at least {windowDays} consecutive days of covered spending history. Select a shorter window to
             see available history.
           </Text>
         ) : !canPlot ? (
