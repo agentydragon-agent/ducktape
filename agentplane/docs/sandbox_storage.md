@@ -127,8 +127,8 @@ A node-local volume retains its node affinity when its workload stops. Making no
 capacity-enforcing storage available across the cluster is independent of choosing a layout.
 The replicated Piraeus class permits attachments within its configured OVH zone. Both state
 and workspace must use portable storage for the VM to move; raw block mode alone does not
-remove node affinity. The selected VM rollout is documented in the
-[block-storage plan](../plans/vm_block_storage.md).
+remove node affinity. The deployed VM layout and basic live acceptance are documented in
+[VM Sandboxes](vm_sandboxes.md#fresh-vm-trial-readiness).
 
 ## Retained volume identity
 
@@ -159,10 +159,9 @@ merely because the desired layout changes.
 
 Conversion is an accepted option for much later, tracked separately.
 It does not gate workspace ownership or template rollout; incompatible changes are rejected until
-a converter exists. For the selected VM block-storage cutover, the operator instead accepts
-resetting affected Sandboxes and creating fresh matching claims; follow the
-[cutover procedure](../plans/vm_block_storage.md#cutover). This is not permission for the
-controller to delete mismatched retained data automatically. A future conversion must:
+a converter exists. A fresh Sandbox can use new matching claims without converting an existing
+Sandbox's data. Resetting an existing Sandbox requires the operator to accept its exact data loss;
+the controller never deletes mismatched retained data automatically. A future conversion must:
 
 - Require a suspended Sandbox, with every old writer terminated before mounting either volume.
 - Allocate a destination with an explicit layout, preserving files, ownership, permissions, links

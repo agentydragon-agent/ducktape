@@ -66,10 +66,9 @@ lost.
   by a filesystem PVC. The workspace claim survives stop/start and replacement of the VM object.
   The VM's separate state PVC remains a `DirectoryTree` on a `Filesystem` claim, attached through
   virtiofs; staging puts both VM claims on `piraeus-ssd-2-autodiskful`. The Pod runner keeps its
-  Sandbox-owned `DirectoryTree` workspace and existing storage class. The selected
-  [replicated block-storage cutover](../plans/vm_block_storage.md) provisions fresh VM claims and
-  resets affected existing Sandboxes with the operator's acceptance; it does not convert retained
-  image-file workspaces. Custom VM templates may also declare generic DataVolume disks; those
+  Sandbox-owned `DirectoryTree` workspace and existing storage class. Fresh VM claims use the new
+  layout; changing the template does not convert retained image-file workspaces. Custom VM
+  templates may also declare generic DataVolume disks; those
   remain VM-owned and are not managed workspace declarations. The guest mounts its workspace disk
   with `autoFormat`: `systemd-makefs` creates the ext4 only when `blkid` finds no filesystem or
   swap signature, so any other filesystem fails to mount instead of being rewritten. A disk with
@@ -85,6 +84,24 @@ lost.
 - The guest root is small and replaceable; journals live on the state PVC and agent work on the
   workspace disk. The guest keeps a serial console (`ttyS0`) because a failed boot unit is otherwise
   invisible.
+
+## Fresh VM trial readiness
+
+Basic live acceptance passed on 2026-10-25 PDT against the deployed staging `runner-vm` template:
+both fresh 10 GiB claims bound on `piraeus-ssd-2-autodiskful`, with `Block` workspace and
+`Filesystem` state modes; the launcher became Ready; and the connected runner reported successful
+bootstrap for that incarnation. The bootstrap checked the workspace's ext4 filesystem and wrote,
+synced and read back markers in both state and workspace. LINSTOR nodes were online, with
+151–361 GiB free on eligible SSD pools and thin-pool metadata below 3% used.
+
+Raw-block lifecycle acceptance on RBE additionally covered suspend/resume, VM replacement,
+retained identities and teardown. Evidence: [raw-block lifecycle](https://app.buildbuddy.io/invocation/382077da-f6fa-42ab-b03f-40f8e2491084)
+and [two-harness suspend/resume](https://app.buildbuddy.io/invocation/a5c97980-39f1-4dc9-ae7d-7e49271d65f1).
+
+The operator authorized the next fresh VM trial with the complex live drills omitted: node loss,
+quorum/fencing, expansion, cross-node movement and recovery remain unqualified in the broader
+[Piraeus production plan](../../cluster/docs/plans/piraeus_production.md). This storage smoke check
+does not establish deployed cgroup OOM behavior or storage-service recovery guarantees.
 
 ## Guest resource controls
 

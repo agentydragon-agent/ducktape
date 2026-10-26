@@ -979,7 +979,6 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 flowchart TD
     DECLARATIVE_SESSIONS_DESIGN[Decision, unscheduled: Flux-managed Sessions and subscriptions]
     SUBSCRIPTION_AUTHORIZATION_DESIGN[Subscription authorization decision, section 2] -. related authority design .-> DECLARATIVE_SESSIONS_DESIGN
-    VM_BLOCK_STORAGE_CUTOVER[In progress: basic readiness for a fresh VM trial]
     STATE_VOLUME_BLOCK[Deferred: block storage for Pod and VM state and workspace]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
@@ -1031,23 +1030,6 @@ implementation prerequisites after choosing the design, including wake policy if
 manifest for a Session with GitHub/webhook subscriptions, and independently finishable follow-up
 nodes with focused reconciliation/restart, duplicate-prevention and authorization acceptance.
 Recording this idea does not schedule implementation.
-
-### `VM_BLOCK_STORAGE_CUTOVER` — basic readiness for a fresh VM trial
-
-**In progress; operator narrowed acceptance, 2026-10-25 PDT.** Check deployed configuration,
-storage health/headroom, and disposable VM boot with state/workspace write/read, then allow
-the next fresh VM trial. Raw-block lifecycle acceptance already passed on RBE. The operator
-waived complex live drills for this trial: node-loss, quorum/fencing, expansion, cross-node
-movement and recovery remain in the broader
-[Piraeus qualification](../../cluster/docs/plans/piraeus_production.md), without blocking this
-trial or being declared complete.
-
-The operator accepts deleting selected pre-existing affected Sandboxes instead of storage
-conversion. A legacy VM explicitly retained by the operator stays permanently suspended with
-automatic wake disabled; preserve its Sandbox, claims and PVs, and use a different name and
-fresh claims for a replacement. Preserve unrelated Sandboxes and backend service data.
-The [cutover procedure](vm_block_storage.md#cutover) records the exact accepted loss, retained
-PV handling and rollback limits. A code merge alone does not establish live readiness.
 
 ### `STATE_VOLUME_BLOCK` — block storage for Pod and VM state and workspace
 
@@ -1102,7 +1084,7 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 ### `WORKSPACE_NODE_PORTABILITY` — move a workspace between nodes
 
 **Unscheduled for remaining node-local workspaces; operator, 2026-10-13 PDT: even later.**
-The selected VM path is replicated Piraeus storage in `VM_BLOCK_STORAGE_CUTOVER`. For other
+Fresh VM Sandboxes use [replicated Piraeus storage](../docs/vm_sandboxes.md#guest-and-storage). For other
 node-local volumes, consider portability by copying through VolSync, object storage or directly
 while the Sandbox is suspended. This broader copy-based path does not gate replicated VM storage.
 
