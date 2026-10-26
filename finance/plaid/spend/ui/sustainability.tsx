@@ -21,6 +21,8 @@ import { SustainabilityHistoryChart } from "./SustainabilityHistoryChart";
 import type { SustainabilityPortfolio, SustainabilitySource, SustainabilityView } from "./types";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
+type AccountCoverage = NonNullable<SustainabilityView["account_coverage"]>[number];
+
 function percent(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return "Unavailable";
   return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(value);
@@ -336,9 +338,99 @@ function SpendingComposition({ view }: { view: SustainabilityView }) {
         </SimpleGrid>
         {view.status === "unavailable" && (
           <Text size="sm" c="dimmed">
-            A draw rate is unavailable because the portfolio value is not ready.
+            A draw rate is unavailable; see current issues and source details.
           </Text>
         )}
+      </Stack>
+    </Paper>
+  );
+}
+
+function AccountHistoryCoverage({ accounts }: { accounts: AccountCoverage[] }) {
+  if (accounts.length === 0) return null;
+
+  const unavailable = accounts.filter((account) => account.unknown_days_in_window > 0);
+
+  return (
+    <Paper component="section" aria-labelledby="account-history-title" withBorder radius="lg" p="lg">
+      <Stack gap="sm">
+        <Title id="account-history-title" order={2} size="h4">
+          Account history coverage
+        </Title>
+        {unavailable.length > 0 && (
+          <Alert color="yellow" title="Unavailable account history">
+            <Text size="sm">
+              Missing history stays unknown. In this requested window:{" "}
+              {unavailable
+                .map((account) => `${account.account_label} (${account.unknown_days_in_window} days unavailable)`)
+                .join(" · ")}
+              .
+            </Text>
+          </Alert>
+        )}
+        <details>
+          <summary style={{ cursor: "pointer", fontWeight: 650 }}>
+            Coverage evidence for {accounts.length} accounts
+          </summary>
+          <Stack gap="xs" mt="sm">
+            {accounts.map((account, index) => (
+              <details key={`${account.account_label}-${index}`}>
+                <summary style={{ cursor: "pointer", fontWeight: 650 }}>
+                  {account.account_label} ·{" "}
+                  {account.unknown_days_in_window > 0
+                    ? `${account.unknown_days_in_window} days unavailable`
+                    : "no unavailable days"}
+                </summary>
+                <Stack gap="xs" mt="sm">
+                  {account.opening ? (
+                    <div>
+                      <Text size="sm" fw={600}>
+                        Approximate opening range: {account.opening.earliest} to {account.opening.latest}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        Evidence: {account.opening.source} · as of {account.opening.as_of}. Days before the earliest
+                        opening bound are treated as known zero spending; the earliest bound is conservative.
+                      </Text>
+                    </div>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      No approximate opening bounds are available.
+                    </Text>
+                  )}
+                  {account.coverage ? (
+                    <div>
+                      <Text size="sm" fw={600}>
+                        Documented complete history from {account.coverage.complete_from}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        Evidence: {account.coverage.source} · as of {account.coverage.as_of}.
+                      </Text>
+                    </div>
+                  ) : account.first_recorded_on ? (
+                    <div>
+                      <Text size="sm" fw={600}>
+                        Inferred history boundary from first recorded transaction: {account.first_recorded_on}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        This is an inference; history before this date is not verified and unknown periods are not zero.
+                      </Text>
+                    </div>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      No documented coverage boundary or first recorded transaction is available to infer one.
+                    </Text>
+                  )}
+                  {account.coverage && account.first_recorded_on && (
+                    <Text size="xs" c="dimmed">
+                      First recorded transaction: {account.first_recorded_on}.
+                    </Text>
+                  )}
+                  <Text size="sm">Unavailable history in requested window: {account.unknown_days_in_window} days.</Text>
+                </Stack>
+              </details>
+            ))}
+          </Stack>
+        </details>
       </Stack>
     </Paper>
   );
@@ -605,6 +697,8 @@ export function SustainabilityPage() {
   const showSkeleton = !displayingSelectedWindow && error == null;
   const statusLabel = view?.status ?? "loading";
   const statusColor = view?.status === "ready" ? "blue" : view?.status === "unavailable" ? "orange" : "gray";
+  const accountCoverage = view?.account_coverage ?? [];
+  const hasHistoricalSpending = view?.history.some((point) => point.annualized_spending_minor_units != null) ?? false;
 
   return (
     <Stack gap="lg">
@@ -692,24 +786,26 @@ export function SustainabilityPage() {
           )}
 
           {view.status === "ready" && (
-            <>
-              <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
-                <DrawGauge view={view} />
-                <SpendingComposition view={view} />
-              </SimpleGrid>
-              <SustainabilityHistoryChart
-                history={view.history}
-                referenceDrawRates={view.reference_draw_rates}
-                currency={view.currency}
-                windowDays={view.window_days}
-                portfolioMinorUnits={view.portfolio.net_minor_units}
-                effectiveTaxRate={view.effective_tax_rate}
-              />
-            </>
+            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
+              <DrawGauge view={view} />
+              <SpendingComposition view={view} />
+            </SimpleGrid>
           )}
           {view.status === "unavailable" && view.annualized_spending_minor_units != null && (
             <SpendingComposition view={view} />
           )}
+          {(view.status === "ready" || hasHistoricalSpending) && (
+            <SustainabilityHistoryChart
+              history={view.history}
+              referenceDrawRates={view.reference_draw_rates}
+              currency={view.currency}
+              windowDays={view.window_days}
+              portfolioMinorUnits={view.portfolio.net_minor_units}
+              effectiveTaxRate={view.effective_tax_rate}
+            />
+          )}
+
+          <AccountHistoryCoverage accounts={accountCoverage} />
 
           <PortfolioDetails portfolio={view.portfolio} generatedAt={view.generated_at} currency={view.currency} />
 

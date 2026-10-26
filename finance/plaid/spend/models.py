@@ -81,6 +81,8 @@ class SpendConfiguration(BaseModel):
             rule_ids = {rule.id for rule in self.allowance.rules if rule.id is not None}
             if set(self.sustainability.confirmed_refund_rule_ids) - rule_ids:
                 raise ValueError("confirmed refunds must refer to configured rule IDs")
+            if self.sustainability.account_history.keys() - self.allowance.spending_account_ids:
+                raise ValueError("account history evidence must refer to selected spending accounts")
         return self
 
     @field_validator("account_labels")
