@@ -23,13 +23,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "cert-manager-trust": {"Bundle"},
     "cert-manager-environment": set(),
     "cluster-ca": set(),
-    "crossplane": {
-        "Provider.pkg.crossplane.io",
-        "Function.pkg.crossplane.io",
-        "DeploymentRuntimeConfig.pkg.crossplane.io",
-        "CompositeResourceDefinition.apiextensions.crossplane.io",
-        "Composition.apiextensions.crossplane.io",
-    },
+    "crossplane": {"Provider.pkg.crossplane.io"},
     "crossplane-provider-litellm": {
         "Key.litellm.m.crossplane.io",
         "Organization.litellm.m.crossplane.io",
@@ -37,9 +31,6 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "ProviderConfig.litellm.m.crossplane.io",
     },
     "crossplane-provider-opentofu": {"Workspace.opentofu.upbound.io", "ProviderConfig.opentofu.upbound.io"},
-    "crossplane-provider-kubernetes": {"Object.kubernetes.crossplane.io", "ProviderConfig.kubernetes.crossplane.io"},
-    # Flux must establish this XRD before the dependent canary Kustomization applies its XR.
-    "crossplane-source-update-canary-definitions": {"CrossplaneSourceUpdateCanary.opentofu.ducktape.io"},
     "keda": {"ScaledJob", "TriggerAuthentication"},
     "kyverno": {"ClusterPolicy", "Policy", "CleanupPolicy"},
     "kyverno-policies": set(),

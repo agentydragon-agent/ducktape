@@ -1140,37 +1140,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  annotations:
-    description: Install provider-kubernetes with its alpha ExternalArtifact watch enabled and the Composition patch-and-transform function.
-  name: crossplane-provider-kubernetes
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: crossplane
-      namespace: ducktape-flux
-  healthCheckExprs:
-    - apiVersion: pkg.crossplane.io/v1
-      current: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')
-      failed: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')
-      kind: Provider
-    - apiVersion: pkg.crossplane.io/v1
-      current: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')
-      failed: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')
-      kind: Function
-  interval: 10m
-  path: ./cluster/generated/crossplane-provider-kubernetes
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: crossplane-provider-kubernetes
-    namespace: ducktape-flux
-  timeout: 15m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: clickhouse
   namespace: ducktape-flux
 spec:
@@ -2058,67 +2027,6 @@ spec:
   sourceRef:
     kind: ExternalArtifact
     name: forgejo-gitops
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    description: Establish the canary XRD and Composition before Flux applies the XR.
-  name: crossplane-source-update-canary-definitions
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: crossplane-provider-opentofu
-      namespace: ducktape-flux
-    - name: crossplane-provider-kubernetes
-      namespace: ducktape-flux
-    - name: artifact-generators
-      namespace: ducktape-flux
-  healthCheckExprs:
-    - apiVersion: apiextensions.crossplane.io/v1
-      current: has(status.conditions) && status.conditions.exists(c, c.type == 'Established' && c.status == 'True')
-      failed: has(status.conditions) && status.conditions.exists(c, c.type == 'Established' && c.status == 'False')
-      kind: CompositeResourceDefinition
-  interval: 10m
-  path: ./cluster/generated/crossplane-source-update-canary-definitions
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: crossplane-source-update-canary-definitions
-    namespace: ducktape-flux
-  timeout: 10m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    description: Output-only OpenTofu canary. Flux publishes the root's content-addressed artifact; provider-kubernetes watches its ExternalArtifact and Crossplane updates the Workspace source URL.
-  name: crossplane-source-update-canary
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: crossplane-source-update-canary-definitions
-      namespace: ducktape-flux
-    - name: crossplane-provider-opentofu
-      namespace: ducktape-flux
-    - name: crossplane-provider-kubernetes
-      namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
-    - name: artifact-generators
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/crossplane-source-update-canary
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: crossplane-source-update-canary
     namespace: ducktape-flux
   timeout: 10m
   wait: true
