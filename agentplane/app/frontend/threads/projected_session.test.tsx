@@ -710,7 +710,7 @@ it.each([
 
 it("shows the thread's unprocessed notification count in its topbar status indicator", async () => {
   noticeInboxes = [{ inboxId: "inbox-1", sessionId: THREAD.id, queued: 2, unacknowledged: 1 }];
-  const container = await render();
+  await render();
   const indicator = mounted.at(-1)?.topbarTitle?.querySelector(".agentplane-thread-status-indicator");
   expect(mounted.at(-1)?.topbarTitle?.contains(indicator ?? null)).toBe(true);
   expect(indicator?.querySelector(".agentplane-thread-list-row-notices")?.textContent).toBe("3");
