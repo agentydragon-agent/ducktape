@@ -139,6 +139,8 @@ native command item with that exit code; the turn itself completes normally. Run
 and app-server process identity/PID stay unchanged before and after the OOM and a successful
 follow-up turn. That command runs in the same executor leaf and reports exit zero. Evidence goes
 to `test.outputs/vm-codex-oom.json`, alongside the guest console and scripted upstream requests.
+The test guest runs a root observer outside the Runner subtree to publish read-only snapshots of
+executor limits and OOM counters. Tool processes retain production's UID and cgroup permissions.
 This exercises the test guest's kernel and production Runner/Codex binaries; it does not run the
 production NixOS systemd unit or force exec-server death/restart.
 

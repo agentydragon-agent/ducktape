@@ -58,6 +58,8 @@ for group in /sys/fs/cgroup /sys/fs/cgroup/system.slice "$service"; do
 	echo "$controllers" >"$group/cgroup.subtree_control"
 done
 
+/usr/sbin/agentplane-cgroup-observer &
+
 umask 0007
 export ANTHROPIC_AUTH_TOKEN=agentplane-credential-agentplane-workload
 export OPENAI_API_KEY=agentplane-credential-agentplane-workload

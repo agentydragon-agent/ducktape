@@ -12,32 +12,40 @@ from pydantic import BaseModel
 
 from agentplane.app.testing.client import Client
 from agentplane.native.codex import wire
-from agentplane.native.codex.testing import frames
+from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import TURN_SECONDS, Agent, Turn
 from agentplane.system_tests.conftest import VM_TEMPLATE, VM_WORKING_DIRECTORY, Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text, ToolOutput
+from agentplane.testing.codex_model import CodexModel
+from agentplane.testing.scripted_model import ShellCall, Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 PING = "Run a shell command, then say exactly PING."
 
-# Read the actual executor leaf, rather than inferring an OOM from SIGKILL alone.
-MEMORY_PROBE = """set -eu
+# The test guest's root observer publishes kernel counters without granting the tool cgroup access.
+# Wait for a new snapshot so the follow-up cannot accidentally read pre-OOM counters.
+MEMORY_PROBE = """(set -eu
 group=$(awk -F: '$1 == "0" {print $3}' /proc/self/cgroup)
-root=/sys/fs/cgroup$group
-event() { awk -v key="$1" '$1 == key {print $2}' "$root/memory.events"; }
-printf 'VM_MEMORY {"cgroup":"%s","max":%s,"swap_max":%s,"oom_group":%s,"oom":%s,"oom_kill":%s,"oom_group_kill":%s}\\n' \\
-    "$group" "$(cat "$root/memory.max")" "$(cat "$root/memory.swap.max")" \\
-    "$(cat "$root/memory.oom.group")" "$(event oom)" "$(event oom_kill)" "$(event oom_group_kill)"
+snapshot=/run/agentplane-test/cgroups/${group##*/}.json
+first=$(cat "$snapshot" 2>/dev/null || true)
+for attempt in $(seq 1 50); do
+    current=$(cat "$snapshot" 2>/dev/null || true)
+    if [ -n "$current" ] && [ "$current" != "$first" ]; then
+        printf 'VM_MEMORY %s\\n' "$current"
+        exit 0
+    fi
+    sleep 0.1
+done
+echo "No fresh cgroup snapshot for $group" >&2
+exit 1
+)
 """
 
 # Busybox awk is in the test guest. sprintf touches each allocation, so this is not merely virtual
 # address reservation. Bound growth above the leaf's configured limit and prefer this command as
 # the victim, making the tool-OOM path deterministic without changing the executor's OOM policy.
 OOM_COMMAND = """set -eu
-group=$(awk -F: '$1 == "0" {print $3}' /proc/self/cgroup)
-limit=$(cat "/sys/fs/cgroup$group/memory.max")
 echo VM_OOM_ALLOCATING
 echo 1000 > /proc/self/oom_score_adj
 exec awk -v chunks="$((limit / 65536 + 1024))" 'BEGIN {
@@ -58,27 +66,47 @@ class _MemoryEvidence(BaseModel):
     oom_group_kill: int
 
     @classmethod
-    def from_output(cls, output: ToolOutput) -> _MemoryEvidence:
-        (report,) = [
-            line.removeprefix("VM_MEMORY ")
-            for block in output.blocks
-            for line in block.splitlines()
-            if line.startswith("VM_MEMORY ")
-        ]
+    def from_output(cls, output: str) -> _MemoryEvidence:
+        (report,) = [line.removeprefix("VM_MEMORY ") for line in output.splitlines() if line.startswith("VM_MEMORY ")]
         return cls.model_validate_json(report)
 
 
+class _ExecResult(BaseModel):
+    output: str
+    exit_code: int
+
+
 async def _command(
-    agent: Agent, model: ScriptedModel[Any], *, call_id: str, command: str, exit_code: int
-) -> tuple[Turn, ToolOutput]:
+    agent: Agent, model: CodexModel, *, call_id: str, command: str, exit_code: int
+) -> tuple[Turn, _ExecResult]:
     async with asyncio.timeout(TURN_SECONDS), asyncio.TaskGroup() as turns:
         turn = turns.create_task(agent.run("Run the requested shell command and report its result."))
-        await model.reply(await model.request(), ShellCall(call_id, command))
+        request = await model.request()
+        # Emit the nested result, including its exit status, through the actual code-mode tool.
+        script = (
+            f"let result = await tools.exec_command({json.dumps({'cmd': command, 'yield_time_ms': 1000})});\n"
+            "while (result.session_id != null) {\n"
+            "  const next = await tools.write_stdin({session_id: result.session_id, chars: '', yield_time_ms: 1000});\n"
+            "  result = {...next, output: result.output + next.output};\n"
+            "}\n"
+            "text('VM_EXEC_RESULT ' + JSON.stringify(result));"
+        )
+        async with request._exchange as exchange:
+            assert request.native.code_mode
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall(call_id, "exec", script)], model=model.model
+                ).events
+            )
         result = await model.request()
-        (output,) = [output for output in result.tool_outputs if output.call_id == call_id]
-        assert output.contains(f"Process exited with code {exit_code}"), output
         await model.reply(result, Text("Command observed."))
-    return turn.result(), output
+    (output,) = [output for output in result.tool_outputs if output.call_id == call_id]
+    (report,) = [
+        block.removeprefix("VM_EXEC_RESULT ") for block in output.blocks if block.startswith("VM_EXEC_RESULT ")
+    ]
+    executed = _ExecResult.model_validate_json(report)
+    assert executed.exit_code == exit_code, output
+    return turn.result(), executed
 
 
 @pytest.mark.vm_sandboxes
@@ -112,13 +140,14 @@ async def test_codex_tool_oom_preserves_runner_and_app_server(
     view = await sandbox("systest-vm-codex-oom", template=VM_TEMPLATE)
     assert view.pod is not None
     model = scripted.model(view.pod.name, runner_pb2.HARNESS_CODEX)
+    assert isinstance(model, CodexModel)
     agent = await Agent.open(
         client, sandbox=view.name, harness=runner_pb2.HARNESS_CODEX, model=offered_model, cwd=VM_WORKING_DIRECTORY
     )
     evidence: dict[str, Any] = {}
     try:
         _, output = await _command(agent, model, call_id="memory-before", command=MEMORY_PROBE, exit_code=0)
-        before = _MemoryEvidence.from_output(output)
+        before = _MemoryEvidence.from_output(output.output)
         evidence["memory_before"] = before.model_dump()
         assert "/agentplane-runner.service/executors/process-" in before.cgroup
         assert before.max > 0
@@ -133,11 +162,13 @@ async def test_codex_tool_oom_preserves_runner_and_app_server(
         assert session.process_id == app_server.process_id
         assert session.native_session_id is not None
 
-        turn, output = await _command(agent, model, call_id="tool-oom", command=OOM_COMMAND, exit_code=137)
-        evidence["oom_tool_result"] = output.blocks
+        turn, output = await _command(
+            agent, model, call_id="tool-oom", command=f"limit={before.max}\n" + OOM_COMMAND, exit_code=137
+        )
+        evidence["oom_tool_result"] = output.model_dump()
         evidence["oom_native_frames"] = turn.native
-        assert output.contains("VM_OOM_ALLOCATING")
-        assert not output.contains("VM_OOM_UNEXPECTED_SURVIVAL")
+        assert "VM_OOM_ALLOCATING" in output.output
+        assert "VM_OOM_UNEXPECTED_SURVIVAL" not in output.output
         (execution,) = frames.assert_item_lifecycles(
             [json.loads(line) for line in turn.native], wire.CommandExecutionItem
         )
@@ -156,10 +187,10 @@ async def test_codex_tool_oom_preserves_runner_and_app_server(
         followup, output = await _command(
             agent, model, call_id="memory-after", command=MEMORY_PROBE + "echo VM_OOM_FOLLOWUP_OK", exit_code=0
         )
-        evidence["followup_tool_result"] = output.blocks
-        after = _MemoryEvidence.from_output(output)
+        evidence["followup_tool_result"] = output.model_dump()
+        after = _MemoryEvidence.from_output(output.output)
         evidence["memory_after"] = after.model_dump()
-        assert output.contains("VM_OOM_FOLLOWUP_OK")
+        assert "VM_OOM_FOLLOWUP_OK" in output.output
         assert after.cgroup == before.cgroup
         assert after.max == before.max
         assert after.oom > before.oom
