@@ -490,18 +490,3 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
-py_library(
-    name = "pin_crossplane_source",
-    srcs = ["pin_crossplane_source.py"],
-)
-
-py_test(
-    name = "test_pin_crossplane_source",
-    srcs = ["test_pin_crossplane_source.py"],
-    deps = [
-        ":pin_crossplane_source",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)

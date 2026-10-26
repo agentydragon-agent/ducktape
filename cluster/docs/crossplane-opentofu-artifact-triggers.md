@@ -1,10 +1,10 @@
 # Push-triggered Crossplane OpenTofu sources
 
-**Status: implementation and canary plan.** This compares ways to get a Crossplane OpenTofu Workspace to use new root inputs promptly, without pulling the whole ducktape repository on every Workspace reconciliation. This PR adds an output-only canary and a CI-pinned source update path; it does not change the existing Route 53 or Forgejo Workspaces.
+**Status: watched-artifact canary.** This compares ways to get a Crossplane OpenTofu Workspace to use new root inputs promptly, without pulling the whole ducktape repository on every Workspace reconciliation. This PR adds an output-only canary that follows a Flux content-addressed artifact through an in-cluster provider-kubernetes watch and Crossplane Composition. It does not change the existing Route 53 or Forgejo Workspaces and adds no CI source-pin/writeback step.
 
 ## Goal
 
-When files that a root actually consumes change on devel, the cluster should promptly update that root's Workspace and let OpenTofu reconcile it. CI may validate and publish the input first. A change outside the root's effective input set should not change its Workspace source or cause a push-triggered OpenTofu run.
+When files that a root actually consumes reach devel, the existing GitHub Receiver should wake Flux, which updates the root artifact and then the Workspace through a Kubernetes watch. No new CI publisher, pin commit, or periodic poll is part of that source-update path. A change outside the root's effective input set should not change its Workspace source or cause a push-triggered OpenTofu run.
 
 This is about source updates. Crossplane/provider-opentofu still periodically observes Workspaces and detects drift. For an unchanged source URL, provider-opentofu v1.1.10 supports remotePullPolicy IfNotPresent and skips the download when the lockfile is present and the URL matches status.atProvider.remoteSource. A changed URL causes a new download. See the [pinned example](https://github.com/upbound/provider-opentofu/blob/v1.1.10/examples/cluster/workspace-remote-pull-policy-if-not-present.yaml) and [controller code](https://github.com/upbound/provider-opentofu/blob/v1.1.10/internal/controller/cluster/workspace/workspace.go).
 
@@ -18,11 +18,13 @@ The GitHub Receiver already reconciles the shared ducktape GitRepository on push
 
 ## Implemented canary path
 
-This PR adds `tf/gitops/crossplane-source-update-canary`, an output-only root with a separate Postgres state schema and no external providers or infrastructure resources. Its Workspace uses `remotePullPolicy: IfNotPresent`; the module reference comes from the `crossplane-source-pins` ConfigMap through Flux post-build substitution.
+This PR adds `tf/gitops/crossplane-source-update-canary`, an output-only root with a separate Postgres state schema and no external providers or infrastructure resources. The existing Flux `ArtifactGenerator` packages only `*.tf` files from that root. Its content-addressed `ExternalArtifact` URL changes when those inputs change and stays the same for unrelated repository edits.
 
-After the full Bazel CI job succeeds on a push to devel, the new CI job compares the canary's OpenTofu input files since the currently pinned revision. When those inputs changed, it writes the validated commit SHA to `cluster/k8s/crossplane-source-pins/source-update-canary-revision.txt` and pushes that pin with the existing `ducktape-automation` GitHub App. Other repository changes do not update the pin. The existing GitHub push Receiver wakes the shared GitRepository; Flux applies the new ConfigMap first, then the canary Kustomization substitutes the immutable commit into the Workspace. Crossplane fetches and reconciles that source once. A later unrelated push leaves the source pin and Workspace module URL unchanged.
+A read-only provider-kubernetes `Object` observes that `ExternalArtifact` with `watch: true`. The Composition copies `status.atProvider.manifest.status.artifact.url` into the OpenTofu Workspace's `module` field. `remotePullPolicy: IfNotPresent` downloads a new artifact URL once. An existing GitHub push Receiver wakes Flux's shared GitRepository; the ArtifactGenerator follows that source update, and the Kubernetes watch promptly drives the Workspace source change. The trigger is event and watch driven; it does not wait for a periodic artifact poll. No CI job writes a pin or follow-up commit.
 
-The first merge will establish the canary and run this path from devel. The safe state-only output is `canary-v1`; changing it in a later commit tests a real OpenTofu output update without creating or changing infrastructure. The canary is deliberately separate from the live Forgejo and Route 53 roots. Once this path works, Forgejo is the lower-impact existing root to migrate; Route 53 remains a poor first live test because it manages a registered domain.
+The reader uses a dedicated ServiceAccount with `get`, `list`, and `watch` on Flux `ExternalArtifact` resources only. The watch feature is alpha and its informer watches the whole ExternalArtifact kind, so the grant is cluster-wide for that API resource; it cannot read Secrets or artifact bytes. OpenTofu must be able to fetch the artifact URL from the in-cluster source-watcher service, which the post-merge canary will verify.
+
+The first merge will establish the canary and run this path from devel. The safe state-only output is `canary-v1`; changing it in a later commit tests a real OpenTofu output update without creating or changing infrastructure. An unrelated repository push should leave the artifact URL and Workspace `module` unchanged. The canary is deliberately separate from the live Forgejo and Route 53 roots. Once this path works, Forgejo is the lower-impact existing root to migrate; Route 53 remains a poor first live test because it manages a registered domain.
 
 ## Candidate A: OCI artifact plus Flux Kustomization
 
@@ -87,79 +89,13 @@ Provider-opentofu's [Workspace API](https://github.com/upbound/provider-opentofu
 
 There is a related Flux post-build substitution pattern: a Kustomization can read variables from a ConfigMap or Secret and react immediately when watched dependencies change. That can insert a module pin into a manifest, but it does not produce the pin. CI or another controller must still write the value to the ConfigMap. See [Kustomization post-build substitution](https://fluxcd.io/flux/components/kustomize/kustomizations/#post-build-variable-substitution).
 
-## Candidate E: Flux ExternalArtifact plus watched provider-kubernetes Object
+## Candidate E (implemented): Flux ExternalArtifact plus watched provider-kubernetes Object
 
-This is the original low-glue prototype. It first needs a new content-addressed ExternalArtifact for the Route 53 Terraform input closure; the existing Crossplane manifest artifact is not that source.
+Flux already refreshes the shared ducktape GitRepository from its GitHub Receiver and builds per-consumer artifacts. The canary adds a root-only artifact by copying `tf/gitops/crossplane-source-update-canary/*.tf` to the artifact root. The ExternalArtifact URL is content-addressed, so it changes only when those files change.
 
-1. Git webhook updates the ducktape GitRepository.
-2. ArtifactGenerator emits a new ExternalArtifact only when the root's effective input content changes.
-3. A read-only provider-kubernetes Object watches that artifact. A Composition function relays status.atProvider.manifest.status.artifact.url to the root's Workspace module field.
-4. Set the Workspace to Remote and remotePullPolicy IfNotPresent so a new immutable URL is fetched once and the same URL is not fetched on unrelated pushes.
+The canary Composition contains an observe-only provider-kubernetes `Object` for that ExternalArtifact, with `watch: true`. Its observed artifact URL is patched through the composite resource status into the composed Workspace's `spec.forProvider.module`. Until the observer has an artifact URL, the optional patch leaves the module field unset; once the watch observes the first artifact, the Workspace receives the URL. Later URL changes update the Workspace source. `remotePullPolicy: IfNotPresent` avoids downloading the same artifact URL again.
 
-The artifact must contain exactly the OpenTofu input closure, including local modules and lockfiles. A blanket copy of the root directory may also change the artifact when README or build metadata changes, which would violate the no-op requirement for files OpenTofu does not read.
-
-A minimal watched Object would look like:
-
-```yaml
-apiVersion: kubernetes.crossplane.io/v1alpha2
-kind: Object
-metadata:
-  name: watch-tf-gitops-route53-domain-delegation
-spec:
-  managementPolicies:
-    - Observe
-  providerConfigRef:
-    name: tf-artifact-reader
-  watch: true
-  forProvider:
-    manifest:
-      apiVersion: source.toolkit.fluxcd.io/v1
-      kind: ExternalArtifact
-      metadata:
-        name: tf-gitops-route53-domain-delegation
-        namespace: ducktape-flux
-```
-
-In a function-patch-and-transform pipeline, the observer's reported URL can be relayed through XR status and patched into the Workspace. The Workspace must wait until the first URL exists:
-
-```yaml
-- name: artifact-watch
-  base:
-    apiVersion: kubernetes.crossplane.io/v1alpha2
-    kind: Object
-    spec:
-      managementPolicies: [Observe]
-      providerConfigRef:
-        name: tf-artifact-reader
-      watch: true
-      forProvider:
-        manifest:
-          apiVersion: source.toolkit.fluxcd.io/v1
-          kind: ExternalArtifact
-          metadata:
-            name: tf-gitops-route53-domain-delegation
-            namespace: ducktape-flux
-  patches:
-    - type: ToCompositeFieldPath
-      fromFieldPath: status.atProvider.manifest.status.artifact.url
-      toFieldPath: status.artifactURL
-- name: workspace
-  base:
-    apiVersion: opentofu.upbound.io/v1beta1
-    kind: Workspace
-    spec:
-      forProvider:
-        source: Remote
-        remotePullPolicy: IfNotPresent
-  patches:
-    - type: FromCompositeFieldPath
-      fromFieldPath: status.artifactURL
-      toFieldPath: spec.forProvider.module
-```
-
-This shows only the relevant resource fields, not a complete Composition. A real pipeline needs the XRD/XR wrapper, a gate that omits the Workspace until the URL is present, and the current Workspace's provider config, state backend, variables, credentials, deletion policy, and management policies.
-
-The reader's Kubernetes grant would need to include:
+The provider runs with `--enable-watches`. Its dedicated ServiceAccount receives only:
 
 ```yaml
 rules:
@@ -168,11 +104,9 @@ rules:
     verbs: [get, list, watch]
 ```
 
-Bind only this rule to the dedicated provider-kubernetes ServiceAccount. It permits reading ExternalArtifact metadata/status across namespaces, but does not grant Secret reads or artifact-byte access. The source artifact must separately be reachable by the OpenTofu runner.
+The provider-kubernetes v1.4.1 [watch example](https://github.com/crossplane-contrib/provider-kubernetes/blob/v1.4.1/examples/cluster/object/object-watching.yaml) and [Object API](https://github.com/crossplane-contrib/provider-kubernetes/blob/v1.4.1/apis/cluster/object/v1alpha2/types.go) mark watch as alpha. Its informer watches the whole ExternalArtifact GVK rather than one named object, so the required list/watch grant is cluster-wide for ExternalArtifacts. The grant does not include Secrets or artifact bytes. The watch is the source-update trigger; Crossplane and provider-opentofu retain their normal reconciliation and drift-check behavior.
 
-The provider-kubernetes v1.4.1 [watch example](https://github.com/crossplane-contrib/provider-kubernetes/blob/v1.4.1/examples/cluster/object/object-watching.yaml) and [Object API](https://github.com/crossplane-contrib/provider-kubernetes/blob/v1.4.1/apis/cluster/object/v1alpha2/types.go) mark watch as alpha and not for production. The feature must be enabled. The watcher starts an informer for the referenced GVK, not just the named ExternalArtifact; an update to any ExternalArtifact can enqueue these Objects. Namespaced ExternalArtifacts are listed across namespaces, so the rule above has to be cluster-scoped. It can be bound to a dedicated ServiceAccount and does not need Secret permissions, but it is not per-root Kubernetes RBAC.
-
-The provider's ExternalArtifact URL must also be reachable from the provider-opentofu runner and accepted by its go-getter module client. Verify this in a disposable environment before relying on it. The watch bridge does not remove Flux's shared Git fetch on every push; it only avoids updating the Workspace for unchanged root content. The source watch/API may be suitable for a spike, but the alpha and GVK-wide behavior are material production limitations.
+The remaining runtime check is whether the provider-opentofu runner can fetch the in-cluster ExternalArtifact URL through its remote module downloader. The canary tests that after merge. This route uses Flux, provider-kubernetes, Crossplane Composition, and provider-opentofu entirely in the cluster; it has no CI pin/writeback step or custom controller. The alpha watch and GVK-wide permission are the material caveats.
 
 A Composition function's required resources alone are not a substitute for this watcher. Crossplane fetches required resources while rendering a Composition after an XR reconciliation; that feature is not a watch subscription that reconciles the XR whenever the referenced ExternalArtifact changes. See [Crossplane required resources](https://docs.crossplane.io/latest/composition/compositions/#required-resources).
 
@@ -188,26 +122,26 @@ A Composition function's required resources alone are not a substitute for this 
 
 ## Options at a glance
 
-| Option                                                     | What changes Crossplane's Workspace?                                    | Push/event behavior                                                                                                             | Fit and trade-off                                                                                                         |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Current mutable Git URL with remotePullPolicy Always       | Nothing; Workspace keeps ref=devel.                                     | No push-triggered spec update; the next regular reconciliation pulls again.                                                     | Simplest current setup, with repeated source downloads.                                                                   |
-| OCI Kustomize artifact + OCIRepository + Kustomization     | Artifact carries a Workspace with a new immutable module URL.           | GHCR registry_package event refreshes OCIRepository; changed source revision triggers Kustomization. Poll interval is fallback. | Most direct existing-controller path; root-only archive avoids full Git fetch but needs a supported URL and CI packaging. |
-| OCI Helm chart + OCIRepository + HelmRelease               | Chart renders Workspace with a new immutable source URL.                | GHCR registry_package event refreshes OCIRepository; OCI digest change triggers HelmRelease. Poll interval is fallback.         | Supported, but adds Helm and transfers Workspace ownership from Kustomize.                                                |
-| CI pin commit + existing Git Receiver                      | CI changes the Workspace's immutable module URL or pin input.           | Git push Receiver promptly refreshes Git; Kustomization applies the pin.                                                        | Few cluster parts; requires bot writeback or a pin PR and path/input-digest gating.                                       |
-| Inline HCL + Flux Kustomization                            | A new Workspace spec.forProvider.module string.                         | Git or ExternalArtifact source revision applies the changed spec.                                                               | No remote module download; only practical for a single combined file without local modules.                               |
-| CI-published root archive or OCI artifact alone            | Nothing; publication does not change the Workspace.                     | Registry event can wake Flux, but no Workspace update happens without a pin or manifest bridge.                                 | Useful immutable input; pair it with a pin writer and verify the provider accepts the selected URL.                       |
-| ExternalArtifact + provider-kubernetes watch + Composition | Composition function patches Workspace module URL from artifact status. | Kubernetes watch triggers composition update.                                                                                   | No custom controller, but current watch API is alpha and GVK-wide.                                                        |
-| Crossplane Composition required resources only             | Nothing automatically.                                                  | Resource is fetched only when the XR already reconciles.                                                                        | Not an event trigger by itself.                                                                                           |
-| Flux ConfigMap substitution                                | Kustomize substitutes a ConfigMap value into the Workspace manifest.    | Watched ConfigMap can trigger Kustomize promptly.                                                                               | Useful propagation step, but requires CI or a controller to write the pin ConfigMap.                                      |
-| Purpose-built watcher                                      | Controller patches the Workspace or pin ConfigMap.                      | Direct Kubernetes watch on the root artifact.                                                                                   | Narrow behavior/RBAC is possible, with custom controller ownership.                                                       |
-| Helm lookup or Receiver alone                              | Nothing by itself.                                                      | Neither observes the source as a dependency that changes Workspace spec.                                                        | Not sufficient without another publisher or pin writer.                                                                   |
+| Option                                                     | What changes Crossplane's Workspace?                                 | Push/event behavior                                                                                                             | Fit and trade-off                                                                                                         |
+| ---------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Current mutable Git URL with remotePullPolicy Always       | Nothing; Workspace keeps ref=devel.                                  | No push-triggered spec update; the next regular reconciliation pulls again.                                                     | Simplest current setup, with repeated source downloads.                                                                   |
+| OCI Kustomize artifact + OCIRepository + Kustomization     | Artifact carries a Workspace with a new immutable module URL.        | GHCR registry_package event refreshes OCIRepository; changed source revision triggers Kustomization. Poll interval is fallback. | Most direct existing-controller path; root-only archive avoids full Git fetch but needs a supported URL and CI packaging. |
+| OCI Helm chart + OCIRepository + HelmRelease               | Chart renders Workspace with a new immutable source URL.             | GHCR registry_package event refreshes OCIRepository; OCI digest change triggers HelmRelease. Poll interval is fallback.         | Supported, but adds Helm and transfers Workspace ownership from Kustomize.                                                |
+| CI pin commit + existing Git Receiver                      | CI changes the Workspace's immutable module URL or pin input.        | Git push Receiver promptly refreshes Git; Kustomization applies the pin.                                                        | Few cluster parts; requires bot writeback or a pin PR and path/input-digest gating.                                       |
+| Inline HCL + Flux Kustomization                            | A new Workspace spec.forProvider.module string.                      | Git or ExternalArtifact source revision applies the changed spec.                                                               | No remote module download; only practical for a single combined file without local modules.                               |
+| CI-published root archive or OCI artifact alone            | Nothing; publication does not change the Workspace.                  | Registry event can wake Flux, but no Workspace update happens without a pin or manifest bridge.                                 | Useful immutable input; pair it with a pin writer and verify the provider accepts the selected URL.                       |
+| ExternalArtifact + provider-kubernetes watch + Composition | Composition patches Workspace module URL from artifact status.       | Kubernetes watch triggers composition update when the root artifact changes.                                                    | In-cluster and no CI writeback; current watch API is alpha and GVK-wide.                                                  |
+| Crossplane Composition required resources only             | Nothing automatically.                                               | Resource is fetched only when the XR already reconciles.                                                                        | Not an event trigger by itself.                                                                                           |
+| Flux ConfigMap substitution                                | Kustomize substitutes a ConfigMap value into the Workspace manifest. | Watched ConfigMap can trigger Kustomize promptly.                                                                               | Useful propagation step, but requires CI or a controller to write the pin ConfigMap.                                      |
+| Purpose-built watcher                                      | Controller patches the Workspace or pin ConfigMap.                   | Direct Kubernetes watch on the root artifact.                                                                                   | Narrow behavior/RBAC is possible, with custom controller ownership.                                                       |
+| Helm lookup or Receiver alone                              | Nothing by itself.                                                   | Neither observes the source as a dependency that changes Workspace spec.                                                        | Not sufficient without another publisher or pin writer.                                                                   |
 
 ## Suggested investigation order
 
-1. Merge the canary implementation and watch CI publish its source pin, Flux update the Workspace module URL, and Crossplane report the output-only plan/apply. Then change the canary output value in a separate commit and confirm the new pin triggers one output update. An unrelated repository push should leave the pin and Workspace spec unchanged.
-2. If the canary works, move the same CI pin and Flux substitution pattern to Forgejo in a follow-up. The OCI Kustomize artifact path remains a viable alternative if CI repository writeback becomes undesirable; it requires an OCIRepository and registry-package event wiring.
+1. Merge the canary and confirm Flux updates its root-only ExternalArtifact, provider-kubernetes observes the new URL without polling, and Crossplane updates the Workspace and reports the output-only run. Then change `canary-v1` to `canary-v2` in a separate commit and confirm one output update. An unrelated repository push should leave the artifact URL and Workspace source unchanged.
+2. If the canary works, evaluate the same watched-artifact Composition for Forgejo in a follow-up. OCI Kustomize/Helm artifacts and CI pin commits remain alternatives if the provider-kubernetes watch proves unsuitable.
 3. Keep Inline for roots whose effective configuration is genuinely one file. Use it to remove remote pulls, not as a blanket fit for arbitrary Terraform roots.
-4. Use the watched-Object composition only as a contained experiment if artifact-status bridging remains valuable; do not treat its alpha watch as production-ready.
-5. If CI writeback and the provider-kubernetes watch are both unacceptable, evaluate a dedicated watcher with per-root RBAC.
+4. Keep the provider-kubernetes watch as a contained experiment while its watch API is alpha and its GVK-wide permission is required.
+5. If the provider-kubernetes watch is unacceptable, evaluate a dedicated watcher with per-root RBAC.
 
 For Route 53, do not test by adding a real DNS record or changing the registered-domain configuration. The existing Workspace currently permits Create and Update. Any plan-only spike must first ensure the Workspace cannot apply changes (for example, an isolated canary with observe-only management policies) and confirm that the provider still exposes the plan result. A comment-only OpenTofu input change can test source repinning with no intended infrastructure diff, but only in a disposable environment. Adding a LiteLLM key remains a separate smoke test of Crossplane's direct LiteLLM provider and is not evidence for this source-update design.

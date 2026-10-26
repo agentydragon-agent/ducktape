@@ -21,7 +21,6 @@ from cluster.cdk8s import (
     cnpg_operator,
     crossplane,
     crossplane_forgejo_agentydragon,
-    crossplane_source_pins,
     crossplane_source_update_canary,
     descheduler,
     dns_automation,
@@ -333,7 +332,7 @@ def generate_manifests(root: Path) -> None:
             patch_charts=[agent_sandbox.controller_patches],
         ),
     )
-    artifact_generators_factory(flux_chart)
+    artifact_generators_kustomization = artifact_generators_factory(flux_chart)
     external_secrets_crds_kustomization = external_secrets_flux_kustomizations.external_secrets_crds(flux_chart)
     flux_image_automation_ghcr_artifact = artifact("flux-image-automation-ghcr", flux_image_automation_ghcr.OUTPUT_DIR)
     flux_image_automation_ghcr_kustomization = flux_image_automation_ghcr.flux_image_automation_ghcr(
@@ -613,6 +612,14 @@ def generate_manifests(root: Path) -> None:
     crossplane_opentofu_provider_kustomization = crossplane.opentofu_provider(
         flux_chart,
         write_directory(root, crossplane_opentofu_provider_artifact, crossplane.opentofu_provider_chart),
+        crossplane_kustomization,
+    )
+    crossplane_kubernetes_provider_artifact = artifact(
+        crossplane.KUBERNETES_PROVIDER_KUSTOMIZATION_NAME, crossplane.KUBERNETES_PROVIDER_OUTPUT_DIR
+    )
+    crossplane_kubernetes_provider_kustomization = crossplane.kubernetes_provider(
+        flux_chart,
+        write_directory(root, crossplane_kubernetes_provider_artifact, crossplane.kubernetes_provider_chart),
         crossplane_kustomization,
     )
     clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
@@ -949,19 +956,17 @@ def generate_manifests(root: Path) -> None:
     crossplane_forgejo_agentydragon_artifact = artifact(
         crossplane_forgejo_agentydragon.NAME, crossplane_forgejo_agentydragon.OUTPUT_DIR
     )
-    crossplane_source_pins_artifact = artifact(crossplane_source_pins.NAME, crossplane_source_pins.OUTPUT_DIR)
-    crossplane_source_pins_kustomization = crossplane_source_pins.source_pins(
-        flux_chart, crossplane_source_pins_artifact
-    )
     crossplane_source_update_canary_artifact = artifact(
         crossplane_source_update_canary.NAME, crossplane_source_update_canary.OUTPUT_DIR
     )
+    crossplane_source_update_canary_input_artifact = crossplane_source_update_canary.source_artifact()
     crossplane_source_update_canary.resources(
         flux_chart,
         write_directory(root, crossplane_source_update_canary_artifact, crossplane_source_update_canary.chart),
         crossplane_opentofu_provider_kustomization,
+        crossplane_kubernetes_provider_kustomization,
         tofu_state_db_kustomization,
-        crossplane_source_pins_kustomization,
+        artifact_generators_kustomization,
     )
     crossplane_forgejo_agentydragon.resources(
         flux_chart,
@@ -1833,10 +1838,11 @@ def generate_manifests(root: Path) -> None:
             crossplane_artifact,
             crossplane_litellm_provider_artifact,
             crossplane_opentofu_provider_artifact,
+            crossplane_kubernetes_provider_artifact,
             route53_domain_delegation_artifact,
             crossplane_forgejo_agentydragon_artifact,
-            crossplane_source_pins_artifact,
             crossplane_source_update_canary_artifact,
+            crossplane_source_update_canary_input_artifact,
             external_secrets_config_artifact,
             external_secrets_operator_artifact,
             forgejo_artifact,

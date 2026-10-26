@@ -1293,28 +1293,19 @@ py_library(
 )
 
 py_library(
-    name = "crossplane_source_pins",
-    srcs = ["crossplane_source_pins.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        ":flux",
-        ":manifest_roots",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "@pypi//cdk8s",
-    ],
-)
-
-py_library(
     name = "crossplane_source_update_canary",
     srcs = ["crossplane_source_update_canary.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":artifact_generators",
+        ":crossplane",
         ":flux",
         ":manifest_roots",
         ":terraform",
         "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -1548,7 +1539,6 @@ py_library(
         ":claude_sandbox_secrets",
         ":crossplane",
         ":crossplane_forgejo_agentydragon",
-        ":crossplane_source_pins",
         ":crossplane_source_update_canary",
         ":descheduler",
         ":dns_automation",

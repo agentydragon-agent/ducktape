@@ -1140,6 +1140,37 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: Install provider-kubernetes with its alpha ExternalArtifact watch enabled and the Composition patch-and-transform function.
+  name: crossplane-provider-kubernetes
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: pkg.crossplane.io/v1
+      current: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')
+      failed: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')
+      kind: Provider
+    - apiVersion: pkg.crossplane.io/v1
+      current: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')
+      failed: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')
+      kind: Function
+  interval: 10m
+  path: ./cluster/generated/crossplane-provider-kubernetes
+  prune: false
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: crossplane-provider-kubernetes
+    namespace: ducktape-flux
+  timeout: 15m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: clickhouse
   namespace: ducktape-flux
 spec:
@@ -2034,41 +2065,22 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: crossplane-source-pins
-  namespace: ducktape-flux
-spec:
-  interval: 10m
-  path: ./cluster/k8s/crossplane-source-pins
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: crossplane-source-pins
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   annotations:
-    description: No-infrastructure OpenTofu Workspace used to verify CI source pinning, Flux delivery, and Crossplane runs.
+    description: Output-only OpenTofu canary. Flux publishes the root's content-addressed artifact; provider-kubernetes watches its ExternalArtifact and Crossplane updates the Workspace source URL.
   name: crossplane-source-update-canary
   namespace: ducktape-flux
 spec:
   dependsOn:
     - name: crossplane-provider-opentofu
       namespace: ducktape-flux
+    - name: crossplane-provider-kubernetes
+      namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
-    - name: crossplane-source-pins
+    - name: artifact-generators
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/crossplane-source-update-canary
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: crossplane-source-pins
   prune: true
   retryInterval: 1m
   sourceRef:
