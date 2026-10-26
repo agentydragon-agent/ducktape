@@ -32,9 +32,10 @@ const spendTabs: { value: SpendTab; label: string }[] = [
 ];
 
 function tabForHash(hash: string): SpendTab {
-  if (hash === "#/transactions") return "transactions";
-  if (hash === "#/configuration") return "configuration";
-  if (hash === "#/sustainability") return "sustainability";
+  const path = hash.split("?")[0];
+  if (path === "#/transactions") return "transactions";
+  if (path === "#/configuration") return "configuration";
+  if (path === "#/sustainability") return "sustainability";
   return "spending";
 }
 

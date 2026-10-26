@@ -644,14 +644,38 @@ function SustainabilitySkeleton({ minHeight }: { minHeight: number }) {
   );
 }
 
+function windowDaysFromUrl(): number | null {
+  const query = window.location.hash.split("?")[1] ?? "";
+  const value = new URLSearchParams(query).get("window_days");
+  if (value == null || !/^[1-9]\d*$/.test(value)) return null;
+  const days = Number(value);
+  return Number.isSafeInteger(days) ? days : null;
+}
+
+function windowHash(days: number): string {
+  const query = new URLSearchParams(window.location.hash.split("?")[1] ?? "");
+  query.set("window_days", String(days));
+  return `#/sustainability?${query}`;
+}
+
 export function SustainabilityPage() {
   const contentRef = useRef<HTMLDivElement>(null);
   const [loadingHeight, setLoadingHeight] = useState(0);
   const [view, setView] = useState<SustainabilityView | null>(null);
-  const [selectedWindowDays, setSelectedWindowDays] = useState<number | null>(null);
+  const [selectedWindowDays, setSelectedWindowDays] = useState<number | null>(windowDaysFromUrl);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
+
+  useEffect(() => {
+    const restoreWindow = () => {
+      setLoadingHeight((previous) => contentRef.current?.getBoundingClientRect().height ?? previous);
+      setError(null);
+      setSelectedWindowDays(windowDaysFromUrl());
+    };
+    window.addEventListener("hashchange", restoreWindow);
+    return () => window.removeEventListener("hashchange", restoreWindow);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -674,7 +698,12 @@ export function SustainabilityPage() {
         }
         if (!response.ok) throw new Error(`Sustainability request returned ${response.status}`);
         const data: SustainabilityView = await response.json();
-        if (!controller.signal.aborted) setView(data);
+        if (!controller.signal.aborted) {
+          setView(data);
+          if (selectedWindowDays == null) {
+            window.history.replaceState(window.history.state, "", windowHash(data.window_days));
+          }
+        }
       } catch (cause) {
         if (!controller.signal.aborted) {
           setError(cause instanceof Error ? cause.message : "Sustainability request failed");
@@ -731,6 +760,7 @@ export function SustainabilityPage() {
               setLoadingHeight(contentRef.current?.getBoundingClientRect().height ?? 0);
               setError(null);
               setSelectedWindowDays(Number(value));
+              window.location.hash = windowHash(Number(value));
             }}
             data={view.available_windows_days.map((days) => ({ label: `${days} days`, value: String(days) }))}
           />

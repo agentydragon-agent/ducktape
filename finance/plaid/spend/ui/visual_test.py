@@ -1164,6 +1164,37 @@ async def test_sustainability_experimental_render(
 
 
 @pytest.mark.parametrize("width", [1280, 390])
+async def test_sustainability_window_survives_reload_and_history(page: Page, dashboard_url: str, width: int) -> None:
+    requests: list[str] = []
+    page.on(
+        "request", lambda request: requests.append(request.url) if "/api/v1/sustainability" in request.url else None
+    )
+    await page.set_viewport_size({"width": width, "height": 960})
+    await page.goto(f"{dashboard_url}/#/sustainability?window_days=30", wait_until="domcontentloaded")
+    await expect(page.get_by_text("30 of 30 days covered", exact=False)).to_be_visible()
+    assert requests
+    assert all("window_days=30" in url for url in requests)
+    await page.get_by_text("90 days", exact=True).click()
+    await expect(page).to_have_url(f"{dashboard_url}/#/sustainability?window_days=90")
+    await expect(page.get_by_text("90 of 90 days covered", exact=False)).to_be_visible()
+    await page.reload(wait_until="domcontentloaded")
+    await expect(page.get_by_text("90 of 90 days covered", exact=False)).to_be_visible()
+    await page.go_back()
+    await expect(page.get_by_text("30 of 30 days covered", exact=False)).to_be_visible()
+    await expect(page).to_have_url(f"{dashboard_url}/#/sustainability?window_days=30")
+    await page.go_forward()
+    await expect(page.get_by_text("90 of 90 days covered", exact=False)).to_be_visible()
+    await expect(page).to_have_url(f"{dashboard_url}/#/sustainability?window_days=90")
+
+
+@pytest.mark.parametrize("value", ["", "garbage", "-30", "1.5", "9007199254740992"])
+async def test_sustainability_invalid_url_window_uses_default(page: Page, dashboard_url: str, value: str) -> None:
+    await page.goto(f"{dashboard_url}/#/sustainability?window_days={value}", wait_until="domcontentloaded")
+    await expect(page.get_by_text("90 of 90 days covered", exact=False)).to_be_visible()
+    await expect(page).to_have_url(f"{dashboard_url}/#/sustainability?window_days=90")
+
+
+@pytest.mark.parametrize("width", [1280, 390])
 async def test_sustainability_loading_preserves_layout(
     page: Page, view: VisualPage, dashboard_url: str, width: int
 ) -> None:
