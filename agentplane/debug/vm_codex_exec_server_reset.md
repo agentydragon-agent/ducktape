@@ -16,6 +16,11 @@ Its console establishes the sequence on 2026-10-26 (UTC):
 - `08:45:19Z`: a successor executor is ready. Codex cannot resume its execution session in that
   new server and returns the transport error instead of the command's exit status.
 
+[A second CI run](https://app.buildbuddy.io/invocation/f2363a75-dc85-5fd4-b2c1-76d70f31ab28)
+returned exit `137`, but Runner then fenced on a handshake deadline at `09:16:53Z`. The follow-up
+succeeded through a new executor leaf, failing the test's same-cgroup assertion. This demonstrates
+that checking only command completion and harness identity would miss the unnecessary restart.
+
 The kernel contained the allocation, but Runner's single failed three-second probe discarded the
 surviving server's tool result. [PR #12143](https://github.com/agentydragon/ducktape/pull/12143)
 requires three consecutive failed probes, resetting after a success, while retaining the five-second
