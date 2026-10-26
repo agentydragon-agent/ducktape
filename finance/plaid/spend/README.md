@@ -132,6 +132,13 @@ current eligible portfolio value. The optional effective tax fraction is a share
 annual funding is `annualized spending / (1 - rate)`. A supplied rate requires a dated explanatory assumption. Both
 ratios assume no other income. The reference markers are scenarios, not guarantees of lifetime sustainability.
 
+The headline annualizes the available common history when it is shorter than the selected lookback, with a partial
+window label. Historical chart points require the entire selected window: a 30-day point includes its endpoint and
+the preceding 29 complete days. Startup windows are omitted to avoid annualizing one or two days of monthly bills.
+An account's first recorded transaction establishes an inferred history boundary, not its opening date; selecting a
+recently opened or sparsely used account can shorten common coverage. Earlier history requires verified source or
+account-lifecycle evidence before treating absent transactions as zero spending.
+
 Portfolio value is selected gross USD assets minus signed liabilities minus the current value of explicitly excluded
 security positions. Holdings are not added to their account balances. Each Plaid holding-value correction selects an
 exact account and one or more security IDs with a positive finite `value_multiplier`. Corrected holdings in that

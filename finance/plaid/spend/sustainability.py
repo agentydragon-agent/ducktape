@@ -249,11 +249,13 @@ def calculate_sustainability(
     history = []
     # Reuse the same complete-day bounds and rounding as the headline. Every
     # historical point uses today's eligible assets, never reconstructed holdings.
-    chart_start = max(coverage_start, today - timedelta(days=365))
+    # A rolling-window series starts only once that entire window is covered.
+    # Annualizing its first one or two days amplifies monthly bills into spikes.
+    chart_start = max(coverage_start + timedelta(days=window_days - 1), today - timedelta(days=365))
     chart_day = chart_start
     while chart_day <= end:
-        point_start = max(coverage_start, chart_day - timedelta(days=window_days - 1))
-        point_days = (chart_day - point_start).days + 1
+        point_start = chart_day - timedelta(days=window_days - 1)
+        point_days = window_days
         point_total = sum(sum(values) for day, values in daily.items() if point_start <= day <= chart_day)
         point_annual = _annualize(point_total, point_days) if source_ready else None
         point_draw = _tax_adjust(point_annual, policy.withdrawal_tax.rate)

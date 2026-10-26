@@ -1,6 +1,6 @@
 """Funding-rate accounting boundaries using synthetic purchases and portfolios."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -162,6 +162,55 @@ def test_partial_window_uses_actual_covered_days_and_pacific_instant() -> None:
     assert result.annualized_spending_minor_units == 73_049
     assert result.tax_adjusted_draw_rate is None
     assert any("Only 10 of 90" in issue for issue in result.issues)
+    assert result.history == []
+
+
+@pytest.mark.parametrize("covered_days", [29, 30, 31])
+def test_history_starts_at_first_complete_window(covered_days: int) -> None:
+    end = date(2026, 3, 31)
+    first_day = end - timedelta(days=covered_days - 1)
+    result = calculate_sustainability(
+        policy(),
+        allowance(),
+        [
+            transaction(first_day, "0", "TRANSFER", key="history"),
+            transaction(first_day + timedelta(days=1), "3000", "RENT", key="rent"),
+        ],
+        portfolio(),
+        time_zone=ZoneInfo("America/Los_Angeles"),
+        now=_NOW,
+        window_days=30,
+        source_issues=[],
+    )
+    assert len(result.history) == max(0, covered_days - 29)
+    if result.history:
+        assert result.history[0].date == first_day + timedelta(days=29)
+        assert all(point.covered_days == 30 for point in result.history)
+        assert result.history[0].annualized_spending_minor_units == 3_652_425
+        assert result.history[-1].annualized_spending_minor_units == result.annualized_spending_minor_units
+
+
+def test_history_window_includes_both_endpoints_and_excludes_adjacent_days() -> None:
+    result = calculate_sustainability(
+        policy(),
+        allowance(),
+        [
+            transaction(date(2026, 1, 1), "0", "TRANSFER", key="history"),
+            transaction(date(2026, 3, 1), "9000", key="before-window"),
+            transaction(date(2026, 3, 2), "10", key="first-in-window"),
+            transaction(date(2026, 3, 31), "20", key="last-in-window"),
+            transaction(date(2026, 4, 1), "9000", key="today"),
+        ],
+        portfolio(),
+        time_zone=ZoneInfo("America/Los_Angeles"),
+        now=_NOW,
+        window_days=30,
+        source_issues=[],
+    )
+    assert result.spending_minor_units == 3000
+    assert result.annualized_spending_minor_units == 36_524
+    assert result.history[-1].annualized_spending_minor_units == 36_524
+    assert result.history[-1].covered_days == 30
 
 
 def test_missing_portfolio_preserves_observed_spending_without_showing_rate() -> None:

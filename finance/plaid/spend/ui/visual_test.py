@@ -1027,6 +1027,35 @@ async def test_sustainability_experimental_render(
     view.errors.assert_none(context="Sustainability")
 
 
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_sustainability_partial_window_has_no_startup_chart(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
+    async def serve_partial(route: Route) -> None:
+        result = _example_sustainability()
+        result["covered_days"] = 12
+        result["history"] = []
+        await route.fulfill(json=result)
+
+    await page.route("**/api/v1/sustainability*", serve_partial)
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Sustainability")
+    await expect(page.get_by_text("Partial window · 12/90 days", exact=True)).to_be_visible()
+    await expect(page.get_by_text("History requires at least 90 days", exact=False)).to_be_visible()
+    await expect(page.locator('canvas[aria-label="Annualized spending and implied draw rates by day"]')).to_have_count(
+        0
+    )
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"sustainability-partial-window-{width}",
+        label=f"{width}px partial headline with no incomplete rolling-window chart",
+        full_page=True,
+        animations="disabled",
+    )
+    view.errors.assert_none(context="Sustainability partial window")
+
+
 async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, dashboard_url: str) -> None:
     async def serve_ready(route: Route) -> None:
         await route.fulfill(json=_example_sustainability())
