@@ -262,6 +262,7 @@ def _network_policy(chart: Chart) -> None:
             IngressRule.from_endpoints(_namespace_source(NAMESPACE), ports=[_HTTP, _HTTPS, _METRICS]),
             # tofu-controller's tf-runner calls the Authentik API.
             IngressRule.from_endpoints(_namespace_source("flux-system"), ports=[_HTTP]),
+            # Cilium sees the provider pod's identity, not its impersonated root ServiceAccounts.
             IngressRule.from_endpoints(
                 {
                     **_namespace_source(opentofu.NAMESPACE),
