@@ -494,6 +494,11 @@ def test_crossplane_source_update_canary_watches_its_flux_artifact(
             "failed": "has(status.conditions) && status.conditions.exists(c, c.type == 'Established' && c.status == 'False')",
         }
     ]
+    assert definitions_kustomization["spec"]["dependsOn"] == [
+        {"name": "crossplane-provider-opentofu", "namespace": "ducktape-flux"},
+        {"name": "crossplane-provider-kubernetes", "namespace": "ducktape-flux"},
+        {"name": "artifact-generators", "namespace": "ducktape-flux"},
+    ]
     assert composition_step["functionRef"] == {"name": "function-go-templating"}
     assert composition_step["input"]["apiVersion"] == "gotemplating.fn.crossplane.io/v1beta1"
     assert composition_step["input"]["kind"] == "GoTemplate"

@@ -331,7 +331,7 @@ def resources(
         DEFINITIONS_NAME,
         definitions_directory,
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(opentofu_provider, kubernetes_provider),
+        depends_on=flux_kustomization_depends_on_many(opentofu_provider, kubernetes_provider, artifact_generators),
         health_check_exprs=[_XRD_HEALTH],
         description="Establish the canary XRD and Composition before Flux applies the XR.",
     )
