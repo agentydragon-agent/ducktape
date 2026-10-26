@@ -95,9 +95,9 @@ same-Sandbox processes from one another. The Runner's state-owner descriptor and
 protect storage ownership across Runner restart and ensure harness descendants are reaped; they do not
 make Runner internals or sibling Session stores confidential from code in the same Sandbox.
 
-The delegated cgroups below provide resource containment and teardown, not security isolation between
-a harness and its tool children. A native harness and the tools it starts share that harness's cgroup
-and resource budget. No separate per-tool budget or kill boundary is part of the current VM contract.
+The delegated cgroups below provide resource containment and teardown within one Sandbox principal.
+In isolated Codex mode, the exec-server and its descendants have a sibling budget separate from the
+app-server. Claude, local Codex mode, and app-server-owned helpers share their native harness budget.
 
 **Observed failure:** on 2026-10-19, Nix work in staging `public-coder-1` exhausted the 1536 MiB
 guest and the guest kernel killed its Codex harness. The guest console recorded
@@ -115,16 +115,16 @@ The subsequent conversation-recovery failure is addressed separately in
 - The VM template and guest runner share the strict version-2 `GuestResources` seed. The template
   takes its KubeVirt memory request and vCPU count from that object; an `ExecStartPre` reads the same
   seed and applies the Runner systemd caps after the ConfigMap disk is mounted and before the Runner
-  starts. Staging currently sets:
+  starts. The staging template specifies:
 
   | Scope               | Memory                                                                                  | CPU                              | PID limit | Block I/O limit                                          |
   | ------------------- | --------------------------------------------------------------------------------------- | -------------------------------- | --------- | -------------------------------------------------------- |
-  | VM guest            | 3072 MiB (3,221,225,472 bytes), with a 512 MiB (536,870,912 byte) OS reserve            | 1 vCPU                           | —         | —                                                        |
-  | Runner service      | `MemoryHigh` 2304 MiB (2,415,919,104 bytes), `MemoryMax` 2560 MiB (2,684,354,560 bytes) | 100,000 µs per 100,000 µs period | 2048      | —                                                        |
-  | Harness aggregate   | `memory.max` 1024 MiB (1,073,741,824 bytes)                                             | 100,000 µs per 100,000 µs period | 768       | read 50 MiB/s and 1000 IOPS; write 20 MiB/s and 500 IOPS |
-  | Native process leaf | `memory.max` 768 MiB (805,306,368 bytes)                                                | 100,000 µs per 100,000 µs period | 512       | read 50 MiB/s and 1000 IOPS; write 20 MiB/s and 500 IOPS |
+  | VM guest            | 8192 MiB (8,589,934,592 bytes), with a 1024 MiB (1,073,741,824 byte) OS reserve         | 1 vCPU                           | —         | —                                                        |
+  | Runner service      | `MemoryHigh` 6144 MiB (6,442,450,944 bytes), `MemoryMax` 7168 MiB (7,516,192,768 bytes) | 100,000 µs per 100,000 µs period | 2048      | —                                                        |
+  | Harness aggregate   | `memory.max` 2048 MiB (2,147,483,648 bytes)                                             | 100,000 µs per 100,000 µs period | 768       | read 50 MiB/s and 1000 IOPS; write 20 MiB/s and 500 IOPS |
+  | Native process leaf | `memory.max` 1536 MiB (1,610,612,736 bytes)                                             | 100,000 µs per 100,000 µs period | 512       | read 50 MiB/s and 1000 IOPS; write 20 MiB/s and 500 IOPS |
 
-  The sibling executor aggregate and its leaf each cap memory at 1024 MiB (1,073,741,824 bytes),
+  The sibling executor aggregate and its leaf each cap memory at 3072 MiB (3,221,225,472 bytes),
   CPU at one vCPU and PIDs at 512, with the same I/O caps. Its optional seed budget selects isolated
   tools; see [Codex executor isolation](../runner/docs/codex_executor.md) for lifecycle and scope.
 

@@ -592,8 +592,9 @@ prerequisite: no client budget inside the guest is workable until the guest has 
 
 **Unscheduled; the PR parked for it ([#10734](https://github.com/agentydragon/ducktape/pull/10734), 8 GiB
 with one vCPU and larger `agentplane-testing` quotas) was closed unmerged on 2026-10-20, and testing is
-deleted.** The `runner-vm` template still requests 1536Mi. The approved size is 8 GiB; one VM per OVH node is
-approved; CPU sizing and derived guest budgets remain separate work.
+deleted.** The executor implementation PR sets the template to the approved 8 GiB with one vCPU; this has not
+been booted or reconciled on staging. One VM per OVH node is approved. Live capacity and build
+acceptance remain below; resource budgets are explicit in the shared typed guest seed.
 
 After reconciliation on staging, inspect actual launcher requests/limits, namespace usage and node
 capacity: KubeVirt adds overhead and quota-derived limits, not a fixed 240 MiB surcharge. Confirm
@@ -602,31 +603,18 @@ Record useful sizing evidence in VM documentation and delete this node when acce
 
 ### `VM_GUEST_BUDGET_DERIVE` — derive the guest's cgroup budgets from the VM's memory
 
-**Candidate; no prerequisites; pair with `VM_HARNESS_RESOURCE_LIMITS`, which owns the VM cgroup
-acceptance and already cites these files.** Two places set guest budgets as literals while guest RAM is a third number, and
-nothing connects them:
+**Implementation in progress; no deployment authorized by this node.** The configurable-resource
+PR replaces independent code literals with a typed version-2 guest seed shared by the VM template,
+systemd preflight and Runner. The operator selected explicit byte budgets propagated from templates
+on 2026-10-25, rather than automatically deriving every budget from RAM. Validation checks the OS
+reserve, service caps, aggregate and native-process relationships, and actual guest `MemTotal`.
+The executor PR adds a separately budgeted sibling subtree. Kernel acceptance forces a leaf OOM
+and verifies sibling survival; VM image boot and deployed service/cgroup wiring remain unverified.
 
-- the unit in `agentplane/runner/vm.nix`: `MemoryHigh = "6G"`, `MemoryMax = "7G"`, `CPUQuota = "700%"`,
-  `TasksMax = 1024`;
-- the delegated groups in `agentplane/runner/cgroups.go`: aggregate `memory.max` 4 GiB with
-  `cpu.max` 400000/100000 (4 cores) and `pids.max` 768, per-process 3 GiB / 3 cores / 512.
-
-On this 1536Mi / 1 vCPU guest the unit is live — read `memory.max` 7516192768 and
-`cpu.max` 700000 100000 on `agentplane-runner.service`, about 4.5x the whole VM, with
-`memory.current` 1085681664 of it already used — so `VM_HARNESS_RESOURCE_LIMITS`' "verify the existing limits"
-step will find that the aggregate group cannot reach its declared 4 GiB and the CPU shares are meaningless
-against one core. (The `workloads/` group itself is not readable from inside as the agent user; the 4 GiB
-figure is from the source, not observed. Reading it is part of this node.)
-
-Make the guest's own size the input: at boot or in the runner binary, read `MemTotal`/`memory.max` and
-the online CPU count, subtract a stated reserve for the guest kernel, journald and virtiofsd, and write
-the rest. `runner_vm.py` then carries one number and every budget follows it. Keep the reserve explicit
-and testable rather than a magic fraction, and fail loudly if the derived value would leave the runner
-less than it needs — the dangerous state is a cap so close to guest RAM that the first over-committed
-harness hits the **global** OOM instead of being killed as an identifiable subtree, which is exactly what
-[VM Sandboxes § Guest resource controls](../docs/vm_sandboxes.md#guest-resource-controls) says these groups exist to prevent. Exit evidence:
-one image booted at two guest sizes reports budgets that track it, and a harness that exhausts memory
-dies inside its own subtree with the runner still answering RPCs.
+Complete the VM-specific acceptance with `VM_HARNESS_RESOURCE_LIMITS`: boot the image with a
+matching seed, inspect the actual service and sibling cgroup caps, and verify Runner answers RPCs
+after an executor exceeds its budget. Reject a larger seed on a stale smaller VM before applying
+unsafe caps. Remove this node when that deployment-specific uncertainty is resolved.
 
 ## 5. Independent UI and narrowly scoped service work
 

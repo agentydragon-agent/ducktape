@@ -246,5 +246,6 @@ a deployed sandbox must separately prove the normal proxy/CA/credential route fo
 No credentials are embedded in the image. The staging container workflow is BuildBuddy-hosted
 builds, not a local Bazel client with remote actions. Local Bazel execution is deferred until
 VM-backed environments; package availability does not imply permission to run it. Adding tools
-does not isolate their processes or memory from the harness. See the
+does not itself establish a tool memory boundary. Isolated Codex execution is configured separately
+([executor lifecycle and scope](docs/codex_executor.md)). See the
 [BuildBuddy execution policy and validation](../docs/buildbuddy_remote_auth.md#validation-and-execution-policy).
