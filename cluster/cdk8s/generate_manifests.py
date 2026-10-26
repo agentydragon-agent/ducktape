@@ -915,25 +915,13 @@ def generate_manifests(root: Path) -> None:
         user_agentydragon_kustomization,
     )
     authentik_tf_artifact = artifact(authentik_tf.NAME, authentik_tf.OUTPUT_DIR)
-    # CLEANUP(added 2026-10-26): Keep these four legacy source artifacts until their
-    # Terraform CRs are absent and replacement Workspaces are Ready and current-generation Synced.
-    sso_providers_module = terraform.gitops_module(sso_providers.NAME)
-    agent_machine_access_module = terraform.gitops_module(agent_machine_access.NAME)
-    authentik_tf_kustomization = authentik_tf.authentik_tf(
-        flux_chart, write_directory(root, authentik_tf_artifact), tofu_controller_kustomization
-    )
     sso_providers_artifact = artifact(sso_providers.WORKSPACE_NAME, sso_providers.OUTPUT_DIR)
     sso_providers_kustomization = opentofu.workspace_kustomization(
         flux_chart,
         sso_providers.WORKSPACE_NAME,
         write_directory(root, sso_providers_artifact, sso_providers.chart),
         authentik_tf_artifact,
-        depends_on=[
-            crossplane_opentofu_provider_kustomization,
-            tofu_state_db_kustomization,
-            authentik_tf_kustomization,
-            authentik_kustomization,
-        ],
+        depends_on=[crossplane_opentofu_provider_kustomization, tofu_state_db_kustomization, authentik_kustomization],
     )
     agent_machine_access_artifact = artifact(agent_machine_access.WORKSPACE_NAME, agent_machine_access.OUTPUT_DIR)
     opentofu.workspace_kustomization(
@@ -944,7 +932,6 @@ def generate_manifests(root: Path) -> None:
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
-            authentik_tf_kustomization,
             sso_providers_kustomization,
         ],
     )
@@ -955,7 +942,6 @@ def generate_manifests(root: Path) -> None:
         authentik_tf_artifact,
         crossplane_opentofu_provider_kustomization,
         tofu_state_db_kustomization,
-        authentik_tf_kustomization,
     )
     alloy_otlp_bearer_token_artifact = artifact(alloy_otlp_bearer_token.NAME, alloy_otlp_bearer_token.OUTPUT_DIR)
     alloy_otlp_bearer_token.resources(
@@ -964,7 +950,6 @@ def generate_manifests(root: Path) -> None:
         authentik_tf_artifact,
         crossplane_opentofu_provider_kustomization,
         tofu_state_db_kustomization,
-        authentik_tf_kustomization,
     )
     github_tf_artifact = artifact(github_tf.NAME, github_tf.OUTPUT_DIR)
     # CLEANUP(added 2026-10-26): Keep these module artifacts while the old Terraform CRs
@@ -977,21 +962,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, github_tf_artifact), tofu_controller_kustomization
     )
     forgejo_gitops_artifact = artifact(forgejo_gitops_modules.NAME, forgejo_gitops_modules.OUTPUT_DIR)
-    forgejo_gitops_kustomization = forgejo_gitops_modules.forgejo_gitops(
-        flux_chart, write_directory(root, forgejo_gitops_artifact), tofu_controller_kustomization
-    )
-    # CLEANUP(added 2026-10-26): Retain these source artifacts while the old
-    # tofu-controller Terraform CRs finalize. tofu-controller resolves sourceRef before
-    # normal finalization, even with destroy=false. Remove only after all five legacy CRs
-    # are absent and all five replacement Workspaces report Ready=True and
-    # current-generation Synced=True after PR #12109 rolls out.
-    forgejo_legacy_gitops_artifacts = (
-        artifact("tf-gitops-haku-state", f"{ducktape_flux.TF_GITOPS_ROOT}/haku-state"),
-        artifact("tf-gitops-budget-ledger", f"{ducktape_flux.TF_GITOPS_ROOT}/budget-ledger"),
-        artifact("tf-gitops-cpap-data", f"{ducktape_flux.TF_GITOPS_ROOT}/cpap-data"),
-        artifact("tf-gitops-forgejo-agentydragon-repos", f"{ducktape_flux.TF_GITOPS_ROOT}/forgejo-agentydragon-repos"),
-        artifact("tf-gitops-finance-agent", f"{ducktape_flux.TF_GITOPS_ROOT}/finance-agent"),
-    )
     forgejo_claude_artifact = artifact(forgejo_claude.NAME, forgejo_claude.OUTPUT_DIR)
     forgejo_claude_kustomization = forgejo_claude.resources(
         flux_chart,
@@ -999,7 +969,6 @@ def generate_manifests(root: Path) -> None:
         forgejo_gitops_artifact,
         crossplane_opentofu_provider_kustomization,
         tofu_state_db_kustomization,
-        forgejo_gitops_kustomization,
     )
     forgejo_haku_state_artifact = artifact(
         forgejo_crossplane_roots.HAKU_STATE_NAME, forgejo_crossplane_roots.output_dir("haku-state")
@@ -1012,7 +981,6 @@ def generate_manifests(root: Path) -> None:
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
-            forgejo_gitops_kustomization,
             forgejo_claude_kustomization,
         ],
     )
@@ -1027,7 +995,6 @@ def generate_manifests(root: Path) -> None:
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
-            forgejo_gitops_kustomization,
             forgejo_haku_state_kustomization,
         ],
     )
@@ -1042,7 +1009,6 @@ def generate_manifests(root: Path) -> None:
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
-            forgejo_gitops_kustomization,
             forgejo_haku_state_kustomization,
         ],
     )
@@ -1057,7 +1023,6 @@ def generate_manifests(root: Path) -> None:
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
-            forgejo_gitops_kustomization,
             forgejo_haku_state_kustomization,
         ],
     )
@@ -1073,7 +1038,6 @@ def generate_manifests(root: Path) -> None:
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
-            forgejo_gitops_kustomization,
             forgejo_haku_state_kustomization,
         ],
     )
@@ -1085,7 +1049,6 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, crossplane_forgejo_agentydragon_artifact, crossplane_forgejo_agentydragon.chart),
         crossplane_opentofu_provider_kustomization,
         tofu_state_db_kustomization,
-        forgejo_gitops_kustomization,
     )
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
     monitoring_stack.monitoring_stack(
@@ -1239,16 +1202,6 @@ def generate_manifests(root: Path) -> None:
     )
     gitlab_spike_module = terraform.gitops_module("gitlab-spike")
     gitlab_spike_gitops_artifact = artifact(gitlab_spike_flux.GITOPS_NAME, gitlab_spike_flux.GITOPS_DIR)
-    # Prune the failed Inline Workspace (Orphan/default state) before restoring Tofu ownership.
-    # Both Kustomizations consume this artifact, so Flux also requires its current revision.
-    gitlab_spike_workspace_artifact = artifact(gitlab_spike_flux.WORKSPACE_NAME, gitlab_spike_flux.WORKSPACE_DIR)
-    gitlab_spike_workspace_kustomization = opentofu.workspace_kustomization(
-        flux_chart,
-        gitlab_spike_flux.WORKSPACE_NAME,
-        write_directory(root, gitlab_spike_workspace_artifact),
-        gitlab_spike_gitops_artifact,
-        depends_on=[crossplane_opentofu_provider_kustomization, tofu_state_db_kustomization],
-    )
     gitlab_spike_gitops_kustomization = gitlab_spike_flux.gitops(
         flux_chart,
         write_directory(
@@ -1259,7 +1212,6 @@ def generate_manifests(root: Path) -> None:
         gitlab_spike_bootstrap_kustomization,
         tofu_controller_kustomization,
         forgejo_kustomization,
-        gitlab_spike_workspace_kustomization,
     )
     gitlab_spike_integrations_artifact = artifact(
         gitlab_spike_flux.INTEGRATIONS_NAME, gitlab_spike_flux.INTEGRATIONS_DIR
@@ -1372,7 +1324,6 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
-    forgejo_images_module = terraform.gitops_module(forgejo_images.NAME)
     forgejo_images_kustomization = forgejo_images.forgejo_images(
         flux_chart,
         # The SOPS sibling (the tenant's canonical registry credential) turns on Flux decryption.
@@ -1854,9 +1805,6 @@ def generate_manifests(root: Path) -> None:
     haku_workloads_artifact = artifact("haku-workloads", haku_workloads.OUTPUT_DIR)
     haku_workloads.haku_workloads(flux_chart, write_directory(root, haku_workloads_artifact, haku_workloads.chart))
     litellm_keys_tf_artifact = artifact("litellm-keys-tf", litellm_keys.OUTPUT_DIR)
-    # CLEANUP(added 2026-10-26): Retain the source until the legacy litellm-keys
-    # Terraform CR and its runner are absent; finalization resolves sourceRef even with destroy=false.
-    litellm_keys_module = terraform.gitops_module(litellm_keys.TF_MODULE)
     litellm_keys.litellm_keys_tf(
         flux_chart,
         write_directory(root, litellm_keys_tf_artifact, siblings=["buildbuddy-org-admin-api-key.sops.yaml"]),
@@ -2028,7 +1976,6 @@ def generate_manifests(root: Path) -> None:
             gitlab_spike_app_artifact,
             gitlab_spike_bootstrap_artifact,
             gitlab_spike_gitops_artifact,
-            gitlab_spike_workspace_artifact,
             gitlab_spike_integrations_artifact,
             forgejo_images_artifact,
             forgejo_images_workspace_artifact,
@@ -2106,7 +2053,6 @@ def generate_manifests(root: Path) -> None:
             flux_image_automation_forgejo_artifact,
             flux_webhook_artifact,
             forgejo_gitops_artifact,
-            *forgejo_legacy_gitops_artifacts,
             budget_namespace_artifact,
             gaffer_private_source_artifact,
             gatus_artifact,
@@ -2169,14 +2115,10 @@ def generate_manifests(root: Path) -> None:
             vpa_artifact,
             website_artifact,
             home_switch_module,
-            sso_providers_module,
-            agent_machine_access_module,
             github_branch_protection_module,
             github_secrets_sync_module,
             flux_webhook_token_module,
-            forgejo_images_module,
             gitlab_spike_module,
-            litellm_keys_module,
             litellm_buildbuddy_sync_module,
         ],
         flux_system=[external_creds_artifact],

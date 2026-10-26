@@ -133,11 +133,6 @@ spec:
       name: gitlab-spike-gitops
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/gitlab-spike/gitops/crossplane-gitlab-spike/**"
-          to: "@artifact/cluster/generated/gitlab-spike/gitops/crossplane-gitlab-spike/"
-      name: crossplane-gitlab-spike
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/gitlab-spike/integrations/**"
           to: "@artifact/cluster/generated/gitlab-spike/integrations/"
       name: gitlab-spike-integrations
@@ -545,31 +540,6 @@ spec:
       name: forgejo-gitops
       originRevision: "@repo"
     - copy:
-        - from: "@repo/tf/gitops/haku-state/**"
-          to: "@artifact/tf/gitops/haku-state/"
-      name: tf-gitops-haku-state
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/budget-ledger/**"
-          to: "@artifact/tf/gitops/budget-ledger/"
-      name: tf-gitops-budget-ledger
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/cpap-data/**"
-          to: "@artifact/tf/gitops/cpap-data/"
-      name: tf-gitops-cpap-data
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/forgejo-agentydragon-repos/**"
-          to: "@artifact/tf/gitops/forgejo-agentydragon-repos/"
-      name: tf-gitops-forgejo-agentydragon-repos
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/finance-agent/**"
-          to: "@artifact/tf/gitops/finance-agent/"
-      name: tf-gitops-finance-agent
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/forgejo/budget-namespace/**"
           to: "@artifact/cluster/generated/forgejo/budget-namespace/"
       name: budget-namespace
@@ -900,16 +870,6 @@ spec:
       name: tf-gitops-home-switch
       originRevision: "@repo"
     - copy:
-        - from: "@repo/tf/gitops/sso-providers/**"
-          to: "@artifact/tf/gitops/sso-providers/"
-      name: tf-gitops-sso-providers
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/agent-machine-access/**"
-          to: "@artifact/tf/gitops/agent-machine-access/"
-      name: tf-gitops-agent-machine-access
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/tf/gitops/github-branch-protection/**"
           to: "@artifact/tf/gitops/github-branch-protection/"
       name: tf-gitops-github-branch-protection
@@ -925,19 +885,9 @@ spec:
       name: tf-gitops-flux-webhook-token
       originRevision: "@repo"
     - copy:
-        - from: "@repo/tf/gitops/forgejo-images/**"
-          to: "@artifact/tf/gitops/forgejo-images/"
-      name: tf-gitops-forgejo-images
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/tf/gitops/gitlab-spike/**"
           to: "@artifact/tf/gitops/gitlab-spike/"
       name: tf-gitops-gitlab-spike
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/litellm-keys/**"
-          to: "@artifact/tf/gitops/litellm-keys/"
-      name: tf-gitops-litellm-keys
       originRevision: "@repo"
     - copy:
         - from: "@repo/tf/gitops/litellm-buildbuddy-sync/**"

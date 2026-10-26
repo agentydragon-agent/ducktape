@@ -394,12 +394,6 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
         if doc.get("kind", "").lower() == "kustomization"
         and doc.get("metadata", {}).get("name") == "crossplane-forgejo-agentydragon"
     )
-    forgejo_gitops_kustomization = next(
-        doc
-        for doc in documents
-        if doc.get("kind", "").lower() == "kustomization" and doc.get("metadata", {}).get("name") == "forgejo-gitops"
-    )
-
     assert provider["spec"]["package"] == "xpkg.upbound.io/upbound/provider-opentofu:v1.1.10"
     assert provider_kustomization["spec"]["dependsOn"] == [{"name": "crossplane", "namespace": "ducktape-flux"}]
     assert provider_kustomization["spec"]["wait"] is True
@@ -436,12 +430,9 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
     assert resources_kustomization["spec"]["dependsOn"] == [
         {"name": "crossplane-provider-opentofu", "namespace": "ducktape-flux"},
         {"name": "tofu-state-db", "namespace": "ducktape-flux"},
-        {"name": "forgejo-gitops", "namespace": "ducktape-flux"},
     ]
     assert resources_kustomization["spec"]["wait"] is True
     assert resources_kustomization["spec"]["prune"] is True
-    assert forgejo_gitops_kustomization["spec"]["wait"] is True
-    assert forgejo_gitops_kustomization["spec"]["prune"] is True
     assert not any(
         doc.get("apiVersion") == "infra.contrib.fluxcd.io/v1alpha2"
         and doc.get("kind") == "Terraform"

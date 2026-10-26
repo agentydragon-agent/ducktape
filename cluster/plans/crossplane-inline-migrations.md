@@ -1,115 +1,49 @@
-# Crossplane Inline migration batches
+# Crossplane inline migration status
 
-## Merge sequence
+The application roots (`gatus-sso`, `forgejo-claude`, and
+`alloy-otlp-bearer-token`) and five Forgejo roots (`haku-state`, `budget-ledger`,
+`cpap-data`, `finance-agent`, and `forgejo-agentydragon-repos`) have completed their
+handoffs to Crossplane OpenTofu Workspaces. The SSO/access roots and Forgejo registry
+Terraform root were also migrated. Each Workspace uses its existing PostgreSQL schema
+and OpenTofu `default` workspace; state export/import, credential rotation, and
+infrastructure recreation were not part of these migrations.
 
-1. Expand the shared cluster diagnostics role to read Crossplane objects, including
-   Provider packages, revisions, runtime configs, ProviderConfigs and Workspaces.
-   Grant no core Secret reads or access to the PostgreSQL state backend.
-2. Migrate `gatus-sso`, `forgejo-claude`, and `alloy-otlp-bearer-token` together.
-   Factor the existing Inline Workspace construction and configure Kubernetes identities
-   (application-root migration, PR #12105).
-3. Migrate the five remaining active Forgejo roots together: `haku-state`,
-   `budget-ledger`, `cpap-data`, `finance-agent`, `forgejo-agentydragon-repos`.
-   This Forgejo migration builds on the application-root migration and remains draft
-   until that migration's live handoff is verified (PR #12109, stacked on PR #12105).
+## Retired gates and source artifacts
 
-4. Migrate `sso-providers`, `agent-machine-access`, `gitlab-spike`, and `forgejo-images`
-   together. Keep this batch draft until the preceding Forgejo batch has live
-   current-generation Synced and Ready conditions.
+This change removes the empty Flux Kustomizations that owned the retired Terraform
+objects, plus ArtifactGenerator entries for Terraform roots whose handoffs have
+completed. Before removing those entries, live checks confirmed the old Terraform
+objects were absent and replacement Workspaces were Ready and Synced for their current
+generations.
 
-   | Root                 | PostgreSQL schema    | Kubernetes identity           |
-   | -------------------- | -------------------- | ----------------------------- |
-   | sso-providers        | sso_providers        | opentofu-sso-providers        |
-   | agent-machine-access | agent_machine_access | opentofu-agent-machine-access |
-   | gitlab-spike         | gitlab_spike         | opentofu-gitlab-spike         |
-   | forgejo-images       | forgejo_images       | opentofu-forgejo-images       |
+The `authentik-tf` and `forgejo-gitops` Kustomizations are no longer used as prune gates.
+Their ArtifactGenerator sources remain because the nested Workspace directories still
+consume files from those source trees. The five legacy Forgejo `tf-gitops-*` source
+artifacts have been removed after the old Terraform objects were absent and all five
+replacement Workspaces were current and healthy.
 
-   The Authentik prune gate becomes empty; its two replacement directories share its
-   artifact. SSO waits for Authentik; machine access waits for SSO. GitLab's app waits
-   for SSO, then bootstrap and the empty GitLab GitOps prune gate precede its Workspace.
-   GitLab integrations wait for that Workspace. The Forgejo registry keeps its namespace,
-   credentials, Receiver and ESO objects in their existing owner; only Terraform is
-   replaced by a Workspace in a nested directory, after that owner and Forgejo are Ready.
+GitLab's attempted inline migration was rolled back by PR #12133 after its generated
+Terraform version file was found missing. The original Terraform owner is restored and
+Ready at its current generation. Its GitOps and Terraform Kustomizations had applied
+the same artifact revision before the empty Workspace prune gate was removed. The
+GitLab Terraform module, state, credentials, and native resource addresses remain.
 
-   Retain all four `tf-gitops-*` module source artifacts through finalization. Remove
-   them in a later cleanup only after the four old Terraform CRs and runners are absent
-   and all replacements are Ready and current-generation Synced. Preserve HCL, SSH key
-   inputs, webhook variables, credentials, and native resource addresses. No state import,
-   export, credential rotation, or recreation is part of this batch.
+The LiteLLM `litellm-keys-tf` Kustomization remains because it applies the BuildBuddy
+credential used by the live-test key sync. The retired `litellm-keys` Terraform source
+is no longer included; the separate `litellm-buildbuddy-sync` source and executable
+remain.
 
-   Each identity can GET only its named input Secrets and manage its named output
-   Secrets. Secret CREATE remains namespace-wide because Kubernetes cannot scope it by
-   resource name. Shared provider process and backend access remain as documented in
-   `cluster/docs/crossplane-opentofu-artifact-triggers.md`; these are scoped Kubernetes
-   clients, not execution isolation.
+## Reconciliation and recovery
 
-   Check SSO consumers and machine-client authentication, GitLab runner and Flux source
-   readiness, and Forgejo registry authentication/package webhook continuity after merge.
-   Confirm no legacy runner competes for the preserved state before declaring handoff done.
+Active Workspaces keep Orphan deletion policy and Observe/Create/Update management
+policies so deleting a Workspace does not destroy its managed infrastructure. HCL
+changes can still delete resources. Workspace Kustomizations use a health check that
+requires `Synced=True` for the current generation and `Ready=True`.
 
-## Handoff and verification
+If a future replacement fails, keep the old Terraform object absent while diagnosing.
+To return ownership, pause Crossplane reconciliation, remove the Workspace with Orphan
+policy, verify it no longer owns the state, then restore the old Terraform object. Keep
+the original state schema and `default` workspace throughout.
 
-Each replacement uses the existing PostgreSQL backend/schema and OpenTofu `default`
-workspace. No state export, import, password rotation, or repository recreation is
-part of a migration. Keep native HCL resource addresses and legacy `removed` blocks.
-
-Flux prunes each old tofu-controller Terraform CR with resource destruction disabled
-before the replacement Workspace's Kustomization runs. Old and new Kustomizations
-share one ExternalArtifact, with the new output in a separate nested path. Flux's
-built-in dependency check then requires the old owner to have applied the current
-artifact revision, rather than accepting Ready from an earlier revision. The replacement has Orphan
-deletion policy and Observe/Create/Update management policies. Those policies prevent
-Workspace deletion from destroying infrastructure; HCL edits can still delete resources.
-
-Every OpenTofu Workspace Kustomization uses a health-check expression that requires
-both `Synced=True` for the Workspace's current generation and `Ready=True`. The
-generation check applies to Synced; Ready has no observed-generation requirement.
-This prevents Flux's generic kstatus check from treating `Synced=True` alone as Ready
-when the Workspace has not reported `Ready=True`.
-
-Keep the five legacy `tf-gitops-*` ArtifactGenerator outputs while the old
-tofu-controller Terraform CRs finalize. tofu-controller resolves the CR's source before
-normal finalization even when destruction is disabled, so removing an artifact early
-can strand its CR. A `CLEANUP(added 2026-10-26)` tombstone in
-`generate_manifests.py` lists the retained artifacts and the removal gate. Remove
-them only after all five legacy Terraform CRs
-(`haku-state`, `budget-ledger`, `cpap-data`, `forgejo-agentydragon-repos`,
-and `finance-agent`)
-are absent and all five replacement Workspaces report `Ready=True` plus
-current-generation `Synced=True` after PR #12109 rolls out. This artifact cleanup is a
-separate follow-up; the migration does not recreate the legacy Terraform CRs.
-
-After merging the application-root migration, verify:
-
-- `authentik-tf` and `forgejo-gitops` reached their new revision and pruned the three old
-  Terraform CRs. No old runner remains active for those roots.
-- Each new Workspace reports Synced=True and Ready=True for its current generation.
-  Inspect provider diagnostics for unexpected recreation, missing state, or denied access.
-- Gatus OIDC login and the Alloy rotator's existing consumer remain healthy. Claude's
-  existing credentials continue to authenticate through their current consumers.
-- Existing Forgejo SSH-key and Route 53 Workspaces stay Ready after the provider runtime
-  rollout. Their backend, source, variables and lifecycle policies are unchanged.
-
-For the Forgejo migration also verify the haku Workspace before dependent Forgejo
-Workspaces, preserve `forgejo_codex` for `forgejo-agentydragon-repos`, and check existing
-repository identities and credential consumers. Do not mark the Forgejo migration PR
-ready until the application-root migration's handoff has been observed. Keep broader
-SSO/access, CI/bootstrap, parked roots, and roots with executable/mixed-format
-dependencies for subsequent work.
-
-## Recovery
-
-If a replacement fails, leave the old Terraform CR absent while diagnosing. Reverting a
-migration without first stopping the replacement would reintroduce two controllers for
-one state. To return ownership, first pause Crossplane reconciliation and remove its
-Workspace with Orphan policy, verify it no longer owns the state, then restore the old
-Terraform CR. Keep the original schema and `default` workspace throughout.
-
-## GitLab spike deferred
-
-GitLab remains on tofu-controller while the evaluation is experimental. Its attempted
-Inline migration omitted BUILD-generated `versions.tf.json`; #12128's manual HCL
-translation was withdrawn. Restore the original Terraform root only after Flux prunes
-the Orphan-policy Workspace. Keep the empty Crossplane Kustomization as that prune gate
-until live handoff is verified. State schema, default workspace, credentials, and HCL
-resource addresses stay unchanged. Revisit source assembly before a future migration.
+Other parked roots and roots with executable or mixed-format dependencies remain
+outside these completed migrations.

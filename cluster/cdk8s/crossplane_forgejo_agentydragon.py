@@ -31,22 +31,15 @@ def chart(app: App) -> Chart:
 
 
 def resources(
-    flux_chart: Chart,
-    directory: RenderedDirectory,
-    opentofu_provider: Kustomization,
-    tofu_state_db: Kustomization,
-    forgejo_gitops: Kustomization,
+    flux_chart: Chart, directory: RenderedDirectory, opentofu_provider: Kustomization, tofu_state_db: Kustomization
 ) -> Kustomization:
-    """Start Crossplane only after tofu-controller has pruned the old Terraform root."""
+    """Apply the Workspace after its provider and state backend are ready."""
     return flux_kustomization(
         flux_chart,
         NAME,
         directory,
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(opentofu_provider, tofu_state_db, forgejo_gitops),
+        depends_on=flux_kustomization_depends_on_many(opentofu_provider, tofu_state_db),
         health_check_exprs=[opentofu.WORKSPACE_HEALTH_CHECK_EXPR],
-        description=(
-            "Take over forgejo-agentydragon from tofu-controller using its existing PostgreSQL state; "
-            "the dependency on forgejo-gitops serializes the controller handoff."
-        ),
+        description="Manage Forgejo SSH keys with their existing OpenTofu state.",
     )
