@@ -49,7 +49,7 @@ can run it.
 [`fixture_chart.py`](fixture_chart.py) constructs the chart directly
 with shared service constructs and explicit bare-k3s settings. It supplies fixture Secrets,
 local-path storage for filesystem claims and a test egress CA. VM stacks add a separate static
-`agentplane-test-loop-block` class for the VM workspace claim. `block_storage.py` backs its two
+`agentplane-test-loop-block` class for the VM workspace claim. `block_storage.py` backs its three
 10 GiB `Block` PVs with sparse files attached to loop devices on the k3s node; the action detaches
 only the loops it attached after k3s removes its Pods. This gives the VM test guest a real raw block
 device while keeping state on the fixture's filesystem class. The fixture runs the Go egress proxy
@@ -130,6 +130,21 @@ in a private registry and would boot for minutes without KVM: a Debian cloud ker
 directly, a busybox initramfs that mounts an erofs root under a tmpfs overlay, and an init that gives
 the runner what [`vm.nix`](../../runner/vm.nix) does. The runner comes from the production runner disk,
 as in a Pod; both harnesses, Git and `findmnt` are pinned in the root disk.
+
+`test_vm_sandbox_vm` also drives the real Codex app-server to run a memory-exhausting shell command
+through its isolated exec-server. The allocator touches memory beyond the configured executor
+limit, with a raised `oom_score_adj` to select that tool as the victim. The test checks a single
+`memory.events` OOM kill with `memory.oom.group=0`, a tool result reporting exit 137, and a failed
+native command item with that exit code; the turn itself completes normally. Runner boot identity
+and app-server process identity/PID stay unchanged before and after the OOM and a successful
+follow-up turn. That command runs in the same executor leaf and reports exit zero. Evidence goes
+to `test.outputs/vm-codex-oom.json`, alongside the guest console and scripted upstream requests.
+The test guest runs a root observer outside the Runner subtree to publish read-only snapshots of
+executor limits and OOM counters. Tool processes retain production's UID and cgroup permissions.
+The executor aggregate's hierarchical OOM counter proves the constrained subtree, while the leaf's
+victim counter proves the single kill: either the aggregate or leaf limit can trigger first.
+This exercises the test guest's kernel and production Runner/Codex binaries; it does not run the
+production NixOS systemd unit or force exec-server death/restart.
 
 KubeVirt's and Kyverno's images are Bazel-pulled layouts (`vm_sandboxes/`, pinned in `MODULE.bazel`),
 imported before their releases are applied, so no Pod pulls them; the releases roll out while the

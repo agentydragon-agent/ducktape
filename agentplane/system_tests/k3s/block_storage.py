@@ -19,7 +19,9 @@ from uuid import uuid4
 STORAGE_CLASS = "agentplane-test-loop-block"
 CLAIM_CAPACITY = "10Gi"
 _CLAIM_CAPACITY_BYTES = 10 * 1024**3
-_PV_COUNT = 2
+# The VM suite creates one workspace per harness plus the Codex OOM workspace. Retained static PVs
+# stay Released after their claim is deleted and cannot bind another test's fresh claim.
+_PV_COUNT = 3
 
 _LOOP_CTL_GET_FREE = 0x4C82
 _LOOP_SET_FD = 0x4C00
@@ -116,7 +118,7 @@ class _LoopDevice:
 
 
 class BlockStorage:
-    """A two-device, single-node pool for VM workspace claims in one disposable k3s stack."""
+    """A single-node pool for VM workspace claims in one disposable k3s stack."""
 
     def __init__(self, work: Path) -> None:
         self.work = work / "raw-block"
