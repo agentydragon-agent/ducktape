@@ -10,8 +10,13 @@
 # gazelle:resolve py agentplane_policyset_crds //agentplane/crds:policyset
 # gazelle:resolve py cilium_crds //cluster/cdk8s/providers/cilium:ciliumnetworkpolicy
 # gazelle:resolve py crossplane_pkg_provider_crds //cluster/cdk8s/providers/crossplane:provider
+# gazelle:resolve py crossplane_composition_crds //cluster/cdk8s/providers/crossplane:composition
+# gazelle:resolve py crossplane_xrd_crds //cluster/cdk8s/providers/crossplane:xrd
+# gazelle:resolve py crossplane_deploymentruntimeconfig_crds //cluster/cdk8s/providers/crossplane:deploymentruntimeconfig
+# gazelle:resolve py crossplane_function_crds //cluster/cdk8s/providers/crossplane:function
 # gazelle:resolve py opentofu_providerconfig_crds //cluster/cdk8s/providers/crossplane:opentofu_providerconfig
 # gazelle:resolve py opentofu_workspace_crds //cluster/cdk8s/providers/crossplane:opentofu_workspace
+# gazelle:resolve py provider_kubernetes_providerconfig_crds //cluster/cdk8s/providers/provider_kubernetes:providerconfig
 # gazelle:resolve py flux_helm //cluster/cdk8s/providers/flux:helmrelease
 # gazelle:resolve py flux_source //cluster/cdk8s/providers/flux:helmrepository
 # gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
@@ -1274,6 +1279,8 @@ py_library(
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/providers/crossplane:deploymentruntimeconfig",
+        "//cluster/cdk8s/providers/crossplane:function",
         "//cluster/cdk8s/providers/crossplane:provider",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -1307,6 +1314,27 @@ py_library(
         ":terraform",
         "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "crossplane_source_update_canary",
+    srcs = ["crossplane_source_update_canary.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        ":artifact_generators",
+        ":crossplane",
+        ":flux",
+        ":manifest_roots",
+        ":terraform",
+        "//cluster/cdk8s/providers/crossplane:composition",
+        "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
+        "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
+        "//cluster/cdk8s/providers/crossplane:xrd",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/provider_kubernetes:providerconfig",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -1540,6 +1568,7 @@ py_library(
         ":claude_sandbox_secrets",
         ":crossplane",
         ":crossplane_forgejo_agentydragon",
+        ":crossplane_source_update_canary",
         ":descheduler",
         ":dns_automation",
         ":etcd",

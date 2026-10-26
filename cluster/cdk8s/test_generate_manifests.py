@@ -7,7 +7,6 @@ fails; generated files beside hand-written ones under `HAND_WRITTEN_ROOT` or `PA
 are pinned only one way.
 """
 
-from difflib import unified_diff
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +17,6 @@ import yaml
 from cluster.cdk8s.generate_manifests import generate_manifests
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
 from util.bazel.runfiles import get_required_path
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _REGENERATE = "regenerate with `bb run //cluster/cdk8s:generate_manifests` and commit the result"
 
@@ -28,23 +26,9 @@ def _files(root: Path) -> set[str]:
 
 
 @pytest.fixture(scope="module")
-def generated(tmp_path_factory: pytest.TempPathFactory, checkout: Path) -> Path:
+def generated(tmp_path_factory: pytest.TempPathFactory) -> Path:
     root = tmp_path_factory.mktemp("generated")
     generate_manifests(root)
-    # CI uses the same pinned generator as local runs. Preserve its exact drift as an
-    # applyable artifact rather than making authors reconstruct generated YAML by hand.
-    patch: list[str] = []
-    for relative in sorted(_files(root)):
-        committed = checkout / relative
-        before = committed.read_text().splitlines(keepends=True) if committed.is_file() else []
-        after = (root / relative).read_text().splitlines(keepends=True)
-        patch.extend(
-            unified_diff(
-                before, after, fromfile=f"a/{relative}" if committed.is_file() else "/dev/null", tofile=f"b/{relative}"
-            )
-        )
-    if patch:
-        (undeclared_outputs_dir() / "generated-manifests.patch").write_text("".join(patch))
     return root
 
 
@@ -447,6 +431,116 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
         and doc.get("metadata", {}).get("name") == "forgejo-agentydragon"
         for doc in documents
     )
+
+
+def test_crossplane_source_update_canary_watches_its_flux_artifact(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    artifact_generator = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "source.extensions.fluxcd.io/v1beta1"
+        and doc.get("kind") == "ArtifactGenerator"
+        and doc.get("metadata", {}).get("name") == "ducktape-artifacts"
+    )
+    workspace_kustomization = next(
+        doc
+        for doc in documents
+        if doc.get("kind", "").lower() == "kustomization"
+        and doc.get("metadata", {}).get("name") == "crossplane-source-update-canary"
+    )
+    composition = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "apiextensions.crossplane.io/v1"
+        and doc.get("kind") == "Composition"
+        and doc.get("metadata", {}).get("name") == "crossplane-source-update-canary"
+    )
+    xrd = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "apiextensions.crossplane.io/v1"
+        and doc.get("kind") == "CompositeResourceDefinition"
+        and doc.get("metadata", {}).get("name") == "crossplanesourceupdatecanaries.opentofu.ducktape.io"
+    )
+    composition_resources = composition["spec"]["pipeline"][0]["input"]["resources"]
+    artifact_watch = next(resource for resource in composition_resources if resource["name"] == "artifact-watch")
+    workspace = next(resource for resource in composition_resources if resource["name"] == "workspace")
+    source_artifact = next(
+        artifact
+        for artifact in artifact_generator["spec"]["artifacts"]
+        if artifact["name"] == "tf-gitops-crossplane-source-update-canary"
+    )
+
+    assert source_artifact["originRevision"] == "@repo"
+    assert source_artifact["copy"] == [
+        {"from": "@repo/tf/gitops/crossplane-source-update-canary/*.tf", "to": "@artifact/"}
+    ]
+    assert artifact_watch["base"]["spec"]["managementPolicies"] == ["Observe"]
+    assert xrd["spec"]["defaultCompositionRef"] == {"name": "crossplane-source-update-canary"}
+    assert artifact_watch["base"]["spec"]["watch"] is True
+    assert "metadata" not in artifact_watch["base"]
+    assert artifact_watch["base"]["spec"]["forProvider"]["manifest"] == {
+        "apiVersion": "source.toolkit.fluxcd.io/v1",
+        "kind": "ExternalArtifact",
+        "metadata": {"name": "tf-gitops-crossplane-source-update-canary", "namespace": "ducktape-flux"},
+    }
+    assert artifact_watch["patches"][0] == {
+        "type": "ToCompositeFieldPath",
+        "fromFieldPath": "status.atProvider.manifest.status.artifact.url",
+        "toFieldPath": "status.artifactURL",
+    }
+    assert workspace["base"]["spec"]["managementPolicies"] == ["Observe", "Create", "Update"]
+    assert workspace["base"]["spec"]["deletionPolicy"] == "Orphan"
+    assert workspace["base"]["spec"]["forProvider"]["remotePullPolicy"] == "IfNotPresent"
+    assert workspace["base"]["spec"]["forProvider"]["source"] == "Remote"
+    assert workspace["patches"][0] == {
+        "type": "FromCompositeFieldPath",
+        "fromFieldPath": "status.artifactURL",
+        "toFieldPath": "spec.forProvider.module",
+        "policy": {"fromFieldPath": "Optional"},
+    }
+
+    reader_provider = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "pkg.crossplane.io/v1"
+        and doc.get("kind") == "Provider"
+        and doc.get("metadata", {}).get("name") == "provider-kubernetes"
+    )
+    assert reader_provider["spec"]["runtimeConfigRef"] == {"name": "crossplane-tf-artifact-watches"}
+    runtime_config = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "pkg.crossplane.io/v1beta1"
+        and doc.get("kind") == "DeploymentRuntimeConfig"
+        and doc.get("metadata", {}).get("name") == "crossplane-tf-artifact-watches"
+    )
+    assert runtime_config["spec"]["deploymentTemplate"]["spec"]["template"]["spec"]["containers"] == [
+        {"name": "package-runtime", "args": ["--enable-watches"]}
+    ]
+    assert runtime_config["spec"]["deploymentTemplate"]["spec"]["selector"] == {}
+    reader_role = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "ClusterRole" and doc.get("metadata", {}).get("name") == "crossplane-tf-artifact-reader"
+    )
+    assert reader_role["rules"] == [
+        {
+            "apiGroups": ["source.toolkit.fluxcd.io"],
+            "resources": ["externalartifacts"],
+            "verbs": ["get", "list", "watch"],
+        }
+    ]
+    assert "secrets" not in str(reader_role["rules"])
+    assert workspace_kustomization["spec"]["dependsOn"] == [
+        {"name": "crossplane-provider-opentofu", "namespace": "ducktape-flux"},
+        {"name": "crossplane-provider-kubernetes", "namespace": "ducktape-flux"},
+        {"name": "tofu-state-db", "namespace": "ducktape-flux"},
+        {"name": "artifact-generators", "namespace": "ducktape-flux"},
+    ]
+    assert "postBuild" not in workspace_kustomization["spec"]
 
 
 def test_litellm_crossplane_cutover_waits_for_terraform_teardown(

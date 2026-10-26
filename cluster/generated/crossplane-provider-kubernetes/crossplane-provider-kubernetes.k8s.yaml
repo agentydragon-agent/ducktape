@@ -1,0 +1,69 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: crossplane-tf-artifact-reader
+  namespace: crossplane-system
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    description: Read Flux ExternalArtifact metadata and status so provider-kubernetes can watch the canary's content-addressed OpenTofu source. No Secret or artifact-byte access.
+  name: crossplane-tf-artifact-reader
+rules:
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+    resources:
+      - externalartifacts
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crossplane-tf-artifact-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: crossplane-tf-artifact-reader
+subjects:
+  - kind: ServiceAccount
+    name: crossplane-tf-artifact-reader
+    namespace: crossplane-system
+---
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: crossplane-tf-artifact-watches
+spec:
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        spec:
+          containers:
+            - args:
+                - --enable-watches
+              name: package-runtime
+          serviceAccountName: crossplane-tf-artifact-reader
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-kubernetes
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v1.4.1
+  revisionActivationPolicy: Automatic
+  runtimeConfigRef:
+    name: crossplane-tf-artifact-watches
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-patch-and-transform
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.8.2
+  revisionActivationPolicy: Automatic

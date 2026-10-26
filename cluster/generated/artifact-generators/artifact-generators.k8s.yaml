@@ -78,6 +78,11 @@ spec:
       name: crossplane-provider-opentofu
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/crossplane-provider-kubernetes/**"
+          to: "@artifact/cluster/generated/crossplane-provider-kubernetes/"
+      name: crossplane-provider-kubernetes
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/route53-domain-delegation/**"
           to: "@artifact/cluster/generated/route53-domain-delegation/"
       name: crossplane-dns-records
@@ -86,6 +91,16 @@ spec:
         - from: "@repo/cluster/generated/crossplane-forgejo-agentydragon/**"
           to: "@artifact/cluster/generated/crossplane-forgejo-agentydragon/"
       name: crossplane-forgejo-agentydragon
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/crossplane-source-update-canary/**"
+          to: "@artifact/cluster/generated/crossplane-source-update-canary/"
+      name: crossplane-source-update-canary
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/crossplane-source-update-canary/*.tf"
+          to: "@artifact/"
+      name: tf-gitops-crossplane-source-update-canary
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/external-secrets/config/**"

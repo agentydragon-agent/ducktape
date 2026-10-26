@@ -48,6 +48,21 @@ def artifact(name: str, *directories: str) -> ArtifactGeneratorSpecArtifacts:
     )
 
 
+def artifact_files(name: str, *patterns: str) -> ArtifactGeneratorSpecArtifacts:
+    """Package explicit repository globs at the artifact root.
+
+    Use this for consumers whose effective input set is smaller than a whole directory, so an
+    unrelated README or build-file edit does not change their artifact revision.
+    """
+    if not patterns:
+        raise ValueError("at least one source pattern is required")
+    return ArtifactGeneratorSpecArtifacts(
+        name=name,
+        origin_revision="@repo",
+        copy=[ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{pattern}", to="@artifact/") for pattern in patterns],
+    )
+
+
 def artifact_generators(flux_chart: Chart) -> Kustomization:
     return flux_kustomization(
         flux_chart,
