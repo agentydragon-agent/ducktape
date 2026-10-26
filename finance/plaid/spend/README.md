@@ -127,10 +127,21 @@ repayments and other excluded flows do not count as consumption. Explicit `inclu
 allow a separately reviewed exclusion to count here. Only negative transactions matching an explicitly listed
 `confirmed_refund_rule_ids` rule offset consumption; other credits stay held outside spending.
 
-Annualized spending is `net consumption × 365.2425 / covered days`; the spending-only draw is that amount divided by
-current eligible portfolio value. The optional effective tax fraction is a share of gross withdrawals, so estimated
-annual funding is `annualized spending / (1 - rate)`. A supplied rate requires a dated explanatory assumption. Both
-ratios assume no other income. The reference markers are scenarios, not guarantees of lifetime sustainability.
+Annualized spending is `net consumption × 365.2425 / covered days` and excludes withdrawal taxes. The optional
+effective tax fraction is a share of gross withdrawals, so estimated annual funding is
+`annualized spending / (1 - rate)`. A supplied rate requires a dated explanatory assumption. The displayed draw rate
+is tax-inclusive funding divided by current eligible portfolio value, assuming no other income. Without a documented
+tax assumption, funding and withdrawal percentages remain unavailable; consumption amounts are still available.
+The reference markers are scenarios, not guarantees of lifetime sustainability.
+
+The history chart labels its selected trailing simple moving average and annualization explicitly. It draws one
+curve, defaulting to annual funding including withdrawal taxes. A local switch changes dollar labels to annual
+spending excluding taxes. Withdrawal percentages remain tax-inclusive in both modes. Dollar and percentage axes
+share the same canonical rate bounds and tick positions; the dollar conversion includes the tax fraction when
+showing consumption. The switch cannot create a different apparent volatility or change the implied withdrawal
+percentage. Tooltips separate spending, estimated withdrawal taxes, gross funding and the required percentage.
+Without a tax model, explicitly selecting spending shows dollars alone, with no reference-rate lines or percentage
+axis. This linear conversion relies on the current fixed effective tax fraction and current portfolio denominator.
 
 The headline annualizes the available common history when it is shorter than the selected lookback, with a partial
 window label. Historical chart points require the entire selected window: a 30-day point includes its endpoint and
