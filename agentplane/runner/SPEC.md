@@ -42,8 +42,11 @@ private Go preflight mode, which strictly decodes the shared configuration, vali
 and confirms the service memory cap is below live `MemTotal`; only then does it apply
 `MemoryHigh`, `MemoryMax`, fixed `MemorySwapMax=0`, `CPUQuota` and `TasksMax`. The unit uses
 `OOMPolicy=continue` so a child OOM does not stop the Runner. The delegated aggregate and process
-leaves use their respective Runner configuration budgets; swap stays disabled, aggregate `memory.oom.group` stays 0,
-and each process leaf uses `memory.oom.group=1`. `ProcessConfig.ResourceLimits` can override a leaf
+leaves use their respective Runner configuration budgets; swap stays disabled and both aggregate and
+process cgroups use `memory.oom.group=0`. A cgroup OOM selects individual process victims, so a tool
+OOM can leave its native parent running. The kernel chooses victims; harness survival is not
+guaranteed. If the native leader exits, the supervisor still kills all remaining descendants before
+releasing state ownership. `ProcessConfig.ResourceLimits` can override a leaf
 budget for an isolated process purpose, while the parent aggregate remains authoritative.
 
 ## Initialization
