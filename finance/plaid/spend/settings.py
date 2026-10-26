@@ -23,11 +23,7 @@ class CoinbaseCredentials(BaseModel):
 
 
 class SpendSettings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_prefix="PLAID_SPEND_",
-        env_nested_delimiter="__",
-        hide_input_in_errors=True,
-    )
+    model_config = SettingsConfigDict(env_prefix="PLAID_SPEND_", env_nested_delimiter="__", hide_input_in_errors=True)
 
     database_url: str = Field(validation_alias="DATABASE_URL")
     host: str = "0.0.0.0"

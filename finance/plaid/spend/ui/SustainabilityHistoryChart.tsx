@@ -15,7 +15,16 @@ import {
 import { money } from "./spend_display";
 import type { SustainabilityHistory } from "./types";
 
-Chart.register(BarController, BarElement, CategoryScale, LinearScale, LineController, LineElement, PointElement, Tooltip);
+Chart.register(
+  BarController,
+  BarElement,
+  CategoryScale,
+  LinearScale,
+  LineController,
+  LineElement,
+  PointElement,
+  Tooltip
+);
 
 function percent(value: number): string {
   return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(value);
@@ -111,9 +120,10 @@ export function SustainabilityHistoryChart({
               label: (context) => {
                 const value = Number(context.parsed.y);
                 if (!Number.isFinite(value)) return `${context.dataset.label}: unavailable`;
-                const formatted = context.dataset.yAxisID === "amount"
-                  ? `${context.dataset.label}: ${money(value, currency)}`
-                  : `${context.dataset.label}: ${percent(value)}`;
+                const formatted =
+                  context.dataset.yAxisID === "amount"
+                    ? `${context.dataset.label}: ${money(value, currency)}`
+                    : `${context.dataset.label}: ${percent(value)}`;
                 const coveredDays = history[context.dataIndex]?.covered_days;
                 return context.dataset.yAxisID === "amount" && coveredDays != null
                   ? `${formatted} · based on ${coveredDays} covered days`

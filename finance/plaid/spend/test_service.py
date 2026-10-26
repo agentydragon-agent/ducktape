@@ -499,24 +499,43 @@ async def test_read_sustainability_uses_postgres_transactions_for_each_window(
         connection, spending_account_id, item_id, "synthetic-90-day", today - timedelta(days=40), 20, category="FIXED"
     )
     await add_transaction(
-        connection, spending_account_id, item_id, "synthetic-outside-30", today - timedelta(days=31), 7,
+        connection,
+        spending_account_id,
+        item_id,
+        "synthetic-outside-30",
+        today - timedelta(days=31),
+        7,
         category="FLEXIBLE",
     )
     await add_transaction(
-        connection, spending_account_id, item_id, "synthetic-window-boundary", today - timedelta(days=30), 3,
+        connection,
+        spending_account_id,
+        item_id,
+        "synthetic-window-boundary",
+        today - timedelta(days=30),
+        3,
         category="FIXED",
     )
     await add_transaction(
-        connection, spending_account_id, item_id, "synthetic-pending", yesterday, 100,
-        pending=True, category="FLEXIBLE",
+        connection, spending_account_id, item_id, "synthetic-pending", yesterday, 100, pending=True, category="FLEXIBLE"
     )
     await add_transaction(
-        connection, spending_account_id, item_id, "synthetic-posted-replacement", yesterday, 12,
-        pending_transaction_id="synthetic-pending", category="FLEXIBLE",
+        connection,
+        spending_account_id,
+        item_id,
+        "synthetic-posted-replacement",
+        yesterday,
+        12,
+        pending_transaction_id="synthetic-pending",
+        category="FLEXIBLE",
     )
-    await add_transaction(connection, spending_account_id, item_id, "synthetic-flexible", yesterday, 10, category="FLEXIBLE")
+    await add_transaction(
+        connection, spending_account_id, item_id, "synthetic-flexible", yesterday, 10, category="FLEXIBLE"
+    )
     await add_transaction(connection, spending_account_id, item_id, "synthetic-provisional", yesterday, 5)
-    await add_transaction(connection, spending_account_id, item_id, "synthetic-current-day", today, 999, category="FIXED")
+    await add_transaction(
+        connection, spending_account_id, item_id, "synthetic-current-day", today, 999, category="FIXED"
+    )
     config = _sustainability_configuration(today, spending_account_id)
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
 
@@ -557,10 +576,7 @@ async def test_read_sustainability_uses_postgres_transactions_for_each_window(
 
 @pytest.mark.parametrize("source_state", ["stale", "inactive"])
 async def test_read_sustainability_fails_closed_for_unusable_spending_source(
-    connection: asyncpg.Connection,
-    postgres_url: str,
-    monkeypatch: pytest.MonkeyPatch,
-    source_state: str,
+    connection: asyncpg.Connection, postgres_url: str, monkeypatch: pytest.MonkeyPatch, source_state: str
 ) -> None:
     now = datetime.now(UTC)
     zone = ZoneInfo("America/Los_Angeles")

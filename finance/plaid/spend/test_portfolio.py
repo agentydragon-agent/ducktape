@@ -20,12 +20,7 @@ from finance.plaid.spend.portfolio_models import PortfolioPolicy
 
 
 class _FakeConnection:
-    def __init__(
-        self,
-        *,
-        balances: list[dict[str, object]],
-        holdings: list[dict[str, object]] | None = None,
-    ) -> None:
+    def __init__(self, *, balances: list[dict[str, object]], holdings: list[dict[str, object]] | None = None) -> None:
         self.balances = balances
         self.holdings = holdings or []
 
@@ -45,10 +40,7 @@ class _FakeAcquire:
         return self.connection
 
     async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
     ) -> None:
         return None
 
@@ -65,9 +57,7 @@ def _pool(connection: _FakeConnection) -> asyncpg.Pool:
     return cast(asyncpg.Pool, _FakePool(connection))
 
 
-def _policy(
-    *, coinbase_enabled: bool = False, excluded: list[dict[str, object]] | None = None
-) -> PortfolioPolicy:
+def _policy(*, coinbase_enabled: bool = False, excluded: list[dict[str, object]] | None = None) -> PortfolioPolicy:
     return PortfolioPolicy.model_validate(
         {
             "sources": {
@@ -105,16 +95,13 @@ def _coinbase_test_key() -> str:
 
 
 def _use_coinbase_mock_transport(
-    monkeypatch: pytest.MonkeyPatch,
-    respond: Callable[[httpx.Request], httpx.Response],
+    monkeypatch: pytest.MonkeyPatch, respond: Callable[[httpx.Request], httpx.Response]
 ) -> None:
     real_async_client = httpx.AsyncClient
 
     def mock_async_client(*, timeout: float, follow_redirects: bool) -> httpx.AsyncClient:
         return real_async_client(
-            transport=httpx.MockTransport(respond),
-            timeout=timeout,
-            follow_redirects=follow_redirects,
+            transport=httpx.MockTransport(respond), timeout=timeout, follow_redirects=follow_redirects
         )
 
     monkeypatch.setattr(portfolio.httpx, "AsyncClient", mock_async_client)
@@ -395,12 +382,7 @@ async def test_coinbase_paginates_and_values_held_balances_with_usd_quotes(monke
 
     _use_coinbase_mock_transport(monkeypatch, respond)
     policy = PortfolioPolicy.model_validate(
-        {
-            "sources": {
-                "plaid": {"asset_account_ids": [], "liability_account_ids": []},
-                "coinbase": {"enabled": True},
-            }
-        }
+        {"sources": {"plaid": {"asset_account_ids": [], "liability_account_ids": []}, "coinbase": {"enabled": True}}}
     )
 
     view = await read_portfolio(
@@ -461,12 +443,7 @@ async def test_coinbase_zero_balance_wallet_does_not_request_an_unsupported_asse
 
     _use_coinbase_mock_transport(monkeypatch, respond)
     policy = PortfolioPolicy.model_validate(
-        {
-            "sources": {
-                "plaid": {"asset_account_ids": [], "liability_account_ids": []},
-                "coinbase": {"enabled": True},
-            }
-        }
+        {"sources": {"plaid": {"asset_account_ids": [], "liability_account_ids": []}, "coinbase": {"enabled": True}}}
     )
 
     view = await read_portfolio(
@@ -493,12 +470,7 @@ async def test_coinbase_cursor_without_next_page_token_fails_closed(monkeypatch:
 
     _use_coinbase_mock_transport(monkeypatch, respond)
     policy = PortfolioPolicy.model_validate(
-        {
-            "sources": {
-                "plaid": {"asset_account_ids": [], "liability_account_ids": []},
-                "coinbase": {"enabled": True},
-            }
-        }
+        {"sources": {"plaid": {"asset_account_ids": [], "liability_account_ids": []}, "coinbase": {"enabled": True}}}
     )
 
     view = await read_portfolio(

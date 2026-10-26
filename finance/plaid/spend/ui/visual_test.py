@@ -890,7 +890,9 @@ async def test_sustainability_experimental_render(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
     requests: list[str] = []
-    page.on("request", lambda request: requests.append(request.url) if "/api/v1/sustainability" in request.url else None)
+    page.on(
+        "request", lambda request: requests.append(request.url) if "/api/v1/sustainability" in request.url else None
+    )
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
@@ -899,7 +901,9 @@ async def test_sustainability_experimental_render(
     await expect(page.get_by_text("Experimental", exact=True)).to_be_visible()
     await expect(page.get_by_text("TODAY'S portfolio valuation", exact=False)).to_be_visible()
     await expect(page.get_by_text("Scenario 4: 4.5%", exact=True)).to_be_visible()
-    await expect(page.get_by_text("Current implied draw is 1.5 percentage points above this scenario.", exact=True)).to_be_visible()
+    await expect(
+        page.get_by_text("Current implied draw is 1.5 percentage points above this scenario.", exact=True)
+    ).to_be_visible()
     await expect(page.get_by_text("$2,750", exact=True)).to_be_visible()
     await expect(page.get_by_text("MANDATORY", exact=True)).to_have_count(1)
     await expect(page.get_by_text("FLEXIBLE", exact=True)).to_have_count(1)

@@ -51,7 +51,6 @@ from finance.plaid.spend.models import (
     TransactionPeriodSummary,
     UnavailableCardPeriod,
 )
-
 from finance.plaid.spend.portfolio import read_portfolio
 from finance.plaid.spend.portfolio_models import PortfolioView
 from finance.plaid.spend.sustainability import (
@@ -82,8 +81,13 @@ class SpendService:
     """Postgres reader and reconnecting NOTIFY subscriber for one shared card view."""
 
     def __init__(
-        self, database_url: str, configuration: SpendConfiguration, *, dashboard_url: str,
-        coinbase_api_key: SecretStr | None = None, coinbase_api_secret: SecretStr | None = None,
+        self,
+        database_url: str,
+        configuration: SpendConfiguration,
+        *,
+        dashboard_url: str,
+        coinbase_api_key: SecretStr | None = None,
+        coinbase_api_secret: SecretStr | None = None,
     ) -> None:
         self._database_url = database_url
         self._configuration = configuration
@@ -678,8 +682,11 @@ class SpendService:
                 return cached[1]
             try:
                 view = await read_portfolio(
-                    self._require_pool(), policy.portfolio, now=now,
-                    coinbase_api_key=self._coinbase_api_key, coinbase_api_secret=self._coinbase_api_secret,
+                    self._require_pool(),
+                    policy.portfolio,
+                    now=now,
+                    coinbase_api_key=self._coinbase_api_key,
+                    coinbase_api_secret=self._coinbase_api_secret,
                 )
             except asyncpg.PostgresError:
                 # This boundary surfaces failure without leaking SQL or identifiers.
@@ -692,16 +699,16 @@ class SpendService:
         policy = self._configuration.sustainability
         allowance = self._configuration.allowance
         if policy is None or allowance is None:
-            return disabled_view(now, allowance.time_zone.key if allowance else 'UTC', self.report_day(now))
+            return disabled_view(now, allowance.time_zone.key if allowance else "UTC", self.report_day(now))
         days = window_days if window_days is not None else policy.display.default_window_days
         if days not in policy.display.windows_days:
-            raise ValueError('window must be configured')
+            raise ValueError("window must be configured")
         issues = []
         transactions: list[Transaction] = []
         try:
             async with (
                 self._require_pool().acquire() as connection,
-                connection.transaction(isolation='repeatable_read', readonly=True),
+                connection.transaction(isolation="repeatable_read", readonly=True),
             ):
                 accounts = await connection.fetch(
                     """SELECT a.account_id, a.type, l.last_synced_at
@@ -711,11 +718,12 @@ class SpendService:
                     list(allowance.spending_account_ids),
                 )
                 if len(accounts) != len(allowance.spending_account_ids) or any(
-                    row['type'] not in ('credit', 'depository') or row['last_synced_at'] is None
-                    or now - row['last_synced_at'] > timedelta(hours=allowance.max_sync_age_hours)
+                    row["type"] not in ("credit", "depository")
+                    or row["last_synced_at"] is None
+                    or now - row["last_synced_at"] > timedelta(hours=allowance.max_sync_age_hours)
                     for row in accounts
                 ):
-                    issues.append('Spending account coverage or sync freshness is unavailable.')
+                    issues.append("Spending account coverage or sync freshness is unavailable.")
                 rows = await connection.fetch(
                     f"""SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
                                t.date, t.amount, t.pending, t.name, t.merchant_name,
@@ -733,10 +741,10 @@ class SpendService:
                 )
                 transactions = [Transaction.model_validate(dict(row)) for row in rows]
         except asyncpg.PostgresError:
-            issues.append('The spending source could not be read; totals are unavailable.')
+            issues.append("The spending source could not be read; totals are unavailable.")
         portfolio = await self._read_current_portfolio(now)
         return calculate_sustainability(
-            policy, allowance, transactions, portfolio, now=now, window_days=days, source_issues=issues,
+            policy, allowance, transactions, portfolio, now=now, window_days=days, source_issues=issues
         )
 
     def _require_pool(self) -> asyncpg.Pool:

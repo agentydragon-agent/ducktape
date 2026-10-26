@@ -67,7 +67,7 @@ The private policy file follows `SpendConfiguration` in [`models.py`](models.py)
 Use `null` for an optional limit or threshold. The service validates this file at startup and reads it from
 `/etc/plaid-spend/spend-policy.yaml`. Until the policy Secret exists, the pod cannot start; a missing or invalid file
 fails application startup. Reloader restarts the Deployment after updating it; the process does not watch for mounted
-Secret updates. The spend database role can only read the seven Plaid source tables needed to compute spending and portfolio values; it does
+Secret updates. The spend database role can only read the Plaid source tables needed to compute spending and portfolio values; it does
 not store or write this configuration.
 
 Each card's `label` is its short display name. For spending accounts that are not cards, an optional top-level

@@ -14,7 +14,6 @@ from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
 from finance.plaid.spend.portfolio_models import PortfolioPolicy, PortfolioView, SourceValuation
 
-
 _ACCOUNT_BALANCES_SQL = """
 WITH selected_accounts AS (
     SELECT a.account_id, a.item_id, a.type, a.iso_currency_code AS account_currency
@@ -148,7 +147,7 @@ async def _read_plaid(
             if policy.excluded_securities:
                 account_ids = sorted({exclusion.account_id for exclusion in policy.excluded_securities})
                 holding_rows = await connection.fetch(_EXCLUDED_HOLDINGS_SQL, account_ids)
-    except (asyncpg.PostgresError, OSError, TimeoutError):
+    except asyncpg.PostgresError, OSError, TimeoutError:
         return _unavailable("plaid", "The Plaid mirror could not be read."), 0, 0, 0
 
     rows_by_id = {str(row["account_id"]): row for row in account_rows}
@@ -254,11 +253,7 @@ async def _read_plaid(
     )
     return (
         SourceValuation(
-            name="plaid",
-            status="ready",
-            amount_minor_units=_minor_units(assets),
-            as_of=as_of,
-            issues=issues,
+            name="plaid", status="ready", amount_minor_units=_minor_units(assets), as_of=as_of, issues=issues
         ),
         _minor_units(assets),
         _minor_units(liabilities),
@@ -266,24 +261,11 @@ async def _read_plaid(
     )
 
 
-def _coinbase_jwt(
-    api_key: SecretStr,
-    api_secret: SecretStr,
-    *,
-    now: datetime,
-    method: str,
-    path: str,
-) -> str:
+def _coinbase_jwt(api_key: SecretStr, api_secret: SecretStr, *, now: datetime, method: str, path: str) -> str:
     issued_at = int(now.timestamp())
     uri = f"{method} {_COINBASE_HOST}{path}"
     token = jwt.encode(
-        {
-            "iss": "cdp",
-            "sub": api_key.get_secret_value(),
-            "nbf": issued_at,
-            "exp": issued_at + 120,
-            "uri": uri,
-        },
+        {"iss": "cdp", "sub": api_key.get_secret_value(), "nbf": issued_at, "exp": issued_at + 120, "uri": uri},
         api_secret.get_secret_value(),
         algorithm="ES256",
         headers={"kid": api_key.get_secret_value(), "nonce": str(uuid.uuid4())},
@@ -292,10 +274,7 @@ def _coinbase_jwt(
 
 
 async def _read_coinbase(
-    *,
-    now: datetime,
-    api_key: SecretStr | None,
-    api_secret: SecretStr | None,
+    *, now: datetime, api_key: SecretStr | None, api_secret: SecretStr | None
 ) -> tuple[SourceValuation, int]:
     if api_key is None or api_secret is None:
         return _unavailable("coinbase", "Coinbase is enabled but its view-only credentials are unavailable."), 0
@@ -308,18 +287,8 @@ async def _read_coinbase(
                 params = {"limit": "250"}
                 if cursor:
                     params["cursor"] = cursor
-                token = _coinbase_jwt(
-                    api_key,
-                    api_secret,
-                    now=now,
-                    method="GET",
-                    path=_COINBASE_ACCOUNTS_PATH,
-                )
-                response = await client.get(
-                    _COINBASE_ACCOUNTS_URL,
-                    params=params,
-                    headers={"Authorization": f"Bearer {token}"},
-                )
+                token = _coinbase_jwt(api_key, api_secret, now=now, method="GET", path=_COINBASE_ACCOUNTS_PATH)
+                response = await client.get(_COINBASE_ACCOUNTS_URL, params=params, headers={"Authorization": f"Bearer {token}"})
                 response.raise_for_status()
                 page = _CoinbaseAccountsPage.model_validate(response.json())
                 accounts.extend(page.accounts)
@@ -359,13 +328,10 @@ async def _read_coinbase(
                 if price.base != currency or price.currency != "USD" or amount is None or amount <= 0:
                     return _unavailable("coinbase", "Coinbase returned a malformed USD spot quote."), 0
                 prices[currency] = amount
-    except (httpx.HTTPError, InvalidOperation, TypeError, ValueError, ValidationError, jwt.PyJWTError):
+    except httpx.HTTPError, InvalidOperation, TypeError, ValueError, ValidationError, jwt.PyJWTError:
         return _unavailable("coinbase", "Coinbase could not provide a complete current valuation."), 0
 
-    total_usd = sum(
-        (value * prices[currency] for currency, value in account_values if value != 0),
-        Decimal(0),
-    )
+    total_usd = sum((value * prices[currency] for currency, value in account_values if value != 0), Decimal(0))
     return (
         SourceValuation(
             name="coinbase",
@@ -411,9 +377,7 @@ async def read_portfolio(
 
     if policy.sources.coinbase.enabled:
         coinbase_source, coinbase_assets = await _read_coinbase(
-            now=now,
-            api_key=coinbase_api_key,
-            api_secret=coinbase_api_secret,
+            now=now, api_key=coinbase_api_key, api_secret=coinbase_api_secret
         )
         sources.append(coinbase_source)
         if coinbase_source.status == "unavailable":

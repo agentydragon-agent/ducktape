@@ -51,7 +51,11 @@ function sourceAge(source: SustainabilitySource, generatedAt: string): string {
   return `Updated ${time(source.as_of)} · ${ageDays === 0 ? "under a day old" : `${ageDays} days old`}`;
 }
 
-function PortfolioDetails({ portfolio, generatedAt, currency }: {
+function PortfolioDetails({
+  portfolio,
+  generatedAt,
+  currency,
+}: {
   portfolio: SustainabilityPortfolio;
   generatedAt: string;
   currency: string;
@@ -74,35 +78,59 @@ function PortfolioDetails({ portfolio, generatedAt, currency }: {
         </Group>
         <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
           <div>
-            <Text size="xs" c="dimmed" fw={600}>NET VALUE</Text>
-            <Text size="lg" fw={700}>{money(portfolio.net_minor_units, currency)}</Text>
+            <Text size="xs" c="dimmed" fw={600}>
+              NET VALUE
+            </Text>
+            <Text size="lg" fw={700}>
+              {money(portfolio.net_minor_units, currency)}
+            </Text>
           </div>
           <div>
-            <Text size="xs" c="dimmed" fw={600}>ASSETS</Text>
-            <Text size="lg" fw={700}>{money(portfolio.assets_minor_units, currency)}</Text>
+            <Text size="xs" c="dimmed" fw={600}>
+              ASSETS
+            </Text>
+            <Text size="lg" fw={700}>
+              {money(portfolio.assets_minor_units, currency)}
+            </Text>
           </div>
           <div>
-            <Text size="xs" c="dimmed" fw={600}>LIABILITIES</Text>
-            <Text size="lg" fw={700}>{money(portfolio.liabilities_minor_units, currency)}</Text>
+            <Text size="xs" c="dimmed" fw={600}>
+              LIABILITIES
+            </Text>
+            <Text size="lg" fw={700}>
+              {money(portfolio.liabilities_minor_units, currency)}
+            </Text>
           </div>
           <div>
-            <Text size="xs" c="dimmed" fw={600}>EXCLUDED</Text>
-            <Text size="lg" fw={700}>{money(portfolio.excluded_minor_units, currency)}</Text>
+            <Text size="xs" c="dimmed" fw={600}>
+              EXCLUDED
+            </Text>
+            <Text size="lg" fw={700}>
+              {money(portfolio.excluded_minor_units, currency)}
+            </Text>
           </div>
         </SimpleGrid>
         {portfolio.sources.length > 0 && (
           <>
             <Divider />
-            <Text size="sm" fw={650}>Source valuations</Text>
+            <Text size="sm" fw={650}>
+              Source valuations
+            </Text>
             {portfolio.sources.map((source, index) => (
               <Paper key={`${source.name}-${index}`} bg="var(--mantine-color-default-hover)" radius="md" p="sm">
                 <Group justify="space-between" align="flex-start" gap="sm">
                   <Stack gap={2}>
-                    <Text size="sm" fw={600}>{source.name}</Text>
-                    <Text size="xs" c="dimmed">{sourceAge(source, generatedAt)}</Text>
+                    <Text size="sm" fw={600}>
+                      {source.name}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {sourceAge(source, generatedAt)}
+                    </Text>
                   </Stack>
                   <Stack gap={2} align="flex-end">
-                    <Text size="sm" fw={650}>{money(source.amount_minor_units, currency)}</Text>
+                    <Text size="sm" fw={650}>
+                      {money(source.amount_minor_units, currency)}
+                    </Text>
                     <Badge size="xs" color={source.status === "ready" ? "blue" : "gray"} variant="light">
                       {source.status}
                     </Badge>
@@ -110,7 +138,11 @@ function PortfolioDetails({ portfolio, generatedAt, currency }: {
                 </Group>
                 {(source.issues ?? []).length > 0 && (
                   <Stack gap={2} mt="xs">
-                    {(source.issues ?? []).map((issue) => <Text key={issue} size="xs" c="dimmed">{issue}</Text>)}
+                    {(source.issues ?? []).map((issue) => (
+                      <Text key={issue} size="xs" c="dimmed">
+                        {issue}
+                      </Text>
+                    ))}
                   </Stack>
                 )}
               </Paper>
@@ -126,32 +158,55 @@ function SpendingComposition({ view }: { view: SustainabilityView }) {
   return (
     <Paper component="section" aria-labelledby="spend-composition-title" withBorder radius="lg" p="xl">
       <Stack gap="md">
-        <Title id="spend-composition-title" order={2} size="h4">Spending in this window</Title>
+        <Title id="spend-composition-title" order={2} size="h4">
+          Spending in this window
+        </Title>
         <SimpleGrid cols={{ base: 2, sm: 2 }} spacing="md">
           <div>
-            <Text size="xs" c="dimmed" fw={600}>MANDATORY</Text>
-            <Text size="xl" fw={700}>{money(view.mandatory_minor_units, view.currency)}</Text>
+            <Text size="xs" c="dimmed" fw={600}>
+              MANDATORY
+            </Text>
+            <Text size="xl" fw={700}>
+              {money(view.mandatory_minor_units, view.currency)}
+            </Text>
           </div>
           <div>
-            <Text size="xs" c="dimmed" fw={600}>FLEXIBLE</Text>
-            <Text size="xl" fw={700}>{money(view.flexible_minor_units, view.currency)}</Text>
+            <Text size="xs" c="dimmed" fw={600}>
+              FLEXIBLE
+            </Text>
+            <Text size="xl" fw={700}>
+              {money(view.flexible_minor_units, view.currency)}
+            </Text>
           </div>
           <div>
-            <Text size="xs" c="dimmed" fw={600}>PROVISIONAL</Text>
-            <Text size="xl" fw={700}>{money(view.provisional_minor_units, view.currency)}</Text>
+            <Text size="xs" c="dimmed" fw={600}>
+              PROVISIONAL
+            </Text>
+            <Text size="xl" fw={700}>
+              {money(view.provisional_minor_units, view.currency)}
+            </Text>
           </div>
           <div>
-            <Text size="xs" c="dimmed" fw={600}>TOTAL SPENDING</Text>
-            <Text size="xl" fw={700}>{money(view.spending_minor_units, view.currency)}</Text>
+            <Text size="xs" c="dimmed" fw={600}>
+              TOTAL SPENDING
+            </Text>
+            <Text size="xl" fw={700}>
+              {money(view.spending_minor_units, view.currency)}
+            </Text>
           </div>
           <div>
-            <Text size="xs" c="dimmed" fw={600}>ANNUALIZED SPENDING</Text>
-            <Text size="xl" fw={700}>{money(view.annualized_spending_minor_units, view.currency)}</Text>
+            <Text size="xs" c="dimmed" fw={600}>
+              ANNUALIZED SPENDING
+            </Text>
+            <Text size="xl" fw={700}>
+              {money(view.annualized_spending_minor_units, view.currency)}
+            </Text>
           </div>
         </SimpleGrid>
         <Divider />
         <Text size="sm" c="dimmed">
-          Annualized from {view.covered_days} covered days in the selected lookback. These categories describe observed spending.
+          Annualized from {view.covered_days} covered days in the selected lookback. These categories describe observed
+          spending.
           {view.status === "unavailable" && " A draw rate is unavailable because the portfolio value is not ready."}
         </Text>
       </Stack>
@@ -177,12 +232,16 @@ function DrawGauge({ view }: { view: SustainabilityView }) {
       <Stack gap="md">
         <Group justify="space-between" align="flex-start" gap="sm">
           <div>
-            <Text id="draw-title" size="sm" fw={700}>{rateLabel}</Text>
+            <Text id="draw-title" size="sm" fw={700}>
+              {rateLabel}
+            </Text>
             <Text fz={{ base: 36, sm: 44 }} fw={750} lh={1.1} mt="xs" style={{ overflowWrap: "anywhere" }}>
               {percent(headlineRate)}
             </Text>
           </div>
-          <Badge color="gray" variant="light">Scenario estimate</Badge>
+          <Badge color="gray" variant="light">
+            Scenario estimate
+          </Badge>
         </Group>
         <Text size="sm" c="dimmed">
           {annualDrawLabel}: <strong>{money(annualDraw, view.currency)}</strong>
@@ -248,7 +307,8 @@ function DrawGauge({ view }: { view: SustainabilityView }) {
                     </Badge>
                     <Text size="sm">{scenarioComparison(headlineRate, rate)}</Text>
                     <Text size="xs" c="dimmed">
-                      Equivalent monthly spending: <strong>{money(monthlySpendingBudget(view, rate), view.currency)}</strong>
+                      Equivalent monthly spending:{" "}
+                      <strong>{money(monthlySpendingBudget(view, rate), view.currency)}</strong>
                       {view.effective_tax_rate == null
                         ? " before taxes; taxes unmodeled."
                         : ` after ${percent(view.effective_tax_rate)} modeled withdrawal tax.`}
@@ -258,11 +318,16 @@ function DrawGauge({ view }: { view: SustainabilityView }) {
               ))}
             </SimpleGrid>
             <Text size="xs" c="dimmed">
-              Gauge scale ends at {percent(maximumRate)}. {overflow ? `The actual rate is ${percent(headlineRate)}; the marker is beyond the scale.` : "Reference marks are comparisons, not safety thresholds or guarantees."}
+              Gauge scale ends at {percent(maximumRate)}.{" "}
+              {overflow
+                ? `The actual rate is ${percent(headlineRate)}; the marker is beyond the scale.`
+                : "Reference marks are comparisons, not safety thresholds or guarantees."}
             </Text>
           </Stack>
         ) : (
-          <Text size="sm" c="dimmed">No reference scenarios are configured for comparison.</Text>
+          <Text size="sm" c="dimmed">
+            No reference scenarios are configured for comparison.
+          </Text>
         )}
       </Stack>
     </Card>
@@ -325,8 +390,12 @@ export function SustainabilityPage() {
       <Group justify="space-between" align="flex-start" gap="md">
         <div>
           <Group gap="xs" align="center">
-            <Title order={1} size="h3">Sustainability</Title>
-            <Badge color="violet" variant="light">Experimental</Badge>
+            <Title order={1} size="h3">
+              Sustainability
+            </Title>
+            <Badge color="violet" variant="light">
+              Experimental
+            </Badge>
           </Group>
           <Text size="sm" c="dimmed" mt="xs">
             A spending and portfolio scenario estimate. It cannot guarantee that assets will last.
@@ -345,13 +414,11 @@ export function SustainabilityPage() {
             onChange={(value) => setSelectedWindowDays(Number(value))}
             data={view.available_windows_days.map((days) => ({ label: `${days} days`, value: String(days) }))}
           />
-        ) : <Skeleton height={36} width={220} />}
+        ) : (
+          <Skeleton height={36} width={220} />
+        )}
         <Text size="xs" c="dimmed">
-          {view
-            ? `Updated ${time(view.generated_at)}`
-            : loading
-              ? "Loading estimate…"
-              : "No result yet"}
+          {view ? `Updated ${time(view.generated_at)}` : loading ? "Loading estimate…" : "No result yet"}
         </Text>
       </Group>
 
@@ -369,9 +436,12 @@ export function SustainabilityPage() {
       {view && displayingSelectedWindow && (
         <>
           <Group justify="space-between" gap="sm">
-            <Badge color={statusColor} variant="light" size="lg">{statusLabel}</Badge>
+            <Badge color={statusColor} variant="light" size="lg">
+              {statusLabel}
+            </Badge>
             <Text size="sm" c="dimmed">
-              {view.covered_days} of {view.window_days} days covered · {view.period_start} through {view.period_end} (complete days, {view.time_zone})
+              {view.covered_days} of {view.window_days} days covered · {view.period_start} through {view.period_end}{" "}
+              (complete days, {view.time_zone})
             </Text>
           </Group>
 
@@ -382,7 +452,8 @@ export function SustainabilityPage() {
           )}
           {view.status === "unavailable" && (
             <Alert color="orange" title="Estimate unavailable">
-              Current spending or portfolio data is not sufficient to calculate the estimate. Review the source status and issues below.
+              Current spending or portfolio data is not sufficient to calculate the estimate. Review the source status
+              and issues below.
             </Alert>
           )}
 
@@ -406,23 +477,43 @@ export function SustainabilityPage() {
           <PortfolioDetails portfolio={view.portfolio} generatedAt={view.generated_at} currency={view.currency} />
 
           <Alert color="gray" title="Scope and timing">
-            No other income is modeled. Account sync and transaction posting may lag; this estimate covers the complete days listed above. Asset snapshots from different institutions can arrive at different times and temporarily distort totals during transfers. Draw rates use today&apos;s portfolio value, including when the history chart shows earlier dates.
+            No other income is modeled. Account sync and transaction posting may lag; this estimate covers the complete
+            days listed above. Asset snapshots from different institutions can arrive at different times and temporarily
+            distort totals during transfers. Draw rates use today&apos;s portfolio value, including when the history
+            chart shows earlier dates.
             {view.tax_assumption_note && (
-              <> {view.tax_assumption_note}{view.tax_assumption_as_of && ` · tax assumption as of ${view.tax_assumption_as_of}.`}</>
+              <>
+                {" "}
+                {view.tax_assumption_note}
+                {view.tax_assumption_as_of && ` · tax assumption as of ${view.tax_assumption_as_of}.`}
+              </>
             )}
           </Alert>
           {view.issues.length > 0 && (
             <Alert color="orange" title="Current data issues">
-              <Stack gap={4}>{view.issues.map((issue) => <Text key={issue} size="sm">{issue}</Text>)}</Stack>
+              <Stack gap={4}>
+                {view.issues.map((issue) => (
+                  <Text key={issue} size="sm">
+                    {issue}
+                  </Text>
+                ))}
+              </Stack>
             </Alert>
           )}
           {view.known_issues.length > 0 && (
             <Alert color="yellow" title="Known limitations">
-              <Stack gap={4}>{view.known_issues.map((issue) => <Text key={issue} size="sm">{issue}</Text>)}</Stack>
+              <Stack gap={4}>
+                {view.known_issues.map((issue) => (
+                  <Text key={issue} size="sm">
+                    {issue}
+                  </Text>
+                ))}
+              </Stack>
             </Alert>
           )}
           <Text size="xs" c="dimmed">
-            Estimates are sensitive to spending coverage, portfolio valuations, taxes, inflation, and future returns. Scenario references are comparisons, not safe-withdrawal guarantees.
+            Estimates are sensitive to spending coverage, portfolio valuations, taxes, inflation, and future returns.
+            Scenario references are comparisons, not safe-withdrawal guarantees.
           </Text>
         </>
       )}

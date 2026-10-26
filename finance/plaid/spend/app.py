@@ -81,7 +81,13 @@ def _web_login_config(settings: SpendSettings) -> LoginConfig:
         public_base_url=settings.web_oidc_public_base_url,
         cookie_name="plaid-spend-session",
         public_paths={"/healthz"},
-        auth_handled_paths={"/api/v1/view", "/api/v1/events", "/api/v1/configuration", "/api/v1/transactions", "/api/v1/sustainability"},
+        auth_handled_paths={
+            "/api/v1/view",
+            "/api/v1/events",
+            "/api/v1/configuration",
+            "/api/v1/transactions",
+            "/api/v1/sustainability",
+        },
         signed_out_text="You are signed out of Plaid Spend.",
         session_created_log="Authentik session created for Plaid Spend",
         allowed_subject=None,
@@ -144,13 +150,12 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
 
     @app.get("/api/v1/sustainability", response_model=SustainabilityView)
     async def get_sustainability(
-        _access: SpendAccess, reader: SpendReader,
-        window_days: Annotated[int | None, Query(ge=1, le=730)] = None,
+        _access: SpendAccess, reader: SpendReader, window_days: Annotated[int | None, Query(ge=1, le=730)] = None
     ) -> SustainabilityView:
         try:
             return await reader.read_sustainability(window_days)
         except ValueError as error:
-            raise HTTPException(status_code=422, detail='Window is not configured for sustainability.') from error
+            raise HTTPException(status_code=422, detail="Window is not configured for sustainability.") from error
 
     @app.get("/api/v1/events")
     async def events(
@@ -204,7 +209,9 @@ def main() -> None:
     configuration = load_configuration(settings.config_path)
     coinbase = settings.coinbase
     service = SpendService(
-        settings.database_url, configuration, dashboard_url=settings.web_oidc_public_base_url,
+        settings.database_url,
+        configuration,
+        dashboard_url=settings.web_oidc_public_base_url,
         coinbase_api_key=coinbase.api_key if coinbase is not None else None,
         coinbase_api_secret=coinbase.api_secret if coinbase is not None else None,
     )
