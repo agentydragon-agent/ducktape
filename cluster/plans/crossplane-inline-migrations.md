@@ -6,10 +6,12 @@
    Provider packages, revisions, runtime configs, ProviderConfigs and Workspaces.
    Grant no core Secret reads or access to the PostgreSQL state backend.
 2. Migrate `gatus-sso`, `forgejo-claude`, and `alloy-otlp-bearer-token` together.
-   Factor the existing Inline Workspace construction and configure Kubernetes identities.
+   Factor the existing Inline Workspace construction and configure Kubernetes identities
+   (application-root migration, PR #12105).
 3. Migrate the five remaining active Forgejo roots together: `haku-state`,
    `budget-ledger`, `cpap-data`, `finance-agent`, `forgejo-agentydragon-repos`.
-   This batch builds on batch 2 and remains draft until its live handoff is verified.
+   This Forgejo migration builds on the application-root migration and remains draft
+   until that migration's live handoff is verified (PR #12109, stacked on PR #12105).
 
 ## Handoff and verification
 
@@ -25,7 +27,7 @@ artifact revision, rather than accepting Ready from an earlier revision. The rep
 deletion policy and Observe/Create/Update management policies. Those policies prevent
 Workspace deletion from destroying infrastructure; HCL edits can still delete resources.
 
-After merging batch 2, verify:
+After merging the application-root migration, verify:
 
 - `authentik-tf` and `forgejo-gitops` reached their new revision and pruned the three old
   Terraform CRs. No old runner remains active for those roots.
@@ -36,11 +38,12 @@ After merging batch 2, verify:
 - Existing Forgejo SSH-key and Route 53 Workspaces stay Ready after the provider runtime
   rollout. Their backend, source, variables and lifecycle policies are unchanged.
 
-For batch 3 also verify the haku Workspace before dependent Forgejo Workspaces, preserve
-`forgejo_codex` for `forgejo-agentydragon-repos`, and check existing repository identities
-and credential consumers. Do not mark the second migration PR ready until batch 2's
-handoff has been observed. Keep broader SSO/access, CI/bootstrap, parked roots, and roots
-with executable/mixed-format dependencies for subsequent work.
+For the Forgejo migration also verify the haku Workspace before dependent Forgejo
+Workspaces, preserve `forgejo_codex` for `forgejo-agentydragon-repos`, and check existing
+repository identities and credential consumers. Do not mark the Forgejo migration PR
+ready until the application-root migration's handoff has been observed. Keep broader
+SSO/access, CI/bootstrap, parked roots, and roots with executable/mixed-format
+dependencies for subsequent work.
 
 ## Recovery
 
