@@ -42,8 +42,7 @@ from pydantic import AnyHttpUrl
 from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.settings import AppSettingsConfig
-from agentplane.runner.configuration import ResourceLimits
-from agentplane.sandboxes.guest_config import GuestResources
+from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import launch_preset, probe_credential, runtime_grant, send_grant
 from agentplane.system_tests.k3s import dex, fixture_database

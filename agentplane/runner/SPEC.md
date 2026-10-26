@@ -11,7 +11,7 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 ## Configuration
 
 Every Pod and VM starts `agentplane-runner --config PATH --launch-file PATH`. The executable name
-has no effect on configuration. Both flags are required; the shared version-1 JSON configuration
+has no effect on configuration. Both flags are required; the shared version-2 JSON configuration
 rejects unknown fields, unsupported versions and contradictory policy before state ownership.
 Templates own paths, endpoints, providers, explicit environment allowlists, platform instructions
 and isolation settings. The separate controller-owned launch file contains only Sandbox identity
@@ -27,15 +27,18 @@ Pods and VMs expose `/run/agentplane/config/runner.json`,
 `/run/agentplane/trust/` at the same paths. Pod templates mount ConfigMaps; VM boot mounts disks.
 The [configuration inventory](CONFIGURATION.md) specifies every field, source and file.
 
-VM boot policy is a separate version-3 `vm.json`, containing console policy and guest/service
-capacity. The same typed template resource value sizes the VM and supplies common Runner isolation
-configuration. Pod resources remain Kubernetes-owned. Local execution, a Pod companion, and a
-supervised VM cgroup are explicit executor configurations.
+The required `environment.kind` selects a Pod or VM variant. Pod policy contains an optional
+container executor; VM policy contains console settings, guest/service capacity, cgroup paths and
+identity, and an optional cgroup executor. This is the only deployment/executor discriminator.
+The VM resource policy declares each harness/executor budget once; Runner derives its cgroups
+from it. The same typed template value sizes KubeVirt. Pod resources remain Kubernetes-owned.
+Omitting the variant's executor selects local tools. Contradictory or partial environment policy
+is rejected before environment changes or state ownership.
 
 The VM resource object uses bytes for memory, microseconds per a fixed 100,000 µs CPU
 period, process counts for PIDs, and bytes/operations per second for block I/O. The same guest RAM
 and vCPU values size the KubeVirt domain. Before the Runner starts, `ExecStartPre` invokes the
-private Go preflight mode, which strictly validates the seed and confirms the service memory cap is
+private Go preflight mode, which strictly decodes the shared configuration and validates VM policy and confirms the service memory cap is
 below live `MemTotal`; only then does it apply
 `MemoryHigh`, `MemoryMax`, fixed `MemorySwapMax=0`, `CPUQuota` and `TasksMax`. The unit uses
 `OOMPolicy=continue` so a child OOM does not stop the Runner. The delegated aggregate and process

@@ -14,7 +14,8 @@ func configurationFixture(t *testing.T) (map[string]any, string, string) {
 	configPath, launchPath := filepath.Join(directory, "runner.json"), filepath.Join(directory, "launch.json")
 	writeJSONFixture(t, launchPath, map[string]any{"sandbox": map[string]string{"namespace": "test", "name": "sandbox", "uid": "sandbox-uid"}, "bootstrap": "echo initialized"})
 	value := map[string]any{
-		"version": 1, "state_dir": filepath.Join(directory, "state"), "initialization_cwd": directory,
+		"environment": map[string]any{"kind": "pod"},
+		"version":     2, "state_dir": filepath.Join(directory, "state"), "initialization_cwd": directory,
 		"control":               map[string]string{"target": "gateway.test:7100", "bearer": "control-placeholder"},
 		"ingress":               map[string]string{"target": "history.test:8081", "bearer": "ingress-placeholder"},
 		"platform_instructions": "Test guidance.",
@@ -25,29 +26,49 @@ func configurationFixture(t *testing.T) (map[string]any, string, string) {
 	return value, configPath, launchPath
 }
 
-func configurationCgroups(root string) map[string]any {
-	resources := validGuestResources()
-	return map[string]any{"root": root, "agent_uid": 107, "agent_gid": 107, "block_devices": []string{"/dev/test-workspace"}, "aggregate": resources["aggregate"], "process": resources["process"]}
+func configurationVMEnvironment() map[string]any {
+	return map[string]any{"kind": "vm", "root": "/sys/fs/cgroup/test/workloads", "agent_uid": 107, "agent_gid": 107, "block_devices": []string{"/dev/test-workspace"}, "resources": validGuestResources()}
+}
+
+func configurationVMExecutor(environment map[string]any) {
+	environment["executor"] = map[string]any{"url": "ws://127.0.0.1:4501", "root": "/sys/fs/cgroup/test/executors"}
+	resources := environment["resources"].(map[string]any)
+	resources["executor"] = map[string]any{"cpu_quota_micros": 100000, "memory_max_bytes": 67108864, "pids_max": 128, "read_bps": 52428800, "write_bps": 20971520, "read_iops": 1000, "write_iops": 500}
 }
 
 func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T) {
 	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
 	t.Setenv("PATH", "/image/bin")
 	t.Setenv("UNDECLARED_SECRET", "must-not-inherit")
-	for _, kind := range []string{"local", "container", "cgroup"} {
+	for _, kind := range []string{"pod-local", "pod-executor", "vm-local", "vm-executor"} {
 		t.Run(kind, func(t *testing.T) {
 			value, path, launchPath := configurationFixture(t)
 			switch kind {
-			case "container":
-				value["executor"] = map[string]any{"kind": "container", "url": "ws://127.0.0.1:4501", "socket": "/run/test/executor.sock"}
-			case "cgroup":
-				value["isolation"] = configurationCgroups("/sys/fs/cgroup/test/workloads")
-				value["executor"] = map[string]any{"kind": "cgroup", "url": "ws://127.0.0.1:4501", "isolation": configurationCgroups("/sys/fs/cgroup/test/executors")}
+			case "pod-executor":
+				value["environment"] = map[string]any{"kind": "pod", "executor": map[string]any{"url": "ws://127.0.0.1:4501", "socket": "/run/test/executor.sock"}}
+			case "vm-local", "vm-executor":
+				environment := configurationVMEnvironment()
+				if kind == "vm-executor" {
+					configurationVMExecutor(environment)
+				}
+				value["environment"] = environment
 			}
 			writeJSONFixture(t, path, value)
 			config, control, ingress, environment, err := loadConfiguration(path, launchPath)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if config.ProcessIsolation != nil {
+				resources, err := guestResourcesFromMap(value["environment"].(map[string]any)["resources"].(map[string]any))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if config.ProcessIsolation.AggregateLimits != resources.Aggregate || config.ProcessIsolation.ProcessLimits != resources.Process {
+					t.Fatal("harness limits differ from VM resource policy")
+				}
+				if resources.Executor != nil && (config.CodexExecutor.Isolation.AggregateLimits != *resources.Executor || config.CodexExecutor.Isolation.ProcessLimits != *resources.Executor) {
+					t.Fatal("executor limits differ from VM resource policy")
+				}
 			}
 			if control.Target != "gateway.test:7100" || ingress.Target != "history.test:8081" {
 				t.Fatalf("endpoints = %v %v", control, ingress)
@@ -65,7 +86,7 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 			if _, err := os.Stat(config.StateDir); !os.IsNotExist(err) {
 				t.Fatalf("configuration opened state: %v", err)
 			}
-			if (config.CodexExecutor == nil) != (kind == "local") || (config.ProcessIsolation != nil) != (kind == "cgroup") {
+			if (config.CodexExecutor == nil) != (kind == "pod-local" || kind == "vm-local") || (config.ProcessIsolation != nil) != (kind == "vm-local" || kind == "vm-executor") {
 				t.Fatalf("incorrect isolation for %s", kind)
 			}
 		})
@@ -79,7 +100,7 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		update func(map[string]any)
 	}{
 		{"unknown field", func(v map[string]any) { v["unexpected"] = true }},
-		{"old version", func(v map[string]any) { v["version"] = 2 }},
+		{"old version", func(v map[string]any) { v["version"] = 1 }},
 		{"relative state", func(v map[string]any) { v["state_dir"] = "relative" }},
 		{"missing initialization cwd", func(v map[string]any) { delete(v, "initialization_cwd") }},
 		{"empty workspace root", func(v map[string]any) { v["workspace_root"] = "" }},
@@ -89,15 +110,48 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		}},
 		{"partial provider", func(v map[string]any) { v["codex"] = map[string]string{"binary": "/opt/codex"} }},
 		{"missing provider token", func(v map[string]any) { v["codex"].(map[string]string)["token_env"] = "ABSENT_PROVIDER_TOKEN" }},
-		{"unknown executor", func(v map[string]any) { v["executor"] = map[string]string{"kind": "unknown"} }},
+		{"missing environment", func(v map[string]any) { delete(v, "environment") }},
+		{"unknown environment", func(v map[string]any) { v["environment"] = map[string]any{"kind": "unknown"} }},
 		{"partial container executor", func(v map[string]any) {
-			v["executor"] = map[string]string{"kind": "container", "url": "ws://127.0.0.1:4501"}
+			v["environment"] = map[string]any{"kind": "pod", "executor": map[string]any{"url": "ws://127.0.0.1:4501"}}
 		}},
-		{"mixed executor policies", func(v map[string]any) {
-			v["executor"] = map[string]any{"kind": "container", "url": "ws://127.0.0.1:4501", "socket": "/test/socket", "isolation": configurationCgroups("/test/executor")}
+		{"VM policy in Pod", func(v map[string]any) {
+			v["environment"] = map[string]any{"kind": "pod", "resources": validGuestResources()}
 		}},
-		{"cgroup executor without harness isolation", func(v map[string]any) {
-			v["executor"] = map[string]any{"kind": "cgroup", "url": "ws://127.0.0.1:4501", "isolation": configurationCgroups("/test/executor")}
+		{"container policy in VM", func(v map[string]any) {
+			env := configurationVMEnvironment()
+			configurationVMExecutor(env)
+			env["executor"].(map[string]any)["socket"] = "/test/socket"
+			v["environment"] = env
+		}},
+		{"VM endpoint without budget", func(v map[string]any) {
+			env := configurationVMEnvironment()
+			env["executor"] = map[string]any{"url": "ws://127.0.0.1:4501", "root": "/sys/fs/cgroup/test/executors"}
+			v["environment"] = env
+		}},
+		{"VM budget without endpoint", func(v map[string]any) {
+			env := configurationVMEnvironment()
+			configurationVMExecutor(env)
+			delete(env, "executor")
+			v["environment"] = env
+		}},
+		{"VM executor exceeds service headroom", func(v map[string]any) {
+			env := configurationVMEnvironment()
+			configurationVMExecutor(env)
+			env["resources"].(map[string]any)["executor"].(map[string]any)["memory_max_bytes"] = 67108865
+			v["environment"] = env
+		}},
+		{"overlapping VM roots", func(v map[string]any) {
+			env := configurationVMEnvironment()
+			configurationVMExecutor(env)
+			env["executor"].(map[string]any)["root"] = env["root"]
+			v["environment"] = env
+		}},
+		{"executor without Codex", func(v map[string]any) {
+			delete(v, "codex")
+			env := configurationVMEnvironment()
+			configurationVMExecutor(env)
+			v["environment"] = env
 		}},
 		{"manual execution override", func(v map[string]any) {
 			v["harness_environment"] = map[string]any{"values": map[string]string{"CODEX_EXEC_SERVER_URL": "ws://127.0.0.1:9999"}}

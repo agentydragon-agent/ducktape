@@ -19,7 +19,7 @@ from agentplane.action_service.mcp_settings import McpClientMetadataSettings, Mc
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.app.settings import AppSettingsConfig
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
-from agentplane.sandboxes.guest_config import GuestResources
+from agentplane.runner.configuration import GuestResources
 from agentplane.subjects import ServiceAccountRef
 from model_catalog.catalog import Route
 

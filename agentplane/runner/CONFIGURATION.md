@@ -33,7 +33,7 @@ All validation completes before Runner environment changes or state ownership be
 
 ## File fields
 
-`runner.json` is a strict JSON object with `version: 1`.
+`runner.json` is a strict JSON object with `version: 2`.
 
 | Field                   | Meaning                                                                                                                     |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -45,23 +45,29 @@ All validation completes before Runner environment changes or state ownership be
 | `runner_environment`    | Optional `inherit` names and `values` map applied to Runner itself.                                                         |
 | `harness_environment`   | Required `inherit` names and `values` map defining the native process environment.                                          |
 | `claude`, `codex`       | Optional provider objects: absolute `binary`, HTTP(S) `base_url`, and `token_env`. An omitted provider is disabled.         |
-| `isolation`             | Optional harness cgroup policy; absent in Pods, whose runtime owns container limits.                                        |
-| `executor`              | Optional tagged executor configuration. Omission selects local tools.                                                       |
+| `environment`           | Required tagged Pod or VM policy, including the optional executor.                                                          |
 | `debug_checkpoint`      | Optional test-only object containing nonempty `name` and `command_id`.                                                      |
 
-An `isolation` object contains absolute `root`, non-root `agent_uid`/`agent_gid`, absolute
-`block_devices`, and `aggregate`/`process` resource budgets. A budget contains `memory_max_bytes`,
-`cpu_quota_micros` per fixed 100,000 µs period, `pids_max`, `read_bps`, `write_bps`, `read_iops` and
-`write_iops`. Process memory/CPU/PID ceilings must fit the aggregate.
+`environment` has exactly one discriminator, `kind`:
 
-`executor` has exactly one of these shapes:
+- `kind: "pod"`: optional `executor` with loopback `url` and absolute ownership `socket`.
+  Kubernetes owns the container resource limits.
+- `kind: "vm"`: required `resources`, absolute harness cgroup `root`, non-root `agent_uid`/
+  `agent_gid`, absolute `block_devices`, optional `console_autologin` (false when omitted), and
+  optional `executor` with loopback `url` and an absolute cgroup `root`. Executor and harness roots
+  must be distinct siblings; both use the VM's identity and block devices.
 
-- `kind: "container"`, loopback `url`, and absolute ownership `socket`. Kubernetes owns its resources.
-- `kind: "cgroup"`, loopback `url`, and `isolation`. Its root must be a distinct sibling of the harness root.
+The VM `resources` object holds guest RAM/vCPU sizing, OS reserve, Runner service limits, and
+`aggregate`/`process` harness budgets. Its optional `executor` budget must be supplied together with
+the VM executor endpoint. Each budget contains `memory_max_bytes`, `cpu_quota_micros` per fixed
+100,000 µs period, `pids_max`, `read_bps`, `write_bps`, `read_iops` and `write_iops`. Runner derives
+cgroup limits from these budgets; the document contains each budget once. Process memory/CPU/PID
+ceilings must fit the aggregate; harness and executor caps must fit the enclosing service.
 
-The endpoint must be `ws://127.0.0.1:<nonzero port>`. Executor configuration requires Codex.
-`CODEX_EXEC_SERVER_URL` belongs to Runner and is rejected in the harness environment. Lifecycle,
-recovery and scope are documented in [Codex executor isolation](docs/codex_executor.md).
+Omitting `environment.executor` selects local tools. An executor requires Codex, and its endpoint
+must be `ws://127.0.0.1:<nonzero port>`. `CODEX_EXEC_SERVER_URL` belongs to Runner and is rejected in
+the harness environment. Lifecycle, recovery and scope are documented in
+[Codex executor isolation](docs/codex_executor.md).
 
 ## Shared layout
 
@@ -93,16 +99,16 @@ processes use uid/gid 1000.
 
 ## VM boot and resource policy
 
-`/run/agentplane/config/vm.json` is a separate strict version-3 VM boot document containing
-`resources` and `console_autologin`. Console policy has no place in Runner configuration. Its
-`GuestResources` model is in [`guest_config.py`](../sandboxes/guest_config.py).
+VM boot policy lives in `runner.json`'s `environment` variant. `GuestResources` and both environment
+variants are defined in [`configuration.py`](configuration.py). The strict decoder rejects fields
+belonging to another environment; there is no separate boot document or executor discriminator.
 
-One typed `Environment.vm_resources` value supplies KubeVirt RAM/vCPU sizing, VM boot service
-limits, and the common Runner configuration's harness/executor budgets. `vm.nix` mounts the disks
+One typed `Environment.vm_resources` value supplies KubeVirt RAM/vCPU sizing and the VM variant's
+resource policy, including boot service limits and harness/executor budgets. `vm.nix` mounts the disks
 and delegates cgroups; it does not supply an alternate Runner configuration loader.
 
 Before Runner starts, systemd invokes the executable's private `--vm-resource-properties` mode
-with `vm.json`. The preflight validates resource relationships and live `/proc/meminfo` before
+with `runner.json`. The preflight validates resource relationships and live `/proc/meminfo` before
 printing `MemoryHigh`, `MemoryMax`, `MemorySwapMax=0`, `CPUQuota` and `TasksMax`. The maximum must be
 below live `MemTotal`, and nominal sizing must leave the configured OS reserve. The unit uses
 `OOMPolicy=continue`. Aggregate `memory.oom.group` is 0; native process leaves use 1. Supervisors log

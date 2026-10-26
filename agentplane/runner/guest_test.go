@@ -11,7 +11,7 @@ import (
 
 func TestGuestResourcePropertiesModeValidatesSeedBeforeOutput(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
-	writeJSONFixture(t, configPath, validGuestSeed())
+	writeJSONFixture(t, configPath, validGuestConfiguration(t))
 	command := exec.Command(os.Args[0], vmResourcePropertiesMode, configPath)
 	output, err := command.Output()
 	if err != nil {
@@ -29,16 +29,29 @@ func TestGuestResourcePropertiesModeValidatesSeedBeforeOutput(t *testing.T) {
 		t.Fatalf("resource properties = %q, want %q", output, want)
 	}
 
-	invalid := validGuestSeed()
-	invalid["resources"].(map[string]any)["service_memory_max_bytes"] = 0
-	writeJSONFixture(t, configPath, invalid)
-	command = exec.Command(os.Args[0], vmResourcePropertiesMode, configPath)
-	output, err = command.CombinedOutput()
-	if err == nil {
-		t.Fatal("resource properties mode accepted invalid resource limits")
-	}
-	if strings.Contains(string(output), "MemoryHigh=") {
-		t.Fatalf("invalid seed produced systemd properties: %q", output)
+	for _, mutate := range []func(map[string]any){
+		func(v map[string]any) {
+			v["environment"].(map[string]any)["resources"].(map[string]any)["service_memory_max_bytes"] = 0
+		},
+		func(v map[string]any) { v["environment"] = map[string]any{"kind": "pod"} },
+		func(v map[string]any) { v["unexpected"] = true },
+		func(v map[string]any) {
+			env := v["environment"].(map[string]any)
+			configurationVMExecutor(env)
+			delete(env, "executor")
+		},
+	} {
+		invalid := validGuestConfiguration(t)
+		mutate(invalid)
+		writeJSONFixture(t, configPath, invalid)
+		command = exec.Command(os.Args[0], vmResourcePropertiesMode, configPath)
+		output, err = command.CombinedOutput()
+		if err == nil {
+			t.Fatal("resource preflight accepted invalid configuration")
+		}
+		if strings.Contains(string(output), "MemoryHigh=") {
+			t.Fatalf("invalid configuration produced systemd properties: %q", output)
+		}
 	}
 }
 
@@ -108,8 +121,11 @@ func writeJSONFixture(t *testing.T, path string, value any) {
 	}
 }
 
-func validGuestSeed() map[string]any {
-	return map[string]any{"version": 3, "resources": validGuestResources()}
+func validGuestConfiguration(t *testing.T) map[string]any {
+	t.Helper()
+	value, _, _ := configurationFixture(t)
+	value["environment"] = configurationVMEnvironment()
+	return value
 }
 
 func validGuestResources() map[string]any {

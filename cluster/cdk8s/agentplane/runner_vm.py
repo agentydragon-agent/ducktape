@@ -38,12 +38,11 @@ from agentplane.runner.configuration import (
     JAVA_TRUST_STORE,
     KUBECONFIG,
     CgroupExecutor,
-    Cgroups,
     Configuration,
     Endpoint,
     Harness,
+    VMEnvironment,
 )
-from agentplane.sandboxes.guest_config import GuestConfig
 from cluster.cdk8s.agentplane import launcher_relay, llm_ingress, platform_routes, sandbox_pod, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
@@ -98,7 +97,7 @@ class RunnerVmTemplate(Construct):
         }
         llm_url = llm_ingress.proxied_url(namespace)
         config = Configuration(
-            version=1,
+            version=2,
             state_dir="/state",
             workspace_root="/state/workspaces",
             initialization_cwd="/state/workspaces",
@@ -111,8 +110,8 @@ class RunnerVmTemplate(Construct):
                 bearer=platform_routes.ROUTE_BEARER,
             ),
             platform_instructions=platform_instructions,
-            runner_environment=configuration.Environment(values=network),
-            harness_environment=configuration.Environment(
+            runner_environment=configuration.EnvironmentVariables(values=network),
+            harness_environment=configuration.EnvironmentVariables(
                 values={
                     **network,
                     **env.sandbox_workload_env,
@@ -132,34 +131,22 @@ class RunnerVmTemplate(Construct):
             codex=Harness(
                 binary="/run/current-system/sw/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"
             ),
-            isolation=Cgroups(
+            environment=VMEnvironment(
+                resources=resources,
+                console_autologin=env.vm_console_autologin,
                 root="/sys/fs/cgroup/system.slice/agentplane-runner.service/workloads",
                 agent_uid=107,
                 agent_gid=107,
                 block_devices=("/dev/disk/by-id/virtio-workspace",),
-                aggregate=resources.aggregate,
-                process=resources.process,
-            ),
-            executor=(
-                CgroupExecutor(
-                    url="ws://127.0.0.1:4501",
-                    isolation=Cgroups(
-                        root="/sys/fs/cgroup/system.slice/agentplane-runner.service/executors",
-                        agent_uid=107,
-                        agent_gid=107,
-                        block_devices=("/dev/disk/by-id/virtio-workspace",),
-                        aggregate=resources.executor,
-                        process=resources.executor,
-                    ),
+                executor=CgroupExecutor(
+                    url="ws://127.0.0.1:4501", root="/sys/fs/cgroup/system.slice/agentplane-runner.service/executors"
                 )
                 if resources.executor is not None
-                else None
+                else None,
             ),
         )
-        boot = GuestConfig(version=3, resources=resources, console_autologin=env.vm_console_autologin)
         config_map_data = {
             "runner.json": config.model_dump_json(exclude_none=True),
-            "vm.json": boot.model_dump_json(),
             "kubeconfig": yaml_config(sandbox_pod.kubeconfig(str(CA_BUNDLE))),
             _RUNNER_ENV_FILE: "".join(
                 f'{name}="{value}"\n'

@@ -15,8 +15,9 @@ from agentplane.runner.configuration import (
     ContainerExecutor,
     DebugCheckpoint,
     Endpoint,
-    Environment,
+    EnvironmentVariables,
     Harness,
+    PodEnvironment,
 )
 from agentplane.runner.testing.config import NativeLaunch, RunnerTestConfig, SandboxLaunch
 from agentplane.sandboxes.launch import SandboxIdentity
@@ -112,13 +113,14 @@ def runner_command(
     claude = claude_launch(endpoint) if harness == runner_pb2.HARNESS_CLAUDE else None
     codex = codex_launch(endpoint) if harness == runner_pb2.HARNESS_CODEX else None
     config = Configuration(
-        version=1,
+        version=2,
+        environment=PodEnvironment(),
         state_dir=str(state_dir),
         initialization_cwd=str(state_dir),
         control=gateway,
         ingress=gateway,
         platform_instructions=PLATFORM_INSTRUCTIONS,
-        harness_environment=Environment(inherit=inherited, values=values),
+        harness_environment=EnvironmentVariables(inherit=inherited, values=values),
         claude=Harness(binary=str(claude.binary), base_url=claude.base_url, token_env="ANTHROPIC_AUTH_TOKEN")
         if claude
         else None,
@@ -148,13 +150,13 @@ def command(config: RunnerTestConfig, *, control: Endpoint, ingress: Endpoint) -
         json.dumps({"sandbox": config.launch.sandbox.model_dump(), "bootstrap": config.launch.bootstrap})
     )
     file = Configuration(
-        version=1,
+        version=2,
         state_dir=str(config.state_dir),
         initialization_cwd=str(config.state_dir),
         control=control,
         ingress=ingress,
         platform_instructions=config.launch.platform_instructions,
-        harness_environment=Environment(values=config.harness_environment),
+        harness_environment=EnvironmentVariables(values=config.harness_environment),
         claude=Harness(
             binary=str(config.claude.binary), base_url=config.claude.base_url, token_env="ANTHROPIC_AUTH_TOKEN"
         )
@@ -163,9 +165,11 @@ def command(config: RunnerTestConfig, *, control: Endpoint, ingress: Endpoint) -
         codex=Harness(binary=str(config.codex.binary), base_url=config.codex.base_url, token_env="OPENAI_API_KEY")
         if config.codex
         else None,
-        executor=ContainerExecutor(url=config.codex_executor_url, socket=str(config.codex_executor_socket))
-        if config.codex_executor_url is not None
-        else None,
+        environment=PodEnvironment(
+            executor=ContainerExecutor(url=config.codex_executor_url, socket=str(config.codex_executor_socket))
+            if config.codex_executor_url is not None
+            else None
+        ),
         debug_checkpoint=DebugCheckpoint(name=config.debug_checkpoint[0], command_id=config.debug_checkpoint[1])
         if config.debug_checkpoint
         else None,

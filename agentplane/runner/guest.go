@@ -9,15 +9,6 @@ import (
 	"strings"
 )
 
-const guestSeedVersion = 3
-
-// guestSeed contains only VM boot policy. Runner policy uses Configuration in both runtimes.
-type guestSeed struct {
-	Version          int            `json:"version"`
-	Resources        guestResources `json:"resources"`
-	ConsoleAutologin bool           `json:"console_autologin"`
-}
-
 type guestResources struct {
 	GuestMemoryBytes       int64           `json:"guest_memory_bytes"`
 	GuestVCPUCount         int64           `json:"guest_vcpu_count"`
@@ -75,7 +66,7 @@ func (r guestResources) Validate() error {
 	return nil
 }
 
-// guestResourceSystemdProperties reads and validates the seed before returning
+// guestResourceSystemdProperties reads and validates the shared configuration before returning
 // systemd properties. The VM applies these before starting the runner, so this
 // path must reject malformed limits before systemctl is invoked.
 func guestResourceSystemdProperties(configPath string) ([]string, error) {
@@ -83,28 +74,25 @@ func guestResourceSystemdProperties(configPath string) ([]string, error) {
 }
 
 func guestResourceSystemdPropertiesWithMeminfo(configPath, meminfoPath string) ([]string, error) {
-	configBytes, err := os.ReadFile(configPath)
+	file, err := readConfiguration(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read guest config at %s: %w", configPath, err)
+		return nil, err
 	}
-	var seed guestSeed
-	if err := DecodeStrict(configBytes, &seed); err != nil {
-		return nil, fmt.Errorf("invalid guest config at %s: %w", configPath, err)
+	_, _, vm, err := file.resolveEnvironment()
+	if err != nil {
+		return nil, fmt.Errorf("invalid VM environment: %w", err)
 	}
-	if seed.Version != guestSeedVersion {
-		return nil, fmt.Errorf("invalid guest config at %s: version must be %d", configPath, guestSeedVersion)
-	}
-	if err := seed.Resources.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid guest config at %s: invalid resources: %w", configPath, err)
+	if vm == nil {
+		return nil, errors.New("resource preflight requires a VM environment")
 	}
 	actualMemory, err := guestMemoryTotalBytes(meminfoPath)
 	if err != nil {
 		return nil, fmt.Errorf("cannot verify guest memory for config at %s: %w", configPath, err)
 	}
-	if err := validateGuestMemoryCapacity(seed.Resources, actualMemory); err != nil {
-		return nil, fmt.Errorf("invalid guest config at %s: %w", configPath, err)
+	if err := validateGuestMemoryCapacity(vm.Resources, actualMemory); err != nil {
+		return nil, fmt.Errorf("invalid Runner config at %s: %w", configPath, err)
 	}
-	return guestResourceProperties(seed.Resources), nil
+	return guestResourceProperties(vm.Resources), nil
 }
 
 func guestResourceProperties(resources guestResources) []string {
