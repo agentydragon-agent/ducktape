@@ -10,7 +10,7 @@ import httpx
 import pytest
 import pytest_bazel
 
-from agentplane.app.live import SandboxesSnapshot
+from agentplane.app.live import SandboxesSnapshot, WatchHealth
 from agentplane.app.testing.client import Client
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.sandbox_resource import OperatingMode
@@ -21,13 +21,14 @@ from agentplane.system_tests.conftest import SandboxNotReadyError, suspend_and_d
 # gazelle:include_dep @pypi//protobuf
 
 
-async def test_cleanup_waits_for_effective_suspension_before_deleting() -> None:
+async def test_cleanup_waits_for_effective_suspension_and_actual_deletion() -> None:
     client = create_autospec(Client, instance=True)
     uid = uuid4()
     closed = False
+    deletion_observed = False
 
     async def snapshots() -> AsyncIterator[SandboxesSnapshot]:
-        nonlocal closed
+        nonlocal closed, deletion_observed
         try:
             for name, fresh, mode in [
                 ("owned-test-sandbox", True, OperatingMode.RUNNING),
@@ -39,6 +40,14 @@ async def test_cleanup_waits_for_effective_suspension_before_deleting() -> None:
                 yield Mock(
                     watch=Mock(fresh=fresh), sandboxes=[SimpleNamespace(name=name, uid=uid, operating_mode=mode)]
                 )
+            client.delete_sandbox.assert_awaited_once_with("owned-test-sandbox")
+            yield SandboxesSnapshot(
+                watch=WatchHealth(fresh=False, stale_after_seconds=30, refreshed_seconds_ago={}), sandboxes=[]
+            )
+            deletion_observed = True
+            yield SandboxesSnapshot(
+                watch=WatchHealth(fresh=True, stale_after_seconds=30, refreshed_seconds_ago={}), sandboxes=[]
+            )
         finally:
             closed = True
 
@@ -52,6 +61,7 @@ async def test_cleanup_waits_for_effective_suspension_before_deleting() -> None:
         call.delete_sandbox("owned-test-sandbox"),
     ]
     assert closed
+    assert deletion_observed
 
 
 async def test_cleanup_does_not_delete_a_replacement_sandbox() -> None:
