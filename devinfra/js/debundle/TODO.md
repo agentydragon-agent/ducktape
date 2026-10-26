@@ -159,6 +159,14 @@ still open:
   between seal and execute" contract is convention-held; making
   non-execute passes take `&Module` would let the compiler enforce it.
 
+## Import re-export claims
+
+Extend `resolve_imported_binding` in `lowering/imports/imports_runtime.rs` to
+support default and namespace import member re-exports (<SPEC.md> § Entities).
+Add neutral CLI/Node cases for both forms; a minimal default case is
+`import a from "./dependency.js"` with a member claim for `a` carrying
+`kind: import_specifier`.
+
 ## Suspected bugs
 
 Findings from a read-only code review (2026-09-30), each with where to look and
