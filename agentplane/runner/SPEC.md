@@ -38,8 +38,8 @@ is rejected before environment changes or state ownership.
 The VM resource object uses bytes for memory, microseconds per a fixed 100,000 µs CPU
 period, process counts for PIDs, and bytes/operations per second for block I/O. The same guest RAM
 and vCPU values size the KubeVirt domain. Before the Runner starts, `ExecStartPre` invokes the
-private Go preflight mode, which strictly decodes the shared configuration and validates VM policy and confirms the service memory cap is
-below live `MemTotal`; only then does it apply
+private Go preflight mode, which strictly decodes the shared configuration, validates VM policy,
+and confirms the service memory cap is below live `MemTotal`; only then does it apply
 `MemoryHigh`, `MemoryMax`, fixed `MemorySwapMax=0`, `CPUQuota` and `TasksMax`. The unit uses
 `OOMPolicy=continue` so a child OOM does not stop the Runner. The delegated aggregate and process
 leaves use their respective Runner configuration budgets; swap stays disabled, aggregate `memory.oom.group` stays 0,

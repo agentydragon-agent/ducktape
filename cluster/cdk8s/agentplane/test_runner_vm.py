@@ -47,15 +47,13 @@ def _runner_vm_manifests(*, console_autologin: bool) -> dict[str, dict[str, Any]
     }
 
 
-def _vm_environment(*, console_autologin: bool) -> dict[str, Any]:
-    return _runner_vm_manifests(console_autologin=console_autologin)["runner"]["environment"]
-
-
 @pytest.mark.parametrize(("console_autologin", "rendered"), [(True, True), (False, False)])
 def test_console_autologin_reaches_the_vm_environment_only_when_enabled(
     console_autologin: bool, rendered: bool
 ) -> None:
-    assert _vm_environment(console_autologin=console_autologin).get("console_autologin") == rendered
+    config = Configuration.model_validate(_runner_vm_manifests(console_autologin=console_autologin)["runner"])
+    assert isinstance(config.environment, VMEnvironment)
+    assert config.environment.console_autologin == rendered
 
 
 def test_harness_env_reaches_the_vm_environment() -> None:

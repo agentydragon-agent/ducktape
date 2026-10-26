@@ -57,8 +57,9 @@ All validation completes before Runner environment changes or state ownership be
   optional `executor` with loopback `url` and an absolute cgroup `root`. Executor and harness roots
   must be distinct siblings; both use the VM's identity and block devices.
 
-The VM `resources` object holds guest RAM/vCPU sizing, OS reserve, Runner service limits, and
-`aggregate`/`process` harness budgets. Its optional `executor` budget must be supplied together with
+The VM `resources` object contains `guest_memory_bytes`, `guest_vcpu_count`, `os_reserve_bytes`,
+`service_memory_high_bytes`, `service_memory_max_bytes`, `service_cpu_quota_micros`,
+`service_pids_max`, and `aggregate`/`process` harness budgets. Its optional `executor` budget must be supplied together with
 the VM executor endpoint. Each budget contains `memory_max_bytes`, `cpu_quota_micros` per fixed
 100,000 µs period, `pids_max`, `read_bps`, `write_bps`, `read_iops` and `write_iops`. Runner derives
 cgroup limits from these budgets; the document contains each budget once. Process memory/CPU/PID
