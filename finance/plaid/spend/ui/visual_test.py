@@ -1035,8 +1035,12 @@ async def test_sustainability_partial_window_has_no_startup_chart(
         result = _example_sustainability()
         result["covered_days"] = 45
         result["period_start"] = "2026-08-31"
-        for field in ["mandatory_minor_units", "flexible_minor_units", "provisional_minor_units", "spending_minor_units"]:
-            result[field] = int(result[field]) // 2
+        result.update(
+            mandatory_minor_units=380_000,
+            flexible_minor_units=205_000,
+            provisional_minor_units=25_000,
+            spending_minor_units=610_000,
+        )
         result["history"] = []
         await route.fulfill(json=result)
 
