@@ -414,6 +414,7 @@ py_test(
         ":main_bin",  # keep: the PID-1 companion is the production runner binary
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned Codex executor
     ],
+    env = {"DOCKER_HOST": "tcp://127.0.0.1:2375"},
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     target_compatible_with = [

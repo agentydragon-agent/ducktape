@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shlex
 import socket
 import time
@@ -18,7 +19,7 @@ import pytest_bazel
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.config import RunnerTestConfig
-from agentplane.runner.testing.driver import RunnerDriver, SessionFollow
+from agentplane.runner.testing.driver import RunnerDriver, SessionFollow, SessionSealedError
 from agentplane.runner.testing.fixtures import ModelEndpoint
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.process_fixtures import wait_for_exit
@@ -77,7 +78,7 @@ def executor_companion(tmp_path: Path) -> Iterator[ExecutorCompanion]:
     url = f"ws://127.0.0.1:{_free_port()}"
     container = (
         LoggedContainer(debian_slim.IMAGE.tag, test_name="runner-executor-companion")
-        .with_kwargs(network_mode="host", mem_limit="512m", pids_limit=64)
+        .with_kwargs(network_mode="host", mem_limit="512m", pids_limit=64, user=f"{os.getuid()}:{os.getgid()}")
         .with_volume_mapping(str(tmp_path), str(tmp_path), mode="rw")
         .with_volume_mapping(str(runner_binary), "/runner", mode="ro")
         .with_volume_mapping(str(codex_binary.parent.parent), "/opt/codex", mode="ro")
@@ -158,7 +159,17 @@ def _host_pid_for_marker(companion: ExecutorCompanion, marker: str) -> int | Non
     matches = [row for row in process_table["Processes"] if marker in row[command_column]]
     if len(matches) > 1:
         raise AssertionError(f"expected one process marked {marker!r}, found {matches}")
-    return int(matches[0][pid_column]) if matches else None
+    if not matches:
+        return None
+
+    pid = int(matches[0][pid_column])
+    try:
+        cmdline = (Path("/proc") / str(pid) / "cmdline").read_bytes().split(b"\0")
+    except OSError as error:
+        raise AssertionError(f"Docker top PID {pid} is not visible in the test process namespace") from error
+    if marker.encode() not in cmdline:
+        raise AssertionError(f"Docker top PID {pid} does not have expected marker {marker!r}: {cmdline!r}")
+    return pid
 
 
 def _wait_for_host_pid(companion: ExecutorCompanion, marker: str) -> int:
@@ -193,7 +204,13 @@ def _wait_for_container_exit(companion: ExecutorCompanion) -> None:
 
 
 def _start_container(companion: ExecutorCompanion) -> None:
+    # Starting the stopped container models kubelet's restart after PID 1 exits.
     companion.container.get_wrapped_container().start()
+
+
+def _detached_command(marker: str) -> str:
+    script = "tail -f /dev/null & wait"
+    return f"setsid sh -c {shlex.quote(script)} {shlex.quote(marker)} </dev/null >/dev/null 2>&1 &"
 
 
 async def _codex_process(driver: RunnerDriver) -> runner_pb2.HarnessProcessStatus:
@@ -210,8 +227,9 @@ async def _reply_to_tool(
     request = await model.request()
     await model.reply(request, ShellCall(call_id, command))
     result = await model.request()
-    (output,) = result.tool_outputs
-    assert output.call_id == call_id
+    outputs = [output for output in result.tool_outputs if output.call_id == call_id]
+    assert len(outputs) == 1, f"expected one output for {call_id!r}, got {result.tool_outputs!r}"
+    (output,) = outputs
     assert output.contains(expected_output)
     await model.reply(result, Text(result_text))
     done = await session.until(events.turn_completed)
@@ -227,11 +245,7 @@ async def test_companion_namespace_restarts_without_restarting_codex_app_server(
 ) -> None:
     session = await driver.attach("isolated-executor", spec=spec)
     detached_marker = f"detached-child-{uuid4().hex}"
-    detached_script = "while :; do sleep 1; done"
-    first_command = (
-        f"setsid sh -c {shlex.quote(detached_script)} {shlex.quote(detached_marker)} "
-        "</dev/null >/dev/null 2>&1 & printf FIRST_TOOL_OK"
-    )
+    first_command = f"{_detached_command(detached_marker)} printf FIRST_TOOL_OK"
 
     await session.submit_input("input-1", "Run the first shell tool and report its output.")
     await _reply_to_tool(model, session, "call-first", first_command, "FIRST_DONE", "FIRST_TOOL_OK")
@@ -250,24 +264,55 @@ async def test_companion_namespace_restarts_without_restarting_codex_app_server(
     recovered_app_server = await _codex_process(driver)
     assert recovered_app_server.pid == initial_app_server.pid
 
+    second_detached_marker = f"detached-child-{uuid4().hex}"
     await session.submit_input("input-2", "Run a fresh shell tool and report its output.")
-    await _reply_to_tool(model, session, "call-second", "printf SECOND_TOOL_OK", "SECOND_DONE", "SECOND_TOOL_OK")
+    await _reply_to_tool(
+        model,
+        session,
+        "call-second",
+        f"{_detached_command(second_detached_marker)} printf SECOND_TOOL_OK",
+        "SECOND_DONE",
+        "SECOND_TOOL_OK",
+    )
+    second_detached_host_pid = await asyncio.to_thread(_wait_for_host_pid, executor_companion, second_detached_marker)
     assert restarted_executor.generation != initial_executor.generation
     assert (await _codex_process(driver)).pid == initial_app_server.pid
 
     await runner.crash()
     await asyncio.to_thread(_wait_for_container_exit, executor_companion)
+    await asyncio.wait_for(wait_for_exit(second_detached_host_pid), timeout=30)
     await asyncio.to_thread(_start_container, executor_companion)
     idle_executor = await _wait_for_generation(executor_companion.socket, restarted_executor.generation, owned=False)
     await runner.start()
 
     session = await driver.attach("isolated-executor", spec=spec, after_cursor=session.cursor)
     await session.submit_input("input-3", "Run a fresh shell tool and report its output.")
-    await _reply_to_tool(model, session, "call-third", "printf THIRD_TOOL_OK", "THIRD_DONE", "THIRD_TOOL_OK")
+    third_detached_marker = f"detached-child-{uuid4().hex}"
+    await _reply_to_tool(
+        model,
+        session,
+        "call-third",
+        f"{_detached_command(third_detached_marker)} printf THIRD_TOOL_OK",
+        "THIRD_DONE",
+        "THIRD_TOOL_OK",
+    )
     owned_executor = await _wait_for_owned(executor_companion.socket, idle_executor.generation)
     assert owned_executor.generation == idle_executor.generation
-    await driver.quiesce()
+
+    third_detached_host_pid = await asyncio.to_thread(_wait_for_host_pid, executor_companion, third_detached_marker)
+    app_server = await _codex_process(driver)
+    assert app_server.HasField("pid")
+    quiescing = asyncio.create_task(driver.quiesce())
     await asyncio.to_thread(_wait_for_container_exit, executor_companion)
+    await asyncio.wait_for(wait_for_exit(third_detached_host_pid), timeout=30)
+    await asyncio.wait_for(wait_for_exit(app_server.pid), timeout=30)
+    assert not quiescing.done()
+    await asyncio.to_thread(_start_container, executor_companion)
+    await _wait_for_generation(executor_companion.socket, owned_executor.generation, owned=False)
+    await quiescing
+    with pytest.raises(SessionSealedError) as sealed:
+        await session.until(lambda _: False)
+    assert sealed.value.cursor == session.cursor
 
 
 if __name__ == "__main__":
