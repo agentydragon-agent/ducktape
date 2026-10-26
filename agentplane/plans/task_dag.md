@@ -1036,7 +1036,9 @@ Recording this idea does not schedule implementation.
 
 ### `VM_REPLICATED_BLOCK_WORKSPACE` — provision replicated raw-block VM workspaces
 
-**In review; [PR #12108](https://github.com/agentydragon/ducktape/pull/12108), 2026-10-25 PDT, operator-selected.** Change `runner-vm` to
+**Provisioning merged in [PR #12108](https://github.com/agentydragon/ducktape/pull/12108);
+acceptance assertions in review in [PR #12110](https://github.com/agentydragon/ducktape/pull/12110),
+2026-10-25 PDT, operator-selected.** Change `runner-vm` to
 `BlockFilesystem`/ext4 on a `Block` claim. Staging puts both VM claims on
 `piraeus-ssd-2-autodiskful`; state remains `DirectoryTree`/`Filesystem` through virtiofs and
 Pod templates are unchanged. Exit: template and generated-manifest checks plus real raw-block
@@ -1047,8 +1049,10 @@ VM write/read, suspend/resume and retained-identity acceptance on RBE. See
 
 **Blocked on `VM_REPLICATED_BLOCK_WORKSPACE`; operational hold on the replicated class's
 [Piraeus qualification](../../cluster/docs/plans/piraeus_production.md).** The operator accepts
-deleting pre-existing affected Sandboxes instead of implementing storage conversion
-(2026-10-25 PDT). Inventory and reset only those VM Sandboxes through their normal lifecycle;
+deleting selected pre-existing affected Sandboxes instead of implementing storage conversion
+(2026-10-25 PDT). A legacy VM explicitly retained by the operator stays permanently suspended
+with automatic wake disabled; preserve its Sandbox, claims and PVs, and use a different name
+for a fresh replacement. Inventory and reset only selected VM Sandboxes through their normal lifecycle;
 recreate with fresh matching claims, then verify state/workspace persistence and a bounded
 stop/start move across eligible OVH nodes. Preserve unrelated Sandboxes and backend service
 data. The [cutover procedure](vm_block_storage.md#cutover) records the exact accepted loss,
