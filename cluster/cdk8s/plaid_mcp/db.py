@@ -80,7 +80,7 @@ def _cluster(chart: Chart) -> None:
                     ensure=ClusterSpecManagedRolesEnsure.PRESENT,
                     login=True,
                     password_secret=ClusterSpecManagedRolesPasswordSecret(name=SPEND.name),
-                    comment="Read-only runtime role for plaid-spend's four Plaid source tables.",
+                    comment="Read-only runtime role for plaid-spend's seven Plaid source tables.",
                 ),
             ]
         ),

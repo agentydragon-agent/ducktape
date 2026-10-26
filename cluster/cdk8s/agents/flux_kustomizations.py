@@ -69,6 +69,7 @@ def plaid_mcp(
         artifact,
         timeout="10m",
         decryption=SOPS_DECRYPTION,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         # Web OIDC credentials are supplied by an ExternalSecret and required by
         # the pods at startup; wait=True tracks their readiness. Unrelated
         # Authentik Terraform projects must not block app image/config updates.

@@ -11,4 +11,5 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO plaid_ro;
 -- plaid-spend can read only the source tables used to compute its shared view.
 GRANT CONNECT ON DATABASE plaidmcp TO plaid_spend;
 GRANT USAGE ON SCHEMA public TO plaid_spend;
-GRANT SELECT ON TABLE links, accounts, transactions, liability_credit_snapshots TO plaid_spend;
+GRANT SELECT ON TABLE links, accounts, transactions, liability_credit_snapshots,
+    balance_snapshots, holding_snapshots, securities TO plaid_spend;
