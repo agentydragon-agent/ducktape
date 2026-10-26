@@ -28,7 +28,7 @@ WORKSPACE_HEALTH_CHECK_EXPR = KustomizationSpecHealthCheckExprs(
     api_version="opentofu.upbound.io/v1beta1",
     kind="Workspace",
     current=(
-        "has(status) && has(status.conditions) && "
+        "has(status.conditions) && "
         "status.conditions.exists(c, has(c.type) && c.type == 'Synced' && "
         "has(c.status) && c.status == 'True' && has(c.observedGeneration) && "
         "c.observedGeneration == metadata.generation) && "
