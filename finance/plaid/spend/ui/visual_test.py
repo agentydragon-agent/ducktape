@@ -1033,7 +1033,10 @@ async def test_sustainability_partial_window_has_no_startup_chart(
 ) -> None:
     async def serve_partial(route: Route) -> None:
         result = _example_sustainability()
-        result["covered_days"] = 12
+        result["covered_days"] = 45
+        result["period_start"] = "2026-08-31"
+        for field in ["mandatory_minor_units", "flexible_minor_units", "provisional_minor_units", "spending_minor_units"]:
+            result[field] = int(result[field]) // 2
         result["history"] = []
         await route.fulfill(json=result)
 
@@ -1041,7 +1044,7 @@ async def test_sustainability_partial_window_has_no_startup_chart(
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
-    await expect(page.get_by_text("Partial window · 12/90 days", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Partial window · 45/90 days", exact=True)).to_be_visible()
     await expect(page.get_by_text("History requires at least 90 days", exact=False)).to_be_visible()
     await expect(page.locator('canvas[aria-label="Annualized spending and implied draw rates by day"]')).to_have_count(
         0
