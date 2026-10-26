@@ -62,6 +62,7 @@ func CLI(ctx context.Context, args []string) error {
 	var config Config
 	var control, ingress Endpoint
 	var launchFile, instructionsFile, claudeBinary, codexBinary, anthropicURL, openaiURL string
+	var executorURL, executorSocket string
 	var declared, inherited environmentFlags
 	var checkpoint DebugCheckpointConfig
 	flags.StringVar(&config.StateDir, "state-dir", "", "Session logs and native persistence")
@@ -75,6 +76,8 @@ func CLI(ctx context.Context, args []string) error {
 	flags.StringVar(&anthropicURL, "anthropic-base-url", "", "Anthropic Messages endpoint")
 	flags.StringVar(&codexBinary, "codex-binary", "", "Codex executable")
 	flags.StringVar(&openaiURL, "openai-base-url", "", "OpenAI Responses base URL, including /v1")
+	flags.StringVar(&executorURL, "codex-executor-url", "", "Isolated executor loopback WebSocket URL")
+	flags.StringVar(&executorSocket, "codex-executor-socket", "", "Executor container ownership socket")
 	flags.Var(&declared, "harness-env", "NAME=value or NAME inherited by harnesses; repeatable")
 	flags.Var(&inherited, "harness-inherit-env", "Image-owned environment NAME inherited by harnesses; repeatable")
 	flags.StringVar(&checkpoint.Name, "test-debug-checkpoint-name", "", "Test-only durable checkpoint")
@@ -130,6 +133,9 @@ func CLI(ctx context.Context, args []string) error {
 			return errors.New("codex-binary requires openai-base-url and OPENAI_API_KEY")
 		}
 		config.Codex = &harness.LaunchConfig{Binary: codexBinary, BaseURL: openaiURL, Token: environ["OPENAI_API_KEY"]}
+	}
+	if executorURL != "" || executorSocket != "" {
+		config.CodexExecutor = &CodexExecutorConfig{URL: executorURL, ContainerSocket: executorSocket}
 	}
 	if (checkpoint.Name == "") != (checkpoint.CommandID == "") {
 		return errors.New("both test debug checkpoint options must be set together")

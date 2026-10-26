@@ -34,6 +34,7 @@ type ProcessConfig struct {
 	Env              map[string]string
 	StateOwnerFD     *os.File
 	ProcessIsolation *AgentCgroups
+	ResourceLimits   *ResourceLimits
 	AgentUID         *uint32
 	AgentGID         *uint32
 	Executable       string
@@ -74,6 +75,14 @@ func NewProcess(config ProcessConfig) (*Process, error) {
 		uid, gid := config.ProcessIsolation.AgentUID, config.ProcessIsolation.AgentGID
 		config.AgentUID, config.AgentGID = &uid, &gid
 	}
+	if config.ResourceLimits != nil {
+		if config.ProcessIsolation == nil {
+			return nil, errors.New("process resource limits require process isolation")
+		}
+		if err := config.ProcessIsolation.validateProcessLimits(*config.ResourceLimits); err != nil {
+			return nil, fmt.Errorf("invalid process resource limits: %w", err)
+		}
+	}
 	return &Process{config: config, waitDone: make(chan struct{})}, nil
 }
 
@@ -92,7 +101,7 @@ func (p *Process) Start(ctx context.Context) error {
 	}
 
 	if p.config.ProcessIsolation != nil {
-		path, err := p.config.ProcessIsolation.CreateProcessGroup()
+		path, err := p.config.ProcessIsolation.CreateProcessGroup(p.config.ResourceLimits)
 		if err != nil {
 			return p.cleanupFailedStart(fmt.Errorf("create native process cgroup: %w", err))
 		}

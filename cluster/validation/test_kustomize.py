@@ -1,8 +1,13 @@
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest_bazel
+import yaml
 
 from cluster.validation.kustomize import flux_generated_kustomization
+from cluster.validation.tool_resolve import resolve_tool
+from util.bazel.runfiles import get_required_path
 
 
 def test_flux_generated_kustomization_scans_like_kustomize_controller(tmp_path: Path) -> None:
@@ -15,6 +20,43 @@ def test_flux_generated_kustomization_scans_like_kustomize_controller(tmp_path: 
     # A subdirectory with its own kustomization is one resource; any other YAML file,
     # nested or not, is its own resource; non-YAML files are not resources.
     assert set(kust.resources) == {Path("app.k8s.yaml"), Path("overlay"), Path("plain/secret.sops.yaml")}
+
+
+def test_runner_image_pin_reaches_every_sandbox_template_container(tmp_path: Path) -> None:
+    image_pins = get_required_path("_main/cluster/k8s/agentplane-staging/image-pins")
+    shutil.copytree(image_pins, tmp_path / "image-pins")
+    pins = yaml.safe_load((tmp_path / "image-pins/kustomization.yaml").read_text())
+    runner_image = "git.allegedly.works/ducktape-ci/runner-ducktape"
+    runner_pin = next(image for image in pins["images"] if image["name"] == runner_image)
+    (tmp_path / "kustomization.yaml").write_text(
+        "apiVersion: kustomize.config.k8s.io/v1beta1\n"
+        "kind: Kustomization\n"
+        "resources: [sandbox-template.yaml]\n"
+        "components: [image-pins]\n"
+    )
+    (tmp_path / "sandbox-template.yaml").write_text(
+        "apiVersion: agentplane.allegedly.works/v1alpha1\n"
+        "kind: SandboxTemplate\n"
+        "metadata:\n"
+        "  name: runner-ducktape\n"
+        "spec:\n"
+        "  pod:\n"
+        "    spec:\n"
+        "      containers:\n"
+        "        - name: runner\n"
+        f"          image: {runner_image}:unset\n"
+        "        - name: codex-executor\n"
+        f"          image: {runner_image}:unset\n"
+    )
+    result = subprocess.run(
+        [str(resolve_tool("kustomize", "multitool/tools/kustomize/kustomize")), "build", str(tmp_path)],
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr.decode()
+    [template] = yaml.safe_load_all(result.stdout)
+    images = [container["image"] for container in template["spec"]["pod"]["spec"]["containers"]]
+    assert images == [f"{runner_image}:{runner_pin['newTag']}"] * 2
 
 
 if __name__ == "__main__":

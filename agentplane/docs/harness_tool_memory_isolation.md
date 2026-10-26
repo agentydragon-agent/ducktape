@@ -1,34 +1,18 @@
 # Keeping tool memory from killing the harness
 
-Status: **optional same-Sandbox resource research; none implemented**. Static reading of Claude Code
-2.1.252 (debundled from the pinned binary) and Codex `rust-v0.144.1` source. The Sandbox is the
-security boundary. In a VM, the native harness and its tool children share one delegated cgroup and
-resource budget; it is not a security boundary between a tool and its harness. No per-tool budget or
-separate kill behavior is part of VM acceptance. Nothing below has been exercised in an Agentplane
-Sandbox.
+Runner implements isolated Codex execution through a supervised exec-server. Pods use a separate
+container; VMs use a sibling delegated cgroup. Configuration, lifecycle, and the limits of that
+boundary are documented in [Codex executor isolation](../runner/docs/codex_executor.md).
 
-## Problem
+The research below covers additional interception and enforcement options, principally for Claude.
+It was based on Claude Code 2.1.252 and Codex `rust-v0.144.1`; it is not a statement of the current
+Codex integration. The Sandbox remains the security boundary. Claude and Codex's local operating
+mode still share a resource budget with their tool children.
 
-The [observed VM OOM incident](vm_sandboxes.md#guest-resource-controls) demonstrates accidental
-harness death during agent Nix work under the current VM setup. The VM boundary and existing
-per-harness budgets do not keep a tool's memory consumption from killing its own harness.
-
-The Agentplane runner, its native harness (Claude Code or Codex), and every command the agent runs share one container. When
-the container's memory cgroup hits `memory.max`, the kernel OOM-kills, and under cgroup v2 kubelet
-sets `memory.oom.group=1` on the container (upstream default since Kubernetes 1.28; our nodes run
-1.35 on Talos, not observed directly), so the whole container dies, runner and harness included. An
-optional future product requirement might ask for an accidental runaway (`make -j`, a leaking test,
-a large `sort`) to stop at the tool process without ending its harness. The current resource contract
-instead budgets and tears down the native harness together with its child tools.
-
-Constraints from the Agentplane runner Pod template (`cluster/cdk8s/agentplane/sandbox_pod.py`): uid 1000,
-`capabilities.drop: [ALL]`, no privilege escalation, RuntimeDefault seccomp. The container runtime
-therefore mounts `/sys/fs/cgroup` read-only; nothing in the container can create cgroups, write
-`memory.max`, or lower `oom_score_adj`. Raising one's own `oom_score_adj` and reading the cgroup's
-`memory.current`, `memory.max`, `memory.events` and `memory.pressure` still work.
-
-Two independent choices: **where** tool commands get intercepted (per harness), and **what** the
-interception does (enforcement).
+The [observed VM OOM incident](vm_sandboxes.md#guest-resource-controls) demonstrates why a
+per-harness budget alone cannot keep tool memory from killing its harness. Pod workloads run as
+uid 1000 without capabilities or privilege escalation and with RuntimeDefault seccomp; their
+cgroup filesystem is read-only. VM delegation permits Runner to enforce sibling cgroup budgets.
 
 ## Interception points
 
@@ -108,9 +92,8 @@ for snapshots.
 | Tools in a separate container (Codex exec-server)              | Needs Pod change     | Kernel-enforced by that container's own limit, no privilege. A second container with the shared workspace volume runs `codex exec-server`; Codex points at it through `environments.toml`. Claude has no equivalent short of a `CLAUDE_CODE_SHELL_PREFIX` client that proxies each command, cwd and environment to that container.                                                                   |
 | VM or microVM Sandbox                                          | No                   | The current VM uses delegated cgroups per native harness. The harness and its tool descendants share a group; per-tool limits remain optional research.                                                                                                                                                                                                                                              |
 
-## Deferred options
+## Further work
 
-The mechanisms above are alternatives only if a concrete product requirement calls for a tool child
-to have a separate resource or termination boundary. Revisit them with an acceptance scenario for
-tool OOM behavior that checks both the native harness and Runner journal. This is separate from the
-per-harness cgroup acceptance in [VM Sandboxes](vm_sandboxes.md) and does not gate it.
+Claude tool cgroups and shell interception remain deferred. Any implementation needs an acceptance
+scenario checking tool OOM, harness survival and Runner journal continuity. Codex code-mode workers,
+MCP helpers and external daemons remain outside its executor boundary.

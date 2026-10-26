@@ -89,11 +89,15 @@ def egress_env() -> list[k8s.EnvVar]:
     spellings, since clients disagree on case; NO_PROXY is loopback and nothing else. KUBECONFIG
     names the box's own identity at the API server, through the same proxy.
     """
+    return [*proxy_environment(), k8s.EnvVar(name="KUBECONFIG", value=_KUBECONFIG_PATH)]
+
+
+def proxy_environment() -> list[k8s.EnvVar]:
+    """Proxy routing and certificate trust for a workload that has no platform config mount."""
     return [
         *(k8s.EnvVar(name=name, value=_MITM_PROXY_URL) for name in PROXY_VAR_NAMES),
         *(k8s.EnvVar(name=name, value=_NO_PROXY_HOSTS) for name in NO_PROXY_VAR_NAMES),
         *(k8s.EnvVar(name=name, value=_CA_BUNDLE_PATH) for name in CA_BUNDLE_VAR_NAMES),
-        k8s.EnvVar(name="KUBECONFIG", value=_KUBECONFIG_PATH),
     ]
 
 
@@ -108,30 +112,39 @@ def workload_environment(env: Environment, existing: Sequence[k8s.EnvVar]) -> li
 
 
 def egress_proxy_mounts() -> list[k8s.VolumeMount]:
-    """The proxy CA bundle and kubeconfig needed by a sandbox workload."""
+    """The interception CA bundle needed to verify proxied requests."""
     return [
         k8s.VolumeMount(
             name=_EGRESS_CA_VOLUME_NAME, mount_path=_CA_BUNDLE_PATH, sub_path=egress.CA_BUNDLE_KEY, read_only=True
-        ),
-        k8s.VolumeMount(
-            name=_TOOL_CONFIG_VOLUME_NAME, mount_path=_KUBECONFIG_PATH, sub_path=_KUBECONFIG_KEY, read_only=True
-        ),
+        )
     ]
 
 
-def egress_mounts() -> list[k8s.VolumeMount]:
-    """The proxy mounts plus Java's trust store. subPath updates reach a new Pod on restart."""
-    ca, kubeconfig_mount = egress_proxy_mounts()
+def platform_control_mounts() -> list[k8s.VolumeMount]:
+    """The kubeconfig for workload tools which need this Sandbox's API identity."""
     return [
-        ca,
+        k8s.VolumeMount(
+            name=_TOOL_CONFIG_VOLUME_NAME, mount_path=_KUBECONFIG_PATH, sub_path=_KUBECONFIG_KEY, read_only=True
+        )
+    ]
+
+
+def proxy_trust_mounts() -> list[k8s.VolumeMount]:
+    """The proxy CA at system and Java trust paths, without the Sandbox API identity."""
+    return [
+        *egress_proxy_mounts(),
         k8s.VolumeMount(
             name=_EGRESS_CA_VOLUME_NAME,
             mount_path=_JAVA_TRUST_STORE_PATH,
             sub_path=egress.JAVA_TRUST_STORE_KEY,
             read_only=True,
         ),
-        kubeconfig_mount,
     ]
+
+
+def egress_mounts() -> list[k8s.VolumeMount]:
+    """Proxy trust and platform control mounts needed by sandbox tools."""
+    return [*proxy_trust_mounts(), *platform_control_mounts()]
 
 
 def bazelrc_mount() -> k8s.VolumeMount:
@@ -306,6 +319,7 @@ def pod_spec(
     env: Environment,
     *,
     workload: k8s.Container,
+    additional_workloads: Sequence[k8s.Container] = (),
     service_account_name: str | None,
     sidecar_settings: SettingsFile,
     node_selector: Mapping[str, str] | None = None,
@@ -318,7 +332,8 @@ def pod_spec(
     projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
     several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
     `service_account_name` is the template's own; whoever creates a box from it may replace it.
-    `sidecar_settings` is the sidecar's settings file (`add_sidecar_settings`), and `workload_volumes`
+    `additional_workloads` are other workload containers, before the egress sidecar. `sidecar_settings`
+    is the sidecar's settings file (`add_sidecar_settings`), and `workload_volumes`
     are Pod volumes the workload mounts beyond the egress path's own. `node_selector` is the optional
     placement restriction for this template."""
     settings = sidecar_settings.pod_wiring(
@@ -329,6 +344,7 @@ def pod_spec(
         # `kubectl exec` and the sandbox Actions run a command in.
         containers=[
             workload,
+            *additional_workloads,
             _egress_sidecar(
                 env,
                 settings,
@@ -341,11 +357,15 @@ def pod_spec(
             ),
         ],
         automount_service_account_token=False,
+        # Container restarts create a fresh PID namespace for the isolated Codex executor.
+        restart_policy="Always",
         image_pull_secrets=(
             [k8s.LocalObjectReference(name=image_pull_secret_name)] if image_pull_secret_name is not None else None
         ),
         node_selector=dict(node_selector) if node_selector is not None else None,
         service_account_name=service_account_name,
+        # Do not let a runner or command process inspect another container's processes.
+        share_process_namespace=False,
         termination_grace_period_seconds=60,
         security_context=k8s.PodSecurityContext(
             run_as_non_root=True,

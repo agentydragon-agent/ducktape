@@ -22,6 +22,8 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 
 - `runner.go` and `session.go`: durable Session reservations, admission, setup,
   lazy native startup, command scheduling, recovery and quiesce.
+- `executor.go` and `executor_container.go`: isolated Codex tool execution, independent restart,
+  RPC health checks and container ownership fencing ([execution modes](docs/codex_executor.md)).
 - `codex_server.go`: the Runner's one Codex app-server, its startup and exit, and the journaling of
   each frame in the Sessions that `codex/router.go` assigns it to.
 - `transport.go`: the outbound control tunnel and independent per-Session ingress
@@ -45,11 +47,31 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   JSON encoding rather than reproducing the former Python runner's formatting.
 - `config.go`, `guest.go` and `cli.go`: explicit child environment and launch
   configuration. `cmd/main.go` dispatches internal process modes before service startup.
-  `agentplane-runner-vm` is a symlink to this same executable.
+  `agentplane-runner-vm` is a symlink to this same executable. The [Runner configuration inventory](CONFIGURATION.md)
+  documents the public flags, configuration sources and VM paths for Pod and VM deployments.
 
 The production build target is `//agentplane/runner/cmd:agentplane-runner`, shipped in `//agentplane/runner:disk_image`.
 The binary includes the supervisor and SQLite; the native Claude/Codex executables,
 workspace tools and CA certificates are supplied by the runtime image.
+
+## Codex executor container
+
+Runner Pods can run Codex command execution through a companion container in the same Pod. The runner
+retains the Codex app-server and journals; the companion runs as PID 1 and supervises
+`codex exec-server` in its private container PID namespace. The runner claims the companion over a Unix socket before Codex
+starts and fences it before replacing a lost process. A companion exit or failed health probe lets
+Kubernetes restart that container with a fresh PID namespace; the runner never replays an in-flight
+command. `Environment.isolated_codex_executor` controls this Pod-template policy and can be disabled
+for environments that need execution inside the runner container.
+
+Both containers run as the image's uid and gid 1000 and share the Sandbox state and workspace at the
+same absolute paths, plus `/home/runner`, `/tmp`, and the read-only runner disk image. They use the
+same proxy and CA settings. Processes in either container have the same filesystem identity and can
+change the shared files, so the companion is a process and resource boundary, not a trust boundary.
+Its Kubernetes requests and limits are independently configurable with `executor_resources` on
+`RunnerTemplate`; runner resource overrides continue to apply only to the runner container. The
+companion receives the Sandbox kubeconfig and any optional BuildBuddy diagnostics key so its command
+tools keep the runner's intended access. It gets no model credentials or sidecar-projected tokens.
 
 `codex/protocol` generates Go models at build time with Quicktype from schemas
 exported by the same pinned Codex executable used by the native tests. Requests,
@@ -243,5 +265,6 @@ a deployed sandbox must separately prove the normal proxy/CA/credential route fo
 No credentials are embedded in the image. The staging container workflow is BuildBuddy-hosted
 builds, not a local Bazel client with remote actions. Local Bazel execution is deferred until
 VM-backed environments; package availability does not imply permission to run it. Adding tools
-does not isolate their processes or memory from the harness. See the
+does not itself establish a tool memory boundary. Isolated Codex execution is configured separately
+([executor lifecycle and scope](docs/codex_executor.md)). See the
 [BuildBuddy execution policy and validation](../docs/buildbuddy_remote_auth.md#validation-and-execution-policy).

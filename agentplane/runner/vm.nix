@@ -77,6 +77,24 @@ let
   consoleAutologinIs =
     autologin:
     "${pkgs.jq}/bin/jq 'if (.console_autologin == true) == ${lib.boolToString autologin} then empty else (\"\" | halt_error(1)) end' ${runtimeDir}/config.json";
+  applyRunnerResourceLimits = pkgs.writeShellScript "agentplane-runner-resource-limits" ''
+    set -eu
+    properties="$(
+      ${runnerDir}/bin/agentplane-runner-vm --guest-resource-properties ${runtimeDir}/config.json
+    )"
+    set --
+    while IFS= read -r property; do
+      [ -n "$property" ] || continue
+      set -- "$@" "$property"
+    done <<EOF
+    $properties
+    EOF
+    if [ "$#" -ne 5 ]; then
+      echo "Runner resource preflight returned an unexpected property count" >&2
+      exit 1
+    fi
+    ${pkgs.systemd}/bin/systemctl set-property --runtime agentplane-runner.service "$@"
+  '';
 in
 {
   imports = [ ./../../nix/nixos/modules/vm-hardware.nix ];
@@ -297,12 +315,10 @@ in
       Restart = "on-failure";
       RestartSec = "2s";
       TimeoutStopSec = "25s";
+      OOMPolicy = "continue";
       Delegate = "cpu io memory pids";
       DelegateSubgroup = "runner";
-      MemoryHigh = "6G";
-      MemoryMax = "7G";
-      CPUQuota = "700%";
-      TasksMax = 1024;
+      ExecStartPre = "${applyRunnerResourceLimits}";
       # Only signal the runner first so its shutdown drains native processes while their inherited
       # state-owner descriptor remains open. systemd escalates to the whole unit after 25 seconds.
       KillMode = "mixed";

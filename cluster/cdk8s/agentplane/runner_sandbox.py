@@ -57,6 +57,15 @@ _RUNNER_DIR = "/run/agentplane/runner"
 _STATE_DIR = "/state"
 _WORKSPACE_VOLUME_NAME = "workspace"
 _WORKSPACE_DIR = f"{_STATE_DIR}/workspaces"
+_HOME_VOLUME_NAME = "home"
+_HOME_DIR = "/home/runner"
+_TMP_VOLUME_NAME = "tmp"
+_TMP_DIR = "/tmp"
+_EXECUTOR_VOLUME_NAME = "codex-executor"
+_EXECUTOR_DIR = "/run/agentplane/executor"
+_EXECUTOR_SOCKET = f"{_EXECUTOR_DIR}/control.sock"
+_EXECUTOR_URL = "ws://127.0.0.1:4501"
+_EXECUTOR_CONTAINER_NAME = "codex-executor"
 _BUILDBUDDY_SECRET = "buildbuddy-api-key"
 _BUILDBUDDY_MOUNT = "/run/buildbuddy"
 # The deployment-wide instructions every Session starts with, as a ConfigMap the runner container mounts.
@@ -145,6 +154,7 @@ class RunnerSandbox(Construct):
         egress_api_service: ServiceRef | None = None,
         storage_class: str = _STORAGE_CLASS,
         runner_resources: k8s.ResourceRequirements | None = None,
+        executor_resources: k8s.ResourceRequirements | None = None,
         sidecar_resources: k8s.ResourceRequirements | None = None,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
@@ -172,6 +182,7 @@ class RunnerSandbox(Construct):
             image=_IMAGE,
             storage_class=storage_class,
             runner_resources=runner_resources,
+            executor_resources=executor_resources,
             sidecar_resources=sidecar_resources,
             image_pull_secret_name=image_pull_secret_name,
             trust_mounts=trust_mounts,
@@ -214,7 +225,7 @@ class RunnerSandbox(Construct):
 
 
 class RunnerTemplate(Construct):
-    """Shared runner Pod and storage wiring; staging ducktape may opt into a direct BuildBuddy key."""
+    """Shared runner Pod and storage wiring, with optional isolated Codex execution."""
 
     def __init__(
         self,
@@ -228,6 +239,7 @@ class RunnerTemplate(Construct):
         extra_harness_env: Sequence[str] = (),
         storage_class: str = _STORAGE_CLASS,
         runner_resources: k8s.ResourceRequirements | None = None,
+        executor_resources: k8s.ResourceRequirements | None = None,
         sidecar_resources: k8s.ResourceRequirements | None = None,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
@@ -240,13 +252,88 @@ class RunnerTemplate(Construct):
         self.extra_harness_env = extra_harness_env
         self.storage_class = storage_class
         self.runner_resources = runner_resources
+        self.executor_resources = executor_resources
         self.sidecar_resources = sidecar_resources
         self.image_pull_secret_name = image_pull_secret_name
-        self.trust_mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
+        self.trust_mounts = trust_mounts if trust_mounts is not None else sandbox_pod.proxy_trust_mounts()
         self.control_service = control_service
         self.agent_cli_env = agent_cli_environment(service_urls(env, egress_api_service=egress_api_service))
+        if not env.isolated_codex_executor and executor_resources is not None:
+            raise ValueError("executor_resources cannot be set when isolated Codex execution is disabled")
         # The SandboxTemplate's spec: its `pod`, and the `stateVolume` the VM template shares.
         self.spec = self._add_sandbox_template(name=name, image=image)
+
+    def _execution_mounts(self) -> list[k8s.VolumeMount]:
+        return [
+            k8s.VolumeMount(name=_STATE_VOLUME_NAME, mount_path=_STATE_DIR),
+            k8s.VolumeMount(name=_WORKSPACE_VOLUME_NAME, mount_path=_WORKSPACE_DIR),
+            k8s.VolumeMount(name=_RUNNER_VOLUME_NAME, mount_path=_RUNNER_DIR, read_only=True),
+            *self.trust_mounts,
+        ]
+
+    def _isolated_executor_mounts(self) -> list[k8s.VolumeMount]:
+        return [
+            k8s.VolumeMount(name=_HOME_VOLUME_NAME, mount_path=_HOME_DIR),
+            k8s.VolumeMount(name=_TMP_VOLUME_NAME, mount_path=_TMP_DIR),
+            k8s.VolumeMount(name=_EXECUTOR_VOLUME_NAME, mount_path=_EXECUTOR_DIR),
+        ]
+
+    def _executor_health_probe(self) -> k8s.Probe:
+        return k8s.Probe(
+            exec=k8s.ExecAction(
+                command=[f"{_RUNNER_DIR}/bin/agentplane-runner", "--executor-container-health", _EXECUTOR_SOCKET]
+            ),
+            initial_delay_seconds=5,
+            period_seconds=5,
+            timeout_seconds=2,
+            failure_threshold=1,
+        )
+
+    def _executor_container(self, image: str) -> k8s.Container:
+        return k8s.Container(
+            name=_EXECUTOR_CONTAINER_NAME,
+            image=f"{image}:{_PLACEHOLDER_TAG}",
+            command=[f"{_RUNNER_DIR}/bin/agentplane-runner"],
+            args=[
+                "--executor-container",
+                "--socket",
+                _EXECUTOR_SOCKET,
+                "--listen",
+                _EXECUTOR_URL,
+                "--binary",
+                "/bin/codex",
+            ],
+            working_dir=_STATE_DIR,
+            security_context=sandbox_pod.workload_security_context(),
+            env=sandbox_pod.workload_environment(
+                self.env,
+                [
+                    *sandbox_pod.egress_env(),
+                    *(
+                        [k8s.EnvVar(name="BBR_BUILDBUDDY_API_KEY_FILE", value=f"{_BUILDBUDDY_MOUNT}/api-key")]
+                        if self.buildbuddy_secret
+                        else []
+                    ),
+                ],
+            ),
+            resources=self.executor_resources
+            or k8s.ResourceRequirements(
+                requests={"cpu": k8s.Quantity.from_string("250m"), "memory": k8s.Quantity.from_string("512Mi")},
+                limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("2Gi")},
+            ),
+            liveness_probe=self._executor_health_probe(),
+            readiness_probe=self._executor_health_probe(),
+            volume_mounts=[
+                *self._execution_mounts(),
+                *self._isolated_executor_mounts(),
+                *sandbox_pod.platform_control_mounts(),
+                *(
+                    [k8s.VolumeMount(name=_BUILDBUDDY_SECRET, mount_path=_BUILDBUDDY_MOUNT, read_only=True)]
+                    if self.buildbuddy_secret
+                    else []
+                ),
+            ],
+        )
 
     def _runner_container(self, image: str) -> k8s.Container:
         # The environment a harness child starts from: a bare NAME takes the runner's
@@ -281,6 +368,11 @@ class RunnerTemplate(Construct):
             "/bin/codex",
             "--openai-base-url",
             "$(LITELLM_URL)/v1",
+            *(
+                ["--codex-executor-url", _EXECUTOR_URL, "--codex-executor-socket", _EXECUTOR_SOCKET]
+                if self.env.isolated_codex_executor
+                else []
+            ),
             # The Runner Gateway and the ingress, over the sidecar's platform routes.
             *platform_routes.runner_args(self.env.namespace),
             "--launch-file",
@@ -334,14 +426,12 @@ class RunnerTemplate(Construct):
                 limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
             ),
             volume_mounts=[
-                k8s.VolumeMount(name=_STATE_VOLUME_NAME, mount_path=_STATE_DIR),
-                # Session presets use this same path in Pod and VM Sandboxes.
-                k8s.VolumeMount(name=_WORKSPACE_VOLUME_NAME, mount_path=_WORKSPACE_DIR),
+                *self._execution_mounts(),
                 k8s.VolumeMount(
                     name=_PLATFORM_INSTRUCTIONS_VOLUME, mount_path=_PLATFORM_INSTRUCTIONS_DIR, read_only=True
                 ),
-                k8s.VolumeMount(name=_RUNNER_VOLUME_NAME, mount_path=_RUNNER_DIR, read_only=True),
-                *self.trust_mounts,
+                *(self._isolated_executor_mounts() if self.env.isolated_codex_executor else []),
+                *sandbox_pod.platform_control_mounts(),
                 *(
                     [k8s.VolumeMount(name=_BUILDBUDDY_SECRET, mount_path=_BUILDBUDDY_MOUNT, read_only=True)]
                     if self.buildbuddy_secret
@@ -376,6 +466,7 @@ class RunnerTemplate(Construct):
                 workload=self._runner_container(image),
                 service_account_name=NAME,
                 sidecar_settings=sidecar_settings,
+                additional_workloads=([self._executor_container(image)] if self.env.isolated_codex_executor else []),
                 # Let LINSTOR's storage-pool topology place the strict-local HDD claims.
                 workload_volumes=[
                     k8s.Volume(
@@ -385,6 +476,15 @@ class RunnerTemplate(Construct):
                     k8s.Volume(
                         name=_PLATFORM_INSTRUCTIONS_VOLUME,
                         config_map=k8s.ConfigMapVolumeSource(name=_PLATFORM_INSTRUCTIONS_CONFIG_MAP),
+                    ),
+                    *(
+                        [
+                            k8s.Volume(name=_HOME_VOLUME_NAME, empty_dir=k8s.EmptyDirVolumeSource()),
+                            k8s.Volume(name=_TMP_VOLUME_NAME, empty_dir=k8s.EmptyDirVolumeSource()),
+                            k8s.Volume(name=_EXECUTOR_VOLUME_NAME, empty_dir=k8s.EmptyDirVolumeSource()),
+                        ]
+                        if self.env.isolated_codex_executor
+                        else []
                     ),
                     *(
                         [

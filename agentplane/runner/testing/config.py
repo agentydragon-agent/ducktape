@@ -30,3 +30,5 @@ class RunnerTestConfig:
     claude: NativeLaunch | None = None
     codex: NativeLaunch | None = None
     debug_checkpoint: tuple[str, str] | None = None
+    codex_executor_url: str | None = None
+    codex_executor_socket: Path | None = None
