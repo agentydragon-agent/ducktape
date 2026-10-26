@@ -1667,6 +1667,7 @@ py_library(
         "//cluster/cdk8s/forgejo:budget_namespace",
         "//cluster/cdk8s/forgejo:cache",
         "//cluster/cdk8s/forgejo:claude",
+        "//cluster/cdk8s/forgejo:crossplane_roots",
         "//cluster/cdk8s/forgejo:db",
         "//cluster/cdk8s/forgejo:flux_kustomizations",
         "//cluster/cdk8s/forgejo:gitops_modules",
