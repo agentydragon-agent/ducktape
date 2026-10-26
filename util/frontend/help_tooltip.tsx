@@ -1,6 +1,5 @@
 import { ActionIcon, Tooltip } from "@mantine/core";
-import { useEffect, useRef, useState } from "react";
-import type { JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 
 /** A compact, keyboard-accessible question mark for explanatory copy beside a label. */
 export function HelpTooltip({ topic, description }: { topic: string; description: string }): JSX.Element {
