@@ -1,4 +1,4 @@
-"""A Sandbox on the VM template runs a turn on each harness, with the scripted model."""
+"""Real VM harness turns and Codex tool OOM containment, driven by the scripted model."""
 
 from __future__ import annotations
 
@@ -176,7 +176,9 @@ async def test_codex_tool_oom_preserves_runner_and_app_server(
         assert final.runner_boot_id == original.runner_boot_id
         assert final.processes == original.processes
         assert final.sessions[0].native_session_id == session.native_session_id
-        assert (await client.sandbox(view.name)).pod == view.pod
+        current = await client.sandbox(view.name)
+        assert current.pod is not None
+        assert current.pod.uid == view.pod.uid
         evidence["passed"] = True
     finally:
         (undeclared_outputs_dir() / "vm-codex-oom.json").write_text(json.dumps(evidence, indent=2) + "\n")
