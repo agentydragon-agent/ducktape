@@ -23,7 +23,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "cert-manager-trust": {"Bundle"},
     "cert-manager-environment": set(),
     "cluster-ca": set(),
-    "crossplane": {"Provider.pkg.crossplane.io"},
+    "crossplane": {"Provider.pkg.crossplane.io", "DeploymentRuntimeConfig.pkg.crossplane.io"},
     "crossplane-provider-litellm": {
         "Key.litellm.m.crossplane.io",
         "Organization.litellm.m.crossplane.io",
