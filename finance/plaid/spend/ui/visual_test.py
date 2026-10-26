@@ -254,7 +254,7 @@ async def _expect_tooltip_rendered(tooltip: Locator) -> None:
 
 
 async def _expect_tooltip_hidden(tooltip: Locator) -> None:
-    await expect(tooltip).to_have_css("opacity", "0")
+    await expect(tooltip).to_be_hidden()
 
 
 @pytest.fixture(scope="module")
