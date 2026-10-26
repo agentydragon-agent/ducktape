@@ -26,15 +26,16 @@ control socket, including while waiting for Runner to claim it. Pod OOM evidence
 `status.containerStatuses[].lastState.terminated` and `restartCount`; an ownership disconnect alone
 does not establish that the container was OOM-killed.
 
-The common Runner configuration selects this mode with `executor.kind: "container"`, `url`,
-and `socket`. The endpoint
+The common Runner configuration selects this mode with `environment.kind: "pod"` with
+`environment.executor.url` and `environment.executor.socket`. The endpoint
 is loopback-only; no Service, inbound network rule, Kubernetes credentials or cgroup privileges are
 needed by Runner. The template owns the endpoint and socket paths used on both sides.
 
 ## VMs
 
-The template's optional `vm_resources.executor` budget supplies `executor.kind: "cgroup"` in the
-common Runner configuration. Runner prepares
+The template's `vm_resources` value supplies `environment.resources` under `environment.kind: "vm"`.
+Its optional executor budget and `environment.executor` endpoint/root must be configured together.
+Runner derives the executor cgroup limits from that budget and prepares
 `workloads` and `executors` as sibling delegated cgroup subtrees, before opening Session stores.
 The harness aggregate and executor aggregate have independent limits; their configured memory caps
 must fit together below the service's memory high watermark. The service's maximum leaves the

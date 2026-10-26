@@ -27,6 +27,7 @@ from agentplane.runner.configuration import (
     ContainerExecutor,
     Endpoint,
     Harness,
+    PodEnvironment,
 )
 from agentplane.runner.platform_instructions import render_platform_instructions
 from cluster.cdk8s import cilium
@@ -351,21 +352,23 @@ class RunnerTemplate(Construct):
         ingress = platform_routes.ingress(self.env.namespace)
         llm_url = llm_ingress.proxied_url(self.env.namespace)
         config = Configuration(
-            version=1,
+            version=2,
             state_dir=_STATE_DIR,
             initialization_cwd=_STATE_DIR,
             control=Endpoint(target=control.local_target, bearer=platform_routes.ROUTE_BEARER),
             ingress=Endpoint(target=ingress.local_target, bearer=platform_routes.ROUTE_BEARER),
             platform_instructions=platform_instructions(self.env, egress_api_service=self.egress_api_service),
-            harness_environment=configuration.Environment(
+            harness_environment=configuration.EnvironmentVariables(
                 inherit=tuple(dict.fromkeys((*self.env.harness_inherited_env, *harness_env))),
                 values={"HOME": _HOME_DIR},
             ),
             claude=Harness(binary="/bin/claude", base_url=llm_url, token_env="ANTHROPIC_AUTH_TOKEN"),
             codex=Harness(binary="/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"),
-            executor=ContainerExecutor(url=_EXECUTOR_URL, socket=_EXECUTOR_SOCKET)
-            if self.env.isolated_codex_executor
-            else None,
+            environment=PodEnvironment(
+                executor=ContainerExecutor(url=_EXECUTOR_URL, socket=_EXECUTOR_SOCKET)
+                if self.env.isolated_codex_executor
+                else None
+            ),
         )
         ConfigMap(
             self,

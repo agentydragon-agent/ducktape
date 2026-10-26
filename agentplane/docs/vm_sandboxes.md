@@ -3,7 +3,7 @@
 A `SandboxTemplate` with `vm` runs its Sandbox's runner in a NixOS guest under KubeVirt instead of
 in a Pod. The Sandbox Controller owns the lifecycle
 ([`SPEC.md` § VMs](../sandbox_controller/SPEC.md)); the guest is
-[`runner/vm.nix`](../runner/vm.nix) and its seed schema is [`sandboxes/guest_config.py`](../sandboxes/guest_config.py);
+[`runner/vm.nix`](../runner/vm.nix) and its shared configuration schema is [`runner/configuration.py`](../runner/configuration.py);
 the template is [`runner_vm.py`](../../cluster/cdk8s/agentplane/runner_vm.py) and the egress relay is
 [`launcher_relay.py`](../../cluster/cdk8s/agentplane/launcher_relay.py). The traffic diagram is in
 [`agentplane/README.md`](../README.md). Control is the runner's outbound stream

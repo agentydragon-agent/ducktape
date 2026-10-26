@@ -52,11 +52,11 @@ func InternalMode(args []string) (handled bool, exitCode int) {
 	}
 }
 
-// VMResourcePropertiesMain validates the read-only VM seed and prints the
+// VMResourcePropertiesMain validates the shared Runner config and prints the
 // systemd properties that may be applied to the Runner service.
 func VMResourcePropertiesMain(args []string) int {
 	if len(args) != 1 || args[0] == "" {
-		fmt.Fprintln(os.Stderr, "--vm-resource-properties requires one guest config path")
+		fmt.Fprintln(os.Stderr, "--vm-resource-properties requires one Runner config path")
 		return 64
 	}
 	properties, err := guestResourceSystemdProperties(args[0])

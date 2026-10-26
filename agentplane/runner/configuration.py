@@ -36,30 +36,57 @@ class ResourceLimits(BaseModel):
     write_iops: int = Field(gt=0)
 
 
-class Cgroups(BaseModel):
+class GuestResources(BaseModel):
+    """VM size, systemd service caps, and the delegated Runner cgroup budgets."""
+
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    root: str
-    agent_uid: int = Field(ge=1, le=4_294_967_295)
-    agent_gid: int = Field(ge=1, le=4_294_967_295)
-    block_devices: Sequence[str] = Field(min_length=1)
+    guest_memory_bytes: int = Field(gt=0)
+    guest_vcpu_count: int = Field(gt=0)
+    os_reserve_bytes: int = Field(ge=0)
+    service_memory_high_bytes: int = Field(gt=0)
+    service_memory_max_bytes: int = Field(gt=0)
+    service_cpu_quota_micros: int = Field(gt=0)
+    service_pids_max: int = Field(gt=0)
     aggregate: ResourceLimits
     process: ResourceLimits
+    executor: ResourceLimits | None = None
 
     @model_validator(mode="after")
-    def validate_limits(self) -> Cgroups:
-        if not Path(self.root).is_absolute() or any(not Path(path).is_absolute() for path in self.block_devices):
-            raise ValueError("cgroup and block-device paths must be absolute")
-        if (
-            self.process.memory_max_bytes > self.aggregate.memory_max_bytes
-            or self.process.cpu_quota_micros > self.aggregate.cpu_quota_micros
-            or self.process.pids_max > self.aggregate.pids_max
-        ):
-            raise ValueError("process memory, CPU and PID limits must fit aggregate")
+    def internally_consistent(self) -> GuestResources:
+        if self.os_reserve_bytes >= self.guest_memory_bytes:
+            raise ValueError("os_reserve_bytes must be smaller than guest_memory_bytes")
+        if self.service_memory_high_bytes > self.service_memory_max_bytes:
+            raise ValueError("service_memory_high_bytes must not exceed service_memory_max_bytes")
+        if self.service_memory_max_bytes > self.guest_memory_bytes - self.os_reserve_bytes:
+            raise ValueError("service_memory_max_bytes must leave the configured OS reserve")
+        if self.aggregate.memory_max_bytes > self.service_memory_high_bytes:
+            raise ValueError("aggregate memory max must not exceed service memory high")
+        if self.aggregate.cpu_quota_micros > self.service_cpu_quota_micros:
+            raise ValueError("aggregate CPU quota must not exceed service CPU quota")
+        if self.aggregate.pids_max > self.service_pids_max:
+            raise ValueError("aggregate PID max must not exceed service PID max")
+        if self.executor is not None:
+            if self.executor.memory_max_bytes > self.service_memory_high_bytes - self.aggregate.memory_max_bytes:
+                raise ValueError("harness and executor memory caps must fit below service memory high")
+            if self.executor.pids_max >= self.service_pids_max - self.aggregate.pids_max:
+                raise ValueError("harness and executor PID caps must leave room for Runner and supervisors")
+            if self.executor.cpu_quota_micros > self.service_cpu_quota_micros:
+                raise ValueError("executor CPU quota must fit within Runner service quota")
+        if self.process.memory_max_bytes > self.aggregate.memory_max_bytes:
+            raise ValueError("process memory max must not exceed aggregate memory max")
+        if self.process.cpu_quota_micros > self.aggregate.cpu_quota_micros:
+            raise ValueError("process CPU quota must not exceed aggregate CPU quota")
+        if self.process.pids_max > self.aggregate.pids_max:
+            raise ValueError("process PID max must not exceed aggregate PID max")
+        if self.service_cpu_quota_micros > self.guest_vcpu_count * 100_000:
+            raise ValueError("service CPU quota must not exceed guest vCPU capacity")
+        if self.service_cpu_quota_micros % 1_000 != 0:
+            raise ValueError("service CPU quota must convert to an integral systemd CPUQuota percent")
         return self
 
 
-class Environment(BaseModel):
+class EnvironmentVariables(BaseModel):
     """Inherited names are read first; explicit values take precedence."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -68,7 +95,7 @@ class Environment(BaseModel):
     values: Mapping[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def valid_names(self) -> Environment:
+    def valid_names(self) -> EnvironmentVariables:
         if any(not name or "=" in name or "\0" in name for name in (*self.inherit, *self.values)):
             raise ValueError("environment names must be nonempty and contain neither '=' nor NUL")
         if any("\0" in value for value in self.values.values()):
@@ -127,15 +154,52 @@ class Executor(BaseModel):
 class ContainerExecutor(Executor):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    kind: Literal["container"] = "container"
     socket: str
+
+    @field_validator("socket")
+    @classmethod
+    def absolute_socket(cls, value: str) -> str:
+        if not Path(value).is_absolute():
+            raise ValueError("container executor socket must be absolute")
+        return value
 
 
 class CgroupExecutor(Executor):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    kind: Literal["cgroup"] = "cgroup"
-    isolation: Cgroups
+    root: str
+
+
+class PodEnvironment(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    kind: Literal["pod"] = "pod"
+    executor: ContainerExecutor | None = None
+
+
+class VMEnvironment(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    kind: Literal["vm"] = "vm"
+    resources: GuestResources
+    console_autologin: bool = False
+    root: str
+    agent_uid: int = Field(ge=1, le=4_294_967_295)
+    agent_gid: int = Field(ge=1, le=4_294_967_295)
+    block_devices: Sequence[str] = Field(min_length=1)
+    executor: CgroupExecutor | None = None
+
+    @model_validator(mode="after")
+    def valid_isolation(self) -> VMEnvironment:
+        if not Path(self.root).is_absolute() or any(not Path(path).is_absolute() for path in self.block_devices):
+            raise ValueError("cgroup and block-device paths must be absolute")
+        if (self.executor is None) != (self.resources.executor is None):
+            raise ValueError("executor endpoint and resource budget must be supplied together")
+        if self.executor is not None:
+            root, executor_root = Path(self.root), Path(self.executor.root)
+            if not executor_root.is_absolute() or root == executor_root or root.parent != executor_root.parent:
+                raise ValueError("executor and harness cgroups must be distinct absolute siblings")
+        return self
 
 
 class DebugCheckpoint(BaseModel):
@@ -150,19 +214,18 @@ class Configuration(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    version: Literal[1]
+    version: Literal[2]
     state_dir: str
     workspace_root: str | None = None
     initialization_cwd: str
     control: Endpoint
     ingress: Endpoint
     platform_instructions: str = Field(min_length=1)
-    runner_environment: Environment = Field(default_factory=Environment)
-    harness_environment: Environment
+    runner_environment: EnvironmentVariables = Field(default_factory=EnvironmentVariables)
+    harness_environment: EnvironmentVariables
     claude: Harness | None = None
     codex: Harness | None = None
-    isolation: Cgroups | None = None
-    executor: Annotated[ContainerExecutor | CgroupExecutor, Field(discriminator="kind")] | None = None
+    environment: Annotated[PodEnvironment | VMEnvironment, Field(discriminator="kind")]
     debug_checkpoint: DebugCheckpoint | None = None
 
     @model_validator(mode="after")
@@ -171,16 +234,6 @@ class Configuration(BaseModel):
             raise ValueError("state and initialization paths must be absolute")
         if self.workspace_root is not None and not Path(self.workspace_root).is_absolute():
             raise ValueError("workspace_root must be absolute when configured")
-        if self.executor is not None and self.codex is None:
+        if self.environment.executor is not None and self.codex is None:
             raise ValueError("executor requires Codex")
-        if isinstance(self.executor, ContainerExecutor) and (
-            self.isolation is not None or not Path(self.executor.socket).is_absolute()
-        ):
-            raise ValueError("container executor requires an absolute socket and container-owned limits")
-        if isinstance(self.executor, CgroupExecutor):
-            if self.isolation is None:
-                raise ValueError("cgroup executor requires harness cgroup isolation")
-            root, executor_root = Path(self.isolation.root), Path(self.executor.isolation.root)
-            if root == executor_root or root.parent != executor_root.parent:
-                raise ValueError("executor and harness cgroups must be distinct siblings")
         return self

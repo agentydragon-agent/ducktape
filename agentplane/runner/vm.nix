@@ -65,17 +65,17 @@ let
           $out/bin/codex
       '';
 
-  # An ExecCondition that passes where the guest config's `console_autologin` (unset is false)
+  # An ExecCondition that passes where the Runner config's `environment.console_autologin` (unset is false)
   # equals `autologin`. jq exits 1 otherwise, which skips the unit without failing it; an unreadable
   # config (exit 2 or 5) skips both console units. It prints nothing, which the console, a tty
   # for these units, would show.
   consoleAutologinIs =
     autologin:
-    "${pkgs.jq}/bin/jq 'if (.console_autologin == true) == ${lib.boolToString autologin} then empty else (\"\" | halt_error(1)) end' ${runtimeDir}/config/vm.json";
+    "${pkgs.jq}/bin/jq 'if (.environment.kind == \"vm\" and .environment.console_autologin == true) == ${lib.boolToString autologin} then empty else (\"\" | halt_error(1)) end' ${runtimeDir}/config/runner.json";
   applyRunnerResourceLimits = pkgs.writeShellScript "agentplane-runner-resource-limits" ''
     set -eu
     properties="$(
-      ${runnerDir}/bin/agentplane-runner --vm-resource-properties ${runtimeDir}/config/vm.json
+      ${runnerDir}/bin/agentplane-runner --vm-resource-properties ${runtimeDir}/config/runner.json
     )"
     set --
     while IFS= read -r property; do
@@ -138,7 +138,7 @@ in
   # the VMI serial log and `virtctl console` read, without a guest exec.
   services.journald.console = "/dev/ttyS0";
 
-  # Serial console login, selected per environment by the guest config's `console_autologin`: the
+  # Serial console login, selected per environment by the Runner config's `environment.console_autologin`: the
   # ordinary login prompt where unset, a root shell without a prompt where set. The guest has no
   # account passwords, so without autologin an attach stops at the prompt.
   systemd.services."serial-getty@ttyS0" = {
