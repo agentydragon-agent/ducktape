@@ -2099,6 +2099,146 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Manage the haku-state Forgejo root with its existing OpenTofu state.
+  name: crossplane-haku-state
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: forgejo-gitops
+      namespace: ducktape-flux
+    - name: crossplane-forgejo-claude
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/forgejo/gitops/crossplane-haku-state
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-gitops
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Manage the budget-ledger Forgejo root with its existing OpenTofu state.
+  name: crossplane-budget-ledger
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: forgejo-gitops
+      namespace: ducktape-flux
+    - name: crossplane-haku-state
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/forgejo/gitops/crossplane-budget-ledger
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-gitops
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Manage the cpap-data Forgejo root with its existing OpenTofu state.
+  name: crossplane-cpap-data
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: forgejo-gitops
+      namespace: ducktape-flux
+    - name: crossplane-haku-state
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/forgejo/gitops/crossplane-cpap-data
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-gitops
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Manage the finance-agent Forgejo root with its existing OpenTofu state.
+  name: crossplane-finance-agent
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: forgejo-gitops
+      namespace: ducktape-flux
+    - name: crossplane-haku-state
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/forgejo/gitops/crossplane-finance-agent
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-gitops
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Manage the forgejo-agentydragon-repos Forgejo root with its existing OpenTofu state.
+  name: crossplane-forgejo-agentydragon-repos
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: forgejo-gitops
+      namespace: ducktape-flux
+    - name: crossplane-haku-state
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/forgejo/gitops/crossplane-forgejo-agentydragon-repos
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-gitops
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Take over forgejo-agentydragon from tofu-controller using its existing PostgreSQL state; the dependency on forgejo-gitops serializes the controller handoff.
   name: crossplane-forgejo-agentydragon
   namespace: ducktape-flux
