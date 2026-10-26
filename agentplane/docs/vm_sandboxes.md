@@ -156,8 +156,17 @@ The subsequent conversation-recovery failure is addressed separately in
   exec-server survives; the kernel can also select the native leader. Leader exit still triggers
   supervisor cleanup of all descendants. The supervisor records `memory.events` and `memory.peak` as JSON before it
   removes the leaf; stale leaves are also recorded during startup cleanup. This keeps each harness's
-  kill boundary below the Runner. Acceptance of the VM cgroup limits in a deployed guest is still
-  open.
+  kill boundary below the Runner.
+
+  The CI-active k3s VM scenario `test_codex_tool_oom_preserves_runner_and_app_server` runs a real
+  Codex shell command past the executor limit and asserts the kernel OOM counter increments once.
+  Codex receives exit 137, the native command item is `failed` with that exit code, and the turn
+  completes normally. The same Runner boot and app-server process/PID survive; a follow-up turn
+  executes successfully in the same executor leaf. The allocator raises its own `oom_score_adj`
+  to make selection of the tool deterministic. This covers the production Runner and pinned Codex
+  inside the test guest, independently of further guest slimming. It does not exercise the
+  production NixOS systemd caps, executor death/restart, or a breached outer service limit;
+  [fixture details and artifacts](../system_tests/k3s/README.md#vm-sandboxes) describe the scope.
 
 - [Tool memory isolation](harness_tool_memory_isolation.md) records optional research on putting
   tighter resource limits around a tool child. That would be a separate resource policy, not a change

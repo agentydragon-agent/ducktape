@@ -488,8 +488,11 @@ authorize native-subagent implementation.
 ## 4. VM environment phases
 
 The [VM Sandboxes design](../docs/vm_sandboxes.md) holds the provider constraints, and the
-[KubeVirt plan](kubevirt_environments.md) the live gates no node below names. Split implementation rather than making “VM support” one indivisible task. This is
-an unranked candidate lane, not authorization for local Bazel in current containers. The
+[KubeVirt plan](kubevirt_environments.md) the unresolved platform constraints. Selectable VM-backed
+Sandboxes, typed resource budgets, isolated Codex tools and the raw-block workspace are shipped;
+[component evidence](../docs/vm_sandboxes.md#fresh-vm-trial-readiness) records their acceptance.
+The remaining nodes do not gate the operator-authorized fresh VM trial. This is an unranked candidate
+lane, not authorization for local Bazel in current containers. The
 [runner control stream](../docs/runner_control.md) settles the dial-out contract VM control networking
 builds on; changing connection direction does not move command durability or remove the runner
 journal.
@@ -506,30 +509,11 @@ a block StorageClass does not itself make Pod and VM layouts interchangeable. Se
 flowchart LR
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
     VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
-    VM_HARNESS_RESOURCE_LIMITS[Blocked: accept VM per-harness resource limits]
     VM_INTRA_SANDBOX_HARDENING[Deferred: optional intra-Sandbox process/state hardening]
     RUNNER_LAYERING_VM[Paused: slim VM runtime, section 7]
-    VM_LIFECYCLE[Blocked: integrated lifecycle]
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
-    VM_HARNESS_RESOURCE_LIMITS --> VM_LIFECYCLE
-    VM_GUEST_BUDGET_DERIVE --> VM_HARNESS_RESOURCE_LIMITS
-    RUNNER_LAYERING_VM --> VM_HARNESS_RESOURCE_LIMITS
-    VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
-    VM_GUEST_MEMORY[Unscheduled: an 8 GiB guest for real builds]
-    VM_GUEST_BUDGET_DERIVE[Candidate: guest budgets derive from the VM spec]
-    SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
-    VM_GUEST_MEMORY --> LOCAL_BAZEL
+    LOCAL_BAZEL[Unscheduled: bounded local Bazel client in VM]
 ```
-
-### `VM_HARNESS_RESOURCE_LIMITS` — accept per-harness resource limits on the VM guest
-
-**Blocked on `VM_GUEST_BUDGET_DERIVE` and `RUNNER_LAYERING_VM`; the k3s test guest (`agentplane/system_tests/k3s/guest`) is an optional fixture.**
-The guest already places each native harness and its tool descendants in a delegated cgroup with CPU,
-memory, task and workspace I/O limits. Exercise those limits on the slim guest: resource pressure must
-respect the aggregate and per-harness budgets, and exhausting one harness's memory group must terminate
-that harness subtree while the Runner remains available. Preserve the existing process-group cleanup and state-owner lock
-behavior. The Sandbox is the security boundary; these cgroups enforce resource budgets, not
-confidentiality between co-resident Sessions or between a harness and its tool children.
 
 ### `VM_INTRA_SANDBOX_HARDENING` — optional process and state hardening inside one Sandbox
 
@@ -542,20 +526,6 @@ require Runner-private storage, sibling Session stores, or harness/tool process 
 inside one Sandbox. Revisit Runner-state privacy and tool-child-versus-harness hardening separately
 only if a concrete product requirement or incident warrants it. This node does not
 gate VM resource acceptance or lifecycle work.
-
-### `VM_LIFECYCLE` — integrated lifecycle verification
-
-**Blocked on the resource-limit checks.** Basic VM creation, Session execution,
-retained-state suspend/resume and replacement are covered by the [acceptance suite](../system_tests/README.md).
-Combine that coverage with the resource-limit evidence; do not
-repeat completed live runs just to assemble a capstone. Additional live faults need a concrete unresolved platform risk,
-not a Cartesian product of every component crash and lifecycle operation.
-
-### `SANDBOX_VM_ISOLATION` — VM integration capstone
-
-**Blocked on integrated lifecycle.** Publish the selectable VM environment and measured resource
-limits and cross-Sandbox security guarantees, with no implied existing-Sandbox conversion or live
-migration. Component evidence, not absence of every imaginable failure, establishes the delivered contract.
 
 ### `VM_RAM_SUSPEND` — suspend a VM to disk with its RAM
 
@@ -582,39 +552,14 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `LOCAL_BAZEL` — bounded local client in a VM
 
-**Blocked on VM capstone.** Wire Bazelisk, storage and authenticated RBE/cache/BES; set CPU/memory/disk
-budgets and cleanup. Run a representative build/test with the client inside the VM and actions
-remote; check cancellation/cleanup while the harness stays responsive. Installed tools and working
-hosted builds do not authorize local Bazel in agent containers. `VM_GUEST_MEMORY` is a second
-prerequisite: no client budget inside the guest is workable until the guest has RAM to budget.
-
-### `VM_GUEST_MEMORY` — size the VM guest for real builds
-
-**Unscheduled; the PR parked for it ([#10734](https://github.com/agentydragon/ducktape/pull/10734), 8 GiB
-with one vCPU and larger `agentplane-testing` quotas) was closed unmerged on 2026-10-20, and testing is
-deleted.** The executor implementation PR sets the template to the approved 8 GiB with one vCPU; this has not
-been booted or reconciled on staging. One VM per OVH node is approved. Live capacity and build
-acceptance remain below; resource budgets are explicit in the shared typed guest seed.
-
-After reconciliation on staging, inspect actual launcher requests/limits, namespace usage and node
-capacity: KubeVirt adds overhead and quota-derived limits, not a fixed 240 MiB surcharge. Confirm
-larger guest `MemTotal`, then run a representative `bbr build` and `bbr test` without guest OOM.
-Record useful sizing evidence in VM documentation and delete this node when acceptance is complete.
-
-### `VM_GUEST_BUDGET_DERIVE` — derive the guest's cgroup budgets from the VM's memory
-
-**Implementation in progress; no deployment authorized by this node.** The configurable-resource
-PR replaces independent code literals with a typed version-2 guest seed shared by the VM template,
-systemd preflight and Runner. The operator selected explicit byte budgets propagated from templates
-on 2026-10-25, rather than automatically deriving every budget from RAM. Validation checks the OS
-reserve, service caps, aggregate and native-process relationships, and actual guest `MemTotal`.
-The executor PR adds a separately budgeted sibling subtree. Kernel acceptance forces a leaf OOM
-and verifies sibling survival; VM image boot and deployed service/cgroup wiring remain unverified.
-
-Complete the VM-specific acceptance with `VM_HARNESS_RESOURCE_LIMITS`: boot the image with a
-matching seed, inspect the actual service and sibling cgroup caps, and verify Runner answers RPCs
-after an executor exceeds its budget. Reject a larger seed on a stale smaller VM before applying
-unsafe caps. Remove this node when that deployment-specific uncertainty is resolved.
+**Unscheduled.** The deployed template already provides 8 GiB, one vCPU and explicit byte
+budgets. Wire Bazelisk, storage and authenticated RBE/cache/BES; bound the client's CPU/memory/disk
+usage and cleanup. Inspect actual launcher requests/limits, namespace usage and eligible-node
+capacity, including KubeVirt overhead. Run a representative build/test with the client inside the
+VM and actions remote, without guest OOM; check cancellation/cleanup while the harness stays
+responsive. Record useful sizing evidence in VM documentation. Installed tools and working hosted
+builds do not authorize local Bazel in agent containers. Further guest slimming is independent of
+this acceptance.
 
 ## 5. Independent UI and narrowly scoped service work
 
@@ -1229,12 +1174,12 @@ works, so the update path exists. Landed: the runner and CLI are published as th
 (`//agentplane/runner:disk_image`), the `runner-vm` template attaches it as a second read-only disk, and the guest
 mounts it at `/run/agentplane/runner`, runs the runner from it and no longer carries the runner or CLI
 (a Sandbox on `agentplane-testing` booted this way). Remaining: the tools disk is not split yet.
-The in-guest budgets (`VM_GUEST_BUDGET_DERIVE`) are the other half of the same story — stage 1 owns the
-reserve, stage 2 gets the rest.
+Preserve the shipped typed guest resource policy when splitting layers: stage 1 owns the OS
+reserve and service caps, and native workloads and the executor keep their separate budgets.
 Deliver a lean bootable guest: a bare root filesystem with the runner and harnesses available from
 their chosen layer, and the tools-heavy environment separate. The layering decision still owns exact
-disk placement. `VM_HARNESS_RESOURCE_LIMITS` acceptance waits for this slim runtime; existing guest
-resource controls remain in place while it is prepared. The k3s test guest (`agentplane/system_tests/k3s/guest`)
+disk placement. This work does not gate resource acceptance on the existing guest. The k3s test guest
+(`agentplane/system_tests/k3s/guest`)
 shows a guest root filesystem can be an `oci_image` target: a candidate runtime then needs no Nix or Attic
 and is an additive target rather than a second release pipeline.
 

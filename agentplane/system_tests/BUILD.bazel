@@ -147,7 +147,8 @@ system_test(
 )
 
 # One VM Sandbox and one scripted turn per harness: guest bring-up, and model traffic through the
-# launcher's egress relay. The guest boots before its runner answers.
+# launcher's egress relay. A Codex-only case exceeds the executor's memory limit and verifies
+# tool failure, Runner/app-server survival, and a successful follow-up on the same Session.
 system_test(
     name = "test_vm_sandbox",
     srcs = ["test_vm_sandbox.py"],
@@ -158,9 +159,13 @@ system_test(
         ":scripted_upstream",
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane/app/testing:client",
+        "//agentplane/native/codex:wire",
+        "//agentplane/native/codex/testing:frames",
         "//agentplane/proto:runner_pb2",
         "//agentplane/testing:scripted_model",
+        "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
