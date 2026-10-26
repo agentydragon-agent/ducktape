@@ -1,40 +1,6 @@
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
 kind: Terraform
 metadata:
-  name: forgejo-claude
-  namespace: flux-system
-spec:
-  approvePlan: auto
-  backendConfig:
-    customConfiguration: |
-      backend "pg" {
-        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
-        schema_name = "forgejo_claude"
-      }
-  interval: 15m
-  path: ./tf/gitops/forgejo-claude
-  refreshBeforeApply: true
-  runnerPodTemplate:
-    spec:
-      env:
-        - name: PGPASSWORD
-          valueFrom:
-            secretKeyRef:
-              key: password
-              name: tofu-state-db-credentials
-      resources:
-        requests:
-          cpu: 250m
-          memory: 512Mi
-  serviceAccountName: tf-runner
-  sourceRef:
-    kind: ExternalArtifact
-    name: tf-gitops-forgejo-claude
-    namespace: ducktape-flux
----
-apiVersion: infra.contrib.fluxcd.io/v1alpha2
-kind: Terraform
-metadata:
   name: haku-state
   namespace: flux-system
 spec:
@@ -45,8 +11,6 @@ spec:
         conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
         schema_name = "haku_state"
       }
-  dependsOn:
-    - name: forgejo-claude
   interval: 15m
   path: ./tf/gitops/haku-state
   refreshBeforeApply: true
@@ -82,7 +46,6 @@ spec:
         schema_name = "budget_ledger"
       }
   dependsOn:
-    - name: forgejo-claude
     - name: haku-state
   interval: 15m
   path: ./tf/gitops/budget-ledger
@@ -119,7 +82,6 @@ spec:
         schema_name = "cpap_data"
       }
   dependsOn:
-    - name: forgejo-claude
     - name: haku-state
   interval: 15m
   path: ./tf/gitops/cpap-data

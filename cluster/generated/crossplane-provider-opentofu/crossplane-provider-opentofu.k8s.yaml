@@ -1,3 +1,92 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opentofu-kubernetes-clients
+  namespace: crossplane-system
+data:
+  opentofu-alloy-otlp-bearer-token: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-alloy-otlp-bearer-token
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-alloy-otlp-bearer-token
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-alloy-otlp-bearer-token
+    current-context: root
+  opentofu-forgejo-claude: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-forgejo-claude
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-forgejo-claude
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-forgejo-claude
+    current-context: root
+  opentofu-gatus-sso: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-gatus-sso
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-gatus-sso
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-gatus-sso
+    current-context: root
+immutable: false
+---
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: opentofu
+spec:
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        spec:
+          containers:
+            - name: package-runtime
+              volumeMounts:
+                - mountPath: /etc/opentofu/kubernetes
+                  name: kubernetes-clients
+                  readOnly: true
+          volumes:
+            - configMap:
+                name: opentofu-kubernetes-clients
+              name: kubernetes-clients
+  serviceAccountTemplate:
+    metadata:
+      name: crossplane-opentofu
+---
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
@@ -5,3 +94,5 @@ metadata:
 spec:
   package: xpkg.upbound.io/upbound/provider-opentofu:v1.1.10
   revisionActivationPolicy: Automatic
+  runtimeConfigRef:
+    name: opentofu
