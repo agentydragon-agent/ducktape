@@ -98,6 +98,11 @@ spec:
       name: crossplane-source-update-canary
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/crossplane-source-update-canary-definitions/**"
+          to: "@artifact/cluster/generated/crossplane-source-update-canary-definitions/"
+      name: crossplane-source-update-canary-definitions
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/tf/gitops/crossplane-source-update-canary/*.tf"
           to: "@artifact/"
       name: tf-gitops-crossplane-source-update-canary

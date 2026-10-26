@@ -95,6 +95,8 @@ Flux already refreshes the shared ducktape GitRepository from its GitHub Receive
 
 The canary Composition contains an observe-only provider-kubernetes `Object` for that ExternalArtifact, with `watch: true`. Its observed artifact URL is patched through the composite resource status into the composed Workspace's `spec.forProvider.module`. Until the observer has an artifact URL, the optional patch leaves the module field unset; once the watch observes the first artifact, the Workspace receives the URL. Later URL changes update the Workspace source. `remotePullPolicy: IfNotPresent` avoids downloading the same artifact URL again.
 
+Flux applies the XRD and Composition from a separate definitions artifact and waits for the XRD's `Established=True` condition. The dependent canary Kustomization then applies the composite resource. This prevents Flux from dry-running the XR before Crossplane has registered its API.
+
 The provider runs with `--enable-watches`. Its dedicated ServiceAccount receives only:
 
 ```yaml
