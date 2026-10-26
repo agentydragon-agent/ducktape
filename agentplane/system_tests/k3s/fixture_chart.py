@@ -42,6 +42,7 @@ from pydantic import AnyHttpUrl
 from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.settings import AppSettingsConfig
+from agentplane.sandboxes.guest_config import GuestResources, ResourceLimits
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import launch_preset, probe_credential, runtime_grant, send_grant
 from agentplane.system_tests.k3s import dex, fixture_database
@@ -108,6 +109,36 @@ _VM_GUEST_BOOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot
 _VM_GUEST_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
 # The serial guest/initramfs_init mounts as the root.
 _VM_GUEST_ROOT_SERIAL = "guest-root"
+_MIB = 1024 * 1024
+# The test guest gets a smaller work budget than staging while keeping enough room for the
+# harnesses exercised by the VM system tests.
+_TEST_VM_RESOURCES = GuestResources(
+    guest_memory_bytes=1536 * _MIB,
+    guest_vcpu_count=1,
+    os_reserve_bytes=256 * _MIB,
+    service_memory_high_bytes=1024 * _MIB,
+    service_memory_max_bytes=1280 * _MIB,
+    service_cpu_quota_micros=100_000,
+    service_pids_max=1024,
+    aggregate=ResourceLimits(
+        cpu_quota_micros=100_000,
+        memory_max_bytes=768 * _MIB,
+        pids_max=768,
+        read_bps=50 * _MIB,
+        write_bps=20 * _MIB,
+        read_iops=1000,
+        write_iops=500,
+    ),
+    process=ResourceLimits(
+        cpu_quota_micros=100_000,
+        memory_max_bytes=512 * _MIB,
+        pids_max=512,
+        read_bps=50 * _MIB,
+        write_bps=20 * _MIB,
+        read_iops=1000,
+        write_iops=500,
+    ),
+)
 # What the app offers when LLM ingress forwards to the scenario's scripted model. Scenarios take each harness's
 # first model; a ChatGPT route puts Codex in code mode.
 _LOCAL_MODEL_MODELS = HarnessRoutes(claude=(OLLAMA_QWEN_IQ4XS_128K.native,), codex=(GPT6_LUNA_RESPONSES,))
@@ -210,6 +241,7 @@ def environment(*, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORI
             hostname=None,
         ),
         vm_sandboxes=vm_sandboxes,
+        vm_resources=_TEST_VM_RESOURCES if vm_sandboxes else None,
         vm_console_autologin=True,
         wake_caller_accounts=frozenset(
             {
