@@ -269,6 +269,7 @@ def dashboard_url() -> Iterator[str]:
             )
         return AllowanceView(
             status=Status.ACTIVE,
+            time_zone="UTC",
             currency="USD",
             monthly_minor_units=70000,
             activation_at=activation,
