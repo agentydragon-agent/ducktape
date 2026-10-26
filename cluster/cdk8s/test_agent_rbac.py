@@ -20,6 +20,27 @@ from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
 from cluster.cdk8s.plaid_mcp import db as plaid_db, spend as plaid_spend
 from cluster.cdk8s.public_coder import app as public_coder_app
 
+_CROSSPLANE_API_GROUPS = {
+    "apiextensions.crossplane.io",
+    "litellm.m.crossplane.io",
+    "opentofu.upbound.io",
+    "ops.crossplane.io",
+    "pkg.crossplane.io",
+    "protection.crossplane.io",
+}
+_CROSSPLANE_RESOURCES = {
+    ("apiextensions.crossplane.io", "compositeresourcedefinitions"),
+    ("apiextensions.crossplane.io", "compositions"),
+    ("litellm.m.crossplane.io", "keys"),
+    ("opentofu.upbound.io", "providerconfigs"),
+    ("opentofu.upbound.io", "workspaces"),
+    ("ops.crossplane.io", "operations"),
+    ("pkg.crossplane.io", "deploymentruntimeconfigs"),
+    ("pkg.crossplane.io", "providers"),
+    ("protection.crossplane.io", "clusterusages"),
+}
+_READ = {"get", "list", "watch"}
+
 
 @pytest.fixture(scope="module")
 def model_resources() -> list[dict[str, Any]]:
@@ -159,6 +180,24 @@ def test_agent_permission_superset_and_finance_parity(
         Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials"),
         Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy"),
     }
+
+
+def test_public_coder_gets_crossplane_diagnostics_without_secret_reads(
+    agent_rbac: Rbac, staging_app_config: dict[str, Any], staging_policy_sets: dict[str, list[dict[str, Any]]]
+) -> None:
+    cluster_diagnostics = agent_rbac.rules("ClusterRole", "cluster-diagnostics-reader", None)
+    crossplane = {permission for permission in cluster_diagnostics if permission.api_group in _CROSSPLANE_API_GROUPS}
+    assert {permission.api_group for permission in crossplane} == _CROSSPLANE_API_GROUPS
+    assert {(permission.api_group, permission.resource) for permission in crossplane} >= _CROSSPLANE_RESOURCES
+    assert {permission.verb for permission in crossplane} == _READ
+
+    public_coder = agent_rbac.managed(
+        staging_app_config, staging_policy_sets, "public-coder", namespace="agentplane-staging"
+    )
+    assert not uncovered(crossplane, public_coder)
+
+    secret_reads = {Permission(None, "", "secrets", verb) for verb in _READ}
+    assert uncovered(secret_reads, cluster_diagnostics) == secret_reads
 
 
 @pytest.mark.parametrize("account", ["claude-ai", "haku-agent"])
