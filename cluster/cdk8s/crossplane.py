@@ -53,6 +53,8 @@ KUBERNETES_PROVIDER_RUNTIME_CONFIG = "crossplane-tf-artifact-watches"
 KUBERNETES_PROVIDER_CONFIG = "crossplane-tf-artifact-reader"
 PATCH_AND_TRANSFORM_FUNCTION = "function-patch-and-transform"
 PATCH_AND_TRANSFORM_PACKAGE = "xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.8.2"
+GO_TEMPLATING_FUNCTION = "function-go-templating"
+GO_TEMPLATING_PACKAGE = "xpkg.upbound.io/crossplane-contrib/function-go-templating:v0.13.1"
 _PROVIDER_HEALTH = KustomizationSpecHealthCheckExprs(
     api_version="pkg.crossplane.io/v1",
     kind="Provider",
@@ -258,6 +260,12 @@ def kubernetes_provider_chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=PATCH_AND_TRANSFORM_FUNCTION),
         spec=FunctionSpec(package=PATCH_AND_TRANSFORM_PACKAGE, revision_activation_policy="Automatic"),
     )
+    Function(
+        chart,
+        "go-templating-function",
+        metadata=ApiObjectMetadata(name=GO_TEMPLATING_FUNCTION),
+        spec=FunctionSpec(package=GO_TEMPLATING_PACKAGE, revision_activation_policy="Automatic"),
+    )
     return chart
 
 
@@ -274,6 +282,6 @@ def kubernetes_provider(chart: Chart, directory: RenderedDirectory, crossplane: 
         depends_on=[flux_kustomization_depends_on(crossplane)],
         description=(
             "Install provider-kubernetes with its alpha ExternalArtifact watch enabled and the Composition "
-            "patch-and-transform function."
+            "patch-and-transform and go-templating functions."
         ),
     )
