@@ -104,3 +104,12 @@ migration without first stopping the replacement would reintroduce two controlle
 one state. To return ownership, first pause Crossplane reconciliation and remove its
 Workspace with Orphan policy, verify it no longer owns the state, then restore the old
 Terraform CR. Keep the original schema and `default` workspace throughout.
+
+## GitLab spike deferred
+
+GitLab remains on tofu-controller while the evaluation is experimental. Its attempted
+Inline migration omitted BUILD-generated `versions.tf.json`; #12128's manual HCL
+translation was withdrawn. Restore the original Terraform root only after Flux prunes
+the Orphan-policy Workspace. Keep the empty Crossplane Kustomization as that prune gate
+until live handoff is verified. State schema, default workspace, credentials, and HCL
+resource addresses stay unchanged. Revisit source assembly before a future migration.
