@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
+use source_identity::SourceUnitOrdinal;
 use swc_ecma_ast::Id;
 
-use crate::{ModuleId, StatementOrdinal};
+use crate::ModuleId;
 
-use super::owner_graph::OwnerId;
+use super::dependency_graph::SourceUnitId;
 
 /// How an edge was emitted. Determines whether the gate / quotient /
 /// reports consumers project the edge through the lenient (drop
@@ -11,13 +12,13 @@ use super::owner_graph::OwnerId;
 ///
 /// Variants:
 /// - `Direct` — the edge was emitted by direct binding lookup in
-///   `build_owner_graph_with` (eager/lazy reads, rebinds, sequenced
+///   `build_dependency_graph_with` (eager/lazy reads, rebinds, sequenced
 ///   side effects, local effects). The quotient drops same-module
 ///   edges (`from == to`) but never drops a `Direct` edge by role.
-/// - `PromotedAtInit { callee_owner }` — `promote_at_init_calls`
+/// - `PromotedAtInit { callee_source_unit }` — `promote_at_init_calls`
 ///   manufactured the edge by lifting a function-body lazy read/rebind
 ///   into a caller's eager read. The lenient view (quotient, reports)
-///   drops these when `assignment.of(callee_owner) != assignment.of(from)`
+///   drops these when `assignment.of(callee_source_unit) != assignment.of(from)`
 ///   — the body read fires inside a call into a *different* module,
 ///   so by ESM DFS post-order the callee module (and its transitive
 ///   imports) are fully evaluated before the call returns; the
@@ -34,22 +35,24 @@ use super::owner_graph::OwnerId;
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EdgeRole {
     Direct,
-    PromotedAtInit { callee_owner: OwnerId },
+    PromotedAtInit { callee_source_unit: SourceUnitId },
 }
 
 impl EdgeRole {
-    /// `true` if this is a `PromotedAtInit` role and the callee owner
+    /// `true` if this is a `PromotedAtInit` role and the callee source unit
     /// lives in a different module than the caller per `module_of`.
     /// The lenient projection view (quotient, reports) drops such
     /// edges; the gate view keeps them.
     pub fn is_cross_module_promotion(
         self,
-        from: OwnerId,
-        module_of: impl Fn(OwnerId) -> ModuleId,
+        from: SourceUnitId,
+        module_of: impl Fn(SourceUnitId) -> ModuleId,
     ) -> bool {
         match self {
             EdgeRole::Direct => false,
-            EdgeRole::PromotedAtInit { callee_owner } => module_of(callee_owner) != module_of(from),
+            EdgeRole::PromotedAtInit { callee_source_unit } => {
+                module_of(callee_source_unit) != module_of(from)
+            }
         }
     }
 }
@@ -69,7 +72,7 @@ impl EdgeRole {
 /// - `EagerRebind` / `LazyRebind` describe rebinding writes. A
 ///   cross-destination write is rejected outright because ESM imports
 ///   are read-only in the importing module; same-destination writes
-///   are represented only at owner level and don't become module
+///   are represented only at source unit level and don't become module
 ///   imports.
 /// - `CoDeclaration` is emitted in both directions between statements
 ///   declaring the same `var` binding. A split therefore forms a forbidden
@@ -79,21 +82,21 @@ impl EdgeRole {
 ///   topological order.
 /// - `LocalEffect` is a trusted target-local mutation (for example
 ///   a TypeScript `__decorate` helper application) that must
-///   co-locate with the target owner but should not impose global
-///   side-effect ordering on unrelated owners.
+///   co-locate with the target source unit but should not impose global
+///   side-effect ordering on unrelated source units.
 ///
 /// `role` (see [`EdgeRole`]) selects which projection rule the
 /// quotient/gate/reports consumers apply to the edge.
 #[derive(Debug, Clone)]
 pub struct EdgeReason {
     pub kind: DepKind,
-    pub statement_ordinal: StatementOrdinal,
+    pub statement_ordinal: SourceUnitOrdinal,
     pub binding: Option<Id>,
     pub(crate) role: EdgeRole,
 }
 
 impl EdgeReason {
-    pub(crate) fn eager_use(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn eager_use(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::EagerUse,
             statement_ordinal: so,
@@ -101,7 +104,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn lazy_use(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn lazy_use(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::LazyUse,
             statement_ordinal: so,
@@ -109,7 +112,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn hoisted_use(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn hoisted_use(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::HoistedUse,
             statement_ordinal: so,
@@ -117,7 +120,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn eager_rebind(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn eager_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::EagerRebind,
             statement_ordinal: so,
@@ -125,7 +128,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn lazy_rebind(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn lazy_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::LazyRebind,
             statement_ordinal: so,
@@ -133,7 +136,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn deferred_rebind(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn deferred_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::DeferredRebind,
             statement_ordinal: so,
@@ -141,7 +144,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn co_declaration(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn co_declaration(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::CoDeclaration,
             statement_ordinal: so,
@@ -149,7 +152,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn sequenced(so: StatementOrdinal) -> Self {
+    pub(crate) fn sequenced(so: SourceUnitOrdinal) -> Self {
         Self {
             kind: DepKind::Sequenced,
             statement_ordinal: so,
@@ -157,7 +160,7 @@ impl EdgeReason {
             role: EdgeRole::Direct,
         }
     }
-    pub(crate) fn local_effect(so: StatementOrdinal, b: Id) -> Self {
+    pub(crate) fn local_effect(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::LocalEffect,
             statement_ordinal: so,
@@ -170,13 +173,13 @@ impl EdgeReason {
     /// `promote_at_init_calls`; downstream gate/lenient projection
     /// helpers consult `role` to decide whether to drop the edge when
     /// caller and callee land in different assignment slots.
-    pub(crate) fn promoted_at_init(mut self, callee_owner: OwnerId) -> Self {
-        self.role = EdgeRole::PromotedAtInit { callee_owner };
+    pub(crate) fn promoted_at_init(mut self, callee_source_unit: SourceUnitId) -> Self {
+        self.role = EdgeRole::PromotedAtInit { callee_source_unit };
         self
     }
 
     /// Construct a synthetic edge reason from raw fields. Used by
-    /// `OwnerGraph::from_report` and similar JSON-recovery paths that
+    /// `DependencyGraph::from_report` and similar JSON-recovery paths that
     /// don't carry an `Id` atom for the binding. The realizability
     /// gate (`check_realizability`) consults only `kind` and the role
     /// — every `is_*` and `constrains_init_order` predicate delegates
@@ -184,7 +187,7 @@ impl EdgeReason {
     /// sufficient for the gate. Source-of-truth construction from
     /// `StatementFacts` still goes through the kind-specific helpers
     /// above.
-    pub fn synthetic(kind: DepKind, statement_ordinal: StatementOrdinal, role: EdgeRole) -> Self {
+    pub fn synthetic(kind: DepKind, statement_ordinal: SourceUnitOrdinal, role: EdgeRole) -> Self {
         Self {
             kind,
             statement_ordinal,
@@ -204,7 +207,7 @@ impl EdgeReason {
     pub fn binding(&self) -> Option<&Id> {
         self.binding.as_ref()
     }
-    pub fn statement_ordinal(&self) -> StatementOrdinal {
+    pub fn statement_ordinal(&self) -> SourceUnitOrdinal {
         self.statement_ordinal
     }
     pub fn is_rebind(&self) -> bool {
@@ -285,31 +288,31 @@ impl DepKind {
     }
 }
 
-/// Stable per-chunk identity of an owner-graph edge. Equal to the
-/// edge's position in [`OwnerGraph::edges`]. The previous
+/// Stable per-chunk identity of a dependency graph edge. Equal to the
+/// edge's position in [`DependencyGraph::edges`]. The previous
 /// representation stored the report-shape spelling
-/// (`format!("owner_edge:{idx}")`) on every entry; that spelling is
+/// (`format!("dependency_edge:{idx}")`) on every entry; that spelling is
 /// `O(n_edges)` strings allocated per chunk and
 /// repeated clones in graph-report hot paths. Carry the typed index
 /// instead and let the report layer do the formatting at its single
 /// serialization boundary via
-/// [`OwnerEdgeId::report_key`].
+/// [`DependencyEdgeId::report_key`].
 ///
-/// [`OwnerGraph::edges`]: super::owner_graph::OwnerGraph
+/// [`DependencyGraph::edges`]: super::dependency_graph::DependencyGraph
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct OwnerEdgeId(pub usize);
+pub struct DependencyEdgeId(pub usize);
 
-impl OwnerEdgeId {
+impl DependencyEdgeId {
     pub fn report_key(self) -> String {
-        format!("owner_edge:{}", self.0)
+        format!("dependency_edge:{}", self.0)
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct OwnerEdge {
-    pub id: OwnerEdgeId,
-    pub from: OwnerId,
-    pub to: OwnerId,
+pub struct DependencyEdge {
+    pub id: DependencyEdgeId,
+    pub from: SourceUnitId,
+    pub to: SourceUnitId,
     pub reason: EdgeReason,
 }
 

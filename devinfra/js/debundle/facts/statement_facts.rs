@@ -1,4 +1,5 @@
 use super::*;
+use source_identity::SourceUnitOrdinal;
 
 /// One value per syntactic position bucket. Collapses the repeated
 /// eager / lazy / first-order-lazy triples (reads, rebinds, calls)
@@ -49,7 +50,7 @@ impl PositionBucketed<BTreeSet<Id>> {
 
 #[derive(Debug, Clone)]
 pub struct StatementFacts {
-    pub ordinal: StatementOrdinal,
+    pub ordinal: SourceUnitOrdinal,
     pub source_location: Option<SourceLocation>,
     pub declared: BTreeSet<Id>,
     /// Bindings introduced inside this statement's lexical scopes (parameters,
@@ -70,13 +71,13 @@ pub struct StatementFacts {
     /// Direct member writes on binding roots, across eager and lazy syntax.
     pub(crate) member_write_roots: BTreeSet<Id>,
     /// Target-local mutations produced by recognized trusted helper
-    /// calls. Each binding is the class/prototype owner that must
+    /// calls. Each binding is the class/prototype source_unit that must
     /// co-locate with the mutating statement.
     pub local_effects: BTreeSet<Id>,
     /// Statically identified call and constructor targets, bucketed by
     /// syntactic position. The collector records bare identifiers; the
     /// chunk value-flow pass adds identities reached through aliases,
-    /// parameters, returns and static object properties. The owner-graph
+    /// parameters, returns and static object properties. The dependency graph
     /// build uses `eager` for conservative at-init promotion when call-site
     /// execution cannot be bounded, and `lazy` to reconstruct the chunk
     /// call graph so promotion follows call chains (e.g.
@@ -153,12 +154,12 @@ pub struct StatementFacts {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SynchronousCalls {
-    pub reads: BTreeSet<(Id, StatementOrdinal)>,
-    pub rebinds: BTreeSet<(Id, StatementOrdinal)>,
+    pub reads: BTreeSet<(Id, SourceUnitOrdinal)>,
+    pub rebinds: BTreeSet<(Id, SourceUnitOrdinal)>,
     /// Bindings a synchronous callee can observe before their source-order
     /// initializer has executed. This is a subset of `reads`; it distinguishes
     /// a real prefix value from a TDZ/initial-`undefined` observation so the
-    /// owner graph can preserve that observation point.
+    /// dependency graph can preserve that observation point.
     pub uninitialized_reads: BTreeSet<Id>,
     pub complete: bool,
 }
@@ -222,7 +223,7 @@ pub struct StatementEffectSummary {
 #[derive(Debug, Clone)]
 pub struct ChunkFactAnalysis {
     pub facts: Vec<StatementFacts>,
-    pub top_level_await: Option<StatementOrdinal>,
+    pub top_level_await: Option<SourceUnitOrdinal>,
     /// Author-declared `purity: pure` spec hints the analyzer
     /// determines would be inferred automatically by recursive
     /// purity — e.g. the callee's body classifies `Pure` even
@@ -270,7 +271,7 @@ pub enum StatementKind {
 /// [`analyze_chunk_structural`] for why this layer exists.
 #[derive(Debug, Clone)]
 pub struct StructuralStatementFacts {
-    pub ordinal: StatementOrdinal,
+    pub ordinal: SourceUnitOrdinal,
     pub source_location: Option<SourceLocation>,
     pub kind: StatementKind,
     pub declared: BTreeSet<Id>,
@@ -320,5 +321,5 @@ pub struct StructuralChunkAnalysis<'a> {
     pub(crate) plain_data_bindings: Vec<String>,
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,
-    pub top_level_await: Option<StatementOrdinal>,
+    pub top_level_await: Option<SourceUnitOrdinal>,
 }

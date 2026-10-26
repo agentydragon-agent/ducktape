@@ -8,6 +8,7 @@ use analysis::{BindingId, BindingKind, ChunkId, ModuleId};
 use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle};
 use gate::AssignmentAnalysis;
+use source_identity::StatementId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
@@ -156,7 +157,7 @@ pub(crate) fn plan_module_reference_needs<'a>(
     module_index: usize,
     body_facts: &NaturalizedBodyFacts,
     factorization: &AssignmentAnalysis,
-    declaration_by_name: &HashMap<Id, Vec<usize>>,
+    declaration_by_name: &HashMap<Id, Vec<StatementId>>,
     binding_assignment: &HashMap<Id, usize>,
     entry_exports_by_original_local: &HashMap<Id, EntryExport>,
     runtime_imports: &'a RuntimeImportFacts,
@@ -223,8 +224,8 @@ pub(crate) fn plan_module_reference_needs<'a>(
 
 /// Phantom side-effect providers (Lemma 2's emit-side fix):
 ///
-/// Walk this module's owners' outgoing constraining edges in the
-/// owner graph. Any target module not already in
+/// Walk this module's source_units' outgoing constraining edges in the
+/// dependency graph. Any target module not already in
 /// `cross_module_imports_by_provider` (and not residual) needs a
 /// side-effect-only ESM import so the linker visits it as a
 /// dependency. Without this, at-init promotion records the
@@ -244,13 +245,13 @@ fn collect_phantom_side_effect_providers(
 ) {
     let module_id = ModuleId(module_index);
     let residual = factorization.assignment().residual();
-    let owner_graph = factorization.analysis().owner_graph();
-    for (owner_id, owner_module) in factorization.assignment().iter() {
-        if owner_module != module_id {
+    let dependency_graph = factorization.analysis().dependency_graph();
+    for (source_unit_id, source_unit_module) in factorization.assignment().iter() {
+        if source_unit_module != module_id {
             continue;
         }
-        for &edge_id in owner_graph.out_edges_of(owner_id) {
-            let edge = owner_graph.edge(edge_id);
+        for &edge_id in dependency_graph.out_edges_of(source_unit_id) {
+            let edge = dependency_graph.edge(edge_id);
             if !edge.reason.constrains_init_order() {
                 continue;
             }

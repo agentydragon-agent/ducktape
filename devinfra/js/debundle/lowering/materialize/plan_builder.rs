@@ -14,15 +14,16 @@ use crate::plans::ModulePlan;
 use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
 use analysis::{
-    BindingCatalogue, BindingKind, ChunkId, ModuleId, ModuleRole, OwnerGraphAndAtomicGroups,
-    OwnerId, top_level_id,
+    BindingCatalogue, BindingKind, ChunkId, DependencyGraphAndAtomicGroups, ModuleId, ModuleRole,
+    SourceUnitId, top_level_id,
 };
 use anyhow::{Context, Result, bail};
-use js_ast::body_index_for_statement_ordinal;
+use js_ast::statement_for_source_unit_ordinal;
 use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
 };
 use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector, Resolution};
+use source_identity::{SourceUnitOrdinal, StatementId};
 use spec_resolution::{LogicalRequest, MemberRequest, reject_duplicate_member_bindings};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
@@ -56,14 +57,14 @@ fn member_outcome(
 pub(super) struct ChunkPlan {
     pub(super) module_plans: Vec<ModulePlan>,
     pub(super) bindings_catalogue: BindingCatalogue,
-    pub(super) anonymous_ordinal_assignment: BTreeMap<usize, usize>,
+    pub(super) whole_statement_assignment: BTreeMap<StatementId, usize>,
     pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
 }
 
 /// Per-explicit-request inputs the builder reads but does not own.
 pub(super) struct ExplicitRequestContext<'a> {
     pub(super) body: &'a [ModuleItem],
-    pub(super) declaration_by_name: &'a HashMap<Id, Vec<usize>>,
+    pub(super) declaration_by_name: &'a HashMap<Id, Vec<StatementId>>,
     pub(super) chunk_top_level_mark: swc_common::Mark,
     pub(super) target_dir: &'a str,
     pub(super) chunk_id: &'a str,
@@ -81,9 +82,9 @@ pub(super) struct ChunkPlanBuilder {
     /// Per-source-body-index → `module_plans` index, for anonymous
     /// (non-declared) top-level statements claimed by spec
     /// `anonymous_statements` entries.
-    anonymous_ordinal_assignment: BTreeMap<usize, usize>,
+    whole_statement_assignment: BTreeMap<StatementId, usize>,
     /// The plans being constructed, in append order. Final indices
-    /// stable: binding destinations and `anonymous_ordinal_assignment`
+    /// stable: binding destinations and `whole_statement_assignment`
     /// hold positional references.
     module_plans: Vec<ModulePlan>,
     /// Authoritative destination of every claimed binding, including imported
@@ -137,7 +138,7 @@ pub(super) struct ChunkPlanBuilder {
 impl ChunkPlanBuilder {
     pub(super) fn new(fail_fast: bool, list_template_identifiers: bool) -> Self {
         Self {
-            anonymous_ordinal_assignment: BTreeMap::new(),
+            whole_statement_assignment: BTreeMap::new(),
             module_plans: Vec::new(),
             bindings_catalogue: HashMap::new(),
             residual_plan_index: None,
@@ -326,7 +327,7 @@ impl ChunkPlanBuilder {
                 .filter(|member| member.explicit_export_name && !member.binding.is_empty())
                 .map(|member| member.binding.clone())
                 .collect(),
-            anonymous_statement_ordinals: Vec::new(),
+            anonymous_statements: Vec::new(),
             anonymous_statement_comments: BTreeMap::new(),
             comment: request.comment.clone(),
             binding_comments,
@@ -342,8 +343,8 @@ impl ChunkPlanBuilder {
         claim: &ResolvedAnonymousStatement,
     ) -> Result<()> {
         if let Some(existing) = self
-            .anonymous_ordinal_assignment
-            .get(&claim.ordinal)
+            .whole_statement_assignment
+            .get(&claim.body_index)
             .copied()
         {
             let existing_id: String = self
@@ -356,23 +357,23 @@ impl ChunkPlanBuilder {
                  statement at body index {} already claimed by module {}; each anonymous \
                  statement may belong to at most one logical module.",
                 request_id,
-                claim.ordinal,
+                claim.body_index,
                 existing_id,
             );
         }
-        self.anonymous_ordinal_assignment
-            .insert(claim.ordinal, module_index);
+        self.whole_statement_assignment
+            .insert(claim.body_index, module_index);
         let plan = self.module_plans.get_mut(module_index).with_context(|| {
             format!(
                 "logical_module {request_id}: anonymous statement resolved before its module plan existed"
             )
         })?;
-        plan.anonymous_statement_ordinals.push(claim.ordinal);
-        plan.anonymous_statement_ordinals.sort_unstable();
-        plan.anonymous_statement_ordinals.dedup();
+        plan.anonymous_statements.push(claim.body_index);
+        plan.anonymous_statements.sort_unstable();
+        plan.anonymous_statements.dedup();
         if let Some(comment) = &claim.comment {
             plan.anonymous_statement_comments
-                .insert(claim.ordinal, comment.clone());
+                .insert(claim.body_index, comment.clone());
         }
         Ok(())
     }
@@ -390,7 +391,7 @@ impl ChunkPlanBuilder {
         &self,
         explicit_requests: &[LogicalRequest],
         chunk_top_level_mark: swc_common::Mark,
-        declaration_by_name: &HashMap<Id, Vec<usize>>,
+        declaration_by_name: &HashMap<Id, Vec<StatementId>>,
     ) -> Vec<Vec<usize>> {
         explicit_requests
             .iter()
@@ -427,7 +428,7 @@ impl ChunkPlanBuilder {
         chunk_top_level_mark: swc_common::Mark,
         chunk_id: &str,
         body: &[ModuleItem],
-        declaration_by_name: &HashMap<Id, Vec<usize>>,
+        declaration_by_name: &HashMap<Id, Vec<StatementId>>,
     ) -> Result<()> {
         self.outcomes.list_templates(resolution.templates);
         // Recorded last, once every claim is in.
@@ -440,7 +441,7 @@ impl ChunkPlanBuilder {
         {
             let request = &explicit_requests[index];
             let Outcome::Resolved {
-                owner,
+                body_index,
                 binding,
                 resolved_by,
             } = outcome.outcome.clone()
@@ -454,7 +455,7 @@ impl ChunkPlanBuilder {
                         index,
                         &request.id,
                         &ResolvedAnonymousStatement {
-                            ordinal: owner,
+                            body_index: StatementId(body_index),
                             comment: request.anonymous_statements[statement_index]
                                 .comment
                                 .clone(),
@@ -466,7 +467,7 @@ impl ChunkPlanBuilder {
                     let binding = binding.with_context(|| {
                         format!(
                             "logical_module {}: global selector solver resolved member `{}` to \
-                             body item {owner} without a single declared binding",
+                             body item {body_index} without a single declared binding",
                             request.id, member.export_name,
                         )
                     })?;
@@ -589,7 +590,7 @@ impl ChunkPlanBuilder {
         chunk_top_level_mark: swc_common::Mark,
         chunk_id: &str,
         body: &[ModuleItem],
-        declaration_by_name: &HashMap<Id, Vec<usize>>,
+        declaration_by_name: &HashMap<Id, Vec<StatementId>>,
     ) -> Result<()> {
         let binding_id = top_level_id(binding, chunk_top_level_mark);
         if !declaration_by_name.contains_key(&binding_id) {
@@ -727,7 +728,7 @@ impl ChunkPlanBuilder {
             let Some(owner_index) = owned_destination(&self.bindings_catalogue, &claimed_id) else {
                 continue;
             };
-            let owner_id = ModuleId(owner_index);
+            let owner_module_id = ModuleId(owner_index);
             for sibling in sibling_set {
                 if sibling == claimed_name {
                     continue;
@@ -735,14 +736,22 @@ impl ChunkPlanBuilder {
                 let sibling_id = top_level_id(sibling, chunk_top_level_mark);
                 match owned_destination(&self.bindings_catalogue, &sibling_id) {
                     None => {
-                        self.bindings_catalogue
-                            .insert(sibling_id, BindingKind::Owned { module: owner_id });
+                        self.bindings_catalogue.insert(
+                            sibling_id,
+                            BindingKind::Owned {
+                                module: owner_module_id,
+                            },
+                        );
                         let plan = &mut self.module_plans[owner_index];
                         plan.bindings.insert(sibling.clone(), sibling.clone());
                     }
                     Some(other_index) if Some(other_index) == self.residual_plan_index => {
-                        self.bindings_catalogue
-                            .insert(sibling_id, BindingKind::Owned { module: owner_id });
+                        self.bindings_catalogue.insert(
+                            sibling_id,
+                            BindingKind::Owned {
+                                module: owner_module_id,
+                            },
+                        );
                         self.module_plans[other_index].bindings.remove(sibling);
                         let plan = &mut self.module_plans[owner_index];
                         plan.bindings.insert(sibling.clone(), sibling.clone());
@@ -777,7 +786,7 @@ impl ChunkPlanBuilder {
         declarations: &[TopLevelDecl],
     ) {
         for decl in declarations {
-            let Some(&plan_index) = self.anonymous_ordinal_assignment.get(&decl.ordinal) else {
+            let Some(&plan_index) = self.whole_statement_assignment.get(&decl.statement) else {
                 continue;
             };
             let module = ModuleId(plan_index);
@@ -811,7 +820,7 @@ impl ChunkPlanBuilder {
         declarations: &[TopLevelDecl],
     ) -> Result<()> {
         for decl in declarations {
-            let Some(ModuleItem::Stmt(statement)) = body.get(decl.ordinal) else {
+            let Some(ModuleItem::Stmt(statement)) = body.get(decl.statement.0) else {
                 continue;
             };
             // Direct variable declarations can be split by declarator in the
@@ -826,8 +835,8 @@ impl ChunkPlanBuilder {
                 .iter()
                 .filter_map(|(_, id)| owned_destination(&self.bindings_catalogue, id))
                 .chain(
-                    self.anonymous_ordinal_assignment
-                        .get(&decl.ordinal)
+                    self.whole_statement_assignment
+                        .get(&decl.statement)
                         .copied(),
                 )
                 .collect::<BTreeSet<_>>();
@@ -844,7 +853,7 @@ impl ChunkPlanBuilder {
                 bail!(
                     "top-level control-flow statement at body index {} also declares unassigned \
                      bindings ({}); assign them to the same module before extracting the statement",
-                    decl.ordinal,
+                    decl.statement,
                     missing_bindings.join(", "),
                 );
             }
@@ -857,19 +866,19 @@ impl ChunkPlanBuilder {
                 bail!(
                     "top-level control-flow statement at body index {} declares bindings assigned \
                      to different modules ({destinations}); assign all nested var bindings to one module",
-                    decl.ordinal,
+                    decl.statement,
                 );
             }
 
             let destination = *assigned_destinations
                 .first()
                 .expect("assigned_destinations is nonempty");
-            self.anonymous_ordinal_assignment
-                .insert(decl.ordinal, destination);
+            self.whole_statement_assignment
+                .insert(decl.statement, destination);
             let plan = &mut self.module_plans[destination];
-            plan.anonymous_statement_ordinals.push(decl.ordinal);
-            plan.anonymous_statement_ordinals.sort_unstable();
-            plan.anonymous_statement_ordinals.dedup();
+            plan.anonymous_statements.push(decl.statement);
+            plan.anonymous_statements.sort_unstable();
+            plan.anonymous_statements.dedup();
         }
         Ok(())
     }
@@ -921,7 +930,7 @@ impl ChunkPlanBuilder {
                     role: ModuleRole::Unassigned,
                     bindings: residual_bindings,
                     spec_named_bindings: BTreeSet::new(),
-                    anonymous_statement_ordinals: Vec::new(),
+                    anonymous_statements: Vec::new(),
                     anonymous_statement_comments: BTreeMap::new(),
                     comment: None,
                     binding_comments: BTreeMap::new(),
@@ -942,7 +951,7 @@ impl ChunkPlanBuilder {
                 .iter()
                 .position(|plan| plan.target_path == catchall_target);
             if let Some(owner_index) = owner_index {
-                let owner_id = ModuleId(owner_index);
+                let owner_module_id = ModuleId(owner_index);
                 let owner_plan = &mut self.module_plans[owner_index];
                 owner_plan.role = ModuleRole::Unassigned;
                 for decl in declarations {
@@ -952,8 +961,12 @@ impl ChunkPlanBuilder {
                                 .bindings
                                 .entry(name.clone())
                                 .or_insert_with(|| name.clone());
-                            self.bindings_catalogue
-                                .insert(id.clone(), BindingKind::Owned { module: owner_id });
+                            self.bindings_catalogue.insert(
+                                id.clone(),
+                                BindingKind::Owned {
+                                    module: owner_module_id,
+                                },
+                            );
                         }
                     }
                 }
@@ -963,51 +976,51 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
-    /// Move anonymous owners into the catchall when their atomic group already
-    /// belongs there, or when a catchall owner must run after them according
+    /// Move anonymous source units into the catchall when their atomic group already
+    /// belongs there, or when a catchall source unit must run after them according
     /// to the source-order side-effect graph. Other anonymous statements may
     /// stay in the entry and run after peeled modules. Explicit claims win;
     /// the realizability gate rejects an order that cannot be represented.
     pub(super) fn route_unclaimed_anonymous_to_catchall(
         &mut self,
-        precomputed: &OwnerGraphAndAtomicGroups,
+        precomputed: &DependencyGraphAndAtomicGroups,
         body: &[ModuleItem],
     ) {
         let Some(index) = self.residual_plan_index else {
             return;
         };
-        let graph = &precomputed.owner_graph;
+        let graph = &precomputed.dependency_graph;
         let mut body_indices = BTreeSet::new();
-        let mut catchall_owners = BTreeSet::new();
+        let mut catchall_source_units = BTreeSet::new();
         for node in graph.iter_nodes() {
             if !node.declared.is_empty()
                 && node.declared.iter().all(|binding| {
                     owned_destination(&self.bindings_catalogue, binding) == Some(index)
                 })
             {
-                catchall_owners.insert(node.id);
+                catchall_source_units.insert(node.id);
             } else if node.declared.is_empty()
                 && let Some(body_index) =
-                    body_index_for_statement_ordinal(body, node.statement_ordinal.0)
-                && self.anonymous_ordinal_assignment.get(&body_index) == Some(&index)
+                    statement_for_source_unit_ordinal(body, node.statement_ordinal)
+                && self.whole_statement_assignment.get(&body_index) == Some(&index)
             {
-                catchall_owners.insert(node.id);
+                catchall_source_units.insert(node.id);
             }
         }
         for atomic_group in &precomputed.atomic_groups {
             let mut has_catchall_binding = false;
-            let all_members_fit = atomic_group.members.iter().all(|&owner_id| {
-                let Some(node) = graph.node(owner_id) else {
+            let all_members_fit = atomic_group.members.iter().all(|&source_unit_id| {
+                let Some(node) = graph.node(source_unit_id) else {
                     return false;
                 };
                 if node.declared.is_empty() {
                     let Some(body_index) =
-                        body_index_for_statement_ordinal(body, node.statement_ordinal.0)
+                        statement_for_source_unit_ordinal(body, node.statement_ordinal)
                     else {
                         return false;
                     };
                     return self
-                        .anonymous_ordinal_assignment
+                        .whole_statement_assignment
                         .get(&body_index)
                         .is_none_or(|&assigned| assigned == index);
                 }
@@ -1020,29 +1033,29 @@ impl ChunkPlanBuilder {
             if !has_catchall_binding || !all_members_fit {
                 continue;
             }
-            for &owner_id in &atomic_group.members {
-                let Some(node) = graph.node(owner_id) else {
+            for &source_unit_id in &atomic_group.members {
+                let Some(node) = graph.node(source_unit_id) else {
                     continue;
                 };
                 if node.declared.is_empty()
                     && let Some(body_index) =
-                        body_index_for_statement_ordinal(body, node.statement_ordinal.0)
+                        statement_for_source_unit_ordinal(body, node.statement_ordinal)
                     && self
-                        .anonymous_ordinal_assignment
+                        .whole_statement_assignment
                         .get(&body_index)
                         .is_none_or(|&assigned| assigned == index)
                 {
                     body_indices.insert(body_index);
-                    catchall_owners.insert(owner_id);
+                    catchall_source_units.insert(source_unit_id);
                 }
             }
         }
         // A Sequenced edge points from a later effect to an earlier one.
         // Follow those edges backwards so no required predecessor remains in
         // the entry, which always evaluates after the catchall module.
-        let mut pending: Vec<OwnerId> = catchall_owners.iter().copied().collect();
-        while let Some(owner_id) = pending.pop() {
-            for &edge_id in graph.out_edges_of(owner_id) {
+        let mut pending: Vec<SourceUnitId> = catchall_source_units.iter().copied().collect();
+        while let Some(source_unit_id) = pending.pop() {
+            for &edge_id in graph.out_edges_of(source_unit_id) {
                 let edge = graph.edge(edge_id);
                 if !edge.reason.is_sequenced() {
                     continue;
@@ -1054,19 +1067,19 @@ impl ChunkPlanBuilder {
                     continue;
                 }
                 let Some(body_index) =
-                    body_index_for_statement_ordinal(body, node.statement_ordinal.0)
+                    statement_for_source_unit_ordinal(body, node.statement_ordinal)
                 else {
                     continue;
                 };
                 if self
-                    .anonymous_ordinal_assignment
+                    .whole_statement_assignment
                     .get(&body_index)
                     .is_some_and(|&assigned| assigned != index)
                 {
                     continue;
                 }
                 body_indices.insert(body_index);
-                if catchall_owners.insert(node.id) {
+                if catchall_source_units.insert(node.id) {
                     pending.push(node.id);
                 }
             }
@@ -1076,19 +1089,19 @@ impl ChunkPlanBuilder {
         if self.module_plans.len() == 1 {
             for node in graph.iter_nodes().filter(|node| node.declared.is_empty()) {
                 if let Some(body_index) =
-                    body_index_for_statement_ordinal(body, node.statement_ordinal.0)
+                    statement_for_source_unit_ordinal(body, node.statement_ordinal)
                 {
                     body_indices.insert(body_index);
                 }
             }
         }
         for body_index in body_indices {
-            if self.anonymous_ordinal_assignment.contains_key(&body_index) {
+            if self.whole_statement_assignment.contains_key(&body_index) {
                 continue;
             }
-            self.anonymous_ordinal_assignment.insert(body_index, index);
+            self.whole_statement_assignment.insert(body_index, index);
             self.module_plans[index]
-                .anonymous_statement_ordinals
+                .anonymous_statements
                 .push(body_index);
         }
     }
@@ -1102,34 +1115,35 @@ impl ChunkPlanBuilder {
     /// pruned to match.
     pub(super) fn synthesize_per_atomic_group(
         &mut self,
-        precomputed: &OwnerGraphAndAtomicGroups,
+        precomputed: &DependencyGraphAndAtomicGroups,
         body: &[ModuleItem],
         target_dir: &str,
     ) -> Result<()> {
-        let owner_graph = &precomputed.owner_graph;
+        let dependency_graph = &precomputed.dependency_graph;
         let atomic_groups = &precomputed.atomic_groups;
-        let mut owner_declared_names: HashMap<OwnerId, Vec<Id>> = HashMap::new();
-        let mut owner_statement_ordinal: HashMap<OwnerId, usize> = HashMap::new();
-        for node in owner_graph.iter_nodes() {
+        let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
+        let mut source_unit_statement_ordinal: HashMap<SourceUnitId, SourceUnitOrdinal> =
+            HashMap::new();
+        for node in dependency_graph.iter_nodes() {
             let ids: Vec<Id> = node.declared.iter().cloned().collect();
-            owner_declared_names.insert(node.id, ids);
-            owner_statement_ordinal.insert(node.id, node.statement_ordinal.0);
+            source_unit_declared_names.insert(node.id, ids);
+            source_unit_statement_ordinal.insert(node.id, node.statement_ordinal);
         }
 
         let residual_plan_index = self.residual_plan_index;
         let bindings_catalogue = &self.bindings_catalogue;
-        let anonymous_ordinal_assignment = &self.anonymous_ordinal_assignment;
+        let whole_statement_assignment = &self.whole_statement_assignment;
         // An atomic-group member counts as unclaimed iff every declared binding
         // has no owned destination in `bindings_catalogue` or is assigned to
-        // the residual plan (if any); anonymous owners must similarly
+        // the residual plan (if any); anonymous statements must similarly
         // be unassigned or routed via residual. If any member is
         // claimed by an explicit (non-residual) plan, the spec author
         // already named the atomic group's destination — leave the existing
         // claim intact (and let downstream validation flag an
         // atomic group conflict if the claims disagree).
-        let is_owner_unclaimed = |owner: OwnerId| -> bool {
-            let names = owner_declared_names
-                .get(&owner)
+        let is_source_unit_unclaimed = |source_unit: SourceUnitId| -> bool {
+            let names = source_unit_declared_names
+                .get(&source_unit)
                 .map(Vec::as_slice)
                 .unwrap_or(&[]);
             for id in names {
@@ -1140,13 +1154,14 @@ impl ChunkPlanBuilder {
                 }
             }
             if names.is_empty() {
-                let Some(stmt_ord) = owner_statement_ordinal.get(&owner).copied() else {
+                let Some(stmt_ord) = source_unit_statement_ordinal.get(&source_unit).copied()
+                else {
                     return true;
                 };
-                let Some(body_idx) = body_index_for_statement_ordinal(body, stmt_ord) else {
+                let Some(body_idx) = statement_for_source_unit_ordinal(body, stmt_ord) else {
                     return true;
                 };
-                match anonymous_ordinal_assignment.get(&body_idx).copied() {
+                match whole_statement_assignment.get(&body_idx).copied() {
                     None => return true,
                     Some(idx) if Some(idx) == residual_plan_index => return true,
                     Some(_) => return false,
@@ -1155,12 +1170,18 @@ impl ChunkPlanBuilder {
             true
         };
 
-        let mut unclaimed_atomic_groups: Vec<&BTreeSet<OwnerId>> = atomic_groups
+        let mut unclaimed_atomic_groups: Vec<&BTreeSet<SourceUnitId>> = atomic_groups
             .iter()
-            .filter(|atomic_group| atomic_group.members.iter().copied().all(is_owner_unclaimed))
+            .filter(|atomic_group| {
+                atomic_group
+                    .members
+                    .iter()
+                    .copied()
+                    .all(is_source_unit_unclaimed)
+            })
             .map(|atomic_group| &atomic_group.members)
             .collect();
-        // Stable iteration order: smallest OwnerId first.
+        // Stable iteration order: smallest SourceUnitId first.
         unclaimed_atomic_groups.sort_by_key(|members| members.iter().next().copied());
 
         for (idx, members) in unclaimed_atomic_groups.into_iter().enumerate() {
@@ -1169,22 +1190,23 @@ impl ChunkPlanBuilder {
             let target_path = format!("__auto/atomic_groups/{idx:04}");
             let target_file = target_file_for_request(target_dir, &target_path)?;
             let mut bindings = HashMap::<String, String>::new();
-            let mut anonymous_statement_ordinals = Vec::<usize>::new();
-            for owner in members {
-                let names = owner_declared_names
-                    .get(owner)
+            let mut anonymous_statements = Vec::<StatementId>::new();
+            for source_unit in members {
+                let names = source_unit_declared_names
+                    .get(source_unit)
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
                 if names.is_empty() {
-                    let Some(stmt_ord) = owner_statement_ordinal.get(owner).copied() else {
+                    let Some(stmt_ord) = source_unit_statement_ordinal.get(source_unit).copied()
+                    else {
                         continue;
                     };
-                    let Some(body_idx) = body_index_for_statement_ordinal(body, stmt_ord) else {
+                    let Some(body_idx) = statement_for_source_unit_ordinal(body, stmt_ord) else {
                         continue;
                     };
-                    self.anonymous_ordinal_assignment
+                    self.whole_statement_assignment
                         .insert(body_idx, synthetic_idx);
-                    anonymous_statement_ordinals.push(body_idx);
+                    anonymous_statements.push(body_idx);
                     continue;
                 }
                 for name in names {
@@ -1209,7 +1231,7 @@ impl ChunkPlanBuilder {
                     );
                 }
             }
-            anonymous_statement_ordinals.sort_unstable();
+            anonymous_statements.sort_unstable();
             self.module_plans.push(ModulePlan {
                 id: target_path.clone(),
                 target_file,
@@ -1217,7 +1239,7 @@ impl ChunkPlanBuilder {
                 role: ModuleRole::Unassigned,
                 bindings,
                 spec_named_bindings: BTreeSet::new(),
-                anonymous_statement_ordinals,
+                anonymous_statements,
                 anonymous_statement_comments: BTreeMap::new(),
                 comment: None,
                 binding_comments: BTreeMap::new(),
@@ -1294,7 +1316,7 @@ impl ChunkPlanBuilder {
         Ok(ChunkPlan {
             module_plans: self.module_plans,
             bindings_catalogue: BindingCatalogue::new(chunk_id, self.bindings_catalogue),
-            anonymous_ordinal_assignment: self.anonymous_ordinal_assignment,
+            whole_statement_assignment: self.whole_statement_assignment,
             unmatched_spec_claims: self.unmatched_spec_claims,
         })
     }

@@ -1,5 +1,6 @@
 use super::*;
 use serde::Serialize;
+use source_identity::SourceUnitOrdinal;
 
 /// Controls only whether the source module's export surface contributes
 /// synthetic execution roots to unknown-call fallback.
@@ -104,7 +105,7 @@ where
                 let mut finder = TopLevelAwaitFinder::default();
                 item.visit_with(&mut finder);
                 if finder.found {
-                    top_level_await = Some(StatementOrdinal(ordinal));
+                    top_level_await = Some(SourceUnitOrdinal(ordinal));
                 }
             }
             let kind = classify_item(item);
@@ -135,7 +136,7 @@ where
                 })
             });
             StructuralStatementFacts {
-                ordinal: StatementOrdinal(ordinal),
+                ordinal: SourceUnitOrdinal(ordinal),
                 source_location,
                 kind,
                 var_declared: collector
@@ -348,7 +349,7 @@ where
 
 /// Facts needed by vendor pruning after its own AST mutations. Vendor pruning
 /// consumes the structural, value-flow, purity and local-effect fields, but
-/// builds no owner graph and never reads `StatementFacts::synchronous_calls`.
+/// builds no dependency graph and never reads `StatementFacts::synchronous_calls`.
 /// Keep value-flow call augmentation; it is part of vendor reachability.
 pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
     let hints = AnalysisInputs {
@@ -371,11 +372,11 @@ pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
 ///
 /// Multi-declarator `var/let/const` statements are split into
 /// per-declarator entries before analysis, so each row declares
-/// a single name and owner-graph destination attribution
-/// returns an unambiguous owner. Without the split, a chunk like
+/// a single name and dependency graph destination attribution
+/// returns an unambiguous source_unit. Without the split, a chunk like
 /// `const A = 1, B = readsX;` with `{A → mod_a, B → mod_b}`
 /// would attribute `B`'s read of `X` to `mod_a` (the first
-/// declared name's owner), inventing or hiding cycles. The
+/// declared name's source_unit), inventing or hiding cycles. The
 /// emitter splits the same comma-lists separately at lower-time
 /// (`split_var_decl` in `lowering/util.rs`); this pre-split
 /// just teaches the analyzer the same view.

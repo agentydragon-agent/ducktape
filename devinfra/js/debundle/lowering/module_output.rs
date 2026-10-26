@@ -1,6 +1,7 @@
 //! Emit one accepted logical-module plan. Chunk selection and entry construction stay in
 //! `lower`; this phase owns per-module imports, sealed renames, comments, and output metadata.
 
+use source_identity::StatementId;
 use std::sync::Mutex;
 
 use swc_common::{BytePos, DUMMY_SP, Spanned};
@@ -53,7 +54,7 @@ pub(super) struct ModuleEmissionInputs<'a> {
     pub(super) plan: &'a ModulePlan,
     pub(super) naturalized: NaturalizedModuleBody,
     pub(super) factorization: &'a AssignmentAnalysis,
-    pub(super) declaration_by_name: &'a HashMap<Id, Vec<usize>>,
+    pub(super) declaration_by_name: &'a HashMap<Id, Vec<StatementId>>,
     pub(super) binding_assignment: &'a HashMap<Id, usize>,
     pub(super) runtime_import_facts: &'a RuntimeImportFacts,
     pub(super) entry_exports_by_original_local: &'a HashMap<Id, EntryExport>,
@@ -473,10 +474,10 @@ fn build_module_output(
             )
         })
         .collect();
-    let owner_ids = context
+    let source_unit_ids = context
         .factorization
         .analysis()
-        .owner_report_ids_for_bindings(binding_ids.iter())
+        .source_unit_report_ids_for_bindings(binding_ids.iter())
         .expect("module report bindings belong to the analysis chunk");
     // Module-level `comment:` from the spec lands at the very top of
     // the emitted file (above the lowerer's pragma block), separated
@@ -492,8 +493,8 @@ fn build_module_output(
         LOWERING_FILE_PRAGMA.to_string(),
         LOWERING_GENERATOR_HEADER.to_string(),
         format!(
-            "// Selected-module lowered region; original owner ids: {}.",
-            owner_ids.join(", ")
+            "// Selected-module lowered region; original source_unit ids: {}.",
+            source_unit_ids.join(", ")
         ),
         format!(
             "// Selected-module lowered region; source bindings: {}.",
@@ -549,7 +550,7 @@ fn build_module_output(
         spec_named_export_names,
         cross_chunk_import_aliases: Vec::new(),
         file: context.entry_file.to_string(),
-        owner_ids,
+        source_unit_ids,
         residual: plan.role == ModuleRole::Unassigned,
         target_file: plan.target_file.clone(),
         target_path: plan.target_path.clone(),
@@ -567,7 +568,7 @@ fn anonymous_statement_comments_by_span(
             if comment.is_empty() {
                 return None;
             }
-            let lo = runtime_ast.module.body.get(*body_idx)?.span().lo();
+            let lo = runtime_ast.module.body.get(body_idx.0)?.span().lo();
             if lo == BytePos(0) {
                 return None;
             }

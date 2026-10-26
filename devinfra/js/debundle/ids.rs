@@ -1,3 +1,4 @@
+use source_identity::SourceUnitOrdinal;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -28,11 +29,6 @@ pub fn top_level_id(sym: &str, top_level_mark: Mark) -> Id {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ModuleId(pub usize);
-
-/// Position of a top-level statement in a chunk's source body.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct StatementOrdinal(pub usize);
 
 /// Interned chunk identifier. Created by `ChunkTable::intern` during chunk
 /// loading and used throughout the pipeline in place of `String` chunk names.
@@ -81,8 +77,8 @@ pub enum BindingKind {
     /// Declared by a top-level `var/let/const/function/class` in this
     /// chunk; the spec assigns it to a logical module (or the
     /// residual entry). `module` is the owning logical module — named
-    /// `module` (not `owner`) to avoid colliding with the "owner =
-    /// owner-graph node" sense of `owner` used throughout the crate.
+    /// `module` (not `source_unit`) to avoid colliding with the "source_unit =
+    /// dependency graph node" sense of `source_unit` used throughout the crate.
     Owned { module: ModuleId },
     /// Introduced by an `import { imported_name as <local> } from
     /// "<source>"` in the chunk's top-level body. The value lives in
@@ -311,7 +307,7 @@ pub struct PlannedModule {
     /// Chunk-relative path the module emits to (e.g. `"runtime/foo.js"`).
     pub target_file: String,
     /// This policy role distinguishes explicitly specified destinations from
-    /// outputs that receive unassigned source owners. It is independent of the
+    /// outputs that receive unassigned source units. It is independent of the
     /// physical DFS root selected by [`crate::ModuleAssignment::residual`]. Reports
     /// project `Unassigned` to their legacy residual boolean, including for
     /// generated atomic-group outputs.
@@ -326,11 +322,11 @@ pub struct PlannedModule {
     /// `top_level_id(name, top_level_mark)`.
     pub rename_map: HashMap<Id, Atom>,
     /// Source-chunk top-level statement ordinals this module claims
-    /// as anonymous-statement members (owners with empty
+    /// as anonymous-statement members (source_units with empty
     /// `declared_bindings` that the spec resolves by AST shape via
     /// `spec::LogicalModule::anonymous_statements`). AssignmentAnalysis uses
     /// these to override the otherwise-residual destination of those
-    /// owners so cross-destination/cycle checks see the closure as
+    /// source_units so cross-destination/cycle checks see the closure as
     /// the materializer will emit it.
-    pub anonymous_statement_ordinals: Vec<usize>,
+    pub anonymous_source_unit_ordinals: Vec<SourceUnitOrdinal>,
 }
