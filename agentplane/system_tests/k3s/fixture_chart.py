@@ -138,6 +138,15 @@ _TEST_VM_RESOURCES = GuestResources(
         read_iops=1000,
         write_iops=500,
     ),
+    executor=ResourceLimits(
+        cpu_quota_micros=100_000,
+        memory_max_bytes=256 * _MIB,
+        pids_max=128,
+        read_bps=50 * _MIB,
+        write_bps=20 * _MIB,
+        read_iops=1000,
+        write_iops=500,
+    ),
 )
 # What the app offers when LLM ingress forwards to the scenario's scripted model. Scenarios take each harness's
 # first model; a ChatGPT route puts Codex in code mode.
