@@ -1036,7 +1036,7 @@ Recording this idea does not schedule implementation.
 
 ### `VM_REPLICATED_BLOCK_WORKSPACE` — provision replicated raw-block VM workspaces
 
-**In flight; public-coder session, 2026-10-25 PDT, operator-selected.** Change `runner-vm` to
+**In review; [PR #12108](https://github.com/agentydragon/ducktape/pull/12108), 2026-10-25 PDT, operator-selected.** Change `runner-vm` to
 `BlockFilesystem`/ext4 on a `Block` claim. Staging puts both VM claims on
 `piraeus-ssd-2-autodiskful`; state remains `DirectoryTree`/`Filesystem` through virtiofs and
 Pod templates are unchanged. Exit: template and generated-manifest checks plus real raw-block
