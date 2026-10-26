@@ -245,11 +245,11 @@
       "sha256": "ehEEqt+2TQPSBsA/KugNUtehlLVNeWkdFlugUmDWZOk="
     },
     "plaid-spend-desktop": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-9417f770887c/plaid_spend_desktop-0.1.0-py3-none-any.whl",
-      "sha256": "P0ulmo6R0aST4FJK+teF2XycayUXvPjesg+PyAx5Gto="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-70bb54e74a76/plaid_spend_desktop-0.1.0-py3-none-any.whl",
+      "sha256": "N1c/+heX8KBZS/SXams8Z4RfnmsTo5ab15D4aCaiE6U="
     },
     "plaid-spend-desktop-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-9417f770887c/plaid-spend-desktop.zip",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-70bb54e74a76/plaid-spend-desktop.zip",
       "sha256": "LAEf22GknJj3AgbdUsi9T76OlDkuQ5tzB507BtneTS0="
     },
     "pr-visuals": {
