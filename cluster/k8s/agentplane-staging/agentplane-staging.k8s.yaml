@@ -4738,24 +4738,25 @@ spec:
     layout:
       type: DirectoryTree
     claim:
-      storageClassName: piraeus-hdd-local
-      accessModes:
-        - ReadWriteOnce
-      resources:
-        requests:
-          storage: 10Gi
-  workspaceVolume:
-    name: workspace
-    claim:
-      storageClassName: piraeus-hdd-local
+      storageClassName: piraeus-ssd-2-autodiskful
       accessModes:
         - ReadWriteOnce
       resources:
         requests:
           storage: 10Gi
       volumeMode: Filesystem
+  workspaceVolume:
+    name: workspace
+    claim:
+      storageClassName: piraeus-ssd-2-autodiskful
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+      volumeMode: Block
     layout:
-      type: RawDiskImage
+      type: BlockFilesystem
       filesystem: ext4
 ---
 apiVersion: cilium.io/v2

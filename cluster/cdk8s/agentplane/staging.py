@@ -492,6 +492,7 @@ ENV = Environment(
         extra_egress=(cilium.egress_via_gateway("auth.allegedly.works"), EgressRule.to_fqdns("claude.ai")),
     ),
     vm_sandboxes=True,
+    vm_storage_class="piraeus-ssd-2-autodiskful",
     vm_resources=STAGING_VM_RESOURCES,
     wake_caller_accounts=frozenset(
         {
