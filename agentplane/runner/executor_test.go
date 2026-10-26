@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/coder/websocket"
@@ -108,4 +109,78 @@ func TestStoppedExecutorCannotStart(t *testing.T) {
 	if err := monitorExecutor(ctx, "", make(chan error)); !errors.Is(err, context.Canceled) {
 		t.Fatalf("monitor: %v", err)
 	}
+}
+
+func TestExecutorMonitorToleratesTransientProbesAndResetsFailures(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		results := []error{context.DeadlineExceeded, context.DeadlineExceeded, nil, context.DeadlineExceeded, context.DeadlineExceeded, nil}
+		calls := 0
+		finished := make(chan error, 1)
+		go func() {
+			finished <- monitorExecutorHealth(ctx, make(chan error), func(context.Context) error {
+				result := results[calls]
+				calls++
+				return result
+			})
+		}()
+		synctest.Wait()
+		for range results {
+			time.Sleep(5 * time.Second)
+			synctest.Wait()
+			select {
+			case err := <-finished:
+				t.Fatalf("fenced a transient failure: %v", err)
+			default:
+			}
+		}
+		if calls != len(results) {
+			t.Fatalf("probed %d times, want %d", calls, len(results))
+		}
+		cancel()
+		if err := <-finished; !errors.Is(err, context.Canceled) {
+			t.Fatalf("monitor cancellation: %v", err)
+		}
+	})
+}
+
+func TestExecutorMonitorFencesPersistentFailure(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		calls := 0
+		err := monitorExecutorHealth(ctx, make(chan error), func(ctx context.Context) error {
+			calls++
+			<-ctx.Done()
+			return ctx.Err()
+		})
+		if !errors.Is(err, context.DeadlineExceeded) || calls != 3 {
+			t.Fatalf("monitor: calls=%d error=%v, want three failed bounded probes", calls, err)
+		}
+	})
+}
+
+func TestExecutorMonitorDoesNotDelayProcessExitForProbeGrace(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		finished := make(chan error, 1)
+		calls := 0
+		go func() {
+			finished <- monitorExecutorHealth(ctx, done, func(context.Context) error {
+				calls++
+				return context.DeadlineExceeded
+			})
+		}()
+		synctest.Wait()
+		time.Sleep(5 * time.Second)
+		synctest.Wait()
+		exited := errors.New("test executor exited")
+		done <- exited
+		if err := <-finished; !errors.Is(err, exited) || calls != 1 {
+			t.Fatalf("monitor: calls=%d error=%v, want immediate process exit", calls, err)
+		}
+	})
 }

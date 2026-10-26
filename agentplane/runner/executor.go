@@ -216,8 +216,13 @@ func (e *codexExecutor) run(ctx context.Context) {
 }
 
 func monitorExecutor(ctx context.Context, endpoint string, done <-chan error) error {
+	return monitorExecutorHealth(ctx, done, func(ctx context.Context) error { return probeExecutor(ctx, endpoint) })
+}
+
+func monitorExecutorHealth(ctx context.Context, done <-chan error, probe func(context.Context) error) error {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
+	failures := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -226,10 +231,18 @@ func monitorExecutor(ctx context.Context, endpoint string, done <-chan error) er
 			return err
 		case <-ticker.C:
 			probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-			err := probeExecutor(probeCtx, endpoint)
+			err := probe(probeCtx)
 			cancel()
-			if err != nil {
-				return err
+			if err == nil {
+				failures = 0
+				continue
+			}
+			failures++
+			// A tool memcg OOM can stall RPC briefly while the kernel selects its victim.
+			// Fencing on that first timeout would discard the surviving server's tool result.
+			slog.Warn("Codex executor health probe failed", "consecutive_failures", failures, "error", err)
+			if failures >= 3 {
+				return fmt.Errorf("executor failed %d consecutive health probes: %w", failures, err)
 			}
 		}
 	}
