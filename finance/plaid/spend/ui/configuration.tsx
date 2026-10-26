@@ -42,6 +42,7 @@ export function ConfigurationPage({
       )}
       {configuration && (
         <>
+          <Metric label="DAY CUTOVER TIME ZONE" value={configuration.time_zone} />
           {allowance ? (
             <Card component="section" aria-labelledby="configuration-allowance-title" withBorder radius="lg" p="lg">
               <Stack gap="md">
@@ -54,7 +55,6 @@ export function ConfigurationPage({
                     value={<Money value={allowance.monthly_minor_units} currency={allowance.currency} />}
                   />
                   <Metric label="START DATE" value={allowance.activation_at} />
-                  <Metric label="DAY CUTOVER TIME ZONE" value={allowance.time_zone ?? "UTC"} />
                   <Metric label="ACCOUNTS IN SCOPE" value={allowance.spending_account_count} />
                   <Metric label="MAX SYNC AGE" value={`${allowance.max_sync_age_hours} hours`} />
                   <Metric label="DEFAULT ESTIMATE WINDOW" value={periodLabels[allowance.forecast_basis_period_id]} />

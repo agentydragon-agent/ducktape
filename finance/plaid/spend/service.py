@@ -10,7 +10,6 @@ from collections import defaultdict
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from zoneinfo import ZoneInfo
 
 import anyio
 import asyncpg
@@ -50,6 +49,14 @@ from finance.plaid.spend.models import (
     TransactionPeriodSummary,
     UnavailableCardPeriod,
 )
+from finance.plaid.spend.portfolio import CoinbaseClient, read_portfolio
+from finance.plaid.spend.portfolio_models import PortfolioView, SourceValuation
+from finance.plaid.spend.sustainability import (
+    SustainabilityView,
+    calculate_sustainability,
+    disabled_view,
+    empty_portfolio,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +78,20 @@ _TRANSACTION_DATES_COLUMNS = """
 class SpendService:
     """Postgres reader and reconnecting NOTIFY subscriber for one shared card view."""
 
-    def __init__(self, database_url: str, configuration: SpendConfiguration, *, dashboard_url: str) -> None:
+    def __init__(
+        self,
+        database_url: str,
+        configuration: SpendConfiguration,
+        *,
+        dashboard_url: str,
+        coinbase_client: CoinbaseClient | None = None,
+    ) -> None:
         self._database_url = database_url
         self._configuration = configuration
         self._dashboard_url = dashboard_url
+        self._coinbase_client = coinbase_client
+        self._portfolio_lock = asyncio.Lock()
+        self._portfolio_cache: tuple[datetime, PortfolioView] | None = None
         self._pool: asyncpg.Pool | None = None
         self._listening = asyncio.Event()
         self._revision = 0
@@ -107,10 +124,7 @@ class SpendService:
                 self._pool = None
 
     def report_day(self, instant: datetime) -> date:
-        """Policy-local reporting date; UTC when no allowance is configured."""
-        policy = self._configuration.allowance
-        zone = policy.time_zone if policy else UTC
-        return instant.astimezone(zone).date()
+        return instant.astimezone(self._configuration.time_zone).date()
 
     def subscribe(self) -> asyncio.Queue[None]:
         queue: asyncio.Queue[None] = asyncio.Queue(maxsize=1)
@@ -125,7 +139,6 @@ class SpendService:
             allowance = AllowanceConfigurationView(
                 monthly_minor_units=policy.monthly_minor_units,
                 activation_at=policy.activation_at,
-                time_zone=policy.time_zone.key,
                 currency=policy.currency,
                 spending_account_count=len(policy.spending_account_ids),
                 max_sync_age_hours=policy.max_sync_age_hours,
@@ -134,6 +147,7 @@ class SpendService:
                 analysis_categories=policy.analysis_categories,
             )
         return SpendConfigurationView(
+            time_zone=configuration.time_zone.key,
             cards=[
                 CardConfigurationView(
                     label=card.label,
@@ -433,7 +447,7 @@ class SpendService:
         rows: list[SpendTransactionRow] = []
         seen: set[tuple[str, str]] = set()
 
-        zone = allowance_policy.time_zone if allowance_policy else ZoneInfo("UTC")
+        zone = self._configuration.time_zone
 
         def add_row(transaction: Transaction, decision: TransactionDecision | None) -> None:
             day = transaction.report_day(zone)
@@ -591,7 +605,7 @@ class SpendService:
                     currency=policy.currency,
                     monthly_minor_units=policy.monthly_minor_units,
                     activation_at=policy.activation_at,
-                    time_zone=policy.time_zone.key,
+                    time_zone=self._configuration.time_zone.key,
                     available_minor_units=None,
                     next_credit_at=None,
                     posted_minor_units=0,
@@ -645,10 +659,104 @@ class SpendService:
         return calculate(
             policy,
             [Transaction.model_validate(dict(row)) for row in rows],
+            time_zone=self._configuration.time_zone,
             now=now,
             last_synced_at=last_synced,
             decisions=decisions,
             estimate_period_id=estimate_period_id,
+        )
+
+    async def _read_current_portfolio(self, now: datetime) -> PortfolioView:
+        policy = self._configuration.sustainability
+        if policy is None:
+            return empty_portfolio()
+        async with self._portfolio_lock:
+            cached = self._portfolio_cache
+            if cached is not None and now - cached[0] < timedelta(seconds=60):
+                return cached[1]
+            try:
+                view = await read_portfolio(
+                    self._require_pool(), policy.portfolio, now=now, coinbase_client=self._coinbase_client
+                )
+            except asyncpg.PostgresError:
+                view = PortfolioView(
+                    status="unavailable",
+                    net_minor_units=None,
+                    assets_minor_units=None,
+                    liabilities_minor_units=None,
+                    excluded_minor_units=None,
+                    sources=[
+                        SourceValuation(
+                            name="plaid",
+                            status="unavailable",
+                            amount_minor_units=None,
+                            as_of=None,
+                            issues=["The Plaid mirror could not be read."],
+                        )
+                    ],
+                )
+            if view.status == "ready":
+                self._portfolio_cache = (now, view)
+            return view
+
+    async def read_sustainability(self, window_days: int | None = None) -> SustainabilityView:
+        now = datetime.now(UTC)
+        policy = self._configuration.sustainability
+        allowance = self._configuration.allowance
+        if policy is None or allowance is None:
+            return disabled_view(now, self._configuration.time_zone.key, self.report_day(now))
+        days = window_days if window_days is not None else policy.display.default_window_days
+        if days not in policy.display.windows_days:
+            raise ValueError("window must be configured")
+        issues = []
+        transactions: list[Transaction] = []
+        try:
+            async with (
+                self._require_pool().acquire() as connection,
+                connection.transaction(isolation="repeatable_read", readonly=True),
+            ):
+                accounts = await connection.fetch(
+                    """SELECT a.account_id, a.type, l.last_synced_at
+                       FROM public.accounts a JOIN public.links l ON l.item_id = a.item_id
+                       WHERE a.account_id = ANY($1::text[]) AND a.detached_at IS NULL
+                         AND l.status = 'active'""",
+                    list(allowance.spending_account_ids),
+                )
+                if len(accounts) != len(allowance.spending_account_ids) or any(
+                    row["type"] not in ("credit", "depository")
+                    or row["last_synced_at"] is None
+                    or now - row["last_synced_at"] > timedelta(hours=allowance.max_sync_age_hours)
+                    for row in accounts
+                ):
+                    issues.append("Spending account coverage or sync freshness is unavailable.")
+                rows = await connection.fetch(
+                    f"""SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
+                               t.date, t.amount, t.pending, t.name, t.merchant_name,
+                               t.pfc_primary, t.pfc_detailed, {_TRANSACTION_DATES_COLUMNS},
+                               a.type AS account_type,
+                               t.raw_json->>'merchant_category_code' AS merchant_category_code,
+                               {_COUNTERPARTIES_COLUMN},
+                               COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency
+                        FROM public.transactions t
+                        JOIN public.accounts a ON a.account_id=t.account_id AND a.item_id=t.item_id
+                        JOIN public.links l ON l.item_id=a.item_id
+                        WHERE t.account_id = ANY($1::text[]) AND t.removed IS FALSE
+                          AND a.detached_at IS NULL AND l.status='active'""",
+                    list(allowance.spending_account_ids),
+                )
+                transactions = [Transaction.model_validate(dict(row)) for row in rows]
+        except asyncpg.PostgresError:
+            issues.append("The spending source could not be read; totals are unavailable.")
+        portfolio = await self._read_current_portfolio(now)
+        return calculate_sustainability(
+            policy,
+            allowance,
+            transactions,
+            portfolio,
+            time_zone=self._configuration.time_zone,
+            now=now,
+            window_days=days,
+            source_issues=issues,
         )
 
     def _require_pool(self) -> asyncpg.Pool:

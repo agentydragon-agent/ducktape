@@ -45,6 +45,7 @@ def sample_card() -> CardView:
 def sample_allowance(status: Status = Status.ACTIVE) -> AllowanceView:
     active = status == Status.ACTIVE
     return AllowanceView(
+        time_zone="UTC",
         status=status,
         currency="USD",
         monthly_minor_units=10000,

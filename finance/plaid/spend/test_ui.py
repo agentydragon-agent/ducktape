@@ -22,6 +22,7 @@ from finance.plaid.spend.models import (
 )
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
+from finance.plaid.spend.sustainability import SustainabilityView, disabled_view
 from util.oidc_login import LoginSession
 from util.oidc_principal import InvalidOidcPrincipalError, VerifiedOidcPrincipal
 
@@ -41,7 +42,7 @@ class _Reader:
         return SpendView(generated_at=datetime(2026, 10, 15, tzinfo=UTC), cards=[])
 
     def read_configuration(self) -> SpendConfigurationView:
-        return SpendConfigurationView(cards=[], allowance=None)
+        return SpendConfigurationView(time_zone="UTC", cards=[], allowance=None)
 
     async def read_transactions(self, period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransactionsView:
         today = date(2026, 10, 15)
@@ -58,6 +59,12 @@ class _Reader:
             allowance=None,
             rows=[],
         )
+
+    async def read_sustainability(self, window_days: int | None = None) -> SustainabilityView:
+        if window_days is not None and window_days not in (30, 90, 365):
+            raise ValueError("window must be configured")
+        now = datetime.now(UTC)
+        return disabled_view(now, "UTC", now.date())
 
 
 class _Resolver:
@@ -91,13 +98,14 @@ async def test_one_api_route_accepts_bearer_or_signed_session() -> None:
         base64.b64encode(json.dumps({"user": payload}).encode())
     )
     cookie = {"Cookie": f"{config.session_cookie_name}={signed.decode()}"}
-    paths = ("/api/v1/view", "/api/v1/configuration", "/api/v1/transactions")
+    paths = ("/api/v1/view", "/api/v1/configuration", "/api/v1/transactions", "/api/v1/sustainability")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app.test") as client:
         for path in paths:
             assert (await client.get(path)).status_code == 401
             assert (await client.get(path, headers={"Authorization": "Bearer example-valid-token"})).status_code == 200
             assert (await client.get(path, headers=cookie)).status_code == 200
             assert (await client.get(path, headers={"Authorization": "Bearer bad-token", **cookie})).status_code == 401
+        assert (await client.get("/api/v1/sustainability?window_days=7", headers=cookie)).status_code == 422
         assert (await client.get("/api/v1/events")).status_code == 401
         assert (await client.get("/api/v1/web/view", headers=cookie)).status_code == 404
 

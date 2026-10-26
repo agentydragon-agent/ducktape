@@ -19,6 +19,7 @@ import "./styles.css";
 
 import { ConfigurationPage } from "./configuration";
 import { SpendingPage } from "./spending";
+import { SustainabilityPage } from "./sustainability";
 import { TransactionsPage } from "./transactions";
 import { useSpendData } from "./use_spend_data";
 import type { EstimatePeriodId, SpendTab, TransactionPeriodId } from "./types";
@@ -27,11 +28,13 @@ const spendTabs: { value: SpendTab; label: string }[] = [
   { value: "spending", label: "Spending" },
   { value: "transactions", label: "Transactions" },
   { value: "configuration", label: "Configuration" },
+  { value: "sustainability", label: "Sustainability" },
 ];
 
 function tabForHash(hash: string): SpendTab {
   if (hash === "#/transactions") return "transactions";
   if (hash === "#/configuration") return "configuration";
+  if (hash === "#/sustainability") return "sustainability";
   return "spending";
 }
 
@@ -65,12 +68,12 @@ function App() {
         <Paper component="header" radius={0} withBorder>
           <Container size="lg" py="xs">
             <Grid align="center" gap="xs">
-              <Grid.Col span={{ base: 6, lg: 4 }} order={1}>
+              <Grid.Col span={{ base: 6, lg: 3 }} order={1}>
                 <Anchor href="#/spending" size="lg" fw={700} c="var(--mantine-color-text)" underline="never">
                   Spend
                 </Anchor>
               </Grid.Col>
-              <Grid.Col span={{ base: 6, lg: 4 }} order={{ base: 2, lg: 3 }}>
+              <Grid.Col span={{ base: 6, lg: 3 }} order={{ base: 2, lg: 3 }}>
                 <Group justify="flex-end" gap="xs">
                   <Box>
                     <Menu position="bottom-end" opened={navigationMenuOpened} onChange={setNavigationMenuOpened}>
@@ -104,7 +107,7 @@ function App() {
                   </Box>
                 </Group>
               </Grid.Col>
-              <Grid.Col span={4} order={2} visibleFrom="lg">
+              <Grid.Col span={6} order={2} visibleFrom="lg">
                 <Center>
                   <Tabs.List aria-label="Spend pages">
                     {spendTabs.map((tab) => (
@@ -154,6 +157,9 @@ function App() {
               loading={spendData.configurationLoading}
               error={spendData.configurationError}
             />
+          </Tabs.Panel>
+          <Tabs.Panel value="sustainability">
+            <SustainabilityPage />
           </Tabs.Panel>
         </Container>
       </Tabs>

@@ -330,7 +330,6 @@ class AllowancePolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     monthly_minor_units: int = Field(gt=0)
     activation_at: date_type
-    time_zone: ZoneInfo = ZoneInfo("UTC")
     spending_account_ids: set[str] = Field(min_length=1)
     currency: Literal["USD"] = "USD"
     rules: list[Rule] = Field(
@@ -455,7 +454,7 @@ class AllowanceView(BaseModel):
     currency: str
     monthly_minor_units: int
     activation_at: date_type
-    time_zone: str = "UTC"
+    time_zone: str
     available_minor_units: int | None
     next_credit_at: datetime | None
     posted_minor_units: int
@@ -559,10 +558,19 @@ def matching_rule(transaction: Transaction | Mapping[str, object], rules: list[R
     return next((rule for rule in rules if matches_fields(transaction, rule.condition)), None)
 
 
+def superseded_pending_keys(transactions: list[Transaction]) -> set[tuple[str, str]]:
+    return {
+        (transaction.account_id, transaction.pending_transaction_id)
+        for transaction in transactions
+        if not transaction.pending and transaction.pending_transaction_id is not None
+    }
+
+
 def calculate(
     policy: AllowancePolicy,
     transactions: list[Transaction],
     *,
+    time_zone: ZoneInfo,
     now: datetime,
     last_synced_at: datetime | None,
     decisions: list[TransactionDecision] | None = None,
@@ -571,7 +579,7 @@ def calculate(
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     now = now.astimezone(UTC)
-    zone = policy.time_zone
+    zone = time_zone
     local_now = now.astimezone(zone)
     start = datetime.combine(policy.activation_at, datetime.min.time(), tzinfo=zone)
     if start > now:
@@ -581,11 +589,7 @@ def calculate(
     while month_anniversary(start, credits) <= now:
         credits += 1
     next_credit = month_anniversary(start, credits)
-    superseded = {
-        (transaction.account_id, transaction.pending_transaction_id)
-        for transaction in transactions
-        if not transaction.pending and transaction.pending_transaction_id is not None
-    }
+    superseded = superseded_pending_keys(transactions)
     # Keep each included purchase once, with its category and posting state.
     included: list[Purchase] = []
     rolling_periods = tuple(period_id for period_id in PeriodId if period_id.rolling_days is not None)
@@ -735,7 +739,7 @@ def calculate(
         currency=policy.currency,
         monthly_minor_units=policy.monthly_minor_units,
         activation_at=policy.activation_at,
-        time_zone=policy.time_zone.key,
+        time_zone=zone.key,
         available_minor_units=available,
         next_credit_at=next_credit,
         posted_minor_units=posted,

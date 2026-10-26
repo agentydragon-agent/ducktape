@@ -11,8 +11,10 @@ from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import asyncpg
+import pytest
 import pytest_asyncio
 
+from finance.plaid.spend import service
 from finance.plaid.spend.allowance import (
     AllOf,
     AllowancePolicy,
@@ -28,7 +30,15 @@ from finance.plaid.spend.allowance import (
 )
 from finance.plaid.spend.app import _event_stream
 from finance.plaid.spend.models import AlertState, CardConfig, SpendConfiguration
+from finance.plaid.spend.portfolio_models import (
+    PlaidSourcePolicy,
+    PortfolioPolicy,
+    PortfolioSources,
+    PortfolioView,
+    SourceValuation,
+)
 from finance.plaid.spend.service import SpendService
+from finance.plaid.spend.sustainability import SustainabilityDisplay, SustainabilityPolicy
 
 
 @pytest_asyncio.fixture
@@ -157,11 +167,11 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
         raw_json={"authorized_datetime": now.isoformat()},
     )
     config = SpendConfiguration(
+        time_zone=zone,
         cards=[CardConfig(account_id="card-time", label="Example card", enabled=True)],
         allowance=AllowancePolicy(
             monthly_minor_units=10_000,
             activation_at=activation,
-            time_zone=zone,
             spending_account_ids={"card-time"},
             analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#D97706")},
             rules=[Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
@@ -221,10 +231,11 @@ async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
             currency="CAD" if transaction_id == "other-currency" else "USD",
         )
     configuration = SpendConfiguration(
+        time_zone=ZoneInfo("UTC"),
         cards=[
             CardConfig(account_id=aid, label=aid, limit_minor_units=100_000, enabled=True)
             for aid in ("card-early", "card-late")
-        ]
+        ],
     )
     service = SpendService(postgres_url, configuration, dashboard_url="https://spend.example.test")
     async with service.lifespan():
@@ -258,10 +269,11 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
     service = SpendService(
         postgres_url,
         SpendConfiguration(
+            time_zone=ZoneInfo("UTC"),
             cards=[
                 CardConfig(account_id=aid, label=aid, limit_minor_units=10_000, enabled=True)
                 for aid in ("card-first", "card-empty")
-            ]
+            ],
         ),
         dashboard_url="https://spend.example.test",
     )
@@ -280,13 +292,13 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
     assert empty.spend_minor_units is None
 
 
-def test_report_day_uses_policy_zone_for_card_and_allowance_dates() -> None:
+def test_report_day_uses_configured_zone_for_card_and_allowance_dates() -> None:
     config = SpendConfiguration(
+        time_zone=ZoneInfo("America/Los_Angeles"),
         cards=[],
         allowance=AllowancePolicy(
             monthly_minor_units=10_000,
             activation_at=date(2026, 10, 5),
-            time_zone=ZoneInfo("America/Los_Angeles"),
             spending_account_ids={"example-card"},
             analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#D97706")},
             rules=[Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
@@ -297,12 +309,27 @@ def test_report_day_uses_policy_zone_for_card_and_allowance_dates() -> None:
     assert service.report_day(datetime(2026, 10, 9, 7, tzinfo=UTC)) == date(2026, 10, 9)
     allowance_config = service.read_configuration().allowance
     assert allowance_config is not None
-    assert allowance_config.time_zone == "America/Los_Angeles"
+    assert service.read_configuration().time_zone == "America/Los_Angeles"
     assert all(rule.id is None for rule in allowance_config.rules)
+
+
+@pytest.mark.asyncio
+async def test_report_day_and_disabled_sustainability_use_zone_without_allowance() -> None:
+    zone = ZoneInfo("America/Los_Angeles")
+    service = SpendService(
+        "unused", SpendConfiguration(time_zone=zone, cards=[]), dashboard_url="https://spend.example.test"
+    )
+
+    assert service.report_day(datetime(2026, 10, 9, 6, 59, tzinfo=UTC)) == date(2026, 10, 8)
+    disabled = await service.read_sustainability()
+
+    assert disabled.status == "disabled"
+    assert disabled.time_zone == zone.key
 
 
 def test_configuration_view_lists_one_off_rules_without_account_ids() -> None:
     config = SpendConfiguration(
+        time_zone=ZoneInfo("UTC"),
         cards=[],
         allowance=AllowancePolicy(
             monthly_minor_units=10_000,
@@ -346,6 +373,7 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         await add_account(connection, account_id, item_id, type=type)
     await add_transaction(connection, "card-1", "item-card", "purchase", now.date(), 12.0)
     config = SpendConfiguration(
+        time_zone=ZoneInfo("UTC"),
         cards=[],
         allowance=AllowancePolicy(
             monthly_minor_units=10_000,
@@ -382,6 +410,7 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
     await add_transaction(connection, "card-1", "item-card", "prior", now.date() - timedelta(days=1), 70.0)
     await add_transaction(connection, "card-1", "item-card", "older", now.date() - timedelta(days=20), 30.0)
     config = SpendConfiguration(
+        time_zone=ZoneInfo("UTC"),
         cards=[],
         allowance=AllowancePolicy(
             monthly_minor_units=10_000,
@@ -391,6 +420,7 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
             rules=[Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
         ),
     )
+
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
     async with service.lifespan():
         allowance = (await service.read_view()).allowance
@@ -404,6 +434,261 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
         next(report.spend_minor_units for report in allowance.spend_periods if report.period.id == PeriodId.ROLLING_7D)
         == 0
     )
+
+
+def _sustainability_configuration(today: date, spending_account_id: str) -> SpendConfiguration:
+    zone = ZoneInfo("America/Los_Angeles")
+    return SpendConfiguration(
+        time_zone=zone,
+        cards=[],
+        allowance=AllowancePolicy(
+            monthly_minor_units=10_000,
+            activation_at=today - timedelta(days=730),
+            spending_account_ids={spending_account_id},
+            analysis_categories={
+                "unclassified": AnalysisCategory(label="Unclassified", color="#D97706"),
+                "fixed": AnalysisCategory(label="Required", color="#0F766E"),
+                "flexible": AnalysisCategory(label="Flexible", color="#7C3AED"),
+            },
+            rules=[
+                Rule(
+                    condition=CategoryExact(field="pfc_detailed", value="FIXED"),
+                    kind=Kind.FIXED,
+                    analysis_category="fixed",
+                ),
+                Rule(
+                    condition=CategoryExact(field="pfc_detailed", value="FLEXIBLE"),
+                    kind=Kind.FLEXIBLE,
+                    analysis_category="flexible",
+                ),
+            ],
+        ),
+        sustainability=SustainabilityPolicy(
+            display=SustainabilityDisplay(windows_days=[30, 90], default_window_days=90),
+            portfolio=PortfolioPolicy(
+                sources=PortfolioSources(
+                    plaid=PlaidSourcePolicy(asset_account_ids=["synthetic-private-portfolio-source-id"])
+                )
+            ),
+        ),
+    )
+
+
+def _synthetic_portfolio() -> PortfolioView:
+    observed_at = datetime.now(UTC)
+    return PortfolioView(
+        status="ready",
+        net_minor_units=50_000_000,
+        assets_minor_units=55_000_000,
+        liabilities_minor_units=5_000_000,
+        excluded_minor_units=0,
+        sources=[
+            SourceValuation(
+                name="Synthetic portfolio source",
+                status="ready",
+                amount_minor_units=55_000_000,
+                as_of=observed_at,
+                issues=[],
+            )
+        ],
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_mode", ["postgres_error", "unavailable_result"])
+async def test_portfolio_read_retries_failure_and_caches_ready_result(
+    monkeypatch: pytest.MonkeyPatch, failure_mode: str
+) -> None:
+    now = datetime.now(UTC)
+    spend_service = SpendService(
+        "unused",
+        _sustainability_configuration(now.date(), "synthetic-spending-account"),
+        dashboard_url="https://spend.example.test",
+    )
+    monkeypatch.setattr(spend_service, "_require_pool", lambda: cast(asyncpg.Pool, object()))
+    attempts = 0
+
+    async def read_portfolio(
+        _pool: asyncpg.Pool, _policy: PortfolioPolicy, *, now: datetime, coinbase_client: object | None
+    ) -> PortfolioView:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            if failure_mode == "postgres_error":
+                raise asyncpg.PostgresError("synthetic transient database failure")
+            return PortfolioView(
+                status="unavailable",
+                net_minor_units=None,
+                assets_minor_units=None,
+                liabilities_minor_units=None,
+                excluded_minor_units=None,
+                sources=[
+                    SourceValuation(
+                        name="coinbase",
+                        status="unavailable",
+                        amount_minor_units=None,
+                        as_of=None,
+                        issues=["Coinbase could not provide a current valuation."],
+                    )
+                ],
+            )
+        return _synthetic_portfolio()
+
+    monkeypatch.setattr(service, "read_portfolio", read_portfolio)
+
+    unavailable = await spend_service._read_current_portfolio(now)
+    recovered = await spend_service._read_current_portfolio(now)
+    cached = await spend_service._read_current_portfolio(now)
+
+    assert unavailable.status == "unavailable"
+    assert len(unavailable.sources) == 1
+    assert unavailable.sources[0].name == ("plaid" if failure_mode == "postgres_error" else "coinbase")
+    assert unavailable.sources[0].status == "unavailable"
+    assert unavailable.sources[0].issues
+    assert recovered.status == "ready"
+    assert cached.status == "ready"
+    assert attempts == 2
+
+
+async def test_read_sustainability_uses_postgres_transactions_for_each_window(
+    connection: asyncpg.Connection, postgres_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = datetime.now(UTC)
+    zone = ZoneInfo("America/Los_Angeles")
+    today = now.astimezone(zone).date()
+    yesterday = today - timedelta(days=1)
+    spending_account_id = "synthetic-private-spending-account-id"
+    item_id = "synthetic-spending-item"
+    await add_link(connection, item_id, synced=now)
+    await add_account(connection, spending_account_id, item_id, type="credit")
+    # One old source record establishes that this account has transaction history.
+    await add_transaction(
+        connection,
+        spending_account_id,
+        item_id,
+        "synthetic-history-start",
+        date(today.year - 1, 1, 1),
+        999,
+        category="FIXED",
+    )
+    await add_transaction(
+        connection, spending_account_id, item_id, "synthetic-90-day", today - timedelta(days=40), 20, category="FIXED"
+    )
+    await add_transaction(
+        connection,
+        spending_account_id,
+        item_id,
+        "synthetic-outside-30",
+        today - timedelta(days=31),
+        7,
+        category="FLEXIBLE",
+    )
+    await add_transaction(
+        connection,
+        spending_account_id,
+        item_id,
+        "synthetic-window-boundary",
+        today - timedelta(days=30),
+        3,
+        category="FIXED",
+    )
+    await add_transaction(
+        connection, spending_account_id, item_id, "synthetic-pending", yesterday, 100, pending=True, category="FLEXIBLE"
+    )
+    await add_transaction(
+        connection,
+        spending_account_id,
+        item_id,
+        "synthetic-posted-replacement",
+        yesterday,
+        12,
+        pending_transaction_id="synthetic-pending",
+        category="FLEXIBLE",
+    )
+    await add_transaction(
+        connection, spending_account_id, item_id, "synthetic-flexible", yesterday, 10, category="FLEXIBLE"
+    )
+    await add_transaction(connection, spending_account_id, item_id, "synthetic-provisional", yesterday, 5)
+    await add_transaction(
+        connection, spending_account_id, item_id, "synthetic-current-day", today, 999, category="FIXED"
+    )
+    config = _sustainability_configuration(today, spending_account_id)
+    service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
+
+    async def read_portfolio(_now: datetime) -> PortfolioView:
+        return _synthetic_portfolio()
+
+    monkeypatch.setattr(service, "_read_current_portfolio", read_portfolio)
+    async with service.lifespan():
+        default = await service.read_sustainability()
+        alternative = await service.read_sustainability(30)
+
+    assert default.status == "ready"
+    assert default.window_days == 90
+    assert default.covered_days == 90
+    assert default.period_start == today - timedelta(days=90)
+    assert default.period_end == yesterday
+    assert default.mandatory_minor_units == 2_300
+    assert default.flexible_minor_units == 2_900
+    assert default.provisional_minor_units == 500
+    assert default.spending_minor_units == 5_700
+    assert default.history[-1].date == yesterday
+    assert default.history[-1].covered_days == 90
+
+    assert alternative.status == "ready"
+    assert alternative.window_days == 30
+    assert alternative.covered_days == 30
+    assert alternative.period_start == today - timedelta(days=30)
+    assert alternative.period_end == yesterday
+    assert alternative.mandatory_minor_units == 300
+    assert alternative.flexible_minor_units == 2_200
+    assert alternative.provisional_minor_units == 500
+    assert alternative.spending_minor_units == 3_000
+    assert alternative.history[-1].covered_days == 30
+    serialized = default.model_dump_json()
+    assert spending_account_id not in serialized
+    assert "synthetic-private-portfolio-source-id" not in serialized
+
+
+@pytest.mark.parametrize("source_state", ["stale", "inactive"])
+async def test_read_sustainability_fails_closed_for_unusable_spending_source(
+    connection: asyncpg.Connection, postgres_url: str, monkeypatch: pytest.MonkeyPatch, source_state: str
+) -> None:
+    now = datetime.now(UTC)
+    zone = ZoneInfo("America/Los_Angeles")
+    today = now.astimezone(zone).date()
+    account_id = "synthetic-unusable-spending-account-id"
+    item_id = f"synthetic-{source_state}-spending-item"
+    synced = now - timedelta(days=4) if source_state == "stale" else now
+    await add_link(connection, item_id, synced=synced)
+    await add_account(connection, account_id, item_id, type="credit")
+    await add_transaction(
+        connection, account_id, item_id, "synthetic-source-history", date(today.year - 1, 1, 1), 25, category="FIXED"
+    )
+    await add_transaction(
+        connection, account_id, item_id, "synthetic-recent-charge", today - timedelta(days=1), 10, category="FLEXIBLE"
+    )
+    if source_state == "inactive":
+        await connection.execute("UPDATE public.links SET status = 'removed' WHERE item_id = $1", item_id)
+    config = _sustainability_configuration(today, account_id)
+    service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
+
+    async def read_portfolio(_now: datetime) -> PortfolioView:
+        return _synthetic_portfolio()
+
+    monkeypatch.setattr(service, "_read_current_portfolio", read_portfolio)
+    async with service.lifespan():
+        result = await service.read_sustainability()
+
+    assert result.status == "unavailable"
+    assert result.annualized_spending_minor_units is None
+    assert result.spending_draw_rate is None
+    assert "Spending account coverage or sync freshness is unavailable." in result.issues
+    if source_state == "stale":
+        assert result.spending_minor_units == 1_000
+    else:
+        assert result.covered_days == 0
+        assert result.spending_minor_units == 0
 
 
 class _ConnectedRequest:
@@ -421,7 +706,9 @@ async def test_event_stream_sends_initial_view_and_notification_update(
     await add_transaction(connection, "card-1", "item-1", "purchase", today, 10.0)
     service = SpendService(
         postgres_url,
-        SpendConfiguration(cards=[CardConfig(account_id="card-1", label="Test", enabled=True)]),
+        SpendConfiguration(
+            time_zone=ZoneInfo("UTC"), cards=[CardConfig(account_id="card-1", label="Test", enabled=True)]
+        ),
         dashboard_url="https://spend.example.test",
     )
     async with service.lifespan():

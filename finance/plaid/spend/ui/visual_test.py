@@ -95,6 +95,18 @@ async def page(playwright: Playwright, request: pytest.FixtureRequest) -> AsyncI
 
 
 @pytest.fixture
+async def touch_page(playwright: Playwright, request: pytest.FixtureRequest) -> AsyncIterator[Page]:
+    capture_name = request.node.name.removeprefix("test_")
+    async with (
+        deterministic_browser_context(
+            playwright, viewport={"width": 390, "height": 844}, frozen_now_ms=_FROZEN_NOW_MS, has_touch=True
+        ) as context,
+        playwright_trace(context, undeclared_outputs_dir(), capture_name),
+    ):
+        yield await context.new_page()
+
+
+@pytest.fixture
 def view(page: Page) -> VisualPage:
     return VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend")
 
@@ -118,6 +130,107 @@ async def _expand_accordion(control: Locator) -> None:
     )
 
 
+def _example_sustainability(variant: str = "ready") -> dict[str, object]:
+    stale = variant == "stale"
+    unavailable = variant == "unavailable"
+    tax_unmodeled = variant == "tax_unmodeled"
+    low_draw = variant == "low_draw"
+    portfolio_unavailable = stale or unavailable
+    portfolio_net = None if portfolio_unavailable else 125_000_000
+    annualized_spending = 600_621 if low_draw else 4_951_065
+    effective_tax_rate = None if tax_unmodeled else 0.12
+
+    def rates_for(annualized: int) -> tuple[float | None, float | None]:
+        if portfolio_net is None:
+            return None, None
+        if effective_tax_rate is None:
+            return annualized / portfolio_net, None
+        tax_adjusted = int((Decimal(annualized) / (Decimal(1) - Decimal(str(effective_tax_rate)))).quantize(Decimal(1)))
+        return annualized / portfolio_net, tax_adjusted / portfolio_net
+
+    history = []
+    history_values = (
+        (570_000, 585_000, annualized_spending) if low_draw else (4_700_000, 4_850_000, annualized_spending)
+    )
+    for day, annualized in zip(("2026-10-12", "2026-10-13", "2026-10-14"), history_values, strict=True):
+        spending_rate, tax_adjusted_rate = rates_for(annualized)
+        history.append(
+            {
+                "date": day,
+                "covered_days": 90,
+                "annualized_spending_minor_units": annualized,
+                "spending_draw_rate": spending_rate,
+                "tax_adjusted_draw_rate": tax_adjusted_rate,
+            }
+        )
+
+    spending_draw_rate, tax_adjusted_draw_rate = rates_for(annualized_spending)
+    estimated_annual_draw = (
+        None
+        if portfolio_unavailable or effective_tax_rate is None
+        else int((Decimal(annualized_spending) / (Decimal(1) - Decimal(str(effective_tax_rate)))).quantize(Decimal(1)))
+    )
+    mandatory, flexible, provisional, total = (
+        (92_000, 50_000, 6_000, 148_000) if low_draw else (760_000, 410_000, 50_000, 1_220_000)
+    )
+    return {
+        "generated_at": "2026-10-15T12:00:00Z",
+        "status": "unavailable" if portfolio_unavailable else "ready",
+        "currency": "USD",
+        "time_zone": "UTC",
+        "window_days": 90,
+        "available_windows_days": [30, 90],
+        "period_start": "2026-07-17",
+        "period_end": "2026-10-14",
+        "covered_days": 90,
+        "mandatory_minor_units": mandatory,
+        "flexible_minor_units": flexible,
+        "provisional_minor_units": provisional,
+        "spending_minor_units": total,
+        "annualized_spending_minor_units": annualized_spending,
+        "estimated_annual_draw_minor_units": estimated_annual_draw,
+        "spending_draw_rate": spending_draw_rate,
+        "tax_adjusted_draw_rate": tax_adjusted_draw_rate,
+        "effective_tax_rate": effective_tax_rate,
+        "tax_assumption_note": (
+            None
+            if tax_unmodeled
+            else "Synthetic fixture tax assumption; actual tax treatment depends on account and income details."
+        ),
+        "tax_assumption_as_of": None if tax_unmodeled else "2026-01-01",
+        "reference_draw_rates": [0.03, 0.035, 0.04, 0.045],
+        "portfolio": {
+            "status": "unavailable" if portfolio_unavailable else "ready",
+            "net_minor_units": portfolio_net,
+            "assets_minor_units": None if portfolio_unavailable else 145_000_000,
+            "liabilities_minor_units": None if portfolio_unavailable else 15_000_000,
+            "excluded_minor_units": None if portfolio_unavailable else 5_000_000,
+            "sources": [
+                {
+                    "name": "Synthetic investment source",
+                    "status": "unavailable" if portfolio_unavailable else "ready",
+                    "amount_minor_units": None if portfolio_unavailable else 125_000_000,
+                    "as_of": "2026-08-30T12:00:00Z" if stale else "2026-10-14T12:00:00Z",
+                    "issues": ["Synthetic valuation has not refreshed recently."] if stale else [],
+                },
+                {
+                    "name": "Synthetic cash source",
+                    "status": "unavailable" if unavailable else "ready",
+                    "amount_minor_units": None if unavailable else 20_000_000,
+                    "as_of": "2026-10-14T12:00:00Z",
+                    "issues": [],
+                },
+            ],
+        },
+        "history": history,
+        "issues": ["Synthetic source has delayed updates."] if stale or unavailable else [],
+        "known_issues": [
+            "Synthetic fixture: investment values are illustrative and can lag market changes.",
+            "No income outside observed spending and portfolio sources is represented.",
+        ],
+    }
+
+
 async def _select_spend_page(page: Page, label: str) -> None:
     navigation_button = page.get_by_role("button", name="Open page navigation")
     if await navigation_button.is_visible():
@@ -125,6 +238,23 @@ async def _select_spend_page(page: Page, label: str) -> None:
         await page.get_by_role("menuitem", name=label).click()
     else:
         await page.get_by_role("tab", name=label).click()
+
+
+async def _expect_tooltip_rendered(tooltip: Locator) -> None:
+    await expect(tooltip).to_be_visible()
+    await expect(tooltip).to_have_css("opacity", "1")
+    fits_viewport = await tooltip.evaluate(
+        """(element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.left >= 0 &&
+            rect.bottom <= window.innerHeight && rect.right <= window.innerWidth;
+        }"""
+    )
+    assert fits_viewport, "tooltip is clipped by the viewport"
+
+
+async def _expect_tooltip_hidden(tooltip: Locator) -> None:
+    await expect(tooltip).to_be_hidden()
 
 
 @pytest.fixture(scope="module")
@@ -156,6 +286,7 @@ def dashboard_url() -> Iterator[str]:
             )
         return AllowanceView(
             status=Status.ACTIVE,
+            time_zone="UTC",
             currency="USD",
             monthly_minor_units=70000,
             activation_at=activation,
@@ -253,6 +384,7 @@ def dashboard_url() -> Iterator[str]:
     @app.get("/api/v1/configuration", response_model=SpendConfigurationView)
     def configuration() -> SpendConfigurationView:
         return SpendConfigurationView(
+            time_zone="UTC",
             cards=[
                 CardConfigurationView(
                     label="Example card", enabled=True, limit_minor_units=None, alert_threshold_percent=None
@@ -498,6 +630,15 @@ def dashboard_url() -> Iterator[str]:
             allowance=example_allowance(),
             rows=shown,
         )
+
+    @app.get("/api/v1/sustainability")
+    def sustainability(window_days: int | None = None) -> dict[str, object]:
+        days = window_days or 90
+        result = _example_sustainability()
+        result["window_days"] = days
+        result["covered_days"] = days
+        result["period_start"] = "2026-09-15" if days == 30 else "2026-07-17"
+        return result
 
     app.mount("/static", StaticFiles(directory=_UI_DIR))
     with serve_app_sync(app) as url:
@@ -795,6 +936,190 @@ async def test_transaction_explanations_dark_theme(page: Page, view: VisualPage,
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = "transactions-dark-390.png"
     await view.capture(image.removesuffix(".png"), label="390px dark theme", full_page=True, animations="disabled")
+
+
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_sustainability_experimental_render(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
+    requests: list[str] = []
+    page.on(
+        "request", lambda request: requests.append(request.url) if "/api/v1/sustainability" in request.url else None
+    )
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Sustainability")
+    await page.get_by_text("Tax-adjusted implied draw rate", exact=True).wait_for()
+    await page.locator('canvas[aria-label="Annualized spending and implied draw rates by day"]').wait_for()
+    await expect(page.get_by_text("Experimental", exact=True)).to_be_visible()
+    await expect(page.get_by_text("TODAY'S portfolio valuation", exact=False)).to_be_visible()
+    await expect(page.get_by_text("Scenario 4: 4.5%", exact=True)).to_be_visible()
+    await expect(
+        page.get_by_text("Current implied draw is 1.5 percentage points above this scenario.", exact=True)
+    ).to_be_visible()
+    await expect(page.get_by_text("$2,750", exact=True)).to_be_visible()
+    scenario_marker = page.get_by_role("button", name="Scenario 1: 3% draw rate")
+    await expect(scenario_marker).to_be_visible()
+    await expect(scenario_marker).to_have_text("3%")
+    await expect(page.get_by_text("MANDATORY", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("FLEXIBLE", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("PROVISIONAL", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("No other income is modeled.", exact=False)).to_be_visible()
+    await expect(page.get_by_text("Synthetic investment source", exact=True)).to_be_visible()
+    assert any(url.endswith("/api/v1/sustainability") for url in requests)
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"sustainability-ready-{width}",
+        label=f"{width}px synthetic ready estimate",
+        full_page=True,
+        animations="disabled",
+    )
+
+    await scenario_marker.hover()
+    scenario_tooltip = page.get_by_role("tooltip").filter(has_text="Scenario 1: 3% draw rate")
+    await _expect_tooltip_rendered(scenario_tooltip)
+    await expect(scenario_tooltip).to_contain_text("Scenario 1: 3% draw rate")
+    await expect(scenario_tooltip).to_contain_text("Supported monthly spending (USD/month):")
+    await expect(scenario_tooltip).to_contain_text("$2,750")
+    await expect(scenario_tooltip).to_contain_text("1.5 percentage points above this scenario")
+    await expect(scenario_tooltip).to_contain_text("After 12% modeled withdrawal tax.")
+    if width == 1280:
+        await view.capture(
+            "sustainability-scenario-tooltip-desktop",
+            label="1280px scenario details opened by hovering the 3% marker",
+            full_page=True,
+            animations="disabled",
+        )
+    await page.mouse.move(0, 0)
+    await _expect_tooltip_hidden(scenario_tooltip)
+    await scenario_marker.focus()
+    await page.keyboard.press("Tab")
+    await page.keyboard.press("Shift+Tab")
+    await expect(scenario_marker).to_be_focused()
+    await _expect_tooltip_rendered(scenario_tooltip)
+    if width == 390:
+        await view.capture(
+            "sustainability-scenario-tooltip-mobile",
+            label="390px scenario details opened from the 3% marker",
+            full_page=True,
+            animations="disabled",
+        )
+        await page.keyboard.press("Escape")
+        await _expect_tooltip_hidden(scenario_tooltip)
+    view.errors.assert_none(context="Sustainability")
+
+    async with page.expect_response(lambda response: "window_days=30" in response.url):
+        await page.get_by_text("30 days", exact=True).click()
+    await expect(page.get_by_text("30 of 30 days covered", exact=False)).to_be_visible()
+    assert any("/api/v1/sustainability?window_days=30" in url for url in requests)
+    view.errors.assert_none(context="Sustainability")
+
+
+async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, dashboard_url: str) -> None:
+    async def serve_ready(route: Route) -> None:
+        await route.fulfill(json=_example_sustainability())
+
+    await touch_page.route("**/api/v1/sustainability*", serve_ready)
+    await touch_page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(touch_page, "Sustainability")
+    marker = touch_page.get_by_role("button", name="Scenario 1: 3% draw rate")
+    await expect(marker).to_be_visible()
+    await marker.tap()
+    tooltip = touch_page.get_by_role("tooltip")
+    await _expect_tooltip_rendered(tooltip)
+    await expect(tooltip).to_contain_text("Scenario 1: 3% draw rate")
+    await expect(tooltip).to_contain_text("Supported monthly spending (USD/month):")
+    await expect(tooltip).to_contain_text("After 12% modeled withdrawal tax.")
+    await VisualPage(touch_page, output_dir=undeclared_outputs_dir(), title="Spend").capture(
+        "sustainability-scenario-touch-tooltip",
+        label="Scenario details opened by tapping the 3% marker",
+        full_page=True,
+        animations="disabled",
+    )
+    await touch_page.get_by_role("heading", name="Sustainability", exact=True).tap()
+    await _expect_tooltip_hidden(tooltip)
+    await marker.tap()
+    await _expect_tooltip_rendered(tooltip)
+    await marker.tap()
+    await _expect_tooltip_hidden(tooltip)
+    await marker.tap()
+    await _expect_tooltip_rendered(tooltip)
+    await touch_page.keyboard.press("Escape")
+    await _expect_tooltip_hidden(tooltip)
+
+
+async def test_sustainability_short_gauge_fill_render(page: Page, view: VisualPage, dashboard_url: str) -> None:
+    async def serve_low_draw(route: Route) -> None:
+        await route.fulfill(json=_example_sustainability("low_draw"))
+
+    await page.route("**/api/v1/sustainability*", serve_low_draw)
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Sustainability")
+    gauge = page.get_by_role("region", name="Tax-adjusted implied draw rate")
+    await expect(gauge.get_by_text("0.5%", exact=True)).to_be_visible()
+    await expect(page.get_by_role("button", name="Scenario 1: 3% draw rate")).to_be_visible()
+    await view.capture(
+        "sustainability-short-gauge-fill",
+        label="Synthetic 0.5% implied rate with a short gauge fill",
+        full_page=True,
+        animations="disabled",
+    )
+    view.errors.assert_none(context="Sustainability short fill")
+
+
+async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
+    page: Page, view: VisualPage, dashboard_url: str
+) -> None:
+    async def serve_tax_unmodeled(route: Route) -> None:
+        await route.fulfill(json=_example_sustainability("tax_unmodeled"))
+
+    await page.route("**/api/v1/sustainability*", serve_tax_unmodeled)
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Sustainability")
+    await page.get_by_text("Spending-only implied draw rate · taxes unmodeled", exact=True).wait_for()
+    marker = page.get_by_role("button", name="Scenario 1: 3% draw rate")
+    await marker.hover()
+    tooltip = page.get_by_role("tooltip")
+    await expect(tooltip).to_contain_text("Supported monthly spending (USD/month):")
+    await expect(tooltip).to_contain_text("$3,125")
+    await expect(tooltip).to_contain_text("1.0 percentage points above this scenario")
+    await expect(tooltip).to_contain_text("Before taxes; withdrawal taxes are not modeled.")
+    view.errors.assert_none(context="Sustainability with unmodeled tax")
+
+
+@pytest.mark.parametrize("variant", ["stale", "unavailable"])
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_sustainability_stale_and_unavailable_render(
+    page: Page, view: VisualPage, dashboard_url: str, variant: str, width: int, height: int
+) -> None:
+    async def serve_variant(route: Route) -> None:
+        await route.fulfill(json=_example_sustainability(variant))
+
+    await page.route("**/api/v1/sustainability*", serve_variant)
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Sustainability")
+    await page.get_by_role("alert").get_by_text("Estimate unavailable", exact=False).wait_for()
+    await expect(page.get_by_text("Portfolio used in the estimate", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Valuation unavailable", exact=True)).to_be_visible()
+    await expect(page.get_by_text("ANNUALIZED SPENDING", exact=True)).to_be_visible()
+    await expect(page.get_by_text("$49,511", exact=True)).to_be_visible()
+    await expect(page.locator('[role="img"][aria-label*="gauge"]')).to_have_count(0)
+    if variant == "stale":
+        await page.get_by_text("Synthetic valuation has not refreshed recently.", exact=True).wait_for()
+        await expect(page.get_by_text("46 days old", exact=False)).to_be_visible()
+        await expect(page.get_by_text("Current data issues", exact=True)).to_be_visible()
+    else:
+        await expect(page.get_by_text("Synthetic investment source", exact=True)).to_be_visible()
+        await expect(page.get_by_text("Synthetic cash source", exact=True)).to_be_visible()
+    view.errors.assert_none(context="Sustainability")
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"sustainability-{variant}-{width}",
+        label=f"{width}px synthetic {variant} data",
+        full_page=True,
+        animations="disabled",
+    )
 
 
 async def test_accordion_readiness_ignores_unrelated_animations(page: Page) -> None:

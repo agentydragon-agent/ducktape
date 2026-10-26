@@ -9,8 +9,10 @@ py_library(
     deps = [
         ":allowance",
         ":models",
+        ":portfolio",
         ":service",
         ":settings",
+        ":sustainability",
         "//util:oidc_login",
         "//util:oidc_principal",
         "@pypi//fastapi",
@@ -31,6 +33,7 @@ py_library(
     visibility = ["//finance/plaid/spend:__subpackages__"],
     deps = [
         ":allowance",
+        ":sustainability",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -42,10 +45,31 @@ py_library(
     deps = [
         ":allowance",
         ":models",
+        ":portfolio",
+        ":portfolio_models",
+        ":sustainability",
         "@pypi//anyio",
         "@pypi//asyncpg",
         "@pypi//babel",
     ],
+)
+
+py_library(
+    name = "portfolio",
+    srcs = ["portfolio.py"],
+    deps = [
+        ":portfolio_models",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pyjwt",
+    ],
+)
+
+py_library(
+    name = "portfolio_models",
+    srcs = ["portfolio_models.py"],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -85,6 +109,7 @@ py_test(
         ":models",
         ":service",
         ":settings",
+        ":sustainability",
         "//:conftest",
         "//util:oidc_login",
         "//util:oidc_principal",
@@ -107,10 +132,44 @@ py_test(
         ":app",
         ":conftest",
         ":models",
+        ":portfolio_models",
         ":service",
+        ":sustainability",
         "//:conftest",
         "@pypi//asyncpg",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_portfolio",
+    srcs = ["test_portfolio.py"],
+    deps = [
+        ":conftest",
+        ":portfolio",
+        ":portfolio_models",
+        "//:conftest",
+        "@pypi//asyncpg",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
+    deps = [
+        ":conftest",
+        ":settings",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -184,12 +243,25 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_settings",
-    srcs = ["test_settings.py"],
+py_library(
+    name = "sustainability",
+    srcs = ["sustainability.py"],
     deps = [
+        ":allowance",
+        ":portfolio_models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_sustainability",
+    srcs = ["test_sustainability.py"],
+    deps = [
+        ":allowance",
         ":conftest",
-        ":settings",
+        ":models",
+        ":portfolio_models",
+        ":sustainability",
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",

@@ -252,7 +252,7 @@ export function SpendingHistoryChart({
               Spending over time
             </Title>
             <Text size="sm" c="dimmed" mt="xs">
-              Daily flexible purchases by configured category. Days follow {allowance.time_zone ?? "UTC"}.
+              Daily flexible purchases by configured category. Days follow {allowance.time_zone}.
             </Text>
           </div>
           <Stack gap={4} align="flex-end" style={{ flexShrink: 0 }}>

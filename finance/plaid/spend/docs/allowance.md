@@ -6,11 +6,13 @@ isolated `finance-spend-config` namespace; Ducktape owns an ExternalSecret that 
 for the app. Keep Plaid account IDs in the private file, never in public ducktape. Until the Flux migration has rolled
 out, the live app still reads the existing named Secret. Without the policy file the pod will not start. Invalid YAML or
 policy fails application startup. Reloader restarts the Deployment after Secret changes; the process reads the file only
-at startup. Check the current read-only Plaid account coverage **before** configuring the allowance.
+at startup. The root `time_zone` is required even when the allowance is disabled. Check the current read-only Plaid
+account coverage **before** configuring the allowance.
 
 Generic _synthetic_ YAML example (amounts are integer cents; IDs, categories and prefixes illustrative):
 
 ```yaml
+time_zone: UTC
 cards: []
 allowance:
   monthly_minor_units: 100000
@@ -62,6 +64,8 @@ and, when needed, `amount_exact` in an `all_of` rule to limit a historical class
 ## One rule type, ordered: patterns and one-offs
 
 ```yaml
+time_zone: UTC
+cards: []
 allowance:
   monthly_minor_units: 100000
   activation_at: 2026-01-31
@@ -128,10 +132,11 @@ counted, and a negative credit matched by an `excluded` one-off is a paired tran
 refund. Keep the one-offs short: they are a ledger of reviewed corrections, not a second rule engine.
 
 When `allowance` is present, it is active. Supply a required `activation_at` ISO date (YYYY-MM-DD) as the stable
-credit-cycle anchor; null or omission is invalid. To disable the allowance, omit the entire `allowance` object. Plaid
-supplies only transaction **dates**, not trustworthy purchase times: activation uses the full UTC date, and a purchase
-dated on activation day counts in full. A full monthly credit arrives immediately on activation, again on each policy-zone
-monthly anniversary (clamped to month-end, always measured from the original day). Unspent credit carries forward; no
+credit-cycle anchor; null or omission is invalid. To disable the allowance, omit the entire `allowance` object. Activation
+starts at midnight in the required top-level `time_zone`; a purchase assigned to that local day counts in full. Purchase
+days follow the timestamp/date hierarchy below. A full monthly credit arrives immediately on activation, again on each
+monthly anniversary in the configured time zone (clamped to month-end, always measured from the original day).
+Unspent credit carries forward; no
 monthly reset or second credit at the first calendar-month boundary. Do not backdate the anchor expecting a clean slate;
 choose the intended first credit date. Only transactions dated on or after activation reduce the allowance or appear in
 the spending-window totals. For **pace only**, the service also reads the preceding 30 calendar days, applies the same
@@ -147,7 +152,7 @@ forecast against that **provisional allowance**, not a sustainability guarantee.
 GNOME and CLI use the configured default. Each recorded pace report's `unmatched_charges` count and
 amount count positive, default-flexible purchases in the pace lookback, including before activation; this is separate
 from the postactivation review tally. Purchase days define membership in each window and the transaction list:
-prefer an offset-bearing `authorized_datetime` converted into the policy's IANA `time_zone` (default `UTC`), then
+prefer an offset-bearing `authorized_datetime` converted into the configured IANA `time_zone`, then
 `authorized_date`, then an offset-bearing posting `datetime` converted to that zone, then the original Plaid `date`.
 Date-only values remain unchanged. Missing, malformed, naive, and exact-midnight timestamps are ignored; Plaid
 [documents default midnight times](https://plaid.com/docs/api/products/transactions/#transaction-authorized_datetime),

@@ -7,6 +7,7 @@ from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -23,6 +24,7 @@ from finance.plaid.spend.allowance import (
     Rule,
     TransactionPeriodId,
 )
+from finance.plaid.spend.sustainability import SustainabilityPolicy
 
 
 class AlertState(StrEnum):
@@ -60,11 +62,26 @@ class CardConfig(BaseModel):
 
 
 class SpendConfiguration(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
 
+    time_zone: ZoneInfo
     cards: list[CardConfig]
     allowance: AllowancePolicy | None = None
+    sustainability: SustainabilityPolicy | None = None
     account_labels: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _sustainability_uses_shared_classification(self) -> SpendConfiguration:
+        if self.sustainability is not None:
+            if self.allowance is None:
+                raise ValueError("sustainability requires shared allowance classifications")
+            categories = set(self.sustainability.include_excluded_categories)
+            if categories - self.allowance.analysis_categories.keys():
+                raise ValueError("sustainability category overrides must refer to configured categories")
+            rule_ids = {rule.id for rule in self.allowance.rules if rule.id is not None}
+            if set(self.sustainability.confirmed_refund_rule_ids) - rule_ids:
+                raise ValueError("confirmed refunds must refer to configured rule IDs")
+        return self
 
     @field_validator("account_labels")
     @classmethod
@@ -111,7 +128,6 @@ class AllowanceConfigurationView(BaseModel):
     activation_at: date_type
     currency: str
     spending_account_count: int
-    time_zone: str = "UTC"
     max_sync_age_hours: int
     forecast_basis_period_id: PeriodId
     rules: list[Rule]
@@ -123,6 +139,7 @@ class SpendConfigurationView(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    time_zone: str
     cards: list[CardConfigurationView]
     allowance: AllowanceConfigurationView | None
 
