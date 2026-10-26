@@ -510,8 +510,9 @@ def test_crossplane_source_update_canary_watches_its_flux_artifact(
     assert '"managementPolicies":["Observe","Create","Update"]' in composition_template
     assert '"module":{{ $artifactURL | toJson }}' in composition_template
     assert "{{- if $artifactURL }}" in composition_template
-    assert '"gotemplating.fn.crossplane.io/ready": {{ if $workspaceReady }}"True"{{ else }}"False"{{ end }}' in (
-        composition_template
+    assert (
+        '"gotemplating.fn.crossplane.io/ready": {{ if and $artifactWatchReady $workspaceReady }}"True"{{ else }}"False"{{ end }}'
+        in composition_template
     )
     assert "__ARTIFACT_URL__" not in composition_template
 
