@@ -4,20 +4,30 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class CoinbaseCredentials(BaseModel):
+    api_key: SecretStr
+    api_secret: SecretStr
+
+    @field_validator("api_key", "api_secret")
+    @classmethod
+    def reject_empty_secret(cls, value: SecretStr) -> SecretStr:
+        if not value.get_secret_value().strip():
+            raise ValueError("Coinbase credentials must not be empty")
+        return value
+
+
 class SpendSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="PLAID_SPEND_")
+    model_config = SettingsConfigDict(env_prefix="PLAID_SPEND_", env_nested_delimiter="__")
 
     database_url: str = Field(validation_alias="DATABASE_URL")
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     config_path: Path = Path("/etc/plaid-spend/spend-policy.yaml")
-    coinbase_api_key: SecretStr | None = None
-    coinbase_api_secret: SecretStr | None = None
-    valuation_history_path: Path | None = None
+    coinbase: CoinbaseCredentials | None = None
 
     api_oidc_issuer: str
     api_oidc_client_id: str
@@ -30,15 +40,6 @@ class SpendSettings(BaseSettings):
     web_oidc_client_secret: SecretStr
     web_oidc_session_secret: SecretStr
     web_oidc_session_seconds: int = Field(default=28_800, gt=0)
-
-    @model_validator(mode="after")
-    def validate_coinbase_credentials(self) -> SpendSettings:
-        if (self.coinbase_api_key is None) != (self.coinbase_api_secret is None):
-            raise ValueError("Coinbase API key and secret must be configured together")
-        if self.coinbase_api_key is not None and self.coinbase_api_secret is not None:
-            if not self.coinbase_api_key.get_secret_value().strip() or not self.coinbase_api_secret.get_secret_value().strip():
-                raise ValueError("Coinbase API key and secret must not be empty")
-        return self
 
     @property
     def api_signing_algorithms(self) -> tuple[str, ...]:
