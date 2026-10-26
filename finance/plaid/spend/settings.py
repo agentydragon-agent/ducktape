@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class CoinbaseCredentials(BaseModel):
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     api_key: SecretStr
     api_secret: SecretStr
 
@@ -21,7 +23,11 @@ class CoinbaseCredentials(BaseModel):
 
 
 class SpendSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="PLAID_SPEND_", env_nested_delimiter="__")
+    model_config = SettingsConfigDict(
+        env_prefix="PLAID_SPEND_",
+        env_nested_delimiter="__",
+        hide_input_in_errors=True,
+    )
 
     database_url: str = Field(validation_alias="DATABASE_URL")
     host: str = "0.0.0.0"

@@ -269,8 +269,8 @@ py_test(
     name = "test_settings",
     srcs = ["test_settings.py"],
     deps = [
-        ":settings",
         ":conftest",
+        ":settings",
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
