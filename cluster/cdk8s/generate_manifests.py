@@ -1808,15 +1808,12 @@ def generate_manifests(root: Path) -> None:
     haku_workloads_artifact = artifact("haku-workloads", haku_workloads.OUTPUT_DIR)
     haku_workloads.haku_workloads(flux_chart, write_directory(root, haku_workloads_artifact, haku_workloads.chart))
     litellm_keys_tf_artifact = artifact("litellm-keys-tf", litellm_keys.OUTPUT_DIR)
+    # CLEANUP(added 2026-10-26): Retain the source until the legacy litellm-keys
+    # Terraform CR and its runner are absent; finalization resolves sourceRef even with destroy=false.
     litellm_keys_module = terraform.gitops_module(litellm_keys.TF_MODULE)
-    litellm_keys_tf_kustomization = litellm_keys.litellm_keys_tf(
+    litellm_keys.litellm_keys_tf(
         flux_chart,
-        write_directory(
-            root,
-            litellm_keys_tf_artifact,
-            functools.partial(litellm_keys.keys_chart, module=litellm_keys_module),
-            siblings=["buildbuddy-org-admin-api-key.sops.yaml"],
-        ),
+        write_directory(root, litellm_keys_tf_artifact, siblings=["buildbuddy-org-admin-api-key.sops.yaml"]),
         tofu_controller_kustomization,
         litellm_kustomization,
     )
@@ -1836,7 +1833,6 @@ def generate_manifests(root: Path) -> None:
         ),
         crossplane_provider_kustomization,
         litellm_kustomization,
-        litellm_keys_tf_kustomization,
     )
     litellm_buildbuddy_sync_artifact = artifact("litellm-buildbuddy-sync", litellm_buildbuddy_sync.OUTPUT_DIR)
     litellm_buildbuddy_sync_module = terraform.gitops_module(litellm_buildbuddy_sync.TF_MODULE)

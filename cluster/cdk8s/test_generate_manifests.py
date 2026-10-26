@@ -450,7 +450,7 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
     )
 
 
-def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
+def test_litellm_crossplane_keys_retain_publication_after_handoff(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
@@ -469,7 +469,6 @@ def test_litellm_crossplane_cutover_waits_for_terraform_teardown(
     assert kustomizations["litellm-crossplane-keys"]["spec"]["dependsOn"] == [
         {"name": "crossplane-provider-litellm", "namespace": "ducktape-flux"},
         {"name": "litellm", "namespace": "ducktape-flux"},
-        {"name": "litellm-keys-tf", "namespace": "ducktape-flux"},
     ]
     assert kustomizations["litellm-crossplane-keys"]["spec"]["wait"] is True
     assert kustomizations["litellm-buildbuddy-sync"]["spec"]["dependsOn"] == [
@@ -544,7 +543,7 @@ def test_litellm_buildbuddy_terraform_runners_receive_api_key_inputs(
         if doc.get("kind") == "Terraform"
         and doc.get("metadata", {}).get("name") in {"litellm-keys", "litellm-buildbuddy-sync"}
     }
-    assert set(terraform_resources) == {"litellm-keys", "litellm-buildbuddy-sync"}
+    assert set(terraform_resources) == {"litellm-buildbuddy-sync"}
 
     expected_env = {
         "name": "BUILDBUDDY_API_KEY",
