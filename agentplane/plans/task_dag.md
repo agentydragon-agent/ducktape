@@ -979,9 +979,7 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 flowchart TD
     DECLARATIVE_SESSIONS_DESIGN[Decision, unscheduled: Flux-managed Sessions and subscriptions]
     SUBSCRIPTION_AUTHORIZATION_DESIGN[Subscription authorization decision, section 2] -. related authority design .-> DECLARATIVE_SESSIONS_DESIGN
-    VM_REPLICATED_BLOCK_WORKSPACE[In flight: provision replicated raw-block VM workspaces]
-    VM_BLOCK_STORAGE_CUTOVER[Blocked: reset affected VM Sandboxes onto replicated storage]
-    VM_REPLICATED_BLOCK_WORKSPACE --> VM_BLOCK_STORAGE_CUTOVER
+    VM_BLOCK_STORAGE_CUTOVER[Blocked: qualify fresh VM Sandboxes on replicated storage]
     STATE_VOLUME_BLOCK[Deferred: block storage for Pod and VM state and workspace]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
@@ -1034,20 +1032,9 @@ manifest for a Session with GitHub/webhook subscriptions, and independently fini
 nodes with focused reconciliation/restart, duplicate-prevention and authorization acceptance.
 Recording this idea does not schedule implementation.
 
-### `VM_REPLICATED_BLOCK_WORKSPACE` — provision replicated raw-block VM workspaces
+### `VM_BLOCK_STORAGE_CUTOVER` — qualify fresh VM Sandboxes on replicated storage
 
-**Provisioning merged in [PR #12108](https://github.com/agentydragon/ducktape/pull/12108);
-acceptance assertions in review in [PR #12110](https://github.com/agentydragon/ducktape/pull/12110),
-2026-10-25 PDT, operator-selected.** Change `runner-vm` to
-`BlockFilesystem`/ext4 on a `Block` claim. Staging puts both VM claims on
-`piraeus-ssd-2-autodiskful`; state remains `DirectoryTree`/`Filesystem` through virtiofs and
-Pod templates are unchanged. Exit: template and generated-manifest checks plus real raw-block
-VM write/read, suspend/resume and retained-identity acceptance on RBE. See
-[selected plan](vm_block_storage.md).
-
-### `VM_BLOCK_STORAGE_CUTOVER` — reset affected VM Sandboxes onto replicated storage
-
-**Blocked on `VM_REPLICATED_BLOCK_WORKSPACE`; operational hold on the replicated class's
+**Operational hold on the replicated class's
 [Piraeus qualification](../../cluster/docs/plans/piraeus_production.md).** The operator accepts
 deleting selected pre-existing affected Sandboxes instead of implementing storage conversion
 (2026-10-25 PDT). A legacy VM explicitly retained by the operator stays permanently suspended
