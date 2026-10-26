@@ -1721,7 +1721,7 @@ spec:
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
-      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
       kind: Workspace
   interval: 10m
   path: ./cluster/generated/route53-domain-delegation
@@ -2002,7 +2002,7 @@ spec:
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
-      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
       kind: Workspace
   interval: 10m
   path: ./cluster/generated/authentik/tf/crossplane-gatus-sso
@@ -2030,7 +2030,7 @@ spec:
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
-      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
       kind: Workspace
   interval: 10m
   path: ./cluster/generated/authentik/tf/crossplane-alloy-otlp-bearer-token
@@ -2098,7 +2098,7 @@ spec:
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
-      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
       kind: Workspace
   interval: 10m
   path: ./cluster/generated/forgejo/gitops/crossplane-forgejo-claude
@@ -2130,7 +2130,7 @@ spec:
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
-      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
       kind: Workspace
   interval: 10m
   path: ./cluster/generated/forgejo/gitops/crossplane-haku-state
@@ -2162,7 +2162,7 @@ spec:
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
-      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
       kind: Workspace
   interval: 10m
   path: ./cluster/generated/forgejo/gitops/crossplane-budget-ledger
@@ -2194,7 +2194,7 @@ spec:
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
-      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
       kind: Workspace
   interval: 10m
   path: ./cluster/generated/forgejo/gitops/crossplane-cpap-data
@@ -2226,7 +2226,7 @@ spec:
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
-      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
       kind: Workspace
   interval: 10m
   path: ./cluster/generated/forgejo/gitops/crossplane-finance-agent
@@ -2258,7 +2258,7 @@ spec:
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
-      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
       kind: Workspace
   interval: 10m
   path: ./cluster/generated/forgejo/gitops/crossplane-forgejo-agentydragon-repos
@@ -2288,7 +2288,7 @@ spec:
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: opentofu.upbound.io/v1beta1
-      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
       kind: Workspace
   interval: 10m
   path: ./cluster/generated/crossplane-forgejo-agentydragon
