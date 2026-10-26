@@ -102,7 +102,8 @@ def test_reversal_removes_both_legs_but_keeps_replacement_and_normal_refunds() -
     )
     assert result.posted_minor_units == 9_000
     assert result.unmatched_refunds_minor_units == 400
-    assert result.reversal_pairs[0].issues == []
+    assert result.note is None
+    assert "reversal_pairs" not in result.model_dump()  # Existing terminal clients reject unknown view fields.
     for decision in decisions[:2]:
         assert decision.disposition == Disposition.REVERSED
         assert decision.effective_kind == Kind.EXCLUDED
@@ -120,7 +121,9 @@ def test_missing_leg_preserves_conservative_accounting(missing_leg: int) -> None
     rows = legs()
     rows.pop(missing_leg)
     result = calculate(policy([pair()]), rows, time_zone=_ZONE, now=_NOW, last_synced_at=_NOW)
-    assert result.reversal_pairs[0].issues
+    assert result.note is not None
+    assert "Reversal pair example-return" in result.note
+    assert "matched 0" in result.note
     assert result.posted_minor_units == (8_000 if missing_leg == 1 else 0)
     assert result.unmatched_refunds_minor_units == (8_000 if missing_leg == 0 else 0)
 

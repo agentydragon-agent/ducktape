@@ -251,11 +251,7 @@ def calculate_sustainability(
     requested_start = today - timedelta(days=window_days)
     issues = list(source_issues)
     reversals = resolve_reversal_pairs(allowance, transactions, time_zone=time_zone, today=today)
-    issues.extend(
-        f"Reversal pair {resolution.pair_id}: {issue}"
-        for resolution in reversals.resolutions
-        for issue in resolution.issues
-    )
+    issues.extend(reversals.issues)
     superseded = superseded_pending_keys(transactions)
     days_by_account: dict[str, list[date_type]] = defaultdict(list)
     daily: dict[date_type, list[int]] = defaultdict(lambda: [0, 0, 0])

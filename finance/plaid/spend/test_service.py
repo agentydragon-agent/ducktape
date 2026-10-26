@@ -477,7 +477,7 @@ async def test_reversal_uses_old_retained_original_and_preserves_card_statement(
     assert view.allowance is not None
     assert view.allowance.posted_minor_units == 9_000
     assert view.allowance.unmatched_refunds_minor_units == 0
-    assert view.allowance.reversal_pairs[0].issues == []
+    assert view.allowance.note is None
     assert view.cards[0].posted_minor_units == 1_000  # Statement still sees the actual -80 credit and +90 debit.
     assert len(transactions.rows) == 2  # Original is outside the displayed period, but still reconciled.
     credit = next(row for row in transactions.rows if row.amount_minor_units < 0)

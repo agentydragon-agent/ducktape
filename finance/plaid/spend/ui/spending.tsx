@@ -20,8 +20,6 @@ import { Metric, Money, SignalLabel, time, periodLabels, type Signal } from "./s
 import { SpendingHistoryChart } from "./SpendingHistoryChart";
 import type { Allowance, AllowancePeriodId, CardView, EstimatePeriodId, SpendView, TransactionsView } from "./types";
 
-type ReversalPairResolution = NonNullable<Allowance["reversal_pairs"]>[number];
-
 function cardTitle(card: CardView): string {
   return `${card.label || card.account_name || "Card"}${card.mask ? ` ···· ${card.mask}` : ""}`;
 }
@@ -33,29 +31,6 @@ function pacePeriod(allowance: Allowance, periodId: AllowancePeriodId) {
 }
 function signalFor(available: number, projected: number): Signal {
   return available <= 0 ? "exceeded" : projected < 0 ? "warning" : "normal";
-}
-
-function ReversalPairNotice({ statuses }: { statuses: ReversalPairResolution[] }) {
-  const unresolved = statuses.filter((status) => status.issues.length > 0);
-  if (!unresolved.length) return null;
-  return (
-    <Alert color="yellow" title="Full reversal pairs need review">
-      <Stack gap="xs">
-        <Text size="sm">
-          Unresolved pairs leave every matching transaction in normal allowance accounting. Review these issues before
-          relying on the spending total.
-        </Text>
-        {statuses.map(({ pair_id, issues }) => (
-          <Text size="sm" key={pair_id} style={{ overflowWrap: "anywhere" }}>
-            <strong>{pair_id}:</strong>{" "}
-            {issues.length
-              ? issues.join(" ")
-              : "matched as a posted full reversal; both legs are excluded from the allowance."}
-          </Text>
-        ))}
-      </Stack>
-    </Alert>
-  );
 }
 
 function PurchaseCheck({
@@ -543,7 +518,11 @@ export function SpendingPage({
       )}
       {view?.allowance ? (
         <>
-          <ReversalPairNotice statuses={view.allowance.reversal_pairs ?? []} />
+          {view.allowance.status === "active" && view.allowance.note && (
+            <Alert color="yellow" title="Allowance needs review" style={{ overflowWrap: "anywhere" }}>
+              {view.allowance.note}
+            </Alert>
+          )}
           <AllowancePanel
             allowance={view.allowance}
             purchase={purchase}

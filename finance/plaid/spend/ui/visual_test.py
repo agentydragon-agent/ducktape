@@ -41,7 +41,6 @@ from finance.plaid.spend.allowance import (
     PlaidCounterparty,
     RecordedPacePeriod,
     ReversalPair,
-    ReversalPairResolution,
     Rule,
     RuleScope,
     Status,
@@ -465,13 +464,8 @@ def dashboard_url() -> Iterator[str]:
             spending_signal=PaceAlert.UNAVAILABLE if warmup else PaceAlert.NORMAL,
             last_synced_at=datetime(2026, 10, 15, 11, tzinfo=UTC),
             prior_carry_minor_units=0 if warmup else 5000,
-            reversal_pairs=[
-                ReversalPairResolution(pair_id="example-full-reversal", issues=[]),
-                ReversalPairResolution(
-                    pair_id="example-reversal-needs-review",
-                    issues=["Original selector matched 0 retained transactions; exactly one is required."],
-                ),
-            ],
+            note="Reversal pair example-reversal-needs-review: "
+            "Original selector matched 0 retained transactions; exactly one is required.",
         )
 
     @app.get("/api/v1/view", response_model=SpendView)
@@ -885,7 +879,7 @@ async def test_spending_decision_render(
     )
     await expect(page.get_by_role("alert").get_by_text("2 charges ($15) need review")).to_have_count(1)
     await expect(page.get_by_role("heading", name="Can I afford this?")).to_have_count(1)
-    pair_review = page.get_by_role("alert").filter(has_text="Full reversal pairs need review")
+    pair_review = page.get_by_role("alert").filter(has_text="Allowance needs review")
     await expect(pair_review.get_by_text("example-reversal-needs-review", exact=False)).to_be_visible()
     await expect(
         pair_review.get_by_text("Original selector matched 0 retained transactions", exact=False)

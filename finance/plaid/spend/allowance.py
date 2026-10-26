@@ -327,10 +327,9 @@ class ReversalPair(BaseModel):
         return self
 
 
-class ReversalPairResolution(BaseModel):
+@dataclass(frozen=True)
+class ReversalPairResolution:
     """Safe reconciliation result. Empty issues confirms both legs; otherwise neither is adjusted."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     pair_id: str
     issues: list[str]
@@ -506,7 +505,6 @@ class AllowanceView(BaseModel):
     last_synced_at: datetime | None
     note: str | None = None
     prior_carry_minor_units: int = 0
-    reversal_pairs: list[ReversalPairResolution] = Field(default_factory=list)
 
 
 def month_anniversary(start: datetime, months: int) -> datetime:
@@ -608,6 +606,14 @@ def superseded_pending_keys(transactions: list[Transaction]) -> set[tuple[str, s
 class ResolvedReversals:
     pairs_by_transaction: dict[tuple[str, str], ReversalPair]
     resolutions: list[ReversalPairResolution]
+
+    @property
+    def issues(self) -> list[str]:
+        return [
+            f"Reversal pair {resolution.pair_id}: {issue}"
+            for resolution in self.resolutions
+            for issue in resolution.issues
+        ]
 
 
 def resolve_reversal_pairs(
@@ -869,5 +875,5 @@ def calculate(
         spending_signal=signal,
         last_synced_at=last_synced_at,
         prior_carry_minor_units=(credits - 1) * policy.monthly_minor_units - (posted + pending - current_cycle_spend),
-        reversal_pairs=reversals.resolutions,
+        note=" ".join(reversals.issues) or None,
     )

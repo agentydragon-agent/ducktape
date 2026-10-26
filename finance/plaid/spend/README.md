@@ -41,7 +41,7 @@ authenticated detail view remain decimal strings in major units.
 - `GET /api/v1/transactions?period=rolling_30d` returns transaction explanations and a period summary. If a requested
   credit cycle is unavailable, the response identifies the actual `rolling_30d` period.
 - `GET /api/v1/configuration` returns the loaded policy for the read-only Configuration tab without Plaid account IDs.
-- Allowance views report configured full reversal pair resolutions; transaction rows identify both matched legs. The
+- Allowance views report unresolved full reversal pairs in their existing note field; transaction rows identify both matched legs. The
   Spending page shows unresolved pair issues even when the allowance is otherwise ready.
 - `GET /api/v1/events` accepts the same optional estimate period and sends a complete `view` SSE event immediately and
   after `plaid_spend_changed` notifications; idle streams send heartbeat comments.
