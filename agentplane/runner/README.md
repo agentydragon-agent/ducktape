@@ -54,6 +54,25 @@ The production build target is `//agentplane/runner/cmd:agentplane-runner`, ship
 The binary includes the supervisor and SQLite; the native Claude/Codex executables,
 workspace tools and CA certificates are supplied by the runtime image.
 
+## Codex executor container
+
+Runner Pods can run Codex command execution through a companion container in the same Pod. The runner
+retains the Codex app-server and journals; the companion owns `codex exec-server` as PID 1 in its
+private container PID namespace. The runner claims the companion over a Unix socket before Codex
+starts and fences it before replacing a lost process. A companion exit or failed health probe lets
+Kubernetes restart that container with a fresh PID namespace; the runner never replays an in-flight
+command. `Environment.isolated_codex_executor` controls this Pod-template policy and can be disabled
+for environments that need execution inside the runner container.
+
+Both containers run as the image's uid and gid 1000 and share the Sandbox state and workspace at the
+same absolute paths, plus `/home/runner`, `/tmp`, and the read-only runner disk image. They use the
+same proxy and CA settings. Processes in either container have the same filesystem identity and can
+change the shared files, so the companion is a process and resource boundary, not a trust boundary.
+Its Kubernetes requests and limits are independently configurable with `executor_resources` on
+`RunnerTemplate`; runner resource overrides continue to apply only to the runner container. The
+companion receives the Sandbox kubeconfig and any optional BuildBuddy diagnostics key so its command
+tools keep the runner's intended access. It gets no model credentials or sidecar-projected tokens.
+
 `codex/protocol` generates Go models at build time with Quicktype from schemas
 exported by the same pinned Codex executable used by the native tests. Requests,
 responses, notifications and known item payloads use these models. Method and item

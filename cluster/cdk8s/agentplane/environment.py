@@ -167,6 +167,8 @@ class Environment:
     vm_sandboxes: bool
     # Guest sizing and Runner cgroup budgets shared by the VM template and guest config seed.
     vm_resources: GuestResources | None = None
+    # Whether runner Pods delegate Codex command execution to a companion with its own PID namespace.
+    isolated_codex_executor: bool = True
     # Whether a VM Sandbox's serial console is a root shell, for whoever holds the VMI `console`
     # subresource. Only meaningful with `vm_sandboxes`.
     vm_console_autologin: bool = False
