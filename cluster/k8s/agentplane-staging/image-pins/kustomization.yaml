@@ -49,7 +49,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
     newTag: devel-20261023092025-3c01b52 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261026004905-28850a2 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+    newTag: devel-20261026063736-f63e198 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # The runner VM SandboxTemplate's containerDisk, which `images:` reaches through kustomizeconfig.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-vm
     newTag: devel-20261026042333-88badbc # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
