@@ -1125,20 +1125,23 @@ async def test_full_reversal_transaction_explanation(
     await _select_spend_page(page, "Transactions")
     rows = page.get_by_role("table") if width >= 992 else page.locator(".mantine-Accordion-root").first
 
-    async def toggle_transaction(name: str) -> None:
+    async def open_transaction(name: str) -> Locator:
         if width >= 992:
-            await rows.locator("tr[data-transaction-row]").filter(has_text=name).click()
-        else:
-            await rows.get_by_role("button", name=name, exact=False).click()
+            control = page.locator("tr[data-transaction-row]").filter(has_text=name)
+            await control.click()
+            return rows.locator("tbody").filter(has=control)
+        control = page.get_by_role("button", name=name, exact=False)
+        await _expand_accordion(control)
+        return rows.locator(".mantine-Accordion-item").filter(has=control)
 
-    await toggle_transaction("EXAMPLE OWN ACCOUNT TRANSFER")
-    original = page.get_by_label("Full reversal pair example-full-reversal")
+    original_details = await open_transaction("EXAMPLE OWN ACCOUNT TRANSFER")
+    original = original_details.get_by_label("Full reversal pair example-full-reversal")
     await expect(original).to_be_visible()
     await expect(original.get_by_text("Original debit", exact=True)).to_be_visible()
     await expect(original.get_by_text("Original debit selector:", exact=False)).to_be_visible()
     await expect(original.get_by_text("Reversal credit selector:", exact=False)).to_be_visible()
-    await expect(page.get_by_text("Classification rule is shown as context", exact=False)).to_be_visible()
-    await expect(page.get_by_text("Allowance balance effect: $0", exact=False)).to_be_visible()
+    await expect(original_details.get_by_text("Classification rule is shown as context", exact=False)).to_be_visible()
+    await expect(original_details.get_by_text("Allowance balance effect: $0", exact=False)).to_be_visible()
     await view.capture(
         f"full-reversal-transaction-explanation-{width}",
         label=f"{width}px full reversal explanation",
@@ -1146,14 +1149,20 @@ async def test_full_reversal_transaction_explanation(
         animations="disabled",
     )
 
-    await toggle_transaction("EXAMPLE OWN ACCOUNT TRANSFER")
-    await toggle_transaction("EXAMPLE OWN ACCOUNT REVERSAL")
-    reversal = page.get_by_label("Full reversal pair example-full-reversal")
+    reversal_details = await open_transaction("EXAMPLE OWN ACCOUNT REVERSAL")
+    reversal = reversal_details.get_by_label("Full reversal pair example-full-reversal")
     await expect(reversal).to_be_visible()
     await expect(reversal.get_by_text("Reversal credit", exact=True)).to_be_visible()
     await expect(
-        page.get_by_text("Synthetic rule classification retained as context for the reversal.")
+        reversal_details.get_by_text("Synthetic rule classification retained as context for the reversal.")
     ).to_be_visible()
+    await expect(reversal_details.get_by_text("Allowance balance effect: $0", exact=False)).to_be_visible()
+    await view.capture(
+        f"full-reversal-credit-explanation-{width}",
+        label=f"{width}px full reversal credit explanation",
+        full_page=True,
+        animations="disabled",
+    )
 
 
 @pytest.mark.asyncio
