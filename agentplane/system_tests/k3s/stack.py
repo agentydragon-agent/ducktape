@@ -34,7 +34,7 @@ import yaml
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.conftest import AGENT_SERVICE_ACCOUNT, AUDIENCE
-from agentplane.system_tests.k3s import rendered_fixture, vm_sandboxes
+from agentplane.system_tests.k3s import block_storage, rendered_fixture, vm_sandboxes
 from agentplane.system_tests.k3s.bootstrap import Bootstrap
 from agentplane.testing import tls
 from util.bazel.runfiles import get_required_path
@@ -492,7 +492,16 @@ def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Ite
     process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
     timeline.mark("node Ready")
     with contextlib.ExitStack() as cleanup:
-        cleanup.callback(shutil.rmtree, work, ignore_errors=True)
+        raw_block = block_storage.BlockStorage(work)
+
+        def remove_work() -> None:
+            if raw_block.closed:
+                shutil.rmtree(work, ignore_errors=True)
+            else:
+                logger.error("preserving %s because a fixture loop device did not detach", work)
+
+        cleanup.callback(remove_work)
+        cleanup.callback(raw_block.close)
         cleanup.callback(k3s.stop, process)
         ca_cert, ca_key = _openssl_ca(work)
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
@@ -529,6 +538,9 @@ def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Ite
         namespaces = [d for d in fixture.objects if d["kind"] == "Namespace"]
         rest = [d for d in fixture.objects if d["kind"] != "Namespace"]
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
+        if fixture.vm_sandboxes:
+            k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(raw_block.prepare()))
+            timeline.mark("raw block PVs applied")
         print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
         logger.info("applied %s objects", len(rest))
         timeline.mark("manifests applied")

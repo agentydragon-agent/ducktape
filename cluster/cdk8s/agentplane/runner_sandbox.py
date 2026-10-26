@@ -138,7 +138,7 @@ def workspace_volume_spec(
     storage_class: str | None = None,
 ) -> dict[str, Any]:
     """The workspace claim follows the state claim, with layout-derived volume mode and optional class."""
-    layout = {"type": layout_type}
+    layout: dict[str, str] = {"type": layout_type}
     if layout_type != "DirectoryTree":
         layout["filesystem"] = "ext4"
     claim = {**state_volume["claim"], "volumeMode": "Block" if layout_type == "BlockFilesystem" else "Filesystem"}
