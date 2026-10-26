@@ -132,11 +132,7 @@ def _example_sustainability(variant: str = "ready") -> dict[str, object]:
         return annualized / portfolio_net, tax_adjusted / portfolio_net
 
     history = []
-    for day, annualized in (
-        ("2026-10-12", 4_700_000),
-        ("2026-10-13", 4_850_000),
-        ("2026-10-14", annualized_spending),
-    ):
+    for day, annualized in (("2026-10-12", 4_700_000), ("2026-10-13", 4_850_000), ("2026-10-14", annualized_spending)):
         spending_rate, tax_adjusted_rate = rates_for(annualized)
         history.append(
             {
