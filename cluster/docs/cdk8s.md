@@ -57,6 +57,12 @@ central Flux chart keeps its name, `flux/kustomizations.k8s.yaml`.
    modules.
 4. **Hand-written outright**: `flux/flux-system` (`flux bootstrap` output).
 
+**Gotcha:** deleting an empty parent `kustomization.yaml` enables recursive discovery
+of nested resources while the retiring Flux Kustomization may still be running.
+First land `deletionPolicy: Orphan` on that Flux Kustomization and verify it live;
+then remove it and its root file. Otherwise its deletion can prune a nested Workspace
+before the dedicated owner reapplies it. Verify unchanged Workspace UIDs after cleanup.
+
 The parked tree, `cluster/parked` (`PARKED_ROOT`), is outside both roots and applied by
 nothing; it is hand-written apart from augur-evidence's generated file.
 
