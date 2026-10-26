@@ -130,8 +130,10 @@ budget for an isolated process purpose, while the parent aggregate remains autho
 - In VMs the executor and native harnesses have separate sibling cgroup budgets under the Runner
   service. In Pods the executor companion is PID 1 in a separate container with a private PID namespace
   and Kubernetes resource limits. Workspace and runtime paths are shared under the same Sandbox principal.
-- Runner starts the executor before the app-server and probes RPC progress with deadlines. Server exit
-  or an unresponsive dispatcher fences its work and restarts the executor with bounded backoff. A
+- Runner starts the executor before the app-server and probes RPC progress every five seconds with
+  a three-second deadline. Three consecutive failures fence its work and restart the executor with
+  bounded backoff; a successful probe resets the failure count. Server exit fences without waiting
+  for further probes. A
   failed tool's side effects remain uncertain; Runner never replays it. Executor loss does not itself
   emit `HarnessExited` for the app-server.
 - Startup fences previous executor work before opening Session stores. Quiesce fences the executor

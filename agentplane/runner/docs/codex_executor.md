@@ -57,8 +57,9 @@ for root paths, agent UID/GID and block devices; templates supply resource polic
 2. The first Codex startup starts the executor restart loop and waits for a bounded RPC probe.
    The probe initializes a WebSocket session and reads `environment/status`. The app-server then
    starts with the configured executor URL.
-3. Runner probes RPC progress every five seconds with a three-second deadline. Exit or failed
-   probes fence that generation and retry startup with exponential backoff capped at ten seconds.
+3. Runner probes RPC progress every five seconds with a three-second deadline. Three consecutive
+   failed probes fence that generation; a successful probe resets the failure count. Server exit
+   fences without waiting for further probes. Restart uses exponential backoff capped at ten seconds.
    Pod cleanup also waits for kubelet to restart the companion. Commands are never replayed by Runner.
 4. Quiesce halts Sessions, stops harnesses, fences the executor and only then seals journals.
    Ordinary Runner shutdown follows the same cleanup before releasing state ownership. Failure to
