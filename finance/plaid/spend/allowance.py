@@ -559,6 +559,14 @@ def matching_rule(transaction: Transaction | Mapping[str, object], rules: list[R
     return next((rule for rule in rules if matches_fields(transaction, rule.condition)), None)
 
 
+def superseded_pending_keys(transactions: list[Transaction]) -> set[tuple[str, str]]:
+    return {
+        (transaction.account_id, transaction.pending_transaction_id)
+        for transaction in transactions
+        if not transaction.pending and transaction.pending_transaction_id is not None
+    }
+
+
 def calculate(
     policy: AllowancePolicy,
     transactions: list[Transaction],
@@ -581,11 +589,7 @@ def calculate(
     while month_anniversary(start, credits) <= now:
         credits += 1
     next_credit = month_anniversary(start, credits)
-    superseded = {
-        (transaction.account_id, transaction.pending_transaction_id)
-        for transaction in transactions
-        if not transaction.pending and transaction.pending_transaction_id is not None
-    }
+    superseded = superseded_pending_keys(transactions)
     # Keep each included purchase once, with its category and posting state.
     included: list[Purchase] = []
     rolling_periods = tuple(period_id for period_id in PeriodId if period_id.rolling_days is not None)

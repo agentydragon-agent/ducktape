@@ -61,6 +61,20 @@ ts_library(
 )
 
 ts_library(
+    name = "SustainabilityHistoryChart",
+    srcs = ["SustainabilityHistoryChart.tsx"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":spend_display",
+        ":types",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/chart.js",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "configuration",
     srcs = ["configuration.tsx"],
     tsconfig = ":tsconfig",
@@ -107,6 +121,20 @@ ts_library(
 )
 
 ts_library(
+    name = "sustainability",
+    srcs = ["sustainability.tsx"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":SustainabilityHistoryChart",
+        ":spend_display",
+        ":types",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "use_spend_data",
     srcs = ["use_spend_data.ts"],
     tsconfig = ":tsconfig",
@@ -127,6 +155,7 @@ ts_library(
         ":configuration",
         ":spending",
         ":styles",
+        ":sustainability",
         ":transactions",
         ":types",
         ":use_spend_data",

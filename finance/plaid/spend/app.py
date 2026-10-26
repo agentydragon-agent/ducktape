@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Annotated, cast
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -21,6 +21,7 @@ from finance.plaid.spend.allowance import EstimatePeriodId, PeriodId, Transactio
 from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView, load_configuration
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
+from finance.plaid.spend.sustainability import SustainabilityView
 from util.oidc_login import LoginConfig, current_session_is_valid, install_login
 from util.oidc_principal import (
     AuthentikOidcPrincipalResolver,
@@ -80,7 +81,7 @@ def _web_login_config(settings: SpendSettings) -> LoginConfig:
         public_base_url=settings.web_oidc_public_base_url,
         cookie_name="plaid-spend-session",
         public_paths={"/healthz"},
-        auth_handled_paths={"/api/v1/view", "/api/v1/events", "/api/v1/configuration", "/api/v1/transactions"},
+        auth_handled_paths={"/api/v1/view", "/api/v1/events", "/api/v1/configuration", "/api/v1/transactions", "/api/v1/sustainability"},
         signed_out_text="You are signed out of Plaid Spend.",
         session_created_log="Authentik session created for Plaid Spend",
         allowed_subject=None,
@@ -141,6 +142,16 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
     ) -> SpendTransactionsView:
         return await reader.read_transactions(period)
 
+    @app.get("/api/v1/sustainability", response_model=SustainabilityView)
+    async def get_sustainability(
+        _access: SpendAccess, reader: SpendReader,
+        window_days: Annotated[int | None, Query(ge=1, le=730)] = None,
+    ) -> SustainabilityView:
+        try:
+            return await reader.read_sustainability(window_days)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail='Window is not configured for sustainability.') from error
+
     @app.get("/api/v1/events")
     async def events(
         request: Request, _access: SpendAccess, reader: SpendReader, estimate_period_id: EstimatePeriodId | None = None
@@ -191,7 +202,11 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
     settings = SpendSettings()
     configuration = load_configuration(settings.config_path)
-    service = SpendService(settings.database_url, configuration, dashboard_url=settings.web_oidc_public_base_url)
+    service = SpendService(
+        settings.database_url, configuration, dashboard_url=settings.web_oidc_public_base_url,
+        coinbase_api_key=settings.coinbase_api_key, coinbase_api_secret=settings.coinbase_api_secret,
+        valuation_history_path=settings.valuation_history_path,
+    )
     uvicorn.run(create_app(settings, service=service), host=settings.host, port=settings.port, log_level="info")
 
 

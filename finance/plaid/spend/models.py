@@ -24,6 +24,8 @@ from finance.plaid.spend.allowance import (
     TransactionPeriodId,
 )
 
+from finance.plaid.spend.sustainability import SustainabilityPolicy
+
 
 class AlertState(StrEnum):
     NORMAL = "normal"
@@ -64,7 +66,21 @@ class SpendConfiguration(BaseModel):
 
     cards: list[CardConfig]
     allowance: AllowancePolicy | None = None
+    sustainability: SustainabilityPolicy | None = None
     account_labels: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _sustainability_uses_shared_classification(self) -> SpendConfiguration:
+        if self.sustainability is not None:
+            if self.allowance is None:
+                raise ValueError("sustainability requires shared allowance classifications")
+            categories = set(self.sustainability.include_excluded_categories)
+            if categories - self.allowance.analysis_categories.keys():
+                raise ValueError("sustainability category overrides must refer to configured categories")
+            rule_ids = {rule.id for rule in self.allowance.rules if rule.id is not None}
+            if set(self.sustainability.confirmed_refund_rule_ids) - rule_ids:
+                raise ValueError("confirmed refunds must refer to configured rule IDs")
+        return self
 
     @field_validator("account_labels")
     @classmethod

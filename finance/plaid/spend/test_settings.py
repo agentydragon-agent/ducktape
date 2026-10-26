@@ -78,3 +78,7 @@ def test_coinbase_credentials_reject_partial_or_empty_values(
 
     with pytest.raises(ValidationError):
         SpendSettings(_env_file=None)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

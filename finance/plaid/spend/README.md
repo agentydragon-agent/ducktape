@@ -10,7 +10,7 @@ no write access in the app namespace. The canonical policy is `config/plaid-spen
 finance-agent repository.
 
 The browser at `/` signs in through the confidential Authentik `plaid-spend-web` client. Its tabs use hash URLs
-(`/#/spending`, `/#/transactions`, and `/#/configuration`); the server only needs the root page route. The server keeps
+(`/#/spending`, `/#/transactions`, `/#/sustainability`, and `/#/configuration`); the server only needs the root page route. The server keeps
 OIDC tokens out of the browser and authenticates page, stylesheet, script, view, configuration, and event requests with
 a signed session cookie. The GNOME panel and `plaid-spend` CLI use the separate public `plaid-spend-desktop` client and
 Bearer-token API. Both desktop clients read the same global card view and notification-backed event stream.
@@ -67,7 +67,7 @@ The private policy file follows `SpendConfiguration` in [`models.py`](models.py)
 Use `null` for an optional limit or threshold. The service validates this file at startup and reads it from
 `/etc/plaid-spend/spend-policy.yaml`. Until the policy Secret exists, the pod cannot start; a missing or invalid file
 fails application startup. Reloader restarts the Deployment after updating it; the process does not watch for mounted
-Secret updates. The spend database role can only read the four Plaid source tables needed to compute the view; it does
+Secret updates. The spend database role can only read the seven Plaid source tables needed to compute spending and portfolio values; it does
 not store or write this configuration.
 
 Each card's `label` is its short display name. For spending accounts that are not cards, an optional top-level
@@ -101,6 +101,17 @@ All service settings use the `PLAID_SPEND_` prefix except `DATABASE_URL`:
   `PLAID_SPEND_WEB_OIDC_CLIENT_SECRET`, and `PLAID_SPEND_WEB_OIDC_SESSION_SECRET`; optional
   `PLAID_SPEND_WEB_OIDC_SESSION_SECONDS` (default 28800)
 - optional `PLAID_SPEND_HOST` and `PLAID_SPEND_PORT`
+- optional `PLAID_SPEND_COINBASE_API_KEY` and `PLAID_SPEND_COINBASE_API_SECRET`; both must be present together. The
+  deployed service receives these two properties from the existing view-only Coinbase credential Secret and signs
+  Coinbase requests in memory.
+- optional `PLAID_SPEND_VALUATION_HISTORY_PATH`; when set, successful daily aggregate valuations are stored in a
+  private SQLite file. The deployment uses `/var/lib/plaid-spend/valuation-history.sqlite3` on a dedicated PVC.
+
+Valuation history stores the safe `PortfolioView` projection, its collection day, policy revision, and UTC observation
+time. It does not store source account or security identifiers, transactions, raw provider responses, or credentials.
+There is one updatable row per day and policy revision; an unavailable retry cannot replace a ready snapshot. The PVC
+has no automatic expiry, so snapshots remain until the volume is explicitly removed. The app's Flux owner orphans
+persistent volumes if that owner is removed.
 
 The API resolver verifies Authentik RS256 access tokens against pinned issuer/JWKS metadata and requires the configured
 audience and authorized party. The listener subscribes to committed `plaid_spend_changed` notifications from the
@@ -110,3 +121,34 @@ separate Plaid sync service.
 
 See [allowance setup and accounting](docs/allowance.md). The allowance is read-only and uses the private Flux-managed
 policy; no payment rail is controlled.
+
+## Experimental sustainability
+
+`GET /api/v1/sustainability?window_days=90` and `/#/sustainability` show total mandatory, flexible and provisional
+consumption annualized over complete days in the allowance timezone. Optional private `sustainability` configuration
+selects the lookback windows, scenario reference rates, eligible asset/liability accounts, exact `excluded_securities`,
+Coinbase inclusion, documented effective withdrawal-tax assumptions, and known coverage issues. Without this section
+the page reports that the feature is unconfigured. Its classification rules and spending accounts come from the
+existing allowance; history includes purchases before the allowance's activation date. Identified transfers, card
+repayments and other excluded flows do not count as consumption. Explicit `include_excluded_categories` overrides
+allow a separately reviewed exclusion to count here. Only negative transactions matching an explicitly listed
+`confirmed_refund_rule_ids` rule offset consumption; other credits stay held outside spending.
+
+Annualized spending is `net consumption × 365.2425 / covered days`; the spending-only draw is that amount divided by
+current eligible portfolio value. The optional effective tax fraction is a share of gross withdrawals, so estimated
+annual funding is `annualized spending / (1 - rate)`. A supplied rate requires a dated explanatory assumption. Both
+ratios assume no other income. The reference markers are scenarios, not guarantees of lifetime sustainability.
+
+Portfolio value is selected gross USD assets minus signed liabilities minus the current value of explicitly excluded
+security positions. Holdings are not added to their account balances. A private exclusion's `value_multiplier` can
+state a quote-unit convention; a non-unit multiplier requires corrected account holdings to reconcile to its balance.
+Enabled sources must be complete and fresh for a percentage to appear. The Coinbase source covers returned brokerage
+wallets and current USD spot quotes, including held quantities, not external wallets or every Coinbase product.
+The backend signs view-only GET requests in memory and refreshes its portfolio cache at most once per minute.
+
+Every historical spending point uses **today's** eligible portfolio. Coverage starts at the latest first-recorded
+transaction among selected accounts; partial windows annualize only their covered days and are labeled. This is an
+observable lower bound, not proof of complete linked spending. Asset observations, transaction posting and transfer
+settlement can arrive at different times. Private `known_issues` notes appear on the page alongside source errors.
+Daily aggregate valuation recording starts when a history path is configured; historical asset-denominator charts,
+backfill, transfer reconciliation and richer tax models remain follow-ups. No financial-account writes are performed.

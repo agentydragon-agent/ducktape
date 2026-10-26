@@ -118,6 +118,85 @@ async def _expand_accordion(control: Locator) -> None:
     )
 
 
+def _example_sustainability(variant: str = "ready") -> dict[str, object]:
+    stale = variant == "stale"
+    unavailable = variant == "unavailable"
+    return {
+        "generated_at": "2026-10-15T12:00:00Z",
+        "status": "unavailable" if unavailable else "ready",
+        "currency": "USD",
+        "time_zone": "UTC",
+        "window_days": 90,
+        "available_windows_days": [30, 90],
+        "period_start": "2026-07-17",
+        "period_end": "2026-10-14",
+        "covered_days": 90,
+        "mandatory_minor_units": 760000,
+        "flexible_minor_units": 410000,
+        "provisional_minor_units": 50000,
+        "spending_minor_units": 1220000,
+        "annualized_spending_minor_units": 4800000,
+        "estimated_annual_draw_minor_units": 5600000,
+        "spending_draw_rate": 0.0384,
+        "tax_adjusted_draw_rate": 0.0448,
+        "effective_tax_rate": 0.12,
+        "tax_assumption_note": "Synthetic fixture tax assumption; actual tax treatment depends on account and income details.",
+        "tax_assumption_as_of": "2026-01-01",
+        "reference_draw_rates": [0.03, 0.035, 0.04, 0.045],
+        "portfolio": {
+            "status": "unavailable" if unavailable else "ready",
+            "net_minor_units": None if unavailable else 125000000,
+            "assets_minor_units": None if unavailable else 140000000,
+            "liabilities_minor_units": None if unavailable else 15000000,
+            "excluded_minor_units": None if unavailable else 5000000,
+            "sources": [
+                {
+                    "name": "Example retirement account",
+                    "status": "unavailable" if unavailable else "ready",
+                    "amount_minor_units": None if unavailable else 95000000,
+                    "as_of": "2026-08-30T12:00:00Z" if stale else "2026-10-14T12:00:00Z",
+                    "issues": ["Synthetic valuation has not refreshed recently."] if stale else [],
+                },
+                {
+                    "name": "Example cash account",
+                    "status": "unavailable" if unavailable else "ready",
+                    "amount_minor_units": None if unavailable else 20000000,
+                    "as_of": "2026-10-14T12:00:00Z",
+                    "issues": [],
+                },
+            ],
+        },
+        "history": [
+            {
+                "date": "2026-10-12",
+                "covered_days": 90,
+                "annualized_spending_minor_units": 4700000,
+                "spending_draw_rate": 0.0376,
+                "tax_adjusted_draw_rate": 0.0438,
+            },
+            {
+                "date": "2026-10-13",
+                "covered_days": 90,
+                "annualized_spending_minor_units": 4850000,
+                "spending_draw_rate": 0.0388,
+                "tax_adjusted_draw_rate": 0.0452,
+            },
+            {
+                "date": "2026-10-14",
+                "covered_days": 90,
+                "annualized_spending_minor_units": 4800000,
+                "spending_draw_rate": 0.0384,
+                "tax_adjusted_draw_rate": 0.0448,
+            },
+        ],
+        "issues": ["Synthetic source has delayed updates."] if stale or unavailable else [],
+        "known_issues": [
+            "Synthetic fixture: investment values are illustrative and can lag market changes.",
+            "No income outside observed spending and portfolio sources is represented.",
+        ],
+    }
+
+
 async def _select_spend_page(page: Page, label: str) -> None:
     navigation_button = page.get_by_role("button", name="Open page navigation")
     if await navigation_button.is_visible():
@@ -499,6 +578,15 @@ def dashboard_url() -> Iterator[str]:
             rows=shown,
         )
 
+    @app.get("/api/v1/sustainability")
+    def sustainability(window_days: int | None = None) -> dict[str, object]:
+        days = window_days or 90
+        result = _example_sustainability()
+        result["window_days"] = days
+        result["covered_days"] = days
+        result["period_start"] = "2026-09-15" if days == 30 else "2026-07-17"
+        return result
+
     app.mount("/static", StaticFiles(directory=_UI_DIR))
     with serve_app_sync(app) as url:
         yield url
@@ -795,6 +883,72 @@ async def test_transaction_explanations_dark_theme(page: Page, view: VisualPage,
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = "transactions-dark-390.png"
     await view.capture(image.removesuffix(".png"), label="390px dark theme", full_page=True, animations="disabled")
+
+
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_sustainability_experimental_render(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
+    requests: list[str] = []
+    page.on("request", lambda request: requests.append(request.url) if "/api/v1/sustainability" in request.url else None)
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Sustainability")
+    await page.get_by_text("Tax-adjusted implied draw rate", exact=True).wait_for()
+    await page.locator('canvas[aria-label="Annualized spending and implied draw rates by day"]').wait_for()
+    await expect(page.get_by_text("Experimental", exact=True)).to_be_visible()
+    await expect(page.get_by_text("TODAY'S portfolio valuation", exact=False)).to_be_visible()
+    await expect(page.get_by_text("Scenario 4: 4.5%", exact=True)).to_be_visible()
+    await expect(page.get_by_text("MANDATORY", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("FLEXIBLE", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("PROVISIONAL", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("No other income is modeled.", exact=False)).to_be_visible()
+    await expect(page.get_by_text("Example retirement account", exact=True)).to_be_visible()
+    assert any(url.endswith("/api/v1/sustainability") for url in requests)
+    view.errors.assert_none(context="Sustainability")
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"sustainability-ready-{width}",
+        label=f"{width}px synthetic ready estimate",
+        full_page=True,
+        animations="disabled",
+    )
+
+    async with page.expect_response(lambda response: "window_days=30" in response.url):
+        await page.get_by_text("30 days", exact=True).click()
+    await expect(page.get_by_text("30 of 30 days covered", exact=False)).to_be_visible()
+    assert any("/api/v1/sustainability?window_days=30" in url for url in requests)
+    view.errors.assert_none(context="Sustainability")
+
+
+@pytest.mark.parametrize("variant", ["stale", "unavailable"])
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_sustainability_stale_and_unavailable_render(
+    page: Page, view: VisualPage, dashboard_url: str, variant: str, width: int, height: int
+) -> None:
+    async def serve_variant(route: Route) -> None:
+        await route.fulfill(json=_example_sustainability(variant))
+
+    await page.route("**/api/v1/sustainability*", serve_variant)
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Sustainability")
+    if variant == "stale":
+        await page.get_by_text("Synthetic valuation has not refreshed recently.", exact=True).wait_for()
+        await expect(page.get_by_text("46 days old", exact=False)).to_be_visible()
+        await expect(page.get_by_text("Current data issues", exact=True)).to_be_visible()
+    else:
+        await page.get_by_role("alert").get_by_text("Estimate unavailable", exact=False).wait_for()
+        await expect(page.get_by_text("Portfolio used in the estimate", exact=True)).to_be_visible()
+        await expect(page.get_by_text("Valuation unavailable", exact=True)).to_be_visible()
+    view.errors.assert_none(context="Sustainability")
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"sustainability-{variant}-{width}",
+        label=f"{width}px synthetic {variant} data",
+        full_page=True,
+        animations="disabled",
+    )
 
 
 async def test_accordion_readiness_ignores_unrelated_animations(page: Page) -> None:
