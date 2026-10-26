@@ -130,13 +130,7 @@ async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_
                 "security_ids": ["security-fake-1"],
             }
         ],
-        corrections=[
-            {
-                "account_id": "asset-brokerage",
-                "security_ids": ["security-fake-1"],
-                "value_multiplier": 2,
-            }
-        ],
+        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}],
     )
     connection = _FakeConnection(
         balances=[
@@ -170,13 +164,7 @@ async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_
 async def test_correction_reconciles_included_holdings_across_independent_capture_times() -> None:
     now = datetime.now(UTC)
     policy = _policy(
-        corrections=[
-            {
-                "account_id": "asset-brokerage",
-                "security_ids": ["security-fake-1"],
-                "value_multiplier": 100,
-            }
-        ]
+        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 100}]
     )
     balances = [
         _balance("asset-checking", 1000, now - timedelta(minutes=5)),
@@ -216,13 +204,7 @@ async def test_correction_reconciles_included_holdings_across_independent_captur
 async def test_corrected_holdings_that_do_not_reconcile_fail_closed() -> None:
     now = datetime.now(UTC)
     policy = _policy(
-        corrections=[
-            {
-                "account_id": "asset-brokerage",
-                "security_ids": ["security-fake-1"],
-                "value_multiplier": 2,
-            }
-        ]
+        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
     )
     connection = _FakeConnection(
         balances=[
@@ -293,13 +275,7 @@ async def test_missing_correction_position_with_other_holdings_fails_closed() ->
     balance_time = now - timedelta(minutes=5)
     holdings_time = now - timedelta(minutes=15)
     policy = _policy(
-        corrections=[
-            {
-                "account_id": "asset-brokerage",
-                "security_ids": ["security-fake-1"],
-                "value_multiplier": 2,
-            }
-        ]
+        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
     )
     connection = _FakeConnection(
         balances=[
@@ -498,9 +474,7 @@ async def test_coinbase_paginates_and_values_held_balances_with_usd_quotes(monke
     assert len(account_authorizations) == 2
     assert all(request.method == "GET" for request in requests)
     assert all(
-        "authorization" not in request.headers
-        for request in requests
-        if request.url.path.startswith("/v2/prices/")
+        "authorization" not in request.headers for request in requests if request.url.path.startswith("/v2/prices/")
     )
     assert any(request.url.path == "/v2/prices/USDC-USD/spot" for request in requests)
     assert any(request.url.params.get("cursor") == "opaque-test-cursor" for request in requests)
@@ -566,10 +540,7 @@ async def test_coinbase_cursor_without_next_page_token_fails_closed(monkeypatch:
     )
 
     view = await read_portfolio(
-        _pool(_FakeConnection(balances=[])),
-        policy,
-        now=now,
-        coinbase_client=_coinbase_client("test-key", private_key),
+        _pool(_FakeConnection(balances=[])), policy, now=now, coinbase_client=_coinbase_client("test-key", private_key)
     )
 
     assert view.status == "unavailable"
@@ -604,28 +575,14 @@ def test_portfolio_policy_rejects_overlapping_account_and_security_selectors() -
     with pytest.raises(ValidationError, match="must not overlap"):
         _policy(
             corrections=[
-                {
-                    "account_id": "asset-brokerage",
-                    "security_ids": ["same-security"],
-                    "value_multiplier": 2,
-                },
-                {
-                    "account_id": "asset-brokerage",
-                    "security_ids": ["same-security"],
-                    "value_multiplier": 3,
-                },
+                {"account_id": "asset-brokerage", "security_ids": ["same-security"], "value_multiplier": 2},
+                {"account_id": "asset-brokerage", "security_ids": ["same-security"], "value_multiplier": 3},
             ]
         )
 
     with pytest.raises(ValidationError, match="selected asset account"):
         _policy(
-            corrections=[
-                {
-                    "account_id": "card-account",
-                    "security_ids": ["security-fake-1"],
-                    "value_multiplier": 2,
-                }
-            ]
+            corrections=[{"account_id": "card-account", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
         )
 
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
@@ -647,11 +604,7 @@ def test_holding_value_correction_multiplier_must_be_positive_and_finite(multipl
     with pytest.raises(ValidationError):
         _policy(
             corrections=[
-                {
-                    "account_id": "asset-brokerage",
-                    "security_ids": ["security-fake-1"],
-                    "value_multiplier": multiplier,
-                }
+                {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": multiplier}
             ]
         )
 

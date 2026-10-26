@@ -54,9 +54,7 @@ def name_rule(field: Literal["name", "merchant_name"], prefix: str, kind: Kind) 
     return Rule(condition=NamePrefix(field=field, prefix=prefix), kind=kind)
 
 
-def policy(
-    *, activation_at: date = START_DATE, rules: list[Rule] | None = None
-) -> AllowancePolicy:
+def policy(*, activation_at: date = START_DATE, rules: list[Rule] | None = None) -> AllowancePolicy:
     configured_rules = (
         rules if rules is not None else [category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)]
     )
@@ -102,9 +100,7 @@ def row(
 
 
 def view(rows=(), when=START):
-    return calculate(
-        policy(), list(rows), time_zone=ZoneInfo("UTC"), now=when, last_synced_at=when
-    )
+    return calculate(policy(), list(rows), time_zone=ZoneInfo("UTC"), now=when, last_synced_at=when)
 
 
 def spend(report: AllowanceView, period_id: PeriodId) -> int:
@@ -201,32 +197,20 @@ def test_pacific_calendar_day_and_monthly_credit_follow_local_midnight():
         )
     activated = datetime(2026, 10, 5, 7, tzinfo=UTC)
     first = calculate(
-        chosen,
-        transactions,
-        time_zone=ZoneInfo("America/Los_Angeles"),
-        now=activated,
-        last_synced_at=activated,
+        chosen, transactions, time_zone=ZoneInfo("America/Los_Angeles"), now=activated, last_synced_at=activated
     )
     assert first.next_credit_at == datetime.fromisoformat("2026-11-05T00:00:00-08:00")
     assert first.time_zone == "America/Los_Angeles"
     before_credit = datetime(2026, 11, 5, 7, 59, tzinfo=UTC)
     previous_day = calculate(
-        chosen,
-        transactions,
-        time_zone=ZoneInfo("America/Los_Angeles"),
-        now=before_credit,
-        last_synced_at=before_credit,
+        chosen, transactions, time_zone=ZoneInfo("America/Los_Angeles"), now=before_credit, last_synced_at=before_credit
     )
     assert previous_day.available_minor_units == 10_000 - 2_500 - 4_000
     assert previous_day.forecast.basis_period.end == date(2026, 11, 4)
     assert spend(previous_day, PeriodId.CREDIT_CYCLE) == 6_500
     at_credit = datetime(2026, 11, 5, 8, tzinfo=UTC)
     current_day = calculate(
-        chosen,
-        transactions,
-        time_zone=ZoneInfo("America/Los_Angeles"),
-        now=at_credit,
-        last_synced_at=at_credit,
+        chosen, transactions, time_zone=ZoneInfo("America/Los_Angeles"), now=at_credit, last_synced_at=at_credit
     )
     assert current_day.available_minor_units == 20_000 - 2_500 - 4_000 - 7_000
     assert current_day.forecast.basis_period.end == date(2026, 11, 5)
@@ -249,9 +233,7 @@ def test_configuration_requires_root_time_zone_and_rejects_legacy_allowance_time
     allowance_configuration = policy().model_dump(mode="json")
     allowance_configuration["time_zone"] = "UTC"
     with pytest.raises(ValidationError, match="time_zone"):
-        SpendConfiguration.model_validate(
-            {"time_zone": "UTC", "cards": [], "allowance": allowance_configuration}
-        )
+        SpendConfiguration.model_validate({"time_zone": "UTC", "cards": [], "allowance": allowance_configuration})
 
 
 def test_missing_root_time_zone_error_hides_account_selectors():
@@ -260,9 +242,7 @@ def test_missing_root_time_zone_error_hides_account_selectors():
     with pytest.raises(ValidationError) as error:
         SpendConfiguration.model_validate(
             {
-                "cards": [
-                    {"account_id": "synthetic-root-card-selector", "label": "Example card", "enabled": True}
-                ],
+                "cards": [{"account_id": "synthetic-root-card-selector", "label": "Example card", "enabled": True}],
                 "allowance": allowance_configuration,
             }
         )
@@ -359,7 +339,8 @@ def test_prior_purchases_inform_pace_without_importing_debt():
             row("2026-01-30", 56),
             row("2026-01-30", 300, pfc_primary="RENT", pfc_detailed=None),
         ],
-        time_zone=ZoneInfo("UTC"), now=START,
+        time_zone=ZoneInfo("UTC"),
+        now=START,
         last_synced_at=START,
     )
     assert result.available_minor_units == 10_000
@@ -430,7 +411,8 @@ def test_pending_posted_transfer_and_unmatched_refund():
             ]
         ),
         rows,
-        time_zone=ZoneInfo("UTC"), now=START,
+        time_zone=ZoneInfo("UTC"),
+        now=START,
         last_synced_at=START,
     )
     assert result.posted_minor_units == 2_000
@@ -446,7 +428,8 @@ def test_private_rule_and_uncertain_purchases():
     result = calculate(
         policy(rules=[name_rule(field="name", prefix="EXAMPLE", kind=Kind.FIXED)]),
         [row("2026-01-31", 42)],
-        time_zone=ZoneInfo("UTC"), now=START,
+        time_zone=ZoneInfo("UTC"),
+        now=START,
         last_synced_at=START,
     )
     assert result.available_minor_units == 10_000
@@ -454,7 +437,8 @@ def test_private_rule_and_uncertain_purchases():
         calculate(
             policy(rules=[name_rule("name", "EXAMPLE", Kind.FLEXIBLE)]),
             [row("2026-01-31", -5)],
-            time_zone=ZoneInfo("UTC"), now=START,
+            time_zone=ZoneInfo("UTC"),
+            now=START,
             last_synced_at=START,
         ).available_minor_units
         == 10_000
@@ -467,7 +451,8 @@ def test_private_rule_and_uncertain_purchases():
     prior = calculate(
         policy(activation_at=START_DATE, rules=[name_rule("name", "RENT ONLY", Kind.FIXED)]),
         [row("2026-01-30", 12)],
-        time_zone=ZoneInfo("UTC"), now=START,
+        time_zone=ZoneInfo("UTC"),
+        now=START,
         last_synced_at=START,
     )
     assert prior.available_minor_units == 10_000
@@ -506,9 +491,7 @@ def test_compound_wire_rule_matches_only_named_beneficiary_and_wire_category():
     assert matching_rule(wire, [rule]) == rule
     assert matching_rule(wire.model_copy(update={"pfc_detailed": "GENERAL_SERVICES_LEGAL"}), [rule]) is None
     assert matching_rule(wire.model_copy(update={"name": "WIRE BENEFICIARY: OTHER BROKER"}), [rule]) is None
-    result = calculate(
-        policy(rules=[rule]), [wire], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START
-    )
+    result = calculate(policy(rules=[rule]), [wire], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START)
     assert result.available_minor_units == 10_000
     with pytest.raises(ValidationError):
         AllOf(conditions=[NameContains(field="name", substring="XX")])
@@ -545,11 +528,7 @@ def test_review_rule_uses_shared_conditions_and_preserves_uncertainty():
 def test_reviewed_negative_credit_is_not_spending_or_income():
     review = Rule(condition=AmountSign(sign="negative"), kind=Kind.REVIEW)
     result = calculate(
-        policy(rules=[review]),
-        [row("2026-01-31", -5)],
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
+        policy(rules=[review]), [row("2026-01-31", -5)], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START
     )
     assert result.available_minor_units == 10_000
     assert result.unmatched_refunds_minor_units == 500
@@ -634,7 +613,8 @@ def test_one_off_precedes_the_patterns_it_corrects_by_position():
     calculate(
         policy(rules=[pattern, one_off("rent", Kind.FIXED)]),
         [purchase],
-        time_zone=ZoneInfo("UTC"), now=START,
+        time_zone=ZoneInfo("UTC"),
+        now=START,
         last_synced_at=START,
         decisions=decisions,
     )
@@ -716,16 +696,10 @@ def test_one_off_on_a_negative_credit_avoids_the_held_refund_bucket():
     )
     credit = row("2026-01-31", -250)
     standing = name_rule("name", "NO OTHER MERCHANT", Kind.FIXED)
-    held = calculate(
-        policy(rules=[standing]), [credit], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START
-    )
+    held = calculate(policy(rules=[standing]), [credit], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START)
     assert held.unmatched_refunds_minor_units == 25_000
     paired = calculate(
-        policy(rules=[correction, standing]),
-        [credit],
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
+        policy(rules=[correction, standing]), [credit], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START
     )
     assert paired.unmatched_refunds_minor_units == 0
     assert paired.available_minor_units == 10_000

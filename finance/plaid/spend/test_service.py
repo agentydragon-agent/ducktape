@@ -235,7 +235,7 @@ async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
         cards=[
             CardConfig(account_id=aid, label=aid, limit_minor_units=100_000, enabled=True)
             for aid in ("card-early", "card-late")
-        ]
+        ],
     )
     service = SpendService(postgres_url, configuration, dashboard_url="https://spend.example.test")
     async with service.lifespan():
@@ -273,7 +273,7 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
             cards=[
                 CardConfig(account_id=aid, label=aid, limit_minor_units=10_000, enabled=True)
                 for aid in ("card-first", "card-empty")
-            ]
+            ],
         ),
         dashboard_url="https://spend.example.test",
     )
@@ -317,9 +317,7 @@ def test_report_day_uses_configured_zone_for_card_and_allowance_dates() -> None:
 async def test_report_day_and_disabled_sustainability_use_zone_without_allowance() -> None:
     zone = ZoneInfo("America/Los_Angeles")
     service = SpendService(
-        "unused",
-        SpendConfiguration(time_zone=zone, cards=[]),
-        dashboard_url="https://spend.example.test",
+        "unused", SpendConfiguration(time_zone=zone, cards=[]), dashboard_url="https://spend.example.test"
     )
 
     assert service.report_day(datetime(2026, 10, 9, 6, 59, tzinfo=UTC)) == date(2026, 10, 8)
@@ -511,11 +509,7 @@ async def test_portfolio_read_retries_failure_and_caches_ready_result(
     attempts = 0
 
     async def read_portfolio(
-        _pool: asyncpg.Pool,
-        _policy: PortfolioPolicy,
-        *,
-        now: datetime,
-        coinbase_client: object | None,
+        _pool: asyncpg.Pool, _policy: PortfolioPolicy, *, now: datetime, coinbase_client: object | None
     ) -> PortfolioView:
         nonlocal attempts
         attempts += 1
@@ -713,8 +707,7 @@ async def test_event_stream_sends_initial_view_and_notification_update(
     service = SpendService(
         postgres_url,
         SpendConfiguration(
-            time_zone=ZoneInfo("UTC"),
-            cards=[CardConfig(account_id="card-1", label="Test", enabled=True)],
+            time_zone=ZoneInfo("UTC"), cards=[CardConfig(account_id="card-1", label="Test", enabled=True)]
         ),
         dashboard_url="https://spend.example.test",
     )

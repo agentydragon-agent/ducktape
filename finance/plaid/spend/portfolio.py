@@ -137,9 +137,9 @@ async def _read_plaid(
     selected_ids = [*plaid.asset_account_ids, *plaid.liability_account_ids]
     expected_types = dict.fromkeys(plaid.asset_account_ids, "asset")
     expected_types.update(dict.fromkeys(plaid.liability_account_ids, "liability"))
-    required_holding_accounts = {
-        exclusion.account_id for exclusion in policy.excluded_securities
-    } | {correction.account_id for correction in plaid.holding_value_corrections}
+    required_holding_accounts = {exclusion.account_id for exclusion in policy.excluded_securities} | {
+        correction.account_id for correction in plaid.holding_value_corrections
+    }
     if not selected_ids:
         return _unavailable("plaid", "No Plaid accounts are selected."), 0, 0, 0
 
@@ -242,9 +242,7 @@ async def _read_plaid(
             adjusted_total += adjusted_value
             if position in excluded_positions:
                 excluded_amount += adjusted_value
-                excluded_by_account[account_id] = (
-                    excluded_by_account.get(account_id, Decimal(0)) + adjusted_value
-                )
+                excluded_by_account[account_id] = excluded_by_account.get(account_id, Decimal(0)) + adjusted_value
         if account_id in correction_account_ids:
             balance = balances[account_id]
             tolerance = max(Decimal(1), abs(balance) * Decimal("0.01"))
@@ -305,12 +303,8 @@ class CoinbaseClient:
         params = {"limit": "250"}
         if cursor:
             params["cursor"] = cursor
-        token = _coinbase_jwt(
-            self._api_key, self._api_secret, now=now, method="GET", path=_COINBASE_ACCOUNTS_PATH
-        )
-        response = await client.get(
-            _COINBASE_ACCOUNTS_URL, params=params, headers={"Authorization": f"Bearer {token}"}
-        )
+        token = _coinbase_jwt(self._api_key, self._api_secret, now=now, method="GET", path=_COINBASE_ACCOUNTS_PATH)
+        response = await client.get(_COINBASE_ACCOUNTS_URL, params=params, headers={"Authorization": f"Bearer {token}"})
         response.raise_for_status()
         return _CoinbaseAccountsPage.model_validate(response.json())
 
@@ -320,9 +314,7 @@ class CoinbaseClient:
         return _CoinbaseSpotPrice.model_validate(response.json()).data
 
 
-async def _read_coinbase(
-    *, now: datetime, coinbase_client: CoinbaseClient | None
-) -> tuple[SourceValuation, int]:
+async def _read_coinbase(*, now: datetime, coinbase_client: CoinbaseClient | None) -> tuple[SourceValuation, int]:
     if coinbase_client is None:
         return _unavailable("coinbase", "Coinbase is enabled but its view-only credentials are unavailable."), 0
     try:
@@ -387,11 +379,7 @@ async def _read_coinbase(
 
 
 async def read_portfolio(
-    pool: asyncpg.Pool,
-    policy: PortfolioPolicy,
-    *,
-    now: datetime,
-    coinbase_client: CoinbaseClient | None = None,
+    pool: asyncpg.Pool, policy: PortfolioPolicy, *, now: datetime, coinbase_client: CoinbaseClient | None = None
 ) -> PortfolioView:
     """Read selected holdings and return a fail-closed USD portfolio view."""
     if now.tzinfo is None or now.utcoffset() is None:

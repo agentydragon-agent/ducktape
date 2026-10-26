@@ -99,10 +99,7 @@ async def touch_page(playwright: Playwright, request: pytest.FixtureRequest) -> 
     capture_name = request.node.name.removeprefix("test_")
     async with (
         deterministic_browser_context(
-            playwright,
-            viewport={"width": 390, "height": 844},
-            frozen_now_ms=_FROZEN_NOW_MS,
-            has_touch=True,
+            playwright, viewport={"width": 390, "height": 844}, frozen_now_ms=_FROZEN_NOW_MS, has_touch=True
         ) as context,
         playwright_trace(context, undeclared_outputs_dir(), capture_name),
     ):
@@ -148,16 +145,12 @@ def _example_sustainability(variant: str = "ready") -> dict[str, object]:
             return None, None
         if effective_tax_rate is None:
             return annualized / portfolio_net, None
-        tax_adjusted = int(
-            (Decimal(annualized) / (Decimal(1) - Decimal(str(effective_tax_rate)))).quantize(Decimal(1))
-        )
+        tax_adjusted = int((Decimal(annualized) / (Decimal(1) - Decimal(str(effective_tax_rate)))).quantize(Decimal(1)))
         return annualized / portfolio_net, tax_adjusted / portfolio_net
 
     history = []
     history_values = (
-        (570_000, 585_000, annualized_spending)
-        if low_draw
-        else (4_700_000, 4_850_000, annualized_spending)
+        (570_000, 585_000, annualized_spending) if low_draw else (4_700_000, 4_850_000, annualized_spending)
     )
     for day, annualized in zip(("2026-10-12", "2026-10-13", "2026-10-14"), history_values, strict=True):
         spending_rate, tax_adjusted_rate = rates_for(annualized)
@@ -175,9 +168,7 @@ def _example_sustainability(variant: str = "ready") -> dict[str, object]:
     estimated_annual_draw = (
         None
         if portfolio_unavailable or effective_tax_rate is None
-        else int(
-            (Decimal(annualized_spending) / (Decimal(1) - Decimal(str(effective_tax_rate)))).quantize(Decimal(1))
-        )
+        else int((Decimal(annualized_spending) / (Decimal(1) - Decimal(str(effective_tax_rate)))).quantize(Decimal(1)))
     )
     mandatory, flexible, provisional, total = (
         (92_000, 50_000, 6_000, 148_000) if low_draw else (760_000, 410_000, 50_000, 1_220_000)
@@ -992,9 +983,7 @@ async def test_sustainability_experimental_render(
     view.errors.assert_none(context="Sustainability")
 
 
-async def test_sustainability_scenario_marker_supports_touch(
-    touch_page: Page, dashboard_url: str
-) -> None:
+async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, dashboard_url: str) -> None:
     async def serve_ready(route: Route) -> None:
         await route.fulfill(json=_example_sustainability())
 
@@ -1016,9 +1005,7 @@ async def test_sustainability_scenario_marker_supports_touch(
     )
 
 
-async def test_sustainability_short_gauge_fill_render(
-    page: Page, view: VisualPage, dashboard_url: str
-) -> None:
+async def test_sustainability_short_gauge_fill_render(page: Page, view: VisualPage, dashboard_url: str) -> None:
     async def serve_low_draw(route: Route) -> None:
         await route.fulfill(json=_example_sustainability("low_draw"))
 

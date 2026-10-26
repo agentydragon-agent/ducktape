@@ -676,10 +676,7 @@ class SpendService:
                 return cached[1]
             try:
                 view = await read_portfolio(
-                    self._require_pool(),
-                    policy.portfolio,
-                    now=now,
-                    coinbase_client=self._coinbase_client,
+                    self._require_pool(), policy.portfolio, now=now, coinbase_client=self._coinbase_client
                 )
             except asyncpg.PostgresError:
                 view = PortfolioView(
