@@ -1,0 +1,97 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: crossplanesourceupdatecanaries.opentofu.ducktape.io
+spec:
+  defaultCompositionRef:
+    name: crossplane-source-update-canary
+  group: opentofu.ducktape.io
+  names:
+    kind: CrossplaneSourceUpdateCanary
+    plural: crossplanesourceupdatecanaries
+  versions:
+    - name: v1alpha1
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          properties:
+            spec:
+              type: object
+            status:
+              properties:
+                artifactURL:
+                  type: string
+              type: object
+          type: object
+      served: true
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: crossplane-source-update-canary
+spec:
+  compositeTypeRef:
+    apiVersion: opentofu.ducktape.io/v1alpha1
+    kind: CrossplaneSourceUpdateCanary
+  mode: Pipeline
+  pipeline:
+    - functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                forProvider:
+                  manifest:
+                    apiVersion: source.toolkit.fluxcd.io/v1
+                    kind: ExternalArtifact
+                    metadata:
+                      name: tf-gitops-crossplane-source-update-canary
+                      namespace: ducktape-flux
+                managementPolicies:
+                  - Observe
+                providerConfigRef:
+                  name: crossplane-tf-artifact-reader
+                watch: true
+            name: artifact-watch
+            patches:
+              - fromFieldPath: status.atProvider.manifest.status.artifact.url
+                toFieldPath: status.artifactURL
+                type: ToCompositeFieldPath
+          - base:
+              apiVersion: opentofu.upbound.io/v1beta1
+              kind: Workspace
+              metadata:
+                annotations:
+                  crossplane.io/external-name: default
+              spec:
+                deletionPolicy: Orphan
+                forProvider:
+                  env:
+                    - name: PGPASSWORD
+                      secretKeyRef:
+                        key: password
+                        name: tofu-state-db-credentials
+                        namespace: flux-system
+                  planArgs:
+                    - -lock-timeout=5m
+                  remotePullPolicy: IfNotPresent
+                  source: Remote
+                managementPolicies:
+                  - Observe
+                  - Create
+                  - Update
+                providerConfigRef:
+                  name: crossplane-source-update-canary
+            name: workspace
+            patches:
+              - fromFieldPath: status.artifactURL
+                policy:
+                  fromFieldPath: Optional
+                toFieldPath: spec.forProvider.module
+                type: FromCompositeFieldPath
+      step: patch-and-transform

@@ -960,10 +960,16 @@ def generate_manifests(root: Path) -> None:
     crossplane_source_update_canary_artifact = artifact(
         crossplane_source_update_canary.NAME, crossplane_source_update_canary.OUTPUT_DIR
     )
+    crossplane_source_update_canary_definitions_artifact = crossplane_source_update_canary.definitions_artifact()
     crossplane_source_update_canary_input_artifact = crossplane_source_update_canary.source_artifact()
     crossplane_source_update_canary.resources(
         flux_chart,
-        write_directory(root, crossplane_source_update_canary_artifact, crossplane_source_update_canary.chart),
+        write_directory(
+            root,
+            crossplane_source_update_canary_definitions_artifact,
+            crossplane_source_update_canary.definitions_chart,
+        ),
+        write_directory(root, crossplane_source_update_canary_artifact, crossplane_source_update_canary.canary_chart),
         crossplane_opentofu_provider_kustomization,
         crossplane_kubernetes_provider_kustomization,
         tofu_state_db_kustomization,
@@ -1849,6 +1855,7 @@ def generate_manifests(root: Path) -> None:
             route53_domain_delegation_artifact,
             crossplane_forgejo_agentydragon_artifact,
             crossplane_source_update_canary_artifact,
+            crossplane_source_update_canary_definitions_artifact,
             crossplane_source_update_canary_input_artifact,
             external_secrets_config_artifact,
             external_secrets_operator_artifact,

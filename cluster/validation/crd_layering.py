@@ -38,8 +38,8 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     },
     "crossplane-provider-opentofu": {"Workspace.opentofu.upbound.io", "ProviderConfig.opentofu.upbound.io"},
     "crossplane-provider-kubernetes": {"Object.kubernetes.crossplane.io", "ProviderConfig.kubernetes.crossplane.io"},
-    # The canary Kustomization defines this XRD and applies its composite resource.
-    "crossplane-source-update-canary": {"CrossplaneSourceUpdateCanary.opentofu.ducktape.io"},
+    # Flux must establish this XRD before the dependent canary Kustomization applies its XR.
+    "crossplane-source-update-canary-definitions": {"CrossplaneSourceUpdateCanary.opentofu.ducktape.io"},
     "keda": {"ScaledJob", "TriggerAuthentication"},
     "kyverno": {"ClusterPolicy", "Policy", "CleanupPolicy"},
     "kyverno-policies": set(),

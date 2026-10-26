@@ -450,6 +450,12 @@ def test_crossplane_source_update_canary_watches_its_flux_artifact(
         if doc.get("kind", "").lower() == "kustomization"
         and doc.get("metadata", {}).get("name") == "crossplane-source-update-canary"
     )
+    definitions_kustomization = next(
+        doc
+        for doc in documents
+        if doc.get("kind", "").lower() == "kustomization"
+        and doc.get("metadata", {}).get("name") == "crossplane-source-update-canary-definitions"
+    )
     composition = next(
         doc
         for doc in documents
@@ -472,10 +478,34 @@ def test_crossplane_source_update_canary_watches_its_flux_artifact(
         for artifact in artifact_generator["spec"]["artifacts"]
         if artifact["name"] == "tf-gitops-crossplane-source-update-canary"
     )
+    definitions_artifact = next(
+        artifact
+        for artifact in artifact_generator["spec"]["artifacts"]
+        if artifact["name"] == "crossplane-source-update-canary-definitions"
+    )
 
     assert source_artifact["originRevision"] == "@repo"
     assert source_artifact["copy"] == [
         {"from": "@repo/tf/gitops/crossplane-source-update-canary/*.tf", "to": "@artifact/"}
+    ]
+    assert definitions_artifact["copy"] == [
+        {
+            "from": "@repo/cluster/generated/crossplane-source-update-canary-definitions/**",
+            "to": "@artifact/cluster/generated/crossplane-source-update-canary-definitions/",
+        }
+    ]
+    assert definitions_kustomization["spec"]["healthCheckExprs"] == [
+        {
+            "apiVersion": "apiextensions.crossplane.io/v1",
+            "kind": "CompositeResourceDefinition",
+            "current": "has(status.conditions) && status.conditions.exists(c, c.type == 'Established' && c.status == 'True')",
+            "failed": "has(status.conditions) && status.conditions.exists(c, c.type == 'Established' && c.status == 'False')",
+        }
+    ]
+    assert definitions_kustomization["spec"]["dependsOn"] == [
+        {"name": "crossplane-provider-opentofu", "namespace": "ducktape-flux"},
+        {"name": "crossplane-provider-kubernetes", "namespace": "ducktape-flux"},
+        {"name": "artifact-generators", "namespace": "ducktape-flux"},
     ]
     assert artifact_watch["base"]["spec"]["managementPolicies"] == ["Observe"]
     assert xrd["spec"]["defaultCompositionRef"] == {"name": "crossplane-source-update-canary"}
@@ -535,11 +565,13 @@ def test_crossplane_source_update_canary_watches_its_flux_artifact(
     ]
     assert "secrets" not in str(reader_role["rules"])
     assert workspace_kustomization["spec"]["dependsOn"] == [
+        {"name": "crossplane-source-update-canary-definitions", "namespace": "ducktape-flux"},
         {"name": "crossplane-provider-opentofu", "namespace": "ducktape-flux"},
         {"name": "crossplane-provider-kubernetes", "namespace": "ducktape-flux"},
         {"name": "tofu-state-db", "namespace": "ducktape-flux"},
         {"name": "artifact-generators", "namespace": "ducktape-flux"},
     ]
+    assert workspace_kustomization["metadata"]["name"] == "crossplane-source-update-canary"
     assert "postBuild" not in workspace_kustomization["spec"]
 
 

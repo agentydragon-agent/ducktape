@@ -20,6 +20,7 @@ from crossplane_xrd_crds.io.crossplane.apiextensions import (
     CompositeResourceDefinitionSpecVersions,
     CompositeResourceDefinitionSpecVersionsSchema,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from opentofu_providerconfig_crds.io.upbound.opentofu import ProviderConfig, ProviderConfigSpec
 from opentofu_workspace_crds.io.upbound.opentofu import (
     Workspace,
@@ -37,7 +38,7 @@ from provider_kubernetes_providerconfig_crds.io.crossplane.kubernetes import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import crossplane, terraform
-from cluster.cdk8s.artifact_generators import artifact_files
+from cluster.cdk8s.artifact_generators import artifact, artifact_files
 from cluster.cdk8s.flux import (
     Kustomization as FluxKustomization,
     RenderedDirectory,
@@ -48,6 +49,8 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "crossplane-source-update-canary"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
+DEFINITIONS_NAME = f"{NAME}-definitions"
+DEFINITIONS_OUTPUT_DIR = f"{GENERATED_ROOT}/{DEFINITIONS_NAME}"
 TF_MODULE_NAME = NAME
 TF_ARTIFACT_NAME = f"tf-gitops-{TF_MODULE_NAME}"
 TF_SOURCE_GLOB = f"tf/gitops/{TF_MODULE_NAME}/*.tf"
@@ -60,6 +63,12 @@ XRD_PLURAL = "crossplanesourceupdatecanaries"
 XRD_NAME = f"{XRD_PLURAL}.{XRD_GROUP}"
 COMPOSITION_NAME = NAME
 STATE_SCHEMA = terraform.gitops_state_schema(TF_MODULE_NAME)
+_XRD_HEALTH = KustomizationSpecHealthCheckExprs(
+    api_version="apiextensions.crossplane.io/v1",
+    kind="CompositeResourceDefinition",
+    current="has(status.conditions) && status.conditions.exists(c, c.type == 'Established' && c.status == 'True')",
+    failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Established' && c.status == 'False')",
+)
 
 
 def _api_object_with_spec(
@@ -74,6 +83,11 @@ def _api_object_with_spec(
 def source_artifact() -> ArtifactGeneratorSpecArtifacts:
     """Only changes to the canary's Terraform files change this artifact's digest and URL."""
     return artifact_files(TF_ARTIFACT_NAME, TF_SOURCE_GLOB)
+
+
+def definitions_artifact() -> ArtifactGeneratorSpecArtifacts:
+    """Package the XRD and Composition separately so Flux can wait for XRD establishment."""
+    return artifact(DEFINITIONS_NAME, DEFINITIONS_OUTPUT_DIR)
 
 
 def _artifact_watch_base() -> dict[str, Any]:
@@ -145,27 +159,9 @@ def _workspace_base() -> dict[str, Any]:
     return base
 
 
-def chart(app: App) -> Chart:
-    chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    ProviderConfig(
-        chart,
-        "opentofu-provider-config",
-        metadata=ApiObjectMetadata(name=PROVIDER_CONFIG_NAME),
-        spec=ProviderConfigSpec(
-            configuration='terraform {\n  backend "pg" {}\n}\n',
-            backend_file=(
-                f'conn_str = "{terraform.STATE_DATABASE_CONNECTION_STRING}"\nschema_name = "{STATE_SCHEMA}"\n'
-            ),
-        ),
-    )
-    KubernetesProviderConfig(
-        chart,
-        "kubernetes-provider-config",
-        metadata=ApiObjectMetadata(name=KUBERNETES_PROVIDER_CONFIG_NAME),
-        spec=KubernetesProviderConfigSpec(
-            credentials=KubernetesProviderConfigSpecCredentials(source="InjectedIdentity")
-        ),
-    )
+def definitions_chart(app: App) -> Chart:
+    """Apply the XRD and Composition before Flux applies the composite resource."""
+    chart = Chart(app, DEFINITIONS_NAME, disable_resource_name_hashes=True)
     CompositeResourceDefinition(
         chart,
         "composite-resource-definition",
@@ -239,6 +235,31 @@ def chart(app: App) -> Chart:
             ],
         ),
     )
+    return chart
+
+
+def canary_chart(app: App) -> Chart:
+    """Apply provider configuration and the composite resource after its XRD is established."""
+    chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    ProviderConfig(
+        chart,
+        "opentofu-provider-config",
+        metadata=ApiObjectMetadata(name=PROVIDER_CONFIG_NAME),
+        spec=ProviderConfigSpec(
+            configuration='terraform {\n  backend "pg" {}\n}\n',
+            backend_file=(
+                f'conn_str = "{terraform.STATE_DATABASE_CONNECTION_STRING}"\nschema_name = "{STATE_SCHEMA}"\n'
+            ),
+        ),
+    )
+    KubernetesProviderConfig(
+        chart,
+        "kubernetes-provider-config",
+        metadata=ApiObjectMetadata(name=KUBERNETES_PROVIDER_CONFIG_NAME),
+        spec=KubernetesProviderConfigSpec(
+            credentials=KubernetesProviderConfigSpecCredentials(source="InjectedIdentity")
+        ),
+    )
     _api_object_with_spec(
         chart,
         "composite-resource",
@@ -252,22 +273,33 @@ def chart(app: App) -> Chart:
 
 def resources(
     flux_chart: Chart,
-    directory: RenderedDirectory,
+    definitions_directory: RenderedDirectory,
+    canary_directory: RenderedDirectory,
     opentofu_provider: FluxKustomization,
     kubernetes_provider: FluxKustomization,
     tofu_state_db: FluxKustomization,
     artifact_generators: FluxKustomization,
-) -> FluxKustomization:
-    return flux_kustomization(
+) -> tuple[FluxKustomization, FluxKustomization]:
+    definitions = flux_kustomization(
+        flux_chart,
+        DEFINITIONS_NAME,
+        definitions_directory,
+        timeout="10m",
+        depends_on=flux_kustomization_depends_on_many(opentofu_provider, kubernetes_provider, artifact_generators),
+        health_check_exprs=[_XRD_HEALTH],
+        description="Establish the canary XRD and Composition before Flux applies the XR.",
+    )
+    canary = flux_kustomization(
         flux_chart,
         NAME,
-        directory,
+        canary_directory,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(
-            opentofu_provider, kubernetes_provider, tofu_state_db, artifact_generators
+            definitions, opentofu_provider, kubernetes_provider, tofu_state_db, artifact_generators
         ),
         description=(
             "Output-only OpenTofu canary. Flux publishes the root's content-addressed artifact; provider-kubernetes "
             "watches its ExternalArtifact and Crossplane updates the Workspace source URL."
         ),
     )
+    return definitions, canary
