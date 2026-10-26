@@ -622,7 +622,6 @@ def generate_manifests(root: Path) -> None:
                 kubernetes_identities=(
                     sso_providers.KUBERNETES_IDENTITY,
                     agent_machine_access.KUBERNETES_IDENTITY,
-                    gitlab_spike_flux.KUBERNETES_IDENTITY,
                     forgejo_images.KUBERNETES_IDENTITY,
                     gatus_sso.KUBERNETES_IDENTITY,
                     forgejo_claude.KUBERNETES_IDENTITY,
@@ -1242,24 +1241,27 @@ def generate_manifests(root: Path) -> None:
     )
     gitlab_spike_module = terraform.gitops_module("gitlab-spike")
     gitlab_spike_gitops_artifact = artifact(gitlab_spike_flux.GITOPS_NAME, gitlab_spike_flux.GITOPS_DIR)
-    gitlab_spike_gitops_kustomization = gitlab_spike_flux.gitops(
-        flux_chart,
-        write_directory(root, gitlab_spike_gitops_artifact),
-        gitlab_spike_bootstrap_kustomization,
-        tofu_controller_kustomization,
-        forgejo_kustomization,
-    )
+    # Prune the failed Inline Workspace (Orphan/default state) before restoring Tofu ownership.
+    # Both Kustomizations consume this artifact, so Flux also requires its current revision.
     gitlab_spike_workspace_artifact = artifact(gitlab_spike_flux.WORKSPACE_NAME, gitlab_spike_flux.WORKSPACE_DIR)
     gitlab_spike_workspace_kustomization = opentofu.workspace_kustomization(
         flux_chart,
         gitlab_spike_flux.WORKSPACE_NAME,
-        write_directory(root, gitlab_spike_workspace_artifact, gitlab_spike_flux.workspace_chart),
+        write_directory(root, gitlab_spike_workspace_artifact),
         gitlab_spike_gitops_artifact,
-        depends_on=[
-            crossplane_opentofu_provider_kustomization,
-            tofu_state_db_kustomization,
-            gitlab_spike_gitops_kustomization,
-        ],
+        depends_on=[crossplane_opentofu_provider_kustomization, tofu_state_db_kustomization],
+    )
+    gitlab_spike_gitops_kustomization = gitlab_spike_flux.gitops(
+        flux_chart,
+        write_directory(
+            root,
+            gitlab_spike_gitops_artifact,
+            lambda app: gitlab_spike_flux.gitops_chart(app, module=gitlab_spike_module),
+        ),
+        gitlab_spike_bootstrap_kustomization,
+        tofu_controller_kustomization,
+        forgejo_kustomization,
+        gitlab_spike_workspace_kustomization,
     )
     gitlab_spike_integrations_artifact = artifact(
         gitlab_spike_flux.INTEGRATIONS_NAME, gitlab_spike_flux.INTEGRATIONS_DIR
@@ -1273,7 +1275,7 @@ def generate_manifests(root: Path) -> None:
             gitlab_spike_delivery.chart,
             gitlab_spike_benchmark.chart,
         ),
-        gitlab_spike_workspace_kustomization,
+        gitlab_spike_gitops_kustomization,
     )
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
     matrix_kustomization = matrix.matrix(
