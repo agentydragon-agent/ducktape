@@ -76,9 +76,15 @@ pkg_tar(
 
 pkg_files(
     name = "root_init_file",
-    srcs = ["guest_init"],
+    srcs = [
+        "cgroup_observer",
+        "guest_init",
+    ],
     attributes = pkg_attributes(mode = "0755"),
-    renames = {"guest_init": "agentplane-guest-init"},
+    renames = {
+        "cgroup_observer": "agentplane-cgroup-observer",
+        "guest_init": "agentplane-guest-init",
+    },
 )
 
 pkg_tar(

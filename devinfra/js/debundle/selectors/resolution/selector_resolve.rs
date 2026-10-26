@@ -10,13 +10,14 @@
 
 mod selector_conflict;
 
+use source_identity::SourceUnitOrdinal;
 use std::cell::OnceCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use analysis::facts::StructuralChunkAnalysis;
-use analysis::{DepKind, OwnerId, StatementKind, StatementOrdinal};
+use analysis::{DepKind, SourceUnitId, StatementKind};
 use anyhow::{Context, Result, bail};
-use js_ast::body_index_for_statement_ordinal;
+use js_ast::statement_for_source_unit_ordinal;
 use rayon::prelude::*;
 use selector_ir::{
     ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
@@ -24,15 +25,15 @@ use selector_ir::{
 };
 use selector_ir_lowering::{MemberSelectorProgramBuilder, MemberSelectorSpecRef};
 use selector_outcome::{
-    Candidate, ConflictOwner, Differentiator, Entity, EntityRef, FreeIdentifier, IdentifierMeaning,
-    MAX_CANDIDATES_PER_SELECTOR, NearMiss, Outcome, OwnershipConflict, Placement, ResolvedBy,
-    SelectorKind, SelectorOutcome, TemplateIdentifiers,
+    Candidate, ConflictSourceUnit, Differentiator, Entity, EntityRef, FreeIdentifier,
+    IdentifierMeaning, MAX_CANDIDATES_PER_SELECTOR, NearMiss, Outcome, OwnershipConflict,
+    Placement, ResolvedBy, SelectorKind, SelectorOutcome, TemplateIdentifiers,
 };
 use selector_runtime::solve_global_selector_program;
 use shape_index::ShapeIndex;
 use source_match::chunk_resolver::ChunkResolver;
 use source_match::{ParsedSourceMatchSelector, template_free_identifiers};
-use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec};
+use spec::{AnonymousStatementSelector, BindingSelector, BindingSourceKind, MemberSelectorSpec};
 use swc_ecma_ast::{ImportSpecifier, Module, ModuleDecl, ModuleItem};
 
 /// One parsed chunk, analysed once and resolved against any number of entity
@@ -45,14 +46,32 @@ pub struct Chunk<'m> {
     places: OnceCell<Places>,
 }
 
-/// Top-level statements by source body index: the owner of each statement,
+/// Top-level statements by source body index: the source unit of each statement,
 /// and of each binding it declares.
 struct Places {
-    owner_by_body: BTreeMap<usize, OwnerId>,
-    owner_by_body_and_binding: BTreeMap<(usize, String), OwnerId>,
+    source_unit_by_body: BTreeMap<usize, SourceUnitId>,
+    source_unit_by_body_and_binding: BTreeMap<(usize, String), SourceUnitId>,
     /// Each top-level binding name's declaring statements, with their kind.
     /// Repeated `var` declarations intentionally retain every site here.
-    declarations: BTreeMap<String, Vec<(OwnerId, StatementKind)>>,
+    declarations: BTreeMap<String, Vec<(SourceUnitId, SourceUnitOrdinal, StatementKind)>>,
+    /// Chunk import bindings, indexed once with the declaration sites.
+    imports: HashMap<String, ImportBinding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DirectBindingSourceEvidence {
+    Local {
+        /// All sites remain available because a kind pin is satisfied when
+        /// any site has the requested kind.
+        declaration_sites: Vec<(SourceUnitOrdinal, StatementKind)>,
+    },
+    Import,
+    Missing,
+}
+
+#[derive(Debug, Clone)]
+struct ImportBinding {
+    source: String,
 }
 
 /// One logical module's entities.
@@ -263,7 +282,7 @@ struct Projected {
     unreferenced_rows: usize,
     /// Domains before any other spec entity narrowed the matcher rows.
     /// A Hall witness on these supersets needs no relational premises.
-    original_owners: Vec<BTreeMap<OwnerId, BTreeSet<String>>>,
+    original_source_units: Vec<BTreeMap<SourceUnitId, BTreeSet<String>>>,
 }
 
 /// A spec entity a template names, as a column of the naming entity's rows.
@@ -458,7 +477,7 @@ const JS_GLOBALS: &[&str] = &[
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Place {
-    owner: OwnerId,
+    source_unit: SourceUnitId,
     binding: Option<String>,
 }
 
@@ -507,9 +526,10 @@ impl<'m> Chunk<'m> {
     fn places(&self) -> &Places {
         self.places.get_or_init(|| {
             let mut places = Places {
-                owner_by_body: BTreeMap::new(),
-                owner_by_body_and_binding: BTreeMap::new(),
+                source_unit_by_body: BTreeMap::new(),
+                source_unit_by_body_and_binding: BTreeMap::new(),
                 declarations: BTreeMap::new(),
+                imports: import_bindings(self.module),
             };
             for statement in &self.structural.per_statement {
                 for binding in &statement.declared {
@@ -517,23 +537,61 @@ impl<'m> Chunk<'m> {
                         .declarations
                         .entry(binding.0.as_str().to_string())
                         .or_default()
-                        .push((OwnerId(statement.ordinal.0), statement.kind));
+                        .push((
+                            SourceUnitId(statement.ordinal.0),
+                            statement.ordinal,
+                            statement.kind,
+                        ));
                 }
                 let Some(body_idx) =
-                    body_index_for_statement_ordinal(&self.module.body, statement.ordinal.0)
+                    statement_for_source_unit_ordinal(&self.module.body, statement.ordinal)
                 else {
                     continue;
                 };
-                let owner = OwnerId(statement.ordinal.0);
-                places.owner_by_body.insert(body_idx, owner);
+                let source_unit = SourceUnitId(statement.ordinal.0);
+                places.source_unit_by_body.insert(body_idx.0, source_unit);
                 for binding in &statement.declared {
                     places
-                        .owner_by_body_and_binding
-                        .insert((body_idx, binding.0.as_str().to_string()), owner);
+                        .source_unit_by_body_and_binding
+                        .insert((body_idx.0, binding.0.as_str().to_string()), source_unit);
                 }
             }
             places
         })
+    }
+
+    /// Source evidence for a typed direct name pin. This uses the same
+    /// declaration table and kind mapping as `pin_places`, including its
+    /// repeated-declaration rule: any site may satisfy the kind, while the
+    /// first site remains the representative place.
+    pub fn direct_binding_source_evidence(
+        &self,
+        binding: &BindingSelector,
+    ) -> DirectBindingSourceEvidence {
+        let places = self.places();
+        if binding.kind == Some(BindingSourceKind::ImportSpecifier) {
+            return places
+                .imports
+                .get(&binding.name)
+                .map_or(DirectBindingSourceEvidence::Missing, |_| {
+                    DirectBindingSourceEvidence::Import
+                });
+        }
+
+        if let Some(declarations) = places.declarations.get(&binding.name) {
+            let mut declaration_sites = declarations
+                .iter()
+                .map(|(_, ordinal, kind)| (*ordinal, *kind))
+                .collect::<Vec<_>>();
+            declaration_sites.sort_by_key(|(statement_ordinal, _)| *statement_ordinal);
+            return DirectBindingSourceEvidence::Local { declaration_sites };
+        }
+        places
+            .imports
+            .get(&binding.name)
+            .map_or(DirectBindingSourceEvidence::Missing, |_| {
+                DirectBindingSourceEvidence::Import
+            })
     }
 
     /// [`resolve`] of this chunk alone.
@@ -646,7 +704,7 @@ fn add_nearest_unclaimed(
         .outcomes
         .iter()
         .filter_map(|entity| match &entity.outcome.outcome {
-            Outcome::Resolved { owner, .. } => Some(*owner),
+            Outcome::Resolved { body_index, .. } => Some(*body_index),
             _ => None,
         })
         .collect::<BTreeSet<_>>();
@@ -681,7 +739,7 @@ fn add_nearest_unclaimed(
         )?
         .into_iter()
         .map(|near_miss| NearMiss {
-            owner: near_miss.body_idx,
+            body_index: near_miss.body_idx,
             bindings: near_miss.declared_bindings,
             score: near_miss.score,
             reason: near_miss.reason,
@@ -707,25 +765,28 @@ fn add_differentiators(chunk: &Chunk<'_>, resolution: &mut Resolution) {
         else {
             continue;
         };
-        let mut owners = BTreeSet::new();
+        let mut candidate_body_indices = BTreeSet::new();
         let mut shared = BTreeSet::new();
         for candidate in candidates.iter() {
-            if !owners.insert(candidate.owner) {
-                shared.insert(candidate.owner);
+            if !candidate_body_indices.insert(candidate.body_index) {
+                shared.insert(candidate.body_index);
             }
         }
-        let mut pending = owners.difference(&shared).copied().collect::<BTreeSet<_>>();
+        let mut pending = candidate_body_indices
+            .difference(&shared)
+            .copied()
+            .collect::<BTreeSet<_>>();
         for offset in [0, -1, 1] {
             if pending.is_empty() {
                 break;
             }
-            let statements = owners
+            let statements = candidate_body_indices
                 .iter()
-                .filter_map(|&owner| {
-                    let statement = owner
+                .filter_map(|&candidate_body_index| {
+                    let anchor_body_index = candidate_body_index
                         .checked_add_signed(offset)
                         .filter(|statement| *statement < body.len())?;
-                    Some((owner, statement))
+                    Some((candidate_body_index, anchor_body_index))
                 })
                 .collect::<Vec<_>>();
             let index = ShapeIndex::new(&Module {
@@ -736,15 +797,16 @@ fn add_differentiators(chunk: &Chunk<'_>, resolution: &mut Resolution) {
                     .collect(),
                 shebang: None,
             });
-            for (item, &(owner, statement)) in statements.iter().enumerate() {
-                if !pending.contains(&owner) {
+            for (item, &(candidate_body_index, anchor_body_index)) in statements.iter().enumerate()
+            {
+                if !pending.contains(&candidate_body_index) {
                     continue;
                 }
                 if let Some(feature) = index.distinguishing_feature(item) {
-                    pending.remove(&owner);
+                    pending.remove(&candidate_body_index);
                     differentiators.push(Differentiator {
-                        owner,
-                        statement,
+                        candidate_body_index,
+                        anchor_body_index,
                         anchor: feature.to_string(),
                     });
                 }
@@ -824,22 +886,24 @@ impl Projection {
             )
             .collect::<BTreeMap<_, _>>();
         for distinct in &program.all_different {
-            let owner = |target: &SelectorTargetId| program.targets[target.0].owner;
-            let mut by_owner = BTreeMap::new();
+            let source_unit = |target: &SelectorTargetId| program.targets[target.0].source_unit;
+            let mut by_source_unit = BTreeMap::new();
             let mut by_binding = BTreeMap::new();
             for target in distinct {
                 let Some(places) = places_by_target.get(target) else {
                     for other in distinct {
-                        sets.union(owner(target), owner(other));
+                        sets.union(source_unit(target), source_unit(other));
                     }
                     continue;
                 };
                 for place in places {
-                    let first = *by_owner.entry(place.owner).or_insert(owner(target));
-                    sets.union(first, owner(target));
+                    let first = *by_source_unit
+                        .entry(place.source_unit)
+                        .or_insert(source_unit(target));
+                    sets.union(first, source_unit(target));
                     if let Some(binding) = &place.binding {
-                        let first = *by_binding.entry(binding).or_insert(owner(target));
-                        sets.union(first, owner(target));
+                        let first = *by_binding.entry(binding).or_insert(source_unit(target));
+                        sets.union(first, source_unit(target));
                     }
                 }
             }
@@ -847,7 +911,7 @@ impl Projection {
         let mut groups = BTreeMap::<SelectorVariableId, BTreeSet<SelectorTargetId>>::new();
         for target in &program.targets {
             groups
-                .entry(sets.find(target.owner))
+                .entry(sets.find(target.source_unit))
                 .or_default()
                 .insert(target.id);
         }
@@ -861,8 +925,8 @@ impl Projection {
     /// exactly its own rows, or one name pin with one place.
     fn decide_alone(&self, group: &BTreeSet<SelectorTargetId>) -> Option<Vec<SolverClaim>> {
         let claim = |place: &Place| ResolvedClaim {
-            owner: place.owner,
-            statement_ordinal: StatementOrdinal(place.owner.0),
+            source_unit: place.source_unit,
+            statement_ordinal: SourceUnitOrdinal(place.source_unit.0),
             binding: place.binding.clone(),
         };
         if let Some(entity) = self.projected.iter().find(|entity| {
@@ -1111,7 +1175,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 )?;
                 if group.body_indices.len() > 1
                     && places
-                        .owner_by_body_and_binding
+                        .source_unit_by_body_and_binding
                         .keys()
                         .any(|(index, _)| index == body_idx)
                 {
@@ -1120,22 +1184,22 @@ impl<'c, 'm> Resolve<'c, 'm> {
                              declares a binding and cannot be claimed as anonymous"
                     );
                 }
-                let owner = places.owner_by_body.get(body_idx).copied().with_context(|| {
+                let source_unit = places.source_unit_by_body.get(body_idx).copied().with_context(|| {
                     format!(
                         "anonymous source_match final statement at body index {body_idx} does not \
-                         map to an assignable owner-graph node",
+                         map to an assignable dependency graph node",
                     )
                 })?;
                 Ok(CollectedRow {
                     places: vec![Place {
-                        owner,
+                        source_unit,
                         binding: None,
                     }],
                     free_bindings: group.free_bindings,
                 })
             })
             .collect::<Result<Vec<_>>>()
-            .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))?;
+            .map_err(|error| Rejection::invalid(SOURCE_UNIT_MAPPING_ERROR, &error))?;
         Ok(Collected {
             module_index,
             free: template_free_identifiers(&statement.selector),
@@ -1209,25 +1273,30 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 })
                 .collect::<Result<Vec<_>>>()
         }
-        .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))?;
+        .map_err(|error| Rejection::invalid(SOURCE_UNIT_MAPPING_ERROR, &error))?;
         let mut rows = Vec::new();
         for (declared_places, free_bindings) in matched {
             let mut partial = vec![declared_places];
             for local in used.keys() {
-                let owners = free_bindings
+                let source_units = free_bindings
                     .get(local)
-                    .and_then(|name| places.declarations.get(name).map(|owners| (name, owners)))
+                    .and_then(|name| {
+                        places
+                            .declarations
+                            .get(name)
+                            .map(|source_units| (name, source_units))
+                    })
                     .into_iter()
                     .filter_map(|(name, declarations)| {
                         // A repeated `var` has several syntactic declaration
                         // sites but one binding. Use its first source-order
-                        // owner as the placement representative; the owner
+                        // source unit as the placement representative; the source unit
                         // graph co-locates every other site with it.
                         declarations
                             .iter()
-                            .find(|(_, kind)| *kind != StatementKind::Import)
-                            .map(|(owner, _)| Place {
-                                owner: *owner,
+                            .find(|(_, _, kind)| *kind != StatementKind::Import)
+                            .map(|(source_unit, _, _)| Place {
+                                source_unit: *source_unit,
                                 binding: Some(name.clone()),
                             })
                     })
@@ -1235,7 +1304,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 partial = partial
                     .into_iter()
                     .flat_map(|row| {
-                        owners.iter().map(move |place| {
+                        source_units.iter().map(move |place| {
                             let mut row = row.clone();
                             row.insert(local.clone(), place.clone());
                             row
@@ -1294,7 +1363,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 })
             })
             .collect::<Result<Vec<_>>>()
-            .map_err(|error| Rejection::invalid(OWNER_MAPPING_ERROR, &error))?;
+            .map_err(|error| Rejection::invalid(SOURCE_UNIT_MAPPING_ERROR, &error))?;
         Ok(Collected {
             module_index,
             free: template_free_identifiers(parsed),
@@ -1348,7 +1417,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             .per_statement
             .iter()
             .flat_map(|statement| statement.declared.iter().map(|id| id.0.to_string()))
-            .chain(import_sources(self.chunk.module).into_keys())
+            .chain(self.chunk.places().imports.keys().cloned())
             .collect::<BTreeSet<_>>();
 
         for (index, entity) in collected.iter().enumerate() {
@@ -1572,17 +1641,17 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     })
                     .collect(),
                 unreferenced_rows,
-                original_owners: (0..entity.rows[0].places.len())
+                original_source_units: (0..entity.rows[0].places.len())
                     .map(|position| {
-                        let mut owners = BTreeMap::<OwnerId, BTreeSet<String>>::new();
+                        let mut source_units = BTreeMap::<SourceUnitId, BTreeSet<String>>::new();
                         for row in &entity.rows {
                             let place = &row.places[position];
-                            owners
-                                .entry(place.owner)
+                            source_units
+                                .entry(place.source_unit)
                                 .or_default()
                                 .extend(place.binding.clone());
                         }
-                        owners
+                        source_units
                     })
                     .collect(),
             });
@@ -1632,7 +1701,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         &columns,
                         table
                             .into_iter()
-                            .map(|(places, referenced)| (places[0].owner, referenced))
+                            .map(|(places, referenced)| (places[0].source_unit, referenced))
                             .collect(),
                     );
                 }
@@ -1701,14 +1770,14 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 let places = declarations
                     .get(pin.name.as_str())
                     .and_then(|declarations| {
-                        let has_matching_site = declarations.iter().any(|(_, kind)| {
+                        let has_matching_site = declarations.iter().any(|(_, _, kind)| {
                             pin.kind
                                 .is_none_or(|pinned| statement_kind_for_spec(pinned) == *kind)
                         });
                         has_matching_site.then(|| declarations.first()).flatten()
                     })
-                    .map(|(owner, _)| Place {
-                        owner: *owner,
+                    .map(|(source_unit, _, _)| Place {
+                        source_unit: *source_unit,
                         binding: Some(pin.name.clone()),
                     })
                     .into_iter()
@@ -1796,7 +1865,7 @@ impl Projection {
         for (target, module_index, position) in anonymous {
             let outcome = match result.outcome_for(target) {
                 Some(ClaimOutcome::Unique { claim }) => Outcome::Resolved {
-                    owner: claim_candidate(module, claim)?.owner,
+                    body_index: claim_candidate(module, claim)?.body_index,
                     binding: None,
                     resolved_by: how_resolved(&resolved_by, target),
                 },
@@ -1826,9 +1895,12 @@ impl Projection {
             let member = &modules[module_index].members[member_index];
             let outcome = match result.outcome_for(target) {
                 Some(ClaimOutcome::Unique { claim }) => {
-                    let Candidate { owner, binding } = claim_candidate(module, claim)?;
+                    let Candidate {
+                        body_index,
+                        binding,
+                    } = claim_candidate(module, claim)?;
                     Outcome::Resolved {
-                        owner,
+                        body_index,
                         binding,
                         resolved_by: how_resolved(&resolved_by, target),
                     }
@@ -1878,7 +1950,13 @@ impl Projection {
         let original = self
             .projected
             .iter()
-            .flat_map(|entity| entity.targets.iter().copied().zip(&entity.original_owners))
+            .flat_map(|entity| {
+                entity
+                    .targets
+                    .iter()
+                    .copied()
+                    .zip(&entity.original_source_units)
+            })
             .collect::<BTreeMap<_, _>>();
         for group in self.interacting_groups() {
             if !group.iter().any(|target| {
@@ -1905,7 +1983,7 @@ impl Projection {
                     .map(|target| {
                         original[target]
                             .keys()
-                            .map(|owner| owner.0)
+                            .map(|source_unit| source_unit.0)
                             .collect::<Vec<_>>()
                     })
                     .collect::<Vec<_>>();
@@ -1916,27 +1994,34 @@ impl Projection {
                     .iter()
                     .map(|index| target_entity_ref(&self.program.targets[targets[*index].0]))
                     .collect();
-                let mut owners = BTreeMap::<OwnerId, BTreeSet<String>>::new();
+                let mut source_units = BTreeMap::<SourceUnitId, BTreeSet<String>>::new();
                 for index in deficient {
-                    for (owner, bindings) in original[&targets[index]] {
-                        owners
-                            .entry(*owner)
+                    for (source_unit, bindings) in original[&targets[index]] {
+                        source_units
+                            .entry(*source_unit)
                             .or_default()
                             .extend(bindings.iter().cloned());
                     }
                 }
-                let owners = owners
+                let source_units = source_units
                     .into_iter()
-                    .map(|(owner, bindings)| {
-                        Ok(ConflictOwner {
-                            owner: owner.0,
-                            statement: body_index_for_statement_ordinal(&module.body, owner.0)
-                                .context("conflict owner has no source statement")?,
+                    .map(|(source_unit, bindings)| {
+                        Ok(ConflictSourceUnit {
+                            source_unit: source_unit.0,
+                            body_index: statement_for_source_unit_ordinal(
+                                &module.body,
+                                SourceUnitOrdinal(source_unit.0),
+                            )
+                            .context("conflict source unit has no source statement")?
+                            .0,
                             bindings: bindings.into_iter().collect(),
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
-                witness = Some(OwnershipConflict { selectors, owners });
+                witness = Some(OwnershipConflict {
+                    selectors,
+                    source_units,
+                });
                 break;
             }
             let diagnostic = Outcome::Unsatisfiable {
@@ -2066,7 +2151,7 @@ fn how_resolved(
 /// The prefix of an `invalid` outcome whose matcher failed.
 const MATCHER_ERROR: &str = "shape_matcher_error";
 /// The prefix of an `invalid` outcome whose match maps to no place.
-const OWNER_MAPPING_ERROR: &str = "projection_owner_mapping_error";
+const SOURCE_UNIT_MAPPING_ERROR: &str = "projection_source_unit_mapping_error";
 
 /// Why a `source_match` was rejected before the solve.
 #[derive(Debug, Clone)]
@@ -2347,10 +2432,10 @@ fn reference_entity(modules: &[SpecModule], name: &str, module_index: usize) -> 
     }
 }
 
-/// A member place as the lowering takes it: its owner and binding.
-fn bound(place: &Place) -> (OwnerId, String) {
+/// A member place as the lowering takes it: its source unit and binding.
+fn bound(place: &Place) -> (SourceUnitId, String) {
     (
-        place.owner,
+        place.source_unit,
         place
             .binding
             .clone()
@@ -2364,24 +2449,24 @@ fn member_place(
     matched: &source_match::ResolvedMemberBinding,
 ) -> Result<Place> {
     let binding = matched.binding_name.clone();
-    let matched_owner = places
-        .owner_by_body_and_binding
+    let matched_source_unit = places
+        .source_unit_by_body_and_binding
         .get(&(body_idx, binding.clone()))
         .copied()
         .with_context(|| {
             format!(
                 "source_match candidate at body index {body_idx} binding `{binding}` does not \
-                 map to an owner-graph node"
+                 map to a dependency graph node"
             )
         })?;
-    let owner = places
+    let source_unit = places
         .declarations
         .get(&binding)
         .and_then(|declarations| declarations.first())
-        .map(|(owner, _)| *owner)
-        .unwrap_or(matched_owner);
+        .map(|(source_unit, _, _)| *source_unit)
+        .unwrap_or(matched_source_unit);
     Ok(Place {
-        owner,
+        source_unit,
         binding: Some(binding),
     })
 }
@@ -2442,8 +2527,8 @@ fn source_match_groups(module: &SpecModule) -> Vec<Group> {
 
 /// The targets whose solved claims made an entity unique: `Some` when it has
 /// several candidate `rows` and exactly one survives dropping every row whose
-/// owner or binding another exclusive target's solved value holds.
-/// `exclusive` are the targets the solve keeps on distinct owners; a claim by
+/// source unit or binding another exclusive target's solved value holds.
+/// `exclusive` are the targets the solve keeps on distinct source units; a claim by
 /// any other target never took a row away.
 fn elimination_claimers(
     rows: &[&Vec<Place>],
@@ -2469,7 +2554,7 @@ fn elimination_claimers(
             .iter()
             .filter(|(_, claim)| {
                 row.iter().any(|place| {
-                    place.owner == claim.owner
+                    place.source_unit == claim.source_unit
                         || (place.binding.is_some() && place.binding == claim.binding)
                 })
             })
@@ -2486,14 +2571,15 @@ fn elimination_claimers(
 /// A solver claim as a candidate place: its source body index and binding.
 fn claim_candidate(module: &Module, claim: &ResolvedClaim) -> Result<Candidate> {
     Ok(Candidate {
-        owner: body_index_for_statement_ordinal(&module.body, claim.statement_ordinal.0)
+        body_index: statement_for_source_unit_ordinal(&module.body, claim.statement_ordinal)
             .with_context(|| {
                 format!(
                     "global selector solver claimed post-split ordinal {} which has no source \
                      body item",
                     claim.statement_ordinal.0
                 )
-            })?,
+            })?
+            .0,
         binding: claim.binding.clone(),
     })
 }
@@ -2560,7 +2646,7 @@ fn target_entity_refs<'a>(
         .collect()
 }
 
-fn statement_kind_for_spec(kind: BindingSourceKind) -> StatementKind {
+pub fn statement_kind_for_spec(kind: BindingSourceKind) -> StatementKind {
     match kind {
         BindingSourceKind::ImportSpecifier => StatementKind::Import,
         BindingSourceKind::VariableDeclarator => StatementKind::VarDecl,
@@ -2569,8 +2655,8 @@ fn statement_kind_for_spec(kind: BindingSourceKind) -> StatementKind {
     }
 }
 
-/// Local import binding → module specifier, for every import in the chunk.
-fn import_sources(module: &Module) -> HashMap<String, String> {
+/// Local import binding → source and import form, for every import in the chunk.
+fn import_bindings(module: &Module) -> HashMap<String, ImportBinding> {
     module
         .body
         .iter()
@@ -2586,13 +2672,25 @@ fn import_sources(module: &Module) -> HashMap<String, String> {
                     ImportSpecifier::Default(default) => &default.local,
                     ImportSpecifier::Namespace(namespace) => &namespace.local,
                 };
-                (local.sym.to_string(), source.clone())
+                (
+                    local.sym.to_string(),
+                    ImportBinding {
+                        source: source.clone(),
+                    },
+                )
             })
         })
         .collect()
 }
 
-/// The chunk facts `program`'s tables are built from: every statement's owner,
+/// Import local names without constructing structural chunk
+/// analysis. The direct-claim edit gate uses this when import pins are the
+/// only selectors that need source evidence.
+pub fn import_specifier_names(module: &Module) -> HashSet<String> {
+    import_bindings(module).into_keys().collect()
+}
+
+/// The chunk facts `program`'s tables are built from: every statement's source unit,
 /// kind and declared bindings, its references to other statements' bindings,
 /// and the relation facts only the relational selectors in `program` read.
 fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> SelectorFactStore {
@@ -2600,17 +2698,17 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
     let module = chunk.module;
     let mut store = SelectorFactStore::default();
     // A repeated `var` is one selector binding with several syntactic
-    // declaration sites. Use its first source-order owner for binding lookup,
-    // matching the owner graph's representative after CoDeclaration edges
+    // declaration sites. Use its first source-order source unit for binding lookup,
+    // matching the dependency graph's representative after CoDeclaration edges
     // have made the sites inseparable. Relational facts below remain attached
-    // to their actual statement owners, because different bindings declared
+    // to their actual statement source units, because different bindings declared
     // in one statement can have different repeated-site histories.
-    let mut binding_owner = HashMap::<swc_ecma_ast::Id, OwnerId>::new();
+    let mut binding_source_unit = HashMap::<swc_ecma_ast::Id, SourceUnitId>::new();
     for statement in &structural.per_statement {
         for binding in &statement.declared {
-            binding_owner
+            binding_source_unit
                 .entry(binding.clone())
-                .or_insert(OwnerId(statement.ordinal.0));
+                .or_insert(SourceUnitId(statement.ordinal.0));
         }
     }
     let hoisted_functions = structural
@@ -2621,22 +2719,22 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
         .collect::<BTreeSet<_>>();
     let is_hoisted = |id: &swc_ecma_ast::Id| hoisted_functions.contains(id);
     for statement in &structural.per_statement {
-        let owner = OwnerId(statement.ordinal.0);
-        store.push(SelectorFact::Owner {
-            owner,
+        let source_unit = SourceUnitId(statement.ordinal.0);
+        store.push(SelectorFact::SourceUnit {
+            source_unit,
             statement_ordinal: statement.ordinal,
             statement_kind: statement.kind.to_string(),
         });
         for binding in &statement.declared {
             store.push(SelectorFact::DeclaredBinding {
-                owner,
+                source_unit,
                 binding: binding.0.as_str().to_string(),
             });
         }
     }
 
     for statement in &structural.per_statement {
-        let owner = OwnerId(statement.ordinal.0);
+        let source_unit = SourceUnitId(statement.ordinal.0);
         let references = statement
             .reads
             .eager
@@ -2681,12 +2779,12 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
                     .map(|binding| (binding, DepKind::DeferredRebind)),
             );
         for (binding, edge_kind) in references {
-            let Some(&target_owner) = binding_owner.get(binding) else {
+            let Some(&target_source_unit) = binding_source_unit.get(binding) else {
                 continue;
             };
-            if target_owner != owner {
-                store.push(SelectorFact::OwnerReferencesBinding {
-                    owner,
+            if target_source_unit != source_unit {
+                store.push(SelectorFact::SourceUnitReferencesBinding {
+                    source_unit,
                     binding: binding.0.as_str().to_string(),
                     edge_kind: edge_kind.to_string(),
                 });
@@ -2697,14 +2795,14 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
     let reads = |atom: &SelectorAtom| {
         matches!(
             atom,
-            SelectorAtom::ReadsMember { .. } | SelectorAtom::ReadsMemberOfOwner { .. }
+            SelectorAtom::ReadsMember { .. } | SelectorAtom::ReadsMemberOfSourceUnit { .. }
         )
     };
     if program.atoms.iter().any(reads) {
         for (ordinal, member_reads) in chunk_facts::member_reads_by_ordinal(module) {
             for read in member_reads {
                 store.push(SelectorFact::MemberRead {
-                    statement_ordinal: StatementOrdinal(ordinal),
+                    statement_ordinal: SourceUnitOrdinal(ordinal),
                     object: read.object,
                     member: read.member,
                 });
@@ -2716,12 +2814,16 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
         .iter()
         .any(|atom| matches!(atom, SelectorAtom::ConsumesModuleMember { .. }))
     {
-        for (ordinal, uses) in
-            chunk_facts::module_member_uses_by_ordinal(module, &import_sources(module))
-        {
+        let import_sources = chunk
+            .places()
+            .imports
+            .iter()
+            .map(|(local, import)| (local.clone(), import.source.clone()))
+            .collect::<HashMap<_, _>>();
+        for (ordinal, uses) in chunk_facts::module_member_uses_by_ordinal(module, &import_sources) {
             for use_site in uses {
                 store.push(SelectorFact::ModuleMemberUse {
-                    statement_ordinal: StatementOrdinal(ordinal),
+                    statement_ordinal: SourceUnitOrdinal(ordinal),
                     module: use_site.module,
                     member: use_site.member,
                 });
@@ -2731,7 +2833,7 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
     if program.atoms.iter().any(|atom| {
         matches!(
             atom,
-            SelectorAtom::PassedToCall { .. } | SelectorAtom::PassedToCallOfOwner { .. }
+            SelectorAtom::PassedToCall { .. } | SelectorAtom::PassedToCallOfSourceUnit { .. }
         )
     }) {
         for call in chunk_facts::call_argument_uses(module) {
@@ -2746,7 +2848,7 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
     if program
         .atoms
         .iter()
-        .any(|atom| matches!(atom, SelectorAtom::MakesDecorateCallForOwner { .. }))
+        .any(|atom| matches!(atom, SelectorAtom::MakesDecorateCallForSourceUnit { .. }))
     {
         for call in chunk_facts::decorate_call_uses(module) {
             store.push(SelectorFact::DecorateCallUse {

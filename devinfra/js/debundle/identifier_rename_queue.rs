@@ -50,7 +50,8 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::{ChunkBundle, ChunkDecompositionOutput, ChunkId, EmissionFiles};
+use artifact::reports::ChunkDecompositionOutput;
+use artifact::{ChunkBundle, ChunkId, EmissionFiles};
 use js_ast::ParsedJsModule;
 
 /// One entry in the priority queue: a still-unrenamed top-level symbol
@@ -319,7 +320,7 @@ fn unrenamed_top_level_sites(
 
 /// Names bound at module top-level by `item`. Mirrors the surface
 /// `program_analysis::analyze_program_shallow` already classifies as
-/// "owners" — function/class/var declarations, including the same
+/// "source_units" — function/class/var declarations, including the same
 /// shapes wrapped in `export`. Import locals also count: a minified
 /// import alias is a top-level binding that other modules see.
 fn top_level_binding_names(item: &ModuleItem) -> Vec<String> {

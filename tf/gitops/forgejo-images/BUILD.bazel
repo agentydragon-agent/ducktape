@@ -21,3 +21,9 @@ tf_module(
     ],
     providers_versions = ":providers",
 )
+
+filegroup(
+    name = "inline_source",
+    srcs = glob(["*.tf"]),
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)

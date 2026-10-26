@@ -15,7 +15,8 @@ marked `vm_sandboxes`. `system_test(vm_sandboxes = ...)` runs those cases, and o
 `<scenario>_vm`, on a stack with KubeVirt emulating the guest CPU and the k3s test guest
 ([VM Sandboxes](k3s/README.md#vm-sandboxes)). PR CI runs only what a VM alone exercises:
 `test_vm_sandbox_vm` boots a VM Sandbox and runs a scripted turn on each harness through the
-launcher's egress relay. The other `_vm` targets are `manual`; name one to run it.
+launcher's egress relay, and verifies Codex tool OOM containment and a successful follow-up
+command with the same Runner and app-server. The other `_vm` targets are `manual`; name one to run it.
 `system_test(real_model = True)` runs the `real_model` cases as `<scenario>_real_model`
 ([Real model on k3s](#real-model-on-k3s)). Two checks need what only a deployment has and run against
 staging by hand ([Running live](#running-live)).
@@ -82,9 +83,11 @@ The result is written to the target's `test.outputs/vm-workspace-ownership.json`
 ## Workspace storage layout
 
 `test_storage` is a model-free fixture for the
-built-in Pod `DirectoryTree` and VM `RawDiskImage`/ext4 workspace paths. It checks Sandbox-owned
-PVC identity and layout records, marker bytes across suspend/resume, refusal of an incompatible
-claim before workload start, and retained data after VM replacement. It creates only its own
+built-in Pod `DirectoryTree` and VM `BlockFilesystem`/ext4 workspace paths. The VM workspace uses
+the k3s stack's static loop-backed raw block class while VM state remains on local-path filesystem
+storage. It checks Sandbox-owned PVC identity, `Block` volume mode and layout records, marker bytes
+across suspend/resume, refusal of an incompatible claim before workload start, and retained data
+after VM replacement. It creates only its own
 Sandbox, template and workload, then removes them through UID-preconditioned lifecycle operations.
 It refuses a stack that already has Sandboxes. `test_storage` and `test_storage_vm` (`manual`) run the
 Pod and VM cases on stacks of their own:
@@ -93,7 +96,9 @@ Pod and VM cases on stacks of their own:
 bbr test //agentplane/system_tests:test_storage //agentplane/system_tests:test_storage_vm
 ```
 
-The targets write `test.outputs/storage-{pod-directory,vm-raw}.json`.
+The targets write `test.outputs/storage-{pod-directory,vm-raw}.json`. `test_suspend_resume_vm` uses
+the same block-backed VM fixture while verifying the runner's persisted native sessions across the
+launcher replacement.
 
 ## Suspend and resume
 

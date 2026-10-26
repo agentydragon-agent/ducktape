@@ -10,8 +10,16 @@ from pathlib import Path
 from agentplane.native.claude.testing import model as claude_model
 from agentplane.native.codex.testing import model as codex_model
 from agentplane.proto import runner_pb2
+from agentplane.runner.configuration import (
+    Configuration,
+    ContainerExecutor,
+    DebugCheckpoint,
+    Endpoint,
+    EnvironmentVariables,
+    Harness,
+    PodEnvironment,
+)
 from agentplane.runner.testing.config import NativeLaunch, RunnerTestConfig, SandboxLaunch
-from agentplane.sandboxes.guest_config import Endpoint
 from agentplane.sandboxes.launch import SandboxIdentity
 from util.bazel.runfiles import get_required_path
 
@@ -48,13 +56,23 @@ def environment(home: Path) -> dict[str, str]:
     }
 
 
-def config(harness: runner_pb2.Harness, endpoint: str, *, state_dir: Path, home: Path) -> RunnerTestConfig:
+def config(
+    harness: runner_pb2.Harness,
+    endpoint: str,
+    *,
+    state_dir: Path,
+    home: Path,
+    codex_executor_url: str | None = None,
+    codex_executor_socket: Path | None = None,
+) -> RunnerTestConfig:
     return RunnerTestConfig(
         state_dir=state_dir,
         launch=SANDBOX_LAUNCH,
         harness_environment=environment(home),
         claude=claude_launch(endpoint) if harness == runner_pb2.HARNESS_CLAUDE else None,
         codex=codex_launch(endpoint) if harness == runner_pb2.HARNESS_CODEX else None,
+        codex_executor_url=codex_executor_url,
+        codex_executor_socket=codex_executor_socket,
     )
 
 
@@ -80,31 +98,48 @@ def runner_command(
 ) -> list[str]:
     """The runner as its own process, configured like `config` is, dialing `gateway` for both its
     control stream and its ingress. The Sandbox's files go beside `state_dir`."""
+    if harness not in (runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX):
+        raise ValueError(f"unsupported {harness=}")
     launch_file = state_dir.parent / "launch.json"
     launch_file.write_text(json.dumps({"sandbox": SANDBOX.model_dump(), "bootstrap": bootstrap}))
-    platform_instructions_file = state_dir.parent / "platform-instructions.md"
-    platform_instructions_file.write_text(PLATFORM_INSTRUCTIONS)
-    command = [
+    inherited: list[str] = ["HOME", "PATH", "NO_PROXY"]
+    values: dict[str, str] = {}
+    for entry in harness_env:
+        name, separator, value = entry.partition("=")
+        if separator:
+            values[name] = value
+        else:
+            inherited.append(name)
+    claude = claude_launch(endpoint) if harness == runner_pb2.HARNESS_CLAUDE else None
+    codex = codex_launch(endpoint) if harness == runner_pb2.HARNESS_CODEX else None
+    config = Configuration(
+        version=2,
+        environment=PodEnvironment(),
+        state_dir=str(state_dir),
+        initialization_cwd=str(state_dir),
+        control=gateway,
+        ingress=gateway,
+        platform_instructions=PLATFORM_INSTRUCTIONS,
+        harness_environment=EnvironmentVariables(inherit=inherited, values=values),
+        claude=Harness(binary=str(claude.binary), base_url=claude.base_url, token_env="ANTHROPIC_AUTH_TOKEN")
+        if claude
+        else None,
+        codex=Harness(binary=str(codex_binary or codex.binary), base_url=codex.base_url, token_env="OPENAI_API_KEY")
+        if codex
+        else None,
+        debug_checkpoint=DebugCheckpoint(name=test_debug_checkpoint[0], command_id=test_debug_checkpoint[1])
+        if test_debug_checkpoint
+        else None,
+    )
+    path = state_dir.parent / "runner.json"
+    path.write_text(config.model_dump_json(exclude_none=True))
+    return [
         str(runner_binary or get_required_path(RUNNER_BINARY)),
-        *("--state-dir", str(state_dir)),
-        *("--launch-file", str(launch_file), "--platform-instructions-file", str(platform_instructions_file)),
-        *("--control-target", gateway.target, "--control-bearer", gateway.bearer),
-        *("--ingress-target", gateway.target, "--ingress-bearer", gateway.bearer),
+        "--config",
+        str(path),
+        "--launch-file",
+        str(launch_file),
     ]
-    if harness == runner_pb2.HARNESS_CLAUDE:
-        launch = claude_launch(endpoint)
-        command += ["--claude-binary", str(launch.binary), "--anthropic-base-url", launch.base_url]
-    elif harness == runner_pb2.HARNESS_CODEX:
-        codex = codex_launch(endpoint)
-        command += ["--codex-binary", str(codex_binary or codex.binary), "--openai-base-url", codex.base_url]
-    else:
-        raise ValueError(f"unsupported {harness=}")
-    for entry in ("HOME", "PATH", "NO_PROXY", *harness_env):
-        command += ["--harness-env", entry]
-    if test_debug_checkpoint is not None:
-        name, command_id = test_debug_checkpoint
-        command += ["--test-debug-checkpoint-name", name, "--test-debug-checkpoint-command-id", command_id]
-    return command
 
 
 def command(config: RunnerTestConfig, *, control: Endpoint, ingress: Endpoint) -> list[str]:
@@ -114,32 +149,31 @@ def command(config: RunnerTestConfig, *, control: Endpoint, ingress: Endpoint) -
     launch_file.write_text(
         json.dumps({"sandbox": config.launch.sandbox.model_dump(), "bootstrap": config.launch.bootstrap})
     )
-    instructions = config.state_dir.parent / f"{config.state_dir.name}-instructions.md"
-    instructions.write_text(config.launch.platform_instructions)
-    result = [
-        str(get_required_path(RUNNER_BINARY)),
-        "--state-dir",
-        str(config.state_dir),
-        "--launch-file",
-        str(launch_file),
-        "--platform-instructions-file",
-        str(instructions),
-        "--control-target",
-        control.target,
-        "--control-bearer",
-        control.bearer,
-        "--ingress-target",
-        ingress.target,
-        "--ingress-bearer",
-        ingress.bearer,
-    ]
-    if config.claude is not None:
-        result += ["--claude-binary", str(config.claude.binary), "--anthropic-base-url", config.claude.base_url]
-    if config.codex is not None:
-        result += ["--codex-binary", str(config.codex.binary), "--openai-base-url", config.codex.base_url]
-    for name, value in config.harness_environment.items():
-        result += ["--harness-env", f"{name}={value}"]
-    if config.debug_checkpoint is not None:
-        name, command_id = config.debug_checkpoint
-        result += ["--test-debug-checkpoint-name", name, "--test-debug-checkpoint-command-id", command_id]
-    return result
+    file = Configuration(
+        version=2,
+        state_dir=str(config.state_dir),
+        initialization_cwd=str(config.state_dir),
+        control=control,
+        ingress=ingress,
+        platform_instructions=config.launch.platform_instructions,
+        harness_environment=EnvironmentVariables(values=config.harness_environment),
+        claude=Harness(
+            binary=str(config.claude.binary), base_url=config.claude.base_url, token_env="ANTHROPIC_AUTH_TOKEN"
+        )
+        if config.claude
+        else None,
+        codex=Harness(binary=str(config.codex.binary), base_url=config.codex.base_url, token_env="OPENAI_API_KEY")
+        if config.codex
+        else None,
+        environment=PodEnvironment(
+            executor=ContainerExecutor(url=config.codex_executor_url, socket=str(config.codex_executor_socket))
+            if config.codex_executor_url is not None
+            else None
+        ),
+        debug_checkpoint=DebugCheckpoint(name=config.debug_checkpoint[0], command_id=config.debug_checkpoint[1])
+        if config.debug_checkpoint
+        else None,
+    )
+    path = config.state_dir.parent / f"{config.state_dir.name}-runner.json"
+    path.write_text(file.model_dump_json(exclude_none=True))
+    return [str(get_required_path(RUNNER_BINARY)), "--config", str(path), "--launch-file", str(launch_file)]

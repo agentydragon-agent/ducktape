@@ -477,6 +477,10 @@ Codex already runs one app-server and store per Runner, and Claude one process p
 ([harness process design](../docs/runner_delivery_and_harness_design.md#harness-process-store-and-session-identity));
 the recommendation covers what remains open around them.
 
+Future central Codex hosting through sandbox exec servers, including coexistence with local modes,
+is [deferred separately](task_freezer.md#codex_central_harness--central-codex-with-sandbox-exec-servers).
+It does not gate the current placement decision or separate tool memory containment.
+
 Deliver a recommendation and proposed API shape for review; implementation and migration/retirement
 nodes follow only if selected. This does not unfreeze the broader runner durability redesign or
 authorize native-subagent implementation.
@@ -484,8 +488,11 @@ authorize native-subagent implementation.
 ## 4. VM environment phases
 
 The [VM Sandboxes design](../docs/vm_sandboxes.md) holds the provider constraints, and the
-[KubeVirt plan](kubevirt_environments.md) the live gates no node below names. Split implementation rather than making “VM support” one indivisible task. This is
-an unranked candidate lane, not authorization for local Bazel in current containers. The
+[KubeVirt plan](kubevirt_environments.md) the unresolved platform constraints. Selectable VM-backed
+Sandboxes, typed resource budgets, isolated Codex tools and the raw-block workspace are shipped;
+[component evidence](../docs/vm_sandboxes.md#fresh-vm-trial-readiness) records their acceptance.
+The remaining nodes do not gate the operator-authorized fresh VM trial. This is an unranked candidate
+lane, not authorization for local Bazel in current containers. The
 [runner control stream](../docs/runner_control.md) settles the dial-out contract VM control networking
 builds on; changing connection direction does not move command durability or remove the runner
 journal.
@@ -502,30 +509,11 @@ a block StorageClass does not itself make Pod and VM layouts interchangeable. Se
 flowchart LR
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
     VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
-    VM_HARNESS_RESOURCE_LIMITS[Blocked: accept VM per-harness resource limits]
     VM_INTRA_SANDBOX_HARDENING[Deferred: optional intra-Sandbox process/state hardening]
     RUNNER_LAYERING_VM[Paused: slim VM runtime, section 7]
-    VM_LIFECYCLE[Blocked: integrated lifecycle]
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
-    VM_HARNESS_RESOURCE_LIMITS --> VM_LIFECYCLE
-    VM_GUEST_BUDGET_DERIVE --> VM_HARNESS_RESOURCE_LIMITS
-    RUNNER_LAYERING_VM --> VM_HARNESS_RESOURCE_LIMITS
-    VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
-    VM_GUEST_MEMORY[Unscheduled: an 8 GiB guest for real builds]
-    VM_GUEST_BUDGET_DERIVE[Candidate: guest budgets derive from the VM spec]
-    SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
-    VM_GUEST_MEMORY --> LOCAL_BAZEL
+    LOCAL_BAZEL[Unscheduled: bounded local Bazel client in VM]
 ```
-
-### `VM_HARNESS_RESOURCE_LIMITS` — accept per-harness resource limits on the VM guest
-
-**Blocked on `VM_GUEST_BUDGET_DERIVE` and `RUNNER_LAYERING_VM`; the k3s test guest (`agentplane/system_tests/k3s/guest`) is an optional fixture.**
-The guest already places each native harness and its tool descendants in a delegated cgroup with CPU,
-memory, task and workspace I/O limits. Exercise those limits on the slim guest: resource pressure must
-respect the aggregate and per-harness budgets, and exhausting one harness's memory group must terminate
-that harness subtree while the Runner remains available. Preserve the existing process-group cleanup and state-owner lock
-behavior. The Sandbox is the security boundary; these cgroups enforce resource budgets, not
-confidentiality between co-resident Sessions or between a harness and its tool children.
 
 ### `VM_INTRA_SANDBOX_HARDENING` — optional process and state hardening inside one Sandbox
 
@@ -538,20 +526,6 @@ require Runner-private storage, sibling Session stores, or harness/tool process 
 inside one Sandbox. Revisit Runner-state privacy and tool-child-versus-harness hardening separately
 only if a concrete product requirement or incident warrants it. This node does not
 gate VM resource acceptance or lifecycle work.
-
-### `VM_LIFECYCLE` — integrated lifecycle verification
-
-**Blocked on the resource-limit checks.** Basic VM creation, Session execution,
-retained-state suspend/resume and replacement are covered by the [acceptance suite](../system_tests/README.md).
-Combine that coverage with the resource-limit evidence; do not
-repeat completed live runs just to assemble a capstone. Additional live faults need a concrete unresolved platform risk,
-not a Cartesian product of every component crash and lifecycle operation.
-
-### `SANDBOX_VM_ISOLATION` — VM integration capstone
-
-**Blocked on integrated lifecycle.** Publish the selectable VM environment and measured resource
-limits and cross-Sandbox security guarantees, with no implied existing-Sandbox conversion or live
-migration. Component evidence, not absence of every imaginable failure, establishes the delivered contract.
 
 ### `VM_RAM_SUSPEND` — suspend a VM to disk with its RAM
 
@@ -578,51 +552,14 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `LOCAL_BAZEL` — bounded local client in a VM
 
-**Blocked on VM capstone.** Wire Bazelisk, storage and authenticated RBE/cache/BES; set CPU/memory/disk
-budgets and cleanup. Run a representative build/test with the client inside the VM and actions
-remote; check cancellation/cleanup while the harness stays responsive. Installed tools and working
-hosted builds do not authorize local Bazel in agent containers. `VM_GUEST_MEMORY` is a second
-prerequisite: no client budget inside the guest is workable until the guest has RAM to budget.
-
-### `VM_GUEST_MEMORY` — size the VM guest for real builds
-
-**Unscheduled; the PR parked for it ([#10734](https://github.com/agentydragon/ducktape/pull/10734), 8 GiB
-with one vCPU and larger `agentplane-testing` quotas) was closed unmerged on 2026-10-20, and testing is
-deleted.** The `runner-vm` template still requests 1536Mi. The approved size is 8 GiB; one VM per OVH node is
-approved; CPU sizing and derived guest budgets remain separate work.
-
-After reconciliation on staging, inspect actual launcher requests/limits, namespace usage and node
-capacity: KubeVirt adds overhead and quota-derived limits, not a fixed 240 MiB surcharge. Confirm
-larger guest `MemTotal`, then run a representative `bbr build` and `bbr test` without guest OOM.
-Record useful sizing evidence in VM documentation and delete this node when acceptance is complete.
-
-### `VM_GUEST_BUDGET_DERIVE` — derive the guest's cgroup budgets from the VM's memory
-
-**Candidate; no prerequisites; pair with `VM_HARNESS_RESOURCE_LIMITS`, which owns the VM cgroup
-acceptance and already cites these files.** Two places set guest budgets as literals while guest RAM is a third number, and
-nothing connects them:
-
-- the unit in `agentplane/runner/vm.nix`: `MemoryHigh = "6G"`, `MemoryMax = "7G"`, `CPUQuota = "700%"`,
-  `TasksMax = 1024`;
-- the delegated groups in `agentplane/runner/cgroups.go`: aggregate `memory.max` 4 GiB with
-  `cpu.max` 400000/100000 (4 cores) and `pids.max` 768, per-process 3 GiB / 3 cores / 512.
-
-On this 1536Mi / 1 vCPU guest the unit is live — read `memory.max` 7516192768 and
-`cpu.max` 700000 100000 on `agentplane-runner.service`, about 4.5x the whole VM, with
-`memory.current` 1085681664 of it already used — so `VM_HARNESS_RESOURCE_LIMITS`' "verify the existing limits"
-step will find that the aggregate group cannot reach its declared 4 GiB and the CPU shares are meaningless
-against one core. (The `workloads/` group itself is not readable from inside as the agent user; the 4 GiB
-figure is from the source, not observed. Reading it is part of this node.)
-
-Make the guest's own size the input: at boot or in the runner binary, read `MemTotal`/`memory.max` and
-the online CPU count, subtract a stated reserve for the guest kernel, journald and virtiofsd, and write
-the rest. `runner_vm.py` then carries one number and every budget follows it. Keep the reserve explicit
-and testable rather than a magic fraction, and fail loudly if the derived value would leave the runner
-less than it needs — the dangerous state is a cap so close to guest RAM that the first over-committed
-harness hits the **global** OOM instead of being killed as an identifiable subtree, which is exactly what
-[VM Sandboxes § Guest resource controls](../docs/vm_sandboxes.md#guest-resource-controls) says these groups exist to prevent. Exit evidence:
-one image booted at two guest sizes reports budgets that track it, and a harness that exhausts memory
-dies inside its own subtree with the runner still answering RPCs.
+**Unscheduled.** The deployed template already provides 8 GiB, one vCPU and explicit byte
+budgets. Wire Bazelisk, storage and authenticated RBE/cache/BES; bound the client's CPU/memory/disk
+usage and cleanup. Inspect actual launcher requests/limits, namespace usage and eligible-node
+capacity, including KubeVirt overhead. Run a representative build/test with the client inside the
+VM and actions remote, without guest OOM; check cancellation/cleanup while the harness stays
+responsive. Record useful sizing evidence in VM documentation. Installed tools and working hosted
+builds do not authorize local Bazel in agent containers. Further guest slimming is independent of
+this acceptance.
 
 ## 5. Independent UI and narrowly scoped service work
 
@@ -987,7 +924,7 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 flowchart TD
     DECLARATIVE_SESSIONS_DESIGN[Decision, unscheduled: Flux-managed Sessions and subscriptions]
     SUBSCRIPTION_AUTHORIZATION_DESIGN[Subscription authorization decision, section 2] -. related authority design .-> DECLARATIVE_SESSIONS_DESIGN
-    STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
+    STATE_VOLUME_BLOCK[Deferred: block storage for Pod and VM state and workspace]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
@@ -999,13 +936,12 @@ flowchart TD
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization, section 12]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
-    NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
-    STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Blocked: retire the superseded state attachment]
+    STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Deferred: retire the superseded state attachment]
     IDLE_SUSPEND_UI_DRIVE[Operator: remaining VM idle-suspend/send-to-wake UI drive]
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
@@ -1040,17 +976,14 @@ manifest for a Session with GitHub/webhook subscriptions, and independently fini
 nodes with focused reconciliation/restart, duplicate-prevention and authorization acceptance.
 Recording this idea does not schedule implementation.
 
-### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
+### `STATE_VOLUME_BLOCK` — block storage for Pod and VM state and workspace
 
-**Blocked on `NODE_LOCAL_BLOCK_STORAGE`.** Replace the VM's virtiofs
-state attachment with a declared disk layout once suitable node-local storage exists. The state
-PVC holds journals and native harness persistence under `/state/sessions`, separately from the
-workspace. A disk would remove virtiofs's `107:107` ownership constraint; check all callers before
-changing the guest and Pod UIDs. A Pod filesystem mount and a VM disk are not interchangeable just
-because the provisioner supports block storage. Specify supported attachments and reject
-incompatible kind changes; conversion is deferred, not a prerequisite for fresh provisioning.
-Use an explicit incompatible cutoff for existing Sandboxes, in a separate data-drop PR; the
-operator accepted dropping them rather than requiring migration. Gate guest behavior on the VM image and the runner disk it mounts, then activate templates.
+**Deferred; operator, 2026-10-25 PDT: eventual endpoint, todos for later.** Both execution kinds
+eventually use block-backed state and workspace storage, including replacing the VM state
+virtiofs attachment. Select PVC modes and Pod mount/format ownership explicitly; preserve
+journals, native harness homes, permissions, suspension and kind-compatibility checks. Virtio
+remains the VM disk transport. This is independent of all-node local provisioning and does not
+gate the selected VM workspace cutover. Details: [deferred endpoint](vm_block_storage.md#deferred-endpoint).
 
 ### `NODE_LOCAL_BLOCK_STORAGE` — node-local block volumes on every node
 
@@ -1064,14 +997,15 @@ or the explicit layout contract for workspace PVCs.
 
 ### `STATE_VOLUME_VIRTIOFS_RETIRE` — delete the superseded state attachment
 
-**Blocked on `STATE_VOLUME_BLOCK` acceptance/activation and old workloads gone.** Remove VM state
+**Deferred with `STATE_VOLUME_BLOCK`; revisit after its acceptance/activation and old workloads are gone.** Remove VM state
 virtiofs mounts, guest ownership/UID workarounds used only by them, old template paths and tests/docs.
 Keep unrelated virtiofs uses where live callers still need them. Verify Pod/VM state persistence on
 the selected explicit layouts before retiring the path; data drops stay in a separate cutoff PR.
 
 ### `VOLUME_LAYOUT_CONVERSION` — explicit offline volume conversion
 
-**Unscheduled, much later; operator, 2026-10-13 PDT.** Conversion is an accepted future option,
+**Unscheduled, much later; operator, 2026-10-13 PDT.** The 2026-10-25 VM block-storage cutover
+uses an accepted Sandbox reset and needs no converter. General conversion remains a future option,
 not work for #10440 or a gate on its rollout. Until implemented, incompatible layout changes are
 rejected. When scheduled, design a stopped-Sandbox operation with an explicit destination layout,
 verified data/metadata preservation, crash-safe binding switch and separately authorized source
@@ -1094,9 +1028,10 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `WORKSPACE_NODE_PORTABILITY` — move a workspace between nodes
 
-**Unscheduled; operator, 2026-10-13 PDT: even later.** A reasonably fast, node-portable workspace, or
-node portability by copying: volsync from node to node, through S3 on SeaweedFS or directly, while the
-Sandbox is suspended. Node-local volumes stay the default; this only moves them.
+**Unscheduled for remaining node-local workspaces; operator, 2026-10-13 PDT: even later.**
+Fresh VM Sandboxes use [replicated Piraeus storage](../docs/vm_sandboxes.md#guest-and-storage). For other
+node-local volumes, consider portability by copying through VolSync, object storage or directly
+while the Sandbox is suspended. This broader copy-based path does not gate replicated VM storage.
 
 ### `SANDBOX_ARCHIVE` — a suspended Sandbox archived to object storage
 
@@ -1239,12 +1174,12 @@ works, so the update path exists. Landed: the runner and CLI are published as th
 (`//agentplane/runner:disk_image`), the `runner-vm` template attaches it as a second read-only disk, and the guest
 mounts it at `/run/agentplane/runner`, runs the runner from it and no longer carries the runner or CLI
 (a Sandbox on `agentplane-testing` booted this way). Remaining: the tools disk is not split yet.
-The in-guest budgets (`VM_GUEST_BUDGET_DERIVE`) are the other half of the same story — stage 1 owns the
-reserve, stage 2 gets the rest.
+Preserve the shipped typed guest resource policy when splitting layers: stage 1 owns the OS
+reserve and service caps, and native workloads and the executor keep their separate budgets.
 Deliver a lean bootable guest: a bare root filesystem with the runner and harnesses available from
 their chosen layer, and the tools-heavy environment separate. The layering decision still owns exact
-disk placement. `VM_HARNESS_RESOURCE_LIMITS` acceptance waits for this slim runtime; existing guest
-resource controls remain in place while it is prepared. The k3s test guest (`agentplane/system_tests/k3s/guest`)
+disk placement. This work does not gate resource acceptance on the existing guest. The k3s test guest
+(`agentplane/system_tests/k3s/guest`)
 shows a guest root filesystem can be an `oci_image` target: a candidate runtime then needs no Nix or Attic
 and is an additive target rather than a second release pipeline.
 

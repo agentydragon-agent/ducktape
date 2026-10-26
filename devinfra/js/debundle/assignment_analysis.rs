@@ -1,35 +1,53 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-use crate::report_builders::build_owner_graph_report;
+use thiserror::Error;
+
+use crate::report_builders::build_dependency_graph_report;
 use analysis::assignment_assembly::{AtomicGroupConflict, assemble_assignment};
-use analysis::atomic_groups::{AtomicGroup, OwnerGraphAndAtomicGroups};
+use analysis::atomic_groups::{AtomicGroup, DependencyGraphAndAtomicGroups};
 use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
 use analysis::module_assignment::ModuleAssignment;
-use analysis::{ModuleId, ModuleQuotient, OwnerGraphReport, PlannedModule};
+use analysis::{
+    BindingCatalogue, BindingScopeError, ChunkId, DependencyGraphReport, EntryDestination,
+    ModuleId, ModuleQuotient, PlannedModule,
+};
 
 use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
 use crate::validation::{AssignmentReport, validate_assignment};
 
-/// Per-chunk factorization output: the spec's assignment of the
-/// owner graph, plus the realizability views derived from it
-/// (`dep_graph`, `linker_order`, `assembly_conflicts`) and small
+#[derive(Debug, Error)]
+pub enum AssignmentAnalysisBuildError {
+    #[error(transparent)]
+    BindingScope(#[from] BindingScopeError),
+    #[error(
+        "entry destination logical:{entry} must follow the {planned_module_count} planned output modules"
+    )]
+    InvalidEntryDestination {
+        entry: usize,
+        planned_module_count: usize,
+    },
+}
+
+/// Per-chunk assignment analysis: the spec's assignment of the
+/// dependency graph, plus the realizability views derived from it
+/// (`module_quotient`, `import_order`, `assembly_conflicts`) and small
 /// caches downstream consumers consult on the hot path.
 ///
-/// Holds a reference to the [`AssignmentInputs`] it was factorized
-/// from (`analysis`); report emission and downstream emit code reach
-/// inputs (`bindings`, `logical_modules`, etc.) through `analysis()`.
+/// Holds a reference to the [`AssignmentInputs`] it was built
+/// from (`inputs`); report emission and downstream emit code reach
+/// inputs (`bindings`, `planned_modules`, etc.) through `inputs()`.
 /// Fields are private so the assignment cannot change independently of its
 /// cached quotient, SCCs, and import order.
 #[derive(Debug, Clone)]
 pub struct AssignmentAnalysis {
-    analysis: Arc<AssignmentInputs>,
-    /// Module assignment per owner — the spec's assignment of the
-    /// owner graph. Stored separately from the IR so the IR stays
+    inputs: Arc<AssignmentInputs>,
+    /// Module assignment per source unit — the spec's assignment of the
+    /// dependency graph. Stored separately from the IR so the IR stays
     /// immutable across validation/report construction.
     assignment: ModuleAssignment,
-    /// Atomic groups computed from the owner graph's
+    /// Atomic groups computed from the dependency graph's
     /// constraining-edge SCCs. Stored so report emission and
     /// downstream diagnostics reuse the same atomic group grouping that
     /// factor assembly validated.
@@ -41,11 +59,11 @@ pub struct AssignmentAnalysis {
     /// by construction; the materializer bails on these before
     /// emitting code.
     assembly_conflicts: Vec<AtomicGroupConflict>,
-    dep_graph: ModuleQuotient,
-    /// SCC partition of `dep_graph` in `tarjan_scc` reverse-
+    module_quotient: ModuleQuotient,
+    /// SCC partition of `module_quotient` in `tarjan_scc` reverse-
     /// topological order. Precomputed at build time for
     /// `report_builders::build_quotient_scc_reports`.
-    dep_graph_sccs: Vec<Vec<ModuleId>>,
+    module_quotient_sccs: Vec<Vec<ModuleId>>,
     /// Shared per-module ESM import ordering — the single source of
     /// truth the emitter renders import declarations from and the
     /// realizability gate's evaluation simulator mirrors. See
@@ -57,13 +75,13 @@ pub struct AssignmentAnalysis {
 /// passed. The borrow prevents changing the assignment while lowering uses it.
 #[derive(Debug)]
 pub struct ValidatedAssignment<'a> {
-    factorization: &'a AssignmentAnalysis,
+    assignment_analysis: &'a AssignmentAnalysis,
     report: AssignmentReport,
 }
 
 impl ValidatedAssignment<'_> {
-    pub fn factorization(&self) -> &AssignmentAnalysis {
-        self.factorization
+    pub fn assignment_analysis(&self) -> &AssignmentAnalysis {
+        self.assignment_analysis
     }
 
     pub fn report(&self) -> &AssignmentReport {
@@ -72,8 +90,8 @@ impl ValidatedAssignment<'_> {
 }
 
 impl AssignmentAnalysis {
-    pub fn analysis(&self) -> &AssignmentInputs {
-        &self.analysis
+    pub fn inputs(&self) -> &AssignmentInputs {
+        &self.inputs
     }
 
     pub fn assignment(&self) -> &ModuleAssignment {
@@ -84,82 +102,111 @@ impl AssignmentAnalysis {
         &self.atomic_groups
     }
 
-    pub fn dep_graph(&self) -> &ModuleQuotient {
-        &self.dep_graph
+    pub fn module_quotient(&self) -> &ModuleQuotient {
+        &self.module_quotient
     }
 
-    /// Build a factorization from a caller-computed owner graph +
+    /// Canonical report path for a destination. Real output paths come from
+    /// their `PlannedModule`; the entry keeps the historic report label at
+    /// this serialization boundary without becoming a planned output.
+    pub fn module_path(&self, id: ModuleId) -> spec::ModulePath {
+        if id == self.assignment.entry_destination().module_id() {
+            let report_id = format!("{}::anon_residual_sentinel", self.inputs.chunk_id());
+            return spec::ModulePath::parse(&report_id, self.inputs.chunk_id())
+                .expect("entry destination report path is canonical");
+        }
+        self.inputs.planned_module_path(id)
+    }
+
+    /// Build an assignment analysis from a caller-computed dependency graph +
     /// atomic groups (the materializer computes these once per chunk
-    /// for mini-factor synthesis), the binding catalogue, and the
-    /// spec-derived logical modules. `bindings` should already have
+    /// for atomic-group module synthesis), the binding catalogue, and the
+    /// real planned output modules. The entry destination follows those
+    /// modules in this analysis. The catalogue should already have
     /// every `Owned` binding the spec assigned and every `Imported`
-    /// binding the spec re-exports.
+    /// binding the spec re-exports. `chunk_identity` must match the
+    /// catalogue's interned source chunk; `chunk_id` remains the diagnostic
+    /// name.
     pub fn build_with(
         chunk_id: String,
-        precomputed: OwnerGraphAndAtomicGroups,
-        bindings: HashMap<swc_ecma_ast::Id, analysis::BindingKind>,
-        logical_modules: Vec<PlannedModule>,
+        chunk_identity: ChunkId,
+        precomputed: DependencyGraphAndAtomicGroups,
+        binding_catalogue: BindingCatalogue,
+        planned_modules: Vec<PlannedModule>,
         chunk_renames: HashMap<swc_ecma_ast::Id, swc_atoms::Atom>,
-        default_destination: ModuleId,
-    ) -> Self {
-        let OwnerGraphAndAtomicGroups {
-            owner_graph,
+        entry_destination: EntryDestination,
+    ) -> Result<Self, AssignmentAnalysisBuildError> {
+        let entry_module_id = entry_destination.module_id();
+        if entry_module_id != ModuleId(planned_modules.len()) {
+            return Err(AssignmentAnalysisBuildError::InvalidEntryDestination {
+                entry: entry_module_id.0,
+                planned_module_count: planned_modules.len(),
+            });
+        }
+        let DependencyGraphAndAtomicGroups {
+            dependency_graph,
             atomic_groups,
         } = precomputed;
-        let outcome = assemble_assignment(
-            &owner_graph,
-            &atomic_groups,
-            &bindings,
-            &logical_modules,
-            default_destination,
-        );
+        let outcome = {
+            let local_bindings = binding_catalogue.local_view(chunk_identity)?;
+            assemble_assignment(
+                &dependency_graph,
+                &atomic_groups,
+                &local_bindings,
+                &planned_modules,
+                entry_destination,
+            )
+        };
         let assignment = outcome.assignment;
         let assembly_conflicts = outcome.conflicts;
-        let dep_graph = build_module_quotient(&owner_graph, &assignment);
-        // Cache the dep-graph SCC partition so downstream consumers
+        let module_quotient = build_module_quotient(&dependency_graph, &assignment);
+        // Cache the module-quotient SCC partition so downstream consumers
         // (`report_builders::build_quotient_scc_reports`, the validator's
         // verdict path) share one Tarjan walk instead of each
         // recomputing it.
-        let dep_graph_sccs = dep_graph.sccs();
+        let module_quotient_sccs = module_quotient.sccs();
         // Drive Lemma-2 ordering through the canonical
         // `ChunkConstrainingEdgeSet` so the emitter and the gate's
         // simulator share one source of truth — see
         // `graph::chunk_constraining_module_edges` for the invariant doc.
-        let canonical_edges = chunk_constraining_module_edges(&owner_graph, &assignment);
-        // Every logical module needs a deterministic source-order
-        // slot for emit stability, even singletons that don't
+        let canonical_edges = chunk_constraining_module_edges(&dependency_graph, &assignment);
+        // Every output module and the entry destination need a deterministic
+        // source-order slot for emit stability, even singletons that don't
         // participate in any canonical edge.
-        let extra_nodes: BTreeSet<ModuleId> = (0..logical_modules.len()).map(ModuleId).collect();
+        let mut extra_nodes: BTreeSet<ModuleId> =
+            (0..planned_modules.len()).map(ModuleId).collect();
+        extra_nodes.insert(entry_module_id);
         let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical_edges.pairs().collect();
         let import_order = EsmImportOrder::build(
             &constraining_pairs,
             &canonical_edges.i_successors,
             &extra_nodes,
         );
-        let analysis = Arc::new(AssignmentInputs::build(
+        let inputs = Arc::new(AssignmentInputs::build(
             chunk_id,
-            owner_graph,
-            bindings,
-            logical_modules,
+            dependency_graph,
+            chunk_identity,
+            binding_catalogue,
+            planned_modules,
             &chunk_renames,
-        ));
-        Self {
-            analysis,
+        )?);
+        Ok(Self {
+            inputs,
             assignment,
             atomic_groups,
             assembly_conflicts,
-            dep_graph,
-            dep_graph_sccs,
+            module_quotient,
+            module_quotient_sccs,
             import_order,
-        }
+        })
     }
 
-    /// SCC partition of `dep_graph` (the module quotient), in
+    /// SCC partition of `module_quotient` (the module quotient), in
     /// `tarjan_scc` reverse-topological order. Precomputed at build
     /// time and shared with downstream consumers in lieu of a fresh
     /// Tarjan walk.
-    pub fn dep_graph_sccs(&self) -> &[Vec<ModuleId>] {
-        &self.dep_graph_sccs
+    pub fn module_quotient_sccs(&self) -> &[Vec<ModuleId>] {
+        &self.module_quotient_sccs
     }
 
     /// Shared per-module ESM import ordering. The emitter renders
@@ -170,19 +217,19 @@ impl AssignmentAnalysis {
         &self.import_order
     }
 
-    /// Run SCC analysis over the dep graph. Spec authors consume the
+    /// Validate the assignment and its module quotient. Spec authors consume the
     /// resulting report to fix any cycles or atomic-group conflicts.
     pub fn validate(&self) -> AssignmentReport {
         let mut report =
-            validate_assignment(self.analysis.owner_graph(), &self.assignment, &|id| {
-                self.analysis.module_path(id)
+            validate_assignment(self.inputs.dependency_graph(), &self.assignment, &|id| {
+                self.module_path(id)
             });
         report.atomic_group_conflicts = self.assembly_conflicts.clone();
         report.linker_order = self
             .import_order
             .linker_order()
             .iter()
-            .map(|id| self.analysis.module_path(*id))
+            .map(|id| self.module_path(*id))
             .collect();
         report
     }
@@ -196,15 +243,15 @@ impl AssignmentAnalysis {
             return Err(report);
         }
         Ok(ValidatedAssignment {
-            factorization: self,
+            assignment_analysis: self,
             report,
         })
     }
 
-    /// High-fidelity node-link view of the fine owner graph plus
+    /// High-fidelity node-link view of the fine dependency graph plus
     /// its current module quotient. Written as
-    /// `<chunk_id>/owner_graph.json` for downstream peel tooling.
-    pub fn owner_graph_report(&self) -> OwnerGraphReport {
-        build_owner_graph_report(self)
+    /// `<chunk_id>/dependency_graph.json` for downstream peel tooling.
+    pub fn dependency_graph_report(&self) -> DependencyGraphReport {
+        build_dependency_graph_report(self)
     }
 }

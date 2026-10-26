@@ -5,10 +5,10 @@ use rayon::prelude::*;
 use swc_common::GLOBALS;
 
 use analysis::ChunkId;
+use artifact::reports::{ArtifactChunkRecord, ArtifactCounts, ChunkAnalysisReport};
 use artifact::{
-    ArtifactChunkRecord, ArtifactCounts, CANONICAL_CHUNK_ENTRY_FILE, ChunkAnalysisReport,
-    ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile, JsFileBody,
-    LoadedJsChunks, SourceProgram,
+    CANONICAL_CHUNK_ENTRY_FILE, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
+    JsChunk, JsFile, JsFileBody, LoadedJsChunks, SourceProgram,
 };
 use js_ast::{ParsedJsModule, parse_js_module_consuming};
 use program_analysis::{analyze_program_shallow, build_chunk_manifest_from_analysis};
@@ -215,9 +215,9 @@ fn build_prepare_output(
     manifests: &[ChunkAnalysisReport],
 ) -> (ArtifactCounts, Vec<ArtifactChunkRecord>) {
     let counts = ArtifactCounts {
-        kept_top_level_declaration_owners: manifests
+        kept_top_level_declarations: manifests
             .iter()
-            .map(|manifest| manifest.counts.kept_top_level_declaration_owners)
+            .map(|manifest| manifest.counts.kept_top_level_declarations)
             .sum(),
         top_level_side_effects: manifests
             .iter()

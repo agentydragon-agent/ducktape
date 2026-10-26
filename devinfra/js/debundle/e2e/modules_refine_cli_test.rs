@@ -1,4 +1,4 @@
-//! Reviewed owner-to-module batches preserve existing selector metadata.
+//! Reviewed source_unit-to-module batches preserve existing selector metadata.
 
 use debundle_e2e_support::{GraphFixture, TreeFixture, debundler_path, run_tree_fixture};
 use serde_json::json;
@@ -6,26 +6,28 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::process::Command;
 
-fn owner_for_binding(fixture: &GraphFixture, binding: &str) -> String {
-    let graph: serde_json::Value =
-        serde_json::from_slice(&fs::read(&fixture.graph).unwrap()).unwrap();
-    graph["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|node| {
-            node["declared_bindings"]
-                .as_array()
-                .is_some_and(|declared| {
-                    declared
-                        .iter()
-                        .any(|declared| declared["binding"].as_str() == Some(binding))
-                })
+fn source_units_for_binding(fixture: &GraphFixture, binding: &str) -> Vec<String> {
+    fixture
+        .dependency_graph()
+        .nodes
+        .into_iter()
+        .filter(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding.as_ref() == binding)
         })
-        .unwrap_or_else(|| panic!("no graph owner declares {binding:?}"))["id"]
-        .as_str()
-        .unwrap()
-        .to_string()
+        .map(|node| node.id)
+        .collect()
+}
+
+fn source_unit_for_binding(fixture: &GraphFixture, binding: &str) -> String {
+    let mut units = source_units_for_binding(fixture, binding);
+    assert_eq!(
+        units.len(),
+        1,
+        "expected one declaration site for {binding:?}"
+    );
+    units.pop().unwrap()
 }
 
 fn write_batch(value: serde_json::Value) -> tempfile::TempDir {
@@ -47,9 +49,9 @@ fn moves_member_source_match_group_and_anonymous_claim_with_metadata() {
             "comment: Keep this module shell\nnote: source provenance\nmembers:\n  - name: Alpha\n    selector: {binding: {name: alpha}}\nsource_matches:\n  - match: 'const patternBeta = 2, patternGamma = 3;'\n    bindings:\n      - {local: patternBeta, name: Beta}\n      - {local: patternGamma, name: Gamma}\n    note: shared declaration selector\nannotations:\n  Alpha: {note: alpha annotation}\n  Beta: {note: beta annotation}\n  Gamma: {note: gamma annotation}\nanonymous_statements:\n  - match: 'console.log(alpha, beta, gamma);'\n    note: log provenance\n    comment: Log all values\n",
         )],
     );
-    let alpha = owner_for_binding(&fixture, "alpha");
-    let beta = owner_for_binding(&fixture, "beta");
-    let gamma = owner_for_binding(&fixture, "gamma");
+    let alpha = source_unit_for_binding(&fixture, "alpha");
+    let beta = source_unit_for_binding(&fixture, "beta");
+    let gamma = source_unit_for_binding(&fixture, "gamma");
     let graph: serde_json::Value =
         serde_json::from_slice(&fs::read(&fixture.graph).unwrap()).unwrap();
     let log = graph["nodes"]
@@ -57,15 +59,15 @@ fn moves_member_source_match_group_and_anonymous_claim_with_metadata() {
         .unwrap()
         .iter()
         .find(|node| node["declared_bindings"].as_array().unwrap().is_empty())
-        .expect("anonymous log owner")["id"]
+        .expect("anonymous log source_unit")["id"]
         .as_str()
         .unwrap()
         .to_string();
     let batch = write_batch(json!([
-        {"owner_id": alpha, "module": "values/alpha"},
-        {"owner_id": beta, "module": "values/pair"},
-        {"owner_id": gamma, "module": "values/gamma"},
-        {"owner_id": log, "module": "effects/log"},
+        {"unit_id": alpha, "module": "values/alpha"},
+        {"unit_id": beta, "module": "values/pair"},
+        {"unit_id": gamma, "module": "values/gamma"},
+        {"unit_id": log, "module": "effects/log"},
     ]));
     fixture.assert_success(&[
         "modules",
@@ -147,7 +149,7 @@ fn moves_member_source_match_group_and_anonymous_claim_with_metadata() {
 fn rejects_atom_split_without_changing_any_module_yaml() {
     let fixture = GraphFixture::atomic_pair();
     let batch = write_batch(json!([{
-        "owner_id": owner_for_binding(&fixture, "alpha"),
+        "unit_id": source_unit_for_binding(&fixture, "alpha"),
         "module": "split/alpha",
     }]));
     fixture.assert_rejected_unchanged(
@@ -173,7 +175,7 @@ fn moves_free_claim_from_use_inside_multi_declarator_statement() {
     fixture.assert_runs("hello wo\n");
 
     let batch = write_batch(json!([{
-        "owner_id": owner_for_binding(&fixture, "limit"),
+        "unit_id": source_unit_for_binding(&fixture, "limit"),
         "module": "config/limit",
     }]));
     fixture.assert_success(&[
@@ -197,7 +199,7 @@ fn moves_one_claim_from_gapped_source_match_group() {
     fixture.assert_runs("3\n");
 
     let batch = write_batch(json!([{
-        "owner_id": owner_for_binding(&fixture, "first"),
+        "unit_id": source_unit_for_binding(&fixture, "first"),
         "module": "split/first",
     }]));
     fixture.assert_success(&[
@@ -245,11 +247,11 @@ fn refines_only_the_selected_chunk_under_tree_config() {
     let helper_home = modules.join("chunks/helper/home.yaml");
     let helper_before = fs::read(&helper_home).unwrap();
     let destination_before = fs::read(&existing_destination).unwrap();
-    let graph = run.report_root.join("main/owner_graph.json");
+    let graph = run.report_root.join("main/dependency_graph.json");
     let batch = run.root().join("refine.json");
     let graph_report: serde_json::Value =
         serde_json::from_slice(&fs::read(&graph).unwrap()).unwrap();
-    let owner = graph_report["nodes"]
+    let source_unit = graph_report["nodes"]
         .as_array()
         .unwrap()
         .iter()
@@ -267,8 +269,10 @@ fn refines_only_the_selected_chunk_under_tree_config() {
         .unwrap();
     fs::write(
         &batch,
-        serde_json::to_vec(&json!([{"owner_id": owner, "module": "chunks/Main/existingCASE"}]))
-            .unwrap(),
+        serde_json::to_vec(
+            &json!([{"unit_id": source_unit, "module": "chunks/Main/existingCASE"}]),
+        )
+        .unwrap(),
     )
     .unwrap();
     let output = Command::new(debundler_path())
@@ -307,10 +311,10 @@ fn refines_only_the_selected_chunk_under_tree_config() {
 }
 
 #[test]
-fn rejects_unclaimed_scaffolding_and_duplicate_owner_rows() {
+fn rejects_unclaimed_scaffolding_and_duplicate_source_unit_rows() {
     let residual = GraphFixture::new("const alpha = 1;\nconsole.log(alpha);\n", &[]);
     let unclaimed_batch = write_batch(json!([{
-        "owner_id": owner_for_binding(&residual, "alpha"),
+        "unit_id": source_unit_for_binding(&residual, "alpha"),
         "module": "state/alpha",
     }]));
     residual.assert_rejected_unchanged(
@@ -326,16 +330,16 @@ fn rejects_unclaimed_scaffolding_and_duplicate_owner_rows() {
     let exported = GraphFixture::new("const alpha = 1;\nexport { alpha };\n", &[]);
     let graph: serde_json::Value =
         serde_json::from_slice(&fs::read(&exported.graph).unwrap()).unwrap();
-    let export_owner = graph["nodes"]
+    let export_source_unit = graph["nodes"]
         .as_array()
         .unwrap()
         .iter()
         .find(|node| node["statement_kind"] == "export")
-        .expect("export scaffold owner")["id"]
+        .expect("export scaffold source_unit")["id"]
         .as_str()
         .unwrap();
     let export_batch = write_batch(json!([{
-        "owner_id": export_owner,
+        "unit_id": export_source_unit,
         "module": "state/export",
     }]));
     exported.assert_rejected_unchanged(
@@ -355,10 +359,10 @@ fn rejects_unclaimed_scaffolding_and_duplicate_owner_rows() {
             "members: [{selector: {binding: {name: alpha}}}]\n",
         )],
     );
-    let alpha = owner_for_binding(&claimed, "alpha");
+    let alpha = source_unit_for_binding(&claimed, "alpha");
     let duplicate_batch = write_batch(json!([
-        {"owner_id": alpha, "module": "state/alpha"},
-        {"owner_id": alpha, "module": "state/other"},
+        {"unit_id": alpha, "module": "state/alpha"},
+        {"unit_id": alpha, "module": "state/other"},
     ]));
     claimed.assert_rejected_unchanged(
         &[
@@ -367,7 +371,7 @@ fn rejects_unclaimed_scaffolding_and_duplicate_owner_rows() {
             "--batch",
             duplicate_batch.path().join("refine.json").to_str().unwrap(),
         ],
-        &["owner assignment batch repeats"],
+        &["source unit assignment batch repeats"],
     );
 }
 
@@ -414,19 +418,19 @@ console.log(new C().greet());
     for module in atomic["modules"].as_array().unwrap() {
         for fragment in module["fragments"].as_array().unwrap() {
             let suggested_module = fragment["suggested_module_path"].as_str().unwrap();
-            for owner_id in fragment["owner_ids"].as_array().unwrap() {
-                let owner_id = owner_id.as_str().unwrap();
-                atomic_paths.insert(owner_id.to_string(), suggested_module.to_string());
+            for source_unit_id in fragment["source_unit_ids"].as_array().unwrap() {
+                let source_unit_id = source_unit_id.as_str().unwrap();
+                atomic_paths.insert(source_unit_id.to_string(), suggested_module.to_string());
                 atomic_rows.push(json!({
-                    "owner_id": owner_id,
+                    "unit_id": source_unit_id,
                     "module": suggested_module,
                 }));
             }
         }
     }
     assert_ne!(
-        atomic_paths[&owner_for_binding(&fixture, "decorate")],
-        atomic_paths[&owner_for_binding(&fixture, "getDescriptor")],
+        atomic_paths[&source_unit_for_binding(&fixture, "decorate")],
+        atomic_paths[&source_unit_for_binding(&fixture, "getDescriptor")],
         "graph-only atomic decomposition should expose the local anchor split"
     );
     let invalid_batch = write_batch(serde_json::Value::Array(atomic_rows));
@@ -468,29 +472,29 @@ console.log(new C().greet());
     for module in cohesive["modules"].as_array().unwrap() {
         for fragment in module["fragments"].as_array().unwrap() {
             let suggested_module = fragment["suggested_module_path"].as_str().unwrap();
-            for owner_id in fragment["owner_ids"].as_array().unwrap() {
-                let owner_id = owner_id.as_str().unwrap();
-                cohesive_paths.insert(owner_id.to_string(), suggested_module.to_string());
+            for source_unit_id in fragment["source_unit_ids"].as_array().unwrap() {
+                let source_unit_id = source_unit_id.as_str().unwrap();
+                cohesive_paths.insert(source_unit_id.to_string(), suggested_module.to_string());
                 cohesive_rows.push(json!({
-                    "owner_id": owner_id,
+                    "unit_id": source_unit_id,
                     "module": suggested_module,
                 }));
             }
         }
     }
-    let decorate_path = &cohesive_paths[&owner_for_binding(&fixture, "decorate")];
+    let decorate_path = &cohesive_paths[&source_unit_for_binding(&fixture, "decorate")];
     assert_eq!(
         decorate_path,
-        &cohesive_paths[&owner_for_binding(&fixture, "getDescriptor")]
+        &cohesive_paths[&source_unit_for_binding(&fixture, "getDescriptor")]
     );
     assert_eq!(
         decorate_path,
-        &cohesive_paths[&owner_for_binding(&fixture, "defineProperty")]
+        &cohesive_paths[&source_unit_for_binding(&fixture, "defineProperty")]
     );
     assert_ne!(
         decorate_path,
-        &cohesive_paths[&owner_for_binding(&fixture, "marker")],
-        "unrelated owners should remain independently decomposable"
+        &cohesive_paths[&source_unit_for_binding(&fixture, "marker")],
+        "unrelated source_units should remain independently decomposable"
     );
     assert_eq!(
         fs::read(fixture.modules.join("model.yaml")).unwrap(),
@@ -560,11 +564,11 @@ annotations:
     for module in atomic["modules"].as_array().unwrap() {
         for fragment in module["fragments"].as_array().unwrap() {
             let suggested_module = fragment["suggested_module_path"].as_str().unwrap();
-            for owner_id in fragment["owner_ids"].as_array().unwrap() {
-                let owner_id = owner_id.as_str().unwrap();
-                atomic_paths.insert(owner_id.to_string(), suggested_module.to_string());
+            for source_unit_id in fragment["source_unit_ids"].as_array().unwrap() {
+                let source_unit_id = source_unit_id.as_str().unwrap();
+                atomic_paths.insert(source_unit_id.to_string(), suggested_module.to_string());
                 atomic_rows.push(json!({
-                    "owner_id": owner_id,
+                    "unit_id": source_unit_id,
                     "module": suggested_module,
                 }));
             }
@@ -572,7 +576,7 @@ annotations:
     }
     let atomic_path = |binding: &str, original: &str| {
         atomic_paths
-            .get(&owner_for_binding(&fixture, binding))
+            .get(&source_unit_for_binding(&fixture, binding))
             .cloned()
             .unwrap_or_else(|| original.to_string())
     };
@@ -614,11 +618,11 @@ annotations:
     for module in cohesive["modules"].as_array().unwrap() {
         for fragment in module["fragments"].as_array().unwrap() {
             let suggested_module = fragment["suggested_module_path"].as_str().unwrap();
-            for owner_id in fragment["owner_ids"].as_array().unwrap() {
-                let owner_id = owner_id.as_str().unwrap();
-                cohesive_paths.insert(owner_id.to_string(), suggested_module.to_string());
+            for source_unit_id in fragment["source_unit_ids"].as_array().unwrap() {
+                let source_unit_id = source_unit_id.as_str().unwrap();
+                cohesive_paths.insert(source_unit_id.to_string(), suggested_module.to_string());
                 cohesive_rows.push(json!({
-                    "owner_id": owner_id,
+                    "unit_id": source_unit_id,
                     "module": suggested_module,
                 }));
             }
@@ -626,7 +630,7 @@ annotations:
     }
     let cohesive_path = |binding: &str, original: &str| {
         cohesive_paths
-            .get(&owner_for_binding(&fixture, binding))
+            .get(&source_unit_for_binding(&fixture, binding))
             .cloned()
             .unwrap_or_else(|| original.to_string())
     };
@@ -705,19 +709,19 @@ annotations:
     for module in decomposition["modules"].as_array().unwrap() {
         for fragment in module["fragments"].as_array().unwrap() {
             let suggested_module = fragment["suggested_module_path"].as_str().unwrap();
-            for owner_id in fragment["owner_ids"].as_array().unwrap() {
-                let owner_id = owner_id.as_str().unwrap();
-                paths.insert(owner_id.to_string(), suggested_module.to_string());
+            for source_unit_id in fragment["source_unit_ids"].as_array().unwrap() {
+                let source_unit_id = source_unit_id.as_str().unwrap();
+                paths.insert(source_unit_id.to_string(), suggested_module.to_string());
                 rows.push(json!({
-                    "owner_id": owner_id,
+                    "unit_id": source_unit_id,
                     "module": suggested_module,
                 }));
             }
         }
     }
     assert_ne!(
-        paths[&owner_for_binding(&fixture, "Widget")],
-        paths[&owner_for_binding(&fixture, "decorate")],
+        paths[&source_unit_for_binding(&fixture, "Widget")],
+        paths[&source_unit_for_binding(&fixture, "decorate")],
         "a unique global helper name should not force module co-location"
     );
 
@@ -754,7 +758,7 @@ fn source_match_claim_with_raw_sibling_references_survives_split() {
     );
     fixture.assert_runs("ready\n");
     let batch = write_batch(json!([{
-        "owner_id": owner_for_binding(&fixture, "b"),
+        "unit_id": source_unit_for_binding(&fixture, "b"),
         "module": "parts/loader",
     }]));
     fixture.assert_success(&[
@@ -790,7 +794,7 @@ fn source_match_claim_with_declared_sibling_references_survives_split() {
     fixture.assert_runs("ready\n");
 
     let batch = write_batch(json!([{
-        "owner_id": owner_for_binding(&fixture, "b"),
+        "unit_id": source_unit_for_binding(&fixture, "b"),
         "module": "parts/loader",
     }]));
     fixture.assert_success(&[
@@ -800,4 +804,76 @@ fn source_match_claim_with_declared_sibling_references_survives_split() {
         batch.path().join("refine.json").to_str().unwrap(),
     ]);
     fixture.assert_runs("ready\n");
+}
+
+#[test]
+fn refining_a_local_binding_preserves_an_import_claim() {
+    let fixture = GraphFixture::with_dependency(
+        "import { value as a } from './dependency.js';\nconst b = 2;\nconsole.log(a, b);\n",
+        "export const value = 1;\n",
+        &[
+            (
+                "imports.yaml",
+                "members: [{selector: {binding: {name: a, kind: import_specifier}}}]\n",
+            ),
+            (
+                "values.yaml",
+                "members: [{selector: {binding: {name: b}}}]\n",
+            ),
+        ],
+    );
+    let import_path = fixture.modules.join("imports.yaml");
+    let import_claim = fs::read(&import_path).unwrap();
+    let batch = write_batch(json!([{
+        "unit_id": source_unit_for_binding(&fixture, "b"),
+        "module": "moved/value",
+    }]));
+    fixture.assert_success(&[
+        "modules",
+        "refine",
+        "--batch",
+        batch.path().join("refine.json").to_str().unwrap(),
+    ]);
+    assert_eq!(fs::read(import_path).unwrap(), import_claim);
+    assert!(!fixture.modules.join("values.yaml").exists());
+    fixture.assert_runs("1 2\n");
+}
+
+#[test]
+fn both_edit_commands_move_all_sites_of_one_var_binding() {
+    for command in ["assign", "refine"] {
+        let fixture = GraphFixture::new(
+            "var a = 1;\nvar a = a + 1;\nconsole.log(a);\n",
+            &[(
+                "values.yaml",
+                "members: [{selector: {binding: {name: a}}}]\n",
+            )],
+        );
+        let declarations = source_units_for_binding(&fixture, "a");
+        assert_eq!(declarations.len(), 2);
+        if command == "assign" {
+            fixture.assert_success(&["bindings", "assign", "a:moved/value"]);
+        } else {
+            let batch = write_batch(json!(
+                declarations
+                    .into_iter()
+                    .map(|id| { json!({"unit_id": id, "module": "moved/value"}) })
+                    .collect::<Vec<_>>()
+            ));
+            fixture.assert_success(&[
+                "modules",
+                "refine",
+                "--batch",
+                batch.path().join("refine.json").to_str().unwrap(),
+            ]);
+        }
+        assert!(!fixture.modules.join("values.yaml").exists());
+        let destination: serde_yaml::Value =
+            serde_yaml::from_slice(&fs::read(fixture.modules.join("moved/value.yaml")).unwrap())
+                .unwrap();
+        let members = destination["members"].as_sequence().unwrap();
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0]["selector"]["binding"]["name"], "a");
+        fixture.assert_runs("2\n");
+    }
 }

@@ -10,6 +10,7 @@
 # gazelle:resolve py agentplane_policyset_crds //agentplane/crds:policyset
 # gazelle:resolve py cilium_crds //cluster/cdk8s/providers/cilium:ciliumnetworkpolicy
 # gazelle:resolve py crossplane_pkg_provider_crds //cluster/cdk8s/providers/crossplane:provider
+# gazelle:resolve py crossplane_deploymentruntimeconfig_crds //cluster/cdk8s/providers/crossplane:deploymentruntimeconfig
 # gazelle:resolve py opentofu_providerconfig_crds //cluster/cdk8s/providers/crossplane:opentofu_providerconfig
 # gazelle:resolve py opentofu_workspace_crds //cluster/cdk8s/providers/crossplane:opentofu_workspace
 # gazelle:resolve py flux_helm //cluster/cdk8s/providers/flux:helmrelease
@@ -470,6 +471,25 @@ py_library(
 )
 
 py_library(
+    name = "session_backup",
+    srcs = ["session_backup.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":flux",
+        ":namespaces",
+        ":pod_policy",
+        ":service_ref",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "settings_file",
     srcs = ["settings_file.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -830,11 +850,12 @@ py_library(
 py_library(
     name = "agent_machine_access",
     srcs = ["agent_machine_access.py"],
+    data = ["//tf/gitops/agent-machine-access:inline_source"],
     visibility = ["//cluster/cdk8s/authentik:__pkg__"],
     deps = [
+        ":manifest_roots",
+        ":opentofu",
         ":terraform",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "//cluster/cdk8s/providers/tofu_controller:terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -1252,6 +1273,7 @@ py_library(
         ":helm",
         ":manifest_roots",
         ":namespaces",
+        ":opentofu_runtime",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
@@ -1265,14 +1287,48 @@ py_library(
 )
 
 py_library(
-    name = "route53_domain_delegation",
-    srcs = ["route53_domain_delegation.py"],
+    name = "opentofu",
+    srcs = ["opentofu.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
-        ":route53",
+        ":secret_ref",
         ":terraform",
         "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
+        "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "opentofu_runtime",
+    srcs = ["opentofu_runtime.py"],
+    deps = [
+        ":config_format",
+        ":opentofu",
+        "//cluster/cdk8s/providers/crossplane:deploymentruntimeconfig",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "route53_domain_delegation",
+    srcs = ["route53_domain_delegation.py"],
+    data = ["//tf/gitops/route53-domain-delegation:inline_source"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":flux",
+        ":opentofu",
+        ":route53",
+        ":secret_ref",
+        ":terraform",
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "@pypi//cdk8s",
         "@pypi//pydantic",
@@ -1282,12 +1338,12 @@ py_library(
 py_library(
     name = "crossplane_forgejo_agentydragon",
     srcs = ["crossplane_forgejo_agentydragon.py"],
+    data = ["//tf/gitops/forgejo-agentydragon:inline_source"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
+        ":opentofu",
         ":terraform",
-        "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
-        "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "@pypi//cdk8s",
     ],
 )
@@ -1558,6 +1614,7 @@ py_library(
         ":reflector",
         ":reloader",
         ":route53_domain_delegation",
+        ":session_backup",
         ":talos_cloud_controller_manager",
         ":terraform",
         ":user_agentydragon",
@@ -1613,6 +1670,8 @@ py_library(
         "//cluster/cdk8s/forgejo:app",
         "//cluster/cdk8s/forgejo:budget_namespace",
         "//cluster/cdk8s/forgejo:cache",
+        "//cluster/cdk8s/forgejo:claude",
+        "//cluster/cdk8s/forgejo:crossplane_roots",
         "//cluster/cdk8s/forgejo:db",
         "//cluster/cdk8s/forgejo:flux_kustomizations",
         "//cluster/cdk8s/forgejo:gitops_modules",
@@ -1753,7 +1812,10 @@ py_binary(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     main_module = "cluster.cdk8s.generate_manifests",
-    deps = [":generate_manifests_lib"],
+    deps = [
+        ":generate_manifests_lib",
+        ":opentofu",
+    ],
 )
 
 py_library(

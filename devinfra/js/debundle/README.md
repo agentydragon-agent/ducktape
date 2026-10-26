@@ -29,21 +29,32 @@ artifacts.
 propose, or edit that spec. Commands that resolve selectors or validate edits reuse
 the shared resolver and gate rather than their own acceptance rules.
 
-| Responsibility                                                 | Start here                                               |
-| -------------------------------------------------------------- | -------------------------------------------------------- |
-| Load and prepare source; retain ASTs and manifest indexes      | `prepare_chunks.rs`, `program_analysis.rs`, `artifacts/` |
-| Read flat/tree specs and authoring module documents            | `spec/`                                                  |
-| Match, jointly resolve, synthesize, and diagnose selectors     | `selectors/{matching,resolution,authoring,diagnostics}/` |
-| Analyze statement effects, dependencies, and structural atoms  | `facts/`, `purity/`, `graph/`, `chunk_analysis/`         |
-| Assemble assignments and validate realizability                | `assignment_assembly.rs`, `gate.rs`, `realizability/`    |
-| Lower accepted assignments to entry and logical-module files   | `lowering/`                                              |
-| Plan/apply vendor substitution and finalize emitted files      | `vendor/`, `pipeline.rs`, `artifacts/emission_files.rs`  |
-| Propose moves or safe module refinements; inspect or edit spec | `peel/`, `cli/`                                          |
+| Responsibility                                                                  | Start here                                                          |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Load source and retain in-memory chunk/file artifacts and import indexes        | `prepare_chunks.rs`, `program_analysis.rs`, `artifacts/artifact.rs` |
+| Normalize module paths and parse JS-list input                                  | `artifacts/paths.rs`                                                |
+| Define serialized report models and write JSON reports                          | `artifacts/reports.rs`                                              |
+| Compute output/decomposition metrics and file/directory reports                 | `artifacts/metrics.rs`                                              |
+| Read flat/tree specs and authoring module documents                             | `spec/`                                                             |
+| Compile spec claims and share exact selector resolution                         | `spec_resolution.rs`, `selectors/resolution/`                       |
+| Match, synthesize, and diagnose selectors                                       | `selectors/{matching,authoring,diagnostics}/`                       |
+| Analyze statement effects, dependencies, and structural atoms                   | `facts/`, `purity/`, `graph/`, `chunk_analysis/`                    |
+| Model synchronous values, collect callable execution facts, and interpret calls | `facts/sync_effects/{value_model,execution_index,interpreter}.rs`   |
+| Assemble assignments and validate realizability                                 | `assignment_assembly.rs`, `gate.rs`, `realizability/`               |
+| Lower accepted assignments to entry and logical-module files                    | `lowering/`                                                         |
+| Plan/apply vendor substitution and finalize emitted files                       | `vendor/`, `artifacts/emission_files.rs`                            |
+| Render and write finalized JavaScript files and output reports                  | `artifacts/script_output.rs`                                        |
+| Accept concrete syntax, replacements, and browser loading before writing        | `reconstruction.rs`, `artifacts/browser_harness_plan.rs`            |
+| Propose moves or safe module refinements; inspect or edit spec                  | `peel/`, `cli/`                                                     |
 
 `pipeline.rs` composes these stages. Preparation returns a `SourceProgram` with
 its matching syntax and path indexes; finalized `EmissionFiles` own output files
 and their output indexes. These are different phase types even when a pass-through
 program reuses the prepared indexes.
+
+Assignment gates check module realizability. Final run acceptance also checks
+unresolved claims, reconstructed exports, and replacement consumers;
+writers require the resulting immutable `ValidatedPlan`.
 
 Docs: splitting correctness and implementation entry points <docs/design.md>
 (§ File references); selector semantics <SPEC.md>, <docs/selector_resolution.md>;
@@ -56,7 +67,7 @@ elsewhere in the repo are not the live implementation.
 
 For existing-module layout work, start with `modules decompose --atomic`,
 review semantic destinations and the candidate's complete gate verdict, then
-apply the reviewed non-residual owner map with `modules refine --dry-run`
+apply the reviewed non-residual source-unit map with `modules refine --dry-run`
 and `modules refine`. Fresh residual claims use `modules propose` and
 `modules apply`. Workflow and batch contracts: <docs/cli.md>.
 
@@ -108,6 +119,10 @@ unassigned_mode:
 with `perf_wrapper.sh`: <docs/bazel_integration.md>.
 
 ## Spec features
+
+- **Unassigned source:** `unassigned_mode` keeps unclaimed code in the entry,
+  collects it in a catchall file, or decomposes it into one module per atomic
+  group. Policies and generated paths: <SPEC.md#unassigned-source>.
 
 - **Runtime loading:** `execution_runtime: native_browser_esm` declares native
   browser module loading independently of harness emission; omitted or `generic`

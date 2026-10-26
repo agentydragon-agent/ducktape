@@ -1,18 +1,18 @@
 //! Module analysis core for `materialize_logical_modules`.
 //!
 //! Background: see <docs/design.md>. This crate carries the shared
-//! analysis substrate of the owner-graph quotient model:
+//! analysis substrate of the dependency-graph quotient model:
 //!
-//! 1. Analyze each source chunk into top-level owner facts: declarations,
+//! 1. Analyze each source chunk into top-level source-unit facts: declarations,
 //!    at-init reads/writes, lazy reads/writes, side effects, imports, source
 //!    locations, and top-level await (`facts`, `purity`).
-//! 2. Build a fine-grained owner graph over those facts (`graph`,
+//! 2. Build a fine-grained dependency graph over those facts (`graph`,
 //!    `atomic_groups`).
-//! 3. Map owners to destination modules from the spec (`assignment`,
+//! 3. Map source units to destination modules from the spec (`module_assignment`,
 //!    `assignment_assembly`).
 //! 4. Emit stable graph reports from that same graph model (`reports`).
 //!
-//! Realizability checking and factorization validation live in the
+//! Realizability checking and assignment validation live in the
 //! `gate` crate; the spec-independent per-chunk chunk-analysis
 //! composer lives in the `chunk_analysis` crate. Both build on this core.
 
@@ -32,8 +32,8 @@ pub use assignment_assembly::{
     AssemblyOutcome, AtomicGroupConflict, ConflictingClaim, assemble_assignment,
 };
 pub use atomic_groups::{
-    AtomicGroup, OwnerGraphAndAtomicGroups, compute_atomic_groups,
-    compute_owner_graph_and_atomic_groups_with,
+    AtomicGroup, DependencyGraphAndAtomicGroups, compute_atomic_groups,
+    compute_dependency_graph_and_atomic_groups_with,
 };
 pub use facts::{
     ChunkFactAnalysis, EffectCell, PositionBucketed, StatementEffectSummary, StatementFacts,
@@ -42,13 +42,15 @@ pub use facts::{
     local_namespace_iife_target,
 };
 pub use graph::{
-    ChunkConstrainingEdgeSet, DepKind, DuplicateTopLevelDeclaration, EdgeReason, EdgeRole,
-    ModuleQuotient, OwnerEdge, OwnerEdgeId, OwnerGraph, OwnerGraphOptions, OwnerId, OwnerNode,
-    UnresolvedOwnerEdgeEndpoint, build_module_quotient, build_owner_graph_with,
-    chunk_constraining_module_edges, position_lookup,
+    ChunkConstrainingEdgeSet, DepKind, DependencyEdge, DependencyEdgeId, DependencyGraph,
+    DependencyGraphOptions, DuplicateTopLevelDeclaration, EdgeReason, EdgeRole, ModuleQuotient,
+    SourceUnit, SourceUnitClass, SourceUnitId, UnresolvedDependencyEdgeEndpoint,
+    build_dependency_graph_with, build_module_quotient, chunk_constraining_module_edges,
+    position_lookup,
 };
 pub use ids::{
-    BindingKind, ChunkId, ChunkTable, ModuleId, PlannedModule, StatementOrdinal, top_level_id,
+    BindingCatalogue, BindingId, BindingKind, BindingScopeError, ChunkId, ChunkTable,
+    EntryDestination, LocalBindings, ModuleId, ModuleRole, PlannedModule, top_level_id,
 };
 pub use module_assignment::ModuleAssignment;
 pub use purity::{
@@ -57,7 +59,8 @@ pub use purity::{
 };
 pub use reports::schema::{
     AtomicGraphReport, AtomicGroupConflictReport, AtomicGroupEdgeReport, AtomicGroupReport,
-    BindingReport, ConflictingClaimReport, EdgeRoleReport, LineRange, ModuleEntry, ModuleKey,
-    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
-    PurityCauseReport, QuotientEdgeReport, QuotientSccReport, SequencedOwnerCause, SourceLocation,
+    BindingReport, ConflictingClaimReport, DependencyEdgeReport, DependencyGraphReport,
+    EdgeRoleReport, LineRange, ModuleDestinationKind, ModuleEntry, ModuleKey, ModuleQuotientReport,
+    PurityCauseReport, QuotientEdgeReport, QuotientSccReport, SequencedSourceUnitCause,
+    SourceLocation, SourceUnitReport,
 };

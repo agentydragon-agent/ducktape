@@ -3,11 +3,13 @@ package runner
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -57,23 +59,27 @@ func TestCgroupKernelFixture(t *testing.T) {
 	if err := unix.Mknod(device, unix.S_IFBLK|0o600, int(unix.Mkdev(major, minor))); err != nil {
 		t.Fatal(err)
 	}
-	groups := &AgentCgroups{Root: filepath.Join(mount, "workloads"), AgentUID: 107, AgentGID: 107, BlockDevices: []string{device}}
+	groups := &AgentCgroups{
+		Root: filepath.Join(mount, "workloads"), AgentUID: 107, AgentGID: 107, BlockDevices: []string{device},
+		AggregateLimits: ResourceLimits{CPUQuotaMicros: 100000, MemoryMaxBytes: 1140850688, PidsMax: 768, ReadBPS: 52428800, WriteBPS: 20971520, ReadIOPS: 1000, WriteIOPS: 500},
+		ProcessLimits:   ResourceLimits{CPUQuotaMicros: 100000, MemoryMaxBytes: 805306368, PidsMax: 512, ReadBPS: 52428800, WriteBPS: 20971520, ReadIOPS: 1000, WriteIOPS: 500},
+	}
 	if err := groups.Prepare(); err != nil {
 		t.Fatal(err)
 	}
-	group, err := groups.CreateProcessGroup()
+	group, err := groups.CreateProcessGroup(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, limits := range []struct {
-		path, cpu, memory, pids string
+		path, cpu, memory, pids, oomGroup string
 	}{
-		{groups.Root, "400000 100000", "4294967296", "768"},
-		{group, "300000 100000", "3221225472", "512"},
+		{groups.Root, "100000 100000", "1140850688", "768", "0"},
+		{group, "100000 100000", "805306368", "512", "0"},
 	} {
 		for name, want := range map[string]string{
 			"cpu.max": limits.cpu, "memory.max": limits.memory, "pids.max": limits.pids,
-			"memory.swap.max": "0", "memory.oom.group": "1",
+			"memory.swap.max": "0", "memory.oom.group": limits.oomGroup,
 		} {
 			data, err := os.ReadFile(filepath.Join(limits.path, name))
 			if err != nil || strings.TrimSpace(string(data)) != want {
@@ -137,6 +143,12 @@ func TestCgroupKernelFixture(t *testing.T) {
 	} else if !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
+	limits := &ResourceLimits{
+		CPUQuotaMicros: 100000, MemoryMaxBytes: 64 * 1024 * 1024, PidsMax: 32,
+		ReadBPS: 52428800, WriteBPS: 20971520, ReadIOPS: 1000, WriteIOPS: 500,
+	}
+	assertToolOOMPreservesNativeLeader(t, groups, limits, ctx)
+	assertProcessOOMIsolation(t, groups, limits, ctx)
 	entries, err := os.ReadDir(groups.Root)
 	if err != nil {
 		t.Fatal(err)
@@ -145,6 +157,158 @@ func TestCgroupKernelFixture(t *testing.T) {
 		if entry.IsDir() {
 			t.Fatalf("process cgroup survived supervisor cleanup: %s", entry.Name())
 		}
+	}
+}
+
+func assertToolOOMPreservesNativeLeader(t *testing.T, groups *AgentCgroups, limits *ResourceLimits, ctx context.Context) {
+	t.Helper()
+	process, err := NewProcess(ProcessConfig{
+		Command: []string{"/bin/sh", "-c", `
+/bin/sleep 1000 &
+peer=$!
+"$1" -test.run='^TestCgroupOOMFixture$'
+result=$?
+printf 'tool-oom-survived=%d peer=%d\n' "$result" "$peer"
+read -r confirmation
+`, "tool-oom-fixture", os.Args[0]},
+		Dir: "/tmp", Env: map[string]string{"AGENTPLANE_CGROUP_OOM_FIXTURE": "1"},
+		ProcessIsolation: groups, ResourceLimits: limits,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := process.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = process.Stop(context.Background(), stopGrace) }()
+	go func() { _, _ = io.Copy(io.Discard, process.Stderr()) }()
+	stdout := bufio.NewReader(process.Stdout())
+	line, err := stdout.ReadString('\n')
+	var descendant int
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fmt.Sscanf(line, "oom-descendant=%d", &descendant); err != nil || descendant <= 0 {
+		t.Fatalf("tool did not start its descendant: %q, %v", line, err)
+	}
+	line, err = stdout.ReadString('\n')
+	var code, peer int
+	if err != nil {
+		t.Fatalf("native parent did not survive tool OOM: %v; %s", err, process.ExitDescription())
+	}
+	if _, err := fmt.Sscanf(line, "tool-oom-survived=%d peer=%d", &code, &peer); err != nil || code != 137 || peer <= 0 {
+		t.Fatalf("tool exit = %q, %v; want SIGKILL (137) and surviving peer", line, err)
+	}
+	assertExecuting(t, process.PID(), "native parent after tool OOM")
+	assertExecuting(t, peer, "same-leaf peer after tool OOM")
+	assertExecuting(t, descendant, "tool descendant before leader cleanup")
+	if err := process.WriteLine(ctx, "finish"); err != nil {
+		t.Fatal(err)
+	}
+	if code, err := process.Wait(ctx); err != nil || code != 0 {
+		t.Fatalf("native parent exit = %d, %v; %s", code, err, process.ExitDescription())
+	}
+	assertNotExecuting(t, peer, "same-leaf peer after leader cleanup")
+	assertNotExecuting(t, descendant, "tool descendant after leader cleanup")
+}
+
+func assertProcessOOMIsolation(t *testing.T, groups *AgentCgroups, limits *ResourceLimits, ctx context.Context) {
+	t.Helper()
+	sibling, err := NewProcess(ProcessConfig{Command: []string{"/bin/sleep", "1000"}, Dir: "/tmp", Env: map[string]string{}, ProcessIsolation: groups})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sibling.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = sibling.Stop(context.Background(), stopGrace) }()
+	go func() { _, _ = io.Copy(io.Discard, sibling.Stderr()) }()
+	siblingPID := sibling.PID()
+
+	process, err := NewProcess(ProcessConfig{
+		Command: []string{os.Args[0], "-test.run=^TestCgroupOOMFixture$"},
+		Dir:     "/tmp", Env: map[string]string{"AGENTPLANE_CGROUP_OOM_FIXTURE": "1"},
+		ProcessIsolation: groups, ResourceLimits: limits,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := process.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	stderr := make(chan []byte, 1)
+	go func() {
+		data, _ := io.ReadAll(process.Stderr())
+		stderr <- data
+	}()
+	line, err := bufio.NewReader(process.Stdout()).ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	var descendant int
+	if _, err := fmt.Sscanf(line, "oom-descendant=%d", &descendant); err != nil || descendant <= 0 {
+		t.Fatalf("OOM fixture did not start its descendant: %q, %v", line, err)
+	}
+	code, err := process.Wait(ctx)
+	if err != nil || code != 137 {
+		t.Fatalf("OOM fixture exit = %d, %v; want SIGKILL (137)", code, err)
+	}
+	logLines := <-stderr
+	var diagnostics struct {
+		Message         string            `json:"msg"`
+		MemoryEvents    map[string]uint64 `json:"memory_events"`
+		MemoryPeakBytes uint64            `json:"memory_peak_bytes"`
+		MemoryPeakError string            `json:"memory_peak_error"`
+	}
+	found := false
+	for _, logLine := range strings.Split(string(logLines), "\n") {
+		var candidate struct {
+			Message         string            `json:"msg"`
+			MemoryEvents    map[string]uint64 `json:"memory_events"`
+			MemoryPeakBytes uint64            `json:"memory_peak_bytes"`
+			MemoryPeakError string            `json:"memory_peak_error"`
+		}
+		if json.Unmarshal([]byte(logLine), &candidate) == nil && candidate.Message == "agent process cgroup memory diagnostics" {
+			diagnostics = candidate
+			found = true
+			break
+		}
+	}
+	if !found || diagnostics.MemoryEvents["oom"] == 0 || diagnostics.MemoryEvents["oom_kill"] == 0 ||
+		(diagnostics.MemoryPeakBytes == 0 && diagnostics.MemoryPeakError == "") {
+		t.Fatalf("OOM diagnostics missing from supervisor logs: found=%v diagnostics=%+v stderr=%s", found, diagnostics, logLines)
+	}
+	assertNotExecuting(t, descendant, "descendant after OOM-killed leader cleanup")
+	if !sibling.Running() {
+		t.Fatal("OOM in one process cgroup stopped its sibling process")
+	}
+	assertExecuting(t, siblingPID, "sibling process")
+}
+
+func assertNotExecuting(t *testing.T, pid int, description string) {
+	t.Helper()
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if os.IsNotExist(err) {
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, state, _ := strings.Cut(string(data), ") ")
+	if !strings.HasPrefix(state, "Z ") && !strings.HasPrefix(state, "X ") {
+		t.Fatalf("%s survived its cgroup kill: %s", description, data)
+	}
+}
+
+func assertExecuting(t *testing.T, pid int, description string) {
+	t.Helper()
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		t.Fatalf("%s disappeared: %v", description, err)
+	}
+	_, state, _ := strings.Cut(string(data), ") ")
+	if strings.HasPrefix(state, "Z ") || strings.HasPrefix(state, "X ") {
+		t.Fatalf("%s is no longer executing: %s", description, data)
 	}
 }
 
@@ -167,4 +331,23 @@ func TestCgroupNativeFixture(t *testing.T) {
 	fmt.Printf("detached=%d\n", child.Process.Pid)
 	// Exit the leader while a descendant lives outside its process group. The
 	// supervisor must fence that descendant using the cgroup before it exits.
+}
+
+func TestCgroupOOMFixture(t *testing.T) {
+	if os.Getenv("AGENTPLANE_CGROUP_OOM_FIXTURE") != "1" {
+		return
+	}
+	child := exec.Command("/bin/sleep", "1000")
+	child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("oom-descendant=%d\n", child.Process.Pid)
+	// Touch every page so the kernel must charge this allocation to the small process leaf.
+	allocation := make([]byte, 256*1024*1024)
+	for offset := 0; offset < len(allocation); offset += os.Getpagesize() {
+		allocation[offset] = 1
+	}
+	runtime.KeepAlive(allocation)
+	t.Fatal("large allocation survived the configured cgroup memory max")
 }

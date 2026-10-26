@@ -34,7 +34,7 @@ use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 // Hole keyword spellings come from `source_match_holes` so the minimizer
 // emits exactly the tokens the matcher resolves.
-use source_match_holes::{DECLARATORS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD};
+use source_match_holes::STMT_LIST_HOLE_KEYWORD;
 
 // The selector minimizer is split by form: the AST-holing engine (`render`),
 // the regex-over-string-literal anchors (`regex_anchor`), and the per-form
@@ -1439,17 +1439,19 @@ fn prove_synthesized_selector(
         members,
         anonymous_statements: Vec::new(),
     }])?;
-    let mut first_owner = usize::MAX;
+    let mut first_body_index = usize::MAX;
     for (member_index, target) in targets.iter().enumerate() {
         let outcome = resolution
             .outcome(0, EntityIndex::Member(member_index))
             .context("a source_match member has an outcome")?;
         match &outcome.outcome {
             Outcome::Resolved {
-                owner,
+                body_index,
                 binding: Some(binding),
                 resolved_by: ResolvedBy::OwnSelector,
-            } if *binding == target.runtime_binding => first_owner = first_owner.min(*owner),
+            } if *binding == target.runtime_binding => {
+                first_body_index = first_body_index.min(*body_index)
+            }
             _ => bail!(
                 "synthesized selector does not prove `{}` as `{}`: {}",
                 target.runtime_binding,
@@ -1458,9 +1460,9 @@ fn prove_synthesized_selector(
             ),
         }
     }
-    if first_owner != decl.body_idx {
+    if first_body_index != decl.body_idx {
         bail!(
-            "synthesized selector matched body index {first_owner} instead of intended {}",
+            "synthesized selector matched body index {first_body_index} instead of intended {}",
             decl.body_idx
         );
     }
@@ -1564,15 +1566,6 @@ fn matched_body_indices(
             .map(|candidate| candidate.body_idx)
             .collect(),
     )
-}
-
-/// The declarator-run hole for a binding-group selector. The matcher treats every
-/// `DECLARATORS` / `DECLARATORS_*` run hole identically -- the positional suffix
-/// is not equality-binding, only used in human-facing hint text -- so the
-/// renderer always emits the plain keyword. Suffixed forms remain accepted on
-/// input.
-fn declarator_hole_name() -> &'static str {
-    DECLARATORS_HOLE_KEYWORD
 }
 
 struct SynthesizedCandidateInput<'a> {

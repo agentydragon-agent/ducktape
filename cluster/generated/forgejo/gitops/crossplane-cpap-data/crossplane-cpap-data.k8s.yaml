@@ -1,0 +1,298 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opentofu-cpap-data
+  namespace: crossplane-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-cpap-data-impersonate
+  namespace: crossplane-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - opentofu-cpap-data
+    resources:
+      - serviceaccounts
+    verbs:
+      - impersonate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc8558e91e4db594f987f86c9f0e202288656e0b52f
+  namespace: crossplane-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-cpap-data-impersonate
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-opentofu
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-cpap-data
+  namespace: forgejo
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - forgejo-admin-password
+    resources:
+      - secrets
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resourceNames:
+      - cpap-data-git-write
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - cpap-data-git-read
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc86a445afd84da0e1aaf81b29c7e25bb3a39c3f083
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-cpap-data
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: opentofu-cpap-data
+    namespace: crossplane-system
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: crossplane-cpap-data
+spec:
+  backendFile: |
+    conn_str = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+    schema_name = "cpap_data"
+  configuration: |
+    terraform {
+      backend "pg" {}
+    }
+    provider "kubernetes" {
+      config_path = "/etc/opentofu/kubernetes/opentofu-cpap-data"
+    }
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: Workspace
+metadata:
+  annotations:
+    crossplane.io/external-name: default
+  name: cpap-data
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    env:
+      - name: PGPASSWORD
+        secretKeyRef:
+          key: password
+          name: tofu-state-db-credentials
+          namespace: flux-system
+    module: |
+      # Forgejo repo + service users for the CPAP EDF archive.
+      #
+      # Provisions a private `cpap-data/cpap-data` repo owned by a dedicated
+      # `cpap-data` service user (full read/write on its own repo, used by the
+      # nightly cpap-sync CronJob to commit+push files pulled from the ez Share SD
+      # card), plus read-only collaborators for `cpap-data-reader`, `claude`, and
+      # `haku`. Two Kubernetes Secrets carry the
+      # respective git credentials. Auth is HTTPS Basic against the public ingress
+      # (git.allegedly.works) — unlike augur-evidence's in-cluster URL, because the
+      # sync CronJob runs hostNetwork on wyrm2 where host DNS is simpler than
+      # cluster DNS, and the same URL then works for every consumer (CronJob,
+      # laptops, Claude Code web). Mirrors tf/gitops/augur-evidence otherwise.
+      #
+      # The Secrets land in the `forgejo` namespace. The `cpap-sync` namespace copies
+      # both in through ESO (cluster/cdk8s/cpap_sync/app.py), and Reflector mirrors its
+      # copy of the read Secret into `claude-sandbox` so Claude Code web sessions can
+      # read it through the connected Kubernetes MCP path.
+
+      data "kubernetes_secret" "forgejo_admin" {
+        metadata {
+          name      = "forgejo-admin-password"
+          namespace = "forgejo"
+        }
+      }
+
+      provider "forgejo" {
+        host     = var.forgejo_url
+        username = data.kubernetes_secret.forgejo_admin.data["username"]
+        password = data.kubernetes_secret.forgejo_admin.data["password"]
+      }
+
+      resource "random_password" "writer" {
+        length  = 48
+        special = false
+      }
+
+      resource "random_password" "reader" {
+        length  = 48
+        special = false
+      }
+
+      resource "forgejo_user" "writer" {
+        login                = "cpap-data"
+        email                = "cpap-data@allegedly.works"
+        password             = random_password.writer.result
+        must_change_password = false
+        visibility           = "private"
+      }
+
+      resource "forgejo_user" "reader" {
+        login                = "cpap-data-reader"
+        email                = "cpap-data-reader@allegedly.works"
+        password             = random_password.reader.result
+        must_change_password = false
+        visibility           = "private"
+      }
+
+      resource "forgejo_repository" "data" {
+        owner          = forgejo_user.writer.login
+        name           = "cpap-data"
+        description    = "ResMed CPAP EDF archive, synced nightly from the ez Share SD card by the cpap-sync CronJob. Do not edit by hand."
+        private        = true
+        default_branch = "main"
+        # Create an initial commit so `main` exists for the sync job to clone/push
+        # and readers to clone.
+        auto_init = true
+      }
+
+      # Read-only access for Claude Code analysis sessions.
+      resource "forgejo_collaborator" "reader" {
+        repository_id = forgejo_repository.data.id
+        user          = forgejo_user.reader.login
+        permission    = "read"
+      }
+
+      # Read-only access for the claude agent account (user provisioned by
+      # tf/gitops/forgejo-claude; until it exists this resource fails and the
+      # Terraform CR retries on its interval).
+      resource "forgejo_collaborator" "claude" {
+        repository_id = forgejo_repository.data.id
+        user          = "claude"
+        permission    = "read"
+      }
+
+      # Read-only access for the haku agent account (user provisioned by
+      # tf/gitops/haku-state).
+      resource "forgejo_collaborator" "haku" {
+        repository_id = forgejo_repository.data.id
+        user          = "haku"
+        permission    = "read"
+      }
+
+      # Write credentials for the sync CronJob.
+      resource "kubernetes_secret" "cpap_data_git_write_source" {
+        metadata {
+          name      = "cpap-data-git-write"
+          namespace = "forgejo"
+        }
+
+        data = {
+          username = forgejo_user.writer.login
+          password = random_password.writer.result
+          repo_url = "https://git.allegedly.works/${forgejo_user.writer.login}/${forgejo_repository.data.name}.git"
+        }
+      }
+
+      # Read credentials for Claude Code.
+      resource "kubernetes_secret" "cpap_data_git_read_source" {
+        metadata {
+          name      = "cpap-data-git-read"
+          namespace = "forgejo"
+        }
+
+        data = {
+          username = forgejo_user.reader.login
+          password = random_password.reader.result
+          repo_url = "https://git.allegedly.works/${forgejo_user.writer.login}/${forgejo_repository.data.name}.git"
+        }
+      }
+
+      # The cpap-sync ExternalSecrets adopt the Secrets these addresses created there.
+      # CLEANUP(added 2026-09-28): Remove once the cpap_data state has forgotten both
+      # addresses. Never destroy the ESO-owned Secrets.
+      removed {
+        from = kubernetes_secret.cpap_data_git_write
+        lifecycle {
+          destroy = false
+        }
+      }
+
+      removed {
+        from = kubernetes_secret.cpap_data_git_read
+        lifecycle {
+          destroy = false
+        }
+      }
+
+
+      terraform {
+        required_version = ">= 1.0"
+
+        required_providers {
+          forgejo = {
+            source  = "svalabs/forgejo"
+            version = "~> 1.5"
+          }
+          kubernetes = {
+            source  = "hashicorp/kubernetes"
+            version = "~> 3.0"
+          }
+          random = {
+            source  = "hashicorp/random"
+            version = "~> 3.7"
+          }
+        }
+      }
+
+      variable "forgejo_url" {
+        description = "Forgejo internal cluster API URL"
+        type        = string
+        default     = "http://forgejo-http.forgejo:3000"
+      }
+    planArgs:
+      - -lock-timeout=5m
+    source: Inline
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+  providerConfigRef:
+    name: crossplane-cpap-data

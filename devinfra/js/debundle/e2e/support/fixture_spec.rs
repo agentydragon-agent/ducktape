@@ -7,9 +7,9 @@ use serde::de::value::{Error as DeserializeError, SeqDeserializer};
 use spec::InitializerPurity;
 use spec::{
     AnonymousStatement, BindingAnnotation, BindingSelector, BindingSourceKind, ChunkRenameMember,
-    ChunkRenameSelector, ChunkRenames, CrossRefSelector, IntrinsicAliasSelector, LoadJsChunksArgs,
-    LogicalModule, MakesDecorateCallSelector, MaterializeLogicalModulesConfig,
-    Member as SpecMember, MemberOfModuleSelector, MemberSelector, OwnerGraphOptions,
+    ChunkRenameSelector, ChunkRenames, CrossRefSelector, DependencyGraphOptions,
+    IntrinsicAliasSelector, LoadJsChunksArgs, LogicalModule, MakesDecorateCallSelector,
+    MaterializeLogicalModulesConfig, Member as SpecMember, MemberOfModuleSelector, MemberSelector,
     PassedToCallSelector, ReadsMemberSelector, SourceMatch, SourceMatchBinding,
     SourceMatchBindingDetail, SourceMatchClaim, SourceMatchIdentifierMode, SwapVendorChunksConfig,
     TransformSpec, UnassignedMode, WriteJsTreeConfig,
@@ -161,7 +161,7 @@ impl Member {
     /// Pin a member as the entity that **references** the anchor member `@anchor`
     /// (a delegator / consumer body), re-exported under `name`. `kind` optionally
     /// narrows to one source-declaration kind (`function_declaration`, …) when
-    /// several owners reference the anchor.
+    /// several source_units reference the anchor.
     pub fn cross_ref_references(
         name: &'static str,
         anchor: &'static str,
@@ -200,7 +200,7 @@ impl Member {
     /// re-exported under `name`. `object` optionally constrains the object the
     /// member is read off (the readable `name:` of another member, the codegen
     /// context being the canonical object); `kind` optionally narrows to one
-    /// source-declaration kind (`function_declaration`, …) when several owners
+    /// source-declaration kind (`function_declaration`, …) when several source_units
     /// read the member.
     pub fn reads_member(
         name: &'static str,
@@ -224,7 +224,7 @@ impl Member {
     /// Pin a member as the entity **consumed as `module.member`** at a use site
     /// (`module` an import specifier, `member` an export name), re-exported under
     /// `name`. `kind` optionally narrows to one source-declaration kind
-    /// (`class_declaration`, …) when several owners consume the module member.
+    /// (`class_declaration`, …) when several source_units consume the module member.
     pub fn member_of_module(
         name: &'static str,
         module: &'static str,
@@ -251,7 +251,7 @@ impl Member {
     /// `object` optionally constrains the callee's receiver (the readable `name:`
     /// of another member, the registry singleton); `arg_index` optionally pins the
     /// argument position; `kind` optionally narrows the target's own declaration
-    /// kind (`class_declaration`, …) when several owners are passed to the callee.
+    /// kind (`class_declaration`, …) when several source_units are passed to the callee.
     pub fn passed_to_call(
         name: &'static str,
         callee_member: &'static str,
@@ -319,7 +319,7 @@ impl Member {
         )
     }
 
-    /// Attach an author comment to be emitted above the binding's owner
+    /// Attach an author comment to be emitted above the binding's source_unit
     /// statement in the lowered module body. See `spec::Member::comment`.
     pub fn with_comment(mut self, comment: impl Into<String>) -> Self {
         self.comment = Some(comment.into());
@@ -663,7 +663,7 @@ pub struct FixtureOpts<'a> {
     /// Renders as a YAML object with `kind: <discriminant>` plus
     /// any variant-specific fields. Use [`unassigned_mode_inline`],
     /// [`unassigned_mode_catchall_file`], or
-    /// [`unassigned_mode_mini_factors`] to build typical bodies.
+    /// [`unassigned_mode_per_atomic_group`] to build typical bodies.
     pub unassigned_mode: UnassignedMode,
     /// Opt into the dataflow-aware S-chain emission in `graph/` for
     /// this chunk. Default `false` — leaves the strictly-conservative
@@ -712,8 +712,8 @@ impl<'a> FixtureOpts<'a> {
         // residual-module emission path and rely on
         // `static/app/modules/residual/unhandled.js` being written.
         // Tests that exercise `InlineInEntry` semantics override with
-        // [`unassigned_mode_inline`]; tests that exercise mini factors
-        // override with [`unassigned_mode_mini_factors`].
+        // [`unassigned_mode_inline`]; tests that exercise per-group modules
+        // override with [`unassigned_mode_per_atomic_group`].
         Self {
             execution_runtime: spec::ExecutionRuntime::default(),
             source,
@@ -843,9 +843,9 @@ pub fn unassigned_mode_catchall_file(target: Option<&str>) -> UnassignedMode {
     }
 }
 
-/// Build an `unassigned_mode: mini_factors` entry.
-pub fn unassigned_mode_mini_factors() -> UnassignedMode {
-    UnassignedMode::MiniFactors
+/// Build an `unassigned_mode: per_atomic_group` entry.
+pub fn unassigned_mode_per_atomic_group() -> UnassignedMode {
+    UnassignedMode::PerAtomicGroup
 }
 
 /// Fluent wrapper for building a `(chunk, ChunkExportPurity)` tuple with the
@@ -983,7 +983,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
     {
         BTreeMap::from([(
             chunk_id.to_string(),
-            OwnerGraphOptions {
+            DependencyGraphOptions {
                 dataflow_aware_s_chain: opts.dataflow_aware_s_chain,
                 trusted_dataflow_summaries: opts.trusted_dataflow_summaries,
                 local_property_effects: opts.local_property_effects,
@@ -1164,7 +1164,7 @@ export { renderCard, decoratePrimary, decorateSecondary };
                 "diagnostics/missing",
                 &[Member::source_alpha("MissingFormatter", missing_selector)],
             ),
-            logical_module("owners/card", &[Member::new("renderCard")]),
+            logical_module("source_units/card", &[Member::new("renderCard")]),
             logical_module(
                 "duplicates/card",
                 &[Member::renamed("renderCardAgain", "renderCard")],

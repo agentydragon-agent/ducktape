@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
+use source_identity::SourceUnitOrdinal;
 use swc_atoms::Atom;
 
 use crate::assignment_assembly::AtomicGroupConflict;
 use crate::ids::ModuleId;
 use crate::purity::Purity;
-use crate::{DepKind, StatementKind, StatementOrdinal};
+use crate::{DepKind, SourceUnitClass, StatementKind};
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceLocation {
@@ -81,16 +82,16 @@ pub struct BindingReport {
 
 /// Node-link JSON side output for downstream graph analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnerGraphReport {
+pub struct DependencyGraphReport {
     pub chunk_id: String,
-    pub nodes: Vec<OwnerGraphNodeReport>,
+    pub nodes: Vec<SourceUnitReport>,
     /// Shared callee verdicts referenced by `purity.reasons[].cause_ref`.
-    /// Each cause is emitted once, even when many owners call it.
+    /// Each cause is emitted once, even when many source units call it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub purity_causes: Vec<PurityCauseReport>,
-    pub edges: Vec<OwnerGraphEdgeReport>,
+    pub edges: Vec<DependencyEdgeReport>,
     #[serde(rename = "module_graph")]
-    pub quotient: OwnerGraphQuotientReport,
+    pub quotient: ModuleQuotientReport,
     pub atomic_graph: AtomicGraphReport,
 }
 
@@ -100,27 +101,32 @@ pub struct PurityCauseReport {
     pub purity: Purity,
 }
 
-impl OwnerGraphReport {
+impl DependencyGraphReport {
     /// Resolve a [`ModuleKey`] to its module-table entry. The table
     /// (`quotient.nodes`) is the single source of truth for a module's
-    /// path + residual flag; consumers look up here rather than reading
+    /// path + destination kind; consumers look up here rather than reading
     /// a duplicated field off the reference.
     pub fn module(&self, key: &ModuleKey) -> Option<&ModuleEntry> {
         self.quotient.nodes.iter().find(|entry| &entry.key == key)
     }
 
-    /// Whether `key` denotes the residual catch-all, per the module
-    /// table's authoritative `residual` flag. Unknown keys are not
-    /// residual.
-    pub fn is_residual(&self, key: &ModuleKey) -> bool {
-        self.module(key).is_some_and(|entry| entry.residual)
+    /// Whether `key` receives source units without an explicit module claim.
+    /// This includes the physical entry destination and planned outputs with
+    /// the `Unassigned` policy role. Unknown keys do not match.
+    pub fn is_unassigned_or_entry(&self, key: &ModuleKey) -> bool {
+        self.module(key).is_some_and(|entry| {
+            matches!(
+                entry.kind,
+                ModuleDestinationKind::Entry | ModuleDestinationKind::Unassigned
+            )
+        })
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnerGraphNodeReport {
+pub struct SourceUnitReport {
     pub id: String,
-    pub statement_ordinal: StatementOrdinal,
+    pub statement_ordinal: SourceUnitOrdinal,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
     pub declared_bindings: Vec<BindingReport>,
@@ -129,14 +135,18 @@ pub struct OwnerGraphNodeReport {
     /// any non-`Pure` verdict. A consumer wanting a boolean reads
     /// `purity.kind == "pure"`.
     pub purity: Purity,
-    /// The module this owner is assigned to, as an interned
+    /// The module this source unit is assigned to, as an interned
     /// [`ModuleKey`]. Resolve to a path / residual flag via the module
     /// table (`quotient.nodes`).
     pub destination: ModuleKey,
 }
 
-impl OwnerGraphNodeReport {
-    /// Inclusive line span of the owner's statement; 0 without a
+impl SourceUnitReport {
+    pub fn class(&self) -> SourceUnitClass {
+        SourceUnitClass::from_declared_bindings(&self.declared_bindings)
+    }
+
+    /// Inclusive line span of the source unit's statement; 0 without a
     /// source location.
     pub fn line_count(&self) -> usize {
         self.source_location.as_ref().map_or(0, |loc| {
@@ -148,18 +158,18 @@ impl OwnerGraphNodeReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnerGraphEdgeReport {
+pub struct DependencyEdgeReport {
     pub id: String,
     pub source: String,
     pub target: String,
     pub edge_kind: DepKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding: Option<Atom>,
-    pub statement_ordinal: StatementOrdinal,
+    pub statement_ordinal: SourceUnitOrdinal,
     pub constrains_init_order: bool,
     /// Role the edge was emitted with. Mirrors `EdgeReason::role`
     /// (see `crate::EdgeRole`) through the wire format so the peel
-    /// planner's `OwnerGraph::from_report` reapplies the same
+    /// planner's `DependencyGraph::from_report` reapplies the same
     /// cross-module at-init promotion filter the materializer's gate
     /// does. `None` is shorthand for `EdgeRole::Direct` (omitted when
     /// serializing to keep direct edges compact).
@@ -168,43 +178,46 @@ pub struct OwnerGraphEdgeReport {
 }
 
 /// Wire-format projection of [`crate::EdgeRole`]. The typed variant
-/// avoids the previous `at_init_callee_owner: Option<String>`
+/// avoids the previous `at_init_callee_unit: Option<String>`
 /// side-channel by routing the same data through a tagged enum, so
 /// adding new edge roles is a single-source-of-truth change.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EdgeRoleReport {
-    /// Owner id (e.g. `"owner:42"`) of the at-init callee whose body
+    /// SourceUnit id (e.g. `"unit:42"`) of the at-init callee whose body
     /// produced this edge.
-    PromotedAtInit { callee_owner: String },
+    PromotedAtInit { callee_source_unit: String },
 }
 
 impl EdgeRoleReport {
     /// Resolve back to a [`crate::EdgeRole`] using a `report-id ->
-    /// OwnerId` lookup table. Unknown owner ids fall back to
+    /// SourceUnitId` lookup table. Unknown source-unit IDs fall back to
     /// `EdgeRole::Direct` (the lenient view treats the edge as a
     /// normal direct edge) — same shape as the pre-refactor
-    /// `at_init_callee_owner.and_then(by_id.get)` fallback.
+    /// `at_init_callee_source_unit.and_then(by_id.get)` fallback.
     pub fn resolve(
         &self,
-        by_id: &std::collections::HashMap<String, crate::OwnerId>,
+        by_id: &std::collections::HashMap<String, crate::SourceUnitId>,
     ) -> crate::EdgeRole {
         match self {
-            EdgeRoleReport::PromotedAtInit { callee_owner } => match by_id.get(callee_owner) {
-                Some(&owner) => crate::EdgeRole::PromotedAtInit {
-                    callee_owner: owner,
-                },
-                None => crate::EdgeRole::Direct,
-            },
+            EdgeRoleReport::PromotedAtInit { callee_source_unit } => {
+                match by_id.get(callee_source_unit) {
+                    Some(&source_unit) => crate::EdgeRole::PromotedAtInit {
+                        callee_source_unit: source_unit,
+                    },
+                    None => crate::EdgeRole::Direct,
+                }
+            }
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnerGraphQuotientReport {
-    /// The module table: one [`ModuleEntry`] per logical module. The
-    /// single source of truth for each module's path + residual flag;
-    /// every other reference is a [`ModuleKey`] into this list.
+pub struct ModuleQuotientReport {
+    /// The module table: one [`ModuleEntry`] per planned output plus the
+    /// entry destination. It is the single source of truth for each
+    /// destination's path and kind; every other reference is
+    /// a [`ModuleKey`] into this list.
     pub nodes: Vec<ModuleEntry>,
     pub edges: Vec<QuotientEdgeReport>,
     pub sccs: Vec<QuotientSccReport>,
@@ -225,7 +238,7 @@ pub struct QuotientEdgeReport {
 /// up (single-module non-self-loops are filtered out at the builder),
 /// with `realizable` distinguishing the offending ones, and uses
 /// wire-stable string ids (`module_key`, `quotient_edge:N`) instead of
-/// typed `ModuleId` / `OwnerEdgeId`.
+/// typed `ModuleId` / `DependencyEdgeId`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuotientSccReport {
     pub id: String,
@@ -240,8 +253,8 @@ pub struct QuotientSccReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SequencedOwnerCause {
-    pub owner_id: String,
+pub struct SequencedSourceUnitCause {
+    pub source_unit_id: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub binding_names: Vec<Atom>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -258,11 +271,11 @@ pub struct AtomicGraphReport {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AtomicGroupReport {
     pub id: String,
-    pub owner_ids: Vec<String>,
+    pub source_unit_ids: Vec<String>,
     pub members: Vec<BindingReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub anonymous_statement_owner_ids: Vec<String>,
-    /// Distinct modules the group's owners are assigned to, as interned
+    pub anonymous_statement_source_unit_ids: Vec<String>,
+    /// Distinct modules the group's source units are assigned to, as interned
     /// [`ModuleKey`]s. Resolve to paths/residual via the module table.
     pub destinations: Vec<ModuleKey>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -279,51 +292,51 @@ pub struct AtomicGroupEdgeReport {
     pub source: String,
     pub target: String,
     pub edge_kinds: Vec<DepKind>,
-    pub owner_edge_ids: Vec<String>,
+    pub dependency_edge_ids: Vec<String>,
     pub constrains_init_order: bool,
 }
 
 /// Wire shape for `atomic_group_conflicts.json` (one entry per
 /// conflicting atomic group). Projects the in-memory
 /// [`AtomicGroupConflict`] onto the shared entity-key formats: owners
-/// as `"owner:N"` strings (joining `owner_graph.json`'s `nodes[].id`)
+/// as `"unit:N"` strings (joining `dependency_graph.json`'s `nodes[].id`)
 /// and modules as canonical [`spec::ModulePath`]s (joining the module
-/// table's `path`). The raw `OwnerId` / `ModuleId` indices never hit
+/// table's `path`). The raw `SourceUnitId` / `ModuleId` indices never hit
 /// the wire.
 #[derive(Debug, Clone, Serialize)]
 pub struct AtomicGroupConflictReport {
-    /// Members as `"owner:N"` keys, sorted by owner id.
+    /// Members as `"unit:N"` keys, sorted by source-unit ID.
     pub members: Vec<String>,
     pub claims: Vec<ConflictingClaimReport>,
     pub causes: Vec<DepKind>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub sequenced_owners: Vec<SequencedOwnerCause>,
+    pub sequenced_source_units: Vec<SequencedSourceUnitCause>,
 }
 
 /// One claim row in [`AtomicGroupConflictReport`].
 #[derive(Debug, Clone, Serialize)]
 pub struct ConflictingClaimReport {
-    /// Claiming owner as an `"owner:N"` key.
-    pub owner: String,
+    /// Claiming source unit as an `"unit:N"` key.
+    pub source_unit: String,
     pub binding_names: Vec<Atom>,
     /// Claimed destination, by canonical [`spec::ModulePath`].
     pub module: spec::ModulePath,
 }
 
-pub fn sequenced_owner_causes(
-    owner_graph: &crate::OwnerGraph,
-    members: &[crate::OwnerId],
-) -> Vec<SequencedOwnerCause> {
+pub fn sequenced_source_unit_causes(
+    dependency_graph: &crate::DependencyGraph,
+    members: &[crate::SourceUnitId],
+) -> Vec<SequencedSourceUnitCause> {
     let members: std::collections::BTreeSet<_> = members.iter().copied().collect();
     members
         .into_iter()
-        .filter_map(|owner| {
-            owner_graph
-                .out_edges_of(owner)
+        .filter_map(|source_unit| {
+            dependency_graph
+                .out_edges_of(source_unit)
                 .iter()
-                .map(|id| owner_graph.edge(*id))
+                .map(|id| dependency_graph.edge(*id))
                 .find(|edge| edge.reason.kind == DepKind::Sequenced)
-                .and_then(|edge| sequenced_edge_cause(owner_graph, edge))
+                .and_then(|edge| sequenced_edge_cause(dependency_graph, edge))
         })
         .collect()
 }
@@ -331,18 +344,18 @@ pub fn sequenced_owner_causes(
 /// Describe a sequencing edge's impure source directly. Callers that already
 /// have its provenance need no graph-wide search to rediscover that edge.
 pub fn sequenced_edge_cause(
-    owner_graph: &crate::OwnerGraph,
-    edge: &crate::OwnerEdge,
-) -> Option<SequencedOwnerCause> {
+    dependency_graph: &crate::DependencyGraph,
+    edge: &crate::DependencyEdge,
+) -> Option<SequencedSourceUnitCause> {
     if edge.reason.kind != DepKind::Sequenced {
         return None;
     }
-    let node = owner_graph.node(edge.from)?;
+    let node = dependency_graph.node(edge.from)?;
     let Purity::NotPure { .. } = &node.purity else {
         return None;
     };
-    Some(SequencedOwnerCause {
-        owner_id: crate::reports::owner_key(edge.from),
+    Some(SequencedSourceUnitCause {
+        source_unit_id: crate::reports::source_unit_key(edge.from),
         binding_names: node.declared.iter().map(|id| id.0.clone()).collect(),
         source_location: node.source_location.clone(),
         purity: node.purity.clone(),
@@ -353,7 +366,7 @@ impl AtomicGroupConflictReport {
     pub fn from_conflicts(
         conflicts: &[AtomicGroupConflict],
         module_path: &dyn Fn(ModuleId) -> spec::ModulePath,
-        owner_graph: &crate::OwnerGraph,
+        dependency_graph: &crate::DependencyGraph,
     ) -> Vec<Self> {
         conflicts
             .iter()
@@ -362,33 +375,36 @@ impl AtomicGroupConflictReport {
                     .members
                     .iter()
                     .copied()
-                    .map(crate::reports::owner_key)
+                    .map(crate::reports::source_unit_key)
                     .collect(),
                 claims: conflict
                     .claims
                     .iter()
                     .map(|claim| ConflictingClaimReport {
-                        owner: crate::reports::owner_key(claim.owner),
+                        source_unit: crate::reports::source_unit_key(claim.source_unit),
                         binding_names: claim.binding_names.clone(),
                         module: module_path(claim.module),
                     })
                     .collect(),
                 causes: conflict.causes.iter().copied().collect(),
-                sequenced_owners: sequenced_owner_causes(owner_graph, &conflict.members),
+                sequenced_source_units: sequenced_source_unit_causes(
+                    dependency_graph,
+                    &conflict.members,
+                ),
             })
             .collect()
     }
 }
 
-/// Interned reference to a logical module.
+/// Interned reference to a planned output or entry destination.
 ///
-/// This is the **one** encoding of module identity on the owner-graph
-/// wire. Everything that points at a module — an owner's
+/// This is the **one** encoding of destination identity on the dependency-graph
+/// wire. Everything that points at a destination — a source unit's
 /// `destination`, a quotient edge's endpoints, an SCC's members, an
 /// atomic group's `destinations` — carries a `ModuleKey`, never a
 /// path or a parallel label. The key resolves to a [`ModuleEntry`] in
-/// the module table (`OwnerGraphQuotientReport::nodes`), which is the
-/// sole place a module's `path` and `residual` flag are stored.
+/// the module table (`ModuleQuotientReport::nodes`), which is the
+/// sole place a destination's `path` and `residual` policy flag are stored.
 ///
 /// The key is `module_key(ModuleId)` — `"logical:N"` — so it stays
 /// compact and stable; the human-readable path lives once, in the
@@ -409,18 +425,26 @@ impl std::fmt::Display for ModuleKey {
     }
 }
 
-/// One entry in the module table (`OwnerGraphQuotientReport::nodes`).
+/// One entry in the destination table (`ModuleQuotientReport::nodes`).
 /// The single source of truth mapping a [`ModuleKey`] to its canonical
-/// path and residual flag. No other wire field duplicates `path` or
-/// `residual`.
+/// path and destination kind. No other wire field duplicates them.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModuleEntry {
     pub key: ModuleKey,
-    /// Canonical module identity/destination path (see
-    /// [`spec::ModulePath`]).
+    /// Canonical report identity (see [`spec::ModulePath`]). For planned
+    /// outputs this is the module path; for `Entry` it is the historic
+    /// `anon_residual_sentinel` report label, not the emitted entry filename.
     pub path: spec::ModulePath,
-    /// `true` for the synthesized residual catch-all. Authoritative —
-    /// not derivable from `path` (a spec author may legitimately name
-    /// a non-residual module `residual/...`).
-    pub residual: bool,
+    /// The physical entry destination or the policy role of a planned output.
+    /// Authoritative; the authored `residual/` path namespace is independent.
+    pub kind: ModuleDestinationKind,
+}
+
+/// Disjoint destinations in the module quotient's wire table.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ModuleDestinationKind {
+    Entry,
+    Specified,
+    Unassigned,
 }

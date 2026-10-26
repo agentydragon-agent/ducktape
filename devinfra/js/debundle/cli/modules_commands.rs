@@ -1,6 +1,6 @@
 //! `modules` command arguments, dispatch, and report presentation. Merge and
 //! delete planning/persistence live in `module`, separate from CLI rendering.
-use crate::binding::{OwnerAssignment, run_owner_refine};
+use crate::binding::{SourceUnitAssignment, run_source_unit_refine};
 use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
 use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
@@ -61,31 +61,31 @@ enum ModulesNsCommand {
     /// Read-only: surfaces *suggested* binding → module assignments +
     /// diagnostics; reviewed fresh residual proposals are claimed with
     /// `modules apply` (see docs/cli.md). With `--source-root`, JSON rows
-    /// carry `landable_today`, `unaddressable_anonymous_owner_ids`, and
+    /// carry `landable_today`, `unaddressable_anonymous_source_unit_ids`, and
     /// `landability_notes` from full-JS-AST selector uniqueness.
     /// `landable_today` is `false` both for proposals with unaddressable
     /// anonymous statements and for `blocked_residual_dependency`
-    /// proposals (outgoing constraining edges into other residual cells)
+    /// proposals (outgoing constraining edges into other residual classes)
     /// — the latter need their closure grown or manual co-location
     /// before they can land.
     Propose(PlanWorkArgs),
     /// Claim reviewed residual proposal bindings using proven structural selectors.
     Apply(ModulesApplyArgs),
-    /// Move reviewed existing owner claims as one validated batch.
+    /// Move reviewed existing source-unit claims as one validated batch.
     ///
-    /// The JSON batch contains `{ "owner_id": "...", "module": "..." }`
-    /// rows. Omitted owners keep their current module. This command moves
+    /// The JSON batch contains `{ "unit_id": "...", "module": "..." }`
+    /// rows. Omitted source units keep their current module. This command moves
     /// existing selectors and metadata without synthesizing selectors, then
-    /// resolves the entire scoped spec again and requires the complete owner
+    /// resolves the entire scoped spec again and requires the complete source-unit
     /// assignment to match the requested assignment before running the normal
     /// realizability and atomic-group gates. Import/export scaffolding and
-    /// residual owners cannot be moved. Module comments and notes stay with
+    /// residual source units cannot be moved. Module comments and notes stay with
     /// their original YAML module.
     Refine(ModulesRefineArgs),
     /// Report a read-only, gate-checked refinement of existing module groups.
     ///
     /// The planner keeps each current module separate from the others and
-    /// groups its owners by the gated atomic/same-module seed classes. It
+    /// groups its source units by the gated atomic/same-module seed classes. It
     /// validates the complete candidate against the structural atoms and
     /// shared realizability gate. `--atomic` skips same-module seed contraction
     /// for a faster, more fragmented structural baseline. Suggested paths are
@@ -161,7 +161,7 @@ struct ModuleDecomposeArgs {
 
 #[derive(Debug, ClapArgs)]
 struct ModulesRefineArgs {
-    /// JSON array of reviewed owner IDs and destination module paths; `-` reads stdin.
+    /// JSON array of reviewed source-unit IDs and destination module paths; `-` reads stdin.
     #[arg(long)]
     batch: String,
 
@@ -169,7 +169,7 @@ struct ModulesRefineArgs {
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     modules_root: PathBuf,
 
-    /// Current owner graph used to resolve selectors and check the complete result.
+    /// Current dependency graph used to resolve selectors and check the complete result.
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     graph: PathBuf,
 
@@ -205,8 +205,10 @@ struct ModulesListArgs {
     #[arg(long)]
     pub empty: bool,
 
-    /// Restrict to residual modules (any module whose path starts with `residual/`).
+    /// Restrict to authored modules in the `residual/` path namespace.
     #[arg(long)]
+    /// Whether the authored path belongs to the `residual/` namespace.
+    /// Independent of a generated graph destination's policy or entry role.
     pub residual: bool,
 
     /// Same predicate as `--empty`.
@@ -222,7 +224,7 @@ struct ModulesListArgs {
 
     /// Include each module's `anonymous_statement_count` in text output,
     /// alongside `member_count` (JSON always carries it). Surfaces the
-    /// residual sentinel's side-effect drift over time.
+    /// default entry's anonymous side-effect count over time.
     #[arg(long = "with-anonymous")]
     pub with_anonymous: bool,
 
@@ -251,7 +253,7 @@ struct ModulesListReport {
 }
 
 fn run_modules_list(args: ModulesListArgs) -> Result<()> {
-    use spec::is_residual_module_path;
+    use spec::is_residual_namespace_path;
     use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
     let files = collect_module_files(&args.modules_root)
         .with_context(|| format!("walking {}", args.modules_root.display()))?;
@@ -259,7 +261,7 @@ fn run_modules_list(args: ModulesListArgs) -> Result<()> {
     for file in files {
         let module = read_module_file(&file)?;
         let path = module_path_from_file(&file, &args.modules_root);
-        let residual = is_residual_module_path(&path);
+        let residual = is_residual_namespace_path(&path);
         let source_match_binding_count = module
             .source_matches
             .iter()
@@ -337,8 +339,8 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
         "candidate is not realizable\n"
     });
     out.push_str(&format!(
-        "coverage: {}/{} owners; unchanged modules={}\n",
-        report.assigned_owner_count, report.owner_count, report.unchanged_module_count
+        "coverage: {}/{} source units; unchanged modules={}\n",
+        report.assigned_source_unit_count, report.source_unit_count, report.unchanged_module_count
     ));
     for module in &report.modules {
         out.push_str(&format!(
@@ -348,9 +350,9 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
         ));
         for fragment in &module.fragments {
             out.push_str(&format!(
-                "  {}  owners={} bindings={}\n",
+                "  {}  source_units={} bindings={}\n",
                 fragment.suggested_module_path,
-                fragment.owner_ids.join(", "),
+                fragment.source_unit_ids.join(", "),
                 fragment.binding_ids.join(", "),
             ));
         }
@@ -410,7 +412,7 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
         }
         for group in &coarsening.groups {
             out.push_str(&format!(
-                "  final {}  origins={} owners={} bindings={}\n",
+                "  final {}  origins={} source_units={} bindings={}\n",
                 group.suggested_module_path,
                 group
                     .origin_module_paths
@@ -418,7 +420,7 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(", "),
-                group.owner_ids.join(", "),
+                group.source_unit_ids.join(", "),
                 group.binding_ids.join(", "),
             ));
         }
@@ -432,10 +434,10 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
                         .claims
                         .iter()
                         .map(|claim| format!(
-                            "{}:{} (owners {})",
+                            "{}:{} (source units {})",
                             claim.original_module_path,
                             claim.binding_id,
-                            claim.owner_ids.join(", ")
+                            claim.source_unit_ids.join(", ")
                         ))
                         .collect::<Vec<_>>()
                         .join("; ")
@@ -447,12 +449,12 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
                 .whole_home_pass_limit
                 .map_or_else(|| "unlimited".to_owned(), |limit| limit.to_string());
             out.push_str(&format!(
-                "original-home rejoining stopped: {:?}; restored={}/{} groups={} largest_group_owners={} largest_group_origins={} contractions={}/{} whole_home_passes={}/{} budget_limited_homes={}\n",
+                "original-home rejoining stopped: {:?}; restored={}/{} groups={} largest_group_source_units={} largest_group_origins={} contractions={}/{} whole_home_passes={}/{} budget_limited_homes={}\n",
                 rejoining.stop_reason,
                 rejoining.fully_restored_module_count,
                 rejoining.original_module_count,
                 rejoining.final_group_count,
-                rejoining.largest_group_owner_count,
+                rejoining.largest_group_source_unit_count,
                 rejoining.largest_group_origin_module_count,
                 rejoining.accepted_contractions,
                 rejoining.attempted_contractions,
@@ -471,7 +473,7 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
     );
     let report = decompose_modules_from_files_with_options(
         &ProposalOptions {
-            owner_graph_path: args.common.owner_graph_path,
+            dependency_graph_path: args.common.dependency_graph_path,
             modules_root: args.common.modules_root,
             tree_config: args.tree_config,
             source_root: args.source_root,
@@ -515,9 +517,9 @@ fn run_modules_refine(args: ModulesRefineArgs) -> Result<()> {
     } else {
         fs::read_to_string(&args.batch).with_context(|| format!("reading {}", args.batch))?
     };
-    let assignments: Vec<OwnerAssignment> =
+    let assignments: Vec<SourceUnitAssignment> =
         serde_json::from_str(&text).context("parsing modules refine batch")?;
-    let outcome = match run_owner_refine(
+    let outcome = match run_source_unit_refine(
         &args.modules_root,
         &args.graph,
         &args.source_root,
@@ -533,9 +535,9 @@ fn run_modules_refine(args: ModulesRefineArgs) -> Result<()> {
     };
     match OutputFormat::resolve(args.format) {
         OutputFormat::Text => println!(
-            "{}: {} owner(s), {} file(s) written, {} file(s) deleted",
+            "{}: {} source_unit(s), {} file(s) written, {} file(s) deleted",
             outcome.outcome.action,
-            outcome.owners_reassigned,
+            outcome.source_units_reassigned,
             outcome.outcome.files_written.len(),
             outcome.outcome.files_deleted.len(),
         ),
@@ -562,19 +564,19 @@ fn render_plan_work_text(report: &peel::PlanWorkReport, out: &mut String) {
             "needs-manual-work"
         };
         out.push_str(&format!(
-            "  {}  owners={} size={} {}\n",
+            "  {}  source_units={} size={} {}\n",
             proposal.proposed_module_id,
-            proposal.owner_ids.len(),
+            proposal.source_unit_ids.len(),
             proposal.size_lines_estimate,
             landable,
         ));
         for note in &proposal.landability_notes {
             out.push_str(&format!("    note: {note}\n"));
         }
-        if !proposal.unaddressable_anonymous_owner_ids.is_empty() {
+        if !proposal.unaddressable_anonymous_source_unit_ids.is_empty() {
             out.push_str(&format!(
-                "    unaddressable anonymous owners: {}\n",
-                proposal.unaddressable_anonymous_owner_ids.join(", "),
+                "    unaddressable anonymous source units: {}\n",
+                proposal.unaddressable_anonymous_source_unit_ids.join(", "),
             ));
         }
     }

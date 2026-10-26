@@ -21,7 +21,7 @@ const (
 	LaunchMountPath = "/run/agentplane/sandbox"
 	// LaunchFile is the key of the Sandbox's launch ConfigMap that the Go runner reads.
 	// A VM guest finds the same file on the disk of serial
-	// LaunchDiskSerial, which agentplane/runner/vm.nix links into /run/agentplane.
+	// LaunchDiskSerial, mounted at the same LaunchMountPath by agentplane/runner/vm.nix.
 	LaunchFile       = "launch.json"
 	LaunchDiskSerial = "agentplane-launch"
 

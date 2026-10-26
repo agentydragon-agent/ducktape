@@ -43,11 +43,12 @@ py_library(
 py_library(
     name = "sso_providers",
     srcs = ["sso_providers.py"],
+    data = ["//tf/gitops/sso-providers:inline_source"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:opentofu",
         "//cluster/cdk8s:terraform",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "//cluster/cdk8s/providers/tofu_controller:terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -65,6 +66,7 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:opentofu",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:helmrelease",
@@ -135,14 +137,8 @@ py_library(
     srcs = ["tf.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:agent_machine_access",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:terraform",
-        "//cluster/cdk8s/authentik:sso_providers",
-        "//cluster/cdk8s/gatus:sso",
-        "//cluster/cdk8s/monitoring:alloy_otlp_bearer_token",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
     ],
 )

@@ -1,21 +1,15 @@
 //! End-to-end pinning of the peel proposer's correctness against
 //! the materializer's actual gates.
 //!
-//! `debundle run` emits stable owner and atomic-DAG facts. The peel
+//! `debundle run` emits stable source_unit and atomic-DAG facts. The peel
 //! proposer computes heuristic module proposals from that emitted
 //! graph on demand. Blocked or size-capped frontier states are
 //! diagnostics, not proposals.
 
 use debundle_e2e_support::*;
 use peel::propose::{PeelCandidateStatus, ProposalsReport, propose};
-use spec::{MemberEffect, ModulePath};
+use spec::MemberEffect;
 use std::collections::BTreeMap;
-
-/// Empty active-claims map: these fixtures all start from a fully
-/// residual graph (no pre-existing spec modules).
-fn no_claims() -> BTreeMap<String, ModulePath> {
-    BTreeMap::new()
-}
 
 /// Run `debundle` on `source` with `modules` claimed and every other
 /// binding inlined in the residual entry.
@@ -27,8 +21,8 @@ fn residual_fixture(source: &str, modules: Vec<LogicalModuleEntry>) -> Fixture {
 
 fn factorize_residual(source: &str, modules: Vec<LogicalModuleEntry>) -> ProposalsReport {
     propose(
-        &residual_fixture(source, modules).owner_graph(),
-        &no_claims(),
+        &residual_fixture(source, modules).dependency_graph(),
+        &BTreeMap::new(),
         10_000,
     )
     .unwrap()
@@ -143,7 +137,7 @@ export { anchor, consumer };
             report.proposals.iter().all(|proposal| proposal.status
                 == PeelCandidateStatus::PeelableNow
                 && (proposal.landable_today
-                    || (!proposal.unaddressable_anonymous_owner_ids.is_empty()
+                    || (!proposal.unaddressable_anonymous_source_unit_ids.is_empty()
                         && !proposal.landability_notes.is_empty()))),
             "{case}: proposals must be landable or explicitly advisory: {report:#?}",
         );
@@ -222,7 +216,7 @@ export { anchor, consumer_a, consumer_b };
 fn blocked_residual_dependency_proposals_are_not_landable_today() {
     // `consumer` reads `dep` at init (constraining edge). Under a size
     // cap that admits each singleton but refuses the combined closure,
-    // the quotient keeps them as separate residual cells, so
+    // the quotient keeps them as separate residual classes, so
     // `consumer`'s cell retains an outgoing constraining edge into
     // `dep`'s cell. Promoting `consumer` alone would route the read
     // through `residual_entry` and trip the realizability gate —
@@ -240,8 +234,8 @@ export { anchor, dep, consumer };
         chunk_source,
         vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
     )
-    .owner_graph();
-    let report = propose(&graph, &no_claims(), 1).unwrap();
+    .dependency_graph();
+    let report = propose(&graph, &BTreeMap::new(), 1).unwrap();
 
     let blocked = report
         .proposals
@@ -289,8 +283,8 @@ export { anchor, impure, pureBrand };
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["pureBrand".to_string()]
-                && proposal.owner_ids.len() == 1
-                && proposal.anonymous_statement_owner_ids.is_empty()
+                && proposal.source_unit_ids.len() == 1
+                && proposal.anonymous_statement_source_unit_ids.is_empty()
                 && proposal.landable_today
         }),
         "CLI proposer should preserve the analyzer's singleton pureBrand proposal: {report:#?}",
@@ -333,7 +327,7 @@ export { anchor, mutable, peer };
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["mutable".to_string()]
-                && !proposal.anonymous_statement_owner_ids.is_empty()
+                && !proposal.anonymous_statement_source_unit_ids.is_empty()
                 && proposal.landable_today
         }),
         "mutable can only be proposed together with its rebinding statement: {report:#?}",
@@ -341,7 +335,7 @@ export { anchor, mutable, peer };
     assert!(
         !report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["mutable".to_string()]
-                && proposal.anonymous_statement_owner_ids.is_empty()
+                && proposal.anonymous_statement_source_unit_ids.is_empty()
                 && proposal.landable_today
         }),
         "CLI proposer must not surface a binding-only mutable proposal: {report:#?}",
@@ -394,8 +388,8 @@ export { anchor, SearchPopoverState };
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["SearchPopoverState".to_string()]
-                && proposal.anonymous_statement_owner_ids.len() == 1
-                && proposal.owner_ids.len() == 2
+                && proposal.anonymous_statement_source_unit_ids.len() == 1
+                && proposal.source_unit_ids.len() == 2
                 && proposal.landable_today
         }),
         "decorated class should be proposed with exactly its decorator statement, not the unrelated side-effect chain: {report:#?}",
@@ -403,7 +397,7 @@ export { anchor, SearchPopoverState };
     assert!(
         !report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["SearchPopoverState".to_string()]
-                && proposal.anonymous_statement_owner_ids.is_empty()
+                && proposal.anonymous_statement_source_unit_ids.is_empty()
         }),
         "class-only proposal would split the target-local decorator effect: {report:#?}",
     );

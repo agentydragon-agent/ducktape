@@ -159,6 +159,14 @@ still open:
   between seal and execute" contract is convention-held; making
   non-execute passes take `&Module` would let the compiler enforce it.
 
+## Import re-export claims
+
+Extend `resolve_imported_binding` in `lowering/imports/imports_runtime.rs` to
+support default and namespace import member re-exports (<SPEC.md> § Entities).
+Add neutral CLI/Node cases for both forms; a minimal default case is
+`import a from "./dependency.js"` with a member claim for `a` carrying
+`kind: import_specifier`.
+
 ## Suspected bugs
 
 Findings from a read-only code review (2026-09-30), each with where to look and
@@ -170,17 +178,12 @@ confirmed it.
   likely benign. The post-seed reporting in `peel/quotient.rs` keeps an SCC
   whose owners collapse into one class, while the `translate_*` helpers drop it
   and `would_be_cycles_after_contract` fabricates a two-class evidence.
-- **Two definitions of "residual".** Status: reported. `reports/schema.rs`
-  `ModuleEntry.residual` is documented as authoritative, not derivable from
-  `path`, while `spec::is_residual_module_path`, `spec_stats` and the CLI derive
-  it from the `residual/` prefix. Possibly intentional (authoring tree versus
-  materialized), but undocumented.
 
 ## CLI usability
 
 Open usability and scripting-safety findings from exercising the documented
 workflows against a real spec; resolved items are deleted. Corpus-specific
-paths and owner ids belong in the consuming repo.
+paths and source-unit IDs belong in the consuming repo.
 
 ### Planner CLI follow-ups
 
@@ -191,7 +194,7 @@ paths and owner ids belong in the consuming repo.
   rows are the only thing the caller wants.
 - **Concise explain mode.** Proposal/diagnostic structures on
   `describe` are already opt-in (`--include-proposals`), but there is
-  still no compact mode focused on: selected owner identity and source
+  still no compact mode focused on: selected source-unit IDentity and source
   span, atomic-group membership, matching proposal (if any), immediate
   constraining neighbors, and the exact reason the owner is not
   landable today.

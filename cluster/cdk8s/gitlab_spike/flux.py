@@ -18,6 +18,8 @@ from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 GITOPS_NAME = "gitlab-spike-gitops"
 GITOPS_DIR = f"{GENERATED_ROOT}/gitlab-spike/gitops"
+WORKSPACE_NAME = "crossplane-gitlab-spike"
+WORKSPACE_DIR = f"{GITOPS_DIR}/{WORKSPACE_NAME}"
 INTEGRATIONS_NAME = "gitlab-spike-integrations"
 INTEGRATIONS_DIR = f"{GENERATED_ROOT}/gitlab-spike/integrations"
 
@@ -97,6 +99,7 @@ def gitops(
     bootstrap: Kustomization,
     tofu_controller: Kustomization,
     forgejo: Kustomization,
+    workspace_prune: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -104,7 +107,7 @@ def gitops(
         directory,
         timeout="15m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(bootstrap, tofu_controller, forgejo),
+        depends_on=flux_kustomization_depends_on_many(bootstrap, tofu_controller, forgejo, workspace_prune),
     )
 
 

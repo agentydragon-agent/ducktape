@@ -190,6 +190,14 @@ rules:
       - list
       - watch
   - apiGroups:
+      - apiextensions.crossplane.io
+    resources:
+      - "*"
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - apiextensions.k8s.io
     resources:
       - customresourcedefinitions
@@ -359,6 +367,23 @@ rules:
       - list
       - watch
   - apiGroups:
+      - litellm.crossplane.io
+    resources:
+      - keys
+      - teams
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - litellm.m.crossplane.io
+    resources:
+      - "*"
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - metrics.k8s.io
     resources:
       - pods
@@ -400,9 +425,33 @@ rules:
       - list
       - watch
   - apiGroups:
+      - opentofu.m.upbound.io
+    resources:
+      - "*"
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - opentofu.upbound.io
     resources:
-      - workspaces
+      - "*"
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ops.crossplane.io
+    resources:
+      - "*"
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - pkg.crossplane.io
+    resources:
+      - "*"
     verbs:
       - get
       - list
@@ -421,6 +470,14 @@ rules:
       - clusters
       - backups
       - scheduledbackups
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - protection.crossplane.io
+    resources:
+      - "*"
     verbs:
       - get
       - list

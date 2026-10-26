@@ -3,7 +3,7 @@
 A `SandboxTemplate` with `vm` runs its Sandbox's runner in a NixOS guest under KubeVirt instead of
 in a Pod. The Sandbox Controller owns the lifecycle
 ([`SPEC.md` § VMs](../sandbox_controller/SPEC.md)); the guest is
-[`runner/vm.nix`](../runner/vm.nix) and its seed schema is [`sandboxes/guest_config.py`](../sandboxes/guest_config.py);
+[`runner/vm.nix`](../runner/vm.nix) and its shared configuration schema is [`runner/configuration.py`](../runner/configuration.py);
 the template is [`runner_vm.py`](../../cluster/cdk8s/agentplane/runner_vm.py) and the egress relay is
 [`launcher_relay.py`](../../cluster/cdk8s/agentplane/launcher_relay.py). The traffic diagram is in
 [`agentplane/README.md`](../README.md). Control is the runner's outbound stream
@@ -61,14 +61,19 @@ lost.
   mounted at `/run/agentplane/runner`, and the harness `PATH` lists its `bin` after the system
   profile. A runner or CLI release republishes only that small disk. The harnesses and tools are
   still in the guest image.
-- The deployed `runner-vm` template declares a Sandbox-owned `RawDiskImage` workspace with ext4.
-  Its claim survives stop/start and replacement of the VM object. The Pod runner uses a
-  Sandbox-owned `DirectoryTree` workspace. Custom VM templates may still declare generic
-  DataVolume disks; those remain VM-owned and are not managed workspace declarations. The guest
-  mounts its workspace disk with `autoFormat`: `systemd-makefs` creates the ext4 only when `blkid`
-  finds no filesystem or swap signature, so any other filesystem fails to mount instead of being
-  rewritten. A disk with data but no signature, or with only a partition table, is formatted too; the
-  layouts never produce one, and a zero-scan helper that refused it was dropped for that.
+- The deployed `runner-vm` template declares a Sandbox-owned `BlockFilesystem` workspace with ext4
+  directly on a block PVC. `RawDiskImage` remains supported for custom VM workspace claims backed
+  by a filesystem PVC. The workspace claim survives stop/start and replacement of the VM object.
+  The VM's separate state PVC remains a `DirectoryTree` on a `Filesystem` claim, attached through
+  virtiofs; staging puts both VM claims on `piraeus-ssd-2-autodiskful`. The Pod runner keeps its
+  Sandbox-owned `DirectoryTree` workspace and existing storage class. Fresh VM claims use the new
+  layout; changing the template does not convert retained image-file workspaces. Custom VM
+  templates may also declare generic DataVolume disks; those
+  remain VM-owned and are not managed workspace declarations. The guest mounts its workspace disk
+  with `autoFormat`: `systemd-makefs` creates the ext4 only when `blkid` finds no filesystem or
+  swap signature, so any other filesystem fails to mount instead of being rewritten. A disk with
+  data but no signature, or with only a partition table, is formatted too; the layouts never produce
+  one, and a zero-scan helper that refused it was dropped for that.
 - Stopping and starting a VM creates a new VMI on the same VM and disks. The VM supports neither live
   migration nor RAM suspension.
 - Commands reach a VM Sandbox only through the control stream. There is no guest exec path; `virt-launcher`
@@ -79,6 +84,24 @@ lost.
 - The guest root is small and replaceable; journals live on the state PVC and agent work on the
   workspace disk. The guest keeps a serial console (`ttyS0`) because a failed boot unit is otherwise
   invisible.
+
+## Fresh VM trial readiness
+
+Basic live acceptance passed on 2026-10-25 PDT against the deployed staging `runner-vm` template:
+both fresh 10 GiB claims bound on `piraeus-ssd-2-autodiskful`, with `Block` workspace and
+`Filesystem` state modes; the launcher became Ready; and the connected runner reported successful
+bootstrap for that incarnation. The bootstrap checked the workspace's ext4 filesystem and wrote,
+synced and read back markers in both state and workspace. LINSTOR nodes were online, with
+151–361 GiB free on eligible SSD pools and thin-pool metadata below 3% used.
+
+Raw-block lifecycle acceptance on RBE additionally covered suspend/resume, VM replacement,
+retained identities and teardown. Evidence: [raw-block lifecycle](https://app.buildbuddy.io/invocation/382077da-f6fa-42ab-b03f-40f8e2491084)
+and [two-harness suspend/resume](https://app.buildbuddy.io/invocation/a5c97980-39f1-4dc9-ae7d-7e49271d65f1).
+
+The operator authorized the next fresh VM trial with the complex live drills omitted: node loss,
+quorum/fencing, expansion, cross-node movement and recovery remain unqualified in the broader
+[Piraeus production plan](../../cluster/docs/plans/piraeus_production.md). This storage smoke check
+does not establish deployed cgroup OOM behavior or storage-service recovery guarantees.
 
 ## Guest resource controls
 
@@ -95,9 +118,9 @@ same-Sandbox processes from one another. The Runner's state-owner descriptor and
 protect storage ownership across Runner restart and ensure harness descendants are reaped; they do not
 make Runner internals or sibling Session stores confidential from code in the same Sandbox.
 
-The delegated cgroups below provide resource containment and teardown, not security isolation between
-a harness and its tool children. A native harness and the tools it starts share that harness's cgroup
-and resource budget. No separate per-tool budget or kill boundary is part of the current VM contract.
+The delegated cgroups below provide resource containment and teardown within one Sandbox principal.
+In isolated Codex mode, the exec-server and its descendants have a sibling budget separate from the
+app-server. Claude, local Codex mode, and app-server-owned helpers share their native harness budget.
 
 **Observed failure:** on 2026-10-19, Nix work in staging `public-coder-1` exhausted the 1536 MiB
 guest and the guest kernel killed its Codex harness. The guest console recorded
@@ -112,13 +135,39 @@ harness alive when its tools exceed their budget also requires a separate tool m
 The subsequent conversation-recovery failure is addressed separately in
 [PR #11091](https://github.com/agentydragon/ducktape/pull/11091).
 
-- The runner service is a systemd unit with `MemoryHigh`/`MemoryMax`, `CPUQuota` and `TasksMax`, and
-  delegates a subtree. The Go runner puts agent work under an aggregate cgroup and each
-  native harness process under its own, with memory, CPU, task and I/O limits and `memory.oom.group`.
-  Every Codex Session shares the one Codex app-server's.
-- When a harness subtree exceeds its memory budget, `memory.oom.group` kills that harness and its
-  descendants; the Runner remains outside that group and can continue answering RPCs. Acceptance of
-  the VM cgroup limits is still open.
+- The VM template and guest runner share the typed `GuestResources` policy. The template
+  takes its KubeVirt memory request and vCPU count from that object; an `ExecStartPre` reads the same
+  seed and applies the Runner systemd caps after the ConfigMap disk is mounted and before the Runner
+  starts. The staging template specifies:
+
+  | Scope               | Memory                                                                                  | CPU                              | PID limit | Block I/O limit                                          |
+  | ------------------- | --------------------------------------------------------------------------------------- | -------------------------------- | --------- | -------------------------------------------------------- |
+  | VM guest            | 8192 MiB (8,589,934,592 bytes), with a 1024 MiB (1,073,741,824 byte) OS reserve         | 1 vCPU                           | —         | —                                                        |
+  | Runner service      | `MemoryHigh` 6144 MiB (6,442,450,944 bytes), `MemoryMax` 7168 MiB (7,516,192,768 bytes) | 100,000 µs per 100,000 µs period | 2048      | —                                                        |
+  | Harness aggregate   | `memory.max` 2048 MiB (2,147,483,648 bytes)                                             | 100,000 µs per 100,000 µs period | 768       | read 50 MiB/s and 1000 IOPS; write 20 MiB/s and 500 IOPS |
+  | Native process leaf | `memory.max` 1536 MiB (1,610,612,736 bytes)                                             | 100,000 µs per 100,000 µs period | 512       | read 50 MiB/s and 1000 IOPS; write 20 MiB/s and 500 IOPS |
+
+  The sibling executor aggregate and its leaf each cap memory at 3072 MiB (3,221,225,472 bytes),
+  CPU at one vCPU and PIDs at 512, with the same I/O caps. Its optional seed budget selects isolated
+  tools; see [Codex executor isolation](../runner/docs/codex_executor.md) for lifecycle and scope.
+
+  Memory swap remains disabled. Aggregate and native-process cgroups use `memory.oom.group=0`,
+  so a cgroup OOM selects individual process victims. A tool can be killed while its harness or
+  exec-server survives; the kernel can also select the native leader. Leader exit still triggers
+  supervisor cleanup of all descendants. The supervisor records `memory.events` and `memory.peak` as JSON before it
+  removes the leaf; stale leaves are also recorded during startup cleanup. This keeps each harness's
+  kill boundary below the Runner.
+
+  The CI-active k3s VM scenario `test_codex_tool_oom_preserves_runner_and_app_server` runs a real
+  Codex shell command past the executor limit and asserts the kernel OOM counter increments once.
+  Codex receives exit 137, the native command item is `failed` with that exit code, and the turn
+  completes normally. The same Runner boot and app-server process/PID survive; a follow-up turn
+  executes successfully in the same executor leaf. The allocator raises its own `oom_score_adj`
+  to make selection of the tool deterministic. This covers the production Runner and pinned Codex
+  inside the test guest, independently of further guest slimming. It does not exercise the
+  production NixOS systemd caps, executor death/restart, or a breached outer service limit;
+  [fixture details and artifacts](../system_tests/k3s/README.md#vm-sandboxes) describe the scope.
+
 - [Tool memory isolation](harness_tool_memory_isolation.md) records optional research on putting
   tighter resource limits around a tool child. That would be a separate resource policy, not a change
   to the Sandbox security boundary.

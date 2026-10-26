@@ -64,15 +64,15 @@ impl ImportLocalRenameSink<'_> {
 pub(crate) fn cross_module_imports_for_plan(
     from_file: &str,
     imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
     sink: &mut ImportLocalRenameSink<'_>,
 ) -> Vec<(ModuleId, ModuleItem)> {
     imports_by_provider
         .into_iter()
         .filter_map(|(provider_index, bindings)| {
-            factorization
-                .analysis()
-                .logical_module(ModuleId(provider_index))
+            assignment_analysis
+                .inputs()
+                .planned_module(ModuleId(provider_index))
                 .map(|provider| {
                     let mut minted = BTreeMap::new();
                     let scope = sink.scope();
@@ -110,14 +110,14 @@ pub(crate) fn cross_module_imports_for_plan(
 pub(crate) fn phantom_side_effect_imports(
     from_file: &str,
     phantom_providers: BTreeSet<usize>,
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
 ) -> Vec<(ModuleId, ModuleItem)> {
     phantom_providers
         .into_iter()
         .filter_map(|provider_index| {
-            let provider = factorization
-                .analysis()
-                .logical_module(ModuleId(provider_index))?;
+            let provider = assignment_analysis
+                .inputs()
+                .planned_module(ModuleId(provider_index))?;
             let source = super::import_emit::relative_source(from_file, &provider.target_file);
             Some((
                 ModuleId(provider_index),
@@ -145,7 +145,7 @@ pub(crate) fn residual_entry_imports_for_moved_body(
         // — bail with the offending names so the bug stays
         // diagnosable.
         bail!(
-            "materialize_logical_modules: moved module {module_id} references residual entry binding(s) {} that are not exported by entry. This is an internal invariant violation in `auto_grown_residual_exports` — the export-growth pass should have surfaced these names before per-module emission. Report with the chunk's `owner_graph.json`.",
+            "materialize_logical_modules: moved module {module_id} references residual entry binding(s) {} that are not exported by entry. This is an internal invariant violation in `auto_grown_residual_exports` — the export-growth pass should have surfaced these names before per-module emission. Report with the chunk's `dependency_graph.json`.",
             missing_exports.into_iter().collect::<Vec<_>>().join(", "),
         );
     }

@@ -3,18 +3,21 @@
 //! Resolve source-backed and relational module claims against the same chunk
 //! sources and selector solver as `debundle run`.
 
+use source_identity::StatementId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-use analysis::{OwnerGraphReport, OwnerId, StatementKind};
+use analysis::{DependencyGraphReport, SourceUnitClass, SourceUnitId, StatementKind};
 use anyhow::{Context, Result, bail};
 use selector_outcome::{Candidate, Outcome, SelectorOutcome, Severity};
 pub use selector_resolve::ModuleNeutralReferenceMeaning;
-use selector_resolve::{EntityIndex, SourceMatchReferenceOrigin, SpecModule};
-use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchClaim};
+use selector_resolve::{
+    DirectBindingSourceEvidence, EntityIndex, SourceMatchReferenceOrigin, SpecModule,
+};
+use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec, SourceMatchClaim};
 use spec_resolution::{
     anonymous_statement, member_from_source_match, member_from_spec, parse_anonymous_selector,
     resolve_chunks, spec_module as build_spec_module,
@@ -33,7 +36,7 @@ pub struct SourceClaimSet<'a> {
     pub anonymous_selectors: &'a BTreeSet<AnonymousStatementSelector>,
 }
 
-/// What one module's resolved claims contribute to the owner assignment.
+/// What one module's resolved claims contribute to the source unit assignment.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResolvedSourceClaims {
     /// Chunk-top binding names claimed by source or relational selectors.
@@ -44,10 +47,34 @@ pub struct ResolvedSourceClaims {
     /// another member in the same module. `module_neutral_meaning` is from the
     /// canonical export classifier, not names re-parsed from selector text.
     pub local_member_references: BTreeSet<ResolvedLocalMemberReference>,
-    pub anonymous_owners: BTreeSet<OwnerId>,
-    /// The owner selected by each anonymous source selector. The key keeps
+    pub anonymous_source_units: BTreeSet<SourceUnitId>,
+    /// The source unit selected by each anonymous source selector. The key keeps
     /// authored selector entries addressable when a CLI edit moves claims.
-    pub anonymous_selector_owners: BTreeMap<AnonymousStatementSelector, OwnerId>,
+    pub anonymous_selector_source_units: BTreeMap<AnonymousStatementSelector, SourceUnitId>,
+    /// Exact source evidence for typed direct binding pins. The vector is
+    /// aligned with `SourceClaimSet::member_selectors`; untyped name pins do
+    /// not require source-kind evidence here.
+    pub direct_binding_checks: Vec<Option<DirectBindingSourceCheck>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectBindingSourceCheck {
+    pub expected_kind: BindingSourceKind,
+    pub resolution: DirectBindingSourceResolution,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DirectBindingSourceResolution {
+    Matched {
+        source_path: String,
+    },
+    Missing,
+    WrongKind {
+        observed: Vec<(String, DirectBindingSourceEvidence)>,
+    },
+    Ambiguous {
+        source_paths: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -67,21 +94,21 @@ pub enum ResolvedLocalMemberOrigin {
 }
 
 /// Resolve every module's claims together against each chunk source the
-/// owner graph names. An entity must resolve in exactly one source and match
+/// dependency graph names. An entity must resolve in exactly one source and match
 /// nowhere else; anything else is an error, since the caller (the CLI edit
-/// gate) must never silently treat a claimed owner as residual. As in `run`, a
+/// gate) must never silently treat a claimed source unit as residual. As in `run`, a
 /// claim unique only because other claims took its alternatives resolves, with
 /// a warning on stderr.
 pub fn resolve_source_claims(
-    graph: &OwnerGraphReport,
-    owner_graph_path: &Path,
+    graph: &DependencyGraphReport,
+    dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
     claim_sets: &[SourceClaimSet<'_>],
 ) -> Result<Vec<ResolvedSourceClaims>> {
     resolve_claim_sets(
         graph,
-        owner_graph_path,
+        dependency_graph_path,
         modules_root,
         source_root,
         claim_sets,
@@ -94,8 +121,8 @@ pub fn resolve_source_claims(
 /// [`resolve_source_claims`] for `claim_sets[index]` alone, resolved together
 /// with the others: an error in another set does not fail it.
 pub fn resolve_source_claims_of(
-    graph: &OwnerGraphReport,
-    owner_graph_path: &Path,
+    graph: &DependencyGraphReport,
+    dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
     claim_sets: &[SourceClaimSet<'_>],
@@ -103,7 +130,7 @@ pub fn resolve_source_claims_of(
 ) -> Result<ResolvedSourceClaims> {
     resolve_claim_sets(
         graph,
-        owner_graph_path,
+        dependency_graph_path,
         modules_root,
         source_root,
         claim_sets,
@@ -129,8 +156,8 @@ impl ResolvedClaimSet {
 }
 
 fn resolve_claim_sets(
-    graph: &OwnerGraphReport,
-    owner_graph_path: &Path,
+    graph: &DependencyGraphReport,
+    dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
     claim_sets: &[SourceClaimSet<'_>],
@@ -148,37 +175,145 @@ fn resolve_claim_sets(
                 && claims
                     .member_selectors
                     .iter()
-                    .all(|(_, selector)| matches!(selector, MemberSelectorSpec::Binding(_)))
+                    .all(|(_, selector)| {
+                        matches!(selector, MemberSelectorSpec::Binding(binding) if binding.kind.is_none())
+                    })
         })
     {
         return Ok(resolved);
+    }
+    let direct_binding_claims = !claim_sets.is_empty()
+        && claim_sets.iter().any(|claims| {
+            claims.member_selectors.iter().any(|(_, selector)| {
+                matches!(selector, MemberSelectorSpec::Binding(binding) if binding.kind.is_some())
+            })
+        })
+        && claim_sets.iter().all(|claims| {
+            claims.anonymous_selectors.is_empty()
+                && claims.source_matches.is_empty()
+                && claims
+                    .member_selectors
+                    .iter()
+                    .all(|(_, selector)| matches!(selector, MemberSelectorSpec::Binding(_)))
+        });
+    if direct_binding_claims {
+        let no_sources = "spec contains typed direct, source-backed, or relational binding claims, but \
+             dependency_graph.json has no source_location data; cannot resolve selectors";
+        return js_ast::with_swc_globals(|| {
+            with_source_modules(
+                graph,
+                dependency_graph_path,
+                modules_root,
+                source_root,
+                no_sources,
+                |parsed_by_source| {
+                    let needs_local_declarations = claim_sets.iter().any(|claims| {
+                        claims.member_selectors.iter().any(|(_, selector)| {
+                            matches!(selector, MemberSelectorSpec::Binding(binding)
+                                if binding.kind.is_some_and(|kind| kind != BindingSourceKind::ImportSpecifier))
+                        })
+                    });
+                    // Import-only claims need only the parsed import index. When
+                    // typed local claims are present, the canonical Chunk
+                    // declaration index supplies both local and import evidence.
+                    let chunks = needs_local_declarations.then(|| {
+                        parsed_by_source
+                            .iter()
+                            .map(|(source_path, parsed)| {
+                                selector_resolve::Chunk::analyze(source_path, &parsed.module)
+                            })
+                            .collect::<Vec<_>>()
+                    });
+                    let import_names_by_source = (!needs_local_declarations).then(|| {
+                        parsed_by_source
+                            .iter()
+                            .map(|(source_path, parsed)| {
+                                (
+                                    source_path.clone(),
+                                    selector_resolve::import_specifier_names(&parsed.module),
+                                )
+                            })
+                            .collect::<BTreeMap<_, _>>()
+                    });
+                    for (module_index, claims) in claim_sets.iter().enumerate() {
+                        let Ok(set) = &mut resolved[module_index] else {
+                            continue;
+                        };
+                        set.claims
+                            .direct_binding_checks
+                            .resize(claims.member_selectors.len(), None);
+                        for (member_index, (_, selector)) in
+                            claims.member_selectors.iter().enumerate()
+                        {
+                            let MemberSelectorSpec::Binding(binding) = selector else {
+                                continue;
+                            };
+                            let Some(expected_kind) = binding.kind else {
+                                continue;
+                            };
+                            let observations = if let Some(chunks) = &chunks {
+                                parsed_by_source
+                                    .iter()
+                                    .zip(chunks)
+                                    .map(|((source_path, _), chunk)| {
+                                        (
+                                            source_path.clone(),
+                                            chunk.direct_binding_source_evidence(binding),
+                                        )
+                                    })
+                                    .collect::<Vec<_>>()
+                            } else {
+                                let import_names_by_source = import_names_by_source
+                                    .as_ref()
+                                    .expect("import index exists without local declarations");
+                                import_names_by_source
+                                    .iter()
+                                    .map(|(source_path, import_names)| {
+                                        let evidence = if import_names.contains(&binding.name) {
+                                            DirectBindingSourceEvidence::Import
+                                        } else {
+                                            DirectBindingSourceEvidence::Missing
+                                        };
+                                        (source_path.clone(), evidence)
+                                    })
+                                    .collect::<Vec<_>>()
+                            };
+                            set.claims.direct_binding_checks[member_index] =
+                                Some(resolve_direct_binding_source(expected_kind, observations));
+                        }
+                    }
+                    Ok(resolved)
+                },
+            )
+        });
     }
     js_ast::with_swc_globals(|| {
         let modules = claim_sets
             .iter()
             .map(spec_module)
             .collect::<Result<Vec<_>>>()?;
-        let mut anonymous_owner_by_source_ordinal = HashMap::<(String, usize), OwnerId>::new();
+        let mut anonymous_source_unit_by_source_ordinal =
+            HashMap::<(String, usize), SourceUnitId>::new();
         for (idx, node) in graph.nodes.iter().enumerate() {
-            if let (true, Some(location)) =
-                (node.declared_bindings.is_empty(), &node.source_location)
+            if let (SourceUnitClass::AnonymousStatement, Some(location)) =
+                (node.class(), &node.source_location)
             {
-                anonymous_owner_by_source_ordinal.insert(
+                anonymous_source_unit_by_source_ordinal.insert(
                     (location.source_path.clone(), node.statement_ordinal.0),
-                    OwnerId(idx),
+                    SourceUnitId(idx),
                 );
             }
         }
         let no_sources = if has_anonymous {
-            "spec contains anonymous_statements, but owner_graph.json has no source_location \
+            "spec contains anonymous_statements, but dependency_graph.json has no source_location \
              data; cannot resolve anonymous selectors"
         } else {
-            "spec contains source-backed or relational binding claims, but owner_graph.json has \
-             no source_location data; cannot resolve selectors"
+            "spec contains typed direct, source-backed, or relational binding claims, but \
+             dependency_graph.json has no source_location data; cannot resolve selectors"
         };
         with_source_modules(
             graph,
-            owner_graph_path,
+            dependency_graph_path,
             modules_root,
             source_root,
             no_sources,
@@ -190,6 +325,35 @@ fn resolve_claim_sets(
                         selector_resolve::Chunk::analyze(source_path, &parsed.module)
                     })
                     .collect::<Vec<_>>();
+                for (module_index, claims) in claim_sets.iter().enumerate() {
+                    let Ok(set) = &mut resolved[module_index] else {
+                        continue;
+                    };
+                    set.claims
+                        .direct_binding_checks
+                        .resize(claims.member_selectors.len(), None);
+                    for (member_index, (_, selector)) in claims.member_selectors.iter().enumerate()
+                    {
+                        let MemberSelectorSpec::Binding(binding) = selector else {
+                            continue;
+                        };
+                        let Some(expected_kind) = binding.kind else {
+                            continue;
+                        };
+                        let observations = parsed_by_source
+                            .iter()
+                            .zip(&chunks)
+                            .map(|((source_path, _), chunk)| {
+                                (
+                                    source_path.clone(),
+                                    chunk.direct_binding_source_evidence(binding),
+                                )
+                            })
+                            .collect::<Vec<_>>();
+                        set.claims.direct_binding_checks[member_index] =
+                            Some(resolve_direct_binding_source(expected_kind, observations));
+                    }
+                }
                 let resolutions = resolve_chunks(
                     &chunks
                         .iter()
@@ -273,7 +437,7 @@ fn resolve_claim_sets(
                         &modules[module_index],
                         entity,
                         &outcomes,
-                        &anonymous_owner_by_source_ordinal,
+                        &anonymous_source_unit_by_source_ordinal,
                         set,
                     ) {
                         resolved[module_index] = Err(error);
@@ -286,13 +450,69 @@ fn resolve_claim_sets(
     Ok(resolved)
 }
 
+fn resolve_direct_binding_source(
+    expected_kind: BindingSourceKind,
+    observations: Vec<(String, DirectBindingSourceEvidence)>,
+) -> DirectBindingSourceCheck {
+    let found = observations
+        .iter()
+        .filter(|(_, evidence)| !matches!(evidence, DirectBindingSourceEvidence::Missing))
+        .collect::<Vec<_>>();
+    let matching_sources = found
+        .iter()
+        .filter(|(_, evidence)| direct_binding_evidence_matches(expected_kind, evidence))
+        .map(|(source_path, _)| (*source_path).clone())
+        .collect::<Vec<_>>();
+    let resolution = match (found.is_empty(), matching_sources.as_slice()) {
+        (true, _) => DirectBindingSourceResolution::Missing,
+        (false, [source_path]) => DirectBindingSourceResolution::Matched {
+            source_path: source_path.clone(),
+        },
+        (false, matches) if !matches.is_empty() => DirectBindingSourceResolution::Ambiguous {
+            source_paths: matches.to_vec(),
+        },
+        (false, _) => DirectBindingSourceResolution::WrongKind {
+            observed: found
+                .into_iter()
+                .map(|(source_path, evidence)| (source_path.clone(), evidence.clone()))
+                .collect(),
+        },
+    };
+    DirectBindingSourceCheck {
+        expected_kind,
+        resolution,
+    }
+}
+
+fn direct_binding_evidence_matches(
+    expected_kind: BindingSourceKind,
+    evidence: &DirectBindingSourceEvidence,
+) -> bool {
+    match (expected_kind, evidence) {
+        (BindingSourceKind::ImportSpecifier, DirectBindingSourceEvidence::Import) => true,
+        (BindingSourceKind::ImportSpecifier, _) => false,
+        (
+            _,
+            DirectBindingSourceEvidence::Local {
+                declaration_sites, ..
+            },
+        ) => {
+            let expected_statement_kind = selector_resolve::statement_kind_for_spec(expected_kind);
+            declaration_sites
+                .iter()
+                .any(|(_, statement_kind)| *statement_kind == expected_statement_kind)
+        }
+        (_, _) => false,
+    }
+}
+
 /// Adds what `entity` claims, given its outcome in every source, to `set`.
 fn claim_entity(
     claims: &SourceClaimSet<'_>,
     module: &SpecModule,
     entity: EntityIndex,
     outcomes: &[SourceOutcome<'_>],
-    anonymous_owner_by_source_ordinal: &HashMap<(String, usize), OwnerId>,
+    anonymous_source_unit_by_source_ordinal: &HashMap<(String, usize), SourceUnitId>,
     set: &mut ResolvedClaimSet,
 ) -> Result<()> {
     let (place, source) = one_place(claims, module, entity, outcomes)?;
@@ -301,20 +521,22 @@ fn claim_entity(
     }
     match entity {
         EntityIndex::AnonymousStatement(index) => {
-            let ordinal = js_ast::statement_ordinal_for_body_index(&source.module.body, place);
-            let owner = anonymous_owner_by_source_ordinal
+            let ordinal =
+                js_ast::source_unit_ordinal_for_statement(&source.module.body, StatementId(place))
+                    .0;
+            let source_unit = anonymous_source_unit_by_source_ordinal
                 .get(&(source.source_path.clone(), ordinal))
                 .copied()
                 .with_context(|| {
                     format!(
                         "module {} anonymous statement selector matched source {} statement \
-                         ordinal {ordinal}, but owner_graph.json has no anonymous owner at that \
+                         ordinal {ordinal}, but dependency_graph.json has no anonymous source_unit at that \
                          source position",
                         claims.module_path.display(),
                         source.source_path,
                     )
                 })?;
-            set.claims.anonymous_owners.insert(owner);
+            set.claims.anonymous_source_units.insert(source_unit);
             let selector = module
                 .anonymous_statements
                 .get(index)
@@ -322,7 +544,9 @@ fn claim_entity(
                 .selector
                 .selector()
                 .clone();
-            set.claims.anonymous_selector_owners.insert(selector, owner);
+            set.claims
+                .anonymous_selector_source_units
+                .insert(selector, source_unit);
         }
         EntityIndex::Member(index) => {
             let Outcome::Resolved {
@@ -418,10 +642,14 @@ fn one_place<'o, 's>(
     for source in outcomes {
         match &source.outcome.outcome {
             Outcome::NoMatch { .. } => {}
-            Outcome::Resolved { owner, binding, .. } => {
+            Outcome::Resolved {
+                body_index,
+                binding,
+                ..
+            } => {
                 places.push((
                     Candidate {
-                        owner: *owner,
+                        body_index: *body_index,
                         binding: binding.clone(),
                     },
                     source,
@@ -447,7 +675,7 @@ fn one_place<'o, 's>(
     }
     let at_least = if truncated { "at least " } else { "" };
     match (places.as_slice(), entity) {
-        ([(place, source)], _) if !truncated => Ok((place.owner, source)),
+        ([(place, source)], _) if !truncated => Ok((place.body_index, source)),
         ([], EntityIndex::Member(_)) => bail!(
             "module {module_path} {what} did not match any top-level declaration in the \
              chunk sources:\n{match_source}"
@@ -474,32 +702,32 @@ fn one_place<'o, 's>(
     }
 }
 
-pub fn addressable_anonymous_statement_owner_ids(
-    graph: &OwnerGraphReport,
-    owner_graph_path: &Path,
+pub fn addressable_anonymous_statement_source_unit_ids(
+    graph: &DependencyGraphReport,
+    dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
 ) -> Result<BTreeSet<String>> {
     js_ast::with_swc_globals(|| {
-        addressable_anonymous_statement_owner_ids_in_globals(
+        addressable_anonymous_statement_source_unit_ids_in_globals(
             graph,
-            owner_graph_path,
+            dependency_graph_path,
             modules_root,
             source_root,
         )
     })
 }
 
-fn addressable_anonymous_statement_owner_ids_in_globals(
-    graph: &OwnerGraphReport,
-    owner_graph_path: &Path,
+fn addressable_anonymous_statement_source_unit_ids_in_globals(
+    graph: &DependencyGraphReport,
+    dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
 ) -> Result<BTreeSet<String>> {
-    let mut owner_by_source_ordinal = HashMap::<(String, usize), &str>::new();
+    let mut source_unit_by_source_ordinal = HashMap::<(String, usize), &str>::new();
     let mut source_paths = BTreeSet::<String>::new();
     for node in &graph.nodes {
-        if !node.declared_bindings.is_empty()
+        if node.class() == SourceUnitClass::BindingDeclaration
             || matches!(
                 node.statement_kind,
                 StatementKind::Import | StatementKind::Export
@@ -509,7 +737,7 @@ fn addressable_anonymous_statement_owner_ids_in_globals(
         }
         if let Some(location) = &node.source_location {
             source_paths.insert(location.source_path.clone());
-            owner_by_source_ordinal.insert(
+            source_unit_by_source_ordinal.insert(
                 (location.source_path.clone(), node.statement_ordinal.0),
                 &node.id,
             );
@@ -518,16 +746,23 @@ fn addressable_anonymous_statement_owner_ids_in_globals(
 
     let mut out = BTreeSet::<String>::new();
     for source_path in &source_paths {
-        let parsed =
-            read_and_parse_source(source_path, source_root, owner_graph_path, modules_root)?;
+        let parsed = read_and_parse_source(
+            source_path,
+            source_root,
+            dependency_graph_path,
+            modules_root,
+        )?;
         let unique_body_indices = unique_body_indices(&parsed.module.body);
         for body_idx in unique_body_indices {
-            let statement_ordinal =
-                js_ast::statement_ordinal_for_body_index(&parsed.module.body, body_idx);
-            if let Some(owner_id) =
-                owner_by_source_ordinal.get(&(source_path.clone(), statement_ordinal))
+            let statement_ordinal = js_ast::source_unit_ordinal_for_statement(
+                &parsed.module.body,
+                StatementId(body_idx),
+            )
+            .0;
+            if let Some(source_unit_id) =
+                source_unit_by_source_ordinal.get(&(source_path.clone(), statement_ordinal))
             {
-                out.insert((*owner_id).to_string());
+                out.insert((*source_unit_id).to_string());
             }
         }
     }
@@ -592,8 +827,8 @@ fn unique_body_indices(body: &[ModuleItem]) -> BTreeSet<usize> {
 /// `body` the parsed modules. `no_sources` is the caller-specific error raised
 /// when the graph carries no `source_location` data.
 fn with_source_modules<R>(
-    graph: &OwnerGraphReport,
-    owner_graph_path: &Path,
+    graph: &DependencyGraphReport,
+    dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
     no_sources: &str,
@@ -614,7 +849,12 @@ fn with_source_modules<R>(
         .map(|source_path| {
             Ok((
                 source_path.clone(),
-                read_and_parse_source(source_path, source_root, owner_graph_path, modules_root)?,
+                read_and_parse_source(
+                    source_path,
+                    source_root,
+                    dependency_graph_path,
+                    modules_root,
+                )?,
             ))
         })
         .collect::<Result<_>>()?;
@@ -627,10 +867,15 @@ fn with_source_modules<R>(
 fn read_and_parse_source(
     source_path: &str,
     source_root: Option<&Path>,
-    owner_graph_path: &Path,
+    dependency_graph_path: &Path,
     modules_root: &Path,
 ) -> Result<js_ast::ParsedJsModule> {
-    let resolved = resolve_source_file(source_path, source_root, owner_graph_path, modules_root)?;
+    let resolved = resolve_source_file(
+        source_path,
+        source_root,
+        dependency_graph_path,
+        modules_root,
+    )?;
     let source = fs::read_to_string(&resolved)
         .with_context(|| format!("reading source file {}", resolved.display()))?;
     js_ast::parse_js_module(source_path, &source)
@@ -642,7 +887,7 @@ fn read_and_parse_source(
 pub fn resolve_source_file(
     source_path: &str,
     source_root: Option<&Path>,
-    owner_graph_path: &Path,
+    dependency_graph_path: &Path,
     modules_root: &Path,
 ) -> Result<PathBuf> {
     let mut candidates = Vec::new();
@@ -656,10 +901,10 @@ pub fn resolve_source_file(
         if let Ok(cwd) = env::current_dir() {
             candidates.push(cwd.join(source_path));
         }
-        push_relative_candidate(&mut candidates, owner_graph_path.parent(), source_path);
+        push_relative_candidate(&mut candidates, dependency_graph_path.parent(), source_path);
         push_relative_candidate(
             &mut candidates,
-            owner_graph_path.parent().and_then(Path::parent),
+            dependency_graph_path.parent().and_then(Path::parent),
             source_path,
         );
         push_relative_candidate(&mut candidates, modules_root.parent(), source_path);

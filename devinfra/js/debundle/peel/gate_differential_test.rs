@@ -3,7 +3,7 @@
 //! Compares the kernel's hot boolean merge gate
 //! (`QuotientGraph::merge_preserves_invariants`) against the
 //! **reference predicate**: `gate(c1, c2)` accepts iff
-//! `check_realizability_touching(owner_graph, post_assignment, M)` is
+//! `check_realizability_touching(dependency_graph, post_assignment, M)` is
 //! realizable, where `M` is the post-merge module and
 //! `post_assignment` is built by an independent reference projection
 //! over the kernel's public class-membership surface.
@@ -22,23 +22,20 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
-use analysis::{DepKind, OwnerGraphNodeReport, OwnerGraphReport};
+use analysis::{DepKind, DependencyGraphReport, SourceUnitReport};
 use gate::{
     LadderDecision, RealizabilityVerdict, SccRejection, check_realizability,
     check_realizability_touching,
 };
 use report_fixtures::{
-    active_owner, atomic_group_for, graph_of, owner_edge, promoted_owner_edge, residual_owner,
+    active_source_unit, atomic_group_for, dependency_edge, graph_of, promoted_dependency_edge,
+    residual_source_unit,
 };
 
 use crate::quotient::testing::{greedy_step, module_group};
 use crate::quotient::{ClassId, QuotientGraph, SpecModuleGroup, build_seed_quotient};
 
 const CAP_LINES: usize = 10_000;
-
-fn module_id(index: usize) -> ModuleId {
-    ModuleId(index)
-}
 
 // ---------------------------------------------------------------------
 // Independent reference projection.
@@ -54,13 +51,13 @@ fn module_id(index: usize) -> ModuleId {
 //     ascending `ClassId` order starting at 1.
 // ---------------------------------------------------------------------
 
-/// Owner ids the report marks residual-destined (the gate-residual
+/// SourceUnit ids the report marks residual-destined (the gate-residual
 /// pile), derived from the report's module table only.
-fn residual_owner_ids(report: &OwnerGraphReport) -> BTreeSet<String> {
+fn residual_source_unit_ids(report: &DependencyGraphReport) -> BTreeSet<String> {
     report
         .nodes
         .iter()
-        .filter(|node| report.is_residual(&node.destination))
+        .filter(|node| report.is_unassigned_or_entry(&node.destination))
         .map(|node| node.id.clone())
         .collect()
 }
@@ -72,7 +69,7 @@ fn class_maps_to_residual(
 ) -> bool {
     !q.class_is_pre_existing_module(class)
         && q.class_members(class)
-            .all(|owner| residual_ids.contains(q.owner_id(owner)))
+            .all(|source_unit| residual_ids.contains(q.source_unit_id(source_unit)))
 }
 
 /// Pre-state class → module map plus the next free module index.
@@ -84,9 +81,9 @@ fn reference_class_modules(
     let mut next = 1usize;
     for class in q.iter_classes() {
         let module = if class_maps_to_residual(q, residual_ids, class) {
-            module_id(0)
+            ModuleId(0)
         } else {
-            let module = module_id(next);
+            let module = ModuleId(next);
             next += 1;
             module
         };
@@ -112,48 +109,48 @@ fn reference_post_module(
     if !pre_existing
         && q.class_members(winner)
             .chain(q.class_members(loser))
-            .all(|owner| residual_ids.contains(q.owner_id(owner)))
+            .all(|source_unit| residual_ids.contains(q.source_unit_id(source_unit)))
     {
-        return module_id(0);
+        return ModuleId(0);
     }
     // Mixed or pre-existing: reuse the winner's non-residual slot,
     // else the loser's, else mint a fresh id (the gate-residual
     // promotion transition).
     [pre_modules[&winner], pre_modules[&loser]]
         .into_iter()
-        .find(|module| *module != module_id(0))
-        .unwrap_or(module_id(next_fresh))
+        .find(|module| *module != ModuleId(0))
+        .unwrap_or(ModuleId(next_fresh))
 }
 
-/// Owner-indexed assignment from a class → module map, with the
+/// SourceUnit-indexed assignment from a class → module map, with the
 /// optional speculative `(winner ∪ loser) → M` overlay applied.
 fn reference_assignment(
     q: &QuotientGraph,
     class_modules: &BTreeMap<ClassId, ModuleId>,
     overlay: Option<(ClassId, ClassId, ModuleId)>,
 ) -> ModuleAssignment {
-    let residual = module_id(0);
-    let mut of = vec![residual; q.owner_graph().num_nodes()];
+    let residual = ModuleId(0);
+    let mut of = vec![residual; q.dependency_graph().num_nodes()];
     for class in q.iter_classes() {
         let module = match overlay {
             Some((c1, c2, post)) if class == c1 || class == c2 => post,
             _ => class_modules[&class],
         };
-        for owner in q.class_members(class) {
-            of[owner.0] = module;
+        for source_unit in q.class_members(class) {
+            of[source_unit.0] = module;
         }
     }
-    ModuleAssignment::from_assignments(of, residual)
+    ModuleAssignment::from_assignments(of, analysis::EntryDestination::from_module_id(residual))
 }
 
 /// The index's committed verdict must agree with a from-scratch
 /// `check_realizability` over the reference projection of the same
 /// class membership: the index's maintained assignment stays in step
 /// with the class projection across committed mutations.
-fn assert_committed_verdict_matches_reference(report: &OwnerGraphReport, q: &QuotientGraph) {
-    let (class_modules, _) = reference_class_modules(q, &residual_owner_ids(report));
+fn assert_committed_verdict_matches_reference(report: &DependencyGraphReport, q: &QuotientGraph) {
+    let (class_modules, _) = reference_class_modules(q, &residual_source_unit_ids(report));
     let reference = check_realizability(
-        q.owner_graph(),
+        q.dependency_graph(),
         &reference_assignment(q, &class_modules, None),
     );
     assert_eq!(
@@ -241,7 +238,7 @@ fn assert_ladder_matches_reference(
 /// equal). Returns `None` when the non-cycle preconditions fail (the
 /// gate's `false` would not be a predicate decision).
 fn compare_gate_to_reference(
-    report: &OwnerGraphReport,
+    report: &DependencyGraphReport,
     q: &mut QuotientGraph,
     c1: ClassId,
     c2: ClassId,
@@ -249,12 +246,12 @@ fn compare_gate_to_reference(
     if !preconditions_pass(q, c1, c2) {
         return None;
     }
-    let residual_ids = residual_owner_ids(report);
+    let residual_ids = residual_source_unit_ids(report);
     let (pre_modules, next_fresh) = reference_class_modules(q, &residual_ids);
     let post_module = reference_post_module(q, &residual_ids, &pre_modules, next_fresh, c1, c2);
     let post_assignment = reference_assignment(q, &pre_modules, Some((c1, c2, post_module)));
-    let owner_graph = q.owner_graph();
-    let reference = check_realizability_touching(owner_graph, &post_assignment, post_module);
+    let dependency_graph = q.dependency_graph();
+    let reference = check_realizability_touching(dependency_graph, &post_assignment, post_module);
     let gate_accepts = q.merge_preserves_invariants(c1, c2);
     let ladder = q.ladder_decision_for_merge(c1, c2);
     assert_ladder_matches_reference(c1, c2, ladder, &reference);
@@ -278,14 +275,14 @@ fn compare_gate_to_reference(
 /// accepts and rejects).
 #[test]
 fn gate_matches_reference_on_clean_chain() {
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
-    let h = active_owner("owner:h", 2, &["BindingH"], 10, "ui/h");
-    let b = active_owner("owner:b", 3, &["BindingB"], 10, "ui/b");
+    let a = active_source_unit("unit:a", 1, &["BindingA"], 10, "ui/a");
+    let h = active_source_unit("unit:h", 2, &["BindingH"], 10, "ui/h");
+    let b = active_source_unit("unit:b", 3, &["BindingB"], 10, "ui/b");
     let report = graph_of(
         vec![a.clone(), h.clone(), b.clone()],
         vec![
-            owner_edge("edge:0", "owner:a", "owner:h", DepKind::EagerUse, true),
-            owner_edge("edge:1", "owner:h", "owner:b", DepKind::EagerUse, true),
+            dependency_edge("edge:0", "unit:a", "unit:h", DepKind::EagerUse, true),
+            dependency_edge("edge:1", "unit:h", "unit:b", DepKind::EagerUse, true),
         ],
         vec![
             atomic_group_for("atomic:0", &[&a]),
@@ -316,15 +313,15 @@ fn gate_matches_reference_on_clean_chain() {
 /// accepted (a class-level cycle check would reject it).
 #[test]
 fn gate_accepts_residual_pile_cycle_merge() {
-    let a = residual_owner("owner:a", 1, &["BindingA"], 5);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
-    let c = residual_owner("owner:c", 3, &["BindingC"], 5);
+    let a = residual_source_unit("unit:a", 1, &["BindingA"], 5);
+    let b = residual_source_unit("unit:b", 2, &["BindingB"], 5);
+    let c = residual_source_unit("unit:c", 3, &["BindingC"], 5);
     let report = graph_of(
         vec![a.clone(), b.clone(), c.clone()],
         vec![
-            owner_edge("edge:0", "owner:a", "owner:b", DepKind::EagerUse, true),
-            owner_edge("edge:1", "owner:b", "owner:c", DepKind::EagerUse, true),
-            owner_edge("edge:2", "owner:c", "owner:a", DepKind::EagerUse, true),
+            dependency_edge("edge:0", "unit:a", "unit:b", DepKind::EagerUse, true),
+            dependency_edge("edge:1", "unit:b", "unit:c", DepKind::EagerUse, true),
+            dependency_edge("edge:2", "unit:c", "unit:a", DepKind::EagerUse, true),
         ],
         vec![
             atomic_group_for("atomic:0", &[&a]),
@@ -334,8 +331,8 @@ fn gate_accepts_residual_pile_cycle_merge() {
         vec![],
     );
     let mut q = QuotientGraph::from_report(&report, CAP_LINES).unwrap();
-    let ca = q.class_of(q.owner_idx_of("owner:a").unwrap());
-    let cb = q.class_of(q.owner_idx_of("owner:b").unwrap());
+    let ca = q.class_of(q.source_unit_index_of("unit:a").unwrap());
+    let cb = q.class_of(q.source_unit_index_of("unit:b").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, ca, cb).unwrap();
     assert_eq!(
         ladder,
@@ -350,14 +347,14 @@ fn gate_accepts_residual_pile_cycle_merge() {
 /// gate is blind to it. Dependencies into entry are now rejected early.
 #[test]
 fn gate_rejects_pass2_tdz_merge() {
-    let x = active_owner("owner:x", 1, &["BindingX"], 10, "ui/x");
-    let r = residual_owner("owner:r", 2, &["BindingR"], 5);
-    let h = residual_owner("owner:h", 3, &["BindingH"], 5);
+    let x = active_source_unit("unit:x", 1, &["BindingX"], 10, "ui/x");
+    let r = residual_source_unit("unit:r", 2, &["BindingR"], 5);
+    let h = residual_source_unit("unit:h", 3, &["BindingH"], 5);
     let report = graph_of(
         vec![x.clone(), r.clone(), h.clone()],
         vec![
-            owner_edge("edge:0", "owner:x", "owner:r", DepKind::EagerUse, true),
-            owner_edge("edge:1", "owner:r", "owner:h", DepKind::LazyUse, false),
+            dependency_edge("edge:0", "unit:x", "unit:r", DepKind::EagerUse, true),
+            dependency_edge("edge:1", "unit:r", "unit:h", DepKind::LazyUse, false),
         ],
         vec![
             atomic_group_for("atomic:0", &[&x]),
@@ -370,7 +367,7 @@ fn gate_rejects_pass2_tdz_merge() {
     let (mut q, group_ids) =
         QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
     let cx = group_ids[0];
-    let ch = q.class_of(q.owner_idx_of("owner:h").unwrap());
+    let ch = q.class_of(q.source_unit_index_of("unit:h").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, cx, ch).unwrap();
     assert_eq!(
         ladder,
@@ -386,15 +383,15 @@ fn gate_rejects_pass2_tdz_merge() {
 /// gate, rejected by tier 1.
 #[test]
 fn gate_rejects_module_granularity_pass1_cycle() {
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
-    let r1 = residual_owner("owner:r1", 2, &["BindingR1"], 5);
-    let r2 = residual_owner("owner:r2", 3, &["BindingR2"], 5);
-    let b = residual_owner("owner:b", 4, &["BindingB"], 5);
+    let a = active_source_unit("unit:a", 1, &["BindingA"], 10, "ui/a");
+    let r1 = residual_source_unit("unit:r1", 2, &["BindingR1"], 5);
+    let r2 = residual_source_unit("unit:r2", 3, &["BindingR2"], 5);
+    let b = residual_source_unit("unit:b", 4, &["BindingB"], 5);
     let report = graph_of(
         vec![a.clone(), r1.clone(), r2.clone(), b.clone()],
         vec![
-            owner_edge("edge:0", "owner:a", "owner:r1", DepKind::EagerUse, true),
-            owner_edge("edge:1", "owner:r2", "owner:b", DepKind::EagerUse, true),
+            dependency_edge("edge:0", "unit:a", "unit:r1", DepKind::EagerUse, true),
+            dependency_edge("edge:1", "unit:r2", "unit:b", DepKind::EagerUse, true),
         ],
         vec![
             atomic_group_for("atomic:0", &[&a]),
@@ -408,7 +405,7 @@ fn gate_rejects_module_granularity_pass1_cycle() {
     let (mut q, group_ids) =
         QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
     let ca = group_ids[0];
-    let cb = q.class_of(q.owner_idx_of("owner:b").unwrap());
+    let cb = q.class_of(q.source_unit_index_of("unit:b").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, ca, cb).unwrap();
     assert_eq!(
         ladder,
@@ -422,15 +419,15 @@ fn gate_rejects_module_granularity_pass1_cycle() {
 /// makes it a cross-module rebind, which tier 1 rejects.
 #[test]
 fn gate_rejects_promotion_created_cross_rebind() {
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
-    let h = residual_owner("owner:h", 2, &["BindingH"], 5);
-    let r = residual_owner("owner:r", 3, &["BindingR"], 5);
+    let a = active_source_unit("unit:a", 1, &["BindingA"], 10, "ui/a");
+    let h = residual_source_unit("unit:h", 2, &["BindingH"], 5);
+    let r = residual_source_unit("unit:r", 3, &["BindingR"], 5);
     let report = graph_of(
         vec![a.clone(), h.clone(), r.clone()],
-        vec![owner_edge(
+        vec![dependency_edge(
             "edge:0",
-            "owner:h",
-            "owner:r",
+            "unit:h",
+            "unit:r",
             DepKind::EagerRebind,
             true,
         )],
@@ -445,7 +442,7 @@ fn gate_rejects_promotion_created_cross_rebind() {
     let (mut q, group_ids) =
         QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
     let ca = group_ids[0];
-    let ch = q.class_of(q.owner_idx_of("owner:h").unwrap());
+    let ch = q.class_of(q.source_unit_index_of("unit:h").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, ca, ch).unwrap();
     assert_eq!(
         ladder,
@@ -486,24 +483,24 @@ impl Rng {
 /// edges promoted at init), singleton atomic groups plus the
 /// occasional multi-member atomic group, and spec module groups derived from
 /// the active destinations.
-fn random_report(rng: &mut Rng) -> (OwnerGraphReport, Vec<SpecModuleGroup>) {
-    let owner_count = 4 + rng.below(5);
-    let nodes: Vec<OwnerGraphNodeReport> = (0..owner_count)
+fn random_report(rng: &mut Rng) -> (DependencyGraphReport, Vec<SpecModuleGroup>) {
+    let source_unit_count = 4 + rng.below(5);
+    let nodes: Vec<SourceUnitReport> = (0..source_unit_count)
         .map(|i| {
-            let id = format!("owner:{i}");
+            let id = format!("unit:{i}");
             let binding = format!("B{i}");
             if rng.chance(55) {
-                residual_owner(&id, i + 1, &[&binding], 5)
+                residual_source_unit(&id, i + 1, &[&binding], 5)
             } else {
                 let module = rng.below(3);
-                active_owner(&id, i + 1, &[&binding], 5, &format!("ui/m{module}"))
+                active_source_unit(&id, i + 1, &[&binding], 5, &format!("ui/m{module}"))
             }
         })
         .collect();
 
     let mut edges = Vec::new();
-    for source in 0..owner_count {
-        for target in 0..owner_count {
+    for source in 0..source_unit_count {
+        for target in 0..source_unit_count {
             if source == target || !rng.chance(22) {
                 continue;
             }
@@ -521,9 +518,9 @@ fn random_report(rng: &mut Rng) -> (OwnerGraphReport, Vec<SpecModuleGroup>) {
                 let callee = if rng.chance(50) {
                     source
                 } else {
-                    rng.below(owner_count)
+                    rng.below(source_unit_count)
                 };
-                promoted_owner_edge(
+                promoted_dependency_edge(
                     &id,
                     &nodes[source].id,
                     &nodes[target].id,
@@ -532,7 +529,7 @@ fn random_report(rng: &mut Rng) -> (OwnerGraphReport, Vec<SpecModuleGroup>) {
                     &nodes[callee].id,
                 )
             } else {
-                owner_edge(&id, &nodes[source].id, &nodes[target].id, kind, constrains)
+                dependency_edge(&id, &nodes[source].id, &nodes[target].id, kind, constrains)
             });
         }
     }
@@ -542,9 +539,9 @@ fn random_report(rng: &mut Rng) -> (OwnerGraphReport, Vec<SpecModuleGroup>) {
         .enumerate()
         .map(|(i, node)| atomic_group_for(&format!("atomic:{i}"), &[node]))
         .collect();
-    if owner_count >= 2 && rng.chance(40) {
-        let a = rng.below(owner_count);
-        let b = rng.below(owner_count);
+    if source_unit_count >= 2 && rng.chance(40) {
+        let a = rng.below(source_unit_count);
+        let b = rng.below(source_unit_count);
         if a != b {
             atomic_groups.push(atomic_group_for(
                 &format!("atomic:{}", atomic_groups.len()),
@@ -563,9 +560,9 @@ fn random_report(rng: &mut Rng) -> (OwnerGraphReport, Vec<SpecModuleGroup>) {
     }
     let spec: Vec<SpecModuleGroup> = by_module
         .into_iter()
-        .map(|(module_id, owner_ids)| SpecModuleGroup {
+        .map(|(module_id, source_unit_ids)| SpecModuleGroup {
             module_id,
-            owner_ids,
+            source_unit_ids,
         })
         .collect();
 

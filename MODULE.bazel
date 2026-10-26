@@ -631,12 +631,13 @@ apt.install(
 )
 
 # The k3s fixture's VM test guest (agentplane/system_tests/k3s/guest): busybox for its init, what the init
-# runs to format and hand over the workspace, and Git and `findmnt` (util-linux), which VM acceptance
-# scenarios run in Session setup.
+# runs to format and hand over the workspace, Bash for harness tools, and Git and `findmnt`
+# (util-linux), which VM acceptance scenarios run in Session setup.
 apt.install(
     dependency_set = "trixie_vm_guest",
     packages = [
         "acl",
+        "bash",
         "busybox-static",
         "e2fsprogs",
         "git",
@@ -914,6 +915,13 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
+# Restic's real CLI for offline workstation backup/restore regression tests.
+http_file(
+    name = "restic_linux_amd64",
+    sha256 = "f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c",
+    urls = ["https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64.bz2"],
+)
+
 # Test-only local Kubernetes control-plane binaries used by Agentplane's envtest fixture.
 # Pin the archive so tests do not download assets at runtime.
 http_archive(
@@ -1163,6 +1171,14 @@ http_file(
     downloaded_file_path = "pkg.crossplane.io_providers.yaml",
     sha256 = "205f660040a78a297190a1940a7d36d57a61bd27ac6e6286964734570cb4ed91",
     urls = ["https://raw.githubusercontent.com/crossplane/crossplane/v2.4.2/cluster/crds/pkg.crossplane.io_providers.yaml"],
+)
+
+# Match Crossplane core; runtime configuration supplies scoped Kubernetes clients.
+http_file(
+    name = "crossplane_deploymentruntimeconfig_crd",
+    downloaded_file_path = "pkg.crossplane.io_deploymentruntimeconfigs.yaml",
+    sha256 = "43ac451d27247eb141bd9c12bc9739ecf1e02fc0a42e19eb210edf2350b8d731",
+    urls = ["https://raw.githubusercontent.com/crossplane/crossplane/v2.4.2/cluster/crds/pkg.crossplane.io_deploymentruntimeconfigs.yaml"],
 )
 
 # Crossplane LiteLLM CRDs used by cluster/cdk8s/providers/litellm. The local package build applies

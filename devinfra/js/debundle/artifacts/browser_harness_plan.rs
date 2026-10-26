@@ -6,15 +6,17 @@ use std::path::{Path, PathBuf};
 use std::{cell::RefCell, rc::Rc};
 
 use anyhow::{Context, Result, bail};
-use artifact::{
-    ChunkBundle, ChunkId, chunk_id_for_js_path, get_chunk_entry_path, module_path_from_path,
-    normalize_module_path, path_from_module_path,
+use artifact::paths::{
+    chunk_id_for_js_path, module_path_from_path, normalize_module_path, path_from_module_path,
 };
+use artifact::{ChunkBundle, ChunkId, get_chunk_entry_path};
 use lol_html::{RewriteStrSettings, element, end, end_tag, html_content::ContentType, rewrite_str};
 use output_layout::DebundleOutputLayout;
 use serde::Deserialize;
 use spec::EmitBrowserHarnessConfig;
 use url::Url;
+
+const HARNESS_MONITOR_SCRIPT: &str = include_str!("harness_monitor.html");
 
 /// Concrete loading topology and asset destinations for an accepted browser tree.
 /// The containing validated program exposes this plan only by immutable reference.
@@ -140,7 +142,10 @@ fn runtime_js_href(artifact: &ChunkBundle, js_path: &str, app_root: &Path) -> Re
     let entry_path = app_root
         .join(chunk_name.split('/').collect::<PathBuf>())
         .join(entry_file.split('/').collect::<PathBuf>());
-    Ok(artifact::relative_module_specifier(app_root, &entry_path))
+    Ok(artifact::paths::relative_module_specifier(
+        app_root,
+        &entry_path,
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -191,12 +196,10 @@ fn rewrite_index_html(
     let comment = "Generated local harness: loads generated runtime JavaScript from the transformed output tree.";
     let state = Rc::new(RefCell::new(HtmlRewriteState::default()));
     let first_script_replacement = format!(
-        "{}\n    <script type=\"module\" src=\"./bootstrap.js\"></script>",
-        harness_monitor_script()
+        "{HARNESS_MONITOR_SCRIPT}\n    <script type=\"module\" src=\"./bootstrap.js\"></script>"
     );
     let body_script_insertion = format!(
-        "    {}\n    <script type=\"module\" src=\"./bootstrap.js\"></script>\n  ",
-        harness_monitor_script()
+        "    {HARNESS_MONITOR_SCRIPT}\n    <script type=\"module\" src=\"./bootstrap.js\"></script>\n  "
     );
     let bodyless_script_insertion = format!("{body_script_insertion}</body>");
     let should_insert_comment = !source_html.contains(comment);
@@ -398,8 +401,4 @@ fn normalize_url_path(url: &str) -> Result<String> {
     }
     let stripped = parsed.path().strip_prefix('/').unwrap_or(parsed.path());
     normalize_module_path(stripped)
-}
-
-fn harness_monitor_script() -> &'static str {
-    include_str!("harness_monitor.html")
 }

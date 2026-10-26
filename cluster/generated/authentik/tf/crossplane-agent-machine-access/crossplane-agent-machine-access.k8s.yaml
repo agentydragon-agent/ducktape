@@ -1,0 +1,1191 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opentofu-agent-machine-access
+  namespace: crossplane-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-agent-machine-access-impersonate
+  namespace: crossplane-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - opentofu-agent-machine-access
+    resources:
+      - serviceaccounts
+    verbs:
+      - impersonate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc8beb6631645229790b1b9861753667866af0d722f
+  namespace: crossplane-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-agent-machine-access-impersonate
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-opentofu
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-agent-machine-access
+  namespace: agents-infra
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - agentplane-grocy-sf-readonly
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-client-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-mail-client-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - kubectl-sandbox-client-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc854004631929e50b8082d470af4927361b821751f
+  namespace: agents-infra
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-agent-machine-access
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: opentofu-agent-machine-access
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-agent-machine-access
+  namespace: authentik
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - authentik-bootstrap
+    resources:
+      - secrets
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resourceNames:
+      - aiquota-oidc
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - grocy-mcp-oidc-sf
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - grocy-mcp-oidc-vallejo
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-console-oidc
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - tana-mcp-facade-oidc
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc854004631929e50b8082d470af4927361b821751f
+  namespace: authentik
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-agent-machine-access
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: opentofu-agent-machine-access
+    namespace: crossplane-system
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: crossplane-agent-machine-access
+spec:
+  backendFile: |
+    conn_str = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+    schema_name = "agent_machine_access"
+  configuration: |
+    terraform {
+      backend "pg" {}
+    }
+    provider "kubernetes" {
+      config_path = "/etc/opentofu/kubernetes/opentofu-agent-machine-access"
+    }
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: Workspace
+metadata:
+  annotations:
+    crossplane.io/external-name: default
+  name: agent-machine-access
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    env:
+      - name: PGPASSWORD
+        secretKeyRef:
+          key: password
+          name: tofu-state-db-credentials
+          namespace: flux-system
+    module: |+
+      # aiquota owns an OAuth authorization-code flow; it is not an Authentik proxy
+      # application. The app verifies the Authentik-issued identity token and gates
+      # its own frontend entry point and browser API with a signed session cookie.
+      resource "authentik_group" "aiquota_access" {
+        name  = "aiquota-access"
+        users = [data.authentik_user.agentydragon.pk]
+      }
+
+      resource "authentik_provider_oauth2" "aiquota" {
+        name                       = "aiquota"
+        client_id                  = "aiquota"
+        client_type                = "confidential"
+        authorization_flow         = data.authentik_flow.implicit_consent.id
+        invalidation_flow          = data.authentik_flow.invalidation.id
+        signing_key                = data.authentik_certificate_key_pair.self_signed.id
+        access_token_validity      = "hours=1"
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+        sub_mode                   = "user_id"
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+        ]
+        allowed_redirect_uris = [{
+          matching_mode     = "strict"
+          url               = "https://aiquota.allegedly.works/auth/callback"
+          redirect_uri_type = "authorization"
+        }]
+      }
+
+      resource "authentik_application" "aiquota" {
+        name              = "AI quota"
+        slug              = "aiquota"
+        protocol_provider = authentik_provider_oauth2.aiquota.id
+        meta_description  = "AI subscription quota dashboard"
+        meta_launch_url   = "https://aiquota.allegedly.works"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "aiquota_access" {
+        target = authentik_application.aiquota.uuid
+        group  = authentik_group.aiquota_access.id
+        order  = 0
+      }
+
+      resource "random_password" "aiquota_session" {
+        length  = 64
+        special = false
+      }
+
+      resource "kubernetes_secret" "aiquota_oidc_source" {
+        metadata {
+          name      = "aiquota-oidc"
+          namespace = "authentik"
+          annotations = {
+            description                                                     = "aiquota OAuth client credentials and browser session signing secret"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "cli-proxy-api"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "cli-proxy-api"
+          }
+        }
+        data = {
+          client_id      = authentik_provider_oauth2.aiquota.client_id
+          client_secret  = authentik_provider_oauth2.aiquota.client_secret
+          session_secret = random_password.aiquota_session.result
+        }
+      }
+
+      # --- Grocy SF household (proxy provider + MCP OAuth2) ---
+
+      resource "authentik_group" "grocy_sf_household" {
+        name = "SF household"
+        users = [
+          data.authentik_user.agentydragon.pk,
+          data.authentik_user.auragon.pk,
+        ]
+      }
+
+      resource "authentik_provider_proxy" "grocy_sf" {
+        name                  = "grocy-sf"
+        external_host         = "https://grocy-sf.allegedly.works"
+        internal_host         = "http://grocy.grocy-sf.svc.cluster.local:80"
+        mode                  = "proxy"
+        authentication_flow   = data.authentik_flow.authentication.id
+        authorization_flow    = data.authentik_flow.implicit_consent.id
+        invalidation_flow     = data.authentik_flow.invalidation.id
+        access_token_validity = "hours=24"
+
+        jwt_federation_providers = [
+          authentik_provider_oauth2.grocy_mcp_sf.id,
+        ]
+      }
+
+      resource "authentik_application" "grocy_sf" {
+        name              = "Grocy SF"
+        slug              = "grocy-sf"
+        protocol_provider = authentik_provider_proxy.grocy_sf.id
+        meta_description  = "Groceries & household management (SF)"
+        meta_icon         = "https://cdn.simpleicons.org/grocy"
+        meta_launch_url   = "https://grocy-sf.allegedly.works"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "grocy_sf_household" {
+        target = authentik_application.grocy_sf.uuid
+        group  = authentik_group.grocy_sf_household.id
+        order  = 0
+      }
+
+      moved {
+        from = authentik_policy_binding.grocy_sf_admins
+        to   = authentik_policy_binding.grocy_sf_household
+      }
+
+      resource "authentik_provider_oauth2" "grocy_mcp_sf" {
+        name               = "grocy-mcp-sf"
+        client_id          = "grocy-mcp-sf"
+        client_type        = "confidential"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        # agentplane-staging's grocy_sf MCP linkage holds an operator OAuth association here, and
+        # the Terraform provider's `minutes=10` default made it renew ~150x/day, any one of which can
+        # permanently wedge the association. Matches the `grocy-sf` proxy provider above.
+        access_token_validity = "hours=24"
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.offline_access.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://grocy-mcp-sf.allegedly.works/auth/callback"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "grocy_mcp_sf" {
+        name              = "Grocy MCP SF"
+        slug              = "grocy-mcp-sf"
+        protocol_provider = authentik_provider_oauth2.grocy_mcp_sf.id
+        meta_description  = "Auth-aware MCP server for Grocy SF household"
+        meta_launch_url   = "https://grocy-mcp-sf.allegedly.works"
+      }
+
+      resource "authentik_policy_binding" "grocy_mcp_sf_household" {
+        target = authentik_application.grocy_mcp_sf.uuid
+        group  = authentik_group.grocy_sf_household.id
+        order  = 0
+      }
+
+      moved {
+        from = authentik_policy_binding.grocy_mcp_sf_admins
+        to   = authentik_policy_binding.grocy_mcp_sf_household
+      }
+
+      # Canonical OIDC client credentials. Reflector mirrors this Secret into the
+      # household namespace after that namespace has been created.
+      resource "kubernetes_secret" "grocy_mcp_oidc_sf_source" {
+        metadata {
+          name      = "grocy-mcp-oidc-sf"
+          namespace = "authentik"
+          annotations = {
+            description                                                     = "Grocy SF MCP OIDC client credentials"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "grocy-sf"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "grocy-sf"
+          }
+        }
+
+        data = {
+          client_id             = authentik_provider_oauth2.grocy_mcp_sf.client_id
+          client_secret         = authentik_provider_oauth2.grocy_mcp_sf.client_secret
+          grocy_proxy_client_id = authentik_provider_proxy.grocy_sf.client_id
+        }
+      }
+
+      # --- agentplane read-only identity ---
+
+      # The account agentplane-staging's egress proxy presents to grocy-sf.allegedly.works for
+      # claude-ai sandboxes (`grocy-sf-readonly` in cluster/cdk8s/agentplane/egress_staging_credentials.py),
+      # as HTTP Basic with this app password. The outpost turns Basic credentials into a
+      # client_credentials grant against the grocy-sf proxy provider itself, so no token is minted
+      # or stored outside Authentik. Grocy creates the matching user on its first request with no
+      # permissions (DEFAULT_PERMISSIONS=none, cluster/cdk8s/grocy/app.py), and the egress proxy
+      # presents the password only on GETs to Grocy's read routes.
+      resource "authentik_user" "agentplane_grocy_sf_readonly" {
+        username = "agentplane-grocy-sf-readonly"
+        name     = "agentplane Grocy SF read-only service account"
+        type     = "service_account"
+        path     = "goauthentik.io/service-accounts"
+      }
+
+      resource "authentik_token" "agentplane_grocy_sf_readonly" {
+        identifier   = "agentplane-grocy-sf-readonly"
+        user         = authentik_user.agentplane_grocy_sf_readonly.id
+        intent       = "app_password"
+        expiring     = false
+        retrieve_key = true
+        description  = "HTTP Basic password agentplane-staging's egress proxy presents to the grocy-sf outpost"
+      }
+
+      resource "authentik_policy_binding" "grocy_sf_agentplane_readonly" {
+        target = authentik_application.grocy_sf.uuid
+        user   = authentik_user.agentplane_grocy_sf_readonly.id
+        order  = 1
+      }
+
+      resource "kubernetes_secret" "agentplane_grocy_sf_readonly" {
+        metadata {
+          name      = "agentplane-grocy-sf-readonly"
+          namespace = "agents-infra"
+          annotations = {
+            description = "App password of the agentplane-grocy-sf-readonly Authentik service account, copied by ESO into agentplane-staging's egress-credentials namespace"
+          }
+        }
+
+        data = {
+          password = authentik_token.agentplane_grocy_sf_readonly.key
+        }
+      }
+
+      # --- Grocy Vallejo household (proxy provider + MCP OAuth2) ---
+
+      # Membership group gating both the user-facing Grocy Vallejo webapp and its
+      # MCP. Replaces the previous "authentik Admins" binding so non-admins can be
+      # granted household access without elevating them to platform admins.
+      resource "authentik_group" "grocy_vallejo_household" {
+        name = "grocy-vallejo-household"
+        users = [
+          data.authentik_user.agentydragon.pk,
+          data.authentik_user.auragon.pk,
+        ]
+      }
+
+      resource "authentik_provider_proxy" "grocy_vallejo" {
+        name                  = "grocy-vallejo"
+        external_host         = "https://grocy-vallejo.allegedly.works"
+        internal_host         = "http://grocy.grocy-vallejo.svc.cluster.local:80"
+        mode                  = "proxy"
+        authentication_flow   = data.authentik_flow.authentication.id
+        authorization_flow    = data.authentik_flow.implicit_consent.id
+        invalidation_flow     = data.authentik_flow.invalidation.id
+        access_token_validity = "hours=24"
+
+        jwt_federation_providers = [authentik_provider_oauth2.grocy_mcp_vallejo.id]
+      }
+
+      resource "authentik_application" "grocy_vallejo" {
+        name              = "Grocy Vallejo"
+        slug              = "grocy-vallejo"
+        protocol_provider = authentik_provider_proxy.grocy_vallejo.id
+        meta_description  = "Groceries & household management (Vallejo)"
+        meta_icon         = "https://cdn.simpleicons.org/grocy"
+        meta_launch_url   = "https://grocy-vallejo.allegedly.works"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "grocy_vallejo_household" {
+        target = authentik_application.grocy_vallejo.uuid
+        group  = authentik_group.grocy_vallejo_household.id
+        order  = 0
+      }
+
+      moved {
+        from = authentik_policy_binding.grocy_vallejo_admins
+        to   = authentik_policy_binding.grocy_vallejo_household
+      }
+
+      resource "authentik_provider_oauth2" "grocy_mcp_vallejo" {
+        name               = "grocy-mcp-vallejo"
+        client_id          = "grocy-mcp-vallejo"
+        client_type        = "confidential"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.offline_access.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://grocy-mcp-vallejo.allegedly.works/auth/callback"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "grocy_mcp_vallejo" {
+        name              = "Grocy MCP Vallejo"
+        slug              = "grocy-mcp-vallejo"
+        protocol_provider = authentik_provider_oauth2.grocy_mcp_vallejo.id
+        meta_description  = "Auth-aware MCP server for Grocy Vallejo household"
+        meta_launch_url   = "https://grocy-mcp-vallejo.allegedly.works"
+      }
+
+      resource "authentik_policy_binding" "grocy_mcp_vallejo_household" {
+        target = authentik_application.grocy_mcp_vallejo.uuid
+        group  = authentik_group.grocy_vallejo_household.id
+        order  = 0
+      }
+
+      moved {
+        from = authentik_policy_binding.grocy_mcp_vallejo_admins
+        to   = authentik_policy_binding.grocy_mcp_vallejo_household
+      }
+
+      # Canonical OIDC client credentials. Reflector mirrors this Secret into the
+      # household namespace after that namespace has been created.
+      resource "kubernetes_secret" "grocy_mcp_oidc_vallejo_source" {
+        metadata {
+          name      = "grocy-mcp-oidc-vallejo"
+          namespace = "authentik"
+          annotations = {
+            description                                                     = "Grocy Vallejo MCP OIDC client credentials"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "grocy-vallejo"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "grocy-vallejo"
+          }
+        }
+
+        data = {
+          client_id             = authentik_provider_oauth2.grocy_mcp_vallejo.client_id
+          client_secret         = authentik_provider_oauth2.grocy_mcp_vallejo.client_secret
+          grocy_proxy_client_id = authentik_provider_proxy.grocy_vallejo.client_id
+        }
+      }
+
+
+      # --- Tana MCP facade (public OAuth facade, downstream static bearer) ---
+
+      # ============================================================================
+      # haku-console operator browser login (retires the forward-auth proxy outpost).
+      # This provider serves the operator session cookie; the Console MCP OAuth provider and endpoint
+      # have been retired.
+
+      resource "authentik_group" "haku_console_access" {
+        name  = "haku-console-access"
+        users = [data.authentik_user.agentydragon.pk]
+      }
+
+      resource "authentik_provider_oauth2" "haku_console_operator" {
+        name                  = "haku-console"
+        client_id             = "haku-console"
+        client_type           = "confidential"
+        authorization_flow    = data.authentik_flow.implicit_consent.id
+        invalidation_flow     = data.authentik_flow.invalidation.id
+        signing_key           = data.authentik_certificate_key_pair.self_signed.id
+        access_token_validity = "hours=1"
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+        # `sub` is the stable Authentik user id. Exact issuer + subject resolves to the same canonical
+        # Operator UUID; username remains display-only.
+        sub_mode = "user_id"
+
+        # offline_access so the operator login yields a refresh token the console persists + self-refreshes
+        # for hostexec; the resulting access token is the client assertion the per-host providers federate.
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.offline_access.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://haku.allegedly.works/auth/callback"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "haku_console_operator" {
+        name              = "Haku"
+        slug              = "haku-console"
+        protocol_provider = authentik_provider_oauth2.haku_console_operator.id
+        meta_description  = "Haku's interactive console (operator browser login)"
+        meta_launch_url   = "https://haku.allegedly.works"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "haku_console_operator_access" {
+        target = authentik_application.haku_console_operator.uuid
+        group  = authentik_group.haku_console_access.id
+        order  = 0
+      }
+
+      # Signs the operator session cookie (Starlette SessionMiddleware). Generated here so it is
+      # stable across replicas/restarts (an ephemeral per-pod key would invalidate every other
+      # replica's sessions). 64 alphanumerics; no special chars (env-var safe).
+      resource "random_password" "haku_console_operator_session" {
+        length  = 64
+        special = false
+      }
+
+      # Canonical OAuth client credentials and session key. Reflector mirrors this
+      # Secret into haku-console after that namespace has been created.
+      resource "kubernetes_secret" "haku_console_oidc_source" {
+        metadata {
+          name      = "haku-console-oidc"
+          namespace = "authentik"
+          annotations = {
+            description                                                     = "haku-console operator OAuth credentials and session secret"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-console"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-console"
+          }
+        }
+
+        data = {
+          operator_client_id      = authentik_provider_oauth2.haku_console_operator.client_id
+          operator_client_secret  = authentik_provider_oauth2.haku_console_operator.client_secret
+          operator_session_secret = random_password.haku_console_operator_session.result
+        }
+      }
+
+      # ============================================================================
+      # haku-k8s — Haku's k8s identity, reusing the shared client_credentials provider
+      # ============================================================================
+      # Haku mints its k8s JWT through the EXISTING
+      # kubectl-sandbox-client-credentials OAuth2 provider — no dedicated provider,
+      # so no kube-apiserver issuer entry and no cluster bootstrap. Instead of a
+      # provider-level client_secret, the authentik-jwt-rotation CronJob authenticates
+      # as the haku-k8s service account using that SA's app-password token paired with
+      # the shared provider's client_id. Authentik issues a token FOR the haku-k8s SA,
+      # and the provider's machine-only scope mapping emits groups: ["haku"] only for
+      # that exact username. Unknown machine principals receive no Kubernetes group.
+      # The apiserver maps that claim to oidc-ksbx-groups:haku — read-only access to
+      # the haku namespace, isolated from the sandbox group.
+      #
+      # Consumer: the authentik-jwt-rotation CronJob (cluster/cdk8s/authentik/jwt_rotation.py,
+      # haku-k8s entry). It exchanges client_id + username + app-password for a
+      # JWT and commits it SOPS-encrypted to secrets/haku-k8s-jwt.yaml.
+
+      # Service account whose identity the issued JWT carries. The machine scope
+      # mapping branches on this username (haku-k8s) to emit groups: ["haku"].
+      resource "authentik_user" "haku_k8s" {
+        username = "haku-k8s"
+        name     = "Haku k8s service account"
+        type     = "service_account"
+        path     = "goauthentik.io/service-accounts"
+      }
+
+      # App-password token for the haku-k8s SA, used as the password in the
+      # client_credentials username/password exchange against the shared provider's
+      # client_id.
+      resource "authentik_token" "haku_k8s" {
+        identifier   = "haku-k8s-client-credentials"
+        user         = authentik_user.haku_k8s.id
+        intent       = "app_password"
+        expiring     = false
+        retrieve_key = true
+        description  = "client_credentials app-password for Haku's k8s JWT rotation"
+      }
+
+      # Authorize the haku-k8s SA on the shared client_credentials application so the
+      # grant is accepted. Mirrors the existing per-user bindings on this app; uses a
+      # distinct order to avoid collisions.
+      resource "authentik_policy_binding" "haku_k8s_client_credentials" {
+        target = authentik_application.kubectl_sandbox_client_credentials.uuid
+        user   = authentik_user.haku_k8s.id
+        order  = 2
+      }
+
+      # K8s Secret holding the shared provider's client_id + the haku-k8s username
+      # and app-password. Lives in agents-infra (where the authentik-jwt-rotation
+      # CronJob runs) and is the only place this credential exists outside Authentik
+      # — the minted JWT lives SOPS-encrypted in secrets/haku-k8s-jwt.yaml.
+      resource "kubernetes_secret" "haku_client_credentials" {
+        metadata {
+          name      = "haku-client-credentials"
+          namespace = "agents-infra"
+          annotations = {
+            description = "client_id (shared kubectl-sandbox-client-credentials provider) + haku-k8s username/app-password, authenticating the haku-k8s service account so its JWT carries groups: [\"haku\"] (mounted by authentik-jwt-rotation CronJob)"
+          }
+        }
+
+        data = {
+          client_id = authentik_provider_oauth2.kubectl_sandbox_client_credentials.client_id
+          username  = authentik_user.haku_k8s.username
+          password  = authentik_token.haku_k8s.key
+        }
+      }
+
+      # ============================================================================
+      # haku-mail — Haku's mailbox identity for the Stalwart mailserver
+      # ============================================================================
+      # Stalwart (cluster/k8s/haku/mailbox) authenticates its `haku` mail account
+      # exclusively via OIDC bearer tokens: its directory points at this provider's
+      # issuer and pins requireAudience to this client_id, so kubectl-sandbox JWTs
+      # (or any other Authentik app's tokens) can never authenticate to the mailbox.
+      # The authentik-jwt-rotation CronJob mints the JWT for the existing `haku`
+      # service account (authentik_user.haku_grocy, haku-service-account.tf;
+      # preferred_username=haku is what Stalwart's claimUsername resolves to the
+      # pre-created `haku` principal) — see the haku-mail entry in
+      # cluster/cdk8s/authentik/jwt_rotation.py.
+
+      resource "authentik_provider_oauth2" "stalwart_haku" {
+        name        = "stalwart-haku"
+        client_id   = "stalwart-haku"
+        client_type = "confidential"
+
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        # 30d access-token validity — comfortable margin over the rotation CronJob's
+        # re-mint threshold, and Stalwart validates the JWT offline against this
+        # provider's JWKS on every request anyway.
+        access_token_validity = "days=30"
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+        ]
+
+        # client_credentials doesn't redirect, so allowed_redirect_uris is omitted.
+      }
+
+      resource "authentik_application" "stalwart_haku" {
+        name              = "Stalwart Haku mailbox"
+        slug              = "stalwart-haku"
+        protocol_provider = authentik_provider_oauth2.stalwart_haku.id
+        meta_description  = "Machine client_credentials provider for haku's mailbox (Stalwart OIDC directory)"
+      }
+
+      resource "authentik_policy_binding" "haku_stalwart" {
+        target = authentik_application.stalwart_haku.uuid
+        user   = authentik_user.haku_grocy.id
+        order  = 1
+      }
+
+      # client_id + haku username/app-password for the rotation CronJob (same SA and
+      # app-password as haku-grocy; the credential authenticates the SA, the provider
+      # determines the audience).
+      resource "kubernetes_secret" "haku_mail_client_credentials" {
+        metadata {
+          name      = "haku-mail-client-credentials"
+          namespace = "agents-infra"
+          annotations = {
+            description = "client_id (stalwart-haku OAuth2 provider) + haku username/app-password, authenticating the haku service account so the authentik-jwt-rotation CronJob can mint its mailbox JWT"
+          }
+        }
+
+        data = {
+          client_id = authentik_provider_oauth2.stalwart_haku.client_id
+          username  = authentik_user.haku_grocy.username
+          password  = authentik_token.haku_grocy.key
+        }
+      }
+
+      # ============================================================================
+      # haku-service-account — Haku's shared Authentik service-account identity
+      # ============================================================================
+      # The `haku` service account and its app-password token, which haku-mail.tf's
+      # stalwart-haku provider binds for Haku's mailbox identity. The `haku_grocy`
+      # resource names date from the SA's first use as Haku's read-only grocy-sf identity.
+
+      resource "authentik_user" "haku_grocy" {
+        username = "haku"
+        name     = "Haku service account"
+        # Required for the same SA's stalwart-haku provider (haku-mail.tf): Stalwart's
+        # OIDC directory requires the "email" scope/claim and rejects an empty one, so
+        # /jmap/session 403s without this even though the token authenticates fine.
+        email = "haku@allegedly.works"
+        type  = "service_account"
+        path  = "goauthentik.io/service-accounts"
+      }
+
+      # App-password token, used as the password in the client_credentials
+      # username/password exchange against haku-mail.tf's stalwart-haku provider.
+      resource "authentik_token" "haku_grocy" {
+        identifier   = "haku-grocy-client-credentials"
+        user         = authentik_user.haku_grocy.id
+        intent       = "app_password"
+        expiring     = false
+        retrieve_key = true
+        description  = "client_credentials app-password for Haku's service-account identity"
+      }
+
+      resource "authentik_group" "kubectl_sandbox_users" {
+        name  = "kubectl-sandbox-users"
+        users = [data.authentik_user.agentydragon.pk]
+      }
+
+      # ============================================================================
+      # kubectl-passthrough-mcp — Passthrough kubectl MCP (caller's own permissions)
+      # ============================================================================
+      # Forwards the caller's Authentik JWT directly to kube-apiserver. The caller
+      # gets their own OIDC permissions — not sandbox-scoped.
+
+      resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
+        name               = "kubectl-passthrough-mcp"
+        client_id          = "kubectl-passthrough-mcp"
+        client_type        = "public" # PKCE-based; no client secret distributed to users.
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        # Same reason as ha-mcp.tf: agentplane-staging's `kubernetes` link holds an operator OAuth
+        # association here, and the Terraform provider's `minutes=10` default renews it ~150x/day, any
+        # one of which can permanently wedge the association. This server was wedged that way on
+        # 2026-07-30.
+        access_token_validity = "hours=24"
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.offline_access.id,
+        ]
+
+        # - Claude Code: http://localhost:<port>/callback
+        # - kubernetes-mcp-server's built-in callback (browser testing): /oauth/callback
+        # - agentplane-staging's MCP linkage: /mcp-linkage/callback.
+        #   kubernetes-mcp-server has no DCR endpoint of its own (it just mirrors Authentik's
+        #   OAuth metadata, which has none either), so agentplane-staging is configured with this
+        #   provider's static client_id instead of registering dynamically — safe to share
+        #   across callers since this is a public/PKCE client and redirect_uri is validated
+        #   per request.
+        #
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "regex"
+            url               = "^http://localhost:[0-9]+/callback$"
+            redirect_uri_type = "authorization"
+          },
+          {
+            matching_mode     = "strict"
+            url               = "https://kubectl-passthrough-mcp.allegedly.works/oauth/callback"
+            redirect_uri_type = "authorization"
+          },
+          {
+            matching_mode     = "strict"
+            url               = "https://agentplane-staging.allegedly.works/mcp-linkage/callback"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      moved {
+        from = authentik_provider_oauth2.kubectl_sandbox_mcp
+        to   = authentik_provider_oauth2.kubectl_passthrough_mcp
+      }
+
+      resource "authentik_application" "kubectl_passthrough_mcp" {
+        name              = "kubectl-passthrough-mcp"
+        slug              = "kubectl-passthrough-mcp"
+        protocol_provider = authentik_provider_oauth2.kubectl_passthrough_mcp.id
+        meta_description  = "Passthrough kubectl MCP — forwards caller's JWT to kube-apiserver (caller's own permissions)"
+        meta_launch_url   = "https://kubectl-passthrough-mcp.allegedly.works"
+      }
+
+      moved {
+        from = authentik_application.kubectl_sandbox_mcp
+        to   = authentik_application.kubectl_passthrough_mcp
+      }
+
+      resource "authentik_policy_binding" "kubectl_passthrough_mcp_users" {
+        target = authentik_application.kubectl_passthrough_mcp.uuid
+        group  = authentik_group.kubectl_sandbox_users.id
+        order  = 0
+      }
+
+      moved {
+        from = authentik_policy_binding.kubectl_sandbox_mcp_users
+        to   = authentik_policy_binding.kubectl_passthrough_mcp_users
+      }
+
+      ## Passthrough server needs no Secret — the OAuth2 provider is public (PKCE)
+      ## so there's no client_secret, and passthrough mode doesn't do token exchange.
+      ## The previous kubernetes_secret.kubectl_passthrough_mcp was deleted above;
+      ## TF will destroy the state-only resource on the next apply.
+
+      # ============================================================================
+      # kubectl-sandbox-client-credentials — machine-to-machine OIDC for kubeconfig
+      # ============================================================================
+      # Non-interactive Authentik client_credentials provider for direct kubeconfig /
+      # kube-api-proxy access and kubectl-machine-mcp. The provider's machine-only
+      # scope mapping is an explicit principal-to-groups allowlist.
+      #
+      # Consumer: the authentik-jwt-rotation CronJob (cluster/cdk8s/authentik/jwt_rotation.py). It mints JWTs
+      # for Claude Code Web, Haku, and other explicitly configured machine
+      # principals.
+
+      ## Machine-client scope mapping for kubectl-sandbox-client-credentials.
+      ## This provider is trusted by kube-apiserver, so keep the effective groups as
+      ## an explicit allowlist of known machine principals. Unknown users get no
+      ## Kubernetes RBAC group instead of falling back to sandbox.
+      resource "authentik_property_mapping_provider_scope" "kubectl_machine_groups" {
+        name       = "kubectl-client-credentials-machine-groups"
+        scope_name = "groups"
+        expression = <<-EXPR
+          username = request.user.username
+          if username == "ak-kubectl-sandbox-client-credentials-client_credentials":
+              return {"groups": ["kubectl-sandbox-users"]}
+          if username == "haku-k8s":
+              return {"groups": ["haku"]}
+          return {"groups": []}
+        EXPR
+      }
+
+      resource "authentik_provider_oauth2" "kubectl_sandbox_client_credentials" {
+        name        = "kubectl-sandbox-client-credentials"
+        client_id   = "kubectl-sandbox-client-credentials"
+        client_type = "confidential" # client_secret auto-generated by Authentik
+
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        # 45d access-token validity — comfortable margin over the biweekly rotation
+        # CronJob. See cluster/cdk8s/authentik/jwt_rotation.py for cadence math.
+        access_token_validity = "hours=1080"
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          authentik_property_mapping_provider_scope.kubectl_machine_groups.id,
+        ]
+
+        # client_credentials doesn't redirect, so allowed_redirect_uris is omitted.
+      }
+
+      resource "authentik_application" "kubectl_sandbox_client_credentials" {
+        name              = "kubectl-sandbox-client-credentials"
+        slug              = "kubectl-sandbox-client-credentials"
+        protocol_provider = authentik_provider_oauth2.kubectl_sandbox_client_credentials.id
+        meta_description  = "Machine-to-machine kubectl access with explicit Authentik principal-to-group mapping"
+      }
+
+      # Authentik auto-creates an internal service account for client_credentials
+      # grants (username: ak-<slug>-client_credentials). The client_credentials flow
+      # authenticates as this user. Without a policy binding for it, the grant is
+      # rejected with invalid_grant.
+      data "authentik_user" "kubectl_sandbox_cc_auto" {
+        username = "ak-kubectl-sandbox-client-credentials-client_credentials"
+      }
+
+      resource "authentik_policy_binding" "kubectl_sandbox_cc_auto_user" {
+        target = authentik_application.kubectl_sandbox_client_credentials.uuid
+        user   = data.authentik_user.kubectl_sandbox_cc_auto.pk
+        order  = 0
+      }
+
+      # K8s Secret holding the client_id + client_secret. Lives in agents-infra
+      # (where the authentik-jwt-rotation CronJob runs) and is the only place this
+      # credential exists outside Authentik; consumers receive only minted JWTs.
+      resource "kubernetes_secret" "kubectl_sandbox_client_credentials" {
+        metadata {
+          name      = "kubectl-sandbox-client-credentials"
+          namespace = "agents-infra"
+          annotations = {
+            description = "client_id + client_secret for kubectl-sandbox-client-credentials OIDC provider (mounted by authentik-jwt-rotation CronJob)"
+          }
+        }
+
+        data = {
+          client_id     = authentik_provider_oauth2.kubectl_sandbox_client_credentials.client_id
+          client_secret = authentik_provider_oauth2.kubectl_sandbox_client_credentials.client_secret
+        }
+      }
+
+      terraform {
+        required_version = ">= 1.0"
+
+        required_providers {
+          authentik = {
+            source  = "goauthentik/authentik"
+            version = "~> 2026.8.0"
+          }
+          kubernetes = {
+            source  = "hashicorp/kubernetes"
+            version = "~> 3.0"
+          }
+          random = {
+            source  = "hashicorp/random"
+            version = "~> 3.9.0"
+          }
+        }
+      }
+
+      # Read the Authentik bootstrap token from the K8s Secret (populated by ESO from Vault).
+      data "kubernetes_secret" "authentik_bootstrap" {
+        metadata {
+          name      = "authentik-bootstrap"
+          namespace = "authentik"
+        }
+      }
+
+      provider "authentik" {
+        url   = "http://authentik-server.authentik.svc.cluster.local"
+        token = data.kubernetes_secret.authentik_bootstrap.data["AUTHENTIK_BOOTSTRAP_TOKEN"]
+      }
+
+      # --- Shared data sources ---
+
+      data "authentik_flow" "authentication" {
+        slug = "default-authentication-flow"
+      }
+
+      data "authentik_flow" "implicit_consent" {
+        slug = "default-provider-authorization-implicit-consent"
+      }
+
+      data "authentik_flow" "invalidation" {
+        slug = "default-provider-invalidation-flow"
+      }
+
+      # Signing key + OIDC scope property mappings for the grocy-mcp user-login
+      # OAuth2 provider below.
+      data "authentik_certificate_key_pair" "self_signed" {
+        name = "authentik Self-signed Certificate"
+      }
+
+      data "authentik_property_mapping_provider_scope" "openid" {
+        managed = "goauthentik.io/providers/oauth2/scope-openid"
+      }
+
+      data "authentik_property_mapping_provider_scope" "email" {
+        managed = "goauthentik.io/providers/oauth2/scope-email"
+      }
+
+      data "authentik_property_mapping_provider_scope" "profile" {
+        managed = "goauthentik.io/providers/oauth2/scope-profile"
+      }
+
+      data "authentik_property_mapping_provider_scope" "offline_access" {
+        managed = "goauthentik.io/providers/oauth2/scope-offline_access"
+      }
+
+      # --- Service Account ---
+      # Shared service account for Claude/OpenClaw sandbox agents.
+      # Used for Authentik API access (e.g., querying user info).
+
+
+
+      resource "authentik_provider_oauth2" "tana_mcp_facade" {
+        name               = "tana-mcp-facade"
+        client_id          = "tana-mcp-facade"
+        client_type        = "confidential"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.offline_access.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://tana-mcp-facade.allegedly.works/auth/callback"
+            redirect_uri_type = "authorization"
+          },
+        ]
+      }
+
+      resource "authentik_application" "tana_mcp_facade" {
+        name              = "Tana MCP Facade"
+        slug              = "tana-mcp-facade"
+        protocol_provider = authentik_provider_oauth2.tana_mcp_facade.id
+        meta_description  = "Public OAuth facade for the Tana MCP server"
+        meta_launch_url   = "https://tana-mcp-facade.allegedly.works"
+      }
+
+      resource "authentik_group" "tana_agentydragon_gmail_com_account_access" {
+        name  = "tana-agentydragon-gmail-com-account-access"
+        users = [data.authentik_user.agentydragon.pk]
+      }
+
+      resource "authentik_policy_binding" "tana_mcp_facade_account_access" {
+        target = authentik_application.tana_mcp_facade.uuid
+        group  = authentik_group.tana_agentydragon_gmail_com_account_access.id
+        order  = 0
+      }
+
+      # Canonical OIDC client credentials. Reflector mirrors this Secret into the
+      # facade namespace after that namespace has been created.
+      resource "kubernetes_secret" "tana_mcp_facade_oidc_source" {
+        metadata {
+          name      = "tana-mcp-facade-oidc"
+          namespace = "authentik"
+          annotations = {
+            description                                                     = "Tana MCP facade OIDC client credentials"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "tana-mcp"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "tana-mcp"
+          }
+        }
+
+        data = {
+          client_id     = authentik_provider_oauth2.tana_mcp_facade.client_id
+          client_secret = authentik_provider_oauth2.tana_mcp_facade.client_secret
+        }
+      }
+
+      # Shared Authentik users referenced by multiple access-control resources.
+      # Keep these independent of any one application so retiring an application
+      # cannot remove data sources still required by the rest of this module.
+      data "authentik_user" "agentydragon" {
+        username = "agentydragon"
+      }
+
+      data "authentik_user" "auragon" {
+        username = "auragon"
+      }
+
+    planArgs:
+      - -lock-timeout=5m
+    source: Inline
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+  providerConfigRef:
+    name: crossplane-agent-machine-access

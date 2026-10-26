@@ -20,7 +20,19 @@ impl GraphFixture {
         Self::run(source, modules, false)
     }
 
+    pub fn with_dependency(source: &str, dependency: &str, modules: &[(&str, &str)]) -> Self {
+        Self::run_chunks(
+            &[("main", source), ("dependency", dependency)],
+            modules,
+            true,
+        )
+    }
+
     fn run(source: &str, modules: &[(&str, &str)], succeeds: bool) -> Self {
+        Self::run_chunks(&[("main", source)], modules, succeeds)
+    }
+
+    fn run_chunks(chunks: &[(&str, &str)], modules: &[(&str, &str)], succeeds: bool) -> Self {
         let files: Vec<_> = modules
             .iter()
             .map(|(path, yaml)| (format!("main/{path}"), *yaml))
@@ -31,7 +43,7 @@ impl GraphFixture {
             .collect();
         let run = run_tree_fixture(
             &TreeFixture {
-                chunks: &[("main", source)],
+                chunks,
                 module_roots: &[("main", "main")],
                 modules: if files.is_empty() {
                     &[("main/empty.yaml", "members: []\n")]
@@ -52,7 +64,7 @@ impl GraphFixture {
             fs::remove_file(modules_root.join("empty.yaml")).unwrap();
         }
         Self {
-            graph: run.report_root.join("main/owner_graph.json"),
+            graph: run.report_root.join("main/dependency_graph.json"),
             modules: modules_root,
             run,
         }
@@ -213,7 +225,7 @@ impl GraphFixture {
         assert_node_output(&out_root.join("app/main/entry.js"), expected, "");
     }
 
-    pub fn owner_graph(&self) -> OwnerGraphReport {
+    pub fn dependency_graph(&self) -> DependencyGraphReport {
         read_json(&self.graph)
     }
 }

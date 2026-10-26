@@ -23,6 +23,7 @@ from agentplane.egress import sidecar_config
 from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.egress.resources import placeholder_of
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
+from agentplane.runner.configuration import CA_BUNDLE, JAVA_TRUST_STORE, KUBECONFIG
 from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
 from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
@@ -56,9 +57,9 @@ _SIDECAR_SETTINGS_PATH = "/etc/agentplane-egress-sidecar/settings.yaml"
 _EGRESS_CA_VOLUME_NAME = "egress-ca"
 _MITM_PROXY_URL = f"http://127.0.0.1:{SIDECAR_LISTEN_PORT}"
 _NO_PROXY_HOSTS = "127.0.0.1,localhost"
-_CA_BUNDLE_PATH = "/etc/ssl/certs/ca-certificates.crt"
-# Where Debian's JDKs keep the system trust store; Bazel's embedded JDK reads it only when told to.
-_JAVA_TRUST_STORE_PATH = "/etc/ssl/certs/java/cacerts"
+_CA_BUNDLE_PATH = str(CA_BUNDLE)
+# Shared Java trust store; Bazel's embedded JDK reads it only when told to.
+_JAVA_TRUST_STORE_PATH = JAVA_TRUST_STORE
 # Configuration files for the box's tools, one key each, mounted file by file.
 TOOL_CONFIG_MAP_NAME = "sandbox-tool-config"
 TOOL_CONFIG_READER_ROLE_NAME = "agentplane-sandbox-tool-config-reader"
@@ -69,7 +70,7 @@ _BAZELRC_KEY = "bazel.bazelrc"
 _KUBECONFIG_KEY = "kubeconfig"
 # Outside the home directory: a subPath mount creates its missing parents as root, and kubectl keeps
 # its cache under ~/.kube.
-_KUBECONFIG_PATH = "/etc/kubernetes/kubeconfig"
+_KUBECONFIG_PATH = KUBECONFIG
 PROXY_VAR_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
 NO_PROXY_VAR_NAMES = ("NO_PROXY", "no_proxy")
 CA_BUNDLE_VAR_NAMES = ("SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "REQUESTS_CA_BUNDLE")
@@ -89,11 +90,15 @@ def egress_env() -> list[k8s.EnvVar]:
     spellings, since clients disagree on case; NO_PROXY is loopback and nothing else. KUBECONFIG
     names the box's own identity at the API server, through the same proxy.
     """
+    return [*proxy_environment(), k8s.EnvVar(name="KUBECONFIG", value=_KUBECONFIG_PATH)]
+
+
+def proxy_environment() -> list[k8s.EnvVar]:
+    """Proxy routing and certificate trust for a workload that has no platform config mount."""
     return [
         *(k8s.EnvVar(name=name, value=_MITM_PROXY_URL) for name in PROXY_VAR_NAMES),
         *(k8s.EnvVar(name=name, value=_NO_PROXY_HOSTS) for name in NO_PROXY_VAR_NAMES),
         *(k8s.EnvVar(name=name, value=_CA_BUNDLE_PATH) for name in CA_BUNDLE_VAR_NAMES),
-        k8s.EnvVar(name="KUBECONFIG", value=_KUBECONFIG_PATH),
     ]
 
 
@@ -108,30 +113,46 @@ def workload_environment(env: Environment, existing: Sequence[k8s.EnvVar]) -> li
 
 
 def egress_proxy_mounts() -> list[k8s.VolumeMount]:
-    """The proxy CA bundle and kubeconfig needed by a sandbox workload."""
+    """The interception CA bundle needed to verify proxied requests."""
     return [
         k8s.VolumeMount(
             name=_EGRESS_CA_VOLUME_NAME, mount_path=_CA_BUNDLE_PATH, sub_path=egress.CA_BUNDLE_KEY, read_only=True
-        ),
-        k8s.VolumeMount(
-            name=_TOOL_CONFIG_VOLUME_NAME, mount_path=_KUBECONFIG_PATH, sub_path=_KUBECONFIG_KEY, read_only=True
-        ),
+        )
     ]
 
 
-def egress_mounts() -> list[k8s.VolumeMount]:
-    """The proxy mounts plus Java's trust store. subPath updates reach a new Pod on restart."""
-    ca, kubeconfig_mount = egress_proxy_mounts()
+def platform_control_mounts() -> list[k8s.VolumeMount]:
+    """The kubeconfig for workload tools which need this Sandbox's API identity."""
     return [
-        ca,
+        k8s.VolumeMount(
+            name=_TOOL_CONFIG_VOLUME_NAME, mount_path=_KUBECONFIG_PATH, sub_path=_KUBECONFIG_KEY, read_only=True
+        )
+    ]
+
+
+def proxy_trust_mounts() -> list[k8s.VolumeMount]:
+    """The proxy CA at system and Java trust paths, without the Sandbox API identity."""
+    return [
+        *egress_proxy_mounts(),
+        # System trust also covers tools which do not read CA environment variables.
+        k8s.VolumeMount(
+            name=_EGRESS_CA_VOLUME_NAME,
+            mount_path="/etc/ssl/certs/ca-certificates.crt",
+            sub_path=egress.CA_BUNDLE_KEY,
+            read_only=True,
+        ),
         k8s.VolumeMount(
             name=_EGRESS_CA_VOLUME_NAME,
             mount_path=_JAVA_TRUST_STORE_PATH,
             sub_path=egress.JAVA_TRUST_STORE_KEY,
             read_only=True,
         ),
-        kubeconfig_mount,
     ]
+
+
+def egress_mounts() -> list[k8s.VolumeMount]:
+    """Proxy trust and platform control mounts needed by sandbox tools."""
+    return [*proxy_trust_mounts(), *platform_control_mounts()]
 
 
 def bazelrc_mount() -> k8s.VolumeMount:
@@ -306,7 +327,7 @@ def pod_spec(
     env: Environment,
     *,
     workload: k8s.Container,
-    service_account_name: str | None,
+    additional_workloads: Sequence[k8s.Container] = (),
     sidecar_settings: SettingsFile,
     node_selector: Mapping[str, str] | None = None,
     workload_volumes: Sequence[k8s.Volume] = (),
@@ -317,8 +338,10 @@ def pod_spec(
     """`workload` beside the egress sidecar, as uid 1000, with no ServiceAccount token in the Pod: the
     projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
     several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
-    `service_account_name` is the template's own; whoever creates a box from it may replace it.
-    `sidecar_settings` is the sidecar's settings file (`add_sidecar_settings`), and `workload_volumes`
+    A box names no account of its own: whoever creates one from this shape sets the identity it runs
+    as (the Sandbox controller the Sandbox's own, the sandbox Actions the caller's).
+    `additional_workloads` are other workload containers, before the egress sidecar. `sidecar_settings`
+    is the sidecar's settings file (`add_sidecar_settings`), and `workload_volumes`
     are Pod volumes the workload mounts beyond the egress path's own. `node_selector` is the optional
     placement restriction for this template."""
     settings = sidecar_settings.pod_wiring(
@@ -329,6 +352,7 @@ def pod_spec(
         # `kubectl exec` and the sandbox Actions run a command in.
         containers=[
             workload,
+            *additional_workloads,
             _egress_sidecar(
                 env,
                 settings,
@@ -341,11 +365,14 @@ def pod_spec(
             ),
         ],
         automount_service_account_token=False,
+        # Container restarts create a fresh PID namespace for the isolated Codex executor.
+        restart_policy="Always",
         image_pull_secrets=(
             [k8s.LocalObjectReference(name=image_pull_secret_name)] if image_pull_secret_name is not None else None
         ),
         node_selector=dict(node_selector) if node_selector is not None else None,
-        service_account_name=service_account_name,
+        # Do not let a runner or command process inspect another container's processes.
+        share_process_namespace=False,
         termination_grace_period_seconds=60,
         security_context=k8s.PodSecurityContext(
             run_as_non_root=True,

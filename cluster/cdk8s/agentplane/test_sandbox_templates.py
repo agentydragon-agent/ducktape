@@ -1,17 +1,23 @@
-"""The runner SandboxTemplates: the shared environment, the egress sidecar's tokens and the platform
-routes each Sandbox's runner reaches its services over."""
+"""The runner SandboxTemplates: shared execution paths, the Codex executor, sidecar tokens and routes."""
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
+from dataclasses import replace
 from typing import Any, cast
 
+import pytest
 import pytest_bazel
 import yaml
+from cdk8s import Chart, Testing as Cdk8sTesting  # not collected by pytest
+from cdk8s_plus_34 import k8s
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
-from cluster.cdk8s.agentplane import staging
+from agentplane.runner.configuration import CONFIG_FILE, LAUNCH_FILE, Configuration
+from cluster.cdk8s.agentplane import sandbox_pod, staging
+from cluster.cdk8s.agentplane.runner_sandbox import RunnerTemplate
 from cluster.cdk8s.pod_policy import workload_kind
 
 
@@ -24,6 +30,33 @@ def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]
     return one(doc for doc in docs if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
+def _runner_configuration(docs: list[dict[str, Any]], pod: dict[str, Any]) -> dict[str, Any]:
+    volume = one(volume for volume in pod["volumes"] if volume["name"] == "runner-config")
+    config_map = _by_name(docs, "ConfigMap", volume["configMap"]["name"])
+    return cast(dict[str, Any], json.loads(config_map["data"]["runner.json"]))
+
+
+def _runner_pod(
+    *,
+    isolated_executor: bool,
+    runner_resources: k8s.ResourceRequirements,
+    executor_resources: k8s.ResourceRequirements | None,
+) -> dict[str, Any]:
+    app = Cdk8sTesting.app()
+    chart = Chart(app, "runner-template-test")
+    RunnerTemplate(
+        chart,
+        "runner-template",
+        replace(staging.ENV, isolated_codex_executor=isolated_executor),
+        name="test-runner",
+        image="example.invalid/runner",
+        runner_resources=runner_resources,
+        executor_resources=executor_resources,
+    )
+    template = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "SandboxTemplate")
+    return cast(dict[str, Any], template["spec"]["pod"]["spec"])
+
+
 def test_all_sandbox_workloads_use_shared_environment_defaults(staging_manifests: list[dict[str, Any]]) -> None:
     templates = _templates(staging_manifests)
     assert templates
@@ -33,14 +66,117 @@ def test_all_sandbox_workloads_use_shared_environment_defaults(staging_manifests
         assert timezone["value"] == "America/Los_Angeles"
 
     runner = next(template for template in templates if template["metadata"]["name"] == "runner")
-    args = runner["spec"]["pod"]["spec"]["containers"][0]["args"]
-    assert any(args[index : index + 2] == ["--harness-env", "TZ"] for index in range(len(args) - 1))
-    # TZDIR's value belongs to the sandbox image, but a harness child starts from only what the
-    # runner declares, so the runner has to name it: left off, the child reads every TZ as UTC.
-    assert any(args[index : index + 2] == ["--harness-inherit-env", "TZDIR"] for index in range(len(args) - 1))
+    config = Configuration.model_validate(_runner_configuration(staging_manifests, runner["spec"]["pod"]["spec"]))
+    assert "TZ" in config.harness_environment.inherit
+    assert "TZDIR" in config.harness_environment.inherit
 
 
-def test_ducktape_template_projects_buildbuddy_key_to_runner_only(staging_manifests: list[dict[str, Any]]) -> None:
+def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_manifests: list[dict[str, Any]]) -> None:
+    template = _by_name(staging_manifests, "SandboxTemplate", "runner")
+    pod = template["spec"]["pod"]["spec"]
+    containers = {container["name"]: container for container in pod["containers"]}
+    runner = containers["runner"]
+    executor = containers["codex-executor"]
+
+    assert pod["shareProcessNamespace"] is False
+    assert pod["restartPolicy"] == "Always"
+    assert pod["securityContext"]["runAsUser"] == pod["securityContext"]["runAsGroup"] == 1000
+    assert executor["securityContext"] == runner["securityContext"]
+    assert [container["name"] for container in pod["containers"]] == ["runner", "codex-executor", "egress-sidecar"]
+    assert runner["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
+    config = _runner_configuration(staging_manifests, pod)
+    assert config["environment"] == {
+        "kind": "pod",
+        "executor": {"url": "ws://127.0.0.1:4501", "socket": "/run/agentplane/executor/control.sock"},
+    }
+    assert executor["command"] == ["/run/agentplane/runner/bin/agentplane-runner"]
+    assert executor["args"] == [
+        "--executor-container",
+        "--socket",
+        "/run/agentplane/executor/control.sock",
+        "--listen",
+        "ws://127.0.0.1:4501",
+        "--binary",
+        "/bin/codex",
+    ]
+    health = [
+        "/run/agentplane/runner/bin/agentplane-runner",
+        "--executor-container-health",
+        "/run/agentplane/executor/control.sock",
+    ]
+    assert executor["livenessProbe"]["exec"]["command"] == health
+    assert executor["readinessProbe"]["exec"]["command"] == health
+    assert executor["image"] == runner["image"]
+    assert executor["workingDir"] == runner["workingDir"] == "/state"
+
+    runner_mounts = {mount["mountPath"]: mount["name"] for mount in runner["volumeMounts"]}
+    executor_mounts = {mount["mountPath"]: mount["name"] for mount in executor["volumeMounts"]}
+    for path in (
+        "/state",
+        "/state/workspaces",
+        "/run/agentplane/runner",
+        "/home/runner",
+        "/tmp",
+        "/run/agentplane/executor",
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/run/agentplane/trust/ca-certificates.crt",
+        "/run/agentplane/trust/ca-certificates.p12",
+        "/run/agentplane/config/kubeconfig",
+    ):
+        assert runner_mounts[path] == executor_mounts[path]
+    volumes = {volume["name"]: volume for volume in pod["volumes"]}
+    for path in ("/home/runner", "/tmp", "/run/agentplane/executor"):
+        assert "emptyDir" in volumes[runner_mounts[path]]
+
+    executor_mount_names = set(executor_mounts.values())
+    assert executor_mounts["/run/agentplane/config/kubeconfig"] == "tool-config"
+    assert executor_mount_names.isdisjoint({"egress-token", "runner-config", "buildbuddy-api-key"})
+    executor_env = {variable["name"]: variable["value"] for variable in executor["env"]}
+    runner_env = {variable["name"]: variable["value"] for variable in runner["env"]}
+    for name in (*sandbox_pod.PROXY_VAR_NAMES, *sandbox_pod.NO_PROXY_VAR_NAMES, *sandbox_pod.CA_BUNDLE_VAR_NAMES):
+        assert executor_env[name] == runner_env[name]
+    assert executor_env["KUBECONFIG"] == runner_env["KUBECONFIG"]
+    assert {"ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "LITELLM_URL"}.isdisjoint(executor_env)
+
+
+def test_runner_template_can_override_executor_resources_independently() -> None:
+    runner_resources = k8s.ResourceRequirements(
+        requests={"cpu": k8s.Quantity.from_string("17m"), "memory": k8s.Quantity.from_string("127Mi")},
+        limits={"cpu": k8s.Quantity.from_string("31m"), "memory": k8s.Quantity.from_string("251Mi")},
+    )
+    executor_resources = k8s.ResourceRequirements(
+        requests={"cpu": k8s.Quantity.from_string("43m"), "memory": k8s.Quantity.from_string("509Mi")},
+        limits={"cpu": k8s.Quantity.from_string("71m"), "memory": k8s.Quantity.from_string("997Mi")},
+    )
+    pod = _runner_pod(isolated_executor=True, runner_resources=runner_resources, executor_resources=executor_resources)
+    containers = {container["name"]: container for container in pod["containers"]}
+    assert containers["runner"]["resources"]["requests"] == {"cpu": "17m", "memory": "127Mi"}
+    assert containers["runner"]["resources"]["limits"] == {"cpu": "31m", "memory": "251Mi"}
+    assert containers["codex-executor"]["resources"]["requests"] == {"cpu": "43m", "memory": "509Mi"}
+    assert containers["codex-executor"]["resources"]["limits"] == {"cpu": "71m", "memory": "997Mi"}
+
+
+def test_environment_can_keep_codex_execution_inside_the_runner() -> None:
+    runner_resources = k8s.ResourceRequirements(
+        requests={"cpu": k8s.Quantity.from_string("17m"), "memory": k8s.Quantity.from_string("127Mi")},
+        limits={"cpu": k8s.Quantity.from_string("31m"), "memory": k8s.Quantity.from_string("251Mi")},
+    )
+    pod = _runner_pod(isolated_executor=False, runner_resources=runner_resources, executor_resources=None)
+    containers = {container["name"]: container for container in pod["containers"]}
+    assert "codex-executor" not in containers
+    assert containers["runner"]["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
+    assert {"home", "tmp", "codex-executor"}.isdisjoint({volume["name"] for volume in pod["volumes"]})
+
+
+def test_environment_cannot_configure_resources_for_a_disabled_executor() -> None:
+    resources = k8s.ResourceRequirements(limits={"memory": k8s.Quantity.from_string("1Gi")})
+    with pytest.raises(ValueError, match="executor_resources cannot be set"):
+        _runner_pod(isolated_executor=False, runner_resources=resources, executor_resources=resources)
+
+
+def test_ducktape_template_projects_buildbuddy_key_to_runner_and_executor(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
     templates = {doc["metadata"]["name"]: doc for doc in _templates(staging_manifests)}
     app_config = one(
         doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
@@ -62,9 +198,12 @@ def test_ducktape_template_projects_buildbuddy_key_to_runner_only(staging_manife
     assert copy["spec"]["secretStoreRef"]["name"] == "kubernetes-external-creds-secret-store"
     generic = templates["runner"]["spec"]
     specialized = deepcopy(templates["runner-ducktape"]["spec"])
-    container = specialized["pod"]["spec"]["containers"][0]
+    generic_containers = {container["name"]: container for container in generic["pod"]["spec"]["containers"]}
+    specialized_containers = {container["name"]: container for container in specialized["pod"]["spec"]["containers"]}
+    container = specialized_containers["runner"]
     assert container["image"] == "git.allegedly.works/ducktape-ci/runner-ducktape:unset"
-    container["image"] = generic["pod"]["spec"]["containers"][0]["image"]
+    container["image"] = generic_containers["runner"]["image"]
+    specialized_containers["codex-executor"]["image"] = generic_containers["codex-executor"]["image"]
     pod = specialized["pod"]["spec"]
     secret = next(volume for volume in pod["volumes"] if volume["name"] == "buildbuddy-api-key")
     assert secret["secret"] == {"secretName": "buildbuddy-api-key", "defaultMode": 288}
@@ -72,14 +211,24 @@ def test_ducktape_template_projects_buildbuddy_key_to_runner_only(staging_manife
     mount = next(mount for mount in container["volumeMounts"] if mount["name"] == "buildbuddy-api-key")
     assert mount == {"name": "buildbuddy-api-key", "mountPath": "/run/buildbuddy", "readOnly": True}
     container["volumeMounts"].remove(mount)
-    assert all(mount["name"] != "buildbuddy-api-key" for mount in pod["containers"][1]["volumeMounts"])
+    executor = specialized_containers["codex-executor"]
+    executor_mount = next(mount for mount in executor["volumeMounts"] if mount["name"] == "buildbuddy-api-key")
+    assert executor_mount == {"name": "buildbuddy-api-key", "mountPath": "/run/buildbuddy", "readOnly": True}
+    executor["volumeMounts"].remove(executor_mount)
+    sidecar = specialized_containers["egress-sidecar"]
+    assert all(mount["name"] != "buildbuddy-api-key" for mount in sidecar["volumeMounts"])
     key_file = next(env for env in container["env"] if env["name"] == "BBR_BUILDBUDDY_API_KEY_FILE")
     assert key_file["value"] == "/run/buildbuddy/api-key"
     container["env"].remove(key_file)
-    args = container["args"]
-    i = args.index("BBR_BUILDBUDDY_API_KEY_FILE")
-    assert args[i - 1] == "--harness-env"
-    del args[i - 1 : i + 1]
+    executor_key_file = next(env for env in executor["env"] if env["name"] == "BBR_BUILDBUDDY_API_KEY_FILE")
+    assert executor_key_file["value"] == "/run/buildbuddy/api-key"
+    executor["env"].remove(executor_key_file)
+    generic_config = _runner_configuration(staging_manifests, generic["pod"]["spec"])
+    specialized_config = _runner_configuration(staging_manifests, pod)
+    specialized_config["harness_environment"]["inherit"].remove("BBR_BUILDBUDDY_API_KEY_FILE")
+    assert specialized_config == generic_config
+    config_volume = one(volume for volume in pod["volumes"] if volume["name"] == "runner-config")
+    config_volume["configMap"]["name"] = "runner-config"
     settings = next(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
     generic_settings = next(
         volume for volume in generic["pod"]["spec"]["volumes"] if volume["name"] == "egress-sidecar-settings"
@@ -138,7 +287,7 @@ def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifest
     runner = next(template for template in _templates(staging_manifests) if template["metadata"]["name"] == "runner")
     volumes = runner["spec"]["pod"]["spec"]["volumes"]
     config_maps = {volume["name"]: volume["configMap"]["name"] for volume in volumes if "configMap" in volume}
-    assert config_maps["platform-instructions"] == "runner-platform-instructions"
+    assert config_maps["runner-config"] == "runner-config"
     assert config_maps["tool-config"] == "sandbox-tool-config"
 
 

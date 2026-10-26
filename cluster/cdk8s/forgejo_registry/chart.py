@@ -1,4 +1,4 @@
-"""The ducktape-ci Forgejo registry tenant: the `Terraform` CR provisioning it
+"""The ducktape-ci Forgejo registry tenant: the Inline Workspace provisioning it
 (tf/gitops/forgejo-images) and the Receiver that Forgejo's `package` webhook hits when
 CI pushes an image. The pull-credentials `ExternalSecret` every generated directory shares
 is in `pull_credentials`.
@@ -17,10 +17,10 @@ canonical registry credential.
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_receiver_crds.io.fluxcd.toolkit.notification import ReceiverSpecSecretRef, ReceiverSpecType
+from opentofu_workspace_crds.io.upbound.opentofu import WorkspaceSpecForProviderVars
 from pydantic import BaseModel, ConfigDict
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import namespaces, terraform
+from cluster.cdk8s import namespaces, opentofu, terraform
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.flux_image_automation_ghcr.image_automation import AUTOMATION_NAME
@@ -40,7 +40,7 @@ WEBHOOK_TOKEN_SECRET = "webhook-token"
 
 
 class ForgejoImagesVars(BaseModel):
-    """The inputs of tf/gitops/forgejo-images; `forgejo_url` keeps its variables.tf default."""
+    """Inputs of tf/gitops/forgejo-images; forgejo_url keeps its HCL default."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -50,7 +50,44 @@ class ForgejoImagesVars(BaseModel):
     webhook_token_secret: str
 
 
-def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
+WORKSPACE_NAME = "crossplane-forgejo-images"
+WORKSPACE_DIR = f"{OUTPUT_DIR}/{WORKSPACE_NAME}"
+KUBERNETES_IDENTITY = "opentofu-forgejo-images"
+
+
+def workspace_chart(app: App) -> Chart:
+    chart = Chart(app, WORKSPACE_NAME, disable_resource_name_hashes=True)
+    identity = opentofu.kubernetes_service_account(chart, KUBERNETES_IDENTITY)
+    for namespace, names in (
+        ("forgejo", ["forgejo-admin-password"]),
+        (NAME, ["forgejo-images-creds", WEBHOOK_TOKEN_SECRET]),
+    ):
+        opentofu.secret_access(chart, f"{namespace}-secrets", identity=identity, namespace=namespace, read=names)
+    opentofu.gitops_workspace(
+        chart,
+        "workspace",
+        name=NAME,
+        provider_config_name=WORKSPACE_NAME,
+        schema=terraform.gitops_state_schema(NAME),
+        directory=f"tf/gitops/{NAME}",
+        management_policies=["Observe", "Create", "Update"],
+        kubernetes_identity=KUBERNETES_IDENTITY,
+        variables=[
+            WorkspaceSpecForProviderVars(key=key, value=value)
+            for key, value in ForgejoImagesVars(
+                webhook_host=WEBHOOK_HOST,
+                receiver_name=RECEIVER_NAME,
+                receiver_namespace=NAME,
+                webhook_token_secret=WEBHOOK_TOKEN_SECRET,
+            )
+            .model_dump()
+            .items()
+        ],
+    )
+    return chart
+
+
+def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     namespaces.namespace(
         chart,
@@ -63,17 +100,6 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
                 " (CI-pushed in-cluster images) and its provisioning Terraform."
             )
         },
-    )
-    terraform.gitops_terraform(
-        chart,
-        "terraform",
-        module=module,
-        variables=ForgejoImagesVars(
-            webhook_host=WEBHOOK_HOST,
-            receiver_name=RECEIVER_NAME,
-            receiver_namespace=NAME,
-            webhook_token_secret=WEBHOOK_TOKEN_SECRET,
-        ),
     )
     # Flux's own copy, for the image-automation ImageRepositories that scan the registry.
     forgejo_images_creds_external_secret(chart, "flux-system-creds", namespace="flux-system")
@@ -115,7 +141,7 @@ def forgejo_images(
         description=(
             "ducktape-ci Forgejo registry tenant — shared credential (read by "
             "consumers, including flux-system, via per-namespace ExternalSecrets "
-            "against kubernetes-forgejo-images-secret-store) + Terraform that "
+            "against kubernetes-forgejo-images-secret-store) + Crossplane Workspace that "
             "provisions the Forgejo user."
         ),
     )

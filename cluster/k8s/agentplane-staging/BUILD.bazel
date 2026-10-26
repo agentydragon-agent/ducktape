@@ -10,3 +10,9 @@ filegroup(
         "//cluster/validation:__pkg__",
     ],
 )
+
+filegroup(
+    name = "image_pins",
+    srcs = glob(["image-pins/**"]),
+    visibility = ["//cluster/validation:__pkg__"],
+)

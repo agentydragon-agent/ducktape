@@ -2,40 +2,42 @@
 //! Requested whole-statement moves are checked against that assignment before
 //! becoming emission instructions; binding destinations are read from source units.
 
+use source_identity::{SourceUnitOrdinal, StatementId};
 use std::collections::{BTreeMap, HashMap};
 
-use analysis::{BindingKind, ModuleId};
+use analysis::{BindingKind, ChunkId, ModuleId, SourceUnitClass};
 use anyhow::{Context, Result, bail, ensure};
 use gate::{AssignmentAnalysis, ValidatedAssignment};
-use js_ast::body_indices_for_statement_ordinals;
+use js_ast::statements_for_source_unit_ordinals;
 use swc_ecma_ast::{Id, ModuleItem};
 
 /// Immutable placement instructions tied to the assignment that produced them.
 /// Only projection from a validated assignment constructs this type.
 pub(super) struct EmissionPlacement<'a> {
-    factorization: &'a AssignmentAnalysis,
+    assignment_analysis: &'a AssignmentAnalysis,
     bindings: HashMap<Id, usize>,
-    statements: BTreeMap<usize, usize>,
+    statements: BTreeMap<StatementId, usize>,
 }
 
 impl<'a> EmissionPlacement<'a> {
     pub(super) fn from_validated(
         validated: &'a ValidatedAssignment<'_>,
+        chunk_identity: ChunkId,
         body: &[ModuleItem],
         module_count: usize,
-        requested_statements: &BTreeMap<usize, usize>,
+        requested_statements: &BTreeMap<StatementId, usize>,
     ) -> Result<Self> {
-        let factorization = validated.factorization();
-        let graph = factorization.analysis().owner_graph();
-        let assignment = factorization.assignment();
-        let residual = assignment.residual();
-        let ordinals: Vec<usize> = graph
+        let assignment_analysis = validated.assignment_analysis();
+        let graph = assignment_analysis.inputs().dependency_graph();
+        let assignment = assignment_analysis.assignment();
+        let residual = assignment.entry_destination().module_id();
+        let ordinals: Vec<SourceUnitOrdinal> = graph
             .iter_nodes()
-            .map(|unit| unit.statement_ordinal.0)
+            .map(|unit| unit.statement_ordinal)
             .collect();
-        let body_indices = body_indices_for_statement_ordinals(body, &ordinals);
+        let body_indices = statements_for_source_unit_ordinals(body, &ordinals);
         let mut binding_destinations = HashMap::<Id, ModuleId>::new();
-        let mut statement_destinations = BTreeMap::<usize, ModuleId>::new();
+        let mut statement_destinations = BTreeMap::<StatementId, ModuleId>::new();
         for (unit, body_index) in graph.iter_nodes().zip(body_indices) {
             let body_index = body_index.with_context(|| {
                 format!(
@@ -66,7 +68,8 @@ impl<'a> EmissionPlacement<'a> {
                         "reconstruction: whole-statement claim at body index {body_index} spans differently assigned source units"
                     );
                 }
-            } else if unit.declared.is_empty() && destination != residual {
+            } else if unit.class() == SourceUnitClass::AnonymousStatement && destination != residual
+            {
                 bail!(
                     "reconstruction: source unit {} targets module {} without a whole-statement plan",
                     unit.id.0,
@@ -76,7 +79,10 @@ impl<'a> EmissionPlacement<'a> {
         }
         // Import construction reads this catalogue too. Prove its binding
         // destinations agree with syntax placement, including shared var sites.
-        for (binding, kind) in factorization.analysis().bindings() {
+        let local_bindings = assignment_analysis
+            .inputs()
+            .local_bindings(chunk_identity)?;
+        for (binding, kind) in local_bindings.as_map() {
             if let BindingKind::Owned { module } = kind {
                 ensure!(
                     binding_destinations.get(binding) == Some(module),
@@ -102,19 +108,19 @@ impl<'a> EmissionPlacement<'a> {
             .map(|(binding, destination)| (binding, destination.0))
             .collect();
         Ok(Self {
-            factorization,
+            assignment_analysis,
             bindings,
             statements,
         })
     }
 
-    pub(super) fn factorization(&self) -> &AssignmentAnalysis {
-        self.factorization
+    pub(super) fn assignment_analysis(&self) -> &AssignmentAnalysis {
+        self.assignment_analysis
     }
     pub(super) fn bindings(&self) -> &HashMap<Id, usize> {
         &self.bindings
     }
-    pub(super) fn statements(&self) -> &BTreeMap<usize, usize> {
+    pub(super) fn statements(&self) -> &BTreeMap<StatementId, usize> {
         &self.statements
     }
 }

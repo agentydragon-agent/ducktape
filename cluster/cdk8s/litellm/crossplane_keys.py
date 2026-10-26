@@ -376,11 +376,7 @@ def chart(app: App) -> Chart:
 
 
 def resources(
-    chart: Chart,
-    directory: RenderedDirectory,
-    provider: Kustomization,
-    litellm: Kustomization,
-    tofu_handoff: Kustomization,
+    chart: Chart, directory: RenderedDirectory, provider: Kustomization, litellm: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -388,8 +384,6 @@ def resources(
         directory,
         timeout="20m",
         wait=True,
-        depends_on=flux_kustomization_depends_on_many(provider, litellm, tofu_handoff),
-        description=(
-            "Own LiteLLM teams and virtual keys in Crossplane after the provider, proxy, and Tofu handoff are ready."
-        ),
+        depends_on=flux_kustomization_depends_on_many(provider, litellm),
+        description=("Own LiteLLM teams and virtual keys in Crossplane after the provider and proxy are ready."),
     )

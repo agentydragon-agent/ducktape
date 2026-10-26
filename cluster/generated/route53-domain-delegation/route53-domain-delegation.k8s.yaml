@@ -41,11 +41,74 @@ spec:
           key: AWS_SECRET_ACCESS_KEY
           name: aws-route53-credentials
           namespace: flux-system
-    module: git::https://github.com/agentydragon/ducktape.git//tf/gitops/route53-domain-delegation?ref=devel
+    module: |
+      # Route 53 domain delegation for allegedly.works; DNS records are ExternalDNS-owned.
+      #
+      # All DNS is served by AWS Route 53. No in-cluster DNS authority.
+
+      terraform {
+        required_version = ">= 1.0"
+
+        required_providers {
+          aws = {
+            source  = "hashicorp/aws"
+            version = "~> 6.0"
+          }
+        }
+      }
+
+      locals {
+        domain = "allegedly.works"
+      }
+
+      provider "aws" {
+        region = var.aws_region
+      }
+
+      # Read hosted zone to get its NS records for domain delegation
+      data "aws_route53_zone" "zone" {
+        zone_id = var.route53_zone_id
+      }
+
+      # Domain registration — delegate to Route 53 nameservers
+      import {
+        to = aws_route53domains_registered_domain.allegedly_works
+        id = "allegedly.works"
+      }
+
+      resource "aws_route53domains_registered_domain" "allegedly_works" {
+        domain_name = local.domain
+
+        dynamic "name_server" {
+          for_each = toset(data.aws_route53_zone.zone.name_servers)
+          content {
+            name = name_server.value
+          }
+        }
+
+        lifecycle {
+          ignore_changes = [
+            transfer_lock, auto_renew,
+            admin_contact, billing_contact, registrant_contact, tech_contact,
+            admin_privacy, billing_privacy, registrant_privacy, tech_privacy,
+          ]
+        }
+      }
+
+
+      variable "aws_region" {
+        type        = string
+        default     = "us-east-1"
+        description = "AWS region for Route 53 API calls"
+      }
+
+      variable "route53_zone_id" {
+        type        = string
+        description = "Route 53 hosted zone ID for allegedly.works"
+      }
     planArgs:
       - -lock-timeout=5m
-    remotePullPolicy: Always
-    source: Remote
+    source: Inline
     vars:
       - key: route53_zone_id
         value: Z02901943N8ZFQFOD9P5I

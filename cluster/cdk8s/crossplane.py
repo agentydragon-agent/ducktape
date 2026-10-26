@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount
-from crossplane_pkg_provider_crds.io.crossplane.pkg import Provider, ProviderSpec, ProviderSpecPackagePullSecrets
+from crossplane_pkg_provider_crds.io.crossplane.pkg import (
+    Provider,
+    ProviderSpec,
+    ProviderSpecPackagePullSecrets,
+    ProviderSpecRuntimeConfigRef,
+)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDependsOn, KustomizationSpecHealthCheckExprs
 
-from cluster.cdk8s import flux, namespaces
+from cluster.cdk8s import flux, namespaces, opentofu_runtime
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.forgejo_registry.chart import NAME as FORGEJO_IMAGES_KUSTOMIZATION_NAME
@@ -127,14 +134,19 @@ def litellm_provider(
     )
 
 
-def opentofu_provider_chart(app: App) -> Chart:
+def opentofu_provider_chart(app: App, *, kubernetes_identities: Sequence[str]) -> Chart:
     """Install Upbound's OpenTofu provider package."""
     chart = Chart(app, OPENTOFU_PROVIDER_KUSTOMIZATION_NAME, disable_resource_name_hashes=True)
+    runtime = opentofu_runtime.configure(chart, kubernetes_identities=kubernetes_identities)
     Provider(
         chart,
         "provider",
         metadata=ApiObjectMetadata(name="provider-opentofu"),
-        spec=ProviderSpec(package=OPENTOFU_PROVIDER_PACKAGE, revision_activation_policy="Automatic"),
+        spec=ProviderSpec(
+            package=OPENTOFU_PROVIDER_PACKAGE,
+            revision_activation_policy="Automatic",
+            runtime_config_ref=ProviderSpecRuntimeConfigRef(name=runtime.name),
+        ),
     )
     return chart
 

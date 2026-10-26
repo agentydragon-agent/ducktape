@@ -1,27 +1,29 @@
-//! Shared test-only helpers for building owner-graph wire fixtures.
+//! Shared test-only helpers for building dependency-graph wire fixtures.
 //!
-//! The owner-graph report interns module identity: a reference is a
+//! The dependency-graph report interns module identity: a reference is a
 //! [`ModuleKey`] (`"logical:N"`) and each module's canonical
-//! [`spec::ModulePath`] + residual flag live once in the module table
-//! (`OwnerGraphQuotientReport::nodes`, a list of [`ModuleEntry`]). Tests
+//! [`spec::ModulePath`] + destination kind live once in the module table
+//! (`ModuleQuotientReport::nodes`, a list of [`ModuleEntry`]). Tests
 //! across several crates build that table — and the owner/edge/atomic-group
 //! report nodes around it — the same way, so the builders live here
 //! instead of being copy-pasted per test module.
 //!
 //! Convention: a test destination key's string **is** the module's
 //! canonical path (e.g. `"residual"`, `"ui/plugins"`), so [`module_table`]
-//! recovers the path by parsing the key and derives `residual` from
-//! [`spec::is_residual_module_path`].
+//! recovers the path by parsing the key. The `"residual"` test sentinel
+//! represents the physical entry destination; other keys represent specified
+//! planned outputs.
 
+use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::{
     AtomicGraphReport, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DepKind,
-    EdgeRoleReport, LineRange, ModuleEntry, ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport,
-    OwnerGraphQuotientReport, OwnerGraphReport, Purity, SourceLocation, StatementKind,
-    StatementOrdinal,
+    DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind,
+    ModuleEntry, ModuleKey, ModuleQuotientReport, Purity, SourceLocation, SourceUnitReport,
+    StatementKind,
 };
-use spec::{ModulePath, is_residual_module_path};
+use spec::ModulePath;
 
 /// A destination key whose string is the module's canonical path.
 pub fn module_ref(path: &str) -> ModuleKey {
@@ -29,20 +31,24 @@ pub fn module_ref(path: &str) -> ModuleKey {
 }
 
 /// The module-table entry for a single destination key: the canonical
-/// `ModulePath` (parsed from the key) and its residual flag.
+/// `ModulePath` (parsed from the key) and destination kind.
 pub fn module_entry(key: &ModuleKey) -> ModuleEntry {
     let path = ModulePath::parse(key.as_str(), "").expect("test module key is a valid path");
-    let residual = is_residual_module_path(path.as_str());
+    let kind = if path.as_str() == "residual" {
+        ModuleDestinationKind::Entry
+    } else {
+        ModuleDestinationKind::Specified
+    };
     ModuleEntry {
         key: key.clone(),
         path,
-        residual,
+        kind,
     }
 }
 
 /// Build the module table (`quotient.nodes`) from a set of destination
 /// keys, deduplicating. The single source of truth for each module's
-/// path + residual flag in a test fixture.
+/// path + destination kind in a test fixture.
 pub fn module_table<'a>(keys: impl IntoIterator<Item = &'a ModuleKey>) -> Vec<ModuleEntry> {
     let mut seen = BTreeSet::new();
     keys.into_iter()
@@ -66,7 +72,7 @@ pub fn binding(name: &str) -> BindingReport {
 }
 
 /// Active-claims map (binding name → canonical module path) from clean
-/// spec paths. [`no_claims`] is the empty case.
+/// spec paths.
 pub fn claims(pairs: &[(&str, &str)]) -> BTreeMap<String, ModulePath> {
     pairs
         .iter()
@@ -74,24 +80,20 @@ pub fn claims(pairs: &[(&str, &str)]) -> BTreeMap<String, ModulePath> {
         .collect()
 }
 
-pub fn no_claims() -> BTreeMap<String, ModulePath> {
-    BTreeMap::new()
-}
-
-/// Owner node with an explicit destination. The source location is
+/// SourceUnit node with an explicit destination. The source location is
 /// synthesized from the ordinal (`start_line = ordinal * 100`) so
-/// distinct owners never overlap. Prefer [`residual_owner`] /
-/// [`active_owner`] when the destination is one of the common cases —
+/// distinct owners never overlap. Prefer [`residual_source_unit`] /
+/// [`active_source_unit`] when the destination is one of the common cases —
 /// this 5-arg form is the only `owner` builder, so call sites always
 /// spell the destination decision.
-pub fn owner(
+pub fn source_unit(
     id: &str,
     ordinal: usize,
     bindings: &[&str],
     lines: usize,
     destination: ModuleKey,
-) -> OwnerGraphNodeReport {
-    owner_node(
+) -> SourceUnitReport {
+    source_unit_report(
         id,
         ordinal,
         bindings.iter().map(|b| binding(b)).collect(),
@@ -108,16 +110,16 @@ pub fn owner(
 /// Fully-explicit owner-node core: callers control the declared
 /// bindings (e.g. renamed exports via [`member`]) and the exact
 /// source location.
-pub fn owner_node(
+pub fn source_unit_report(
     id: &str,
     ordinal: usize,
     declared_bindings: Vec<BindingReport>,
     source_location: Option<SourceLocation>,
     destination: ModuleKey,
-) -> OwnerGraphNodeReport {
-    OwnerGraphNodeReport {
+) -> SourceUnitReport {
+    SourceUnitReport {
         id: id.to_string(),
-        statement_ordinal: StatementOrdinal(ordinal),
+        statement_ordinal: SourceUnitOrdinal(ordinal),
         source_location,
         declared_bindings,
         statement_kind: StatementKind::VarDecl,
@@ -127,89 +129,92 @@ pub fn owner_node(
 }
 
 /// [`owner`] destined for the residual catch-all.
-pub fn residual_owner(
+pub fn residual_source_unit(
     id: &str,
     ordinal: usize,
     bindings: &[&str],
     lines: usize,
-) -> OwnerGraphNodeReport {
-    owner(id, ordinal, bindings, lines, module_ref("residual"))
+) -> SourceUnitReport {
+    source_unit(id, ordinal, bindings, lines, module_ref("residual"))
 }
 
 /// [`owner`] destined for an active (spec-claimed) module.
-pub fn active_owner(
+pub fn active_source_unit(
     id: &str,
     ordinal: usize,
     bindings: &[&str],
     lines: usize,
     module_path: &str,
-) -> OwnerGraphNodeReport {
-    owner(id, ordinal, bindings, lines, module_ref(module_path))
+) -> SourceUnitReport {
+    source_unit(id, ordinal, bindings, lines, module_ref(module_path))
 }
 
-/// Owner-level edge with no binding label.
-pub fn owner_edge(
+/// SourceUnit-level edge with no binding label.
+pub fn dependency_edge(
     id: &str,
     source: &str,
     target: &str,
     kind: DepKind,
     constrains: bool,
-) -> OwnerGraphEdgeReport {
-    OwnerGraphEdgeReport {
+) -> DependencyEdgeReport {
+    DependencyEdgeReport {
         id: id.to_string(),
         source: source.to_string(),
         target: target.to_string(),
         edge_kind: kind,
         binding: None,
-        statement_ordinal: StatementOrdinal(0),
+        statement_ordinal: SourceUnitOrdinal(0),
         constrains_init_order: constrains,
         role: None,
     }
 }
 
-/// [`owner_edge`] promoted at init from an at-init call into
+/// [`dependency_edge`] promoted at init from an at-init call into
 /// `callee`'s body; `callee == source` is the conservative fallback
 /// for a call the analysis cannot resolve.
-pub fn promoted_owner_edge(
+pub fn promoted_dependency_edge(
     id: &str,
     source: &str,
     target: &str,
     kind: DepKind,
     constrains: bool,
     callee: &str,
-) -> OwnerGraphEdgeReport {
-    OwnerGraphEdgeReport {
+) -> DependencyEdgeReport {
+    DependencyEdgeReport {
         role: Some(EdgeRoleReport::PromotedAtInit {
-            callee_owner: callee.to_string(),
+            callee_source_unit: callee.to_string(),
         }),
-        ..owner_edge(id, source, target, kind, constrains)
+        ..dependency_edge(id, source, target, kind, constrains)
     }
 }
 
 /// Atomic group aggregating the given owners (ids, members,
 /// destinations, line range, ordinal span).
-pub fn atomic_group_for(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicGroupReport {
-    let mut owner_ids = Vec::new();
+pub fn atomic_group_for(id: &str, source_units: &[&SourceUnitReport]) -> AtomicGroupReport {
+    let mut source_unit_ids = Vec::new();
     let mut members = Vec::new();
     let mut destinations = BTreeMap::<ModuleKey, ModuleKey>::new();
     let mut line_range = LineRange::new();
     let mut min_ordinal = usize::MAX;
     let mut max_ordinal = 0usize;
-    for owner in owners {
-        owner_ids.push(owner.id.clone());
-        members.extend(owner.declared_bindings.clone());
-        destinations.insert(owner.destination.clone(), owner.destination.clone());
-        if let Some(location) = &owner.source_location {
+    for source_unit in source_units {
+        source_unit_ids.push(source_unit.id.clone());
+        members.extend(source_unit.declared_bindings.clone());
+        destinations.insert(
+            source_unit.destination.clone(),
+            source_unit.destination.clone(),
+        );
+        if let Some(location) = &source_unit.source_location {
             line_range.expand(location);
         }
-        min_ordinal = min_ordinal.min(owner.statement_ordinal.0);
-        max_ordinal = max_ordinal.max(owner.statement_ordinal.0);
+        min_ordinal = min_ordinal.min(source_unit.statement_ordinal.0);
+        max_ordinal = max_ordinal.max(source_unit.statement_ordinal.0);
     }
     AtomicGroupReport {
         id: id.to_string(),
-        owner_ids,
+        source_unit_ids,
         members,
-        anonymous_statement_owner_ids: Vec::new(),
+        anonymous_statement_source_unit_ids: Vec::new(),
         destinations: destinations.into_values().collect(),
         causes: Vec::new(),
         size_lines_estimate: line_range.size_estimate(),
@@ -218,46 +223,46 @@ pub fn atomic_group_for(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicGro
     }
 }
 
-/// Constraining eager atomic-group edge. The underlying owner-edge id
+/// Constraining eager atomic-group edge. The underlying dependency-edge id
 /// is derived from `id` by substituting `atomic` → `edge`; use
-/// [`atomic_edge_for_owner_edge`] to spell it explicitly.
+/// [`atomic_edge_for_dependency_edge`] to spell it explicitly.
 pub fn atomic_edge(id: &str, source: &str, target: &str) -> AtomicGroupEdgeReport {
-    atomic_edge_for_owner_edge(id, source, target, &id.replace("atomic", "edge"))
+    atomic_edge_for_dependency_edge(id, source, target, &id.replace("atomic", "edge"))
 }
 
-/// [`atomic_edge`] with the underlying owner-edge id spelled
+/// [`atomic_edge`] with the underlying dependency-edge id spelled
 /// explicitly.
-pub fn atomic_edge_for_owner_edge(
+pub fn atomic_edge_for_dependency_edge(
     id: &str,
     source: &str,
     target: &str,
-    owner_edge_id: &str,
+    dependency_edge_id: &str,
 ) -> AtomicGroupEdgeReport {
     AtomicGroupEdgeReport {
         id: id.to_string(),
         source: source.to_string(),
         target: target.to_string(),
         edge_kinds: vec![DepKind::EagerUse],
-        owner_edge_ids: vec![owner_edge_id.to_string()],
+        dependency_edge_ids: vec![dependency_edge_id.to_string()],
         constrains_init_order: true,
     }
 }
 
-/// Assemble a full `OwnerGraphReport` wire fixture. The module table
+/// Assemble a full `DependencyGraphReport` wire fixture. The module table
 /// is derived from the distinct owner destinations.
 pub fn graph_of(
-    nodes: Vec<OwnerGraphNodeReport>,
-    edges: Vec<OwnerGraphEdgeReport>,
+    nodes: Vec<SourceUnitReport>,
+    edges: Vec<DependencyEdgeReport>,
     atomic_groups: Vec<AtomicGroupReport>,
     atomic_group_edges: Vec<AtomicGroupEdgeReport>,
-) -> OwnerGraphReport {
+) -> DependencyGraphReport {
     let module_nodes = module_table(nodes.iter().map(|n| &n.destination));
-    OwnerGraphReport {
+    DependencyGraphReport {
         chunk_id: "x".to_string(),
         nodes,
         purity_causes: Vec::new(),
         edges,
-        quotient: OwnerGraphQuotientReport {
+        quotient: ModuleQuotientReport {
             nodes: module_nodes,
             edges: vec![],
             sccs: vec![],
@@ -269,16 +274,16 @@ pub fn graph_of(
     }
 }
 
-/// An owner graph whose atomic groups are one-per-owner, in owner order.
+/// An dependency graph whose atomic groups are one-per-owner, in owner order.
 /// Atomic edges stay empty: tests exercising that distinct graph provide it explicitly.
 pub fn singleton_graph(
-    owners: Vec<OwnerGraphNodeReport>,
-    edges: Vec<OwnerGraphEdgeReport>,
-) -> OwnerGraphReport {
-    let atomic_groups = owners
+    source_units: Vec<SourceUnitReport>,
+    edges: Vec<DependencyEdgeReport>,
+) -> DependencyGraphReport {
+    let atomic_groups = source_units
         .iter()
         .enumerate()
-        .map(|(i, owner)| atomic_group_for(&format!("atomic:{i}"), &[owner]))
+        .map(|(i, source_unit)| atomic_group_for(&format!("atomic:{i}"), &[source_unit]))
         .collect();
-    graph_of(owners, edges, atomic_groups, vec![])
+    graph_of(source_units, edges, atomic_groups, vec![])
 }

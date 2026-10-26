@@ -1,4 +1,4 @@
-//! Assignment assembly: produces the authoritative per-owner
+//! Assignment assembly: produces the authoritative per-source-unit
 //! [`ModuleAssignment`] from [`crate::atomic_groups`]' SCCs + the spec's YAML
 //! claims. When two or more distinct claims fall inside one atomic
 //! group the spec is unrealizable; we surface an
@@ -9,22 +9,20 @@
 //! an authoring decision surfaced by `debundle coverage`.
 //! See `docs/design.md` §"Assignment assembly inside `debundle run`".
 
-use std::collections::{BTreeSet, HashMap};
-
-use serde::Serialize;
-use swc_atoms::Atom;
-use swc_ecma_ast::Id;
+use std::collections::BTreeSet;
 
 use crate::atomic_groups::AtomicGroup;
-use crate::graph::{DepKind, OwnerGraph, OwnerId};
-use crate::ids::{BindingKind, ModuleId, PlannedModule};
+use crate::graph::{DepKind, DependencyGraph, SourceUnitId};
+use crate::ids::{BindingKind, EntryDestination, LocalBindings, ModuleId, PlannedModule};
 use crate::module_assignment::ModuleAssignment;
+use serde::Serialize;
+use swc_atoms::Atom;
 
-/// One owner's claimed destination inside a conflicting atomic
+/// One source unit's claimed destination inside a conflicting atomic
 /// group. Listed inside an [`AtomicGroupConflict`].
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct ConflictingClaim {
-    pub owner: OwnerId,
+    pub source_unit: SourceUnitId,
     pub binding_names: Vec<Atom>,
     pub module: ModuleId,
 }
@@ -35,13 +33,13 @@ pub struct ConflictingClaim {
 /// Atom-level (binding members claimed across distinct destinations),
 /// not SCC-level — the atom-level sibling of the module-quotient-SCC
 /// shape [`crate::reports::SccCore`]. Both carry the "unrealizable,
-/// here's why" framing, but this one's domain is owners in an atomic
+/// here's why" framing, but this one's domain is source units in an atomic
 /// group rather than modules in an SCC, so it does not reuse that core
 /// and stays a separate type.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct AtomicGroupConflict {
-    /// Members sorted by `OwnerId`.
-    pub members: Vec<OwnerId>,
+    /// Members sorted by `SourceUnitId`.
+    pub members: Vec<SourceUnitId>,
     pub claims: Vec<ConflictingClaim>,
     /// Constraining-edge kinds inside the group (mirrors
     /// [`AtomicGroup::causes`]). Lets the materializer's diagnostic
@@ -59,30 +57,31 @@ pub struct AssemblyOutcome {
 
 /// Build the assignment + any atomic-group claim conflicts. The assignment is
 /// best-effort when conflicts exist (first-seen claim wins per atomic group)
-/// so downstream owner-graph/report code keeps working — the
+/// so downstream dependency graph/report code keeps working — the
 /// conflict list is what surfaces the rejection to the user.
 ///
-/// `default_destination` is the residual logical module id that
-/// unclaimed owners fall back to (and the conflict detector reports as
-/// the effective destination of unclaimed atomic-group members).
+/// `entry_destination` is where unclaimed source units fall back (and the
+/// conflict detector reports as the effective destination of unclaimed
+/// atomic-group members).
 pub fn assemble_assignment(
-    owner_graph: &OwnerGraph,
+    dependency_graph: &DependencyGraph,
     atomic_groups: &[AtomicGroup],
-    bindings: &HashMap<Id, BindingKind>,
-    logical_modules: &[PlannedModule],
-    default_destination: ModuleId,
+    bindings: &LocalBindings<'_>,
+    planned_modules: &[PlannedModule],
+    entry_destination: EntryDestination,
 ) -> AssemblyOutcome {
-    let claims = compute_owner_claims(owner_graph, bindings, logical_modules);
-    let mut assignment = ModuleAssignment::new(owner_graph, default_destination);
+    let entry_module_id = entry_destination.module_id();
+    let claims = compute_source_unit_claims(dependency_graph, bindings, planned_modules);
+    let mut assignment = ModuleAssignment::new(dependency_graph, entry_destination);
     for (idx, claim) in claims.iter().enumerate() {
         if let Some(dest) = claim {
-            assignment.set(OwnerId(idx), *dest);
+            assignment.set(SourceUnitId(idx), *dest);
         }
     }
     let mut conflicts = Vec::<AtomicGroupConflict>::new();
     for atomic_group in atomic_groups {
         if let Some(conflict) =
-            detect_atomic_group_conflict(atomic_group, &claims, owner_graph, default_destination)
+            detect_atomic_group_conflict(atomic_group, &claims, dependency_graph, entry_module_id)
         {
             conflicts.push(conflict);
         }
@@ -93,31 +92,34 @@ pub fn assemble_assignment(
     }
 }
 
-/// One [`ModuleId`] slot per owner; `None` means no explicit claim.
-fn compute_owner_claims(
-    owner_graph: &OwnerGraph,
-    bindings: &HashMap<Id, BindingKind>,
-    logical_modules: &[PlannedModule],
+/// One [`ModuleId`] slot per source unit; `None` means no explicit claim.
+fn compute_source_unit_claims(
+    dependency_graph: &DependencyGraph,
+    bindings: &LocalBindings<'_>,
+    planned_modules: &[PlannedModule],
 ) -> Vec<Option<ModuleId>> {
-    let mut claims = vec![None; owner_graph.num_nodes()];
-    for node in owner_graph.iter_nodes() {
+    let mut claims = vec![None; dependency_graph.num_nodes()];
+    for node in dependency_graph.iter_nodes() {
         for binding_id in &node.declared {
-            let claim = bindings.get(binding_id).and_then(|kind| match kind {
-                BindingKind::Owned { module: dest } => Some(*dest),
-                _ => None,
-            });
+            let claim = bindings
+                .as_map()
+                .get(binding_id)
+                .and_then(|kind| match kind {
+                    BindingKind::Owned { module: dest } => Some(*dest),
+                    _ => None,
+                });
             if let Some(dest) = claim {
                 claims[node.id.0] = Some(dest);
                 break;
             }
         }
     }
-    for (idx, module) in logical_modules.iter().enumerate() {
+    for (idx, module) in planned_modules.iter().enumerate() {
         let dest = ModuleId(idx);
-        for ordinal in &module.anonymous_statement_ordinals {
-            if let Some(node) = owner_graph
+        for ordinal in &module.anonymous_source_unit_ordinals {
+            if let Some(node) = dependency_graph
                 .iter_nodes()
-                .find(|n| n.statement_ordinal.0 == *ordinal)
+                .find(|n| n.statement_ordinal == *ordinal)
             {
                 claims[node.id.0] = Some(dest);
             }
@@ -129,16 +131,21 @@ fn compute_owner_claims(
 fn detect_atomic_group_conflict(
     atomic_group: &AtomicGroup,
     claims: &[Option<ModuleId>],
-    owner_graph: &OwnerGraph,
-    default_destination: ModuleId,
+    dependency_graph: &DependencyGraph,
+    entry_module_id: ModuleId,
 ) -> Option<AtomicGroupConflict> {
     // Each member's effective destination: explicit claim or
-    // residual fallback. Two or more distinct destinations is
+    // entry fallback. Two or more distinct destinations is
     // unrealizable (covers the spec-claims-some-but-not-all case).
-    let resolved: Vec<(OwnerId, ModuleId)> = atomic_group
+    let resolved: Vec<(SourceUnitId, ModuleId)> = atomic_group
         .members
         .iter()
-        .map(|owner| (*owner, claims[owner.0].unwrap_or(default_destination)))
+        .map(|source_unit| {
+            (
+                *source_unit,
+                claims[source_unit.0].unwrap_or(entry_module_id),
+            )
+        })
         .collect();
     let mut first: Option<ModuleId> = None;
     let mut has_distinct = false;
@@ -158,9 +165,9 @@ fn detect_atomic_group_conflict(
 
     let claims_report: Vec<ConflictingClaim> = resolved
         .into_iter()
-        .map(|(owner, module)| {
-            let binding_names = owner_graph
-                .node(owner)
+        .map(|(source_unit, module)| {
+            let binding_names = dependency_graph
+                .node(source_unit)
                 .map(|node| {
                     node.declared
                         .iter()
@@ -169,7 +176,7 @@ fn detect_atomic_group_conflict(
                 })
                 .unwrap_or_default();
             ConflictingClaim {
-                owner,
+                source_unit,
                 binding_names,
                 module,
             }

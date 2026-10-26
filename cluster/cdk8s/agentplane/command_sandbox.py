@@ -128,11 +128,11 @@ def _pod_template(
 ) -> None:
     rendered = sandbox_pod.render_pod_template(
         _LABELS,
-        # No account of its own: the sandbox Actions run every box as its caller.
+        # No account of its own: the sandbox Actions run every box as its caller
+        # (agentplane/action_service/sandbox/inventory.go).
         sandbox_pod.pod_spec(
             env,
             workload=workload,
-            service_account_name=None,
             workload_volumes=volumes,
             sidecar_settings=scope.sidecar_settings,
             sidecar_resources=scope.sidecar_resources,

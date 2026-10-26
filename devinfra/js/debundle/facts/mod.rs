@@ -35,13 +35,13 @@ pub(crate) use swc_common::{Span, Spanned};
 pub(crate) use swc_ecma_ast::*;
 pub(crate) use swc_ecma_visit::{Visit, VisitWith};
 
+pub(crate) use crate::SourceLocation;
 pub(crate) use crate::analysis_inputs::{AnalysisInputs, KnownEffect, LocalEffectPolicy};
 pub(crate) use crate::purity::{
     ChunkCodeGraph, Purity, PurityRule, RedundantPureMemberHint, RedundantPurityHint,
     SHADOW_TRACKED_GLOBALS, class_has_static_observable, classify_expr_purity,
     classify_var_decl_purity, detect_redundant_pure_member_hints, detect_redundant_purity_hints,
 };
-pub(crate) use crate::{SourceLocation, StatementOrdinal};
 
 mod analyze;
 mod at_init_fallback;
@@ -52,11 +52,11 @@ mod item_views;
 mod lazy_boundary;
 mod local_effect_targets;
 mod local_effects;
-mod owner_read_closure;
 mod purity_classification;
 mod set_iterables;
+mod source_unit_read_closure;
 mod statement_facts;
-mod sync_effects;
+pub(crate) mod sync_effects;
 mod value_flow;
 #[cfg(test)]
 mod value_flow_tests;
@@ -71,13 +71,10 @@ pub(crate) use global_object::*;
 pub(crate) use item_views::*;
 pub(crate) use lazy_boundary::*;
 pub(crate) use local_effect_targets::*;
-pub(crate) use owner_read_closure::FactsOwnerReadClosure;
 pub(crate) use purity_classification::*;
 pub(crate) use set_iterables::{SetIterableProof, primitive_literal_property_keys};
+pub(crate) use source_unit_read_closure::SourceUnitReadClosure;
 pub(crate) use statement_facts::ConstructorFacts;
-pub(crate) use sync_effects::infer_returned_callback_factories;
-#[cfg(test)]
-pub(crate) use sync_effects::stable_ts_enum_named_data_members;
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, ValueOrigin};
 
 // Public API: importable at `facts::<item>` exactly as before the split.

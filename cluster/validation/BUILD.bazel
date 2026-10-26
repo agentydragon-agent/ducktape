@@ -171,10 +171,14 @@ py_test(
 py_test(
     name = "test_kustomize",
     srcs = ["test_kustomize.py"],
+    data = ["//cluster/k8s/agentplane-staging:image_pins"],
     deps = [
         ":kustomize",
+        ":tool_resolve",
+        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 

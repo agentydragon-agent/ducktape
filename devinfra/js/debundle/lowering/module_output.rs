@@ -1,6 +1,7 @@
 //! Emit one accepted logical-module plan. Chunk selection and entry construction stay in
 //! `lower`; this phase owns per-module imports, sealed renames, comments, and output metadata.
 
+use source_identity::StatementId;
 use std::sync::Mutex;
 
 use swc_common::{BytePos, DUMMY_SP, Spanned};
@@ -23,11 +24,11 @@ use crate::plans::ModulePlan;
 use crate::rename_ledger::{RenameLedger, RenameScope, ScopeOccupancy, SealValidation};
 use crate::rewrite_runtime::rewrite_runtime_sources_for_target;
 use crate::visitors::IdentifierRenamer;
-use analysis::{ModuleId, top_level_id};
+use analysis::{BindingId, ModuleId, ModuleRole, top_level_id};
 use anyhow::{Result, bail};
-use artifact::{
-    ChunkId, FileMetadata, FileRole, JsFile, JsFileBody, SelectedModuleLowering, join_module_path,
-};
+use artifact::paths::join_module_path;
+use artifact::reports::SelectedModuleLowering;
+use artifact::{ChunkId, FileMetadata, FileRole, JsFile, JsFileBody};
 use gate::AssignmentAnalysis;
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -39,8 +40,9 @@ const LOWERING_FILE_PRAGMA: &str =
 const LOWERING_GENERATOR_HEADER: &str = "// @ducktape-generator selected_module_lowering";
 
 struct ModuleOutputContext<'a> {
-    factorization: &'a AssignmentAnalysis,
+    assignment_analysis: &'a AssignmentAnalysis,
     runtime_ast: &'a ParsedJsModule,
+    chunk_id_interned: ChunkId,
     chunk_top_level_mark: swc_common::Mark,
     chunk_id: &'a str,
     entry_file: &'a str,
@@ -51,8 +53,8 @@ pub(super) struct ModuleEmissionInputs<'a> {
     pub(super) index: usize,
     pub(super) plan: &'a ModulePlan,
     pub(super) naturalized: NaturalizedModuleBody,
-    pub(super) factorization: &'a AssignmentAnalysis,
-    pub(super) declaration_by_name: &'a HashMap<Id, Vec<usize>>,
+    pub(super) assignment_analysis: &'a AssignmentAnalysis,
+    pub(super) declaration_by_name: &'a HashMap<Id, Vec<StatementId>>,
     pub(super) binding_assignment: &'a HashMap<Id, usize>,
     pub(super) runtime_import_facts: &'a RuntimeImportFacts,
     pub(super) entry_exports_by_original_local: &'a HashMap<Id, EntryExport>,
@@ -83,7 +85,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         index,
         plan,
         naturalized,
-        factorization,
+        assignment_analysis,
         declaration_by_name,
         binding_assignment,
         runtime_import_facts,
@@ -114,12 +116,12 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     } = plan_module_reference_needs(
         index,
         &body_facts,
-        factorization,
+        assignment_analysis,
         declaration_by_name,
         binding_assignment,
         entry_exports_by_original_local,
         runtime_import_facts,
-    );
+    )?;
     // Import-local mints for this plan's body flow through a per-plan
     // ledger (scope: this plan's `Module`, origin: `ImportInduced`);
     // the ledger's taken-name set is seeded with every name bound
@@ -138,7 +140,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         ledger: &mut import_ledger,
     };
     // All intra-chunk imports (cross-module binding imports, phantom
-    // side-effect imports, and the residual-entry import) are
+    // side-effect imports, and the entry-destination import) are
     // collected as `(target ModuleId, decl)` pairs and ordered by ONE
     // shared rule — `EsmImportOrder::sort_module_imports` — below.
     // The realizability gate's evaluation simulator sorts this
@@ -149,7 +151,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     let mut intra_chunk_imports = cross_module_imports_for_plan(
         &plan.target_file,
         cross_module_imports_by_provider,
-        factorization,
+        assignment_analysis,
         &mut import_rename_sink,
     );
     // Phantom side-effect imports surface at-init-promotion-derived
@@ -159,7 +161,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     intra_chunk_imports.extend(phantom_side_effect_imports(
         &plan.target_file,
         phantom_side_effect_providers,
-        factorization,
+        assignment_analysis,
     ));
     let residual_entry_import_items = residual_entry_imports_for_moved_body(
         &plan.id,
@@ -258,22 +260,25 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
             &imported_overrides,
         )
     }?;
-    // The residual-entry import targets the chunk's residual module
-    // (the emitted entry file — always the ESM DFS root, so its slot
+    // The entry-destination import targets the chunk's emitted entry file
+    // (always the ESM DFS root, so its slot
     // in the list is a runtime no-op, but it still gets its shared-
     // ordering position for determinism).
-    let residual_module = factorization.assignment().residual();
+    let entry_module_id = assignment_analysis
+        .assignment()
+        .entry_destination()
+        .module_id();
     intra_chunk_imports.extend(
         residual_entry_import_items
             .into_iter()
-            .map(|item| (residual_module, item)),
+            .map(|item| (entry_module_id, item)),
     );
     // ONE ordering for every intra-chunk import — the same
     // `EsmImportOrder::sort_module_imports` the gate's simulator
     // uses for this module's DFS neighbor order. Runtime re-imports
     // (other source chunks) follow; they're outside the per-chunk
     // I-graph the gate reasons about.
-    factorization
+    assignment_analysis
         .import_order()
         .sort_module_imports(&mut intra_chunk_imports);
     let mut combined: Vec<ModuleItem> = intra_chunk_imports
@@ -360,7 +365,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         }
     }
     // ImportSpecifier-bound members (`BindingKind::Imported` in
-    // `factorization.analysis().bindings()`): for each `Imported` binding whose
+    // `assignment_analysis.inputs().binding_catalogue()`): for each `Imported` binding whose
     // `re_exported_by` map names this module, emit a re-import
     // (using the local name as the alias) plus mirror the
     // public-name export. Per-destination relative paths are
@@ -424,8 +429,9 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         ));
     }
     let output_context = ModuleOutputContext {
-        factorization,
+        assignment_analysis,
         runtime_ast,
+        chunk_id_interned,
         chunk_top_level_mark,
         chunk_id,
         entry_file,
@@ -462,14 +468,20 @@ fn build_module_output(
         .filter(|(binding, _)| plan.spec_named_bindings.contains(binding.as_str()))
         .map(|(_, exported)| (*exported).clone())
         .collect();
-    let binding_ids: Vec<Id> = binding_names
+    let binding_ids: Vec<BindingId> = binding_names
         .iter()
-        .map(|name| top_level_id(name, context.chunk_top_level_mark))
+        .map(|name| {
+            BindingId::new(
+                context.chunk_id_interned,
+                top_level_id(name, context.chunk_top_level_mark),
+            )
+        })
         .collect();
-    let owner_ids = context
-        .factorization
-        .analysis()
-        .owner_report_ids_for_bindings(binding_ids.iter());
+    let source_unit_ids = context
+        .assignment_analysis
+        .inputs()
+        .source_unit_report_ids_for_bindings(binding_ids.iter())
+        .expect("module report bindings belong to the analysis chunk");
     // Module-level `comment:` from the spec lands at the very top of
     // the emitted file (above the lowerer's pragma block), separated
     // from the pragmas by a blank `//` line so the human-readable
@@ -484,8 +496,8 @@ fn build_module_output(
         LOWERING_FILE_PRAGMA.to_string(),
         LOWERING_GENERATOR_HEADER.to_string(),
         format!(
-            "// Selected-module lowered region; original owner ids: {}.",
-            owner_ids.join(", ")
+            "// Selected-module lowered region; original source_unit ids: {}.",
+            source_unit_ids.join(", ")
         ),
         format!(
             "// Selected-module lowered region; source bindings: {}.",
@@ -541,8 +553,8 @@ fn build_module_output(
         spec_named_export_names,
         cross_chunk_import_aliases: Vec::new(),
         file: context.entry_file.to_string(),
-        owner_ids,
-        residual: !plan.explicit,
+        source_unit_ids,
+        residual: plan.role == ModuleRole::Unassigned,
         target_file: plan.target_file.clone(),
         target_path: plan.target_path.clone(),
     };
@@ -559,7 +571,7 @@ fn anonymous_statement_comments_by_span(
             if comment.is_empty() {
                 return None;
             }
-            let lo = runtime_ast.module.body.get(*body_idx)?.span().lo();
+            let lo = runtime_ast.module.body.get(body_idx.0)?.span().lo();
             if lo == BytePos(0) {
                 return None;
             }

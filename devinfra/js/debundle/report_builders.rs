@@ -1,7 +1,7 @@
-//! Owner-graph report builders: project a [`AssignmentAnalysis`]
-//! into the wire-format `OwnerGraphReport` family defined in
+//! dependency graph report builders: project a [`AssignmentAnalysis`]
+//! into the wire-format `DependencyGraphReport` family defined in
 //! `analysis::reports::schema`. The wire-stable key codecs
-//! (`owner_key`, `module_key`, …) live in `analysis::reports`.
+//! (`source_unit_key`, `module_key`, …) live in `analysis::reports`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -10,12 +10,13 @@ use swc_ecma_ast::Id;
 
 use analysis::graph::EdgeRole;
 use analysis::reports::schema::LineRange;
-use analysis::reports::{atomic_group_key, module_id_from_key, module_key, owner_key};
+use analysis::reports::{atomic_group_key, module_id_from_key, module_key, source_unit_key};
 use analysis::{
-    AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport,
-    DepKind, EdgeRoleReport, ModuleEntry, ModuleId, ModuleKey, OwnerGraphEdgeReport,
-    OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity, PurityCauseReport,
-    QuotientEdgeReport, QuotientSccReport,
+    AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingId,
+    BindingReport, DepKind, DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport,
+    ModuleDestinationKind, ModuleEntry, ModuleId, ModuleKey, ModuleQuotientReport, ModuleRole,
+    Purity, PurityCauseReport, QuotientEdgeReport, QuotientSccReport, SourceUnitClass,
+    SourceUnitReport,
 };
 
 use crate::assignment_analysis::AssignmentAnalysis;
@@ -23,42 +24,45 @@ use crate::assignment_analysis::AssignmentAnalysis;
 #[derive(Debug, Clone, Default)]
 struct AtomicEdgeAccumulator {
     kinds: BTreeSet<DepKind>,
-    owner_edge_ids: Vec<String>,
+    dependency_edge_ids: Vec<String>,
     constrains_init_order: bool,
 }
 
-pub(crate) fn build_owner_graph_report(factorization: &AssignmentAnalysis) -> OwnerGraphReport {
+pub(crate) fn build_dependency_graph_report(
+    assignment_analysis: &AssignmentAnalysis,
+) -> DependencyGraphReport {
     // The three sub-reports below — `(quotient_nodes, quotient_edges)`,
     // `nodes` + `edges`, and `atomic_graph` — share no mutable state
     // and individually account for tens of seconds on chunks with
-    // thousands of owners. Run them concurrently via `rayon::join`
+    // thousands of source units. Run them concurrently via `rayon::join`
     // so wall-clock collapses to roughly the slowest one. SCC
     // construction depends on `quotient_edges`, so it runs after the
     // join with the now-ready edge list.
     let (quotient_pair, (nodes_edges, atomic_graph)) = rayon::join(
         || {
             rayon::join(
-                || build_quotient_node_reports(factorization),
-                || build_quotient_edge_reports(factorization),
+                || build_quotient_node_reports(assignment_analysis),
+                || build_quotient_edge_reports(assignment_analysis),
             )
         },
         || {
             rayon::join(
-                || build_owner_nodes_and_edges(factorization),
-                || build_atomic_graph_report(factorization),
+                || build_source_unit_nodes_and_edges(assignment_analysis),
+                || build_atomic_graph_report(assignment_analysis),
             )
         },
     );
     let (quotient_nodes, quotient_edges) = quotient_pair;
     let (mut nodes, edges) = nodes_edges;
     let purity_causes = collect_purity_causes(&mut nodes);
-    let quotient_sccs = build_quotient_scc_reports(factorization, &quotient_nodes, &quotient_edges);
-    OwnerGraphReport {
-        chunk_id: factorization.analysis().chunk_id().to_string(),
+    let quotient_sccs =
+        build_quotient_scc_reports(assignment_analysis, &quotient_nodes, &quotient_edges);
+    DependencyGraphReport {
+        chunk_id: assignment_analysis.inputs().chunk_id().to_string(),
         nodes,
         purity_causes,
         edges,
-        quotient: OwnerGraphQuotientReport {
+        quotient: ModuleQuotientReport {
             nodes: quotient_nodes,
             edges: quotient_edges,
             sccs: quotient_sccs,
@@ -71,8 +75,8 @@ pub(crate) fn build_owner_graph_report(factorization: &AssignmentAnalysis) -> Ow
 /// reason keeps its own location and points to a shared callee verdict;
 /// traversing the table yields the full chain without duplicating it at
 /// every caller. Pointer identity is stable for the lifetime of this build,
-/// and IDs are assigned in deterministic owner/reason traversal order.
-fn collect_purity_causes(nodes: &mut [OwnerGraphNodeReport]) -> Vec<PurityCauseReport> {
+/// and IDs are assigned in deterministic source unit/reason traversal order.
+fn collect_purity_causes(nodes: &mut [SourceUnitReport]) -> Vec<PurityCauseReport> {
     let mut ids = HashMap::<usize, String>::new();
     let mut causes = Vec::new();
     for node in nodes {
@@ -112,33 +116,33 @@ fn attach_cause_refs(
     }
 }
 
-/// Build the per-owner node report and the per-edge edge report
+/// Build the per-source-unit node report and the per-edge edge report
 /// together. Both walks are independent, but bundling them lets the
 /// rayon `join` split four ways without an explicit `scope` and keeps
 /// the assignment-of()/export-name-for()/etc.\ touches paired in cache.
-fn build_owner_nodes_and_edges(
-    factorization: &AssignmentAnalysis,
-) -> (Vec<OwnerGraphNodeReport>, Vec<OwnerGraphEdgeReport>) {
-    let assignment = factorization.assignment();
-    let owner_graph = factorization.analysis().owner_graph();
-    let nodes = owner_graph
+fn build_source_unit_nodes_and_edges(
+    assignment_analysis: &AssignmentAnalysis,
+) -> (Vec<SourceUnitReport>, Vec<DependencyEdgeReport>) {
+    let assignment = assignment_analysis.assignment();
+    let dependency_graph = assignment_analysis.inputs().dependency_graph();
+    let nodes = dependency_graph
         .iter_nodes()
-        .map(|node| OwnerGraphNodeReport {
-            id: owner_key(node.id),
+        .map(|node| SourceUnitReport {
+            id: source_unit_key(node.id),
             statement_ordinal: node.statement_ordinal,
             source_location: node.source_location.clone(),
-            declared_bindings: binding_reports(factorization, node.declared.iter()),
+            declared_bindings: binding_reports(assignment_analysis, node.declared.iter()),
             statement_kind: node.kind,
             purity: node.purity.clone(),
             destination: module_key(assignment.of(node.id)),
         })
         .collect();
-    let edges = owner_graph
+    let edges = dependency_graph
         .iter_edges()
-        .map(|edge| OwnerGraphEdgeReport {
+        .map(|edge| DependencyEdgeReport {
             id: edge.id.report_key(),
-            source: owner_key(edge.from),
-            target: owner_key(edge.to),
+            source: source_unit_key(edge.from),
+            target: source_unit_key(edge.to),
             edge_kind: edge.reason.kind,
             binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
             statement_ordinal: edge.reason.statement_ordinal,
@@ -149,7 +153,10 @@ fn build_owner_nodes_and_edges(
     (nodes, edges)
 }
 
-fn binding_reports<'a, I>(factorization: &AssignmentAnalysis, bindings: I) -> Vec<BindingReport>
+fn binding_reports<'a, I>(
+    assignment_analysis: &AssignmentAnalysis,
+    bindings: I,
+) -> Vec<BindingReport>
 where
     I: IntoIterator<Item = &'a Id>,
 {
@@ -157,30 +164,44 @@ where
         .into_iter()
         .map(|id| BindingReport {
             binding: id.0.clone(),
-            export_name: factorization.analysis().export_name_for(id),
+            export_name: assignment_analysis
+                .inputs()
+                .export_name_for(&BindingId::new(
+                    assignment_analysis.inputs().chunk_identity(),
+                    id.clone(),
+                ))
+                .expect("dependency graph bindings belong to the analysis chunk"),
         })
         .collect()
 }
 
-fn build_quotient_node_reports(factorization: &AssignmentAnalysis) -> Vec<ModuleEntry> {
+fn build_quotient_node_reports(assignment_analysis: &AssignmentAnalysis) -> Vec<ModuleEntry> {
     let mut modules = BTreeSet::<ModuleId>::new();
-    for idx in 0..factorization.analysis().logical_modules().len() {
+    for idx in 0..assignment_analysis.inputs().planned_modules().len() {
         modules.insert(ModuleId(idx));
     }
-    for (_, module) in factorization.assignment().iter() {
+    modules.insert(
+        assignment_analysis
+            .assignment()
+            .entry_destination()
+            .module_id(),
+    );
+    for (_, module) in assignment_analysis.assignment().iter() {
         modules.insert(module);
     }
-    for (from, to) in factorization.dep_graph().all_edges() {
+    for (from, to) in assignment_analysis.module_quotient().all_edges() {
         modules.insert(from);
         modules.insert(to);
     }
     modules
         .into_iter()
-        .map(|id| module_entry(factorization, id))
+        .map(|id| module_entry(assignment_analysis, id))
         .collect()
 }
 
-fn build_quotient_edge_reports(factorization: &AssignmentAnalysis) -> Vec<QuotientEdgeReport> {
+fn build_quotient_edge_reports(
+    assignment_analysis: &AssignmentAnalysis,
+) -> Vec<QuotientEdgeReport> {
     // Use a `HashMap` for the per-(from,to) accumulator — quotient
     // edges count in the tens of thousands and `BTreeMap::entry` is
     // `O(log n)` per insert. The output ordering still has to match
@@ -189,12 +210,12 @@ fn build_quotient_edge_reports(factorization: &AssignmentAnalysis) -> Vec<Quotie
     // `BTreeSet` per pair (small — at most one entry per `DepKind`
     // variant) so the final `edge_kinds: Vec<DepKind>` stays sorted
     // without a per-pair sort.
-    let assignment = factorization.assignment();
-    let owner_graph = factorization.analysis().owner_graph();
+    let assignment = assignment_analysis.assignment();
+    let dependency_graph = assignment_analysis.inputs().dependency_graph();
     let mut accum: HashMap<(ModuleId, ModuleId), QuotientEdgeAccumulator> =
-        HashMap::with_capacity(owner_graph.num_edges());
+        HashMap::with_capacity(dependency_graph.num_edges());
     let mut seen_side_effect_module_pairs: HashSet<(ModuleId, ModuleId)> = HashSet::new();
-    for edge in owner_graph.iter_edges() {
+    for edge in dependency_graph.iter_edges() {
         // Same assignment view every other quotient consumer uses; see
         // `assignment_endpoints` invariant doc.
         let Some((from, to)) = analysis::graph::assignment_endpoints(
@@ -234,13 +255,13 @@ struct QuotientEdgeAccumulator {
 }
 
 fn build_atomic_group_report(
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
     idx: usize,
     atomic_group: &AtomicGroup,
 ) -> AtomicGroupReport {
-    let mut owner_ids = Vec::with_capacity(atomic_group.members.len());
+    let mut source_unit_ids = Vec::with_capacity(atomic_group.members.len());
     let mut members = Vec::new();
-    let mut anonymous_statement_owner_ids = Vec::new();
+    let mut anonymous_statement_source_unit_ids = Vec::new();
     // Destinations dedup-by-key: tiny set per group (rare to exceed
     // a handful), so a Vec + linear-scan dedup is cheaper than a
     // `BTreeMap` allocation per group.
@@ -251,19 +272,23 @@ fn build_atomic_group_report(
     let mut line_range = LineRange::new();
     let mut min_ordinal = usize::MAX;
     let mut max_ordinal = 0usize;
-    for owner_id in &atomic_group.members {
-        owner_ids.push(owner_key(*owner_id));
-        if let Some(node) = factorization.analysis().owner_graph().node(*owner_id) {
-            if node.declared.is_empty() {
-                anonymous_statement_owner_ids.push(owner_key(*owner_id));
+    for source_unit_id in &atomic_group.members {
+        source_unit_ids.push(source_unit_key(*source_unit_id));
+        if let Some(node) = assignment_analysis
+            .inputs()
+            .dependency_graph()
+            .node(*source_unit_id)
+        {
+            if node.class() == SourceUnitClass::AnonymousStatement {
+                anonymous_statement_source_unit_ids.push(source_unit_key(*source_unit_id));
             }
-            members.extend(binding_reports(factorization, node.declared.iter()));
+            members.extend(binding_reports(assignment_analysis, node.declared.iter()));
             if let Some(location) = &node.source_location {
                 line_range.expand(location);
             }
             min_ordinal = min_ordinal.min(node.statement_ordinal.0);
             max_ordinal = max_ordinal.max(node.statement_ordinal.0);
-            let destination = module_key(factorization.assignment().of(*owner_id));
+            let destination = module_key(assignment_analysis.assignment().of(*source_unit_id));
             if !destinations.contains(&destination) {
                 destinations.push(destination);
             }
@@ -271,13 +296,13 @@ fn build_atomic_group_report(
     }
     members.sort();
     members.dedup();
-    anonymous_statement_owner_ids.sort();
+    anonymous_statement_source_unit_ids.sort();
     destinations.sort();
     AtomicGroupReport {
         id: atomic_group_key(idx),
-        owner_ids,
+        source_unit_ids,
         members,
-        anonymous_statement_owner_ids,
+        anonymous_statement_source_unit_ids,
         destinations,
         causes,
         size_lines_estimate: line_range.size_estimate(),
@@ -286,25 +311,25 @@ fn build_atomic_group_report(
     }
 }
 
-fn build_atomic_graph_report(factorization: &AssignmentAnalysis) -> AtomicGraphReport {
-    let owner_graph = factorization.analysis().owner_graph();
-    let mut atomic_groups = factorization.atomic_groups().to_vec();
+fn build_atomic_graph_report(assignment_analysis: &AssignmentAnalysis) -> AtomicGraphReport {
+    let dependency_graph = assignment_analysis.inputs().dependency_graph();
+    let mut atomic_groups = assignment_analysis.atomic_groups().to_vec();
     atomic_groups.sort_by_key(|atomic_group| {
         atomic_group
             .members
             .iter()
             .copied()
             .min()
-            .map(|owner| owner.0)
+            .map(|source_unit| source_unit.0)
     });
-    // `atomic_group_by_owner` is lookup-only after construction — a `HashMap`
+    // `atomic_group_by_source_unit` is lookup-only after construction — a `HashMap`
     // is O(1) per get vs `BTreeMap`'s O(log n) and the per-edge loop
     // below hits it 2× per edge across ~26K edges on big chunks.
-    let owner_count = owner_graph.num_nodes();
-    let mut atomic_group_by_owner: Vec<Option<usize>> = vec![None; owner_count];
+    let source_unit_count = dependency_graph.num_nodes();
+    let mut atomic_group_by_source_unit: Vec<Option<usize>> = vec![None; source_unit_count];
     for (atomic_group_idx, atomic_group) in atomic_groups.iter().enumerate() {
-        for owner in &atomic_group.members {
-            if let Some(slot) = atomic_group_by_owner.get_mut(owner.0) {
+        for source_unit in &atomic_group.members {
+            if let Some(slot) = atomic_group_by_source_unit.get_mut(source_unit.0) {
                 *slot = Some(atomic_group_idx);
             }
         }
@@ -315,23 +340,31 @@ fn build_atomic_graph_report(factorization: &AssignmentAnalysis) -> AtomicGraphR
     let nodes = atomic_groups
         .par_iter()
         .enumerate()
-        .map(|(idx, atomic_group)| build_atomic_group_report(factorization, idx, atomic_group))
+        .map(|(idx, atomic_group)| {
+            build_atomic_group_report(assignment_analysis, idx, atomic_group)
+        })
         .collect();
 
     // Per-(from_group, to_group) accumulator: HashMap keyed by the
     // group pair (cheaper than BTreeMap for the ~tens-of-thousands
-    // edges across thousands of groups). Owner-edge IDs accumulate
-    // into a Vec — dedup is unnecessary because each `OwnerEdgeId`
-    // is unique per owner edge. Order is restored by a single final
+    // edges across thousands of groups). source-unit-edge IDs accumulate
+    // into a Vec — dedup is unnecessary because each `DependencyEdgeId`
+    // is unique per source unit edge. Order is restored by a single final
     // sort.
     let mut accum: HashMap<(usize, usize), AtomicEdgeAccumulator> = HashMap::new();
-    for edge in owner_graph.iter_edges() {
+    for edge in dependency_graph.iter_edges() {
         if matches!(edge.reason.kind, DepKind::LazyUse | DepKind::HoistedUse) {
             continue;
         }
         let (Some(from_group), Some(to_group)) = (
-            atomic_group_by_owner.get(edge.from.0).copied().flatten(),
-            atomic_group_by_owner.get(edge.to.0).copied().flatten(),
+            atomic_group_by_source_unit
+                .get(edge.from.0)
+                .copied()
+                .flatten(),
+            atomic_group_by_source_unit
+                .get(edge.to.0)
+                .copied()
+                .flatten(),
         ) else {
             continue;
         };
@@ -340,13 +373,13 @@ fn build_atomic_graph_report(factorization: &AssignmentAnalysis) -> AtomicGraphR
         }
         let entry = accum.entry((from_group, to_group)).or_default();
         entry.kinds.insert(edge.reason.kind);
-        entry.owner_edge_ids.push(edge.id.report_key());
+        entry.dependency_edge_ids.push(edge.id.report_key());
         entry.constrains_init_order |= edge.reason.constrains_init_order();
     }
     let mut accum: Vec<((usize, usize), AtomicEdgeAccumulator)> = accum.into_iter().collect();
     accum.sort_by_key(|((from, to), _)| (*from, *to));
     for (_, entry) in accum.iter_mut() {
-        entry.owner_edge_ids.sort();
+        entry.dependency_edge_ids.sort();
     }
     let edges = accum
         .into_iter()
@@ -356,7 +389,7 @@ fn build_atomic_graph_report(factorization: &AssignmentAnalysis) -> AtomicGraphR
             source: atomic_group_key(from),
             target: atomic_group_key(to),
             edge_kinds: entry.kinds.into_iter().collect(),
-            owner_edge_ids: entry.owner_edge_ids,
+            dependency_edge_ids: entry.dependency_edge_ids,
             constrains_init_order: entry.constrains_init_order,
         })
         .collect();
@@ -365,15 +398,18 @@ fn build_atomic_graph_report(factorization: &AssignmentAnalysis) -> AtomicGraphR
 }
 
 fn build_quotient_scc_reports(
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
     quotient_nodes: &[ModuleEntry],
     quotient_edges: &[QuotientEdgeReport],
 ) -> Vec<QuotientSccReport> {
     let quotient_edges_by_source = quotient_edge_indices_by_source(quotient_edges);
     let mut sccs = Vec::new();
-    for scc in factorization.dep_graph_sccs() {
+    for scc in assignment_analysis.module_quotient_sccs() {
         let is_cycle = scc.len() > 1
-            || (scc.len() == 1 && factorization.dep_graph().contains_edge(scc[0], scc[0]));
+            || (scc.len() == 1
+                && assignment_analysis
+                    .module_quotient()
+                    .contains_edge(scc[0], scc[0]));
         if !is_cycle {
             continue;
         }
@@ -445,16 +481,29 @@ fn quotient_edge_indices_by_source(
     by_source
 }
 
-/// True iff `id` refers to a logical module whose `residual` flag is
-/// set — the chunk's catch-all destination synthesized before
-/// `AssignmentAnalysis::build_with`. Used by the destination
-/// projection in reports to gate residual-only predicates without
-/// string-matching module ids or labels.
-fn is_residual_destination(factorization: &AssignmentAnalysis, id: ModuleId) -> bool {
-    factorization
-        .analysis()
-        .logical_module(id)
-        .is_some_and(|module| module.residual)
+/// Preserve the disjoint entry identity and planned-output policy in the
+/// report. Neither is inferred from an authored module path.
+fn destination_kind(
+    assignment_analysis: &AssignmentAnalysis,
+    id: ModuleId,
+) -> ModuleDestinationKind {
+    if id
+        == assignment_analysis
+            .assignment()
+            .entry_destination()
+            .module_id()
+    {
+        return ModuleDestinationKind::Entry;
+    }
+    match assignment_analysis
+        .inputs()
+        .planned_module(id)
+        .expect("non-entry destination has a planned module")
+        .role
+    {
+        ModuleRole::Specified => ModuleDestinationKind::Specified,
+        ModuleRole::Unassigned => ModuleDestinationKind::Unassigned,
+    }
 }
 
 /// Map a typed [`EdgeRole`] to its wire-format projection. `None`
@@ -464,18 +513,18 @@ fn is_residual_destination(factorization: &AssignmentAnalysis, id: ModuleId) -> 
 fn edge_role_report(role: EdgeRole) -> Option<EdgeRoleReport> {
     match role {
         EdgeRole::Direct => None,
-        EdgeRole::PromotedAtInit { callee_owner } => Some(EdgeRoleReport::PromotedAtInit {
-            callee_owner: owner_key(callee_owner),
+        EdgeRole::PromotedAtInit { callee_source_unit } => Some(EdgeRoleReport::PromotedAtInit {
+            callee_source_unit: source_unit_key(callee_source_unit),
         }),
     }
 }
 
 /// Build the module-table entry for `id`: the single place its
-/// canonical [`spec::ModulePath`] and residual flag are recorded.
-fn module_entry(factorization: &AssignmentAnalysis, id: ModuleId) -> ModuleEntry {
+/// canonical [`spec::ModulePath`] and destination kind are recorded.
+fn module_entry(assignment_analysis: &AssignmentAnalysis, id: ModuleId) -> ModuleEntry {
     ModuleEntry {
         key: module_key(id),
-        path: factorization.analysis().module_path(id),
-        residual: is_residual_destination(factorization, id),
+        path: assignment_analysis.module_path(id),
+        kind: destination_kind(assignment_analysis, id),
     }
 }

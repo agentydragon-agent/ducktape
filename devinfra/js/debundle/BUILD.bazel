@@ -15,12 +15,21 @@ exports_files([
 ])
 
 rust_library(
+    name = "source_identity",
+    srcs = ["source_identity.rs"],
+    crate_root = "source_identity.rs",
+    edition = "2024",
+    deps = ["@crates//:serde"],
+)
+
+rust_library(
     name = "js_ast",
     srcs = ["js_ast.rs"],
     crate_root = "js_ast.rs",
     edition = "2024",
     deps = [
         ":binding_targets",
+        ":source_identity",
         "@crates//:anyhow",
         "@crates//:swc_atoms",
         "@crates//:swc_common",
@@ -46,6 +55,7 @@ rust_library(
     deps = [
         ":binding_targets",
         ":js_ast",
+        ":source_identity",
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:swc_common",
@@ -169,6 +179,7 @@ rust_library(
         ":js_ast",
         ":selector_outcome",
         ":selector_resolve",
+        ":source_identity",
         ":source_match",
         ":spec",
         ":spec_resolution",
@@ -209,6 +220,10 @@ rust_library(
         "artifacts/artifact.rs",
         "artifacts/emission_files.rs",
         "artifacts/indexed_files.rs",
+        "artifacts/metrics.rs",
+        "artifacts/paths.rs",
+        "artifacts/reports.rs",
+        "artifacts/script_output.rs",
         "artifacts/source_program.rs",
     ],
     crate_root = "artifacts/artifact.rs",
@@ -451,19 +466,22 @@ rust_library(
         "facts/local_effect_targets.rs",
         "facts/local_effects.rs",
         "facts/mod.rs",
-        "facts/owner_read_closure.rs",
         "facts/purity_classification.rs",
         "facts/set_iterables.rs",
+        "facts/source_unit_read_closure.rs",
         "facts/statement_facts.rs",
         "facts/sync_effects.rs",
+        "facts/sync_effects/execution_index.rs",
+        "facts/sync_effects/interpreter.rs",
+        "facts/sync_effects/value_model.rs",
         "facts/value_flow.rs",
         "facts/value_flow_tests.rs",
         "facts/value_set_tests.rs",
         "graph/build.rs",
+        "graph/dependency_graph.rs",
         "graph/edge.rs",
         "graph/linker_order.rs",
         "graph/mod.rs",
-        "graph/owner_graph.rs",
         "graph/quotient.rs",
         "graph/tests.rs",
         "ids.rs",
@@ -489,6 +507,7 @@ rust_library(
     deps = [
         ":binding_targets",
         ":js_ast",
+        ":source_identity",
         ":spec",
         "@crates//:petgraph",
         "@crates//:roaring",
@@ -515,7 +534,7 @@ rust_test(
 rust_library(
     name = "gate",
     srcs = [
-        "analysis_tests/factorization_validation.rs",
+        "analysis_tests/assignment_validation.rs",
         "analysis_tests/mod.rs",
         "assignment_analysis.rs",
         "assignment_inputs.rs",
@@ -535,6 +554,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":source_identity",
         ":spec",
         "@crates//:petgraph",
         "@crates//:rayon",
@@ -542,6 +562,7 @@ rust_library(
         "@crates//:serde",
         "@crates//:swc_atoms",
         "@crates//:swc_ecma_ast",
+        "@crates//:thiserror",
     ],
 )
 
@@ -586,7 +607,7 @@ rust_test(
     ],
 )
 
-# Test-only helpers for building owner-graph wire fixtures (the module
+# Test-only helpers for building dependency graph wire fixtures (the module
 # table + interned ModuleKey references). Shared by in-crate tests and
 # the separate integration / e2e test crates so the builders aren't
 # copy-pasted per test module.
@@ -598,6 +619,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":source_identity",
         ":spec",
     ],
 )
@@ -849,6 +871,7 @@ rust_library(
         ":reconstruction",
         ":selector_outcome",
         ":selector_resolve",
+        ":source_identity",
         ":source_match",
         ":spec",
         ":spec_resolution",
@@ -952,7 +975,6 @@ rust_library(
         ":write_tree",
         "@crates//:anyhow",
         "@crates//:clap",
-        "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],
@@ -962,7 +984,10 @@ rust_test(
     name = "pipeline_test",
     crate = ":pipeline",
     edition = "2024",
-    deps = ["@crates//:tempfile"],
+    deps = [
+        "@crates//:serde",
+        "@crates//:tempfile",
+    ],
 )
 
 rust_library(
@@ -1001,6 +1026,7 @@ rust_library(
         ":selector_debt",
         ":selector_outcome",
         ":selector_resolve",
+        ":source_identity",
         ":source_inspection",
         ":source_match",
         ":spec",
@@ -1035,6 +1061,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":source_identity",
         "@crates//:thiserror",
     ],
 )
@@ -1074,6 +1101,7 @@ rust_library(
         ":analysis",
         ":selector_constraint_backend",
         ":selector_ir",
+        ":source_identity",
     ],
 )
 
@@ -1086,6 +1114,7 @@ rust_library(
     deps = [
         ":analysis",
         ":selector_ir",
+        ":source_identity",
     ],
 )
 
@@ -1112,6 +1141,7 @@ rust_library(
         ":selector_constraint_backend",
         ":selector_constraint_model_builder",
         ":selector_ir",
+        ":source_identity",
     ],
 )
 
@@ -1196,6 +1226,7 @@ rust_library(
         ":sat_parameters_rust_proto",
         ":selector_constraint_backend",
         ":selector_ortools_cpsat_model",
+        ":source_identity",
         "@crates//:thiserror",
     ],
 )
@@ -1245,6 +1276,7 @@ rust_library(
         ":selector_outcome",
         ":selector_runtime",
         ":shape_index",
+        ":source_identity",
         ":source_match",
         ":spec",
         "@crates//:anyhow",
@@ -1321,7 +1353,7 @@ rust_binary(
 
 # A faithful, fail-closed projection of a
 # parsed chunk into AST facts (kind/child/str_lit/prop_name/ident_name + the
-# owner-ordinal join). The extractor errors loudly on any construct it has not
+# source-unit-ordinal join). The extractor errors loudly on any construct it has not
 # modeled rather than emitting a silently-incomplete fact set. Seed slice; grows
 # construct-by-construct.
 rust_library(
@@ -1331,6 +1363,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":js_ast",
+        ":source_identity",
         "@crates//:strum",
         "@crates//:swc_ecma_ast",
     ],

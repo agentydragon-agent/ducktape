@@ -19,6 +19,7 @@ from agentplane.action_service.mcp_settings import McpClientMetadataSettings, Mc
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.app.settings import AppSettingsConfig
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
+from agentplane.runner.configuration import GuestResources
 from agentplane.subjects import ServiceAccountRef
 from model_catalog.catalog import Route
 
@@ -164,6 +165,13 @@ class Environment:
     # Whether this environment has VM Sandboxes: the runner VM template (runner_vm.py) and the egress
     # relay for their KubeVirt launchers (launcher_relay.py).
     vm_sandboxes: bool
+    # Optional StorageClass for both claims owned by a VM Sandbox. If unset, they use the runner
+    # template's state claim class.
+    vm_storage_class: str | None = None
+    # Guest sizing and Runner cgroup budgets shared by the VM template and guest config seed.
+    vm_resources: GuestResources | None = None
+    # Whether runner Pods delegate Codex command execution to a companion with its own PID namespace.
+    isolated_codex_executor: bool = True
     # Whether a VM Sandbox's serial console is a root shell, for whoever holds the VMI `console`
     # subresource. Only meaningful with `vm_sandboxes`.
     vm_console_autologin: bool = False
@@ -176,18 +184,14 @@ class Environment:
     # Non-secret environment defaults shared by every SandboxTemplate workload container;
     # the common pod builder applies them, and the runner explicitly forwards these names to harnesses.
     sandbox_workload_env: Mapping[str, str] = field(default_factory=lambda: {"TZ": "America/Los_Angeles"})
-    # Names whose value the sandbox *image* owns and the runner hands to its harness children through
-    # --harness-inherit-env. The deployment names them and sets no value, so the image stays the only
-    # place a value is written. Needed because a harness child starts from the runner's declared
-    # environment and nothing else: a name left off the list reaches no child however the image is set.
-    # TZDIR is the case that motivated this: nixpkgs' glibc looks for zoneinfo under its own store
-    # path, which holds none, so without it `TZ=America/Los_Angeles` silently means UTC.
-    #
-    # TODO(2026-10-07, Haku): revisit before this list grows. Two open questions: (1) the value may
-    # be removable at the image rather than forwarded — the sandbox image already symlinks
-    # /usr/share/zoneinfo and exports TZDIR in its own Config/Env (agentplane/images/sandbox.nix),
-    # so shipping tzdata where nixpkgs' glibc actually looks would delete the variable instead of
-    # plumbing it; (2) `--harness-env` takes a bare NAME too, so `--harness-env TZDIR` forwards the
-    # same value — the separate flag buys only that inherited names apply first and stay
-    # overridable. If nothing else needs that ordering, one flag is serving one name.
+    # Image-owned values explicitly inherited by harnesses. Runtime configuration can override
+    # these through harness_environment.values; undeclared Runner variables reach no harness.
+    # Nixpkgs glibc needs TZDIR to resolve the deployment's TZ against the image's zoneinfo.
     harness_inherited_env: Sequence[str] = ("TZDIR",)
+
+    def __post_init__(self) -> None:
+        if self.vm_storage_class is not None:
+            if not self.vm_storage_class:
+                raise ValueError("vm_storage_class cannot be empty")
+            if not self.vm_sandboxes:
+                raise ValueError("vm_storage_class requires vm_sandboxes")

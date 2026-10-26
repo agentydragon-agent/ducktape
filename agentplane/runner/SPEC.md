@@ -8,11 +8,52 @@ page is what the runner guarantees about it.
 The runner does not own product Threads, app command persistence, Kubernetes lifecycle, or the
 Thread-page projection. Their cross-layer contract is [Thread, runner, and harness layering](../docs/thread_layering.md).
 
+## Configuration
+
+Every Pod and VM starts `agentplane-runner --config PATH --launch-file PATH`. The executable name
+has no effect on configuration. Both flags are required; the shared version-2 JSON configuration
+rejects unknown fields, unsupported versions and contradictory policy before state ownership.
+Templates own paths, endpoints, providers, explicit environment allowlists, platform instructions
+and isolation settings. The separate controller-owned launch file contains only Sandbox identity
+and optional bootstrap source.
+
+The loader first resolves Runner environment declarations, then harness declarations. Each declaration
+has inherited names and explicit values; explicit values take precedence. Provider tokens are read
+from the named Runner environment variables. Undeclared variables never enter native harnesses.
+Session configuration cannot override template resource ceilings or executor selection.
+
+Pods and VMs expose `/run/agentplane/config/runner.json`,
+`/run/agentplane/sandbox/launch.json`, `/run/agentplane/config/kubeconfig`, and
+`/run/agentplane/trust/` at the same paths. Pod templates mount ConfigMaps; VM boot mounts disks.
+The [configuration inventory](CONFIGURATION.md) specifies every field, source and file.
+
+The required `environment.kind` selects a Pod or VM variant. Pod policy contains an optional
+container executor; VM policy contains console settings, guest/service capacity, cgroup paths and
+identity, and an optional cgroup executor. This is the only deployment/executor discriminator.
+The VM resource policy declares each harness/executor budget once; Runner derives its cgroups
+from it. The same typed template value sizes KubeVirt. Pod resources remain Kubernetes-owned.
+Omitting the variant's executor selects local tools. Contradictory or partial environment policy
+is rejected before environment changes or state ownership.
+
+The VM resource object uses bytes for memory, microseconds per a fixed 100,000 µs CPU
+period, process counts for PIDs, and bytes/operations per second for block I/O. The same guest RAM
+and vCPU values size the KubeVirt domain. Before the Runner starts, `ExecStartPre` invokes the
+private Go preflight mode, which strictly decodes the shared configuration, validates VM policy,
+and confirms the service memory cap is below live `MemTotal`; only then does it apply
+`MemoryHigh`, `MemoryMax`, fixed `MemorySwapMax=0`, `CPUQuota` and `TasksMax`. The unit uses
+`OOMPolicy=continue` so a child OOM does not stop the Runner. The delegated aggregate and process
+leaves use their respective Runner configuration budgets; swap stays disabled and both aggregate and
+process cgroups use `memory.oom.group=0`. A cgroup OOM selects individual process victims, so a tool
+OOM can leave its native parent running. The kernel chooses victims; harness survival is not
+guaranteed. If the native leader exits, the supervisor still kills all remaining descendants before
+releasing state ownership. `ProcessConfig.ResourceLimits` can override a leaf
+budget for an isolated process purpose, while the parent aggregate remains authoritative.
+
 ## Initialization
 
 - The Sandbox's launch file (`--launch-file`, written by the Sandbox controller) carries the
   Sandbox's identity and the bootstrap shell source. The runner starts the bootstrap with
-  `/bin/sh -eu` from `state_dir` when the runner starts; a Sandbox without a bootstrap runs
+  `/bin/sh -eu` from the configured `initialization_cwd` when the runner starts; a Sandbox without a bootstrap runs
   nothing. `OpenSession` durably reserves a Session without waiting for the bootstrap. The runner
   does not run session setup or start a native harness until the bootstrap succeeds. If it fails
   or is interrupted, admitted commands receive durable failure outcomes.
@@ -60,7 +101,7 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   orders that hold for every turn of it. They reach the model appended to the harness's own system
   prompt, so each harness keeps its coding-agent policy. A caller's empty task leaves the platform part. They are
   fixed for the session's life. The runner composes them from the deployment's platform instructions
-  (`--platform-instructions-file`, or the guest config's `platform_instructions`), the Session's
+  (`runner.json`’s `platform_instructions`), the Session's
   notification destination (the Sandbox identity from the launch file and the Session ID) and the
   caller's task, in that order; callers supply only the task. They are fixed because a `spec` supplied on reopening must equal the stored one.
   Platform guidance supplies deployment service addresses and essential constraints; detailed
@@ -81,10 +122,30 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 - `ListSessions` returns every session in the state directory with its spec, harness state,
   setup state, active turn, and last cursor, so a client that keeps no record of its own finds them again.
 
+## Isolated Codex execution
+
+- Deployment selects local tools or one isolated executor shared by every Codex Session. Runner
+  configures the app-server's `CODEX_EXEC_SERVER_URL`; failed isolated execution never falls back to
+  local tools. Claude execution is unchanged.
+- In VMs the executor and native harnesses have separate sibling cgroup budgets under the Runner
+  service. In Pods the executor companion is PID 1 in a separate container with a private PID namespace
+  and Kubernetes resource limits. Workspace and runtime paths are shared under the same Sandbox principal.
+- Runner starts the executor before the app-server and probes RPC progress with deadlines. Server exit
+  or an unresponsive dispatcher fences its work and restarts the executor with bounded backoff. A
+  failed tool's side effects remain uncertain; Runner never replays it. Executor loss does not itself
+  emit `HarnessExited` for the app-server.
+- Startup fences previous executor work before opening Session stores. Quiesce fences the executor
+  before journal seals; shutdown fences it before releasing state ownership. VM supervisors retain
+  inherited ownership through cgroup cleanup. Pod ownership-connection loss exits the executor
+  container, and a new idle container generation proves the runtime cleaned up detached descendants.
+  Failed cleanup prevents sealing and starting a successor.
+- Code-mode workers, MCP helpers and external daemons are outside the executor budget in the pinned
+  Codex release. Details and configuration: [Codex executor isolation](docs/codex_executor.md).
+
 ## Runner control stream
 
 - The runner dials the Runner Gateway's [runner control stream](../docs/runner_control.md) at
-  `--control-target` and keeps one `Connect` stream for as long as it runs, reconnecting on a fresh
+  `control.target` and keeps one `Connect` stream for as long as it runs, reconnecting on a fresh
   connection after any loss, and serves the `Runner` service to the gateway through it. It accepts
   no network connections.
 - `OpenSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,

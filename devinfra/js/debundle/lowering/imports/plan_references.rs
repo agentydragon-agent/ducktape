@@ -4,10 +4,11 @@
 
 use crate::body_facts::NaturalizedBodyFacts;
 use crate::imports::{RuntimeImportFacts, RuntimeImportInfo};
-use analysis::{BindingKind, ModuleId};
+use analysis::{BindingId, BindingKind, ChunkId, ModuleId};
 use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle};
 use gate::AssignmentAnalysis;
+use source_identity::StatementId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
@@ -112,16 +113,19 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
 }
 
 pub(crate) fn collect_imported_reexports_by_module(
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
+    chunk_identity: ChunkId,
     module_count: usize,
-) -> Vec<Vec<ImportedReexport>> {
+) -> Result<Vec<Vec<ImportedReexport>>> {
     let mut by_module: Vec<Vec<ImportedReexport>> = (0..module_count).map(|_| Vec::new()).collect();
-    // Stable iteration order on `factorization.analysis().bindings()` (HashMap): the
+    let local_bindings = assignment_analysis
+        .inputs()
+        .local_bindings(chunk_identity)?;
+    // Stable iteration order on the checked per-chunk catalogue (HashMap): the
     // recorded sequence determines the emit order of
     // `import { ... }` statements per module body and we want that
     // source-level shape pinned.
-    let mut sorted_bindings: Vec<(&Id, &BindingKind)> =
-        factorization.analysis().bindings().iter().collect();
+    let mut sorted_bindings: Vec<(&Id, &BindingKind)> = local_bindings.as_map().iter().collect();
     sorted_bindings.sort_by(|a, b| a.0.0.cmp(&b.0.0));
     for (id, kind) in sorted_bindings {
         // The body of this loop refers to the sym-typed `local` name
@@ -148,18 +152,18 @@ pub(crate) fn collect_imported_reexports_by_module(
             public_name: public_name.to_string(),
         });
     }
-    by_module
+    Ok(by_module)
 }
 
 pub(crate) fn plan_module_reference_needs<'a>(
     module_index: usize,
     body_facts: &NaturalizedBodyFacts,
-    factorization: &AssignmentAnalysis,
-    declaration_by_name: &HashMap<Id, Vec<usize>>,
+    assignment_analysis: &AssignmentAnalysis,
+    declaration_by_name: &HashMap<Id, Vec<StatementId>>,
     binding_assignment: &HashMap<Id, usize>,
     entry_exports_by_original_local: &HashMap<Id, EntryExport>,
     runtime_imports: &'a RuntimeImportFacts,
-) -> ModuleReferenceNeeds<'a> {
+) -> Result<ModuleReferenceNeeds<'a>> {
     let mut needs = ModuleReferenceNeeds::default();
     for reference in body_facts.binding_uses() {
         let Some(original_id) = reference.source_id() else {
@@ -167,11 +171,17 @@ pub(crate) fn plan_module_reference_needs<'a>(
         };
         let body_id = reference.emitted_id();
         let name_str = body_id.0.as_ref();
-        if let Some(ModuleId(provider_index)) = factorization.analysis().owner_of(original_id) {
+        let binding_id = BindingId::new(
+            assignment_analysis.inputs().chunk_identity(),
+            original_id.clone(),
+        );
+        if let Some(ModuleId(provider_index)) =
+            assignment_analysis.inputs().owner_of(&binding_id)?
+        {
             if provider_index != module_index
-                && let Some(provider) = factorization
-                    .analysis()
-                    .logical_module(ModuleId(provider_index))
+                && let Some(provider) = assignment_analysis
+                    .inputs()
+                    .planned_module(ModuleId(provider_index))
                 && let Some(exported_name) = provider.rename_map.get(original_id)
             {
                 needs
@@ -208,18 +218,18 @@ pub(crate) fn plan_module_reference_needs<'a>(
 
     collect_phantom_side_effect_providers(
         module_index,
-        factorization,
+        assignment_analysis,
         &needs.cross_module_imports_by_provider,
         &mut needs.phantom_side_effect_providers,
     );
 
-    needs
+    Ok(needs)
 }
 
 /// Phantom side-effect providers (Lemma 2's emit-side fix):
 ///
-/// Walk this module's owners' outgoing constraining edges in the
-/// owner graph. Any target module not already in
+/// Walk this module's source_units' outgoing constraining edges in the
+/// dependency graph. Any target module not already in
 /// `cross_module_imports_by_provider` (and not residual) needs a
 /// side-effect-only ESM import so the linker visits it as a
 /// dependency. Without this, at-init promotion records the
@@ -233,23 +243,26 @@ pub(crate) fn plan_module_reference_needs<'a>(
 /// is redundant — entry is always reachable.
 fn collect_phantom_side_effect_providers(
     module_index: usize,
-    factorization: &AssignmentAnalysis,
+    assignment_analysis: &AssignmentAnalysis,
     cross_module_imports_by_provider: &BTreeMap<usize, BTreeMap<String, String>>,
     phantom_side_effect_providers: &mut BTreeSet<usize>,
 ) {
     let module_id = ModuleId(module_index);
-    let residual = factorization.assignment().residual();
-    let owner_graph = factorization.analysis().owner_graph();
-    for (owner_id, owner_module) in factorization.assignment().iter() {
-        if owner_module != module_id {
+    let residual = assignment_analysis
+        .assignment()
+        .entry_destination()
+        .module_id();
+    let dependency_graph = assignment_analysis.inputs().dependency_graph();
+    for (source_unit_id, source_unit_module) in assignment_analysis.assignment().iter() {
+        if source_unit_module != module_id {
             continue;
         }
-        for &edge_id in owner_graph.out_edges_of(owner_id) {
-            let edge = owner_graph.edge(edge_id);
+        for &edge_id in dependency_graph.out_edges_of(source_unit_id) {
+            let edge = dependency_graph.edge(edge_id);
             if !edge.reason.constrains_init_order() {
                 continue;
             }
-            let target_module = factorization.assignment().of(edge.to);
+            let target_module = assignment_analysis.assignment().of(edge.to);
             if target_module == module_id || target_module == residual {
                 continue;
             }

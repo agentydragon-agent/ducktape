@@ -26,11 +26,11 @@ images:
   - name: git.allegedly.works/ducktape-ci/runner
     newTag: devel-20261023234547-af673d0 # {"$imagepolicy": "flux-system:runner:tag"}
   - name: git.allegedly.works/ducktape-ci/runner-ducktape
-    newTag: devel-20261026005608-4f6dc7d # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
+    newTag: devel-20261026064916-4ba2ca0 # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
-    newTag: devel-20261026004916-4f6dc7d # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
+    newTag: devel-20261026064058-4ba2ca0 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
-    newTag: devel-20261026004938-4f6dc7d # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
+    newTag: devel-20261026064150-4ba2ca0 # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
     newTag: devel-20261026004914-28850a2 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
   # Publication bootstrap: unused until the separate MCP edge cutover.
@@ -49,13 +49,13 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
     newTag: devel-20261023092025-3c01b52 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261026004905-28850a2 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+    newTag: devel-20261026063736-f63e198 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # The runner VM SandboxTemplate's containerDisk, which `images:` reaches through kustomizeconfig.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-vm
-    newTag: devel-20261024140025-841392f # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
+    newTag: devel-20261026042333-88badbc # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
   # The runner and `agentplane` command: a disk beside the VM guest, and an image volume in the
   # runner Pod, both reached through kustomizeconfig.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
-    newTag: devel-20261026004718-28850a2 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
+    newTag: devel-20261026043659-39c6426 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
 configurations:
   - kustomizeconfig
