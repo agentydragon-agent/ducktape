@@ -361,8 +361,10 @@ function DrawGauge({ view }: { view: SustainabilityView }) {
               {percent(headlineRate)}
             </Text>
           </div>
-          <Badge color="gray" variant="light">
-            Scenario estimate
+          <Badge color={view.covered_days < view.window_days ? "yellow" : "gray"} variant="light">
+            {view.covered_days < view.window_days
+              ? `Partial window · ${view.covered_days}/${view.window_days} days`
+              : "Scenario estimate"}
           </Badge>
         </Group>
         <Text size="sm" c="dimmed">
@@ -611,6 +613,7 @@ export function SustainabilityPage() {
                 history={view.history}
                 referenceDrawRates={view.reference_draw_rates}
                 currency={view.currency}
+                windowDays={view.window_days}
               />
             </>
           )}

@@ -47,10 +47,12 @@ export function SustainabilityHistoryChart({
   history,
   referenceDrawRates,
   currency,
+  windowDays,
 }: {
   history: SustainabilityHistory[];
   referenceDrawRates: number[];
   currency: string;
+  windowDays: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const legendItems = [
@@ -79,7 +81,7 @@ export function SustainabilityHistoryChart({
         borderColor: SERIES_COLORS.annualizedSpending,
         backgroundColor: SERIES_COLORS.annualizedSpending,
         borderWidth: 2,
-        pointRadius: 0,
+        pointRadius: history.length === 1 ? 3 : 0,
         pointHitRadius: 8,
         spanGaps: false,
         yAxisID: "amount",
@@ -91,7 +93,7 @@ export function SustainabilityHistoryChart({
         borderColor: SERIES_COLORS.spendingDrawRate,
         backgroundColor: SERIES_COLORS.spendingDrawRate,
         borderWidth: 2,
-        pointRadius: 0,
+        pointRadius: history.length === 1 ? 3 : 0,
         pointHitRadius: 8,
         spanGaps: false,
         yAxisID: "rate",
@@ -104,7 +106,7 @@ export function SustainabilityHistoryChart({
         backgroundColor: SERIES_COLORS.taxAdjustedDrawRate,
         borderWidth: 2,
         borderDash: [5, 3],
-        pointRadius: 0,
+        pointRadius: history.length === 1 ? 3 : 0,
         pointHitRadius: 8,
         spanGaps: false,
         yAxisID: "rate",
@@ -185,6 +187,9 @@ export function SustainabilityHistoryChart({
           <Text size="xs" c="dimmed" mt={4}>
             Draw rates use TODAY&apos;S portfolio valuation as the denominator for every date shown.
           </Text>
+          <Text size="xs" c="dimmed">
+            Each point uses {windowDays} complete days. Shorter startup windows are omitted.
+          </Text>
           <Group gap="md" mt="xs" wrap="wrap" role="list" aria-label="Chart legend">
             {legendItems.map((item) => (
               <Group key={item.label} gap={6} wrap="nowrap" role="listitem">
@@ -199,7 +204,8 @@ export function SustainabilityHistoryChart({
         </div>
         {history.length === 0 ? (
           <Text size="sm" c="dimmed">
-            History is not available for this window yet.
+            History requires at least {windowDays} days of common recorded spending history. Select a shorter window
+            to see available history.
           </Text>
         ) : (
           <div style={{ height: 300, minWidth: 0, position: "relative" }}>
