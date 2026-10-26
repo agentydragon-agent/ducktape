@@ -11,13 +11,19 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
+from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.plaid_mcp import db
-from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.external_secrets.external_secret import (
+    DataFrom,
+    ExternalSecret,
+    SecretStoreRef,
+    remote_data,
+)
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from finance.plaid.spend.settings import SpendSettings
@@ -35,6 +41,9 @@ POLICY_READER = "plaid-spend-policy-reader"
 _WEB_OIDC_CREDENTIALS_NAME = "plaid-spend-web-oidc-config"
 _WEB_OIDC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name=_WEB_OIDC_CREDENTIALS_NAME)
 _WEB_OIDC_READER = "plaid-spend-web-oidc-reader"
+_COINBASE_CREDENTIALS_NAME = "coinbase-api-credentials"
+_COINBASE_CREDENTIALS = SecretRef(namespace=NAMESPACE, name=_COINBASE_CREDENTIALS_NAME)
+_EXTERNAL_CREDS_READER = "external-creds-reader"
 _DB = db.SPEND
 _CONFIG_PATH = SpendSettings.model_fields["config_path"].default
 _DESKTOP_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-spend-desktop/"
@@ -128,6 +137,28 @@ def _spend_policy_secret(chart: Chart) -> None:
     )
 
 
+def _coinbase_credentials(chart: Chart) -> None:
+    ServiceAccount(
+        chart,
+        "external-creds-reader",
+        metadata=ApiObjectMetadata(name=_EXTERNAL_CREDS_READER, namespace=NAMESPACE),
+        automount_token=False,
+    )
+    ExternalSecret(
+        chart,
+        "coinbase-credentials-external-secret",
+        metadata=ApiObjectMetadata(name=_COINBASE_CREDENTIALS_NAME, namespace=NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
+        data=[
+            remote_data(_COINBASE_CREDENTIALS_NAME, "api_key"),
+            remote_data(_COINBASE_CREDENTIALS_NAME, "api_secret"),
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+    )
+
+
 def _deployment(chart: Chart) -> None:
     health = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_WEB.pod_port))
     k8s.KubeServiceAccount(
@@ -188,6 +219,12 @@ def _deployment(chart: Chart) -> None:
                                     env_name(SpendSettings, "web_oidc_session_secret")
                                 ),
                                 _DB.key("DATABASE_URL").env_var("DATABASE_URL"),
+                                _COINBASE_CREDENTIALS.key("api_key").env_var(
+                                    env_name(SpendSettings, "coinbase", "api_key"), optional=True
+                                ),
+                                _COINBASE_CREDENTIALS.key("api_secret").env_var(
+                                    env_name(SpendSettings, "coinbase", "api_secret"), optional=True
+                                ),
                             ],
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path=str(_CONFIG_PATH.parent), read_only=True)
@@ -214,6 +251,7 @@ def chart(app: App) -> Chart:
     )
     _web_oidc_credentials(chart)
     _spend_policy_secret(chart)
+    _coinbase_credentials(chart)
     _deployment(chart)
     k8s.KubeService(
         chart,
@@ -239,10 +277,21 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(
             name="plaid-spend-ingress",
             namespace=NAMESPACE,
-            annotations={"description": "Only the cluster Gateway may reach the Plaid spend API."},
+            annotations={
+                "description": (
+                    "Only the cluster Gateway may reach the Plaid spend API. Outbound access is limited to the Plaid "
+                    "database, the Authentik Gateway, and Coinbase HTTPS."
+                )
+            },
         ),
         endpoint_selector=_WEB.pods.selector,
         ingress=[IngressRule.from_gateway(_WEB.pod_port)],
+        egress=[
+            cilium.dns_egress(resolves=["*"]),
+            db.POSTGRES.rw.egress(),
+            cilium.egress_via_gateway("auth.allegedly.works"),
+            EgressRule.to_fqdns("api.coinbase.com"),
+        ],
     )
     return chart
 

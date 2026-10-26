@@ -83,6 +83,7 @@ CREDENTIALS = (
         consumers=(
             ApprovedConsumer("haku-sandbox", "coinbase-api-credentials-haku-sandbox-reader"),
             ApprovedConsumer("agentplane-staging", "coinbase-api-credentials-agentplane-staging-reader"),
+            ApprovedConsumer("plaid-mcp", "coinbase-api-credentials-plaid-mcp-reader"),
         ),
     ),
     Credential(

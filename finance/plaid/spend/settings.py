@@ -4,17 +4,32 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class CoinbaseCredentials(BaseModel):
+    model_config = ConfigDict(hide_input_in_errors=True)
+
+    api_key: SecretStr
+    api_secret: SecretStr
+
+    @field_validator("api_key", "api_secret")
+    @classmethod
+    def reject_empty_secret(cls, value: SecretStr) -> SecretStr:
+        if not value.get_secret_value().strip():
+            raise ValueError("Coinbase credentials must not be empty")
+        return value
+
+
 class SpendSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="PLAID_SPEND_")
+    model_config = SettingsConfigDict(env_prefix="PLAID_SPEND_", env_nested_delimiter="__", hide_input_in_errors=True)
 
     database_url: str = Field(validation_alias="DATABASE_URL")
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     config_path: Path = Path("/etc/plaid-spend/spend-policy.yaml")
+    coinbase: CoinbaseCredentials | None = None
 
     api_oidc_issuer: str
     api_oidc_client_id: str
