@@ -27,6 +27,7 @@ import {
 } from "../client";
 import { historyRows, rowKey } from "./history_rows";
 import { SandboxesLiveProvider, ThreadsLiveProvider, useRequiredThreadsLive } from "../live";
+import type { InboxNoticeState } from "../notification_types";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../../../../util/frontend/markdown";
 import { HistoryRowView, ProjectedSession } from "./projected_session";
@@ -128,6 +129,7 @@ let langfuseSearchSettings: LangfuseSearchSettings | null = LANGFUSE_SEARCH_SETT
 // The Dispatcher watches the page opened, which a test answers itself.
 let dispatchWatches: ServedWatch[] = [];
 let threadRows: ThreadView[] | null = null;
+let noticeInboxes: InboxNoticeState[] = [];
 
 beforeEach(() => {
   document.title = "Agentplane";
@@ -147,6 +149,7 @@ beforeEach(() => {
   langfuseSearchSettings = LANGFUSE_SEARCH_SETTINGS;
   dispatchWatches = stubWatchFetch().served;
   threadRows = null;
+  noticeInboxes = [];
   vi.spyOn(api, "GET").mockImplementation((async (path: string) => {
     const data =
       path === "/frontend-config"
@@ -172,6 +175,14 @@ beforeEach(() => {
         super();
         eventSourceUrls.push(url);
         queueMicrotask(() => {
+          if (new URL(url, "http://test").pathname === "/threads/notices/stream") {
+            this.dispatchEvent(
+              new MessageEvent("snapshot", {
+                data: JSON.stringify({ observedAt: "2026-01-01T12:00:00Z", inboxes: noticeInboxes }),
+              })
+            );
+            return;
+          }
           if (sandboxes === null) return;
           this.dispatchEvent(
             new MessageEvent("snapshot", {
@@ -695,6 +706,14 @@ it.each([
   expect(mounted.at(-1)?.topbarTitle?.contains(indicator ?? null)).toBe(true);
   expect(indicator?.getAttribute("aria-label")).toBe(label);
   expect(indicator?.getAttribute("data-status")).toBe(kind);
+});
+
+it("shows the thread's unprocessed notification count in its topbar status indicator", async () => {
+  noticeInboxes = [{ inboxId: "inbox-1", sessionId: THREAD.id, queued: 2, unacknowledged: 1 }];
+  await render();
+  const indicator = mounted.at(-1)?.topbarTitle?.querySelector(".agentplane-thread-status-indicator");
+  expect(mounted.at(-1)?.topbarTitle?.contains(indicator ?? null)).toBe(true);
+  expect(indicator?.querySelector(".agentplane-thread-list-row-notices")?.textContent).toBe("3");
 });
 
 const faviconSvg = (): string => decodeURIComponent(favicon.getAttribute("href")?.split(",")[1] ?? "");

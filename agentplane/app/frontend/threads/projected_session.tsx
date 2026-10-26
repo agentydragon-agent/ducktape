@@ -63,6 +63,7 @@ import { sandboxReady, sandboxStarting, sandboxSummary, sandboxSuspended, suspen
 import { isoTime } from "../format_time";
 import { TimeAgo } from "../time_ago";
 import { NotificationStatus } from "../notification_status";
+import { useThreadNotices } from "./thread_notices";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import { finishSessionCreate, withinSessionCreate } from "../tracing";
 import { langfuseSandboxTraceUrl } from "../langfuse_search";
@@ -1608,6 +1609,7 @@ export function ProjectedSession({
   const threadsLive = useRequiredThreadsLive();
   const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId);
   const [thread, setThread] = useState<ThreadView | null>(snapshotThread ?? null);
+  const notices = useThreadNotices(thread === null ? [] : [threadId]);
   const [tabStatus, setTabStatus] = useState(CONNECTING_TAB_STATUS);
   const topbarStatus = threadStatusFromSnapshot(
     snapshotThread,
@@ -1659,7 +1661,14 @@ export function ProjectedSession({
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
       <TopbarTitle>
         <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-          {thread && <ThreadStatusIndicator kind={topbarStatus.kind} label={topbarStatus.label} />}
+          {thread && (
+            <ThreadStatusIndicator
+              kind={topbarStatus.kind}
+              label={topbarStatus.label}
+              inboxes={notices.bySession?.get(thread.id) ?? []}
+              live={notices.live}
+            />
+          )}
           <Box className="agentplane-thread-heading">
             <ThreadTitle
               className="agentplane-thread-heading-name"

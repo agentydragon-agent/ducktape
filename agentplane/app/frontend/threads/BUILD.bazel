@@ -173,6 +173,7 @@ ts_library(
         ":thread_cards",
         ":thread_commands",
         ":thread_evidence",
+        ":thread_notices",
         ":thread_status",
         ":thread_status_indicator",
         ":thread_sync",
@@ -586,11 +587,13 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":thread_notices",
         ":thread_status_indicator_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:mark_glyph",
+        "//agentplane/app/frontend:notification_types",
         "//agentplane/app/frontend:status_mark",
     ],
 )

@@ -1,6 +1,8 @@
 .agentplane-thread-status-indicator {
+  position: relative;
   display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
   outline-offset: 2px;
 }
 
@@ -10,4 +12,19 @@
 .agentplane-thread-status-indicator .agentplane-mark {
   width: 1rem;
   height: 0.6875rem;
+}
+
+/* The backlog badge sits at the status mark's lower-right corner in both thread rows and the
+   topbar. The ring keeps it legible over the mark. */
+.agentplane-thread-status-indicator .agentplane-thread-list-row-notices {
+  position: absolute;
+  right: -0.375rem;
+  bottom: -0.375rem;
+  height: 0.5875rem;
+  min-width: 0.5875rem;
+  padding: 0 0.1rem;
+  font-size: 0.425rem;
+  line-height: 0.5375rem;
+  letter-spacing: 0;
+  box-shadow: 0 0 0 1px var(--mantine-color-body);
 }

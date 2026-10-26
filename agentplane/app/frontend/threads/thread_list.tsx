@@ -14,7 +14,7 @@ import { sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../status_mark";
 import "./thread_list.css";
 import { groupThreads, type ThreadGroup } from "./thread_groups";
-import { ThreadNoticeBadge, type ThreadNotices, useThreadNotices } from "./thread_notices";
+import { type ThreadNotices, useThreadNotices } from "./thread_notices";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { TimeAgo } from "../time_ago";
 import { archiveBlockReason, snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
@@ -87,10 +87,12 @@ function ThreadRow({
         }
       }}
     >
-      <span className="agentplane-thread-list-row-mark">
-        <ThreadStatusIndicator kind={status.kind} label={status.label} />
-        <ThreadNoticeBadge inboxes={notices.bySession?.get(thread.id) ?? []} live={notices.live} />
-      </span>
+      <ThreadStatusIndicator
+        kind={status.kind}
+        label={status.label}
+        inboxes={notices.bySession?.get(thread.id) ?? []}
+        live={notices.live}
+      />
       <span className="agentplane-thread-list-row-text">
         <span className="agentplane-thread-list-row-name">{label}</span>
         {detailed && (
