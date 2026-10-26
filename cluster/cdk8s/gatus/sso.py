@@ -60,4 +60,5 @@ def resources(
         path=f"./{artifact_directory(directory.artifact)}",
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(opentofu_provider, tofu_state_db, previous_owner),
+        health_check_exprs=[opentofu.WORKSPACE_HEALTH_CHECK_EXPR],
     )

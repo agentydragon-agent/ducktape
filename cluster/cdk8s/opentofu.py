@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ApiResource, Role, RolePolicyRule, Secret, ServiceAccount
 from constructs import Construct
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from opentofu_providerconfig_crds.io.upbound.opentofu import ProviderConfig, ProviderConfigSpec
 from opentofu_workspace_crds.io.upbound.opentofu import (
     Workspace,
@@ -23,6 +24,17 @@ from util.bazel.runfiles import get_required_path, own_repo_rlocation
 NAMESPACE = "crossplane-system"
 RUNTIME_SERVICE_ACCOUNT = "crossplane-opentofu"
 KUBECONFIG_DIRECTORY = "/etc/opentofu/kubernetes"
+WORKSPACE_HEALTH_CHECK_EXPR = KustomizationSpecHealthCheckExprs(
+    api_version="opentofu.upbound.io/v1beta1",
+    kind="Workspace",
+    current=(
+        "has(status) && has(status.conditions) && "
+        "status.conditions.exists(c, has(c.type) && c.type == 'Synced' && "
+        "has(c.status) && c.status == 'True' && has(c.observedGeneration) && "
+        "c.observedGeneration == metadata.generation) && "
+        "status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')"
+    ),
+)
 
 
 def inline_module(directory: str) -> str:

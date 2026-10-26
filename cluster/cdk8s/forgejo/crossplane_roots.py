@@ -168,5 +168,6 @@ def resources(
         decryption=directory.decryption,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(*depends_on),
+        health_check_exprs=[opentofu.WORKSPACE_HEALTH_CHECK_EXPR],
         description=f"Manage the {module_name} Forgejo root with its existing OpenTofu state.",
     )

@@ -1294,6 +1294,7 @@ py_library(
         ":terraform",
         "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

@@ -27,6 +27,12 @@ artifact revision, rather than accepting Ready from an earlier revision. The rep
 deletion policy and Observe/Create/Update management policies. Those policies prevent
 Workspace deletion from destroying infrastructure; HCL edits can still delete resources.
 
+Every OpenTofu Workspace Kustomization uses a health-check expression that requires
+both `Synced=True` for the Workspace's current generation and `Ready=True`. The
+generation check applies to Synced; Ready has no observed-generation requirement.
+This prevents Flux's generic kstatus check from treating `Synced=True` alone as Ready
+when the Workspace has not reported `Ready=True`.
+
 After merging the application-root migration, verify:
 
 - `authentik-tf` and `forgejo-gitops` reached their new revision and pruned the three old
