@@ -50,11 +50,14 @@ func (r ResourceLimits) Validate() error {
 	return nil
 }
 
-func cgroupResources(limits ResourceLimits, oomGroup bool, ioLimits []cgroup2.Entry) *cgroup2.Resources {
+func cgroupResources(limits ResourceLimits, ioLimits []cgroup2.Entry) *cgroup2.Resources {
 	cpuQuota := limits.CPUQuotaMicros
 	period := cgroupCPUPeriodMicros
 	memoryMax := limits.MemoryMaxBytes
 	memorySwapMax := int64(0)
+	// A tool OOM need not kill its native parent along with the individual victim.
+	// Leader exit still fences all descendants through DestroyProcessGroup.
+	oomGroup := false
 	pidsMax := limits.PidsMax
 	return &cgroup2.Resources{
 		CPU:    &cgroup2.CPU{Max: cgroup2.NewCPUMax(&cpuQuota, &period)},
@@ -120,7 +123,7 @@ func (c *AgentCgroups) Prepare() error {
 	if len(ioLimits) == 0 {
 		return errors.New("agent cgroup requires the state and workspace block devices")
 	}
-	if _, err := cgroup2.NewManager(filepath.Dir(root), "/"+filepath.Base(root), cgroupResources(c.AggregateLimits, false, ioLimits)); err != nil {
+	if _, err := cgroup2.NewManager(filepath.Dir(root), "/"+filepath.Base(root), cgroupResources(c.AggregateLimits, ioLimits)); err != nil {
 		return fmt.Errorf("prepare aggregate agent cgroup %s: %w", root, err)
 	}
 	entries, err := os.ReadDir(root)
@@ -163,7 +166,7 @@ func (c *AgentCgroups) CreateProcessGroup(override *ResourceLimits) (string, err
 		return "", err
 	}
 	name := "process-" + uuid.NewString()
-	if _, err := parent.NewChild(name, cgroupResources(limits, true, ioLimits)); err != nil {
+	if _, err := parent.NewChild(name, cgroupResources(limits, ioLimits)); err != nil {
 		return "", fmt.Errorf("create agent process cgroup: %w", err)
 	}
 	return filepath.Join(c.Root, name), nil

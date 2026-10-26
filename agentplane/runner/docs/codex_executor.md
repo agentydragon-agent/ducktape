@@ -38,8 +38,10 @@ common Runner configuration. Runner prepares
 `workloads` and `executors` as sibling delegated cgroup subtrees, before opening Session stores.
 The harness aggregate and executor aggregate have independent limits; their configured memory caps
 must fit together below the service's memory high watermark. The service's maximum leaves the
-configured OS reserve below guest RAM. Each native leaf disables swap and enables group OOM killing;
-the harness aggregate permits individual leaf failures.
+configured OS reserve below guest RAM. Aggregate groups and native leaves disable swap and set
+`memory.oom.group=0`, allowing the kernel to kill individual processes under memory pressure. A tool
+can be killed while the exec-server survives, but the kernel can also select the server itself.
+Native leader exit still fences the entire leaf; OOM policy does not weaken that cleanup.
 
 Runner supervises `exec-server` using the same inherited state-owner descriptor and parent-liveness
 pipe as a harness. The supervisor stays outside the executor cgroup. Parent death or server exit

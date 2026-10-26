@@ -128,9 +128,10 @@ The subsequent conversation-recovery failure is addressed separately in
   CPU at one vCPU and PIDs at 512, with the same I/O caps. Its optional seed budget selects isolated
   tools; see [Codex executor isolation](../runner/docs/codex_executor.md) for lifecycle and scope.
 
-  Memory swap remains disabled. `memory.oom.group=0` on the aggregate lets the kernel select an
-  individual process leaf, while `memory.oom.group=1` on each leaf kills that harness and its
-  descendants together. The supervisor records `memory.events` and `memory.peak` as JSON before it
+  Memory swap remains disabled. Aggregate and native-process cgroups use `memory.oom.group=0`,
+  so a cgroup OOM selects individual process victims. A tool can be killed while its harness or
+  exec-server survives; the kernel can also select the native leader. Leader exit still triggers
+  supervisor cleanup of all descendants. The supervisor records `memory.events` and `memory.peak` as JSON before it
   removes the leaf; stale leaves are also recorded during startup cleanup. This keeps each harness's
   kill boundary below the Runner. Acceptance of the VM cgroup limits in a deployed guest is still
   open.

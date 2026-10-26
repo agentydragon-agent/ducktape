@@ -75,7 +75,7 @@ func TestCgroupKernelFixture(t *testing.T) {
 		path, cpu, memory, pids, oomGroup string
 	}{
 		{groups.Root, "100000 100000", "1140850688", "768", "0"},
-		{group, "100000 100000", "805306368", "512", "1"},
+		{group, "100000 100000", "805306368", "512", "0"},
 	} {
 		for name, want := range map[string]string{
 			"cpu.max": limits.cpu, "memory.max": limits.memory, "pids.max": limits.pids,
@@ -143,7 +143,12 @@ func TestCgroupKernelFixture(t *testing.T) {
 	} else if !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	assertProcessOOMIsolation(t, groups, ctx)
+	limits := &ResourceLimits{
+		CPUQuotaMicros: 100000, MemoryMaxBytes: 64 * 1024 * 1024, PidsMax: 32,
+		ReadBPS: 52428800, WriteBPS: 20971520, ReadIOPS: 1000, WriteIOPS: 500,
+	}
+	assertToolOOMPreservesNativeLeader(t, groups, limits, ctx)
+	assertProcessOOMIsolation(t, groups, limits, ctx)
 	entries, err := os.ReadDir(groups.Root)
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +160,59 @@ func TestCgroupKernelFixture(t *testing.T) {
 	}
 }
 
-func assertProcessOOMIsolation(t *testing.T, groups *AgentCgroups, ctx context.Context) {
+func assertToolOOMPreservesNativeLeader(t *testing.T, groups *AgentCgroups, limits *ResourceLimits, ctx context.Context) {
+	t.Helper()
+	process, err := NewProcess(ProcessConfig{
+		Command: []string{"/bin/sh", "-c", `
+/bin/sleep 1000 &
+peer=$!
+"$1" -test.run='^TestCgroupOOMFixture$'
+result=$?
+printf 'tool-oom-survived=%d peer=%d\n' "$result" "$peer"
+read -r confirmation
+`, "tool-oom-fixture", os.Args[0]},
+		Dir: "/tmp", Env: map[string]string{"AGENTPLANE_CGROUP_OOM_FIXTURE": "1"},
+		ProcessIsolation: groups, ResourceLimits: limits,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := process.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = process.Stop(context.Background(), stopGrace) }()
+	go func() { _, _ = io.Copy(io.Discard, process.Stderr()) }()
+	stdout := bufio.NewReader(process.Stdout())
+	line, err := stdout.ReadString('\n')
+	var descendant int
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fmt.Sscanf(line, "oom-descendant=%d", &descendant); err != nil || descendant <= 0 {
+		t.Fatalf("tool did not start its descendant: %q, %v", line, err)
+	}
+	line, err = stdout.ReadString('\n')
+	var code, peer int
+	if err != nil {
+		t.Fatalf("native parent did not survive tool OOM: %v; %s", err, process.ExitDescription())
+	}
+	if _, err := fmt.Sscanf(line, "tool-oom-survived=%d peer=%d", &code, &peer); err != nil || code != 137 || peer <= 0 {
+		t.Fatalf("tool exit = %q, %v; want SIGKILL (137) and surviving peer", line, err)
+	}
+	assertExecuting(t, process.PID(), "native parent after tool OOM")
+	assertExecuting(t, peer, "same-leaf peer after tool OOM")
+	assertExecuting(t, descendant, "tool descendant before leader cleanup")
+	if err := process.WriteLine(ctx, "finish"); err != nil {
+		t.Fatal(err)
+	}
+	if code, err := process.Wait(ctx); err != nil || code != 0 {
+		t.Fatalf("native parent exit = %d, %v; %s", code, err, process.ExitDescription())
+	}
+	assertNotExecuting(t, peer, "same-leaf peer after leader cleanup")
+	assertNotExecuting(t, descendant, "tool descendant after leader cleanup")
+}
+
+func assertProcessOOMIsolation(t *testing.T, groups *AgentCgroups, limits *ResourceLimits, ctx context.Context) {
 	t.Helper()
 	sibling, err := NewProcess(ProcessConfig{Command: []string{"/bin/sleep", "1000"}, Dir: "/tmp", Env: map[string]string{}, ProcessIsolation: groups})
 	if err != nil {
@@ -168,10 +225,6 @@ func assertProcessOOMIsolation(t *testing.T, groups *AgentCgroups, ctx context.C
 	go func() { _, _ = io.Copy(io.Discard, sibling.Stderr()) }()
 	siblingPID := sibling.PID()
 
-	limits := &ResourceLimits{
-		CPUQuotaMicros: 100000, MemoryMaxBytes: 64 * 1024 * 1024, PidsMax: 32,
-		ReadBPS: 52428800, WriteBPS: 20971520, ReadIOPS: 1000, WriteIOPS: 500,
-	}
 	process, err := NewProcess(ProcessConfig{
 		Command: []string{os.Args[0], "-test.run=^TestCgroupOOMFixture$"},
 		Dir:     "/tmp", Env: map[string]string{"AGENTPLANE_CGROUP_OOM_FIXTURE": "1"},
@@ -225,7 +278,7 @@ func assertProcessOOMIsolation(t *testing.T, groups *AgentCgroups, ctx context.C
 		(diagnostics.MemoryPeakBytes == 0 && diagnostics.MemoryPeakError == "") {
 		t.Fatalf("OOM diagnostics missing from supervisor logs: found=%v diagnostics=%+v stderr=%s", found, diagnostics, logLines)
 	}
-	assertNotExecuting(t, descendant, "OOM group descendant")
+	assertNotExecuting(t, descendant, "descendant after OOM-killed leader cleanup")
 	if !sibling.Running() {
 		t.Fatal("OOM in one process cgroup stopped its sibling process")
 	}

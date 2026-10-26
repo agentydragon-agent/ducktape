@@ -105,8 +105,10 @@ Before Runner starts, systemd invokes the executable's private `--vm-resource-pr
 with `vm.json`. The preflight validates resource relationships and live `/proc/meminfo` before
 printing `MemoryHigh`, `MemoryMax`, `MemorySwapMax=0`, `CPUQuota` and `TasksMax`. The maximum must be
 below live `MemTotal`, and nominal sizing must leave the configured OS reserve. The unit uses
-`OOMPolicy=continue`. Aggregate `memory.oom.group` is 0; native process leaves use 1. Supervisors log
-OOM counters and available peak memory before removing a leaf.
+`OOMPolicy=continue`. Aggregate and native process cgroups use `memory.oom.group=0`, so a cgroup OOM
+selects individual victims. The kernel may select the harness or executor and may kill more processes
+if pressure persists. Native leader exit still fences all descendants. Supervisors log OOM counters
+and available peak memory before removing a leaf.
 
 `/run/agentplane/config/runner.env` supplies the VM systemd unit's Runner-only OpenTelemetry
 settings. Pod templates set the corresponding container environment directly. The Go guest loader
