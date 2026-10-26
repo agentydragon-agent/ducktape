@@ -210,8 +210,7 @@ export async function openSession(
   sandbox: string,
   sessionId: string,
   spec: SessionSpec,
-  setupScript?: string,
-  autoTitleOnFirstMessage = false
+  setupScript?: string
 ): Promise<SessionOpening> {
   const data = ok(
     await api.POST("/sandboxes/{name}/sessions", {
@@ -220,7 +219,6 @@ export async function openSession(
         session_id: sessionId,
         spec: toJson(SessionSpecSchema, spec) as JsonObject,
         setup_script: setupScript,
-        auto_title_on_first_message: autoTitleOnFirstMessage,
       },
     })
   );
@@ -425,10 +423,6 @@ export async function renameThread(threadId: string, name: string | null): Promi
       body: { name },
     })
   );
-}
-
-export async function autoTitleThread(threadId: string): Promise<ThreadView> {
-  return ok(await api.POST("/threads/{thread_id}/auto-title", { params: { path: { thread_id: threadId } } }));
 }
 
 export async function archiveThread(threadId: string, archived: boolean): Promise<void> {

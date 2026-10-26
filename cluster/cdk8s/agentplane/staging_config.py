@@ -12,13 +12,7 @@ from pydantic import AnyHttpUrl
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
-from agentplane.app.settings import (
-    AppSettingsConfig,
-    FrontendConfig,
-    LangfuseSearchSettings,
-    TitleGenerationSettings,
-    TraceSearchSettings,
-)
+from agentplane.app.settings import AppSettingsConfig, FrontendConfig, LangfuseSearchSettings, TraceSearchSettings
 from agentplane.runner.harness import Harness
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane.actions_staging_policies import (
@@ -110,8 +104,6 @@ def config(
     models: HarnessRoutes,
     action_federation: ActionFederationSettings,
     connection_service_url: HttpEndpointUrl,
-    auto_title_on_first_message_default: bool = False,
-    title_generation: TitleGenerationSettings | None = None,
 ) -> AppSettingsConfig:
     cfg = settings(
         namespace=namespace,
@@ -130,8 +122,6 @@ def config(
             *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["public-coder"]),
         ],
         default_policy_sets=set(DEFAULT_POLICIES),
-        auto_title_on_first_message_default=auto_title_on_first_message_default,
-        title_generation=title_generation,
         frontend_config=FrontendConfig(
             trace_search=TraceSearchSettings(
                 grafana_base_url=AnyHttpUrl(GRAFANA_BASE_URL),

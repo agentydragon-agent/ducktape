@@ -39,7 +39,7 @@ class EventLogStore:
         self._history_reader = history_reader
         self._summaries = summaries
 
-    async def open(self, session_id: str, *, auto_title_on_first_message: bool = False) -> UUID:
+    async def open(self, session_id: str) -> UUID:
         """Materialize a public service Session without consulting private runner locators."""
         try:
             thread_id = UUID(session_id)
@@ -53,12 +53,7 @@ class EventLogStore:
             return thread_id
         async with self._sessions.begin() as session:
             # Another replica may win this insert race; its row is the same mapping.
-            if await session.scalar(
-                insert(Thread)
-                .values(id=thread_id, auto_title_on_first_message=auto_title_on_first_message)
-                .on_conflict_do_nothing()
-                .returning(Thread.id)
-            ):
+            if await session.scalar(insert(Thread).values(id=thread_id).on_conflict_do_nothing().returning(Thread.id)):
                 await notify(session, Channel.THREADS)
         return thread_id
 

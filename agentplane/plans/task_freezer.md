@@ -361,6 +361,13 @@ Hosted Agent/Thread capstone only if that product is selected; lifecycle, surfac
 
 Promote on operator selection, not because a prerequisite happens to have landed.
 
+### `THREAD_TITLE_GENERATION` — revisit automatic Thread titles
+
+Operator-requested deferral, 2026-10-26. Automatic Thread title generation was removed from the app.
+Reopen it only after the design in [#11817](https://github.com/agentydragon/ducktape/issues/11817) is
+resolved; then decide its interaction, owner, and reliable History reads before implementation. Thread
+names remain set, changed, and cleared by operators.
+
 ### `T3` — thread search and lookup
 
 Transcript full-text search/lookup remains deferred; ordinary paginated Thread browsing is independent.
