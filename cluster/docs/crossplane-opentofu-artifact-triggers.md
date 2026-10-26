@@ -154,3 +154,20 @@ A restart before both spec changes is insufficient: a still-Remote Workspace cou
 repopulate its directory. This is a one-time migration step, not part of future
 source-change delivery. A cold provider runtime writes the complete Inline module
 without requiring a repository download.
+
+## Kubernetes identities for migrated roots
+
+The shared provider runtime mounts public kubeconfigs, one per migrated root. Each
+uses the Pod's rotating ServiceAccount token and Kubernetes impersonation of a named
+ServiceAccount in `crossplane-system`. A ProviderConfig selects that root's kubeconfig;
+RoleBindings grant that identity only its declared Secret reads and writes. No static
+ServiceAccount token Secret is created. Secret creation is namespace-wide because
+Kubernetes RBAC cannot restrict `create` by `resourceNames`; updates, reads and deletes
+are restricted to the output Secret names.
+
+This scopes normal Kubernetes provider requests, not arbitrary Terraform execution.
+All Workspaces still run in the same provider process, whose package-generated role
+already grants broad Secret access. Trusted HCL could use that identity directly or
+select another mounted kubeconfig. A strict boundary between untrusted roots would
+require separate runtimes and controller access scopes; this migration does not supply
+that boundary. The PostgreSQL backend credential also remains shared.
