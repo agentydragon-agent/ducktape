@@ -470,9 +470,8 @@ def test_crossplane_source_update_canary_watches_its_flux_artifact(
         and doc.get("kind") == "CompositeResourceDefinition"
         and doc.get("metadata", {}).get("name") == "crossplanesourceupdatecanaries.opentofu.ducktape.io"
     )
-    composition_resources = composition["spec"]["pipeline"][0]["input"]["resources"]
-    artifact_watch = next(resource for resource in composition_resources if resource["name"] == "artifact-watch")
-    workspace = next(resource for resource in composition_resources if resource["name"] == "workspace")
+    composition_step = composition["spec"]["pipeline"][0]
+    composition_template = composition_step["input"]["inline"]["template"]
     source_artifact = next(
         artifact
         for artifact in artifact_generator["spec"]["artifacts"]
@@ -494,6 +493,7 @@ def test_crossplane_source_update_canary_watches_its_flux_artifact(
             "to": "@artifact/cluster/generated/crossplane-source-update-canary-definitions/",
         }
     ]
+    assert xrd["spec"]["defaultCompositionRef"] == {"name": "crossplane-source-update-canary"}
     assert definitions_kustomization["spec"]["healthCheckExprs"] == [
         {
             "apiVersion": "apiextensions.crossplane.io/v1",
@@ -507,30 +507,22 @@ def test_crossplane_source_update_canary_watches_its_flux_artifact(
         {"name": "crossplane-provider-kubernetes", "namespace": "ducktape-flux"},
         {"name": "artifact-generators", "namespace": "ducktape-flux"},
     ]
-    assert artifact_watch["base"]["spec"]["managementPolicies"] == ["Observe"]
-    assert xrd["spec"]["defaultCompositionRef"] == {"name": "crossplane-source-update-canary"}
-    assert artifact_watch["base"]["spec"]["watch"] is True
-    assert "metadata" not in artifact_watch["base"]
-    assert artifact_watch["base"]["spec"]["forProvider"]["manifest"] == {
-        "apiVersion": "source.toolkit.fluxcd.io/v1",
-        "kind": "ExternalArtifact",
-        "metadata": {"name": "tf-gitops-crossplane-source-update-canary", "namespace": "ducktape-flux"},
-    }
-    assert artifact_watch["patches"][0] == {
-        "type": "ToCompositeFieldPath",
-        "fromFieldPath": "status.atProvider.manifest.status.artifact.url",
-        "toFieldPath": "status.artifactURL",
-    }
-    assert workspace["base"]["spec"]["managementPolicies"] == ["Observe", "Create", "Update"]
-    assert workspace["base"]["spec"]["deletionPolicy"] == "Orphan"
-    assert workspace["base"]["spec"]["forProvider"]["remotePullPolicy"] == "IfNotPresent"
-    assert workspace["base"]["spec"]["forProvider"]["source"] == "Remote"
-    assert workspace["patches"][0] == {
-        "type": "FromCompositeFieldPath",
-        "fromFieldPath": "status.artifactURL",
-        "toFieldPath": "spec.forProvider.module",
-        "policy": {"fromFieldPath": "Optional"},
-    }
+    assert composition_step["functionRef"] == {"name": "function-go-templating"}
+    assert composition_step["input"]["apiVersion"] == "gotemplating.fn.crossplane.io/v1beta1"
+    assert composition_step["input"]["kind"] == "GoTemplate"
+    assert '"managementPolicies":["Observe"]' in composition_template
+    assert '"watch":true' in composition_template
+    assert '"name":"tf-gitops-crossplane-source-update-canary"' in composition_template
+    assert '"remotePullPolicy":"IfNotPresent"' in composition_template
+    assert '"source":"Remote"' in composition_template
+    assert '"managementPolicies":["Observe","Create","Update"]' in composition_template
+    assert '"module":{{ $artifactURL | toJson }}' in composition_template
+    assert "{{- if $artifactURL }}" in composition_template
+    assert (
+        'gotemplating.fn.crossplane.io/ready: {{ if and $artifactWatchReady $workspaceReady }}"True"{{ else }}"False"{{ end }}'
+        in composition_template
+    )
+    assert "__ARTIFACT_URL__" not in composition_template
 
     reader_provider = next(
         doc
@@ -540,6 +532,16 @@ def test_crossplane_source_update_canary_watches_its_flux_artifact(
         and doc.get("metadata", {}).get("name") == "provider-kubernetes"
     )
     assert reader_provider["spec"]["runtimeConfigRef"] == {"name": "crossplane-tf-artifact-watches"}
+    go_templating_function = next(
+        doc
+        for doc in documents
+        if doc.get("apiVersion") == "pkg.crossplane.io/v1"
+        and doc.get("kind") == "Function"
+        and doc.get("metadata", {}).get("name") == "function-go-templating"
+    )
+    assert go_templating_function["spec"]["package"] == (
+        "xpkg.upbound.io/crossplane-contrib/function-go-templating:v0.13.1"
+    )
     runtime_config = next(
         doc
         for doc in documents
@@ -571,7 +573,7 @@ def test_crossplane_source_update_canary_watches_its_flux_artifact(
         {"name": "tofu-state-db", "namespace": "ducktape-flux"},
         {"name": "artifact-generators", "namespace": "ducktape-flux"},
     ]
-    assert workspace_kustomization["metadata"]["name"] == "crossplane-source-update-canary"
+    assert definitions_kustomization["metadata"]["name"] == "crossplane-source-update-canary-definitions"
     assert "postBuild" not in workspace_kustomization["spec"]
 
 

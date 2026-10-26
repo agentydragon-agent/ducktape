@@ -1141,7 +1141,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Install provider-kubernetes with its alpha ExternalArtifact watch enabled and the Composition patch-and-transform function.
+    description: Install provider-kubernetes with its alpha ExternalArtifact watch enabled and the Composition patch-and-transform and go-templating functions.
   name: crossplane-provider-kubernetes
   namespace: ducktape-flux
 spec:
@@ -2097,7 +2097,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Output-only OpenTofu canary. Flux publishes the root's content-addressed artifact; provider-kubernetes watches its ExternalArtifact and Crossplane updates the Workspace source URL.
+    description: Output-only OpenTofu canary. Flux publishes the root's content-addressed artifact; provider-kubernetes watches its ExternalArtifact and Crossplane emits a Workspace once the artifact URL is available.
   name: crossplane-source-update-canary
   namespace: ducktape-flux
 spec:

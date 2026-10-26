@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, cast
 
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch
@@ -63,6 +64,10 @@ XRD_PLURAL = "crossplanesourceupdatecanaries"
 XRD_NAME = f"{XRD_PLURAL}.{XRD_GROUP}"
 COMPOSITION_NAME = NAME
 STATE_SCHEMA = terraform.gitops_state_schema(TF_MODULE_NAME)
+
+_WORKSPACE_MODULE_PLACEHOLDER = "__ARTIFACT_URL__"
+_COMPOSITION_RESOURCE_NAME_ANNOTATION = "gotemplating.fn.crossplane.io/composition-resource-name"
+_FUNCTION_READY_ANNOTATION = "gotemplating.fn.crossplane.io/ready"
 _XRD_HEALTH = KustomizationSpecHealthCheckExprs(
     api_version="apiextensions.crossplane.io/v1",
     kind="CompositeResourceDefinition",
@@ -80,14 +85,14 @@ def _api_object_with_spec(
     return obj
 
 
-def source_artifact() -> ArtifactGeneratorSpecArtifacts:
-    """Only changes to the canary's Terraform files change this artifact's digest and URL."""
-    return artifact_files(TF_ARTIFACT_NAME, TF_SOURCE_GLOB)
-
-
 def definitions_artifact() -> ArtifactGeneratorSpecArtifacts:
     """Package the XRD and Composition separately so Flux can wait for XRD establishment."""
     return artifact(DEFINITIONS_NAME, DEFINITIONS_OUTPUT_DIR)
+
+
+def source_artifact() -> ArtifactGeneratorSpecArtifacts:
+    """Only changes to the canary's Terraform files change this artifact's digest and URL."""
+    return artifact_files(TF_ARTIFACT_NAME, TF_SOURCE_GLOB)
 
 
 def _artifact_watch_base() -> dict[str, Any]:
@@ -122,21 +127,26 @@ def _artifact_watch_base() -> dict[str, Any]:
 
 
 def _workspace_base() -> dict[str, Any]:
-    """Render a typed Workspace, leaving its artifact URL for the Composition patch."""
+    """Render a typed Workspace base; the function fills its required module URL."""
     base_app = App()
     base_chart = Chart(base_app, "workspace-base", disable_resource_name_hashes=True)
     workspace = Workspace(
         base_chart,
         "workspace",
-        metadata=ApiObjectMetadata(name="workspace", annotations={"crossplane.io/external-name": "default"}),
+        metadata=ApiObjectMetadata(
+            name="workspace",
+            annotations={
+                "crossplane.io/external-name": "default",
+                _COMPOSITION_RESOURCE_NAME_ANNOTATION: "workspace",
+                _FUNCTION_READY_ANNOTATION: "__WORKSPACE_READY__",
+            },
+        ),
         spec=WorkspaceSpec(
             deletion_policy="Orphan",
             management_policies=WORKSPACE_MANAGEMENT_POLICIES,
             provider_config_ref=WorkspaceSpecProviderConfigRef(name=PROVIDER_CONFIG_NAME),
             for_provider=WorkspaceSpecForProvider(
-                # WorkspaceSpecForProvider requires module. P&T fills it from the observed
-                # artifact URL, so remove this temporary value from the rendered base.
-                module="filled-by-composition",
+                module=_WORKSPACE_MODULE_PLACEHOLDER,
                 source="Remote",
                 remote_pull_policy="IfNotPresent",
                 plan_args=["-lock-timeout=5m"],
@@ -155,12 +165,73 @@ def _workspace_base() -> dict[str, Any]:
     )
     base = cast(dict[str, Any], workspace.to_json())
     base["metadata"].pop("name")
-    base["spec"]["forProvider"].pop("module")
     return base
 
 
+def _composition_template() -> str:
+    """Create the observer first and omit Workspace until the watched artifact has a URL.
+
+    The Workspace CRD requires `spec.forProvider.module`. Rendering an incomplete Workspace
+    would fail API validation, so go-templating waits for the observed URL before emitting it.
+    Explicit readiness annotations keep the composite unready until the OpenTofu Workspace
+    itself has reconciled successfully.
+    """
+    artifact_watch = _artifact_watch_base()
+    artifact_watch.update(
+        {
+            "apiVersion": "kubernetes.crossplane.io/v1alpha2",
+            "kind": "Object",
+            "metadata": {
+                "annotations": {
+                    _COMPOSITION_RESOURCE_NAME_ANNOTATION: "artifact-watch",
+                    _FUNCTION_READY_ANNOTATION: "__ARTIFACT_WATCH_READY__",
+                }
+            },
+        }
+    )
+    workspace = _workspace_base()
+    workspace_json = json.dumps(workspace, separators=(",", ":"))
+    workspace_json = workspace_json.replace(
+        json.dumps(_WORKSPACE_MODULE_PLACEHOLDER), "{{ $artifactURL | toJson }}"
+    ).replace(json.dumps("__WORKSPACE_READY__"), '{{ if $workspaceReady }}"True"{{ else }}"False"{{ end }}')
+    template = r"""{{- $artifactURL := "" -}}
+{{- $artifactWatchReady := false -}}
+{{- with (index .observed.resources "artifact-watch") -}}
+  {{- $artifactURL = dig "status" "atProvider" "manifest" "status" "artifact" "url" "" .resource -}}
+  {{- $artifactWatchReady = ne $artifactURL "" -}}
+{{- end -}}
+{{- $workspaceReady := false -}}
+{{- with (index .observed.resources "workspace") -}}
+  {{- range .resource.status.conditions -}}
+    {{- if and (eq .type "Ready") (eq .status "True") -}}
+      {{- $workspaceReady = true -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+__ARTIFACT_WATCH__
+{{- if $artifactURL }}
+---
+__WORKSPACE__
+{{- end }}
+---
+apiVersion: opentofu.ducktape.io/v1alpha1
+kind: CrossplaneSourceUpdateCanary
+status:
+  artifactURL: {{ $artifactURL | toJson }}
+metadata:
+  annotations:
+    gotemplating.fn.crossplane.io/ready: {{ if and $artifactWatchReady $workspaceReady }}"True"{{ else }}"False"{{ end }}
+"""
+    return template.replace(
+        "__ARTIFACT_WATCH__",
+        json.dumps(artifact_watch, separators=(",", ":")).replace(
+            json.dumps("__ARTIFACT_WATCH_READY__"), '{{ if $artifactWatchReady }}"True"{{ else }}"False"{{ end }}'
+        ),
+    ).replace("__WORKSPACE__", workspace_json)
+
+
 def definitions_chart(app: App) -> Chart:
-    """Apply the XRD and Composition before Flux applies the composite resource."""
+    """Apply XRD and Composition before Flux applies the composite resource."""
     chart = Chart(app, DEFINITIONS_NAME, disable_resource_name_hashes=True)
     CompositeResourceDefinition(
         chart,
@@ -198,38 +269,13 @@ def definitions_chart(app: App) -> Chart:
             mode="Pipeline",
             pipeline=[
                 CompositionSpecPipeline(
-                    step="patch-and-transform",
-                    function_ref=CompositionSpecPipelineFunctionRef(name=crossplane.PATCH_AND_TRANSFORM_FUNCTION),
-                    # The Function schema intentionally owns this open-ended input format; its
-                    # nested managed-resource templates are JSON supplied to that function.
+                    step="render-resources",
+                    function_ref=CompositionSpecPipelineFunctionRef(name=crossplane.GO_TEMPLATING_FUNCTION),
                     input={
-                        "apiVersion": "pt.fn.crossplane.io/v1beta1",
-                        "kind": "Resources",
-                        "resources": [
-                            {
-                                "name": "artifact-watch",
-                                "base": _artifact_watch_base(),
-                                "patches": [
-                                    {
-                                        "type": "ToCompositeFieldPath",
-                                        "fromFieldPath": "status.atProvider.manifest.status.artifact.url",
-                                        "toFieldPath": "status.artifactURL",
-                                    }
-                                ],
-                            },
-                            {
-                                "name": "workspace",
-                                "base": _workspace_base(),
-                                "patches": [
-                                    {
-                                        "type": "FromCompositeFieldPath",
-                                        "fromFieldPath": "status.artifactURL",
-                                        "toFieldPath": "spec.forProvider.module",
-                                        "policy": {"fromFieldPath": "Optional"},
-                                    }
-                                ],
-                            },
-                        ],
+                        "apiVersion": "gotemplating.fn.crossplane.io/v1beta1",
+                        "kind": "GoTemplate",
+                        "source": "Inline",
+                        "inline": {"template": _composition_template()},
                     },
                 )
             ],
@@ -299,7 +345,7 @@ def resources(
         ),
         description=(
             "Output-only OpenTofu canary. Flux publishes the root's content-addressed artifact; provider-kubernetes "
-            "watches its ExternalArtifact and Crossplane updates the Workspace source URL."
+            "watches its ExternalArtifact and Crossplane emits a Workspace once the artifact URL is available."
         ),
     )
     return definitions, canary

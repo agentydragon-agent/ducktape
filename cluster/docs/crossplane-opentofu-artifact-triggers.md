@@ -93,9 +93,9 @@ There is a related Flux post-build substitution pattern: a Kustomization can rea
 
 Flux already refreshes the shared ducktape GitRepository from its GitHub Receiver and builds per-consumer artifacts. The canary adds a root-only artifact by copying `tf/gitops/crossplane-source-update-canary/*.tf` to the artifact root. The ExternalArtifact URL is content-addressed, so it changes only when those files change.
 
-The canary Composition contains an observe-only provider-kubernetes `Object` for that ExternalArtifact, with `watch: true`. Its observed artifact URL is patched through the composite resource status into the composed Workspace's `spec.forProvider.module`. Until the observer has an artifact URL, the optional patch leaves the module field unset; once the watch observes the first artifact, the Workspace receives the URL. Later URL changes update the Workspace source. `remotePullPolicy: IfNotPresent` avoids downloading the same artifact URL again.
+The canary Composition uses `function-go-templating` to render an observe-only provider-kubernetes `Object` for that ExternalArtifact, with `watch: true`. The template emits the Workspace only after the observer has an artifact URL. This matters because the Workspace CRD requires `spec.forProvider.module`; omitting it would make the API server reject the Workspace. Later URL changes update the Workspace source. `remotePullPolicy: IfNotPresent` avoids downloading the same artifact URL again. The composite stays unready until the Workspace reports `Ready=True`, so Flux's canary Kustomization also waits for an actual OpenTofu reconciliation.
 
-Flux applies the XRD and Composition from a separate definitions artifact and waits for the XRD's `Established=True` condition. The dependent canary Kustomization then applies the composite resource. This prevents Flux from dry-running the XR before Crossplane has registered its API.
+Flux applies the XRD and Composition in a separate definitions Kustomization. It waits for the XRD's `Established=True` condition before the dependent Kustomization applies the canary XR. This prevents Flux from dry-running the XR before Crossplane has registered its API.
 
 The provider runs with `--enable-watches`. Its dedicated ServiceAccount receives only:
 
