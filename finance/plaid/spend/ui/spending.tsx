@@ -14,7 +14,9 @@ import {
   Title,
 } from "@mantine/core";
 
-import { Metric, Money, SignalLabel, time, type Signal } from "./spend_display";
+import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
+
+import { Metric, Money, SignalLabel, time, periodLabels, type Signal } from "./spend_display";
 import { SpendingHistoryChart } from "./SpendingHistoryChart";
 import type { Allowance, AllowancePeriodId, CardView, EstimatePeriodId, SpendView, TransactionsView } from "./types";
 
@@ -64,14 +66,12 @@ function PurchaseCheck({
   return (
     <Card component="section" aria-labelledby="purchase-title" withBorder radius="lg" padding="xl">
       <Stack gap="lg">
-        <div>
+        <Group gap="xs">
           <Title id="purchase-title" order={2} size="h3">
             Can I afford this?
           </Title>
-          <Text c="dimmed" size="sm" mt="xs">
-            Try a meal, a subscription, or another flexible purchase before buying.
-          </Text>
-        </div>
+          <HelpTooltip topic="Purchase check" description="Try a flexible purchase before buying. The amount is subtracted from your available allowance and projected balance; this does not make a purchase." />
+        </Group>
         <NumberInput
           label="Hypothetical flexible purchase"
           prefix="$"
@@ -141,9 +141,6 @@ function PurchaseCheck({
             </Text>
           )}
         </Paper>
-        <Text size="xs" c="dimmed">
-          Advisory only. No bank transaction is blocked by this dashboard.
-        </Text>
       </Stack>
     </Card>
   );
@@ -198,9 +195,12 @@ function AllowancePanel({
         >
           <Stack gap="md">
             <Group justify="space-between" align="flex-start" gap="md">
-              <Text id="allowance-title" size="sm" fw={700}>
-                Flexible spending available
-              </Text>
+              <Group gap="xs">
+                <Text id="allowance-title" size="sm" fw={700}>
+                  Flexible spending available
+                </Text>
+                <HelpTooltip topic="Available allowance" description="All allowance credits since activation, less posted and pending flexible purchases. Unused allowance carries forward. This is a spending allowance, not a sustainability target." />
+              </Group>
               {estimateLoading ? (
                 <Skeleton height={20} width={112} radius="xl" />
               ) : signal ? (
@@ -215,26 +215,25 @@ function AllowancePanel({
               {m(available)}
             </Text>
             <Text size="sm" c="teal.0">
-              {available <= 0 ? "You're past your available allowance." : "Available across flexible purchases."} Posted
-              and pending charges are included.
+              {available <= 0 ? "You're past your available allowance." : "Includes posted and pending purchases."}
             </Text>
             <Divider color="teal.6" />
-            <Text size="sm">
-              Allowance began: {allowance.activation_at} at midnight ({allowance.time_zone})
-            </Text>
             <Text size="sm">Next credit: {time(allowance.next_credit_at)}</Text>
             <Text size="xs" c="teal.0">
-              Oldest account sync: {time(allowance.last_synced_at)}. New purchases may appear later.
-            </Text>
-            <Text size="xs" c="teal.0">
-              Adds {m(allowance.monthly_minor_units)}; unused allowance carries forward.
+              Oldest account sync: {time(allowance.last_synced_at)}.
             </Text>
           </Stack>
         </Paper>
         <Paper component="section" aria-label="Spending pace" withBorder radius="lg" p="xl">
           <Stack gap="md">
-            <Text size="sm" fw={700} c="dimmed">
-              Estimated balance before next credit
+            <Group gap="xs">
+              <Text size="sm" fw={700} c="dimmed">
+                Estimated balance before next credit
+              </Text>
+              <HelpTooltip topic="Estimated balance" description="Projects the available allowance using the selected spending window. A higher daily pace may be used when purchases since activation are concentrated in fewer days. Plaid purchases can arrive late." />
+            </Group>
+            <Text size="xs" c="dimmed">
+              Based on {periodLabels[allowance.forecast.basis_period.id].toLowerCase()}
             </Text>
             {estimateLoading ? (
               <Skeleton height={42} width={180} />
@@ -250,9 +249,12 @@ function AllowancePanel({
             )}
             <Divider />
             <Group justify="space-between" gap="sm">
-              <Text size="sm" fw={700}>
-                Recorded flexible spending pace
-              </Text>
+              <Group gap="xs">
+                <Text size="sm" fw={700}>
+                  Recorded flexible spending pace
+                </Text>
+                <HelpTooltip topic="Recorded pace" description="Average positive flexible purchases in the selected window, including unmatched purchases and history before activation. Earlier purchases inform pace but do not reduce the available allowance." />
+              </Group>
               <Text size="sm" fw={700}>
                 {estimateLoading ? (
                   <Skeleton height={18} width={100} />
@@ -264,12 +266,7 @@ function AllowancePanel({
               </Text>
             </Group>
             <Text size="sm" c="dimmed">
-              Provisional leash ~{m(Math.round((allowance.monthly_minor_units * 12) / 365.2425))} / day. This is
-              spending capacity, not a sustainability target.
-            </Text>
-            <Text size="xs" c="dimmed">
-              Positive recorded purchases, including history before activation; unmatched purchases count as flexible.
-              Earlier purchases inform pace but do not reduce available allowance. Plaid data may lag.
+              Provisional leash ~{m(Math.round((allowance.monthly_minor_units * 12) / 365.2425))} / day.
             </Text>
             {(estimateLoading || (unmatched && unmatched.count > 0)) && (
               <Text size="xs" c="dimmed">
@@ -286,10 +283,6 @@ function AllowancePanel({
                 )}
               </Text>
             )}
-            <Text size="xs" c="dimmed">
-              The estimate may use a higher daily pace when purchases since the allowance began are concentrated in
-              fewer days.
-            </Text>
             {(estimateLoading || allowance.forecast.estimated_exhaustion_at) && (
               <Text size="sm">
                 Without future credits, this pace would use up the cushion around{" "}
@@ -313,14 +306,12 @@ function AllowancePanel({
         />
         <Card component="section" aria-labelledby="cycle-title" withBorder radius="lg" padding="xl">
           <Stack gap="lg">
-            <div>
+            <Group gap="xs">
               <Title id="cycle-title" order={2} size="h3">
                 Where you stand
               </Title>
-              <Text c="dimmed" size="sm" mt="xs">
-                Your allowance rolls forward; it doesn't reset at month-end.
-              </Text>
-            </div>
+              <HelpTooltip topic="Carryforward" description="Unused allowance carries forward. Each monthly credit adds to the balance instead of resetting it at month-end." />
+            </Group>
             <Paper bg="var(--mantine-color-gray-light)" p="md" radius="md">
               <Stack gap="sm">
                 <Group justify="space-between" gap="sm">
@@ -370,6 +361,9 @@ function AllowancePanel({
           <Accordion.Control>Explore spending history &amp; calculation details</Accordion.Control>
           <Accordion.Panel>
             <Stack gap="lg">
+              <Text size="sm" c="dimmed">
+                Allowance began: {allowance.activation_at} at midnight ({allowance.time_zone}).
+              </Text>
               <Text size="sm" c="dimmed">
                 These are overlapping views of the same purchases, not separate budgets. Your available balance includes
                 all credits since activation, less posted and pending flexible spending.
@@ -530,9 +524,10 @@ export function SpendingPage({
             {cards.length} {cards.length === 1 ? "card" : "cards"}
           </Text>
         </Group>
-        <Text size="sm" c="dimmed" mt="xs" mb="md">
-          Statement cycles and card limits are not a flexible spending budget.
-        </Text>
+        <Group gap="xs" mb="md">
+          <Text size="xs" c="dimmed">Separate from the flexible allowance</Text>
+          <HelpTooltip topic="Card statements" description="Card totals follow statement cycles and include purchases outside the flexible allowance. Card limits are separate from the flexible spending budget." />
+        </Group>
         <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
           {cards.map((card, index) => (
             <SpendCard card={card} key={`${card.account_name}-${index}`} />
@@ -546,9 +541,10 @@ export function SpendingPage({
       </section>
       <Divider />
       <Group justify="space-between" gap="sm">
-        <Text size="xs" c="dimmed">
-          Advisory estimates, not bank controls. Review your accounts for decisions that matter.
-        </Text>
+        <Group gap="xs">
+          <Text size="xs" c="dimmed">Advisory only</Text>
+          <HelpTooltip topic="Advisory only" description="This dashboard does not block bank transactions. Review your accounts for decisions that matter; account sync and transaction posting may lag." />
+        </Group>
         <Text size="xs" c="dimmed">
           View updated {time(view?.generated_at)}
         </Text>

@@ -3,6 +3,7 @@ import { Alert, Badge, Box, Card, Divider, Group, Paper, SimpleGrid, Stack, Text
 import { Metric, Money, periodLabels } from "./spend_display";
 import { ruleConditionText, ruleKindDisplay, rulesFootnote } from "./rule_display";
 import type { SpendConfiguration } from "./types";
+import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
 export function ConfigurationPage({
   configuration,
@@ -18,13 +19,15 @@ export function ConfigurationPage({
     <Stack gap="lg">
       <Group justify="space-between" align="flex-start" gap="md">
         <div>
-          <Title order={2} size="h3">
-            Configuration
-          </Title>
-          <Text size="sm" c="dimmed" mt="xs">
-            Read-only settings currently loaded by Plaid Spend. Account IDs are omitted; changes are made in the private
-            configuration and take effect after rollout.
-          </Text>
+          <Group gap="xs" align="center">
+            <Title order={2} size="h3">
+              Configuration
+            </Title>
+            <HelpTooltip
+              topic="Configuration"
+              description="These read-only settings are loaded by Plaid Spend. Account IDs are omitted. Changes are made in the private configuration and take effect after rollout."
+            />
+          </Group>
         </div>
         <Badge color="gray" variant="light">
           Read only
@@ -91,9 +94,10 @@ export function ConfigurationPage({
                 </div>
                 <Divider />
                 <div>
-                  <Text fw={650} mb="sm">
-                    Classification rules
-                  </Text>
+                  <Group gap="xs" mb="sm">
+                    <Text fw={650}>Classification rules</Text>
+                    <HelpTooltip topic="How rules work" description={rulesFootnote} />
+                  </Group>
                   <Stack gap="xs">
                     {allowance.rules.map((rule, index) => {
                       const { label, color } = ruleKindDisplay[rule.kind];
@@ -122,9 +126,16 @@ export function ConfigurationPage({
                                 {ruleConditionText(rule.condition)}
                               </Text>
                               {rule.description && (
-                                <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                                  {rule.description}
-                                </Text>
+                                <details>
+                                  <summary style={{ cursor: "pointer" }}>
+                                    <Text span size="xs" c="dimmed">
+                                      Rule explanation
+                                    </Text>
+                                  </summary>
+                                  <Text size="xs" c="dimmed" mt={4} style={{ overflowWrap: "anywhere" }}>
+                                    {rule.description}
+                                  </Text>
+                                </details>
                               )}
                             </Stack>
                           </Group>
@@ -132,9 +143,6 @@ export function ConfigurationPage({
                       );
                     })}
                   </Stack>
-                  <Text size="xs" c="dimmed" mt="sm">
-                    {rulesFootnote}
-                  </Text>
                 </div>
               </Stack>
             </Card>

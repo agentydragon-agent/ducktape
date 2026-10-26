@@ -19,6 +19,7 @@ import {
 import { money, time } from "./spend_display";
 import { SustainabilityHistoryChart } from "./SustainabilityHistoryChart";
 import type { SustainabilityPortfolio, SustainabilitySource, SustainabilityView } from "./types";
+import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
 function percent(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return "Unavailable";
@@ -228,40 +229,48 @@ function PortfolioDetails({
         {portfolio.sources.length > 0 && (
           <>
             <Divider />
-            <Text size="sm" fw={650}>
-              Source valuations
-            </Text>
-            {portfolio.sources.map((source, index) => (
-              <Paper key={`${source.name}-${index}`} bg="var(--mantine-color-default-hover)" radius="md" p="sm">
-                <Group justify="space-between" align="flex-start" gap="sm">
-                  <Stack gap={2}>
-                    <Text size="sm" fw={600}>
-                      {source.name}
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      {sourceAge(source, generatedAt)}
-                    </Text>
-                  </Stack>
-                  <Stack gap={2} align="flex-end">
-                    <Text size="sm" fw={650}>
-                      {money(source.amount_minor_units, currency)}
-                    </Text>
-                    <Badge size="xs" color={source.status === "ready" ? "blue" : "gray"} variant="light">
-                      {source.status}
-                    </Badge>
-                  </Stack>
-                </Group>
-                {(source.issues ?? []).length > 0 && (
-                  <Stack gap={2} mt="xs">
-                    {(source.issues ?? []).map((issue) => (
-                      <Text key={issue} size="xs" c="dimmed">
-                        {issue}
-                      </Text>
-                    ))}
-                  </Stack>
-                )}
-              </Paper>
-            ))}
+            <details
+              open={portfolio.sources.some(
+                (source) => source.status !== "ready" || (source.issues ?? []).length > 0
+              )}
+            >
+              <summary style={{ cursor: "pointer", fontWeight: 650 }}>
+                Source valuations ({portfolio.sources.length})
+              </summary>
+              <Stack gap="sm" mt="sm">
+                {portfolio.sources.map((source, index) => (
+                  <Paper key={`${source.name}-${index}`} bg="var(--mantine-color-default-hover)" radius="md" p="sm">
+                    <Group justify="space-between" align="flex-start" gap="sm">
+                      <Stack gap={2}>
+                        <Text size="sm" fw={600}>
+                          {source.name}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {sourceAge(source, generatedAt)}
+                        </Text>
+                      </Stack>
+                      <Stack gap={2} align="flex-end">
+                        <Text size="sm" fw={650}>
+                          {money(source.amount_minor_units, currency)}
+                        </Text>
+                        <Badge size="xs" color={source.status === "ready" ? "blue" : "gray"} variant="light">
+                          {source.status}
+                        </Badge>
+                      </Stack>
+                    </Group>
+                    {(source.issues ?? []).length > 0 && (
+                      <Stack gap={2} mt="xs">
+                        {(source.issues ?? []).map((issue) => (
+                          <Text key={issue} size="xs" c="dimmed">
+                            {issue}
+                          </Text>
+                        ))}
+                      </Stack>
+                    )}
+                  </Paper>
+                ))}
+              </Stack>
+            </details>
           </>
         )}
       </Stack>
@@ -523,10 +532,11 @@ export function SustainabilityPage() {
             <Badge color="violet" variant="light">
               Experimental
             </Badge>
+            <HelpTooltip
+              topic="About this estimate"
+              description="This scenario estimate uses observed spending and portfolio data. It depends on spending coverage, current valuations, and tax assumptions; it cannot guarantee that assets will last."
+            />
           </Group>
-          <Text size="sm" c="dimmed" mt="xs">
-            A spending and portfolio scenario estimate. It cannot guarantee that assets will last.
-          </Text>
         </div>
         <Button variant="light" onClick={() => setRefreshVersion((version) => version + 1)} loading={loading}>
           Refresh
@@ -571,6 +581,16 @@ export function SustainabilityPage() {
               (complete days, {view.time_zone})
             </Text>
           </Group>
+          <Group gap="md" wrap="wrap">
+            <Text size="xs" c="dimmed">
+              No other income is modeled.
+            </Text>
+            <Text size="xs" c="dimmed">
+              Withdrawal taxes: {view.effective_tax_rate == null
+                ? "not modeled"
+                : `${percent(view.effective_tax_rate)} modeled`}
+            </Text>
+          </Group>
 
           {view.status === "disabled" && (
             <Alert color="gray" title="Sustainability estimate is disabled">
@@ -603,19 +623,30 @@ export function SustainabilityPage() {
 
           <PortfolioDetails portfolio={view.portfolio} generatedAt={view.generated_at} currency={view.currency} />
 
-          <Alert color="gray" title="Scope and timing">
-            No other income is modeled. Account sync and transaction posting may lag; this estimate covers the complete
-            days listed above. Asset snapshots from different institutions can arrive at different times and temporarily
-            distort totals during transfers. Draw rates use today&apos;s portfolio value, including when the history
-            chart shows earlier dates.
-            {view.tax_assumption_note && (
-              <>
-                {" "}
-                {view.tax_assumption_note}
-                {view.tax_assumption_as_of && ` · tax assumption as of ${view.tax_assumption_as_of}.`}
-              </>
-            )}
-          </Alert>
+          <details>
+            <summary style={{ cursor: "pointer", fontWeight: 650 }}>Assumptions &amp; calculation</summary>
+            <Stack gap="xs" mt="sm">
+              <Text size="sm">
+                Spending is annualized from the covered complete days in the selected lookback. The implied draw rate
+                compares annualized spending with the current net portfolio value. Historical draw rates use today&apos;s
+                portfolio value for every date shown.
+              </Text>
+              <Text size="sm">
+                Account sync and transaction posting may lag. Asset snapshots from different institutions can arrive at
+                different times and temporarily distort totals during transfers.
+              </Text>
+              {view.tax_assumption_note && (
+                <Text size="sm">
+                  {view.tax_assumption_note}
+                  {view.tax_assumption_as_of && ` · Tax assumption as of ${view.tax_assumption_as_of}.`}
+                </Text>
+              )}
+              <Text size="sm" c="dimmed">
+                Estimates are sensitive to spending coverage, portfolio valuations, taxes, inflation, and future
+                returns. Scenario references are comparisons, not safe-withdrawal guarantees.
+              </Text>
+            </Stack>
+          </details>
           {view.issues.length > 0 && (
             <Alert color="orange" title="Current data issues">
               <Stack gap={4}>
@@ -638,10 +669,6 @@ export function SustainabilityPage() {
               </Stack>
             </Alert>
           )}
-          <Text size="xs" c="dimmed">
-            Estimates are sensitive to spending coverage, portfolio valuations, taxes, inflation, and future returns.
-            Scenario references are comparisons, not safe-withdrawal guarantees.
-          </Text>
         </>
       )}
     </Stack>

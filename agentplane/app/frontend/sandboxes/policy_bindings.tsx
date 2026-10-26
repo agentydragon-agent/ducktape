@@ -3,7 +3,7 @@ import { type JSX, useEffect, useState } from "react";
 
 import { BINDING_GRANT_HELP, BindingsTable } from "../bindings_table";
 import { api, displayableError, type BindingView } from "../client";
-import { HelpTooltip } from "../help_tooltip";
+import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
 /** How long a grant lasts; the Policy Controller deletes the binding when it ends. */
 const GRANT_DURATIONS = [

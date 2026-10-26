@@ -11,6 +11,7 @@ import {
   PointElement,
   Tooltip,
 } from "chart.js";
+import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import type { Allowance, EstimatePeriodId, TransactionsView } from "./types";
 
 Chart.register(
@@ -251,14 +252,15 @@ export function SpendingHistoryChart({
             <Title id="spending-history-title" order={2} size="h3">
               Spending over time
             </Title>
-            <Text size="sm" c="dimmed" mt="xs">
-              Daily flexible purchases by configured category. Days follow {allowance.time_zone}.
+            <Text size="xs" c="dimmed" mt="xs">
+              Daily flexible purchases · {allowance.time_zone}
             </Text>
           </div>
           <Stack gap={4} align="flex-end" style={{ flexShrink: 0 }}>
-            <Text size="xs" c="dimmed" fw={600}>
-              Estimate window
-            </Text>
+            <Group gap="xs">
+              <Text size="xs" c="dimmed" fw={600}>Estimate window</Text>
+              <HelpTooltip topic="Estimate window" description="This selection sets the chart, recorded spending pace and balance forecast. Card statements and the Transactions page use their own periods." />
+            </Group>
             <SegmentedControl
               aria-label="Estimate window"
               size="xs"
@@ -406,6 +408,8 @@ export function SpendingHistoryChart({
                 </Table.Tbody>
               </Table>
             </details>
+            <details>
+              <summary style={{ cursor: "pointer" }}>How this chart works</summary>
             <Text size="xs" c="dimmed">
               Posted and pending positive flexible purchases in the selected window are included, including purchases
               before allowance activation. Earlier purchases inform this graph and the pace estimate but do not reduce
@@ -414,6 +418,7 @@ export function SpendingHistoryChart({
               leash line shows monthly credit as a daily reference pace. Carryforward affects the available balance
               separately.
             </Text>
+            </details>
           </>
         ) : (
           <Text size="sm" c="dimmed">
