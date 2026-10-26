@@ -8,6 +8,50 @@ page is what the runner guarantees about it.
 The runner does not own product Threads, app command persistence, Kubernetes lifecycle, or the
 Thread-page projection. Their cross-layer contract is [Thread, runner, and harness layering](../docs/thread_layering.md).
 
+## Configuration
+
+`CLI` builds one `Config` before `New` takes the state-owner lock. The normal Pod entry point uses
+flags and the container environment; the VM entry point is the same binary selected by the
+`agentplane-runner-vm` symlink and reads the guest seed plus the Sandbox launch file. The seed is a
+strict JSON contract at version 2. It contains per-environment service endpoints, platform
+instructions, harness environment additions, and the VM resource budgets. The launch file is
+separate and contains only the Sandbox identity and optional bootstrap script.
+
+| Runner value                    | Pod source                                                                                                              | VM source                                                                                    | Use                                                                                                               |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `StateDir`                      | required `--state-dir` argument (`runner_sandbox.py` uses `/state`)                                                     | fixed `/state`                                                                               | Durable Session journals and native persistence.                                                                  |
+| `Launch` identity and bootstrap | strict JSON at required `--launch-file`, written by the Sandbox Controller                                              | strict `/run/agentplane/launch.json`, written by the Sandbox Controller                      | Sandbox identity for notifications and the one-time bootstrap script.                                             |
+| `Launch.PlatformInstructions`   | required `--platform-instructions-file`, rendered by deployment from `platform_instructions.j2`                         | `platform_instructions` in `/run/agentplane/config.json`                                     | Prepended to every Session's instructions.                                                                        |
+| Control and ingress endpoints   | `--control-target`, `--control-bearer`, `--ingress-target`, and `--ingress-bearer`                                      | `control` and `ingress` endpoints in the guest seed                                          | Runner Gateway RPC and durable Event ingress. Bearer strings are egress-proxy placeholders.                       |
+| `Claude`                        | `--claude-binary` and `--anthropic-base-url`; `ANTHROPIC_AUTH_TOKEN` comes from the Pod environment                     | fixed guest binary, seed `llm_base_url`, and the workload credential placeholder             | Claude Code executable and authenticated LLM ingress. The binary is disabled if not configured.                   |
+| `Codex`                         | `--codex-binary` and `--openai-base-url`; `OPENAI_API_KEY` comes from the Pod environment                               | fixed guest binary, seed `llm_base_url` plus `/v1`, and the workload credential placeholder  | Codex executable and authenticated LLM ingress. The binary is disabled if not configured.                         |
+| `HarnessEnvironment`            | repeatable `--harness-env NAME=value` or `NAME`, plus `--harness-inherit-env NAME`; deployment constructs the allowlist | fixed guest proxy, CA and kubeconfig values plus the seed's optional `harness_env` map       | Explicit child-process environment. The Runner does not pass its whole Pod or VM environment to native harnesses. |
+| `ProcessIsolation`              | unset; the Pod container receives Kubernetes resource requests and limits from its SandboxTemplate                      | guest seed resource budgets, fixed guest cgroup path, uid/gid 107 and workspace block device | VM aggregate and native-process cgroups.                                                                          |
+| `WorkspaceRoot`                 | unset, so each requested absolute working directory is used directly                                                    | `/state/workspaces`                                                                          | Bounds Session working directories to the Sandbox workspace when set.                                             |
+| `InitializationCwd`             | unset, so bootstrap runs from `StateDir`                                                                                | `/state/workspaces`                                                                          | Bootstrap working directory.                                                                                      |
+| `DebugCheckpoint`               | paired `--test-debug-checkpoint-name` and `--test-debug-checkpoint-command-id` flags                                    | unset                                                                                        | Test-only durable checkpoint hook.                                                                                |
+| `HTTPClient`                    | unset                                                                                                                   | unset                                                                                        | Test injection for model-configuration requests; production uses the default client with observability transport. |
+
+The Pod's `--harness-env` names are assembled by `runner_sandbox.py` from the workload environment,
+egress settings, deployment service URLs and explicit template additions. `--harness-inherit-env`
+forwards a value owned by the runner image. A bare `NAME` copies a value only if present; a
+`NAME=value` entry sets the specified value. Duplicate names use the last declaration. The VM seed
+may add names but cannot override guest-owned `PATH`, `HOME`, proxy or CA values.
+
+See the [Runner configuration inventory](CONFIGURATION.md) for all CLI flags, credential sources,
+VM paths and telemetry settings.
+
+The version-2 guest resource object uses bytes for memory, microseconds per a fixed 100,000 µs CPU
+period, process counts for PIDs, and bytes/operations per second for block I/O. The same guest RAM
+and vCPU values size the KubeVirt domain. Before the Runner starts, `ExecStartPre` invokes the
+private Go preflight mode, which strictly validates the seed and confirms the service memory cap is
+below live `MemTotal`; only then does it apply
+`MemoryHigh`, `MemoryMax`, fixed `MemorySwapMax=0`, `CPUQuota` and `TasksMax`. The unit uses
+`OOMPolicy=continue` so a child OOM does not stop the Runner. The delegated aggregate and process
+leaves use their respective seed budgets; swap stays disabled, aggregate `memory.oom.group` stays 0,
+and each process leaf uses `memory.oom.group=1`. `ProcessConfig.ResourceLimits` can override a leaf
+budget for an isolated process purpose, while the parent aggregate remains authoritative.
+
 ## Initialization
 
 - The Sandbox's launch file (`--launch-file`, written by the Sandbox controller) carries the

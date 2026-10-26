@@ -19,6 +19,7 @@ from agentplane.action_service.mcp_settings import McpClientMetadataSettings, Mc
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.app.settings import AppSettingsConfig
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
+from agentplane.sandboxes.guest_config import GuestResources
 from agentplane.subjects import ServiceAccountRef
 from model_catalog.catalog import Route
 
@@ -164,6 +165,8 @@ class Environment:
     # Whether this environment has VM Sandboxes: the runner VM template (runner_vm.py) and the egress
     # relay for their KubeVirt launchers (launcher_relay.py).
     vm_sandboxes: bool
+    # Guest sizing and Runner cgroup budgets shared by the VM template and guest config seed.
+    vm_resources: GuestResources | None = None
     # Whether a VM Sandbox's serial console is a root shell, for whoever holds the VMI `console`
     # subresource. Only meaningful with `vm_sandboxes`.
     vm_console_autologin: bool = False

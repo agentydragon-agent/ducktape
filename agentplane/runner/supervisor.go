@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	execMode      = "--agentplane-runner-exec"
-	workspaceMode = "--agentplane-runner-workspace"
+	execMode                    = "--agentplane-runner-exec"
+	workspaceMode               = "--agentplane-runner-workspace"
+	guestResourcePropertiesMode = "--guest-resource-properties"
 
 	parentLivenessFDDefault = 3
 	nativePIDFDDefault      = 4
@@ -40,9 +41,31 @@ func InternalMode(args []string) (handled bool, exitCode int) {
 		return true, ExecMain(args[1:])
 	case workspaceMode:
 		return true, WorkspaceMain(args[1:])
+	case guestResourcePropertiesMode:
+		return true, GuestResourcePropertiesMain(args[1:])
 	default:
 		return false, 0
 	}
+}
+
+// GuestResourcePropertiesMain validates the read-only VM seed and prints the
+// systemd properties that may be applied to the Runner service.
+func GuestResourcePropertiesMain(args []string) int {
+	if len(args) != 1 || args[0] == "" {
+		fmt.Fprintln(os.Stderr, "--guest-resource-properties requires one guest config path")
+		return 64
+	}
+	properties, err := guestResourceSystemdProperties(args[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	for _, property := range properties {
+		if _, err := fmt.Fprintln(os.Stdout, property); err != nil {
+			return 1
+		}
+	}
+	return 0
 }
 
 // SupervisorMain runs one native command, retaining inherited state ownership until the
@@ -303,6 +326,7 @@ func fenceNativeGroup(leader int, cgroup *supervisorCgroup) error {
 	if cgroup == nil {
 		return nil
 	}
+	diagnosticsLogged := false
 	for {
 		if err := killCgroup(cgroup); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -310,6 +334,10 @@ func fenceNativeGroup(leader int, cgroup *supervisorCgroup) error {
 			}
 			time.Sleep(time.Second)
 			continue
+		}
+		if !diagnosticsLogged {
+			logCgroupMemoryDiagnostics(cgroup.dir.Name())
+			diagnosticsLogged = true
 		}
 		if err := cgroup.manager.Delete(); err == nil || errors.Is(err, os.ErrNotExist) {
 			return nil

@@ -28,6 +28,7 @@ from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
+from agentplane.sandboxes.guest_config import GuestResources, ResourceLimits
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import (
@@ -105,6 +106,36 @@ _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _KUBERNETES_MCP_SERVICE_URL = f"{kubectl_passthrough_mcp.SERVICE.url}/mcp"
 _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
 _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.json"
+
+# Budget for the one-vCPU, 1536 MiB staging guest. The service cap leaves 256 MiB
+# for guest services and kernel work; delegated agent work is capped below that.
+STAGING_VM_RESOURCES = GuestResources(
+    guest_memory_bytes=1_610_612_736,
+    guest_vcpu_count=1,
+    os_reserve_bytes=268_435_456,
+    service_memory_high_bytes=1_207_959_552,
+    service_memory_max_bytes=1_342_177_280,
+    service_cpu_quota_micros=100_000,
+    service_pids_max=1024,
+    aggregate=ResourceLimits(
+        cpu_quota_micros=100_000,
+        memory_max_bytes=1_140_850_688,
+        pids_max=768,
+        read_bps=52_428_800,
+        write_bps=20_971_520,
+        read_iops=1000,
+        write_iops=500,
+    ),
+    process=ResourceLimits(
+        cpu_quota_micros=100_000,
+        memory_max_bytes=805_306_368,
+        pids_max=512,
+        read_bps=52_428_800,
+        write_bps=20_971_520,
+        read_iops=1000,
+        write_iops=500,
+    ),
+)
 _HOME_ASSISTANT_MCP_URL = f"{ha_mcp.FACADE.url}/mcp"
 _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
 # One google-mcp pod (cluster/cdk8s/google_mcp.py) serves both tool sets at
@@ -452,6 +483,7 @@ ENV = Environment(
         extra_egress=(cilium.egress_via_gateway("auth.allegedly.works"), EgressRule.to_fqdns("claude.ai")),
     ),
     vm_sandboxes=True,
+    vm_resources=STAGING_VM_RESOURCES,
     wake_caller_accounts=frozenset(
         {
             ServiceAccountRef(namespace=STAGING_NAMESPACE, name=app_component.NAME),

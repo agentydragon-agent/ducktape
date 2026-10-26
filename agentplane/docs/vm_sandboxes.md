@@ -112,13 +112,25 @@ harness alive when its tools exceed their budget also requires a separate tool m
 The subsequent conversation-recovery failure is addressed separately in
 [PR #11091](https://github.com/agentydragon/ducktape/pull/11091).
 
-- The runner service is a systemd unit with `MemoryHigh`/`MemoryMax`, `CPUQuota` and `TasksMax`, and
-  delegates a subtree. The Go runner puts agent work under an aggregate cgroup and each
-  native harness process under its own, with memory, CPU, task and I/O limits and `memory.oom.group`.
-  Every Codex Session shares the one Codex app-server's.
-- When a harness subtree exceeds its memory budget, `memory.oom.group` kills that harness and its
-  descendants; the Runner remains outside that group and can continue answering RPCs. Acceptance of
-  the VM cgroup limits is still open.
+- The VM template and guest runner share the strict version-2 `GuestResources` seed. The template
+  takes its KubeVirt memory request and vCPU count from that object; an `ExecStartPre` reads the same
+  seed and applies the Runner systemd caps after the ConfigMap disk is mounted and before the Runner
+  starts. Staging currently sets:
+
+  | Scope                  | Memory                                                                                  | CPU                              | PID limit | Block I/O limit                                          |
+  | ---------------------- | --------------------------------------------------------------------------------------- | -------------------------------- | --------- | -------------------------------------------------------- |
+  | VM guest               | 1536 MiB (1,610,612,736 bytes), with a 256 MiB (268,435,456 byte) OS reserve            | 1 vCPU                           | —         | —                                                        |
+  | Runner service         | `MemoryHigh` 1152 MiB (1,207,959,552 bytes), `MemoryMax` 1280 MiB (1,342,177,280 bytes) | 100,000 µs per 100,000 µs period | 1024      | —                                                        |
+  | Aggregate agent cgroup | `memory.max` 1088 MiB (1,140,850,688 bytes)                                             | 100,000 µs per 100,000 µs period | 768       | read 50 MiB/s and 1000 IOPS; write 20 MiB/s and 500 IOPS |
+  | Native process leaf    | `memory.max` 768 MiB (805,306,368 bytes)                                                | 100,000 µs per 100,000 µs period | 512       | read 50 MiB/s and 1000 IOPS; write 20 MiB/s and 500 IOPS |
+
+  Memory swap remains disabled. `memory.oom.group=0` on the aggregate lets the kernel select an
+  individual process leaf, while `memory.oom.group=1` on each leaf kills that harness and its
+  descendants together. The supervisor records `memory.events` and `memory.peak` as JSON before it
+  removes the leaf; stale leaves are also recorded during startup cleanup. This keeps each harness's
+  kill boundary below the Runner. Acceptance of the VM cgroup limits in a deployed guest is still
+  open.
+
 - [Tool memory isolation](harness_tool_memory_isolation.md) records optional research on putting
   tighter resource limits around a tool child. That would be a separate resource policy, not a change
   to the Sandbox security boundary.

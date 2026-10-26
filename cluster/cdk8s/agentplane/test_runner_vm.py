@@ -62,6 +62,20 @@ def test_harness_env_reaches_the_guest_config() -> None:
     assert _guest_config(console_autologin=False)["harness_env"] == HARNESS_ENV
 
 
+def test_vm_size_and_guest_seed_share_the_configured_resources() -> None:
+    rendered = _runner_vm_manifests(console_autologin=False)
+    config = rendered["config"]
+    vm = rendered["sandbox_template"]["spec"]["vm"]
+    domain = vm["template"]["spec"]["domain"]
+
+    assert config["resources"]["guest_memory_bytes"] == 1_610_612_736
+    assert config["resources"]["os_reserve_bytes"] == 268_435_456
+    assert config["resources"]["aggregate"]["memory_max_bytes"] == 1_140_850_688
+    assert config["resources"]["process"]["memory_max_bytes"] == 805_306_368
+    assert domain["cpu"]["cores"] == config["resources"]["guest_vcpu_count"] == 1
+    assert domain["resources"]["requests"]["memory"] == "1536Mi"
+
+
 def test_vm_workspace_is_a_controller_attached_raw_disk_image() -> None:
     template = _runner_vm_manifests(console_autologin=False)["sandbox_template"]["spec"]
     assert template["workspaceVolume"] == {

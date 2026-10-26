@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"maps"
@@ -15,6 +16,7 @@ import (
 )
 
 const (
+	guestSeedVersion  = 2
 	guestConfigPath   = "/run/agentplane/config.json"
 	guestLaunchPath   = "/run/agentplane/launch.json"
 	guestStateDir     = "/state"
@@ -34,15 +36,136 @@ const (
 // Keep console_autologin here even though the runner does not consume it: vm.nix
 // and the provisioning schema share this versioned JSON contract.
 type guestSeed struct {
-	Version              int      `json:"version"`
-	Control              Endpoint `json:"control"`
-	Ingress              Endpoint `json:"ingress"`
-	LLMBaseURL           string   `json:"llm_base_url"`
-	ProxyURL             string   `json:"proxy_url"`
-	PlatformInstructions string   `json:"platform_instructions"`
-	ConsoleAutologin     bool     `json:"console_autologin"`
+	Version              int            `json:"version"`
+	Control              Endpoint       `json:"control"`
+	Ingress              Endpoint       `json:"ingress"`
+	Resources            guestResources `json:"resources"`
+	LLMBaseURL           string         `json:"llm_base_url"`
+	ProxyURL             string         `json:"proxy_url"`
+	PlatformInstructions string         `json:"platform_instructions"`
+	ConsoleAutologin     bool           `json:"console_autologin"`
 	// HarnessEnv is added to the harness environment; it may not set a name the guest owns.
 	HarnessEnv map[string]string `json:"harness_env"`
+}
+
+type guestResources struct {
+	GuestMemoryBytes       int64          `json:"guest_memory_bytes"`
+	GuestVCPUCount         int64          `json:"guest_vcpu_count"`
+	OSReserveBytes         int64          `json:"os_reserve_bytes"`
+	ServiceMemoryHighBytes int64          `json:"service_memory_high_bytes"`
+	ServiceMemoryMaxBytes  int64          `json:"service_memory_max_bytes"`
+	ServiceCPUQuotaMicros  int64          `json:"service_cpu_quota_micros"`
+	ServicePidsMax         int64          `json:"service_pids_max"`
+	Aggregate              ResourceLimits `json:"aggregate"`
+	Process                ResourceLimits `json:"process"`
+}
+
+func (r guestResources) Validate() error {
+	if r.GuestMemoryBytes <= 0 || r.GuestVCPUCount <= 0 || r.OSReserveBytes < 0 || r.OSReserveBytes >= r.GuestMemoryBytes {
+		return errors.New("guest memory, vCPU count and OS reserve are inconsistent")
+	}
+	if r.GuestVCPUCount > int64(^uint64(0)>>1)/int64(cgroupCPUPeriodMicros) {
+		return errors.New("guest vCPU count is too large")
+	}
+	if r.ServiceMemoryHighBytes <= 0 || r.ServiceMemoryMaxBytes < r.ServiceMemoryHighBytes || r.ServiceMemoryMaxBytes > r.GuestMemoryBytes-r.OSReserveBytes {
+		return errors.New("service memory caps must leave the configured OS reserve")
+	}
+	if r.ServiceCPUQuotaMicros <= 0 || r.ServiceCPUQuotaMicros > r.GuestVCPUCount*int64(cgroupCPUPeriodMicros) || r.ServiceCPUQuotaMicros%1000 != 0 {
+		return errors.New("service CPU quota must fit guest vCPU capacity and map to an integral systemd CPUQuota percent")
+	}
+	if r.ServicePidsMax <= 0 {
+		return errors.New("service PID max must be positive")
+	}
+	groups := AgentCgroups{AggregateLimits: r.Aggregate, ProcessLimits: r.Process}
+	if err := groups.AggregateLimits.Validate(); err != nil {
+		return fmt.Errorf("invalid aggregate limits: %w", err)
+	}
+	if err := groups.validateProcessLimits(groups.ProcessLimits); err != nil {
+		return fmt.Errorf("invalid process limits: %w", err)
+	}
+	if r.Aggregate.MemoryMaxBytes > r.ServiceMemoryHighBytes || r.Aggregate.PidsMax > r.ServicePidsMax || r.Aggregate.CPUQuotaMicros > r.ServiceCPUQuotaMicros {
+		return errors.New("aggregate limits must fit within Runner service limits")
+	}
+	return nil
+}
+
+// guestResourceSystemdProperties reads and validates the seed before returning
+// systemd properties. The VM applies these before starting the runner, so this
+// path must reject malformed limits before systemctl is invoked.
+func guestResourceSystemdProperties(configPath string) ([]string, error) {
+	return guestResourceSystemdPropertiesWithMeminfo(configPath, "/proc/meminfo")
+}
+
+func guestResourceSystemdPropertiesWithMeminfo(configPath, meminfoPath string) ([]string, error) {
+	configBytes, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read guest config at %s: %w", configPath, err)
+	}
+	var seed guestSeed
+	if err := DecodeStrict(configBytes, &seed); err != nil {
+		return nil, fmt.Errorf("invalid guest config at %s: %w", configPath, err)
+	}
+	if seed.Version != guestSeedVersion {
+		return nil, fmt.Errorf("invalid guest config at %s: version must be %d", configPath, guestSeedVersion)
+	}
+	if err := seed.Resources.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid guest config at %s: invalid resources: %w", configPath, err)
+	}
+	actualMemory, err := guestMemoryTotalBytes(meminfoPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot verify guest memory for config at %s: %w", configPath, err)
+	}
+	if err := validateGuestMemoryCapacity(seed.Resources, actualMemory); err != nil {
+		return nil, fmt.Errorf("invalid guest config at %s: %w", configPath, err)
+	}
+	return guestResourceProperties(seed.Resources), nil
+}
+
+func guestResourceProperties(resources guestResources) []string {
+	return []string{
+		fmt.Sprintf("MemoryHigh=%d", resources.ServiceMemoryHighBytes),
+		fmt.Sprintf("MemoryMax=%d", resources.ServiceMemoryMaxBytes),
+		"MemorySwapMax=0",
+		fmt.Sprintf("CPUQuota=%d%%", resources.ServiceCPUQuotaMicros/1000),
+		fmt.Sprintf("TasksMax=%d", resources.ServicePidsMax),
+	}
+}
+
+func validateGuestMemoryCapacity(resources guestResources, actualMemoryBytes int64) error {
+	if actualMemoryBytes <= 0 {
+		return errors.New("guest reports no available memory")
+	}
+	if resources.ServiceMemoryMaxBytes >= actualMemoryBytes {
+		return fmt.Errorf("service memory max %d bytes must be below guest MemTotal %d bytes", resources.ServiceMemoryMaxBytes, actualMemoryBytes)
+	}
+	return nil
+}
+
+func guestMemoryTotalBytes(path string) (int64, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) == 0 || fields[0] != "MemTotal:" {
+			continue
+		}
+		if len(fields) != 3 || fields[2] != "kB" {
+			return 0, errors.New("MemTotal must be a positive kB value")
+		}
+		value, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil || value <= 0 || value > int64(^uint64(0)>>1)/1024 {
+			return 0, errors.New("MemTotal must be a positive kB value")
+		}
+		return value * 1024, nil
+	}
+	if err := scanner.Err(); err != nil {
+		return 0, fmt.Errorf("read memory information: %w", err)
+	}
+	return 0, fmt.Errorf("MemTotal is missing from %s", path)
 }
 
 // GuestConfiguration reads the KubeVirt guest's public config and Sandbox launch
@@ -63,8 +186,11 @@ func GuestConfiguration(path, launchPath string) (Config, Endpoint, Endpoint, er
 	if err := DecodeStrict(configBytes, &seed); err != nil {
 		return Config{}, Endpoint{}, Endpoint{}, fmt.Errorf("invalid guest config at %s: %w", path, err)
 	}
-	if seed.Version != 1 {
-		return Config{}, Endpoint{}, Endpoint{}, fmt.Errorf("invalid guest config at %s: version must be 1", path)
+	if seed.Version != guestSeedVersion {
+		return Config{}, Endpoint{}, Endpoint{}, fmt.Errorf("invalid guest config at %s: version must be %d", path, guestSeedVersion)
+	}
+	if err := seed.Resources.Validate(); err != nil {
+		return Config{}, Endpoint{}, Endpoint{}, fmt.Errorf("invalid guest config at %s: invalid resources: %w", path, err)
 	}
 	if err := validateEndpoint("control", seed.Control); err != nil {
 		return Config{}, Endpoint{}, Endpoint{}, fmt.Errorf("invalid guest config at %s: %w", path, err)
@@ -115,9 +241,16 @@ func GuestConfiguration(path, launchPath string) (Config, Endpoint, Endpoint, er
 		HarnessEnvironment: harnessEnvironment,
 		Claude:             &harness.LaunchConfig{Binary: "/run/current-system/sw/bin/claude", BaseURL: llmBaseURL, Token: workloadToken},
 		Codex:              &harness.LaunchConfig{Binary: "/run/current-system/sw/bin/codex", BaseURL: llmBaseURL + "/v1", Token: workloadToken},
-		ProcessIsolation:   &AgentCgroups{Root: "/sys/fs/cgroup/system.slice/agentplane-runner.service/workloads", AgentUID: identity, AgentGID: group, BlockDevices: []string{guestWorkspaceDev}},
-		WorkspaceRoot:      guestWorkspaceDir,
-		InitializationCwd:  guestWorkspaceDir,
+		ProcessIsolation: &AgentCgroups{
+			Root:            "/sys/fs/cgroup/system.slice/agentplane-runner.service/workloads",
+			AgentUID:        identity,
+			AgentGID:        group,
+			BlockDevices:    []string{guestWorkspaceDev},
+			AggregateLimits: seed.Resources.Aggregate,
+			ProcessLimits:   seed.Resources.Process,
+		},
+		WorkspaceRoot:     guestWorkspaceDir,
+		InitializationCwd: guestWorkspaceDir,
 	}
 	if err := configureGuestNetworkEnvironment(harnessEnvironment, []string{seed.Control.Target, seed.Ingress.Target}); err != nil {
 		return Config{}, Endpoint{}, Endpoint{}, fmt.Errorf("configure guest runner network environment: %w", err)

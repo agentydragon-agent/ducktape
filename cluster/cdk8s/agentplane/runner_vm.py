@@ -54,6 +54,11 @@ def _guest_address(port: int) -> str:
     return f"{launcher_relay.GUEST_GATEWAY}:{port}"
 
 
+def _memory_quantity(memory_bytes: int) -> str:
+    mebibyte = 1024 * 1024
+    return f"{memory_bytes // mebibyte}Mi" if memory_bytes % mebibyte == 0 else str(memory_bytes)
+
+
 class RunnerVmTemplate(Construct):
     """Build the VM SandboxTemplate and the guest configuration it carries."""
 
@@ -71,8 +76,11 @@ class RunnerVmTemplate(Construct):
     ) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
+        resources = env.vm_resources
+        if resources is None:
+            raise ValueError("VM Sandboxes require vm_resources")
         config = GuestConfig(
-            version=1,
+            version=2,
             control=Endpoint(
                 target=_guest_address(platform_routes.control(namespace).listen_port),
                 bearer=platform_routes.ROUTE_BEARER,
@@ -81,6 +89,7 @@ class RunnerVmTemplate(Construct):
                 target=_guest_address(platform_routes.ingress(namespace).listen_port),
                 bearer=platform_routes.ROUTE_BEARER,
             ),
+            resources=resources,
             llm_base_url=AnyHttpUrl(llm_ingress.proxied_url(namespace)),
             proxy_url=AnyHttpUrl(f"http://{_guest_address(sandbox_pod.SIDECAR_LISTEN_PORT)}"),
             platform_instructions=platform_instructions,
@@ -110,9 +119,13 @@ class RunnerVmTemplate(Construct):
         template = container_disk_template(
             labels=labels,
             image=_IMAGE,
-            cpu=VirtualMachineSpecTemplateSpecDomainCpu(cores=1),
+            cpu=VirtualMachineSpecTemplateSpecDomainCpu(cores=resources.guest_vcpu_count),
             resources=VirtualMachineSpecTemplateSpecDomainResources(
-                requests={"memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("1536Mi")}
+                requests={
+                    "memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string(
+                        _memory_quantity(resources.guest_memory_bytes)
+                    )
+                }
             ),
             ports=[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(port=_UNUSED_GUEST_PORT)],
             disks={
