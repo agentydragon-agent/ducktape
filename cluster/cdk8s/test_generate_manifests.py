@@ -7,9 +7,6 @@ fails; generated files beside hand-written ones under `HAND_WRITTEN_ROOT` or `PA
 are pinned only one way.
 """
 
-import base64
-import io
-import tarfile
 from pathlib import Path
 from typing import Any
 
@@ -511,7 +508,7 @@ def test_crossplane_source_update_canary_watches_its_flux_artifact(
     assert '"module":{{ $artifactURL | toJson }}' in composition_template
     assert "{{- if $artifactURL }}" in composition_template
     assert (
-        '"gotemplating.fn.crossplane.io/ready": {{ if and $artifactWatchReady $workspaceReady }}"True"{{ else }}"False"{{ end }}'
+        'gotemplating.fn.crossplane.io/ready: {{ if and $artifactWatchReady $workspaceReady }}"True"{{ else }}"False"{{ end }}'
         in composition_template
     )
     assert "__ARTIFACT_URL__" not in composition_template
@@ -970,29 +967,6 @@ def test_public_coder_pause_retains_state_after_devbox_retirement(
         assert owners[name]["deletionPolicy"] == "Orphan"
     assert owners["public-coder-agent-app"].get("suspend", False) is True
     assert owners["public-coder-agent-backup"]["suspend"] is True
-
-
-def test_dump_manifests_for_ci(generated: Path) -> None:
-    """Temporary CI export: local Bazel is disabled in the agent container."""
-    names = [
-        "cluster/generated/crossplane-source-update-canary",
-        "cluster/generated/crossplane-source-update-canary-definitions",
-        "cluster/generated/crossplane-provider-kubernetes",
-        "cluster/generated/artifact-generators",
-    ]
-    files = [generated / name for name in names]
-    files.append(generated / "cluster/k8s/flux/kustomizations.k8s.yaml")
-    archive = io.BytesIO()
-    with tarfile.open(fileobj=archive, mode="w:gz") as tar:
-        for path in files:
-            if path.is_dir():
-                for child in sorted(path.rglob("*")):
-                    if child.is_file():
-                        tar.add(child, arcname=child.relative_to(generated))
-            else:
-                tar.add(path, arcname=path.relative_to(generated))
-    exported = base64.b64encode(archive.getvalue()).decode()
-    pytest.fail(f"MANIFEST_EXPORT_BEGIN\n{exported}\nMANIFEST_EXPORT_END")
 
 
 if __name__ == "__main__":

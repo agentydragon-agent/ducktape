@@ -1,0 +1,73 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: crossplanesourceupdatecanaries.opentofu.ducktape.io
+spec:
+  defaultCompositionRef:
+    name: crossplane-source-update-canary
+  group: opentofu.ducktape.io
+  names:
+    kind: CrossplaneSourceUpdateCanary
+    plural: crossplanesourceupdatecanaries
+  versions:
+    - name: v1alpha1
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          properties:
+            spec:
+              type: object
+            status:
+              properties:
+                artifactURL:
+                  type: string
+              type: object
+          type: object
+      served: true
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: crossplane-source-update-canary
+spec:
+  compositeTypeRef:
+    apiVersion: opentofu.ducktape.io/v1alpha1
+    kind: CrossplaneSourceUpdateCanary
+  mode: Pipeline
+  pipeline:
+    - functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        inline:
+          template: |
+            {{- $artifactURL := "" -}}
+            {{- $artifactWatchReady := false -}}
+            {{- with (index .observed.resources "artifact-watch") -}}
+              {{- $artifactURL = dig "status" "atProvider" "manifest" "status" "artifact" "url" "" .resource -}}
+              {{- $artifactWatchReady = ne $artifactURL "" -}}
+            {{- end -}}
+            {{- $workspaceReady := false -}}
+            {{- with (index .observed.resources "workspace") -}}
+              {{- range .resource.status.conditions -}}
+                {{- if and (eq .type "Ready") (eq .status "True") -}}
+                  {{- $workspaceReady = true -}}
+                {{- end -}}
+              {{- end -}}
+            {{- end -}}
+            {"apiVersion":"kubernetes.crossplane.io/v1alpha2","kind":"Object","spec":{"managementPolicies":["Observe"],"providerConfigRef":{"name":"crossplane-tf-artifact-reader"},"watch":true,"forProvider":{"manifest":{"apiVersion":"source.toolkit.fluxcd.io/v1","kind":"ExternalArtifact","metadata":{"name":"tf-gitops-crossplane-source-update-canary","namespace":"ducktape-flux"}}}},"metadata":{"annotations":{"gotemplating.fn.crossplane.io/composition-resource-name":"artifact-watch","gotemplating.fn.crossplane.io/ready":{{ if $artifactWatchReady }}"True"{{ else }}"False"{{ end }}}}}
+            {{- if $artifactURL }}
+            ---
+            {"apiVersion":"opentofu.upbound.io/v1beta1","kind":"Workspace","metadata":{"annotations":{"crossplane.io/external-name":"default","gotemplating.fn.crossplane.io/composition-resource-name":"workspace","gotemplating.fn.crossplane.io/ready":{{ if $workspaceReady }}"True"{{ else }}"False"{{ end }}}},"spec":{"deletionPolicy":"Orphan","forProvider":{"env":[{"name":"PGPASSWORD","secretKeyRef":{"key":"password","name":"tofu-state-db-credentials","namespace":"flux-system"}}],"module":{{ $artifactURL | toJson }},"planArgs":["-lock-timeout=5m"],"remotePullPolicy":"IfNotPresent","source":"Remote"},"managementPolicies":["Observe","Create","Update"],"providerConfigRef":{"name":"crossplane-source-update-canary"}}}
+            {{- end }}
+            ---
+            apiVersion: opentofu.ducktape.io/v1alpha1
+            kind: CrossplaneSourceUpdateCanary
+            status:
+              artifactURL: {{ $artifactURL | toJson }}
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/ready: {{ if and $artifactWatchReady $workspaceReady }}"True"{{ else }}"False"{{ end }}
+        kind: GoTemplate
+        source: Inline
+      step: render-resources
