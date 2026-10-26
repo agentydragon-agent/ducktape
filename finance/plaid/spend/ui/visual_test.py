@@ -1062,6 +1062,69 @@ async def test_sustainability_experimental_render(
     view.errors.assert_none(context="Sustainability")
 
 
+@pytest.mark.parametrize("width", [1280, 390])
+async def test_sustainability_loading_preserves_layout(
+    page: Page, view: VisualPage, dashboard_url: str, width: int
+) -> None:
+    response_ready = asyncio.Event()
+    request_started = asyncio.Event()
+
+    async def delay_estimate(route: Route) -> None:
+        request_started.set()
+        await response_ready.wait()
+        await route.continue_()
+
+    await page.route("**/api/v1/sustainability*", delay_estimate)
+    await page.set_viewport_size({"width": width, "height": 960})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Sustainability")
+    await request_started.wait()
+    skeleton = page.get_by_role("status", name="Loading sustainability estimate")
+    await expect(skeleton).to_be_visible()
+    await expect(page.get_by_text("Loading estimate…", exact=True)).to_have_count(0)
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"sustainability-initial-loading-{width}",
+        label=f"{width}px initial loading skeleton",
+        full_page=True,
+        animations="disabled",
+    )
+    response_ready.set()
+    await expect(skeleton).to_be_hidden()
+    await expect(page.get_by_text("90 of 90 days covered", exact=False)).to_be_visible()
+    previous_height = await page.evaluate("document.documentElement.scrollHeight")
+
+    response_ready.clear()
+    request_started.clear()
+    await page.get_by_text("30 days", exact=True).click()
+    await request_started.wait()
+    await expect(skeleton).to_be_visible()
+    await expect(page.get_by_text("90 of 90 days covered", exact=False)).to_be_hidden()
+    await expect(page.get_by_text("Loading selected window", exact=True)).to_have_count(0)
+    assert await page.evaluate("document.documentElement.scrollHeight") >= previous_height - 1
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"sustainability-window-loading-{width}",
+        label=f"{width}px window change preserves page height",
+        full_page=True,
+        animations="disabled",
+    )
+    response_ready.set()
+    await expect(skeleton).to_be_hidden()
+    await expect(page.get_by_text("30 of 30 days covered", exact=False)).to_be_visible()
+
+    response_ready.clear()
+    request_started.clear()
+    await page.get_by_role("button", name="Refresh", exact=True).click()
+    await request_started.wait()
+    await expect(skeleton).to_be_hidden()
+    await expect(page.get_by_text("30 of 30 days covered", exact=False)).to_be_visible()
+    await expect(page.get_by_role("img", name="Annual funding including taxes by day")).to_be_visible()
+    response_ready.set()
+    await expect(page.get_by_role("button", name="Refresh", exact=True)).to_be_enabled()
+    view.errors.assert_none(context="Sustainability loading")
+
+
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
 async def test_sustainability_partial_window_has_no_startup_chart(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int

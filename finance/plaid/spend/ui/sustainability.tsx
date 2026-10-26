@@ -491,7 +491,70 @@ function DrawGauge({ view }: { view: SustainabilityView }) {
   );
 }
 
+function SustainabilitySkeleton({ minHeight }: { minHeight: number }) {
+  return (
+    <Stack role="status" aria-label="Loading sustainability estimate" gap="lg" mih={minHeight}>
+      <Group justify="space-between" aria-hidden="true">
+        <Skeleton height={26} width={80} radius="xl" />
+        <Skeleton height={16} width="60%" />
+      </Group>
+      <Skeleton height={14} width="45%" aria-hidden="true" />
+      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg" aria-hidden="true">
+        <Paper withBorder radius="lg" p="xl">
+          <Stack gap="lg">
+            <Skeleton height={16} width="65%" />
+            <Skeleton height={48} width="35%" />
+            <Skeleton height={16} width="90%" />
+            <Skeleton height={64} radius="md" />
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+              {[0, 1, 2, 3].map((index) => (
+                <Skeleton key={index} height={80} radius="md" />
+              ))}
+            </SimpleGrid>
+            <Skeleton height={12} width="25%" />
+          </Stack>
+        </Paper>
+        <Paper withBorder radius="lg" p="xl">
+          <Stack gap="xl">
+            <Skeleton height={22} width="65%" />
+            <SimpleGrid cols={2} spacing="xl">
+              {[0, 1, 2, 3, 4].map((index) => (
+                <Stack key={index} gap="xs">
+                  <Skeleton height={12} width="70%" />
+                  <Skeleton height={26} width="80%" />
+                </Stack>
+              ))}
+            </SimpleGrid>
+          </Stack>
+        </Paper>
+      </SimpleGrid>
+      <Paper withBorder radius="lg" p="lg" aria-hidden="true">
+        <Stack gap="md">
+          <Skeleton height={22} width="50%" />
+          <Skeleton height={14} width="65%" />
+          <Skeleton height={20} width="45%" />
+          <Skeleton height={300} radius="md" />
+        </Stack>
+      </Paper>
+      <Paper withBorder radius="lg" p="lg" aria-hidden="true">
+        <Stack gap="lg">
+          <Skeleton height={22} width="55%" />
+          <SimpleGrid cols={{ base: 2, sm: 4 }}>
+            {[0, 1, 2, 3].map((index) => (
+              <Skeleton key={index} height={48} />
+            ))}
+          </SimpleGrid>
+          <Skeleton height={18} width="30%" />
+        </Stack>
+      </Paper>
+      <Skeleton height={20} width="35%" aria-hidden="true" />
+    </Stack>
+  );
+}
+
 export function SustainabilityPage() {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [loadingHeight, setLoadingHeight] = useState(0);
   const [view, setView] = useState<SustainabilityView | null>(null);
   const [selectedWindowDays, setSelectedWindowDays] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -539,6 +602,7 @@ export function SustainabilityPage() {
 
   const displayingSelectedWindow =
     view != null && (selectedWindowDays == null || view.window_days === selectedWindowDays);
+  const showSkeleton = !displayingSelectedWindow && error == null;
   const statusLabel = view?.status ?? "loading";
   const statusColor = view?.status === "ready" ? "blue" : view?.status === "unavailable" ? "orange" : "gray";
 
@@ -569,15 +633,23 @@ export function SustainabilityPage() {
           <SegmentedControl
             aria-label="Sustainability lookback window"
             value={String(selectedWindowDays ?? view.window_days)}
-            onChange={(value) => setSelectedWindowDays(Number(value))}
+            onChange={(value) => {
+              setLoadingHeight(contentRef.current?.getBoundingClientRect().height ?? 0);
+              setError(null);
+              setSelectedWindowDays(Number(value));
+            }}
             data={view.available_windows_days.map((days) => ({ label: `${days} days`, value: String(days) }))}
           />
         ) : (
           <Skeleton height={36} width={220} />
         )}
-        <Text size="xs" c="dimmed">
-          {view ? `Updated ${time(view.generated_at)}` : loading ? "Loading estimate…" : "No result yet"}
-        </Text>
+        {showSkeleton ? (
+          <Skeleton height={14} width={180} />
+        ) : (
+          <Text size="xs" c="dimmed">
+            {view ? `Updated ${time(view.generated_at)}` : "No result yet"}
+          </Text>
+        )}
       </Group>
 
       {error && (
@@ -585,14 +657,9 @@ export function SustainabilityPage() {
           {error}
         </Alert>
       )}
-      {loading && view == null && <Skeleton height={180} radius="lg" />}
-      {view && !displayingSelectedWindow && loading && (
-        <Alert color="blue" title="Loading selected window">
-          The previous window is hidden until the selected window finishes loading.
-        </Alert>
-      )}
+      {showSkeleton && <SustainabilitySkeleton minHeight={loadingHeight} />}
       {view && displayingSelectedWindow && (
-        <>
+        <Stack ref={contentRef} gap="lg" aria-busy={loading}>
           <Group justify="space-between" gap="sm">
             <Badge color={statusColor} variant="light" size="lg">
               {statusLabel}
@@ -692,7 +759,7 @@ export function SustainabilityPage() {
               </Stack>
             </Alert>
           )}
-        </>
+        </Stack>
       )}
     </Stack>
   );
