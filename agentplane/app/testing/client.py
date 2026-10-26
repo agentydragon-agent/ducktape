@@ -26,6 +26,7 @@ from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPresetView
 from agentplane.app.sandbox_models import NewSandbox, RunnerStatusView, SandboxView
 from agentplane.app.threads.bridge import NewSession
+from agentplane.app.threads.store import ThreadPage
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.egress.decisions import Decision
 from agentplane.proto import event_log_pb2
@@ -251,6 +252,17 @@ class Client:
                 if time.monotonic() >= deadline:
                     raise TimeoutError(f"Thread {thread_id} was not projected within {timeout_s:g}s") from error
                 await asyncio.sleep(0.2)
+
+    async def threads(self, *, sandbox_uid: UUID) -> AsyncGenerator[ThreadView]:
+        """Every retained Thread of this Sandbox incarnation, including archived Threads."""
+        params = {"sandbox_uid": str(sandbox_uid), "include_archived": "true"}
+        while True:
+            page = ThreadPage.model_validate(await self._json("GET", "/threads", params=params))
+            for thread in page.threads:
+                yield thread
+            if page.next_page_token is None:
+                return
+            params["page_token"] = page.next_page_token
 
     async def thread(self, thread_id: UUID) -> ThreadView:
         """The persistent Thread of a created Session; its ID is the Session's public ID."""

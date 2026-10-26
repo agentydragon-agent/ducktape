@@ -28,7 +28,7 @@ from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_resource import OperatingMode
-from agentplane.system_tests import scripted_upstream
+from agentplane.system_tests import native_artifacts, scripted_upstream
 from agentplane.system_tests.ollama_warmup import warm_ollama
 from util.net import Listener
 
@@ -212,7 +212,7 @@ async def suspend_and_delete(client: Client, name: str, uid: UUID) -> None:
 
 
 @pytest.fixture
-async def sandbox(client: Client) -> AsyncIterator[Sandboxes]:
+async def sandbox(client: Client, request: pytest.FixtureRequest) -> AsyncIterator[Sandboxes]:
     """Creates sandboxes and deletes every one it created, whatever the test did.
 
     Deletion is refused while a sandbox runs, so each is suspended first. A sandbox that will not go
@@ -248,4 +248,8 @@ async def sandbox(client: Client) -> AsyncIterator[Sandboxes]:
     yield create
 
     for name, uid in created:
-        await suspend_and_delete(client, name, uid)
+        try:
+            await suspend_and_delete(client, name, uid)
+        finally:
+            if request.node.get_closest_marker("vm_sandboxes") is not None:
+                await native_artifacts.capture(client, sandbox_uid=uid)

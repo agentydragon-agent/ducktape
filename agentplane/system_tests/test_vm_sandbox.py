@@ -102,10 +102,9 @@ async def _command(
         result = await model.request()
         await model.reply(result, Text("Command observed."))
     (output,) = [output for output in result.tool_outputs if output.call_id == call_id]
-    (report,) = [
-        block.removeprefix("VM_EXEC_RESULT ") for block in output.blocks if block.startswith("VM_EXEC_RESULT ")
-    ]
-    executed = _ExecResult.model_validate_json(report)
+    reports = [block.removeprefix("VM_EXEC_RESULT ") for block in output.blocks if block.startswith("VM_EXEC_RESULT ")]
+    assert len(reports) == 1, output
+    executed = _ExecResult.model_validate_json(reports[0])
     assert executed.exit_code == exit_code, output
     return turn.result(), executed
 
