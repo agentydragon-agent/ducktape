@@ -13,6 +13,40 @@
    This Forgejo migration builds on the application-root migration and remains draft
    until that migration's live handoff is verified (PR #12109, stacked on PR #12105).
 
+4. Migrate `sso-providers`, `agent-machine-access`, `gitlab-spike`, and `forgejo-images`
+   together. Keep this batch draft until the preceding Forgejo batch has live
+   current-generation Synced and Ready conditions.
+
+   | Root                 | PostgreSQL schema    | Kubernetes identity           |
+   | -------------------- | -------------------- | ----------------------------- |
+   | sso-providers        | sso_providers        | opentofu-sso-providers        |
+   | agent-machine-access | agent_machine_access | opentofu-agent-machine-access |
+   | gitlab-spike         | gitlab_spike         | opentofu-gitlab-spike         |
+   | forgejo-images       | forgejo_images       | opentofu-forgejo-images       |
+
+   The Authentik prune gate becomes empty; its two replacement directories share its
+   artifact. SSO waits for Authentik; machine access waits for SSO. GitLab's app waits
+   for SSO, then bootstrap and the empty GitLab GitOps prune gate precede its Workspace.
+   GitLab integrations wait for that Workspace. The Forgejo registry keeps its namespace,
+   credentials, Receiver and ESO objects in their existing owner; only Terraform is
+   replaced by a Workspace in a nested directory, after that owner and Forgejo are Ready.
+
+   Retain all four `tf-gitops-*` module source artifacts through finalization. Remove
+   them in a later cleanup only after the four old Terraform CRs and runners are absent
+   and all replacements are Ready and current-generation Synced. Preserve HCL, SSH key
+   inputs, webhook variables, credentials, and native resource addresses. No state import,
+   export, credential rotation, or recreation is part of this batch.
+
+   Each identity can GET only its named input Secrets and manage its named output
+   Secrets. Secret CREATE remains namespace-wide because Kubernetes cannot scope it by
+   resource name. Shared provider process and backend access remain as documented in
+   `cluster/docs/crossplane-opentofu-artifact-triggers.md`; these are scoped Kubernetes
+   clients, not execution isolation.
+
+   Check SSO consumers and machine-client authentication, GitLab runner and Flux source
+   readiness, and Forgejo registry authentication/package webhook continuity after merge.
+   Confirm no legacy runner competes for the preserved state before declaring handoff done.
+
 ## Handoff and verification
 
 Each replacement uses the existing PostgreSQL backend/schema and OpenTofu `default`

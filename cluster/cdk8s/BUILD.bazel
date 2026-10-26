@@ -850,11 +850,12 @@ py_library(
 py_library(
     name = "agent_machine_access",
     srcs = ["agent_machine_access.py"],
+    data = ["//tf/gitops/agent-machine-access:inline_source"],
     visibility = ["//cluster/cdk8s/authentik:__pkg__"],
     deps = [
+        ":manifest_roots",
+        ":opentofu",
         ":terraform",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "//cluster/cdk8s/providers/tofu_controller:terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -1290,11 +1291,13 @@ py_library(
     srcs = ["opentofu.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":flux",
         ":secret_ref",
         ":terraform",
         "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -1809,7 +1812,10 @@ py_binary(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     main_module = "cluster.cdk8s.generate_manifests",
-    deps = [":generate_manifests_lib"],
+    deps = [
+        ":generate_manifests_lib",
+        ":opentofu",
+    ],
 )
 
 py_library(
