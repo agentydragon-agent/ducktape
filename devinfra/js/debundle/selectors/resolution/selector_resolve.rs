@@ -12,7 +12,7 @@ mod selector_conflict;
 
 use source_identity::SourceUnitOrdinal;
 use std::cell::OnceCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use analysis::facts::StructuralChunkAnalysis;
 use analysis::{DepKind, SourceUnitId, StatementKind};
@@ -33,7 +33,7 @@ use selector_runtime::solve_global_selector_program;
 use shape_index::ShapeIndex;
 use source_match::chunk_resolver::ChunkResolver;
 use source_match::{ParsedSourceMatchSelector, template_free_identifiers};
-use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec};
+use spec::{AnonymousStatementSelector, BindingSelector, BindingSourceKind, MemberSelectorSpec};
 use swc_ecma_ast::{ImportSpecifier, Module, ModuleDecl, ModuleItem};
 
 /// One parsed chunk, analysed once and resolved against any number of entity
@@ -53,7 +53,25 @@ struct Places {
     source_unit_by_body_and_binding: BTreeMap<(usize, String), SourceUnitId>,
     /// Each top-level binding name's declaring statements, with their kind.
     /// Repeated `var` declarations intentionally retain every site here.
-    declarations: BTreeMap<String, Vec<(SourceUnitId, StatementKind)>>,
+    declarations: BTreeMap<String, Vec<(SourceUnitId, SourceUnitOrdinal, StatementKind)>>,
+    /// Chunk import bindings, indexed once with the declaration sites.
+    imports: HashMap<String, ImportBinding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DirectBindingSourceEvidence {
+    Local {
+        /// All sites remain available because a kind pin is satisfied when
+        /// any site has the requested kind.
+        declaration_sites: Vec<(SourceUnitOrdinal, StatementKind)>,
+    },
+    Import,
+    Missing,
+}
+
+#[derive(Debug, Clone)]
+struct ImportBinding {
+    source: String,
 }
 
 /// One logical module's entities.
@@ -511,6 +529,7 @@ impl<'m> Chunk<'m> {
                 source_unit_by_body: BTreeMap::new(),
                 source_unit_by_body_and_binding: BTreeMap::new(),
                 declarations: BTreeMap::new(),
+                imports: import_bindings(self.module),
             };
             for statement in &self.structural.per_statement {
                 for binding in &statement.declared {
@@ -518,7 +537,11 @@ impl<'m> Chunk<'m> {
                         .declarations
                         .entry(binding.0.as_str().to_string())
                         .or_default()
-                        .push((SourceUnitId(statement.ordinal.0), statement.kind));
+                        .push((
+                            SourceUnitId(statement.ordinal.0),
+                            statement.ordinal,
+                            statement.kind,
+                        ));
                 }
                 let Some(body_idx) =
                     statement_for_source_unit_ordinal(&self.module.body, statement.ordinal)
@@ -535,6 +558,40 @@ impl<'m> Chunk<'m> {
             }
             places
         })
+    }
+
+    /// Source evidence for a typed direct name pin. This uses the same
+    /// declaration table and kind mapping as `pin_places`, including its
+    /// repeated-declaration rule: any site may satisfy the kind, while the
+    /// first site remains the representative place.
+    pub fn direct_binding_source_evidence(
+        &self,
+        binding: &BindingSelector,
+    ) -> DirectBindingSourceEvidence {
+        let places = self.places();
+        if binding.kind == Some(BindingSourceKind::ImportSpecifier) {
+            return places
+                .imports
+                .get(&binding.name)
+                .map_or(DirectBindingSourceEvidence::Missing, |_| {
+                    DirectBindingSourceEvidence::Import
+                });
+        }
+
+        if let Some(declarations) = places.declarations.get(&binding.name) {
+            let mut declaration_sites = declarations
+                .iter()
+                .map(|(_, ordinal, kind)| (*ordinal, *kind))
+                .collect::<Vec<_>>();
+            declaration_sites.sort_by_key(|(statement_ordinal, _)| *statement_ordinal);
+            return DirectBindingSourceEvidence::Local { declaration_sites };
+        }
+        places
+            .imports
+            .get(&binding.name)
+            .map_or(DirectBindingSourceEvidence::Missing, |_| {
+                DirectBindingSourceEvidence::Import
+            })
     }
 
     /// [`resolve`] of this chunk alone.
@@ -1237,8 +1294,8 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         // graph co-locates every other site with it.
                         declarations
                             .iter()
-                            .find(|(_, kind)| *kind != StatementKind::Import)
-                            .map(|(source_unit, _)| Place {
+                            .find(|(_, _, kind)| *kind != StatementKind::Import)
+                            .map(|(source_unit, _, _)| Place {
                                 source_unit: *source_unit,
                                 binding: Some(name.clone()),
                             })
@@ -1360,7 +1417,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             .per_statement
             .iter()
             .flat_map(|statement| statement.declared.iter().map(|id| id.0.to_string()))
-            .chain(import_sources(self.chunk.module).into_keys())
+            .chain(self.chunk.places().imports.keys().cloned())
             .collect::<BTreeSet<_>>();
 
         for (index, entity) in collected.iter().enumerate() {
@@ -1713,13 +1770,13 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 let places = declarations
                     .get(pin.name.as_str())
                     .and_then(|declarations| {
-                        let has_matching_site = declarations.iter().any(|(_, kind)| {
+                        let has_matching_site = declarations.iter().any(|(_, _, kind)| {
                             pin.kind
                                 .is_none_or(|pinned| statement_kind_for_spec(pinned) == *kind)
                         });
                         has_matching_site.then(|| declarations.first()).flatten()
                     })
-                    .map(|(source_unit, _)| Place {
+                    .map(|(source_unit, _, _)| Place {
                         source_unit: *source_unit,
                         binding: Some(pin.name.clone()),
                     })
@@ -2406,7 +2463,7 @@ fn member_place(
         .declarations
         .get(&binding)
         .and_then(|declarations| declarations.first())
-        .map(|(source_unit, _)| *source_unit)
+        .map(|(source_unit, _, _)| *source_unit)
         .unwrap_or(matched_source_unit);
     Ok(Place {
         source_unit,
@@ -2589,7 +2646,7 @@ fn target_entity_refs<'a>(
         .collect()
 }
 
-fn statement_kind_for_spec(kind: BindingSourceKind) -> StatementKind {
+pub fn statement_kind_for_spec(kind: BindingSourceKind) -> StatementKind {
     match kind {
         BindingSourceKind::ImportSpecifier => StatementKind::Import,
         BindingSourceKind::VariableDeclarator => StatementKind::VarDecl,
@@ -2598,8 +2655,8 @@ fn statement_kind_for_spec(kind: BindingSourceKind) -> StatementKind {
     }
 }
 
-/// Local import binding → module specifier, for every import in the chunk.
-fn import_sources(module: &Module) -> HashMap<String, String> {
+/// Local import binding → source and import form, for every import in the chunk.
+fn import_bindings(module: &Module) -> HashMap<String, ImportBinding> {
     module
         .body
         .iter()
@@ -2615,10 +2672,22 @@ fn import_sources(module: &Module) -> HashMap<String, String> {
                     ImportSpecifier::Default(default) => &default.local,
                     ImportSpecifier::Namespace(namespace) => &namespace.local,
                 };
-                (local.sym.to_string(), source.clone())
+                (
+                    local.sym.to_string(),
+                    ImportBinding {
+                        source: source.clone(),
+                    },
+                )
             })
         })
         .collect()
+}
+
+/// Import local names without constructing structural chunk
+/// analysis. The direct-claim edit gate uses this when import pins are the
+/// only selectors that need source evidence.
+pub fn import_specifier_names(module: &Module) -> HashSet<String> {
+    import_bindings(module).into_keys().collect()
 }
 
 /// The chunk facts `program`'s tables are built from: every statement's source unit,
@@ -2745,9 +2814,13 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
         .iter()
         .any(|atom| matches!(atom, SelectorAtom::ConsumesModuleMember { .. }))
     {
-        for (ordinal, uses) in
-            chunk_facts::module_member_uses_by_ordinal(module, &import_sources(module))
-        {
+        let import_sources = chunk
+            .places()
+            .imports
+            .iter()
+            .map(|(local, import)| (local.clone(), import.source.clone()))
+            .collect::<HashMap<_, _>>();
+        for (ordinal, uses) in chunk_facts::module_member_uses_by_ordinal(module, &import_sources) {
             for use_site in uses {
                 store.push(SelectorFact::ModuleMemberUse {
                     statement_ordinal: SourceUnitOrdinal(ordinal),
