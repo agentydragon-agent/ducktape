@@ -48,13 +48,23 @@ def environment(home: Path) -> dict[str, str]:
     }
 
 
-def config(harness: runner_pb2.Harness, endpoint: str, *, state_dir: Path, home: Path) -> RunnerTestConfig:
+def config(
+    harness: runner_pb2.Harness,
+    endpoint: str,
+    *,
+    state_dir: Path,
+    home: Path,
+    codex_executor_url: str | None = None,
+    codex_executor_socket: Path | None = None,
+) -> RunnerTestConfig:
     return RunnerTestConfig(
         state_dir=state_dir,
         launch=SANDBOX_LAUNCH,
         harness_environment=environment(home),
         claude=claude_launch(endpoint) if harness == runner_pb2.HARNESS_CLAUDE else None,
         codex=codex_launch(endpoint) if harness == runner_pb2.HARNESS_CODEX else None,
+        codex_executor_url=codex_executor_url,
+        codex_executor_socket=codex_executor_socket,
     )
 
 
@@ -137,6 +147,10 @@ def command(config: RunnerTestConfig, *, control: Endpoint, ingress: Endpoint) -
         result += ["--claude-binary", str(config.claude.binary), "--anthropic-base-url", config.claude.base_url]
     if config.codex is not None:
         result += ["--codex-binary", str(config.codex.binary), "--openai-base-url", config.codex.base_url]
+    if config.codex_executor_url is not None:
+        result += ["--codex-executor-url", config.codex_executor_url]
+    if config.codex_executor_socket is not None:
+        result += ["--codex-executor-socket", str(config.codex_executor_socket)]
     for name, value in config.harness_environment.items():
         result += ["--harness-env", f"{name}={value}"]
     if config.debug_checkpoint is not None:

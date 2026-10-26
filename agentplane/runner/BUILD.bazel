@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_EXEC_PROPERTIES")
+load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES", "NATIVE_RUNNER_EXEC_PROPERTIES")
 load("//devinfra/erofs:defs.bzl", "erofs_image")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
@@ -402,6 +402,41 @@ py_test(
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:container_logs",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_executor_container",
+    size = "medium",
+    srcs = ["test_executor_container.py"],
+    data = [
+        ":main_bin",  # keep: the PID-1 companion is the production runner binary
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned Codex executor
+    ],
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner/testing:config",
+        "//agentplane/runner/testing:driver",
+        "//agentplane/runner/testing:events",
+        "//agentplane/runner/testing:fixtures",
+        "//agentplane/runner/testing:launches",
+        "//agentplane/testing:scripted_model",
+        "//third_party/containers:debian_slim",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:container_logs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
