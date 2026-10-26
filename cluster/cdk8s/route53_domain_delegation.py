@@ -65,6 +65,7 @@ def resources(
         directory,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(opentofu_provider, tofu_state_db, dns_automation),
+        health_check_exprs=[opentofu.WORKSPACE_HEALTH_CHECK_EXPR],
         description=(
             "Manage Route 53 domain registration and nameserver delegation using the existing dns_records state."
         ),

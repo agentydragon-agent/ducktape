@@ -6,10 +6,12 @@
    Provider packages, revisions, runtime configs, ProviderConfigs and Workspaces.
    Grant no core Secret reads or access to the PostgreSQL state backend.
 2. Migrate `gatus-sso`, `forgejo-claude`, and `alloy-otlp-bearer-token` together.
-   Factor the existing Inline Workspace construction and configure Kubernetes identities.
+   Factor the existing Inline Workspace construction and configure Kubernetes identities
+   (application-root migration, PR #12105).
 3. Migrate the five remaining active Forgejo roots together: `haku-state`,
    `budget-ledger`, `cpap-data`, `finance-agent`, `forgejo-agentydragon-repos`.
-   This batch builds on batch 2 and remains draft until its live handoff is verified.
+   This Forgejo migration builds on the application-root migration and remains draft
+   until that migration's live handoff is verified (PR #12109, stacked on PR #12105).
 
 ## Handoff and verification
 
@@ -25,7 +27,25 @@ artifact revision, rather than accepting Ready from an earlier revision. The rep
 deletion policy and Observe/Create/Update management policies. Those policies prevent
 Workspace deletion from destroying infrastructure; HCL edits can still delete resources.
 
-After merging batch 2, verify:
+Every OpenTofu Workspace Kustomization uses a health-check expression that requires
+both `Synced=True` for the Workspace's current generation and `Ready=True`. The
+generation check applies to Synced; Ready has no observed-generation requirement.
+This prevents Flux's generic kstatus check from treating `Synced=True` alone as Ready
+when the Workspace has not reported `Ready=True`.
+
+Keep the five legacy `tf-gitops-*` ArtifactGenerator outputs while the old
+tofu-controller Terraform CRs finalize. tofu-controller resolves the CR's source before
+normal finalization even when destruction is disabled, so removing an artifact early
+can strand its CR. A `CLEANUP(added 2026-10-26)` tombstone in
+`generate_manifests.py` lists the retained artifacts and the removal gate. Remove
+them only after all five legacy Terraform CRs
+(`haku-state`, `budget-ledger`, `cpap-data`, `forgejo-agentydragon-repos`,
+and `finance-agent`)
+are absent and all five replacement Workspaces report `Ready=True` plus
+current-generation `Synced=True` after PR #12109 rolls out. This artifact cleanup is a
+separate follow-up; the migration does not recreate the legacy Terraform CRs.
+
+After merging the application-root migration, verify:
 
 - `authentik-tf` and `forgejo-gitops` reached their new revision and pruned the three old
   Terraform CRs. No old runner remains active for those roots.
@@ -36,11 +56,12 @@ After merging batch 2, verify:
 - Existing Forgejo SSH-key and Route 53 Workspaces stay Ready after the provider runtime
   rollout. Their backend, source, variables and lifecycle policies are unchanged.
 
-For batch 3 also verify the haku Workspace before dependent Forgejo Workspaces, preserve
-`forgejo_codex` for `forgejo-agentydragon-repos`, and check existing repository identities
-and credential consumers. Do not mark the second migration PR ready until batch 2's
-handoff has been observed. Keep broader SSO/access, CI/bootstrap, parked roots, and roots
-with executable/mixed-format dependencies for subsequent work.
+For the Forgejo migration also verify the haku Workspace before dependent Forgejo
+Workspaces, preserve `forgejo_codex` for `forgejo-agentydragon-repos`, and check existing
+repository identities and credential consumers. Do not mark the Forgejo migration PR
+ready until the application-root migration's handoff has been observed. Keep broader
+SSO/access, CI/bootstrap, parked roots, and roots with executable/mixed-format
+dependencies for subsequent work.
 
 ## Recovery
 

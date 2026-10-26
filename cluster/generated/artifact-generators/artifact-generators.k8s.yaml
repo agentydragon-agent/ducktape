@@ -525,6 +525,31 @@ spec:
       name: forgejo-gitops
       originRevision: "@repo"
     - copy:
+        - from: "@repo/tf/gitops/haku-state/**"
+          to: "@artifact/tf/gitops/haku-state/"
+      name: tf-gitops-haku-state
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/budget-ledger/**"
+          to: "@artifact/tf/gitops/budget-ledger/"
+      name: tf-gitops-budget-ledger
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/cpap-data/**"
+          to: "@artifact/tf/gitops/cpap-data/"
+      name: tf-gitops-cpap-data
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/forgejo-agentydragon-repos/**"
+          to: "@artifact/tf/gitops/forgejo-agentydragon-repos/"
+      name: tf-gitops-forgejo-agentydragon-repos
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/finance-agent/**"
+          to: "@artifact/tf/gitops/finance-agent/"
+      name: tf-gitops-finance-agent
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/forgejo/budget-namespace/**"
           to: "@artifact/cluster/generated/forgejo/budget-namespace/"
       name: budget-namespace
@@ -863,31 +888,6 @@ spec:
         - from: "@repo/tf/gitops/flux-webhook-token/**"
           to: "@artifact/tf/gitops/flux-webhook-token/"
       name: tf-gitops-flux-webhook-token
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/haku-state/**"
-          to: "@artifact/tf/gitops/haku-state/"
-      name: tf-gitops-haku-state
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/budget-ledger/**"
-          to: "@artifact/tf/gitops/budget-ledger/"
-      name: tf-gitops-budget-ledger
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/cpap-data/**"
-          to: "@artifact/tf/gitops/cpap-data/"
-      name: tf-gitops-cpap-data
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/forgejo-agentydragon-repos/**"
-          to: "@artifact/tf/gitops/forgejo-agentydragon-repos/"
-      name: tf-gitops-forgejo-agentydragon-repos
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/finance-agent/**"
-          to: "@artifact/tf/gitops/finance-agent/"
-      name: tf-gitops-finance-agent
       originRevision: "@repo"
     - copy:
         - from: "@repo/tf/gitops/forgejo-images/**"

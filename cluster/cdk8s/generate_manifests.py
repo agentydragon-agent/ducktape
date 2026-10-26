@@ -129,6 +129,7 @@ from cluster.cdk8s.forgejo import (
     budget_namespace as forgejo_budget_namespace,
     cache as forgejo_cache,
     claude as forgejo_claude,
+    crossplane_roots as forgejo_crossplane_roots,
     db as forgejo_db,
     flux_kustomizations as forgejo_flux_kustomizations,
     gitops_modules as forgejo_gitops_modules,
@@ -620,6 +621,11 @@ def generate_manifests(root: Path) -> None:
                 kubernetes_identities=(
                     gatus_sso.KUBERNETES_IDENTITY,
                     forgejo_claude.KUBERNETES_IDENTITY,
+                    forgejo_crossplane_roots.HAKU_STATE_IDENTITY,
+                    forgejo_crossplane_roots.BUDGET_LEDGER_IDENTITY,
+                    forgejo_crossplane_roots.CPAP_DATA_IDENTITY,
+                    forgejo_crossplane_roots.FINANCE_AGENT_IDENTITY,
+                    forgejo_crossplane_roots.AGENTYDRAGON_REPOS_IDENTITY,
                     alloy_otlp_bearer_token.KUBERNETES_IDENTITY,
                 ),
             ),
@@ -948,35 +954,105 @@ def generate_manifests(root: Path) -> None:
         tofu_controller_kustomization,
     )
     forgejo_gitops_artifact = artifact(forgejo_gitops_modules.NAME, forgejo_gitops_modules.OUTPUT_DIR)
-    haku_state_module = terraform.gitops_module("haku-state")
-    budget_ledger_module = terraform.gitops_module("budget-ledger")
-    cpap_data_module = terraform.gitops_module("cpap-data")
-    forgejo_agentydragon_repos_module = terraform.gitops_module("forgejo-agentydragon-repos")
-    finance_agent_module = terraform.gitops_module("finance-agent")
     forgejo_gitops_kustomization = forgejo_gitops_modules.forgejo_gitops(
-        flux_chart,
-        write_directory(
-            root,
-            forgejo_gitops_artifact,
-            functools.partial(
-                forgejo_gitops_modules.chart,
-                haku_state=haku_state_module,
-                budget_ledger=budget_ledger_module,
-                cpap_data=cpap_data_module,
-                agentydragon_repos=forgejo_agentydragon_repos_module,
-                finance_agent=finance_agent_module,
-            ),
-        ),
-        tofu_controller_kustomization,
+        flux_chart, write_directory(root, forgejo_gitops_artifact), tofu_controller_kustomization
+    )
+    # CLEANUP(added 2026-10-26): Retain these source artifacts while the old
+    # tofu-controller Terraform CRs finalize. tofu-controller resolves sourceRef before
+    # normal finalization, even with destroy=false. Remove only after all five legacy CRs
+    # are absent and all five replacement Workspaces report Ready=True and
+    # current-generation Synced=True after PR #12109 rolls out.
+    forgejo_legacy_gitops_artifacts = (
+        artifact("tf-gitops-haku-state", f"{ducktape_flux.TF_GITOPS_ROOT}/haku-state"),
+        artifact("tf-gitops-budget-ledger", f"{ducktape_flux.TF_GITOPS_ROOT}/budget-ledger"),
+        artifact("tf-gitops-cpap-data", f"{ducktape_flux.TF_GITOPS_ROOT}/cpap-data"),
+        artifact("tf-gitops-forgejo-agentydragon-repos", f"{ducktape_flux.TF_GITOPS_ROOT}/forgejo-agentydragon-repos"),
+        artifact("tf-gitops-finance-agent", f"{ducktape_flux.TF_GITOPS_ROOT}/finance-agent"),
     )
     forgejo_claude_artifact = artifact(forgejo_claude.NAME, forgejo_claude.OUTPUT_DIR)
-    forgejo_claude.resources(
+    forgejo_claude_kustomization = forgejo_claude.resources(
         flux_chart,
         write_directory(root, forgejo_claude_artifact, forgejo_claude.chart),
         forgejo_gitops_artifact,
         crossplane_opentofu_provider_kustomization,
         tofu_state_db_kustomization,
         forgejo_gitops_kustomization,
+    )
+    forgejo_haku_state_artifact = artifact(
+        forgejo_crossplane_roots.HAKU_STATE_NAME, forgejo_crossplane_roots.output_dir("haku-state")
+    )
+    forgejo_haku_state_kustomization = forgejo_crossplane_roots.resources(
+        flux_chart,
+        write_directory(root, forgejo_haku_state_artifact, forgejo_crossplane_roots.haku_state_chart),
+        forgejo_gitops_artifact,
+        module_name="haku-state",
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            forgejo_gitops_kustomization,
+            forgejo_claude_kustomization,
+        ],
+    )
+    forgejo_budget_ledger_artifact = artifact(
+        forgejo_crossplane_roots.BUDGET_LEDGER_NAME, forgejo_crossplane_roots.output_dir("budget-ledger")
+    )
+    forgejo_crossplane_roots.resources(
+        flux_chart,
+        write_directory(root, forgejo_budget_ledger_artifact, forgejo_crossplane_roots.budget_ledger_chart),
+        forgejo_gitops_artifact,
+        module_name="budget-ledger",
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            forgejo_gitops_kustomization,
+            forgejo_haku_state_kustomization,
+        ],
+    )
+    forgejo_cpap_data_artifact = artifact(
+        forgejo_crossplane_roots.CPAP_DATA_NAME, forgejo_crossplane_roots.output_dir("cpap-data")
+    )
+    forgejo_crossplane_roots.resources(
+        flux_chart,
+        write_directory(root, forgejo_cpap_data_artifact, forgejo_crossplane_roots.cpap_data_chart),
+        forgejo_gitops_artifact,
+        module_name="cpap-data",
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            forgejo_gitops_kustomization,
+            forgejo_haku_state_kustomization,
+        ],
+    )
+    forgejo_finance_agent_artifact = artifact(
+        forgejo_crossplane_roots.FINANCE_AGENT_NAME, forgejo_crossplane_roots.output_dir("finance-agent")
+    )
+    forgejo_crossplane_roots.resources(
+        flux_chart,
+        write_directory(root, forgejo_finance_agent_artifact, forgejo_crossplane_roots.finance_agent_chart),
+        forgejo_gitops_artifact,
+        module_name="finance-agent",
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            forgejo_gitops_kustomization,
+            forgejo_haku_state_kustomization,
+        ],
+    )
+    forgejo_agentydragon_repos_artifact = artifact(
+        forgejo_crossplane_roots.AGENTYDRAGON_REPOS_NAME,
+        forgejo_crossplane_roots.output_dir("forgejo-agentydragon-repos"),
+    )
+    forgejo_crossplane_roots.resources(
+        flux_chart,
+        write_directory(root, forgejo_agentydragon_repos_artifact, forgejo_crossplane_roots.agentydragon_repos_chart),
+        forgejo_gitops_artifact,
+        module_name="forgejo-agentydragon-repos",
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            forgejo_gitops_kustomization,
+            forgejo_haku_state_kustomization,
+        ],
     )
     crossplane_forgejo_agentydragon_artifact = artifact(
         crossplane_forgejo_agentydragon.NAME, crossplane_forgejo_agentydragon.OUTPUT_DIR
@@ -1942,6 +2018,7 @@ def generate_manifests(root: Path) -> None:
             flux_image_automation_forgejo_artifact,
             flux_webhook_artifact,
             forgejo_gitops_artifact,
+            *forgejo_legacy_gitops_artifacts,
             budget_namespace_artifact,
             gaffer_private_source_artifact,
             gatus_artifact,
@@ -2006,11 +2083,6 @@ def generate_manifests(root: Path) -> None:
             github_branch_protection_module,
             github_secrets_sync_module,
             flux_webhook_token_module,
-            haku_state_module,
-            budget_ledger_module,
-            cpap_data_module,
-            forgejo_agentydragon_repos_module,
-            finance_agent_module,
             forgejo_images_module,
             gitlab_spike_module,
             litellm_keys_module,

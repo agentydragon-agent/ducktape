@@ -1719,6 +1719,10 @@ spec:
       namespace: ducktape-flux
     - name: dns-automation
       namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: opentofu.upbound.io/v1beta1
+      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      kind: Workspace
   interval: 10m
   path: ./cluster/generated/route53-domain-delegation
   prune: true
@@ -1996,6 +2000,10 @@ spec:
       namespace: ducktape-flux
     - name: authentik-tf
       namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: opentofu.upbound.io/v1beta1
+      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      kind: Workspace
   interval: 10m
   path: ./cluster/generated/authentik/tf/crossplane-gatus-sso
   prune: true
@@ -2020,6 +2028,10 @@ spec:
       namespace: ducktape-flux
     - name: authentik-tf
       namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: opentofu.upbound.io/v1beta1
+      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      kind: Workspace
   interval: 10m
   path: ./cluster/generated/authentik/tf/crossplane-alloy-otlp-bearer-token
   prune: true
@@ -2084,8 +2096,172 @@ spec:
       namespace: ducktape-flux
     - name: forgejo-gitops
       namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: opentofu.upbound.io/v1beta1
+      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      kind: Workspace
   interval: 10m
   path: ./cluster/generated/forgejo/gitops/crossplane-forgejo-claude
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-gitops
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Manage the haku-state Forgejo root with its existing OpenTofu state.
+  name: crossplane-haku-state
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: forgejo-gitops
+      namespace: ducktape-flux
+    - name: crossplane-forgejo-claude
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: opentofu.upbound.io/v1beta1
+      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      kind: Workspace
+  interval: 10m
+  path: ./cluster/generated/forgejo/gitops/crossplane-haku-state
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-gitops
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Manage the budget-ledger Forgejo root with its existing OpenTofu state.
+  name: crossplane-budget-ledger
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: forgejo-gitops
+      namespace: ducktape-flux
+    - name: crossplane-haku-state
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: opentofu.upbound.io/v1beta1
+      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      kind: Workspace
+  interval: 10m
+  path: ./cluster/generated/forgejo/gitops/crossplane-budget-ledger
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-gitops
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Manage the cpap-data Forgejo root with its existing OpenTofu state.
+  name: crossplane-cpap-data
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: forgejo-gitops
+      namespace: ducktape-flux
+    - name: crossplane-haku-state
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: opentofu.upbound.io/v1beta1
+      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      kind: Workspace
+  interval: 10m
+  path: ./cluster/generated/forgejo/gitops/crossplane-cpap-data
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-gitops
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Manage the finance-agent Forgejo root with its existing OpenTofu state.
+  name: crossplane-finance-agent
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: forgejo-gitops
+      namespace: ducktape-flux
+    - name: crossplane-haku-state
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: opentofu.upbound.io/v1beta1
+      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      kind: Workspace
+  interval: 10m
+  path: ./cluster/generated/forgejo/gitops/crossplane-finance-agent
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-gitops
+    namespace: ducktape-flux
+  timeout: 10m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Manage the forgejo-agentydragon-repos Forgejo root with its existing OpenTofu state.
+  name: crossplane-forgejo-agentydragon-repos
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: forgejo-gitops
+      namespace: ducktape-flux
+    - name: crossplane-haku-state
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: opentofu.upbound.io/v1beta1
+      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      kind: Workspace
+  interval: 10m
+  path: ./cluster/generated/forgejo/gitops/crossplane-forgejo-agentydragon-repos
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2110,6 +2286,10 @@ spec:
       namespace: ducktape-flux
     - name: forgejo-gitops
       namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: opentofu.upbound.io/v1beta1
+      current: has(status) && has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      kind: Workspace
   interval: 10m
   path: ./cluster/generated/crossplane-forgejo-agentydragon
   prune: true

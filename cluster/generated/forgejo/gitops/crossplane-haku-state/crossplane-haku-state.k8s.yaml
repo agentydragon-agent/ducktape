@@ -1,0 +1,615 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opentofu-haku-state
+  namespace: crossplane-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-haku-state-impersonate
+  namespace: crossplane-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - opentofu-haku-state
+    resources:
+      - serviceaccounts
+    verbs:
+      - impersonate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc8fb744f6e42746c2f7324c7232f5c19d52f7dae68
+  namespace: crossplane-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-haku-state-impersonate
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-opentofu
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-haku-state
+  namespace: forgejo
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - forgejo-admin-password
+    resources:
+      - secrets
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-forgejo-git
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - forgejo-token-mint-haku
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-forgejo-registry-pull
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-ci-runner-token
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
+      - forgejo-webhook-token
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc88a426e1712f723e12666ba3d6d4c7decb14d777b
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-haku-state
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: opentofu-haku-state
+    namespace: crossplane-system
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: crossplane-haku-state
+spec:
+  backendFile: |
+    conn_str = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+    schema_name = "haku_state"
+  configuration: |
+    terraform {
+      backend "pg" {}
+    }
+    provider "kubernetes" {
+      config_path = "/etc/opentofu/kubernetes/opentofu-haku-state"
+    }
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: Workspace
+metadata:
+  annotations:
+    crossplane.io/external-name: default
+  name: haku-state
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    env:
+      - name: PGPASSWORD
+        secretKeyRef:
+          key: password
+          name: tofu-state-db-credentials
+          namespace: flux-system
+    module: |
+      # Forgejo repo + service user for Haku, the personal background agent
+      # (see haku/PLAN.md).
+      #
+      # Provisions a private `haku/haku-state` repo owned by a dedicated `haku`
+      # service user (full read/write on its own repo; scan runs commit+push items,
+      # intake, steering, and log as this user), plus a read-only grant for the
+      # `claude` agent account. A Kubernetes Secret carries the git credentials,
+      # consumed by in-cluster scan runs. Mirrors tf/gitops/augur-evidence. The repo
+      # starts empty (auto_init only) — no seed.
+      #
+      # Every Kubernetes Secret here lands in the `forgejo` namespace. Each consumer
+      # namespace copies its Secret in through ESO (cluster/cdk8s/forgejo/secret_copy.py);
+      # the comment on each resource names the copy.
+      #
+      # It also owns a haku-owned in-cluster mirror `haku/ducktape` (a Forgejo pull-mirror)
+      # so haku-ci's Bazel build can fetch ducktape source as a bzlmod git_override without
+      # depending on the agentydragon-owned mirror — see the `ducktape_mirror` resource below.
+      # Both live here because they only need haku's account (already provisioned here).
+
+      data "kubernetes_secret" "forgejo_admin" {
+        metadata {
+          name      = "forgejo-admin-password"
+          namespace = "forgejo"
+        }
+      }
+
+      provider "forgejo" {
+        host     = var.forgejo_url
+        username = data.kubernetes_secret.forgejo_admin.data["username"]
+        password = data.kubernetes_secret.forgejo_admin.data["password"]
+      }
+
+      resource "random_password" "haku" {
+        length  = 48
+        special = false
+        # Changing or removing this keeper rotates the live account password.
+        keepers = {
+          recovery = "2026-10-23-forgejo-secret-key"
+        }
+      }
+
+      resource "forgejo_user" "haku" {
+        login                = "haku"
+        email                = "haku@allegedly.works"
+        password             = random_password.haku.result
+        must_change_password = false
+        visibility           = "private"
+      }
+
+      resource "forgejo_repository" "state" {
+        owner          = forgejo_user.haku.login
+        name           = "haku-state"
+        description    = "Haku's state: item queue, intake, steering, and log. See haku/PLAN.md."
+        private        = true
+        default_branch = "main"
+        # Initial commit so `main` exists for branch protection. No content seed.
+        auto_init = true
+      }
+
+      # Block force-pushes (and branch deletion) on main. Forgejo rejects force-push
+      # on any protected branch by default — there is no separate "force push" toggle
+      # — so protecting `main` is what disallows it. enable_push keeps the whole
+      # write plane direct-push (haku-ui WAL click-commits, scan-run content, anki
+      # srs/ reconciles, Flux's k8s/ image-tag pushes).
+      #
+      # Code changes land via PRs gated on the required contexts below. That routing
+      # is agent PROCEDURE, not server enforcement (operator, 2026-07-20): agents
+      # hold the haku credential for the content write plane, and Forgejo cannot
+      # scope one user's push rights by path — protected_file_patterns turned out to
+      # block PR merges too (only admin force_merge lands them, which also overrides
+      # RED checks), and a push whitelist admitting haku would gate nothing. The
+      # structural fix is evicting code trees from this repo entirely (tracked in
+      # haku-state memory/improvements). What IS server-enforced: any PR merge
+      # requires the listed contexts green — and PR branches get their own runs, so
+      # the cancelled-main-run race (the anki srs-checkout incident, 2026-07-19)
+      # cannot hide a red test behind a superseded push.
+      resource "forgejo_branch_protection" "state_main" {
+        repository_id       = forgejo_repository.state.id
+        branch_name         = "main"
+        enable_push         = true
+        enable_status_check = true
+        # Context format observed live: "<workflow> / <job> (<event>)".
+        # bazel-ci's `validate` and `image` are deliberately separate jobs (haku-state
+        # .forgejo/workflows/bazel-ci.yaml) so a data-only bad commit can never strand a
+        # code image build. Both are required here so a PR can't merge without either
+        # gate green — this list drifted out of sync with that split (2026-07-22, PR #37)
+        # until a stuck PR #38 (2026-07-24) surfaced it: the stale `bazel-ci / bazel`
+        # context could never be satisfied again, so no PR could auto-merge.
+        status_check_contexts = [
+          "bazel-ci / validate (pull_request)",
+          "bazel-ci / image (pull_request)",
+          "linkcheck / linkcheck (pull_request)",
+          "lint / lint (pull_request)",
+        ]
+      }
+
+      # Read-only access for the claude agent account (user provisioned by
+      # tf/gitops/forgejo-claude; until it exists this resource fails and the
+      # Terraform CR retries on its interval).
+      resource "forgejo_collaborator" "claude" {
+        repository_id = forgejo_repository.state.id
+        user          = "claude"
+        permission    = "read"
+      }
+
+      # Write credentials for the haku-state git consumers, copied into haku-sandbox
+      # (cluster/cdk8s/haku/workspaces.py). Reflector mirrors that copy into:
+      #   - haku-egress-proxy: the isolated OpenClaw spike's iron-proxy substitutes
+      #     the password into Forgejo Authorization headers; the agent sees only a
+      #     placeholder.
+      #   - flux-system: basic auth for the haku-state GitRepository, which the
+      #     haku-state-workloads Kustomization reconciles into haku-sandbox under a
+      #     constrained SA (cluster/generated/haku/workloads). Read-only pull — Flux never
+      #     pushes; the haku user is just the only principal on the repo.
+      # Agentplane staging reads only the password through ESO, with an exact-name source grant
+      # in cluster/cdk8s/agentplane/egress_staging_credentials.py; it is not a Reflector target.
+      # The haku-sandbox copy serves in-cluster scan runs / the self-hosted worker + the
+      # haku-ui backend (operator clicks/feedback → Forgejo writes).
+      resource "kubernetes_secret" "haku_forgejo_git_source" {
+        metadata {
+          name      = "haku-forgejo-git"
+          namespace = "forgejo"
+        }
+
+        data = {
+          username = forgejo_user.haku.login
+          password = random_password.haku.result
+          repo_url = "http://forgejo-http.forgejo:3000/${forgejo_user.haku.login}/${forgejo_repository.state.name}.git"
+        }
+      }
+
+      # Source credential for forgejo-token-rotation, copied into agents-infra
+      # (cluster/cdk8s/forgejo/token_rotation.py). The rotator uses Basic auth only to
+      # mint full-account API tokens, then writes the distributed `tea` configs as SOPS
+      # outputs in git.
+      resource "kubernetes_secret" "haku_forgejo_token_mint_source" {
+        metadata {
+          name      = "forgejo-token-mint-haku"
+          namespace = "forgejo"
+        }
+
+        data = {
+          username     = forgejo_user.haku.login
+          password     = random_password.haku.result
+          url          = "https://git.allegedly.works"
+          internal_url = var.forgejo_url
+        }
+      }
+
+      # dockerconfigjson for the private git.allegedly.works/haku/ui package, copied into
+      # haku-sandbox (cluster/cdk8s/haku/workspaces.py):
+      #   - the imagePullSecret Haku's UI Deployment uses to pull the image its Forgejo CI builds
+      #     (kubelet pulls over HTTPS via the public host — node-level, not subject to the pod's
+      #     mitmproxy egress), and
+      #   - the auth Haku's own ImageRepository uses to scan the registry for new tags (the image
+      #     automation is reconciled into haku-sandbox; see haku/state_template/k8s/haku-ui-image-automation).
+      # The CI push credential is a repo Action secret (below), NOT this pull secret.
+      # See cluster/cdk8s/haku_ci + haku/PLAN.md.
+      resource "kubernetes_secret" "haku_forgejo_registry_pull_source" {
+        metadata {
+          name      = "haku-forgejo-registry-pull"
+          namespace = "forgejo"
+        }
+
+        type = "kubernetes.io/dockerconfigjson"
+
+        data = {
+          ".dockerconfigjson" = jsonencode({
+            auths = {
+              "git.allegedly.works" = {
+                username = forgejo_user.haku.login
+                password = random_password.haku.result
+                auth     = base64encode("${forgejo_user.haku.login}:${random_password.haku.result}")
+              }
+            }
+          })
+        }
+      }
+
+      # Registry push credential for the build-ui Forgejo Actions workflow, delivered as
+      # a repo Action secret (`${{ secrets.REGISTRY_PUSH_TOKEN }}`).
+      #
+      # Why this is needed: Forgejo's auto-generated Actions token (github.token) CANNOT
+      # push container packages — the workflow `permissions: { packages: write }` block is
+      # not honored yet (the granular-permissions feature is forgejo/forgejo#3571, still
+      # open, targeted for the Forgejo 16 dev cycle). On Forgejo 15 a real credential is
+      # the only way. We use the haku owner's own credential (haku owns the haku/ui
+      # package; verified: haku basic auth -> HTTP 202 on a blob-upload handshake = push
+      # allowed). The workflow logs in as `${{ github.repository_owner }}` (= haku).
+      #
+      # Least-privilege note: this is haku's full credential rather than a scoped
+      # write:package token — the svalabs/forgejo provider has no token-minting resource,
+      # and the CI already runs as haku (it clones haku-state and builds haku's image), so
+      # this isn't a new trust boundary. If a tighter scope is wanted later, mint a
+      # write:package token via a small Job (cf. authentik-jwt-rotation) and swap it in.
+      resource "forgejo_repository_action_secret" "registry_push" {
+        repository_id = forgejo_repository.state.id
+        name          = "REGISTRY_PUSH_TOKEN"
+        data          = random_password.haku.result
+
+        lifecycle {
+          replace_triggered_by = [
+            random_password.haku,
+            terraform_data.registry_push_secret_refresh,
+          ]
+        }
+      }
+
+      # Existing legacy Actions entries use the same account as the runtime Secret.
+      # The provider's create/update path upserts by name, so adopting them preserves
+      # the entries while bringing all password copies under the same rotation owner.
+      resource "forgejo_repository_action_secret" "ui_git_username" {
+        repository_id = forgejo_repository.state.id
+        name          = "HAKU_UI_GIT_USERNAME"
+        data          = forgejo_user.haku.login
+      }
+
+      resource "forgejo_repository_action_secret" "ui_git_password" {
+        repository_id = forgejo_repository.state.id
+        name          = "HAKU_UI_GIT_PASSWORD"
+        data          = random_password.haku.result
+
+        lifecycle {
+          replace_triggered_by = [random_password.haku]
+        }
+      }
+
+      # The Forgejo provider cannot read back Actions secret values, so opaque value
+      # drift can look like "NoDrift" to Terraform while CI still receives stale auth.
+      # This controller-owned refresh marker forces the provider to rewrite the secret
+      # once now; bump the marker if the secret ever needs an explicit declarative
+      # rewrite again.
+      resource "terraform_data" "registry_push_secret_refresh" {
+        triggers_replace = ["2026-07-06-haku-registry-push-token-resync"]
+      }
+
+      # ── Ducktape source mirror for haku-ci's Bazel builds ────────────────────────────────
+      # Haku's UI Bazel build consumes ducktape's shared @haku/console-bridge package as a bzlmod
+      # `git_override` (haku-state MODULE.bazel). Give haku its own private mirror so haku-ci fetches a
+      # haku-owned repo rather than the agentydragon-owned one. It pull-mirrors directly from the public
+      # ducktape GitHub (the upstream source of truth): a public source needs no auth_token, and Forgejo
+      # already has egress to github.com (the agentydragon mirror pulls from there too). Single-hop, and
+      # decoupled from agentydragon's Forgejo mirror. `mirror`/`clone_addr` are ForceNew: changing the
+      # source recreates the repo.
+      resource "forgejo_repository" "ducktape_mirror" {
+        owner       = forgejo_user.haku.login
+        name        = "ducktape"
+        description = "Haku-owned mirror of ducktape (from public GitHub), for haku-ci Bazel builds (git_override)."
+        private     = true
+        mirror      = true
+        service     = "git"
+        clone_addr  = "https://github.com/agentydragon/ducktape.git"
+      }
+
+      # Read git credential for the haku-ci runner to fetch the ducktape mirror as a Bazel
+      # git_override. Delivered as an Actions secret the bazel-ci workflow reads
+      # (`${{ secrets.DUCKTAPE_MIRROR_READ_TOKEN }}`) and writes into git's credential store before the
+      # bazel gate. It is haku's own credential (haku owns the mirror) — same rationale and read-back
+      # caveat as REGISTRY_PUSH_TOKEN above, kept as a distinct secret so git-clone auth stays decoupled
+      # from the registry push token.
+      resource "forgejo_repository_action_secret" "ducktape_mirror_read" {
+        repository_id = forgejo_repository.state.id
+        name          = "DUCKTAPE_MIRROR_READ_TOKEN"
+        data          = random_password.haku.result
+
+        lifecycle {
+          replace_triggered_by = [
+            random_password.haku,
+            terraform_data.ducktape_mirror_secret_refresh,
+          ]
+        }
+      }
+
+      # Same read-back caveat as registry_push_secret_refresh: force one declarative rewrite so the
+      # opaque Actions-secret value can't silently drift. Bump the marker to force a re-push later.
+      resource "terraform_data" "ducktape_mirror_secret_refresh" {
+        triggers_replace = ["2026-07-11-haku-ducktape-mirror-token-init"]
+      }
+
+      # Registration token for the contained Forgejo Actions runner (cluster/cdk8s/haku_ci),
+      # which builds Haku's UI image from haku-state. The svalabs/forgejo provider has no
+      # runner-token resource, so fetch it from the repo's registration-token API as the
+      # repo-owning haku user (owner ⇒ repo admin) and deliver it as the Secret the runner
+      # registers with, copied into haku-ci (cluster/cdk8s/haku_ci/runner.py). GET returns
+      # the repo's *current* token (it doesn't rotate on read), so repeated applies don't
+      # churn the Secret. depends_on forces the read to apply-time, after the repo exists.
+      data "http" "haku_ci_registration_token" {
+        url    = "${var.forgejo_url}/api/v1/repos/${forgejo_user.haku.login}/${forgejo_repository.state.name}/actions/runners/registration-token"
+        method = "GET"
+        request_headers = {
+          Authorization = "Basic ${base64encode("${forgejo_user.haku.login}:${random_password.haku.result}")}"
+          Accept        = "application/json"
+        }
+        depends_on = [forgejo_repository.state]
+      }
+
+      resource "kubernetes_secret" "haku_ci_runner_token_source" {
+        metadata {
+          name      = "haku-ci-runner-token"
+          namespace = "forgejo"
+        }
+
+        data = {
+          token = jsondecode(data.http.haku_ci_registration_token.response_body).token
+        }
+      }
+
+      # Webhook token shared between the Forgejo package webhook and the Flux generic
+      # Receiver `haku-ui-forgejo`, which reads the copy in flux-system
+      # (cluster/cdk8s/haku/ui_image_webhook.py). The Receiver's
+      # webhook path is sha256(token + receiver-name + namespace), so the token must match
+      # on both ends. Don't rotate after creation — the path would change and orphan the
+      # Forgejo webhook URL.
+      resource "random_password" "forgejo_webhook_token" {
+        length  = 40
+        special = false
+      }
+
+      resource "kubernetes_secret" "forgejo_webhook_token_source" {
+        metadata {
+          name      = "forgejo-webhook-token"
+          namespace = "forgejo"
+        }
+
+        data = {
+          token = random_password.forgejo_webhook_token.result
+        }
+
+        lifecycle {
+          ignore_changes = [data]
+        }
+      }
+
+      # Fire a webhook on container-package publish (the CI image push) AND on git push, so Flux
+      # reconciles the whole haku-ui deploy chain immediately rather than stacking 5m polls: the
+      # `package` event catches the CI image landing (registry scan), the `push` event catches both
+      # ImageUpdateAutomation's tag-bump commit and ordinary haku-state pushes (GitRepository fetch →
+      # workloads apply). The receiver is `generic` and force-reconciles all its listed resources on
+      # any hit (see cluster/cdk8s/haku/ui_image_webhook.py), so both events share one hook
+      # URL. The generic receiver doesn't validate a signature, so the unguessable sha256(token) path
+      # is the secret — no `secret` in the webhook config.
+      #
+      # Targets the *public* Flux webhook host (`flux-webhook.allegedly.works`, the same HTTPRoute
+      # GitHub delivers to), NOT the in-cluster ClusterIP. Why: Forgejo blocks webhook delivery to
+      # private/loopback addresses by default (empty `[webhook] ALLOWED_HOST_LIST`, SSRF protection),
+      # so the original internal `http://webhook-receiver.flux-system/...` URL fired but was silently
+      # dropped — pickup stayed on the 5m poll (verified 2026-06-29: hook `updated_at` bumped on push,
+      # receiver logged zero hits). A public host is `external` → allowed by default, no Forgejo config
+      # change. The in-cluster→public hairpin is already exercised by Forgejo's OIDC to
+      # auth.allegedly.works; verified the public path triggers an off-cycle scan (HTTP 200 + receiver
+      # hit + immediate ImageRepository scan).
+      #
+      # ALSO REQUIRED: the webhook only fires while the `haku/ui` package is LINKED to this repo. It was
+      # created owner-scoped + unlinked (`repository: null`), so the repo-scoped `package` event never
+      # fired. Linked out-of-band via `POST /api/v1/packages/haku/container/ui/-/link/haku-state` (→201,
+      # durable across pushes). The OCI `org.opencontainers.image.source` label (haku-state ui/Dockerfile)
+      # is the would-be auto-linker but Forgejo 15 didn't honor it. Not codified here: the svalabs/forgejo
+      # provider has no package-link resource, and the package doesn't exist until the first CI push.
+      # TODO(link-as-code): a `data "http"` POST to the link endpoint (auth pattern as
+      #   `haku_ci_registration_token`) would self-heal it (404 pre-first-push → 201 after); idempotent.
+      resource "forgejo_repository_webhook" "haku_ui_image" {
+        repository_id = forgejo_repository.state.id
+        type          = "forgejo"
+        active        = true
+        events        = ["package", "push"]
+        config = {
+          content_type = "json"
+          url          = "https://flux-webhook.allegedly.works/hook/${sha256(join("", [random_password.forgejo_webhook_token.result, "haku-ui-forgejo", "flux-system"]))}"
+        }
+      }
+
+      # The consumer namespaces' ExternalSecrets adopt the Secrets these addresses created
+      # there.
+      # CLEANUP(added 2026-09-28): Remove once the haku_state state has forgotten all six
+      # addresses. Never destroy the ESO-owned Secrets.
+      removed {
+        from = kubernetes_secret.haku_forgejo_git
+        lifecycle {
+          destroy = false
+        }
+      }
+
+      removed {
+        from = kubernetes_secret.haku_console_agent_api
+        lifecycle {
+          destroy = false
+        }
+      }
+
+      removed {
+        from = kubernetes_secret.haku_forgejo_token_mint
+        lifecycle {
+          destroy = false
+        }
+      }
+
+      removed {
+        from = kubernetes_secret.haku_forgejo_registry_pull
+        lifecycle {
+          destroy = false
+        }
+      }
+
+      removed {
+        from = kubernetes_secret.haku_ci_runner_token
+        lifecycle {
+          destroy = false
+        }
+      }
+
+      removed {
+        from = kubernetes_secret.forgejo_webhook_token
+        lifecycle {
+          destroy = false
+        }
+      }
+
+
+      terraform {
+        required_version = ">= 1.0"
+
+        required_providers {
+          forgejo = {
+            source  = "svalabs/forgejo"
+            version = "~> 1.5"
+          }
+          http = {
+            source  = "hashicorp/http"
+            version = "~> 3.4"
+          }
+          kubernetes = {
+            source  = "hashicorp/kubernetes"
+            version = "~> 3.0"
+          }
+          random = {
+            source  = "hashicorp/random"
+            version = "~> 3.7"
+          }
+        }
+      }
+
+      variable "forgejo_url" {
+        description = "Forgejo internal cluster API URL"
+        type        = string
+        default     = "http://forgejo-http.forgejo:3000"
+      }
+    planArgs:
+      - -lock-timeout=5m
+    source: Inline
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+  providerConfigRef:
+    name: crossplane-haku-state

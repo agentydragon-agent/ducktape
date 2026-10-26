@@ -44,6 +44,7 @@ def resources(
         directory,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(opentofu_provider, tofu_state_db, forgejo_gitops),
+        health_check_exprs=[opentofu.WORKSPACE_HEALTH_CHECK_EXPR],
         description=(
             "Take over forgejo-agentydragon from tofu-controller using its existing PostgreSQL state; "
             "the dependency on forgejo-gitops serializes the controller handoff."

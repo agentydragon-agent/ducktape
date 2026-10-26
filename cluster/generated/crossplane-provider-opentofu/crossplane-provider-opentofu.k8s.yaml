@@ -23,6 +23,82 @@ data:
           cluster: cluster
           user: opentofu-alloy-otlp-bearer-token
     current-context: root
+  opentofu-budget-ledger: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-budget-ledger
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-budget-ledger
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-budget-ledger
+    current-context: root
+  opentofu-cpap-data: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-cpap-data
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-cpap-data
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-cpap-data
+    current-context: root
+  opentofu-finance-agent: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-finance-agent
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-finance-agent
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-finance-agent
+    current-context: root
+  opentofu-forgejo-agentydragon-repos: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-forgejo-agentydragon-repos
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-forgejo-agentydragon-repos
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-forgejo-agentydragon-repos
+    current-context: root
   opentofu-forgejo-claude: |
     apiVersion: v1
     kind: Config
@@ -60,6 +136,25 @@ data:
         context:
           cluster: cluster
           user: opentofu-gatus-sso
+    current-context: root
+  opentofu-haku-state: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-haku-state
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-haku-state
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-haku-state
     current-context: root
 immutable: false
 ---
