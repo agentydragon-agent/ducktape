@@ -44,6 +44,15 @@ func (c CodexExecutorConfig) validate(isolation *AgentCgroups) error {
 	if filepath.Dir(c.Isolation.Root) != filepath.Dir(isolation.Root) || c.Isolation.Root == isolation.Root {
 		return errors.New("executor and harness cgroups must be distinct sibling subtrees")
 	}
+	// Validate both policies before Prepare can change either subtree.
+	for _, groups := range []*AgentCgroups{isolation, c.Isolation} {
+		if err := groups.AggregateLimits.Validate(); err != nil {
+			return err
+		}
+		if err := groups.validateProcessLimits(groups.ProcessLimits); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -53,7 +62,7 @@ func validateExecutorURL(value string) error {
 		return err
 	}
 	port, err := strconv.Atoi(u.Port())
-	if err != nil || port < 1 || port > 65535 || u.Scheme != "ws" || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil || port < 1 || port > 65535 || u.Scheme != "ws" || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return errors.New("executor URL must be ws://127.0.0.1:<nonzero port>")
 	}
 	return nil

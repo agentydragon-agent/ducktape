@@ -107,19 +107,19 @@ _KUBERNETES_MCP_SERVICE_URL = f"{kubectl_passthrough_mcp.SERVICE.url}/mcp"
 _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
 _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.json"
 
-# Budget for the one-vCPU, 1536 MiB staging guest. The service cap leaves 256 MiB
-# for guest services and kernel work; delegated agent work is capped below that.
+# The harness and executor each get 1 GiB below the service's high watermark.
+# The outer service cap leaves 512 MiB for guest services and kernel work.
 STAGING_VM_RESOURCES = GuestResources(
-    guest_memory_bytes=1_610_612_736,
+    guest_memory_bytes=3_221_225_472,
     guest_vcpu_count=1,
-    os_reserve_bytes=268_435_456,
-    service_memory_high_bytes=1_207_959_552,
-    service_memory_max_bytes=1_342_177_280,
+    os_reserve_bytes=536_870_912,
+    service_memory_high_bytes=2_415_919_104,
+    service_memory_max_bytes=2_684_354_560,
     service_cpu_quota_micros=100_000,
-    service_pids_max=1024,
+    service_pids_max=2048,
     aggregate=ResourceLimits(
         cpu_quota_micros=100_000,
-        memory_max_bytes=1_140_850_688,
+        memory_max_bytes=1_073_741_824,
         pids_max=768,
         read_bps=52_428_800,
         write_bps=20_971_520,
@@ -129,6 +129,15 @@ STAGING_VM_RESOURCES = GuestResources(
     process=ResourceLimits(
         cpu_quota_micros=100_000,
         memory_max_bytes=805_306_368,
+        pids_max=512,
+        read_bps=52_428_800,
+        write_bps=20_971_520,
+        read_iops=1000,
+        write_iops=500,
+    ),
+    executor=ResourceLimits(
+        cpu_quota_micros=100_000,
+        memory_max_bytes=1_073_741_824,
         pids_max=512,
         read_bps=52_428_800,
         write_bps=20_971_520,

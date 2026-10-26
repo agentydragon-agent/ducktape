@@ -28,6 +28,8 @@ flags and positional arguments are rejected.
 | `--claude-binary PATH`                             | Optional Claude Code executable. When set, also requires `--anthropic-base-url` and `ANTHROPIC_AUTH_TOKEN`.                                                                                       |
 | `--anthropic-base-url URL`                         | Anthropic Messages base URL for the Claude provider. It must be an HTTP(S) origin.                                                                                                                |
 | `--codex-binary PATH`                              | Optional Codex executable. When set, also requires `--openai-base-url` and `OPENAI_API_KEY`.                                                                                                      |
+| `--codex-executor-url URL`                         | Optional loopback WebSocket endpoint for the isolated Codex executor. Requires `--codex-executor-socket` and the Codex provider.                                                                  |
+| `--codex-executor-socket PATH`                     | Absolute Unix ownership socket of the executor companion; paired with the executor URL.                                                                                                           |
 | `--openai-base-url URL`                            | OpenAI Responses API base URL for Codex, normally the HTTP(S) LLM-ingress `/v1` URL.                                                                                                              |
 | `--harness-env NAME` or `--harness-env NAME=value` | Repeatable. Add one explicit environment value to every native harness. A bare name copies the Runner's value if present; `NAME=value` sets it directly. Later declarations replace earlier ones. |
 | `--harness-inherit-env NAME`                       | Repeatable. Forward a Runner-image-owned variable to harnesses when it is present.                                                                                                                |
@@ -125,3 +127,28 @@ Runner spans cover tunneled RPC calls and selected lifecycle operations. HTTP in
 method, route and response status without URLs, query strings, headers or bodies. W3C trace context
 is propagated across Runner RPCs and outbound HTTP/gRPC calls. Telemetry does not carry harness
 prompts, model content or event payloads.
+
+## Executor modes and resource composition
+
+Local tools are selected by omitting executor configuration. Pod templates select isolated tools
+with `Environment.isolated_codex_executor`; the Runner and companion receive matching loopback
+URL and Unix socket flags. `RunnerTemplate.executor_resources` supplies Kubernetes requests and
+limits separately from `runner_resources`. Both use the same tools image; the companion receives
+the Runner's explicit harness environment when claimed, with model credential variables removed.
+
+For VMs, `Environment.vm_resources` is one typed `GuestResources` value. `RunnerVmTemplate` uses
+its `guest_memory_bytes` and `guest_vcpu_count` for the KubeVirt domain and serializes the entire
+object into the version-2 seed. The systemd preflight applies its service caps; `GuestConfiguration`
+passes `aggregate` and `process` to the harness cgroup manager. Optional `executor` limits enable a
+sibling executor cgroup and the supervised WebSocket server; absence selects local tools.
+
+Each resource budget sets `memory_max_bytes`, `cpu_quota_micros`, `pids_max`, `read_bps`,
+`write_bps`, `read_iops` and `write_iops`. The outer service has separate memory high/max, CPU and
+PID caps, and leaves `os_reserve_bytes` under nominal guest RAM. Validation requires both sibling
+memory caps to fit together under service memory high and their PID caps to leave space for
+Runner and supervisors. CPU quotas are ceilings sharing the outer cap, not reserved CPU shares.
+The default native process budget must also fit the harness aggregate. No Session can raise these
+limits. Staging's selections live in `cluster/cdk8s/agentplane/staging.py`.
+
+The startup, restart and suspend behavior is described in
+[Codex executor isolation](docs/codex_executor.md).

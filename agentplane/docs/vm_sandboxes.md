@@ -117,12 +117,16 @@ The subsequent conversation-recovery failure is addressed separately in
   seed and applies the Runner systemd caps after the ConfigMap disk is mounted and before the Runner
   starts. Staging currently sets:
 
-  | Scope                  | Memory                                                                                  | CPU                              | PID limit | Block I/O limit                                          |
-  | ---------------------- | --------------------------------------------------------------------------------------- | -------------------------------- | --------- | -------------------------------------------------------- |
-  | VM guest               | 1536 MiB (1,610,612,736 bytes), with a 256 MiB (268,435,456 byte) OS reserve            | 1 vCPU                           | —         | —                                                        |
-  | Runner service         | `MemoryHigh` 1152 MiB (1,207,959,552 bytes), `MemoryMax` 1280 MiB (1,342,177,280 bytes) | 100,000 µs per 100,000 µs period | 1024      | —                                                        |
-  | Aggregate agent cgroup | `memory.max` 1088 MiB (1,140,850,688 bytes)                                             | 100,000 µs per 100,000 µs period | 768       | read 50 MiB/s and 1000 IOPS; write 20 MiB/s and 500 IOPS |
-  | Native process leaf    | `memory.max` 768 MiB (805,306,368 bytes)                                                | 100,000 µs per 100,000 µs period | 512       | read 50 MiB/s and 1000 IOPS; write 20 MiB/s and 500 IOPS |
+  | Scope               | Memory                                                                                  | CPU                              | PID limit | Block I/O limit                                          |
+  | ------------------- | --------------------------------------------------------------------------------------- | -------------------------------- | --------- | -------------------------------------------------------- |
+  | VM guest            | 3072 MiB (3,221,225,472 bytes), with a 512 MiB (536,870,912 byte) OS reserve            | 1 vCPU                           | —         | —                                                        |
+  | Runner service      | `MemoryHigh` 2304 MiB (2,415,919,104 bytes), `MemoryMax` 2560 MiB (2,684,354,560 bytes) | 100,000 µs per 100,000 µs period | 2048      | —                                                        |
+  | Harness aggregate   | `memory.max` 1024 MiB (1,073,741,824 bytes)                                             | 100,000 µs per 100,000 µs period | 768       | read 50 MiB/s and 1000 IOPS; write 20 MiB/s and 500 IOPS |
+  | Native process leaf | `memory.max` 768 MiB (805,306,368 bytes)                                                | 100,000 µs per 100,000 µs period | 512       | read 50 MiB/s and 1000 IOPS; write 20 MiB/s and 500 IOPS |
+
+  The sibling executor aggregate and its leaf each cap memory at 1024 MiB (1,073,741,824 bytes),
+  CPU at one vCPU and PIDs at 512, with the same I/O caps. Its optional seed budget selects isolated
+  tools; see [Codex executor isolation](../runner/docs/codex_executor.md) for lifecycle and scope.
 
   Memory swap remains disabled. `memory.oom.group=0` on the aggregate lets the kernel select an
   individual process leaf, while `memory.oom.group=1` on each leaf kills that harness and its

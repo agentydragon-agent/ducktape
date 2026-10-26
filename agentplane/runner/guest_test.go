@@ -59,6 +59,9 @@ func TestGuestConfigurationBuildsIsolatedHarnessSettings(t *testing.T) {
 	if config.ProcessIsolation.AggregateLimits.MemoryMaxBytes != 1140850688 || config.ProcessIsolation.ProcessLimits.MemoryMaxBytes != 805306368 {
 		t.Fatalf("guest resource limits = aggregate %+v, process %+v", config.ProcessIsolation.AggregateLimits, config.ProcessIsolation.ProcessLimits)
 	}
+	if config.CodexExecutor != nil {
+		t.Fatal("absent executor budget must select local tools")
+	}
 	for key, want := range map[string]string{
 		"HTTP_PROXY":    "http://proxy.test:3128",
 		"HTTPS_PROXY":   "http://proxy.test:3128",
@@ -121,6 +124,49 @@ func TestGuestConfigurationRejectsInvalidSeedAndLaunch(t *testing.T) {
 			configPath, launchPath := writeGuestFixture(t, seed, launch)
 			if _, _, _, err := GuestConfiguration(configPath, launchPath); err == nil {
 				t.Fatal("GuestConfiguration accepted invalid input")
+			}
+		})
+	}
+}
+
+func TestGuestExecutorBudgetsAndWiring(t *testing.T) {
+	for _, test := range []struct {
+		name              string
+		memory, cpu, pids int64
+		wantErr           bool
+	}{
+		{"fits shared service", 64 * 1024 * 1024, 100000, 128, false},
+		{"memory overlaps harness budget", 65 * 1024 * 1024, 100000, 128, true},
+		{"CPU exceeds outer cap", 64 * 1024 * 1024, 100001, 128, true},
+		{"PIDs consume Runner reserve", 64 * 1024 * 1024, 100000, 256, true},
+		{"zero budget", 0, 100000, 128, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			preserveGuestEnvironment(t)
+			seed := validGuestSeed()
+			resources := seed["resources"].(map[string]any)
+			executor := map[string]any{
+				"memory_max_bytes": test.memory, "cpu_quota_micros": test.cpu, "pids_max": test.pids,
+				"read_bps": 1, "write_bps": 1, "read_iops": 1, "write_iops": 1,
+			}
+			resources["executor"] = executor
+			configPath, launchPath := writeGuestFixture(t, seed, validGuestLaunch())
+			config, _, _, err := GuestConfiguration(configPath, launchPath)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("GuestConfiguration error = %v, wantErr %t", err, test.wantErr)
+			}
+			if test.wantErr {
+				return
+			}
+			if config.CodexExecutor == nil || config.CodexExecutor.ContainerSocket != "" || config.CodexExecutor.Isolation == nil {
+				t.Fatalf("VM executor config = %+v", config.CodexExecutor)
+			}
+			if err := config.CodexExecutor.validate(config.ProcessIsolation); err != nil {
+				t.Fatal(err)
+			}
+			group := config.CodexExecutor.Isolation
+			if group.ProcessLimits.MemoryMaxBytes != test.memory || group.ProcessLimits != group.AggregateLimits || group.AgentUID != guestAgentUID || !reflect.DeepEqual(group.BlockDevices, config.ProcessIsolation.BlockDevices) {
+				t.Fatalf("VM executor isolation = %+v", group)
 			}
 		})
 	}

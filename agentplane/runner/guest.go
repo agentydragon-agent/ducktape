@@ -49,15 +49,16 @@ type guestSeed struct {
 }
 
 type guestResources struct {
-	GuestMemoryBytes       int64          `json:"guest_memory_bytes"`
-	GuestVCPUCount         int64          `json:"guest_vcpu_count"`
-	OSReserveBytes         int64          `json:"os_reserve_bytes"`
-	ServiceMemoryHighBytes int64          `json:"service_memory_high_bytes"`
-	ServiceMemoryMaxBytes  int64          `json:"service_memory_max_bytes"`
-	ServiceCPUQuotaMicros  int64          `json:"service_cpu_quota_micros"`
-	ServicePidsMax         int64          `json:"service_pids_max"`
-	Aggregate              ResourceLimits `json:"aggregate"`
-	Process                ResourceLimits `json:"process"`
+	GuestMemoryBytes       int64           `json:"guest_memory_bytes"`
+	GuestVCPUCount         int64           `json:"guest_vcpu_count"`
+	OSReserveBytes         int64           `json:"os_reserve_bytes"`
+	ServiceMemoryHighBytes int64           `json:"service_memory_high_bytes"`
+	ServiceMemoryMaxBytes  int64           `json:"service_memory_max_bytes"`
+	ServiceCPUQuotaMicros  int64           `json:"service_cpu_quota_micros"`
+	ServicePidsMax         int64           `json:"service_pids_max"`
+	Aggregate              ResourceLimits  `json:"aggregate"`
+	Process                ResourceLimits  `json:"process"`
+	Executor               *ResourceLimits `json:"executor"`
 }
 
 func (r guestResources) Validate() error {
@@ -85,6 +86,21 @@ func (r guestResources) Validate() error {
 	}
 	if r.Aggregate.MemoryMaxBytes > r.ServiceMemoryHighBytes || r.Aggregate.PidsMax > r.ServicePidsMax || r.Aggregate.CPUQuotaMicros > r.ServiceCPUQuotaMicros {
 		return errors.New("aggregate limits must fit within Runner service limits")
+	}
+	if r.Executor != nil {
+		if err := r.Executor.Validate(); err != nil {
+			return fmt.Errorf("invalid executor limits: %w", err)
+		}
+		// Subtraction keeps the combined-cap checks safe from integer overflow.
+		if r.Executor.MemoryMaxBytes > r.ServiceMemoryHighBytes-r.Aggregate.MemoryMaxBytes {
+			return errors.New("harness and executor memory caps must fit below service memory high")
+		}
+		if r.Executor.PidsMax >= r.ServicePidsMax-r.Aggregate.PidsMax {
+			return errors.New("harness and executor PID caps must leave room for Runner and supervisors")
+		}
+		if r.Executor.CPUQuotaMicros > r.ServiceCPUQuotaMicros {
+			return errors.New("executor CPU quota must fit within Runner service quota")
+		}
 	}
 	return nil
 }
@@ -251,6 +267,16 @@ func GuestConfiguration(path, launchPath string) (Config, Endpoint, Endpoint, er
 		},
 		WorkspaceRoot:     guestWorkspaceDir,
 		InitializationCwd: guestWorkspaceDir,
+	}
+	if seed.Resources.Executor != nil {
+		config.CodexExecutor = &CodexExecutorConfig{
+			URL: "ws://127.0.0.1:4501",
+			Isolation: &AgentCgroups{
+				Root:     "/sys/fs/cgroup/system.slice/agentplane-runner.service/executors",
+				AgentUID: identity, AgentGID: group, BlockDevices: []string{guestWorkspaceDev},
+				AggregateLimits: *seed.Resources.Executor, ProcessLimits: *seed.Resources.Executor,
+			},
+		}
 	}
 	if err := configureGuestNetworkEnvironment(harnessEnvironment, []string{seed.Control.Target, seed.Ingress.Target}); err != nil {
 		return Config{}, Endpoint{}, Endpoint{}, fmt.Errorf("configure guest runner network environment: %w", err)

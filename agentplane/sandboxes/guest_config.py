@@ -57,6 +57,7 @@ class GuestResources(BaseModel):
     service_pids_max: int = Field(gt=0)
     aggregate: ResourceLimits
     process: ResourceLimits
+    executor: ResourceLimits | None = None
 
     @model_validator(mode="after")
     def internally_consistent(self) -> GuestResources:
@@ -72,6 +73,13 @@ class GuestResources(BaseModel):
             raise ValueError("aggregate CPU quota must not exceed service CPU quota")
         if self.aggregate.pids_max > self.service_pids_max:
             raise ValueError("aggregate PID max must not exceed service PID max")
+        if self.executor is not None:
+            if self.executor.memory_max_bytes > self.service_memory_high_bytes - self.aggregate.memory_max_bytes:
+                raise ValueError("harness and executor memory caps must fit below service memory high")
+            if self.executor.pids_max >= self.service_pids_max - self.aggregate.pids_max:
+                raise ValueError("harness and executor PID caps must leave room for Runner and supervisors")
+            if self.executor.cpu_quota_micros > self.service_cpu_quota_micros:
+                raise ValueError("executor CPU quota must fit within Runner service quota")
         if self.process.memory_max_bytes > self.aggregate.memory_max_bytes:
             raise ValueError("process memory max must not exceed aggregate memory max")
         if self.process.cpu_quota_micros > self.aggregate.cpu_quota_micros:

@@ -69,16 +69,22 @@ func TestExecutorConfigurationRejectsPartialOrOverlappingIsolation(t *testing.T)
 	if err := (CodexExecutorConfig{URL: endpoint, ContainerSocket: "/run/test-executor.sock"}).validate(nil); err != nil {
 		t.Fatal(err)
 	}
-	harness := &AgentCgroups{Root: "/test-cgroups/workloads"}
-	if err := (CodexExecutorConfig{URL: endpoint, Isolation: &AgentCgroups{Root: "/test-cgroups/executors"}}).validate(harness); err != nil {
+	limits := ResourceLimits{CPUQuotaMicros: 100000, MemoryMaxBytes: 64 * 1024 * 1024, PidsMax: 32, ReadBPS: 1, WriteBPS: 1, ReadIOPS: 1, WriteIOPS: 1}
+	harness := &AgentCgroups{Root: "/test-cgroups/workloads", AggregateLimits: limits, ProcessLimits: limits}
+	executor := *harness
+	executor.Root = "/test-cgroups/executors"
+	if err := (CodexExecutorConfig{URL: endpoint, Isolation: &executor}).validate(harness); err != nil {
 		t.Fatal(err)
 	}
+	invalid := executor
+	invalid.ProcessLimits.MemoryMaxBytes++
 	for _, config := range []CodexExecutorConfig{
 		{URL: endpoint},
 		{URL: endpoint, ContainerSocket: "relative"},
 		{URL: endpoint, ContainerSocket: "/run/test.sock", Isolation: harness},
 		{URL: endpoint, Isolation: harness},
 		{URL: endpoint, Isolation: &AgentCgroups{Root: "/test-cgroups/workloads/executor"}},
+		{URL: endpoint, Isolation: &invalid},
 	} {
 		if err := config.validate(harness); err == nil {
 			t.Fatalf("accepted %+v", config)

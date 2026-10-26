@@ -57,7 +57,7 @@ def test_guest_seed_serializes_origin_urls_without_trailing_slashes() -> None:
         "version": 2,
         "control": {"target": "test-gateway.test:7100", "bearer": "test-control-placeholder"},
         "ingress": {"target": "test-history.test:8081", "bearer": "test-ingress-placeholder"},
-        "resources": _resources(),
+        "resources": {**_resources(), "executor": None},
         "llm_base_url": "https://llm.example:8443",
         "proxy_url": "http://proxy.example:3128",
         "platform_instructions": "Test platform guidance.",
@@ -81,6 +81,29 @@ def test_guest_resource_budgets_are_typed_and_fit_guest_headroom() -> None:
     assert resources.service_memory_max_bytes == resources.guest_memory_bytes - resources.os_reserve_bytes
     assert resources.aggregate.memory_max_bytes == 1_140_850_688
     assert resources.process.memory_max_bytes == 805_306_368
+
+
+@pytest.mark.parametrize(
+    ("memory", "cpu", "pids", "valid"),
+    [
+        (67_108_864, 100_000, 128, True),
+        (67_108_865, 100_000, 128, False),
+        (67_108_864, 100_001, 128, False),
+        (67_108_864, 100_000, 256, False),
+    ],
+)
+def test_executor_budget_shares_outer_service_headroom(memory: int, cpu: int, pids: int, valid: bool) -> None:
+    values = {**_resources(), "executor": {**_limits(memory=memory, pids=pids), "cpu_quota_micros": cpu}}
+    if valid:
+        resources = GuestResources.model_validate(values)
+        assert resources.executor is not None
+        assert (
+            resources.aggregate.memory_max_bytes + resources.executor.memory_max_bytes
+            <= resources.service_memory_high_bytes
+        )
+    else:
+        with pytest.raises(ValidationError):
+            GuestResources.model_validate(values)
 
 
 @pytest.mark.parametrize(
