@@ -370,7 +370,7 @@ function AccountHistoryCoverage({ accounts }: { accounts: AccountCoverage[] }) {
         )}
         <details>
           <summary style={{ cursor: "pointer", fontWeight: 650 }}>
-            Coverage evidence for {accounts.length} accounts
+            Coverage evidence for {accounts.length} account{accounts.length === 1 ? "" : "s"}
           </summary>
           <Stack gap="xs" mt="sm">
             {accounts.map((account, index) => (
