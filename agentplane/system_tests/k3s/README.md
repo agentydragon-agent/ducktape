@@ -49,7 +49,7 @@ can run it.
 [`fixture_chart.py`](fixture_chart.py) constructs the chart directly
 with shared service constructs and explicit bare-k3s settings. It supplies fixture Secrets,
 local-path storage for filesystem claims and a test egress CA. VM stacks add a separate static
-`agentplane-test-loop-block` class for the VM workspace claim. `block_storage.py` backs its two
+`agentplane-test-loop-block` class for the VM workspace claim. `block_storage.py` backs its three
 10 GiB `Block` PVs with sparse files attached to loop devices on the k3s node; the action detaches
 only the loops it attached after k3s removes its Pods. This gives the VM test guest a real raw block
 device while keeping state on the fixture's filesystem class. The fixture runs the Go egress proxy
