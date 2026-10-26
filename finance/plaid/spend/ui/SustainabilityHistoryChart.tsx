@@ -204,8 +204,8 @@ export function SustainabilityHistoryChart({
         </div>
         {history.length === 0 ? (
           <Text size="sm" c="dimmed">
-            History requires at least {windowDays} days of common recorded spending history. Select a shorter window
-            to see available history.
+            History requires at least {windowDays} days of common recorded spending history. Select a shorter window to
+            see available history.
           </Text>
         ) : (
           <div style={{ height: 300, minWidth: 0, position: "relative" }}>
