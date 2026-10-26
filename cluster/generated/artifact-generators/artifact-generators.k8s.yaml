@@ -595,6 +595,21 @@ spec:
       name: github-tf
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/github-tf/crossplane-github-branch-protection/**"
+          to: "@artifact/cluster/generated/github-tf/crossplane-github-branch-protection/"
+      name: crossplane-github-branch-protection
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/github-tf/crossplane-github-secrets-sync/**"
+          to: "@artifact/cluster/generated/github-tf/crossplane-github-secrets-sync/"
+      name: crossplane-github-secrets-sync
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/github-tf/crossplane-flux-webhook-token/**"
+          to: "@artifact/cluster/generated/github-tf/crossplane-flux-webhook-token/"
+      name: crossplane-flux-webhook-token
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/github-exporter/**"
           to: "@artifact/cluster/generated/github-exporter/"
         - from: "@repo/cluster/k8s/github-exporter-image-pins/**"

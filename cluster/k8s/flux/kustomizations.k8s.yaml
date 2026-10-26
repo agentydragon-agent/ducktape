@@ -2983,26 +2983,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: flux-webhook
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: kyverno
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/flux-webhook
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: flux-webhook
-    namespace: ducktape-flux
-  timeout: 5m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: langfuse
   namespace: ducktape-flux
 spec:
@@ -3251,6 +3231,122 @@ spec:
     namespace: ducktape-flux
   timeout: 20m
   wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane-github-branch-protection
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: github-tf
+      namespace: ducktape-flux
+    - name: github-secrets-sync-secrets
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: opentofu.upbound.io/v1beta1
+      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      kind: Workspace
+  interval: 10m
+  path: ./cluster/generated/github-tf/crossplane-github-branch-protection
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: github-tf
+    namespace: ducktape-flux
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane-github-secrets-sync
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: github-tf
+      namespace: ducktape-flux
+    - name: github-secrets-sync-secrets
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
+    - name: seaweedfs-pr-visuals-bucket
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: opentofu.upbound.io/v1beta1
+      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      kind: Workspace
+  interval: 10m
+  path: ./cluster/generated/github-tf/crossplane-github-secrets-sync
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: github-tf
+    namespace: ducktape-flux
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane-flux-webhook-token
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: github-tf
+      namespace: ducktape-flux
+    - name: github-secrets-sync-secrets
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: opentofu.upbound.io/v1beta1
+      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      kind: Workspace
+  interval: 10m
+  path: ./cluster/generated/github-tf/crossplane-flux-webhook-token
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: github-tf
+    namespace: ducktape-flux
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flux-webhook
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: kyverno
+      namespace: ducktape-flux
+    - name: crossplane-flux-webhook-token
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/flux-webhook
+  prune: true
+  sourceRef:
+    kind: ExternalArtifact
+    name: flux-webhook
+    namespace: ducktape-flux
+  timeout: 5m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

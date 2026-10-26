@@ -1,0 +1,211 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opentofu-flux-webhook-token
+  namespace: crossplane-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-flux-webhook-token-impersonate
+  namespace: crossplane-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - opentofu-flux-webhook-token
+    resources:
+      - serviceaccounts
+    verbs:
+      - impersonate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc8c0091fecff7f5f52503a19f107a3d26398177d70
+  namespace: crossplane-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-flux-webhook-token-impersonate
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: crossplane-opentofu
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-flux-webhook-token
+  namespace: flux-system
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - github-secrets-sync-pat
+    resources:
+      - secrets
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resourceNames:
+      - github-webhook-token
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc811333b4720f14ba45d51ba980782d0d518133514
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-flux-webhook-token
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: opentofu-flux-webhook-token
+    namespace: crossplane-system
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: crossplane-flux-webhook-token
+spec:
+  backendFile: |
+    conn_str = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+    schema_name = "flux_webhook_token"
+  configuration: |
+    terraform {
+      backend "pg" {}
+    }
+    provider "kubernetes" {
+      config_path = "/etc/opentofu/kubernetes/opentofu-flux-webhook-token"
+    }
+---
+apiVersion: opentofu.upbound.io/v1beta1
+kind: Workspace
+metadata:
+  annotations:
+    crossplane.io/external-name: default
+  name: flux-webhook-token
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    env:
+      - name: PGPASSWORD
+        secretKeyRef:
+          key: password
+          name: tofu-state-db-credentials
+          namespace: flux-system
+    module: |+
+      # Flux webhook token management
+      #
+      # Manages the GitHub webhook token and receiver registration for the Flux
+      # github Receiver.
+      #
+      # Creates:
+      #   - github-webhook-token: K8s Secret in flux-system with the HMAC token
+      #     used by the Flux Receiver to validate incoming GitHub webhook payloads
+      #   - GitHub repository webhook on ducktape pointing to the Flux Receiver URL
+
+      data "kubernetes_secret" "github_secrets_sync_pat" {
+        metadata {
+          name      = "github-secrets-sync-pat"
+          namespace = "flux-system"
+        }
+      }
+
+      provider "github" {
+        owner = "agentydragon"
+        token = data.kubernetes_secret.github_secrets_sync_pat.data["token"]
+      }
+
+      resource "random_password" "github_webhook_token" {
+        length  = 40
+        special = false
+      }
+
+      resource "kubernetes_secret" "github_webhook_token" {
+        metadata {
+          name      = "github-webhook-token"
+          namespace = "flux-system"
+        }
+
+        data = {
+          token = random_password.github_webhook_token.result
+        }
+
+        lifecycle {
+          # Don't rotate after initial creation — rotating requires reconfiguring
+          # the GitHub webhook URL (path changes with the sha256 of the token).
+          ignore_changes = [data]
+        }
+      }
+
+      resource "github_repository_webhook" "flux_receiver" {
+        repository = "ducktape"
+
+        configuration {
+          url          = "https://flux-webhook.allegedly.works/hook/${sha256(join("", [random_password.github_webhook_token.result, "github", "flux-system"]))}"
+          content_type = "json"
+          secret       = random_password.github_webhook_token.result
+          insecure_ssl = false
+        }
+
+        active = true
+        events = ["push", "registry_package"]
+
+        lifecycle {
+          # Keep the GitHub webhook configuration stable after initial creation.
+          # The generated token is persisted in Terraform state, and downstream
+          # secret/webhook updates are intentionally ignored unless this resource is
+          # replaced (for example, if the webhook is manually deleted from GitHub).
+          ignore_changes = [configuration]
+        }
+      }
+
+
+      terraform {
+        required_version = ">= 1.0"
+
+        required_providers {
+          kubernetes = {
+            source  = "hashicorp/kubernetes"
+            version = "~> 3.0"
+          }
+          github = {
+            source  = "integrations/github"
+            version = "~> 6.6"
+          }
+          random = {
+            source  = "hashicorp/random"
+            version = "~> 3.9.0"
+          }
+        }
+      }
+
+    planArgs:
+      - -lock-timeout=5m
+    source: Inline
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+  providerConfigRef:
+    name: crossplane-flux-webhook-token
