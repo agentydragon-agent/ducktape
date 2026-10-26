@@ -15,6 +15,7 @@ export function ConfigurationPage({
   error: string | null;
 }) {
   const allowance = configuration?.allowance;
+  const reversalPairs = allowance?.reversal_pairs ?? [];
   return (
     <Stack gap="lg">
       <Group justify="space-between" align="flex-start" gap="md">
@@ -143,6 +144,54 @@ export function ConfigurationPage({
                       );
                     })}
                   </Stack>
+                </div>
+                <Divider />
+                <div>
+                  <Group gap="xs" mb="sm">
+                    <Text fw={650}>Full reversal pairs</Text>
+                    <HelpTooltip
+                      topic="Full reversals"
+                      description="A pair excludes both legs only when each selector finds one posted transaction with the exact opposite amount in the allowance currency and the same account. Unresolved or overlapping matches keep every transaction in normal allowance accounting."
+                    />
+                  </Group>
+                  {reversalPairs.length ? (
+                    <Stack gap="xs">
+                      {reversalPairs.map((pair) => (
+                        <Paper key={pair.id} withBorder radius="md" p="sm">
+                          <Stack gap="xs">
+                            <Text size="sm" fw={650} style={{ overflowWrap: "anywhere" }}>
+                              {pair.id}
+                            </Text>
+                            <Text size="sm" c="dimmed">
+                              {pair.description}
+                            </Text>
+                            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+                              <div>
+                                <Badge color="blue" variant="light" mb={4}>
+                                  Original debit
+                                </Badge>
+                                <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+                                  {ruleConditionText(pair.original)}
+                                </Text>
+                              </div>
+                              <div>
+                                <Badge color="teal" variant="light" mb={4}>
+                                  Reversal credit
+                                </Badge>
+                                <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+                                  {ruleConditionText(pair.reversal)}
+                                </Text>
+                              </div>
+                            </SimpleGrid>
+                          </Stack>
+                        </Paper>
+                      ))}
+                    </Stack>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      No full reversal pairs configured.
+                    </Text>
+                  )}
                 </div>
               </Stack>
             </Card>

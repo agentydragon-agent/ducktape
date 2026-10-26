@@ -144,6 +144,7 @@ class SpendService:
                 max_sync_age_hours=policy.max_sync_age_hours,
                 forecast_basis_period_id=policy.forecast_basis_period_id,
                 rules=policy.rules,
+                reversal_pairs=policy.reversal_pairs,
                 analysis_categories=policy.analysis_categories,
             )
         return SpendConfigurationView(
@@ -495,6 +496,7 @@ class SpendService:
                     disposition=decision.disposition if decision else None,
                     rule_number=decision.rule_number if decision else None,
                     rule=decision.rule if decision else None,
+                    reversal_pair=decision.reversal_pair if decision else None,
                     effective_kind=decision.effective_kind if decision else None,
                     allowance_minor_units=decision.allowance_minor_units if decision else 0,
                     pace_effects=[

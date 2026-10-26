@@ -517,12 +517,19 @@ export function SpendingPage({
         </Alert>
       )}
       {view?.allowance ? (
-        <AllowancePanel
-          allowance={view.allowance}
-          purchase={purchase}
-          onPurchaseChange={onPurchaseChange}
-          estimateLoading={estimatePending && !error}
-        />
+        <>
+          {view.allowance.status === "active" && view.allowance.note && (
+            <Alert color="yellow" title="Allowance needs review" style={{ overflowWrap: "anywhere" }}>
+              {view.allowance.note}
+            </Alert>
+          )}
+          <AllowancePanel
+            allowance={view.allowance}
+            purchase={purchase}
+            onPurchaseChange={onPurchaseChange}
+            estimateLoading={estimatePending && !error}
+          />
+        </>
       ) : (
         <Alert color="yellow" title="No flexible allowance yet">
           {view

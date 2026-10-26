@@ -18,12 +18,15 @@ from finance.plaid.spend import service
 from finance.plaid.spend.allowance import (
     AllOf,
     AllowancePolicy,
+    AmountExact,
     AnalysisCategory,
     CategoryExact,
     DateRange,
+    Disposition,
     Kind,
     NameContains,
     PeriodId,
+    ReversalPair,
     Rule,
     RuleScope,
     Status,
@@ -434,6 +437,61 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
         next(report.spend_minor_units for report in allowance.spend_periods if report.period.id == PeriodId.ROLLING_7D)
         == 0
     )
+
+
+async def test_reversal_uses_old_retained_original_and_preserves_card_statement(
+    connection: asyncpg.Connection, postgres_url: str
+) -> None:
+    now = datetime.now(UTC)
+    today = now.date()
+    original_day = today - timedelta(days=60)
+    reversal_day = today - timedelta(days=2)
+    await add_link(connection, "item-reversal", synced=now)
+    await add_account(connection, "card-reversal", "item-reversal", type="credit")
+    await add_liability(connection, "card-reversal", "item-reversal", today - timedelta(days=10))
+    await add_transaction(connection, "card-reversal", "item-reversal", "original", original_day, 80)
+    await add_transaction(connection, "card-reversal", "item-reversal", "return", reversal_day, -80)
+    await add_transaction(connection, "card-reversal", "item-reversal", "replacement", reversal_day, 90)
+    pair = ReversalPair(
+        id="example-return",
+        description="Synthetic full return with a separately counted replacement.",
+        original=AllOf(conditions=[DateRange(start=original_day, end=original_day), AmountExact(value="80")]),
+        reversal=AllOf(conditions=[DateRange(start=reversal_day, end=reversal_day), AmountExact(value="-80")]),
+    )
+    config = SpendConfiguration(
+        time_zone=ZoneInfo("UTC"),
+        cards=[CardConfig(account_id="card-reversal", label="Example card", enabled=True)],
+        allowance=AllowancePolicy(
+            monthly_minor_units=100_000,
+            activation_at=today - timedelta(days=20),
+            spending_account_ids={"card-reversal"},
+            analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#777777")},
+            rules=[Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
+            reversal_pairs=[pair],
+        ),
+    )
+    spend_service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
+    async with spend_service.lifespan():
+        view = await spend_service.read_view()
+        transactions = await spend_service.read_transactions(period=PeriodId.ROLLING_30D)
+    assert view.allowance is not None
+    assert view.allowance.posted_minor_units == 9_000
+    assert view.allowance.unmatched_refunds_minor_units == 0
+    assert view.allowance.note is None
+    assert view.cards[0].posted_minor_units == 1_000  # Statement still sees the actual -80 credit and +90 debit.
+    assert len(transactions.rows) == 2  # Original is outside the displayed period, but still reconciled.
+    credit = next(row for row in transactions.rows if row.amount_minor_units < 0)
+    assert credit.disposition == Disposition.REVERSED
+    assert credit.reversal_pair == pair
+    assert credit.effective_kind == Kind.EXCLUDED
+    assert credit.rule is not None
+    assert credit.rule.kind == Kind.FLEXIBLE
+    assert credit.statement_minor_units == -8_000
+    assert credit.allowance_minor_units == 0
+    configuration = spend_service.read_configuration()
+    assert configuration.allowance is not None
+    assert configuration.allowance.reversal_pairs == [pair]
+    assert "card-reversal" not in configuration.model_dump_json()
 
 
 def _sustainability_configuration(today: date, spending_account_id: str) -> SpendConfiguration:
