@@ -204,7 +204,7 @@ def _add_cluster_roles(chart: Chart) -> None:
         ("kustomize.toolkit.fluxcd.io", ("kustomizations",)),
         ("kyverno.io", ("clusterpolicies", "policies", "policyreports", "clusterpolicyreports")),
         ("litellm.crossplane.io", ("keys", "teams")),
-        ("litellm.m.crossplane.io", ("keys", "teams")),
+        ("litellm.m.crossplane.io", ("*",)),
         ("metrics.k8s.io", ("pods", "nodes")),
         # No nodes/proxy, even get-only: the kubelet authorizes a WebSocket /exec handshake as
         # `get` on nodes/proxy, so the grant is command execution in any pod on the node.

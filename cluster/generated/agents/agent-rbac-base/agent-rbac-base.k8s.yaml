@@ -378,8 +378,7 @@ rules:
   - apiGroups:
       - litellm.m.crossplane.io
     resources:
-      - keys
-      - teams
+      - "*"
     verbs:
       - get
       - list

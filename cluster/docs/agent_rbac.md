@@ -74,10 +74,10 @@ bound in <../cdk8s/agent_shared_rbac.py>, grants cluster-wide `get`/`list`/`watc
 diagnostic resources, including RedisReplication, legacy Flux Terraform, OpenTofu Workspace,
 GrafanaDashboard, and all objects in the Crossplane API groups `apiextensions.crossplane.io`,
 `ops.crossplane.io`, `pkg.crossplane.io`, `protection.crossplane.io`, `opentofu.upbound.io`,
-`opentofu.m.upbound.io`. This includes compositions, XRDs, operations, packages, runtime configs,
-OpenTofu provider configs, provider config usages and Workspaces. In `litellm.m.crossplane.io`, it
-reads only `keys` and `teams`. It grants the same two resources in `litellm.crossplane.io` for the
-current provider API; provider configs and organizations in either group are excluded. All object
+`opentofu.m.upbound.io`, and `litellm.m.crossplane.io`. This includes compositions, XRDs,
+operations, packages, runtime configs, OpenTofu provider configs, provider config usages and
+Workspaces, and LiteLLM provider configs, keys, teams, and organizations. It also reads `keys` and
+`teams` in the legacy cluster-scoped `litellm.crossplane.io` API group. All object
 fields are readable, including `EnvironmentConfig.data` and OpenTofu Workspace outputs, so secret
 values must stay out of inline fields. The role does not grant reads on Kubernetes Secrets or direct
 access to an OpenTofu state backend. It also excludes ConfigMaps, Pod logs, Pod exec, and `nodes/proxy`;
