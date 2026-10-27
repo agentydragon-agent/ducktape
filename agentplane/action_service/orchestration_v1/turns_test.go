@@ -1,7 +1,9 @@
 package orchestrationv1
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -151,6 +153,43 @@ func TestWaitDeadlineReturnsNewestProgressAndRejectsBareEOF(t *testing.T) {
 	}
 }
 
+// History can report its propagated deadline before the client's context timer fires.
+func TestWaitHistoryDeadlineReturnsNewestProgress(t *testing.T) {
+	for _, renew := range []bool{false, true} {
+		t.Run(map[bool]string{false: "receiving", true: "after_reconnect"}[renew], func(t *testing.T) {
+			f := newFixture(t)
+			sandbox := f.launch(t, "test-history-deadline")
+			session := uuid.NewString()
+			f.history.hold(summaryOf(f, session, sandbox, nil))
+			var calls atomic.Int32
+			f.history.follow = func(request *historypb.FollowSessionRequest, stream grpc.ServerStreamingServer[historypb.FollowSessionResponse]) error {
+				if calls.Add(1) == 1 {
+					frame := &historypb.FollowSessionResponse{ThroughCursor: 9, Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}}
+					if renew {
+						frame.Frame = &historypb.FollowSessionResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}}
+					}
+					if err := stream.Send(frame); err != nil {
+						return err
+					}
+					if renew {
+						return nil
+					}
+				} else if request.GetAfterCursor() != 9 {
+					t.Errorf("renewal cursor = %d", request.GetAfterCursor())
+				}
+				return status.Error(codes.DeadlineExceeded, "test History deadline before client timeout")
+			}
+			got := resultOf[TurnWait](f.attempt(t, f.caller, actionWaitForTurn, turnArguments(t, sandbox, session, map[string]any{"resume_token": resumeToken(sandbox, session, 2), "wait_seconds": 30})))
+			if got.Completed || got.Turn != nil {
+				t.Fatalf("wait = %+v", got)
+			}
+			if cursor, err := resumeCursor(got.ResumeToken, sandbox, session); err != nil || cursor != 9 {
+				t.Errorf("resume = %d, %v", cursor, err)
+			}
+		})
+	}
+}
+
 func TestTurnReadsRefuseForeignSessionsAndTokens(t *testing.T) {
 	f := newFixture(t)
 	sandbox := f.launch(t, "test-read-scope")
@@ -180,5 +219,123 @@ func TestTurnReadsRefuseForeignSessionsAndTokens(t *testing.T) {
 	sandbox.UID = "00000000-0000-0000-0000-000000000000"
 	if kind := f.attempt(t, f.caller, actionReadTurns, turnArguments(t, sandbox, session, map[string]any{"count": 1})).failure(); kind != "sandbox_replaced" {
 		t.Errorf("replaced = %s", kind)
+	}
+}
+
+// waitHistoryClient overrides only the RPC boundary a deadline test controls.
+type waitHistoryClient struct {
+	historypb.HistoryServiceClient
+	summary func(context.Context, *historypb.GetSessionSummaryRequest, ...grpc.CallOption) (*historypb.SessionSummary, error)
+	follow  func(context.Context, *historypb.FollowSessionRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error)
+}
+
+func (h *waitHistoryClient) GetSessionSummary(ctx context.Context, request *historypb.GetSessionSummaryRequest, opts ...grpc.CallOption) (*historypb.SessionSummary, error) {
+	if h.summary != nil {
+		return h.summary(ctx, request, opts...)
+	}
+	return h.HistoryServiceClient.GetSessionSummary(ctx, request, opts...)
+}
+
+func (h *waitHistoryClient) FollowSession(ctx context.Context, request *historypb.FollowSessionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error) {
+	return h.follow(ctx, request, opts...)
+}
+
+func TestWaitAuthorizationRetainsReadBudget(t *testing.T) {
+	f := newFixture(t)
+	sandbox := f.launch(t, "test-wait-authorization")
+	session := uuid.NewString()
+	f.history.hold(summaryOf(f, session, sandbox, nil))
+	parent, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	deadline, _ := parent.Deadline()
+	original := f.executor.history
+	f.executor.history = &waitHistoryClient{
+		HistoryServiceClient: original,
+		summary: func(ctx context.Context, request *historypb.GetSessionSummaryRequest, opts ...grpc.CallOption) (*historypb.SessionSummary, error) {
+			if got, _ := ctx.Deadline(); !got.Equal(deadline) {
+				t.Errorf("authorization deadline = %v; want caller budget %v", got, deadline)
+			}
+			return original.GetSessionSummary(ctx, request, opts...)
+		},
+		follow: func(ctx context.Context, _ *historypb.FollowSessionRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error) {
+			if got, _ := ctx.Deadline(); !got.Before(deadline) {
+				t.Errorf("follow deadline = %v; want requested wait before %v", got, deadline)
+			}
+			return nil, status.Error(codes.DeadlineExceeded, "test follow open deadline")
+		},
+	}
+	got, err := f.executor.waitForTurn(parent, waitForTurnArgs{Sandbox: sandbox, SessionID: session, ResumeToken: resumeToken(sandbox, session, 2), WaitSeconds: 1})
+	if err != nil || got.Completed || got.ResumeToken != resumeToken(sandbox, session, 2) {
+		t.Fatalf("wait = %+v, %v", got, err)
+	}
+}
+
+type reconnectAtDeadline struct {
+	grpc.ClientStream
+	ctx context.Context
+}
+
+func (s *reconnectAtDeadline) Recv() (*historypb.FollowSessionResponse, error) {
+	<-s.ctx.Done()
+	return &historypb.FollowSessionResponse{ThroughCursor: 9, Frame: &historypb.FollowSessionResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}}}, nil
+}
+
+func TestWaitDoesNotReopenAfterDeadline(t *testing.T) {
+	f := newFixture(t)
+	sandbox := f.launch(t, "test-no-late-reconnect")
+	session := uuid.NewString()
+	f.history.hold(summaryOf(f, session, sandbox, nil))
+	calls := 0
+	f.executor.history = &waitHistoryClient{
+		HistoryServiceClient: f.executor.history,
+		follow: func(ctx context.Context, _ *historypb.FollowSessionRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error) {
+			calls++
+			if calls > 1 {
+				return nil, status.Error(codes.DeadlineExceeded, "test reopened after deadline")
+			}
+			return &reconnectAtDeadline{ctx: ctx}, nil
+		},
+	}
+	got, err := f.executor.waitForTurn(t.Context(), waitForTurnArgs{Sandbox: sandbox, SessionID: session, ResumeToken: resumeToken(sandbox, session, 2), WaitSeconds: 0.01})
+	if err != nil || got.Completed || got.ResumeToken != resumeToken(sandbox, session, 9) || calls != 1 {
+		t.Fatalf("wait = %+v, %v; follow calls = %d", got, err, calls)
+	}
+}
+
+func TestWaitKeepsAuthorizationCallerAndBackendFailures(t *testing.T) {
+	for _, failure := range []string{"authorization_deadline", "caller_cancelled", "backend_unavailable"} {
+		t.Run(failure, func(t *testing.T) {
+			f := newFixture(t)
+			sandbox := f.launch(t, "test-wait-failure")
+			session := uuid.NewString()
+			f.history.hold(summaryOf(f, session, sandbox, nil))
+			parent, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			original := f.executor.history
+			f.executor.history = &waitHistoryClient{
+				HistoryServiceClient: original,
+				summary: func(ctx context.Context, request *historypb.GetSessionSummaryRequest, opts ...grpc.CallOption) (*historypb.SessionSummary, error) {
+					if failure == "authorization_deadline" {
+						return nil, status.Error(codes.DeadlineExceeded, "test authorization deadline")
+					}
+					return original.GetSessionSummary(ctx, request, opts...)
+				},
+				follow: func(_ context.Context, _ *historypb.FollowSessionRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error) {
+					if failure == "authorization_deadline" {
+						t.Error("follow called after failed authorization")
+					}
+					if failure == "caller_cancelled" {
+						cancel()
+						return nil, status.Error(codes.DeadlineExceeded, "test caller ended")
+					}
+					return nil, status.Error(codes.Unavailable, "test backend failure")
+				},
+			}
+			_, err := f.executor.waitForTurn(parent, waitForTurnArgs{Sandbox: sandbox, SessionID: session, ResumeToken: resumeToken(sandbox, session, 2), WaitSeconds: 30})
+			var refused *refusal
+			if !errors.As(err, &refused) || refused.kind != "read_failed" {
+				t.Fatalf("wait failure = %v; want read_failed", err)
+			}
+		})
 	}
 }

@@ -61,12 +61,14 @@ transcript.
 
 `wait_for_turn` takes the same Sandbox and Session plus `resume_token` and `wait_seconds`
 (positive, at most 30). It follows only turn completions from that cursor. The executor bounds the
-whole read, including incarnation checks, to the smaller of the requested wait and the deployment's
-`direct_wait_seconds` minus one second for result publication. A deployment with a budget of at most
-one second refuses turn reads. The caller's earlier deadline also applies.
+whole read, including incarnation checks, to the deployment's `direct_wait_seconds` minus one
+second for result publication. After the incarnation checks, the follow is bounded by the requested
+wait and the remaining read budget. A deployment with a budget of at most one second refuses turn
+reads. The caller's earlier deadline also applies.
 
 The result is `completed: true` with `turn` (`turn_id`, `status`, optional `error`) for the first
-completion after the token, or `completed: false` when the local wait expires. Both carry a new
+completion after the token, or `completed: false` when the local wait expires or History reports its follow deadline, provided
+the caller has not cancelled or exhausted its own deadline. Both carry a new
 `resume_token`. Repeat with it to continue without missing or repeating completions, then use
 `read_turns` for full messages. A completion token stops at that entry even if its History frame
 contains later completions. Planned History renewal reconnects internally from the latest progress;
