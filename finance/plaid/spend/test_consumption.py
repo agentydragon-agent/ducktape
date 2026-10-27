@@ -8,16 +8,22 @@ import pytest
 import pytest_bazel
 
 from finance.plaid.spend.allowance import (
+    AccountingDisposition,
+    AccountingPolicy,
     AllOf,
     AllowancePolicy,
     AmountExact,
     AnalysisCategory,
+    CreditTreatment,
     DateRange,
     Kind,
     NamePrefix,
     ReversalPair,
     Rule,
     Transaction,
+    accounting_disposition,
+    prepare_accounting,
+    round_minor_units,
 )
 from finance.plaid.spend.consumption import ConsumptionDisposition, ConsumptionMode, prepare_consumption
 
@@ -183,6 +189,156 @@ def test_ambiguous_reversal_reports_issue_and_keeps_purchase() -> None:
     )
     assert result.entries[0].amount_minor_units == 1_000
     assert result.issues
+
+
+@pytest.mark.parametrize(
+    ("counted_kinds", "credits", "honor_reversals", "exclude_card_payments", "expected"),
+    [
+        (
+            frozenset({Kind.FLEXIBLE, Kind.REVIEW}),
+            CreditTreatment.HOLD,
+            True,
+            False,
+            [
+                AccountingDisposition.COUNTED,
+                AccountingDisposition.FIXED,
+                AccountingDisposition.EXCLUDED,
+                AccountingDisposition.HELD_REFUND,
+                AccountingDisposition.OTHER_CURRENCY,
+                AccountingDisposition.EXCLUDED,
+                AccountingDisposition.SUPERSEDED_PENDING,
+            ],
+        ),
+        (
+            frozenset({Kind.FIXED, Kind.FLEXIBLE, Kind.REVIEW}),
+            CreditTreatment.CONFIRMED_REFUNDS,
+            True,
+            False,
+            [
+                AccountingDisposition.COUNTED,
+                AccountingDisposition.COUNTED,
+                AccountingDisposition.EXCLUDED,
+                AccountingDisposition.HELD_REFUND,
+                AccountingDisposition.OTHER_CURRENCY,
+                AccountingDisposition.EXCLUDED,
+                AccountingDisposition.SUPERSEDED_PENDING,
+            ],
+        ),
+        (
+            frozenset(Kind),
+            CreditTreatment.ALL,
+            False,
+            True,
+            [
+                AccountingDisposition.COUNTED,
+                AccountingDisposition.COUNTED,
+                AccountingDisposition.COUNTED,
+                AccountingDisposition.COUNTED,
+                AccountingDisposition.OTHER_CURRENCY,
+                AccountingDisposition.CARD_PAYMENT,
+                AccountingDisposition.SUPERSEDED_PENDING,
+            ],
+        ),
+    ],
+)
+def test_shared_decisions_preserve_allowance_consumption_and_statement_meaning(
+    counted_kinds: frozenset[Kind],
+    credits: CreditTreatment,
+    honor_reversals: bool,
+    exclude_card_payments: bool,
+    expected: list[AccountingDisposition],
+) -> None:
+    prepared = prepare_accounting(
+        [
+            transaction("SHOP"),
+            transaction("RENT"),
+            transaction("TRANSFER"),
+            transaction("SHOP credit", "-5"),
+            transaction("SHOP foreign", currency="EUR"),
+            transaction("TRANSFER payment", pfc_detailed="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"),
+            transaction("SHOP pending", pending=True),
+            transaction("SHOP posted", pending_transaction_id="SHOP pending"),
+            transaction("SHOP unrelated", account_id="other"),
+        ],
+        allowance=policy(),
+        time_zone=_ZONE,
+        today=_TODAY,
+    )
+    view_policy = AccountingPolicy(
+        currency="USD",
+        counted_kinds=counted_kinds,
+        credits=credits,
+        honor_reversals=honor_reversals,
+        exclude_card_payments=exclude_card_payments,
+    )
+    assert [accounting_disposition(entry, view_policy) for entry in prepared.entries[:7]] == expected
+    assert len(prepared.entries) == 8
+    assert prepared.entries[0].rule_number == 2
+
+
+def test_statement_keeps_signed_reversal_legs_and_posting_date() -> None:
+    allowance = policy().model_copy(
+        update={
+            "reversal_pairs": [
+                ReversalPair(
+                    id="synthetic-return",
+                    description="Synthetic returned purchase",
+                    original=AllOf(
+                        conditions=[
+                            DateRange(start=date(2026, 1, 1), end=date(2026, 1, 1)),
+                            NamePrefix(field="name", prefix="SHOP original"),
+                        ]
+                    ),
+                    reversal=AllOf(
+                        conditions=[
+                            DateRange(start=date(2026, 3, 10), end=date(2026, 3, 10)),
+                            NamePrefix(field="name", prefix="SHOP return"),
+                        ]
+                    ),
+                )
+            ]
+        }
+    )
+    original = transaction("SHOP original", date=date(2026, 1, 1))
+    reversal = transaction("SHOP return", "-10", authorized_date=date(2026, 3, 9))
+    prepared = prepare_accounting([original, reversal], allowance=allowance, time_zone=_ZONE, today=_TODAY)
+    statement = AccountingPolicy(
+        currency="USD",
+        counted_kinds=frozenset(Kind),
+        credits=CreditTreatment.ALL,
+        honor_reversals=False,
+        exclude_card_payments=True,
+    )
+    consumption = AccountingPolicy(
+        currency="USD", counted_kinds=frozenset(Kind), credits=CreditTreatment.CONFIRMED_REFUNDS
+    )
+    assert not prepared.issues
+    assert [accounting_disposition(entry, statement) for entry in prepared.entries] == [
+        AccountingDisposition.COUNTED
+    ] * 2
+    assert [entry.amount_minor_units for entry in prepared.entries] == [1000, -1000]
+    assert [accounting_disposition(entry, consumption) for entry in prepared.entries] == [
+        AccountingDisposition.REVERSAL
+    ] * 2
+    assert prepared.entries[1].report_day == date(2026, 3, 9)
+    assert prepared.entries[1].transaction.date == date(2026, 3, 10)
+
+
+def test_credit_modes_and_currency_rounding() -> None:
+    credit = transaction("SHOP refund", "-3.125")
+    prepared = prepare_accounting([credit], allowance=policy(), time_zone=_ZONE, today=_TODAY)
+    assert prepared.entries[0].amount_minor_units == -313
+    expected = {
+        CreditTreatment.HOLD: AccountingDisposition.HELD_REFUND,
+        CreditTreatment.CONFIRMED_REFUNDS: AccountingDisposition.HELD_REFUND,
+        CreditTreatment.GROSS_PURCHASES: AccountingDisposition.GROSS_CREDIT,
+        CreditTreatment.ALL: AccountingDisposition.COUNTED,
+    }
+    for credits, disposition in expected.items():
+        view_policy = AccountingPolicy(currency="USD", counted_kinds=frozenset(Kind), credits=credits)
+        assert accounting_disposition(prepared.entries[0], view_policy) == disposition
+    assert round_minor_units(Decimal("3.5"), 0) == 4
+    assert round_minor_units(Decimal("3.1255"), 3) == 3126
 
 
 if __name__ == "__main__":

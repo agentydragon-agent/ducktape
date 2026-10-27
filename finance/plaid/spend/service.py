@@ -9,14 +9,17 @@ import logging
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, timedelta
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 import anyio
 import asyncpg
 from babel.numbers import get_currency_precision
 
 from finance.plaid.spend.allowance import (
+    AccountingDisposition,
+    AccountingPolicy,
     AllowanceView,
+    CreditTreatment,
     Disposition,
     EstimatePeriodId,
     ForecastView,
@@ -28,7 +31,10 @@ from finance.plaid.spend.allowance import (
     Transaction,
     TransactionDecision,
     TransactionPeriodId,
+    accounting_disposition,
     calculate,
+    prepare_accounting,
+    round_minor_units,
 )
 from finance.plaid.spend.models import (
     AlertState,
@@ -62,7 +68,12 @@ from finance.plaid.spend.sustainability import (
 logger = logging.getLogger(__name__)
 
 _CHANNEL = "plaid_spend_changed"
-_CARD_PAYMENT_CATEGORY = "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
+_STATEMENT_REASONS = {
+    AccountingDisposition.COUNTED: StatementReason.COUNTED,
+    AccountingDisposition.SUPERSEDED_PENDING: StatementReason.SUPERSEDED_PENDING,
+    AccountingDisposition.CARD_PAYMENT: StatementReason.CARD_PAYMENT,
+    AccountingDisposition.OTHER_CURRENCY: StatementReason.OTHER_CURRENCY,
+}
 _COUNTERPARTIES_COLUMN = (
     "CASE WHEN jsonb_typeof(t.raw_json->'counterparties') = 'array' "
     "THEN (t.raw_json->'counterparties')::text ELSE '[]' END AS counterparties"
@@ -298,11 +309,6 @@ class SpendService:
         if account_labels is not None:
             account_labels.update({row["account_id"]: card_configs[row["account_id"]].label for row in account_rows})
 
-        superseded_pending_ids = {
-            (row["account_id"], row["pending_transaction_id"])
-            for row in transaction_rows
-            if not row["pending"] and row["pending_transaction_id"] is not None
-        }
         transactions_by_account: defaultdict[str, list[asyncpg.Record]] = defaultdict(list)
         for row in transaction_rows:
             transactions_by_account[row["account_id"]].append(row)
@@ -335,28 +341,32 @@ class SpendService:
 
             posted_minor_units = 0
             pending_minor_units = 0
-            for transaction in transactions_by_account.get(account_id, []):
-                key = (account_id, transaction["transaction_id"])
-                if transaction["date"] < cycle_start or transaction["date"] > today:
+            prepared = prepare_accounting(
+                [Transaction.model_validate(dict(row)) for row in transactions_by_account.get(account_id, [])],
+                time_zone=self._configuration.time_zone,
+                today=today,
+                minor_unit_precision=get_currency_precision(account["currency"]),
+            )
+            accounting_policy = AccountingPolicy(
+                currency=account["currency"],
+                counted_kinds=frozenset(Kind),
+                credits=CreditTreatment.ALL,
+                honor_reversals=False,
+                exclude_card_payments=True,
+            )
+            for entry in prepared.entries:
+                transaction = entry.transaction
+                key = (account_id, transaction.transaction_id)
+                # Statements intentionally use posting dates, not purchase days.
+                if not cycle_start <= transaction.date <= today:
                     if statement_decisions is not None:
                         statement_decisions[key] = (StatementReason.OUTSIDE_CYCLE, 0)
                     continue
-                if transaction["pending"] and (account_id, transaction["transaction_id"]) in superseded_pending_ids:
-                    if statement_decisions is not None:
-                        statement_decisions[key] = (StatementReason.SUPERSEDED_PENDING, 0)
-                    continue
-                if transaction["pfc_detailed"] == _CARD_PAYMENT_CATEGORY:
-                    if statement_decisions is not None:
-                        statement_decisions[key] = (StatementReason.CARD_PAYMENT, 0)
-                    continue
-                if transaction["currency"] is not None and transaction["currency"] != account["currency"]:
-                    if statement_decisions is not None:
-                        statement_decisions[key] = (StatementReason.OTHER_CURRENCY, 0)
-                    continue
-                amount_minor_units = _amount_minor_units(Decimal(str(transaction["amount"])), account["currency"])
+                disposition = accounting_disposition(entry, accounting_policy)
+                amount_minor_units = entry.amount_minor_units if disposition == AccountingDisposition.COUNTED else 0
                 if statement_decisions is not None:
-                    statement_decisions[key] = (StatementReason.COUNTED, amount_minor_units)
-                if transaction["pending"]:
+                    statement_decisions[key] = (_STATEMENT_REASONS[disposition], amount_minor_units)
+                if transaction.pending:
                     pending_minor_units += amount_minor_units
                 else:
                     posted_minor_units += amount_minor_units
@@ -829,11 +839,7 @@ def _cycle_start(last_statement_issue_date: str | None) -> date | None:
 
 
 def _amount_minor_units(major_units: Decimal, currency: str) -> int:
-    precision = get_currency_precision(currency)
-    scale = 10**precision
-    quantum = Decimal(1).scaleb(-precision)
-    rounded = major_units.quantize(quantum, rounding=ROUND_HALF_UP)
-    return int(rounded * scale)
+    return round_minor_units(major_units, get_currency_precision(currency))
 
 
 def _as_utc(value: datetime | None) -> datetime | None:

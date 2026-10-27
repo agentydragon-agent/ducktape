@@ -3,33 +3,28 @@
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
 from finance.plaid.spend.allowance import (
+    AccountingDisposition,
+    AccountingPolicy,
     AllowancePolicy,
+    CreditTreatment,
     Kind,
     Rule,
     Transaction,
-    matching_rule,
-    resolve_reversal_pairs,
-    superseded_pending_keys,
+    accounting_disposition,
+    prepare_accounting,
 )
+
+# Compatibility name for callers; all views use the same decision enum.
+ConsumptionDisposition = AccountingDisposition
 
 
 class ConsumptionMode(StrEnum):
     NET = "net"
     GROSS_PURCHASES = "gross_purchases"
-
-
-class ConsumptionDisposition(StrEnum):
-    COUNTED = "counted"
-    EXCLUDED = "excluded"
-    REVERSAL = "reversal"
-    HELD_REFUND = "held_refund"
-    GROSS_CREDIT = "gross_credit"
-    OTHER_CURRENCY = "other_currency"
 
 
 @dataclass(frozen=True)
@@ -49,31 +44,6 @@ class ConsumptionEntry:
 class PreparedConsumption:
     entries: list[ConsumptionEntry]
     issues: list[str]
-
-
-def _consumption_disposition(
-    transaction: Transaction,
-    *,
-    rule: Rule | None,
-    amount_minor_units: int,
-    currency: str,
-    is_reversal: bool,
-    include_excluded_categories: Collection[str],
-    confirmed_refund_rule_ids: Collection[str],
-    mode: ConsumptionMode,
-) -> ConsumptionDisposition:
-    """Decide whether a prepared transaction contributes to consumption."""
-    if transaction.currency not in (None, currency):
-        return ConsumptionDisposition.OTHER_CURRENCY
-    if is_reversal:
-        return ConsumptionDisposition.REVERSAL
-    if rule is not None and rule.kind == Kind.EXCLUDED and rule.analysis_category not in include_excluded_categories:
-        return ConsumptionDisposition.EXCLUDED
-    if amount_minor_units < 0 and mode == ConsumptionMode.GROSS_PURCHASES:
-        return ConsumptionDisposition.GROSS_CREDIT
-    if amount_minor_units < 0 and (rule is None or rule.id not in confirmed_refund_rule_ids):
-        return ConsumptionDisposition.HELD_REFUND
-    return ConsumptionDisposition.COUNTED
 
 
 def prepare_consumption(
@@ -97,35 +67,26 @@ def prepare_consumption(
     against spending with an explicitly confirmed refund rule; gross mode counts
     no credits. A validated reversal removes both legs in either mode.
     """
-    reversals = resolve_reversal_pairs(allowance, transactions, time_zone=time_zone, today=today)
-    superseded = superseded_pending_keys(transactions)
+    prepared = prepare_accounting(transactions, allowance=allowance, time_zone=time_zone, today=today)
+    accounting_policy = AccountingPolicy(
+        currency=currency,
+        counted_kinds=frozenset({Kind.FIXED, Kind.FLEXIBLE, Kind.REVIEW}),
+        credits=(CreditTreatment.CONFIRMED_REFUNDS if mode == ConsumptionMode.NET else CreditTreatment.GROSS_PURCHASES),
+        include_excluded_categories=frozenset(include_excluded_categories),
+        confirmed_refund_rule_ids=frozenset(confirmed_refund_rule_ids),
+    )
     entries = []
-    for transaction in transactions:
-        if transaction.account_id not in allowance.spending_account_ids:
+    for entry in prepared.entries:
+        if entry.report_day > today or entry.superseded_pending:
             continue
-        day = transaction.report_day(time_zone)
-        key = (transaction.account_id, transaction.transaction_id)
-        if day > today or (transaction.pending and key in superseded):
-            continue
-        rule = matching_rule(transaction, allowance.rules)
-        amount = int((transaction.amount * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
-        disposition = _consumption_disposition(
-            transaction,
-            rule=rule,
-            amount_minor_units=amount,
-            currency=currency,
-            is_reversal=key in reversals.pairs_by_transaction,
-            include_excluded_categories=include_excluded_categories,
-            confirmed_refund_rule_ids=confirmed_refund_rule_ids,
-            mode=mode,
-        )
+        disposition = accounting_disposition(entry, accounting_policy)
         entries.append(
             ConsumptionEntry(
-                transaction=transaction,
-                report_day=day,
-                rule=rule,
+                transaction=entry.transaction,
+                report_day=entry.report_day,
+                rule=entry.rule,
                 disposition=disposition,
-                amount_minor_units=amount if disposition == ConsumptionDisposition.COUNTED else 0,
+                amount_minor_units=entry.amount_minor_units if disposition == ConsumptionDisposition.COUNTED else 0,
             )
         )
-    return PreparedConsumption(entries=entries, issues=reversals.issues)
+    return PreparedConsumption(entries=entries, issues=prepared.issues)
