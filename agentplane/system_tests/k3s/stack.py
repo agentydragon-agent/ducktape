@@ -37,7 +37,6 @@ from agentplane.system_tests.conftest import AGENT_SERVICE_ACCOUNT, AUDIENCE
 from agentplane.system_tests.k3s import block_storage, guest_logs, rendered_fixture, vm_sandboxes
 from agentplane.system_tests.k3s.bootstrap import Bootstrap
 from agentplane.testing import tls
-from cluster.cdk8s.agentplane.egress import KUBERNETES_AUDIENCE
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -211,10 +210,10 @@ class K3s:
                 # The runner Pod mounts the runner disk image as an image volume (beta, off by default in 1.34).
                 "--kube-apiserver-arg",
                 "feature-gates=ImageVolume=true",
-                # Sandbox tools use the production Talos audience through the shared proxy template.
+                # Sandbox tools use the Talos audience (egress.KUBERNETES_AUDIENCE) through the shared template.
                 # Keep k3s's default audiences for its own components and accept that projected token too.
                 "--kube-apiserver-arg",
-                f"api-audiences=https://kubernetes.default.svc.cluster.local,k3s,{KUBERNETES_AUDIENCE}",
+                "api-audiences=https://kubernetes.default.svc.cluster.local,k3s,https://localhost:7445",
                 "--kubelet-arg",
                 "feature-gates=ImageVolume=true",
             ],
