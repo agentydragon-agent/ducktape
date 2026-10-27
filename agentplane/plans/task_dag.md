@@ -605,7 +605,7 @@ flowchart LR
     PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
-    CENTRAL_CODEX_SPIKE[Unscheduled: Codex outside the Sandbox drives its exec-server]
+    CENTRAL_CODEX_SPIKE[In progress: experimental central Codex process fixture]
     CENTRAL_CODEX_SPIKE --> HARNESS_PLACEMENT_DESIGN[Decision, unscheduled: sampler placement and state authority]
     POSTGRES_HARNESS_SPIKE[Unscheduled: measure a Postgres-backed headless Codex subset]
     POSTGRES_HARNESS_SPIKE --> HARNESS_PLACEMENT_DESIGN
@@ -636,8 +636,18 @@ cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 
 ### `CENTRAL_CODEX_SPIKE` — a Codex app-server outside the Sandbox drives its exec-server
 
-**Unscheduled spike; operator asked for the research, 2026-10-27.** [Research](sampling_outside_sandboxes.md).
-In the k3s fixture, run the pinned Codex app-server in a control-plane Pod and `environment/add` one Sandbox's
+**In progress; dispatched by operator, 2026-10-27.** Worker `/root/central_codex_spike`,
+2026-10-27: the first runnable slice under `runner/x/central_codex` passed on RBE with real pinned upstream
+processes and a test-only WebSocket relay ([evidence](../debug/central_codex_sampling.md)). An explicit host
+loss policy records unknown effects and interrupts the turn; upstream yielded output alone is not terminal
+failure evidence. The operator selected experimental `x/` scope; flag gating is
+optional and Codex code-mode-only support is acceptable. This slice covers routing, instruction loading,
+credential environment separation and retained conversation reads after executor process loss. It does not
+complete the separate failure-domain, Gateway authorization, spend-attribution or latency gates below.
+Model-exchange frontend work is lower priority because partial Langfuse linkage already exists; it is not a
+gate for this spike. [Research](sampling_outside_sandboxes.md).
+
+Remaining full-spike gates: in the k3s fixture, run the pinned Codex app-server in a control-plane Pod and `environment/add` one Sandbox's
 `codex exec-server`, reached through a Runner Gateway WebSocket tunnel over the runner's outbound connection.
 Drive a scripted GPT-6 code-mode turn: a cell running `tools.exec_command` and `tools.apply_patch`, a
 `view_image`, and AGENTS.md read from the Sandbox's workspace. Check that the Sandbox needs no LLM ingress
