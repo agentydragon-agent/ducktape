@@ -1674,6 +1674,78 @@ fn global_receiver_path(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GlobalMutationPath {
+    Unrelated,
+    Descendant,
+    Identity,
+    Prototype,
+}
+
+// This classifies syntactic evidence only. A descendant is not proven
+// disjoint: its complete alias integrity remains the author's premise.
+fn global_mutation_path(
+    value: &ValueExpr,
+    names: &BTreeSet<&str>,
+    bindings: &BTreeSet<Id>,
+) -> GlobalMutationPath {
+    use GlobalMutationPath::*;
+    match value {
+        ValueExpr::Binding(id) if !bindings.contains(id) => match id.0.as_ref() {
+            name if names.contains(name) => Identity,
+            "document" => Descendant,
+            "Window" | "EventTarget" | "Object" | "Document" | "HTMLDocument" => Prototype,
+            _ => Unrelated,
+        },
+        ValueExpr::Member(receiver, property, _) => {
+            match global_mutation_path(receiver, names, bindings) {
+                Unrelated => Unrelated,
+                Prototype => Prototype,
+                Identity | Descendant => match property.as_deref() {
+                    Some(
+                        "__proto__" | "prototype" | "constructor" | "Window" | "EventTarget"
+                        | "Object" | "Document" | "HTMLDocument",
+                    ) => Prototype,
+                    Some(
+                        "globalThis" | "global" | "window" | "self" | "frames" | "top" | "parent"
+                        | "defaultView",
+                    ) => Identity,
+                    _ => Descendant,
+                },
+            }
+        }
+        _ => Unrelated,
+    }
+}
+
+fn stored_global_alias(
+    value: &ValueExpr,
+    names: &BTreeSet<&str>,
+    bindings: &BTreeSet<Id>,
+    include_prototypes: bool,
+) -> bool {
+    match global_mutation_path(value, names, bindings) {
+        GlobalMutationPath::Identity => true,
+        GlobalMutationPath::Prototype => include_prototypes,
+        GlobalMutationPath::Descendant => false,
+        GlobalMutationPath::Unrelated => match value {
+            ValueExpr::Alternatives(values) => values
+                .iter()
+                .any(|value| stored_global_alias(value, names, bindings, include_prototypes)),
+            ValueExpr::ObjectLiteral(_, properties) => properties
+                .iter()
+                .any(|(_, value)| stored_global_alias(value, names, bindings, include_prototypes)),
+            ValueExpr::Member(receiver, _, _) => {
+                stored_global_alias(receiver, names, bindings, include_prototypes)
+            }
+            ValueExpr::Call(_, args, _) | ValueExpr::New(_, args, _) => args
+                .iter()
+                .any(|value| stored_global_alias(value, names, bindings, include_prototypes)),
+            _ => false,
+        },
+    }
+}
+
 struct ExecutionIndex {
     owner: SourceUnitOrdinal,
     current: Option<u32>,
@@ -2600,10 +2672,34 @@ impl ExecutionIndex {
                         .flat_map(|callable| &callable.callback_result_writes),
                 )
                 .any(|write| {
-                    global_receiver_path(&write.receiver, &index.global_object_names)
-                        && write.property.as_deref().is_none_or(|property| {
-                            matches!(property, "__proto__" | "prototype" | "constructor")
-                        })
+                    let path = global_mutation_path(
+                        &write.receiver,
+                        &index.global_object_names,
+                        &bindings.0,
+                    );
+                    // A visible stored back-alias defeats the descendant
+                    // distinction even when its receiver is an ordinary object.
+                    // Prototype values held by unrelated private objects do
+                    // not themselves expose or mutate a global-rooted path.
+                    if stored_global_alias(
+                        &write.value,
+                        &index.global_object_names,
+                        &bindings.0,
+                        path != GlobalMutationPath::Unrelated,
+                    ) {
+                        return true;
+                    }
+                    match write.property.as_deref() {
+                        Some("__proto__" | "prototype" | "constructor") => {
+                            path != GlobalMutationPath::Unrelated
+                                || global_receiver_path(&write.receiver, &index.global_object_names)
+                        }
+                        None => matches!(
+                            path,
+                            GlobalMutationPath::Identity | GlobalMutationPath::Prototype
+                        ),
+                        _ => false,
+                    }
                 });
             if index.dynamic_scope_owners.is_empty()
                 && !index.dynamic_global_member
