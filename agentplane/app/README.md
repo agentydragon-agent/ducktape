@@ -38,8 +38,8 @@ runner control stream and authorized live Runner proxy; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.
 The app is a client of each service for its distinct operation.
 Notifications depends on that backend and Actions, not this app. The app's own state is browser
-sessions and its `thread` table: each Thread, keyed by its Session's ID, with its title, archive state,
-and title automation state; like any state the app holds, these are candidates to move into a dedicated
+sessions and its `thread` table: each Thread, keyed by its Session's ID, with the name and archive
+state an operator sets; like any state the app holds, these are candidates to move into a dedicated
 service ([principles](../docs/principles.md#composable-services-not-a-platform-you-sign-up-for-whole)).
 
 The current bridge's session-scoped runner attachment is implementation state, not
@@ -82,14 +82,13 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   App-level `default_policy_sets` are combined with the selected preset's policy sets by the shared
   Sandbox inventory; Policy Controller materializes the resulting grants.
 - `threads/`: Threads over the History Service. The app's database holds each Thread's identity,
-  the name and archive state an operator sets, and its title automation state (`Thread`, `models.py`). Everything folded from a Session's events (summaries, entities,
-  payload chunks, evidence) is the History Service's, read over its gRPC API (`summaries.py`,
-  `view/`) or replicated by Electric from its database. `history_watch.py` follows the History
-  Service's watch: `HistoryWatch` turns its fold commits into `Channel.THREADS` wake-ups, and
-  `SessionOpenings` opens a Thread for each Session it records, whoever started it. `title_generation.py`
-  reads confirmed user messages and runs the configured app-owned title backend; `store.py`
-  (`ThreadStore`) composes the app database and the History Service; runners push their events to
-  the History Service.
+  the name and archive state an operator sets (`Thread`, `models.py`). Everything folded from a
+  Session's events (summaries, entities, payload chunks, evidence) is the History Service's, read
+  over its gRPC API (`summaries.py`, `view/`) or replicated by Electric from its database.
+  `history_watch.py` follows the History Service's watch: `HistoryWatch` turns its fold commits
+  into `Channel.THREADS` wake-ups, and `SessionOpenings` opens a Thread for each Session it records,
+  whoever started it. `store.py` (`ThreadStore`) composes the app database and the History Service;
+  runners push their events to the History Service.
 - `threads/bridge.py`: browser-facing composition of session operations with archive synchronization.
   `threads/runner_directory.py` resolves a Thread's Sandbox through the Runner Gateway and creates
   UID-fenced clients for operations that need live runner state. The Sandbox page's retained Session
@@ -121,8 +120,8 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   within a 5-second budget, the gRPC health service of the Runner Gateway, History Service and egress
   proxy admin port, the `/healthz` of the Action Service and Notification Service,
   plus Electric's `/v1/health`; a probe that fails or times out is `down` with its
-  reason, never an error response. The optional title backend is not probed. The Kubernetes API is
-  not probed either; the freshness of the live views shows it.
+  reason, never an error response. The Kubernetes API is not probed either; the freshness of the live
+  views shows it.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
 - `frontend/connections/connection_service_client.ts`: generated ConnectionService HTTP/NDJSON message adapters for the consent
   page and OAuth-client settings; the service owns Connections and consent.
@@ -186,16 +185,7 @@ delivering, runner-admitted, or failed state, and
 `GET /sandboxes/{name}/sessions/{id}/opening` checks that durable result. Admission does not mean the
 History Service has projected a Thread yet.
 
-The app-level `auto_title_on_first_message_default` controls the initial value of the new-Session
-form's **Auto-title after the first message** option; Thread and Sandbox presets do not override it.
-When `title_generation` is configured, the app reads confirmed user messages from the History Service
-and calls the configured OpenAI Responses-compatible endpoint. The first-message worker applies a
-generated title only while the Thread is unnamed and the operator has not manually set or cleared one.
-The **Auto-title** thread action can replace an existing title using recent confirmed user messages.
-Both paths store only the generated title and automation state in the app database. The optional
-`token_secret_name` points to a Kubernetes Secret in the app namespace with a `token` key; the app
-mounts it read-only and sends it as a Bearer token. The app's NetworkPolicy admits the configured
-backend host and port. Leaving `title_generation` unset disables the checkbox and action.
+Thread names are set, changed, or cleared explicitly by operators in the thread view.
 
 The app ConfigMap groups browser-safe links under one optional `frontend_config` key.
 `GET /frontend-config` returns that same typed object directly, with only the explicitly whitelisted
@@ -511,7 +501,7 @@ ServiceAccount and explicitly confirm rebinding: the existing client token remai
 future Actions act as the new account. The version-checked update never silently retries a stale
 choice. Unlink instead revokes active/pending authority without deleting history or stopping
 already claimed executions. An ineligible current account is flagged separately from the grant's
-lifecycle status. A Connection's name is edited in place, like a Thread's title: Enter or moving
+lifecycle status. A Connection's name is edited in place, like a Thread's name: Enter or moving
 away commits, Escape restores, and a blank name keeps the stored one.
 
 Each current account has a **View grants** disclosure, reusing the Sandbox bindings list and Action-policy

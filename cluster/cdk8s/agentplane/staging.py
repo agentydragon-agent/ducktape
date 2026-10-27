@@ -377,8 +377,6 @@ ENV = Environment(
         models=STAGING_APP_MODELS,
         action_federation=_ACTION_FEDERATION,
         connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
-        # Title generation is disabled until its History Service API and app ownership are designed.
-        # See https://github.com/agentydragon/ducktape/issues/11817.
     ),
     settle_deltas=True,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),

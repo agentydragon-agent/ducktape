@@ -31,9 +31,6 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   fetchMock.mockImplementation(async (request: Request) => {
-    if (new URL(request.url).pathname === "/threads/form") {
-      return Response.json({ auto_title_on_first_message_default: false, title_generation_available: false });
-    }
     return Response.json({ ...THREAD, ...((await request.clone().json()) as { name: string | null }) });
   });
 });

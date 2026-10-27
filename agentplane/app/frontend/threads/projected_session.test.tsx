@@ -152,9 +152,7 @@ beforeEach(() => {
   noticeInboxes = [];
   vi.spyOn(api, "GET").mockImplementation((async (path: string) => {
     const data =
-      path === "/frontend-config"
-        ? { trace_search: traceSearchSettings, langfuse_search: langfuseSearchSettings }
-        : { auto_title_on_first_message_default: false, title_generation_available: false };
+      path === "/frontend-config" ? { trace_search: traceSearchSettings, langfuse_search: langfuseSearchSettings } : {};
     return { data, response: Response.json(data) };
   }) as never);
   vi.mocked(getThread).mockResolvedValue(THREAD);

@@ -232,11 +232,6 @@ async function render(
         ])
       );
     }
-    if (path === "/threads/form") {
-      return Promise.resolve(
-        Response.json({ auto_title_on_first_message_default: false, title_generation_available: false })
-      );
-    }
     if (/^\/sandboxes\/(startup-test|other-test)\/runner-status$/.test(path)) return runnerStatus();
     const threadPath = /^\/threads\/([^/]+)$/.exec(path);
     if (threadPath && request.method === "GET") {

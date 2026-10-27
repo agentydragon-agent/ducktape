@@ -74,15 +74,8 @@ from agentplane.app.threads.events.debug import (
 )
 from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.threads.runner_directory import SandboxNotReachableError
-from agentplane.app.threads.store import (
-    MAX_PAGE,
-    ConcurrentTitleUpdateError,
-    InvalidPageTokenError,
-    ThreadPage,
-    ThreadStore,
-)
+from agentplane.app.threads.store import MAX_PAGE, InvalidPageTokenError, ThreadPage, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
-from agentplane.app.threads.title_generation import ThreadTitles, TitleGenerationUnavailableError
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
 from agentplane.app.trace_relay import relay_traces
 from agentplane.app.upstream_proxy import UpstreamProxy, response_body
@@ -153,8 +146,6 @@ class AppServices:
     dispatcher_http: UpstreamProxy
     actions_http: UpstreamProxy | None
     connection_http: UpstreamProxy | None
-    auto_title_on_first_message_default: bool = False
-    titles: ThreadTitles | None = None
     frontend_config: FrontendConfig = field(default_factory=FrontendConfig)
     oauth: OAuth | None = field(init=False)
     drain: Drain = field(default_factory=Drain)
@@ -636,22 +627,6 @@ class ThreadRename(BaseModel):
         return value
 
 
-class ThreadForm(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    auto_title_on_first_message_default: bool
-    title_generation_available: bool
-
-
-@threads.get("/form")
-async def thread_form(services: Services) -> ThreadForm:
-    available = services.titles is not None
-    return ThreadForm(
-        auto_title_on_first_message_default=services.auto_title_on_first_message_default and available,
-        title_generation_available=available,
-    )
-
-
 @threads.get("")
 async def list_threads(
     store: Store,
@@ -714,22 +689,6 @@ async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
 @threads.patch("/{thread_id}")
 async def rename_thread(store: Store, thread_id: UUID, body: ThreadRename) -> ThreadView:
     return await store.rename(thread_id, body.name)
-
-
-@threads.post("/{thread_id}/auto-title")
-async def auto_title_thread(services: Services, thread_id: UUID) -> ThreadView:
-    if services.titles is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "automatic Thread titles are not configured")
-    try:
-        return await services.titles.auto_title(thread_id)
-    except ValueError as error:
-        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
-    except TitleGenerationUnavailableError as error:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from error
-    except ConcurrentTitleUpdateError as error:
-        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
-    except (httpx.HTTPError, OSError) as error:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "the title backend could not generate a title") from error
 
 
 @threads.post("/{thread_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
@@ -1142,8 +1101,6 @@ def create_app(
     operator_sessions: OperatorSessionStore,
     notifications: NotificationsOperatorClient,
     system_status: SystemStatusChecker,
-    auto_title_on_first_message_default: bool = False,
-    titles: ThreadTitles | None = None,
     frontend_config: FrontendConfig | None = None,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
@@ -1213,8 +1170,6 @@ def create_app(
         dispatcher_http=dispatcher_http,
         actions_http=actions_http,
         connection_http=connection_http,
-        auto_title_on_first_message_default=auto_title_on_first_message_default,
-        titles=titles,
         frontend_config=frontend_config if frontend_config is not None else FrontendConfig(),
     )
     app.state.services = services

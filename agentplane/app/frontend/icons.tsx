@@ -29,7 +29,6 @@ import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
 import IconSearch from "@tabler/icons-react/dist/esm/icons/IconSearch.mjs";
 import IconSend from "@tabler/icons-react/dist/esm/icons/IconSend.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
-import IconSparkles from "@tabler/icons-react/dist/esm/icons/IconSparkles.mjs";
 import IconTrash from "@tabler/icons-react/dist/esm/icons/IconTrash.mjs";
 import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
 import IconZoomCode from "@tabler/icons-react/dist/esm/icons/IconZoomCode.mjs";
@@ -63,7 +62,6 @@ export {
   IconSearch,
   IconSend,
   IconSettings,
-  IconSparkles,
   IconTrash,
   IconX,
   IconZoomCode,

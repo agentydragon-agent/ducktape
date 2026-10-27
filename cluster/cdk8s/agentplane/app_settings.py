@@ -10,7 +10,7 @@ from pydantic import AnyHttpUrl
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.presets import SandboxPreset, ThreadPreset
-from agentplane.app.settings import AppSettingsConfig, FrontendConfig, TitleGenerationSettings
+from agentplane.app.settings import AppSettingsConfig, FrontendConfig
 from agentplane.runner.harness import Harness
 
 # The names of the objects other modules create. `settings()` below grants the public-coder
@@ -100,15 +100,9 @@ def settings(
     action_federation: ActionFederationSettings,
     public_coder_policy_sets: list[str],
     default_policy_sets: Set[str],
-    auto_title_on_first_message_default: bool = False,
-    title_generation: TitleGenerationSettings | None = None,
     frontend_config: FrontendConfig | None = None,
 ) -> AppSettingsConfig:
     optional_configuration: dict[str, object] = {}
-    if auto_title_on_first_message_default:
-        optional_configuration["auto_title_on_first_message_default"] = True
-    if title_generation is not None:
-        optional_configuration["title_generation"] = title_generation
     if frontend_config is not None:
         optional_configuration["frontend_config"] = frontend_config
     return AppSettingsConfig(

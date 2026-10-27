@@ -1,4 +1,4 @@
-import { Button, Checkbox, Group, Paper, Select, Stack, Textarea, TextInput } from "@mantine/core";
+import { Button, Group, Paper, Select, Stack, Textarea, TextInput } from "@mantine/core";
 import { type JSX, useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
@@ -33,7 +33,7 @@ export function NewSessionForm({
   /** Whether the Sandbox can take a Session now and no earlier Open is still unconfirmed. */
   startable: boolean;
   creating: boolean;
-  onStart: (spec: SessionSpec, setupScript: string, autoTitleOnFirstMessage: boolean) => void;
+  onStart: (spec: SessionSpec, setupScript: string) => void;
   onClose: () => void;
   onError: (message: string) => void;
 }): JSX.Element {
@@ -41,9 +41,6 @@ export function NewSessionForm({
   const [instructions, setInstructions] = useState("");
   const [cwdTemplate, setCwdTemplate] = useState("/state/workspaces/{session_id}");
   const [setupScript, setSetupScript] = useState("");
-  const [autoTitleOnFirstMessage, setAutoTitleOnFirstMessage] = useState(false);
-  const [titleGenerationAvailable, setTitleGenerationAvailable] = useState(false);
-  const [titleSettingsLoaded, setTitleSettingsLoaded] = useState(false);
   const [inheritsDefaults, setInheritsDefaults] = useState(false);
   const [presetDefaults, setPresetDefaults] = useState<LoadedPresetDefaults | null>(null);
   // Launch-form offerings; existing threads retain their harness and model.
@@ -62,31 +59,6 @@ export function NewSessionForm({
       }
       if (data) setModelCatalog(data);
     })();
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const { data, error: failure } = await api.GET("/threads/form");
-        if (cancelled) return;
-        if (failure) {
-          reportError(displayableError(failure));
-          return;
-        }
-        if (data) {
-          setTitleGenerationAvailable(data.title_generation_available);
-          setAutoTitleOnFirstMessage(data.auto_title_on_first_message_default);
-        }
-      } catch (reason: unknown) {
-        if (!cancelled) reportError(displayableError(reason));
-      } finally {
-        if (!cancelled) setTitleSettingsLoaded(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   useEffect(() => {
@@ -204,20 +176,13 @@ export function NewSessionForm({
             />
           </DisclosureBody>
         </Disclosure>
-        {titleGenerationAvailable && (
-          <Checkbox
-            label="Auto-title after the first message"
-            checked={autoTitleOnFirstMessage}
-            onChange={(event) => setAutoTitleOnFirstMessage(event.currentTarget.checked)}
-          />
-        )}
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
             Close
           </Button>
           <Button
             loading={creating}
-            disabled={!startable || !model || !titleSettingsLoaded}
+            disabled={!startable || !model}
             onClick={() =>
               model &&
               onStart(
@@ -228,8 +193,7 @@ export function NewSessionForm({
                   reasoningEffort: effort,
                   instructions,
                 } as JsonValue),
-                setupScript,
-                autoTitleOnFirstMessage
+                setupScript
               )
             }
           >

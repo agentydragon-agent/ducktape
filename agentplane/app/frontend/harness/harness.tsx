@@ -2467,14 +2467,6 @@ routes.push(
   ],
   [
     "GET",
-    /^\/threads\/form$/,
-    () => ({
-      auto_title_on_first_message_default: false,
-      title_generation_available: true,
-    }),
-  ],
-  [
-    "GET",
     /^\/models$/,
     () => ({
       models: [

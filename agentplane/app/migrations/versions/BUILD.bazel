@@ -38,6 +38,7 @@ exports_files(
         "0034_thread_resume_drop.py",
         "0035_event_log_into_thread.py",
         "0036_auto_thread_titles.py",
+        "0037_drop_auto_thread_titles.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -312,6 +313,15 @@ py_library(
 py_library(
     name = "0036_auto_thread_titles",
     srcs = ["0036_auto_thread_titles.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0037_drop_auto_thread_titles",
+    srcs = ["0037_drop_auto_thread_titles.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",
