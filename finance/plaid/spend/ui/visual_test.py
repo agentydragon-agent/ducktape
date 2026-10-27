@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -232,6 +232,50 @@ def _example_sustainability(variant: str = "ready") -> dict[str, object]:
             "No income outside observed spending and portfolio sources is represented.",
         ],
     }
+
+
+def _sustainability_dashboard(*windows: dict[str, object]) -> dict[str, object]:
+    return {"default_window_days": 90, "windows": list(windows)}
+
+
+def _example_sustainability_window(days: int) -> dict[str, object]:
+    result = _example_sustainability()
+    if days == 90:
+        return result
+    mandatory, flexible, provisional = (200_000, 100_000, 10_000) if days == 30 else (3_000_000, 2_000_000, 300_000)
+    total = mandatory + flexible + provisional
+    annual = int((Decimal(total) * Decimal("365.2425") / days).quantize(Decimal(1)))
+    funding = int((Decimal(annual) / Decimal("0.88")).quantize(Decimal(1)))
+    dates = (
+        ("2026-10-10", "2026-10-11", "2026-10-12", "2026-10-13", "2026-10-14")
+        if days == 30
+        else ("2026-10-13", "2026-10-14")
+    )
+    result.update(
+        window_days=days,
+        covered_days=days,
+        available_windows_days=[30, 90, 365],
+        period_start=(date(2026, 10, 15) - timedelta(days=days)).isoformat(),
+        mandatory_minor_units=mandatory,
+        flexible_minor_units=flexible,
+        provisional_minor_units=provisional,
+        spending_minor_units=total,
+        annualized_spending_minor_units=annual,
+        estimated_annual_draw_minor_units=funding,
+        spending_draw_rate=annual / 125_000_000,
+        tax_adjusted_draw_rate=funding / 125_000_000,
+        history=[
+            {
+                "date": day,
+                "covered_days": days,
+                "annualized_spending_minor_units": annual,
+                "spending_draw_rate": annual / 125_000_000,
+                "tax_adjusted_draw_rate": funding / 125_000_000,
+            }
+            for day in dates
+        ],
+    )
+    return result
 
 
 def _example_sustainability_with_partial_account_history() -> dict[str, object]:
@@ -807,14 +851,9 @@ def dashboard_url() -> Iterator[str]:
             rows=shown,
         )
 
-    @app.get("/api/v1/sustainability")
-    def sustainability(window_days: int | None = None) -> dict[str, object]:
-        days = window_days or 90
-        result = _example_sustainability()
-        result["window_days"] = days
-        result["covered_days"] = days
-        result["period_start"] = "2026-09-15" if days == 30 else "2026-07-17"
-        return result
+    @app.get("/api/v1/sustainability/windows")
+    def sustainability() -> dict[str, object]:
+        return _sustainability_dashboard(*(_example_sustainability_window(days) for days in (30, 90, 365)))
 
     app.mount("/static", StaticFiles(directory=_UI_DIR))
     with serve_app_sync(app) as url:
@@ -1211,7 +1250,7 @@ async def test_sustainability_experimental_render(
     await source_details.locator("summary").click()
     await expect(page.get_by_text("Synthetic investment source", exact=True)).to_be_visible()
     await source_details.locator("summary").click()
-    assert any(url.endswith("/api/v1/sustainability") for url in requests)
+    assert any(url.endswith("/api/v1/sustainability/windows") for url in requests)
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     await view.capture(
         f"sustainability-ready-{width}",
@@ -1240,7 +1279,7 @@ async def test_sustainability_experimental_render(
         await expect(tooltip).to_be_hidden()
 
     history = page.get_by_role("region", name="Spending and funding history")
-    await expect(history.get_by_text("90-day trailing average, annualized", exact=True)).to_be_visible()
+    await expect(history.get_by_label("Show 90-day average")).to_be_checked()
     await expect(history.get_by_text("Spending-only draw rate", exact=True)).to_have_count(0)
     include_taxes = history.get_by_label("Include withdrawal taxes in dollar amounts")
     await expect(include_taxes).to_be_checked()
@@ -1290,12 +1329,113 @@ async def test_sustainability_experimental_render(
         await _expect_tooltip_hidden(scenario_tooltip)
     view.errors.assert_none(context="Sustainability")
 
-    async with page.expect_response(lambda response: "window_days=30" in response.url):
-        await page.get_by_text("30 days", exact=True).click()
+    request_count = len(requests)
+    await page.get_by_text("30 days", exact=True).click()
     await expect(page.get_by_text("30 of 30 days covered", exact=False)).to_be_visible()
-    await expect(history.get_by_text("30-day trailing average, annualized", exact=True)).to_be_visible()
-    assert any("/api/v1/sustainability?window_days=30" in url for url in requests)
+    await expect(history.get_by_label("Show 90-day average")).to_be_checked()
+    assert len(requests) == request_count
     view.errors.assert_none(context="Sustainability")
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+async def test_sustainability_graph_visibility_is_independent_of_details(
+    page: Page, view: VisualPage, dashboard_url: str, width: int
+) -> None:
+    await page.set_viewport_size({"width": width, "height": 960})
+    await page.goto(f"{dashboard_url}/#/sustainability", wait_until="domcontentloaded")
+    history = page.get_by_role("region", name="Spending and funding history")
+    details = page.get_by_role("region", name="Spending details", exact=True)
+    canvas = history.get_by_role("img")
+    await expect(canvas).to_be_visible()
+    await canvas.evaluate("canvas => { canvas.dataset.preserved = 'yes'; }")
+    await history.get_by_label("Show 90-day average").uncheck()
+    await expect(details.get_by_role("heading", name="90-day estimate", exact=True)).to_be_visible()
+    await details.get_by_text("30 days", exact=True).click()
+    await expect(details.get_by_role("heading", name="30-day estimate", exact=True)).to_be_visible()
+    await expect(details.get_by_text("$2,000", exact=True)).to_be_visible()
+    await expect(history.get_by_label("Show 90-day average")).not_to_be_checked()
+    async with page.expect_response(lambda response: response.url.endswith("/api/v1/sustainability/windows")):
+        await page.get_by_role("button", name="Refresh", exact=True).click()
+    await expect(page.get_by_role("button", name="Refresh", exact=True)).to_be_enabled()
+    await expect(history.get_by_label("Show 90-day average")).not_to_be_checked()
+    await expect(canvas).to_have_attribute("data-preserved", "yes")
+    await expect(page.get_by_role("region", name="Portfolio used in the estimate")).to_have_count(1)
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"sustainability-independent-window-controls-{width}",
+        label=f"{width}px 30-day details with the 90-day graph curve hidden",
+        full_page=True,
+        animations="disabled",
+    )
+    await history.get_by_label("Show 30-day average").uncheck()
+    await history.get_by_label("Show 365-day average").uncheck()
+    await expect(history.get_by_role("img")).to_have_count(0)
+    await expect(details.get_by_role("heading", name="30-day estimate", exact=True)).to_be_visible()
+    await history.get_by_label("Show 90-day average").check()
+    await expect(history.get_by_role("img")).to_be_visible()
+    view.errors.assert_none(context="Independent sustainability controls")
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+async def test_sustainability_shorter_curve_survives_missing_yearly_history(
+    page: Page, view: VisualPage, dashboard_url: str, width: int
+) -> None:
+    async def serve_windows(route: Route) -> None:
+        yearly = _example_sustainability()
+        yearly.update(window_days=365, history=[])
+        await route.fulfill(
+            json=_sustainability_dashboard(_example_sustainability_window(30), _example_sustainability(), yearly)
+        )
+
+    await page.route("**/api/v1/sustainability*", serve_windows)
+    await page.set_viewport_size({"width": width, "height": 960})
+    await page.goto(f"{dashboard_url}/#/sustainability?window_days=365", wait_until="domcontentloaded")
+    history = page.get_by_role("region", name="Spending and funding history")
+    await expect(history.get_by_role("img")).to_be_visible()
+    await expect(page.get_by_text("Partial window · 90/365 days", exact=True)).to_be_visible()
+    await expect(history.get_by_text("History requires at least 365 consecutive days", exact=False)).to_be_visible()
+    await view.capture(
+        f"sustainability-missing-yearly-history-{width}",
+        label=f"{width}px shorter moving averages remain available with missing yearly history",
+        full_page=True,
+        animations="disabled",
+    )
+    view.errors.assert_none(context="Missing yearly sustainability history")
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+async def test_sustainability_shared_history_tooltip_dates(
+    page: Page, view: VisualPage, dashboard_url: str, width: int
+) -> None:
+    async def serve_single_endpoint(route: Route) -> None:
+        windows = [_example_sustainability_window(days) for days in (30, 90, 365)]
+        for window in windows:
+            history = window["history"]
+            assert isinstance(history, list)
+            window["history"] = history[-1:]
+        await route.fulfill(json=_sustainability_dashboard(*windows))
+
+    await page.route("**/api/v1/sustainability*", serve_single_endpoint)
+    await page.set_viewport_size({"width": width, "height": 960})
+    await page.goto(f"{dashboard_url}/#/sustainability", wait_until="domcontentloaded")
+    canvas = page.get_by_role("img", name="Annual funding including taxes by day")
+    await expect(canvas).to_be_visible()
+    bounds = await canvas.bounding_box()
+    assert bounds is not None
+    await canvas.hover(position={"x": bounds["width"] / 2, "y": bounds["height"] / 2})
+    tooltip = page.get_by_role("tooltip", name="History ending October 14, 2026")
+    await expect(tooltip).to_be_visible()
+    await expect(tooltip).to_contain_text("30-day window · Sep 15, 2026 \N{EN DASH} Oct 14, 2026")
+    await expect(tooltip).to_contain_text("90-day window · Jul 17, 2026 \N{EN DASH} Oct 14, 2026")
+    await expect(tooltip).to_contain_text("365-day window · Oct 15, 2025 \N{EN DASH} Oct 14, 2026")
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"sustainability-shared-history-tooltip-{width}",
+        label=f"{width}px common endpoint with each average's full inclusive dates",
+        full_page=True,
+        animations="disabled",
+    )
+    view.errors.assert_none(context="Sustainability shared history tooltip")
 
 
 @pytest.mark.parametrize("width", [1280, 390])
@@ -1308,7 +1448,7 @@ async def test_sustainability_window_survives_reload_and_history(page: Page, das
     await page.goto(f"{dashboard_url}/#/sustainability?window_days=30", wait_until="domcontentloaded")
     await expect(page.get_by_text("30 of 30 days covered", exact=False)).to_be_visible()
     assert requests
-    assert all("window_days=30" in url for url in requests)
+    assert all(url.endswith("/api/v1/sustainability/windows") for url in requests)
     await page.get_by_text("90 days", exact=True).click()
     await expect(page).to_have_url(f"{dashboard_url}/#/sustainability?window_days=90")
     await expect(page.get_by_text("90 of 90 days covered", exact=False)).to_be_visible()
@@ -1322,7 +1462,7 @@ async def test_sustainability_window_survives_reload_and_history(page: Page, das
     await expect(page).to_have_url(f"{dashboard_url}/#/sustainability?window_days=90")
 
 
-@pytest.mark.parametrize("value", ["", "garbage", "-30", "1.5", "9007199254740992"])
+@pytest.mark.parametrize("value", ["", "garbage", "-30", "1.5", "7", "9007199254740992"])
 async def test_sustainability_invalid_url_window_uses_default(page: Page, dashboard_url: str, value: str) -> None:
     await page.goto(f"{dashboard_url}/#/sustainability?window_days={value}", wait_until="domcontentloaded")
     await expect(page.get_by_text("90 of 90 days covered", exact=False)).to_be_visible()
@@ -1359,26 +1499,11 @@ async def test_sustainability_loading_preserves_layout(
     response_ready.set()
     await expect(skeleton).to_be_hidden()
     await expect(page.get_by_text("90 of 90 days covered", exact=False)).to_be_visible()
-    previous_height = await page.evaluate("document.documentElement.scrollHeight")
-
-    response_ready.clear()
     request_started.clear()
     await page.get_by_text("30 days", exact=True).click()
-    await request_started.wait()
-    await expect(skeleton).to_be_visible()
-    await expect(page.get_by_text("90 of 90 days covered", exact=False)).to_be_hidden()
-    await expect(page.get_by_text("Loading selected window", exact=True)).to_have_count(0)
-    assert await page.evaluate("document.documentElement.scrollHeight") >= previous_height - 1
-    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-    await view.capture(
-        f"sustainability-window-loading-{width}",
-        label=f"{width}px window change preserves page height",
-        full_page=True,
-        animations="disabled",
-    )
-    response_ready.set()
-    await expect(skeleton).to_be_hidden()
     await expect(page.get_by_text("30 of 30 days covered", exact=False)).to_be_visible()
+    await expect(skeleton).to_be_hidden()
+    assert not request_started.is_set()
 
     response_ready.clear()
     request_started.clear()
@@ -1407,7 +1532,7 @@ async def test_sustainability_partial_window_has_no_startup_chart(
             spending_minor_units=610_000,
         )
         result["history"] = []
-        await route.fulfill(json=result)
+        await route.fulfill(json=_sustainability_dashboard(result))
 
     await page.route("**/api/v1/sustainability*", serve_partial)
     await page.set_viewport_size({"width": width, "height": height})
@@ -1432,7 +1557,7 @@ async def test_sustainability_account_history_coverage_render(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
     async def serve_partial_coverage(route: Route) -> None:
-        await route.fulfill(json=_example_sustainability_with_partial_account_history())
+        await route.fulfill(json=_sustainability_dashboard(_example_sustainability_with_partial_account_history()))
 
     await page.route("**/api/v1/sustainability*", serve_partial_coverage)
     await page.set_viewport_size({"width": width, "height": height})
@@ -1485,7 +1610,7 @@ async def test_sustainability_history_survives_current_coverage_gap(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
     async def serve_historical_gap(route: Route) -> None:
-        await route.fulfill(json=_example_sustainability_with_historical_coverage_gap())
+        await route.fulfill(json=_sustainability_dashboard(_example_sustainability_with_historical_coverage_gap()))
 
     await page.route("**/api/v1/sustainability*", serve_historical_gap)
     await page.set_viewport_size({"width": width, "height": height})
@@ -1499,7 +1624,7 @@ async def test_sustainability_history_survives_current_coverage_gap(
     await expect(coverage.get_by_role("alert")).to_contain_text("Example new account (5 days unavailable)")
 
     history = page.get_by_role("region", name="Spending and funding history")
-    await expect(history.get_by_text("90-day trailing average, annualized", exact=True)).to_be_visible()
+    await expect(history.get_by_label("Show 90-day average")).to_be_checked()
     await expect(history.get_by_role("img", name="Annual funding including taxes by day")).to_be_visible()
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     view.errors.assert_none(context="Sustainability current coverage gap with historical values")
@@ -1513,7 +1638,7 @@ async def test_sustainability_history_survives_current_coverage_gap(
 
 async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, dashboard_url: str) -> None:
     async def serve_ready(route: Route) -> None:
-        await route.fulfill(json=_example_sustainability())
+        await route.fulfill(json=_sustainability_dashboard(_example_sustainability()))
 
     await touch_page.route("**/api/v1/sustainability*", serve_ready)
     await touch_page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -1546,7 +1671,7 @@ async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, d
 
 async def test_sustainability_short_gauge_fill_render(page: Page, view: VisualPage, dashboard_url: str) -> None:
     async def serve_low_draw(route: Route) -> None:
-        await route.fulfill(json=_example_sustainability("low_draw"))
+        await route.fulfill(json=_sustainability_dashboard(_example_sustainability("low_draw")))
 
     await page.route("**/api/v1/sustainability*", serve_low_draw)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -1567,7 +1692,7 @@ async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
     page: Page, view: VisualPage, dashboard_url: str
 ) -> None:
     async def serve_tax_unmodeled(route: Route) -> None:
-        await route.fulfill(json=_example_sustainability("tax_unmodeled"))
+        await route.fulfill(json=_sustainability_dashboard(_example_sustainability("tax_unmodeled")))
 
     await page.route("**/api/v1/sustainability*", serve_tax_unmodeled)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -1603,7 +1728,7 @@ async def test_sustainability_stale_and_unavailable_render(
     page: Page, view: VisualPage, dashboard_url: str, variant: str, width: int, height: int
 ) -> None:
     async def serve_variant(route: Route) -> None:
-        await route.fulfill(json=_example_sustainability(variant))
+        await route.fulfill(json=_sustainability_dashboard(_example_sustainability(variant)))
 
     await page.route("**/api/v1/sustainability*", serve_variant)
     await page.set_viewport_size({"width": width, "height": height})
@@ -1618,7 +1743,7 @@ async def test_sustainability_stale_and_unavailable_render(
     if variant == "stale":
         await page.get_by_text("Synthetic valuation has not refreshed recently.", exact=True).wait_for()
         await expect(page.get_by_text("46 days old", exact=False)).to_be_visible()
-        await expect(page.get_by_text("Current data issues", exact=True)).to_be_visible()
+        await expect(page.get_by_text("90-day estimate issues", exact=True)).to_be_visible()
     else:
         await expect(page.get_by_text("Synthetic investment source", exact=True)).to_be_visible()
         await expect(page.get_by_text("Synthetic cash source", exact=True)).to_be_visible()

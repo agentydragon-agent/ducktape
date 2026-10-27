@@ -141,14 +141,21 @@ is tax-inclusive funding divided by current eligible portfolio value, assuming n
 tax assumption, funding and withdrawal percentages remain unavailable; consumption amounts are still available.
 The reference markers are scenarios, not guarantees of lifetime sustainability.
 
-The history chart labels its selected trailing simple moving average and annualization explicitly. It draws one
-curve, defaulting to annual funding including withdrawal taxes. A local switch changes dollar labels to annual
+`GET /api/v1/sustainability/windows` returns all configured windows from one transaction snapshot,
+portfolio valuation and observation time. The page overlays their annualized trailing simple moving averages;
+individual visibility checkboxes control curves independently of the spending-detail window selector below the graph.
+That selector changes the headline gauge, scenario comparisons, spending breakdown and account-history coverage.
+Portfolio valuation, tax assumptions and graph visibility remain shared. Detail selection is retained in the hash URL
+and switches without fetching another snapshot.
+
+The chart defaults to annual funding including withdrawal taxes. A local switch changes dollar labels to annual
 spending excluding taxes. Withdrawal percentages remain tax-inclusive in both modes. Dollar and percentage axes
-share the same canonical rate bounds and tick positions, fitted to the plotted values and reference scenarios with
-padding instead of anchoring at zero; the dollar conversion includes the tax fraction when
-showing consumption. The switch cannot create a different apparent volatility or change the implied withdrawal
-percentage. Tooltips show the inclusive window's start and end dates with years, and separate spending, estimated
-withdrawal taxes, gross funding and the required percentage.
+share the same canonical rate bounds and tick positions, fitted to visible curves and reference scenarios with
+padding instead of anchoring at zero; the dollar conversion includes the tax fraction when showing consumption.
+The switch cannot create a different apparent volatility or change the implied withdrawal percentage.
+Tooltips compare a common endpoint with each curve's own inclusive dates including years, spending,
+estimated withdrawal taxes, gross funding and required percentage. Curves retain independent startup dates and
+coverage gaps; missing longer-window history does not truncate shorter-window curves.
 Without a tax model, explicitly selecting spending shows dollars alone, with no reference-rate lines or percentage
 axis. This linear conversion relies on the current fixed effective tax fraction and current portfolio denominator.
 

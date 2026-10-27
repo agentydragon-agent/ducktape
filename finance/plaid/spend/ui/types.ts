@@ -5,6 +5,7 @@ export type CardView = components["schemas"]["CardView"];
 export type SpendView = components["schemas"]["SpendView"];
 export type SpendConfiguration = components["schemas"]["SpendConfigurationView"];
 export type TransactionsView = components["schemas"]["SpendTransactionsView"];
+export type SustainabilityDashboard = components["schemas"]["SustainabilityDashboard"];
 export type SustainabilityView = components["schemas"]["SustainabilityView"];
 export type SustainabilityPortfolio = SustainabilityView["portfolio"];
 export type SustainabilitySource = SustainabilityPortfolio["sources"][number];

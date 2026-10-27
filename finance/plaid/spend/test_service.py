@@ -328,6 +328,9 @@ async def test_report_day_and_disabled_sustainability_use_zone_without_allowance
 
     assert disabled.status == "disabled"
     assert disabled.time_zone == zone.key
+    dashboard = await service.read_sustainability_dashboard()
+    assert dashboard.windows[0].status == "disabled"
+    assert dashboard.windows[0].time_zone == zone.key
 
 
 def test_configuration_view_lists_one_off_rules_without_account_ids() -> None:
@@ -683,13 +686,20 @@ async def test_read_sustainability_uses_postgres_transactions_for_each_window(
         )
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
 
+    portfolio_reads = 0
+
     async def read_portfolio(_now: datetime) -> PortfolioView:
+        nonlocal portfolio_reads
+        portfolio_reads += 1
         return _synthetic_portfolio()
 
     monkeypatch.setattr(service, "_read_current_portfolio", read_portfolio)
     async with service.lifespan():
         default = await service.read_sustainability()
         alternative = await service.read_sustainability(30)
+        portfolio_reads = 0
+        dashboard = await service.read_sustainability_dashboard()
+        assert portfolio_reads == 1
 
     assert default.status == "ready"
     assert default.window_days == 90
@@ -717,7 +727,15 @@ async def test_read_sustainability_uses_postgres_transactions_for_each_window(
     assert alternative.provisional_minor_units == 500
     assert alternative.spending_minor_units == 3_000
     assert alternative.history[-1].covered_days == 30
-    serialized = default.model_dump_json()
+    assert dashboard.default_window_days == 90
+    assert [window.window_days for window in dashboard.windows] == [30, 90]
+    assert {window.generated_at for window in dashboard.windows} == {dashboard.windows[0].generated_at}
+    assert dashboard.windows[0].portfolio == dashboard.windows[1].portfolio
+    assert dashboard.windows[0].spending_minor_units == alternative.spending_minor_units
+    assert dashboard.windows[1].spending_minor_units == default.spending_minor_units
+    assert dashboard.windows[0].history == alternative.history
+    assert dashboard.windows[1].history == default.history
+    serialized = dashboard.model_dump_json()
     assert spending_account_id not in serialized
     assert "synthetic-private-portfolio-source-id" not in serialized
 

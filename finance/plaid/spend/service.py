@@ -52,6 +52,7 @@ from finance.plaid.spend.models import (
 from finance.plaid.spend.portfolio import CoinbaseClient, read_portfolio
 from finance.plaid.spend.portfolio_models import PortfolioView, SourceValuation
 from finance.plaid.spend.sustainability import (
+    SustainabilityDashboard,
     SustainabilityView,
     calculate_sustainability,
     disabled_view,
@@ -702,14 +703,25 @@ class SpendService:
             return view
 
     async def read_sustainability(self, window_days: int | None = None) -> SustainabilityView:
+        policy = self._configuration.sustainability
+        if policy is not None and window_days is not None and window_days not in policy.display.windows_days:
+            raise ValueError("window must be configured")
+        days = window_days if window_days is not None else policy.display.default_window_days if policy else 90
+        return (await self._read_sustainability_windows([days]))[0]
+
+    async def read_sustainability_dashboard(self) -> SustainabilityDashboard:
+        policy = self._configuration.sustainability
+        return SustainabilityDashboard(
+            default_window_days=policy.display.default_window_days if policy else 90,
+            windows=await self._read_sustainability_windows(policy.display.windows_days if policy else [90]),
+        )
+
+    async def _read_sustainability_windows(self, windows_days: list[int]) -> list[SustainabilityView]:
         now = datetime.now(UTC)
         policy = self._configuration.sustainability
         allowance = self._configuration.allowance
         if policy is None or allowance is None:
-            return disabled_view(now, self._configuration.time_zone.key, self.report_day(now))
-        days = window_days if window_days is not None else policy.display.default_window_days
-        if days not in policy.display.windows_days:
-            raise ValueError("window must be configured")
+            return [disabled_view(now, self._configuration.time_zone.key, self.report_day(now))]
         issues = []
         transactions: list[Transaction] = []
         account_labels = dict(self._configuration.account_labels)
@@ -755,17 +767,20 @@ class SpendService:
         except asyncpg.PostgresError:
             issues.append("The spending source could not be read; totals are unavailable.")
         portfolio = await self._read_current_portfolio(now)
-        return calculate_sustainability(
-            policy,
-            allowance,
-            transactions,
-            portfolio,
-            time_zone=self._configuration.time_zone,
-            now=now,
-            window_days=days,
-            source_issues=issues,
-            account_labels=account_labels,
-        )
+        return [
+            calculate_sustainability(
+                policy,
+                allowance,
+                transactions,
+                portfolio,
+                time_zone=self._configuration.time_zone,
+                now=now,
+                window_days=days,
+                source_issues=issues,
+                account_labels=account_labels,
+            )
+            for days in windows_days
+        ]
 
     def _require_pool(self) -> asyncpg.Pool:
         if self._pool is None:
