@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -619,8 +620,13 @@ func (c Config) validate() error {
 
 func validateHTTPURL(name, raw string) error {
 	parsed, err := url.Parse(raw)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil || parsed.ForceQuery || parsed.RawQuery != "" || parsed.Fragment != "" {
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil || parsed.ForceQuery || parsed.RawQuery != "" || strings.Contains(raw, "#") {
 		return fmt.Errorf("%s must be an absolute HTTP(S) URL without credentials, query, or fragment", name)
+	}
+	if port := parsed.Port(); port != "" {
+		if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+			return fmt.Errorf("%s must use a port between 0 and 65535", name)
+		}
 	}
 	return nil
 }

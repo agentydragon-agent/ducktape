@@ -356,7 +356,11 @@ func TestValidateRejectsUnsafeEndpointForms(t *testing.T) {
 	for _, endpoint := range []string{
 		"https://user:pass@example.test",
 		"https://example.test/path?token=x",
+		"https://example.test/path?",
 		"https://example.test/path#fragment",
+		"https://example.test/path#",
+		"https://example.test:invalid/path",
+		"https://example.test:65536/path",
 	} {
 		t.Run(endpoint, func(t *testing.T) {
 			if err := validateHTTPURL("endpoint", endpoint); err == nil {
@@ -375,7 +379,9 @@ func TestValidateRejectsUnsafeEndpointForms(t *testing.T) {
 func TestFrontendLinksRejectUnsafeEndpoints(t *testing.T) {
 	for _, endpoint := range []string{
 		"http://grafana.example.test/", "https://user:pass@grafana.example.test/",
-		"https://grafana.example.test/?token=secret", "https://grafana.example.test/#fragment", "relative",
+		"https://grafana.example.test/?token=secret", "https://grafana.example.test/?",
+		"https://grafana.example.test/#fragment", "https://grafana.example.test/#",
+		"https://grafana.example.test:65536/", "relative",
 	} {
 		t.Run(endpoint, func(t *testing.T) {
 			c := validTestConfig()
