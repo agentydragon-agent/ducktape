@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NativeSelect } from "@mantine/core";
 
 import {
+  type BudgetSnapshotRequest,
   fetchBudgetSnapshot,
   fetchBudgetSummaryCsv,
   fetchBudgetTransactions,
@@ -28,7 +29,7 @@ const TRAILING_CHOICES = [
 ];
 const MAX_CHOICE_VALUE = "max";
 
-function windowSpecFromChoice(value) {
+function windowSpecFromChoice(value: string): BudgetSnapshotRequest["window"] {
   if (value === MAX_CHOICE_VALUE) return { kind: "since_coverage_start" };
   const months = Number(value.split(":")[1]);
   return { kind: "trailing_months", months };
