@@ -343,6 +343,25 @@ Alternatives to compare:
   Agentplane owns the tool/context loop and persistence; presenting
   a Claude identity does not supply Claude's built-in tool behavior.
 
+### Shared code-mode runtime across providers
+
+Operator direction, 2026-10-27: if the Codex-style central sampler proves useful, evaluate running
+Claude through the same code-mode runtime. Keep one execution/tool lifecycle and Postgres authority,
+with provider adapters for Responses custom-tool items and Messages tool-use/result blocks. A Claude
+adapter could expose JavaScript source through a tool input schema and supply code-mode instructions;
+the appropriate prompt and model behavior still need an experiment. Preserve each provider's opaque
+reasoning/signature state without translating it into the other provider's format.
+
+The desired common surface includes compaction, yielded-cell `wait`, process stdin and interrupts.
+Provider-specific compaction protocols remain adapter responsibilities. Instruction discovery and
+permission behavior need an explicit shared contract; a common JavaScript runtime does not inherit
+Claude Code's built-in behavior. Evaluate actual Claude tool selection, nested calls, wait/stdin,
+interruption and continuation before claiming that this works. The current custom-Claude experiment
+uses an ordinary `append_file` tool and does not establish code-mode model behavior.
+
+This is a future direction within the placement decision, independent of the gated native remote-tools
+investigation. It does not add a prerequisite to the current Codex implementation or authorize a cutover.
+
 ## Next
 
 The completed [combined custom sampler evidence](../debug/postgres_codex_spike.md#combined-compaction-and-controls)

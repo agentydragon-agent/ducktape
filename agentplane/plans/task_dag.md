@@ -702,6 +702,13 @@ preservation of existing identities/history/native state. This owns the central-
 remote-tool or custom-sampler branch; CLI subscription assumptions do not settle that choice. Implementation and
 data-preserving migration nodes follow the chosen design.
 
+Operator direction, 2026-10-27: also evaluate a shared Codex-style code-mode runtime for Claude, with
+provider-specific wire, opaque reasoning and compaction adapters. The execution lifecycle and Postgres
+authority could be common; Claude's tool schema/prompt and actual code-mode behavior need a bounded
+experiment. The required common surface includes compaction, wait, stdin and interrupts. This future
+direction is part of this decision, not a gate for the current Codex extension; the existing Messages
+`append_file` experiment does not establish it. See [shared runtime scope](sampling_outside_sandboxes.md#shared-code-mode-runtime-across-providers).
+
 ### `SANDBOX_FORM_TERMINOLOGY` — distinguish launch presets from runtime templates
 
 **Unscheduled; operator, 2026-10-17 PDT: the new Sandbox form's “Preset” and “Sandbox template”
