@@ -1,0 +1,16 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+
+package(default_visibility = ["//visibility:public"])
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+ts_library(
+    name = "presentation",
+    srcs = ["presentation.ts"],
+    isolated_typecheck = True,
+    tsconfig = ":tsconfig",
+)

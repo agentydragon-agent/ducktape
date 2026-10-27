@@ -26,18 +26,11 @@ js_openapi_schema(
 )
 
 ts_library(
-    name = "pace",
-    srcs = ["pace.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-)
-
-ts_library(
     name = "format",
     srcs = ["format.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
-    deps = [":pace"],
+    deps = ["//aiquota/shared:presentation"],
 )
 
 ts_library(
@@ -57,10 +50,10 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":format",
-        ":pace",
         ":quotas",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//aiquota/shared:presentation",
     ],
 )
 
@@ -171,8 +164,8 @@ aiquota_vitest_test(
     deps = [
         ":fixtures",
         ":format",
-        ":pace",
         "//:node_modules/vitest",
+        "//aiquota/shared:presentation",
     ],
 )
 
