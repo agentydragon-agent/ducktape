@@ -298,6 +298,8 @@ in
       ExecStartPre = "${keyFileSync}/bin/agentplane-key-file-sync --config ${keyFilesFile} --group-id ${toString agentId} --once";
       ExecStart = "${keyFileSync}/bin/agentplane-key-file-sync --config ${keyFilesFile} --group-id ${toString agentId} --interval-seconds 60";
       Restart = "on-failure";
+      # Keep the runner's dependency job pending while a failed initial fetch is retried.
+      RestartMode = "direct";
       RestartSec = "10s";
     };
   };
