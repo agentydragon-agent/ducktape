@@ -67,9 +67,10 @@ wait and the remaining read budget. A deployment with a budget of at most one se
 reads. The caller's earlier deadline also applies.
 
 The result is `completed: true` with `turn` (`turn_id`, `status`, optional `error`) for the first
-completion after the token, or `completed: false` when the local wait expires or History reports its follow deadline, provided
-the caller has not cancelled or exhausted its own deadline. Both carry a new
-`resume_token`. Repeat with it to continue without missing or repeating completions, then use
+completion after the token, or `completed: false` when the wait deadline expires and the caller
+has not cancelled or exhausted its own deadline. A History `DeadlineExceeded` before the wait
+deadline fails the Action. Both results carry a new `resume_token`. Repeat with it to continue
+without missing or repeating completions, then use
 `read_turns` for full messages. A completion token stops at that entry even if its History frame
 contains later completions. Planned History renewal reconnects internally from the latest progress;
 a bare stream EOF or backend failure fails the Action. Tokens encode progress, confer no authority,

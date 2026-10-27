@@ -188,6 +188,7 @@ func (e *Executor) waitForTurn(parent context.Context, args waitForTurnArgs) (Tu
 	}
 	ctx, cancel := context.WithTimeout(readCtx, time.Duration(args.WaitSeconds*float64(time.Second)))
 	defer cancel()
+	deadline, _ := ctx.Deadline()
 	result := TurnWait{ResumeToken: resumeToken(args.Sandbox, args.SessionID, cursor)}
 	for {
 		stream, err := e.history.FollowSession(ctx, &historypb.FollowSessionRequest{SessionId: args.SessionID, Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: cursor}, Kinds: []historypb.EventKind{historypb.EventKind_EVENT_KIND_TURN_COMPLETED}, Follow: true})
@@ -217,7 +218,7 @@ func (e *Executor) waitForTurn(parent context.Context, args waitForTurnArgs) (Tu
 			}
 		}
 		// History can exhaust the propagated deadline before the local context timer fires.
-		if ctx.Err() != nil || status.Code(err) == codes.DeadlineExceeded {
+		if ctx.Err() != nil || (status.Code(err) == codes.DeadlineExceeded && !time.Now().Before(deadline)) {
 			if parent.Err() == nil {
 				return result, nil
 			}

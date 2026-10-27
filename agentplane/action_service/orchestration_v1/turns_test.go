@@ -153,8 +153,8 @@ func TestWaitDeadlineReturnsNewestProgressAndRejectsBareEOF(t *testing.T) {
 	}
 }
 
-// History can report its propagated deadline before the client's context timer fires.
-func TestWaitHistoryDeadlineReturnsNewestProgress(t *testing.T) {
+// History request timeouts before the wait deadline must remain read failures.
+func TestWaitHistoryTimeoutBeforeDeadlineFails(t *testing.T) {
 	for _, renew := range []bool{false, true} {
 		t.Run(map[bool]string{false: "receiving", true: "after_reconnect"}[renew], func(t *testing.T) {
 			f := newFixture(t)
@@ -179,12 +179,8 @@ func TestWaitHistoryDeadlineReturnsNewestProgress(t *testing.T) {
 				}
 				return status.Error(codes.DeadlineExceeded, "test History deadline before client timeout")
 			}
-			got := resultOf[TurnWait](f.attempt(t, f.caller, actionWaitForTurn, turnArguments(t, sandbox, session, map[string]any{"resume_token": resumeToken(sandbox, session, 2), "wait_seconds": 30})))
-			if got.Completed || got.Turn != nil {
-				t.Fatalf("wait = %+v", got)
-			}
-			if cursor, err := resumeCursor(got.ResumeToken, sandbox, session); err != nil || cursor != 9 {
-				t.Errorf("resume = %d, %v", cursor, err)
+			if kind := f.attempt(t, f.caller, actionWaitForTurn, turnArguments(t, sandbox, session, map[string]any{"resume_token": resumeToken(sandbox, session, 2), "wait_seconds": 30})).failure(); kind != "read_failed" {
+				t.Errorf("History timeout failure = %s", kind)
 			}
 		})
 	}
@@ -261,10 +257,11 @@ func TestWaitAuthorizationRetainsReadBudget(t *testing.T) {
 			if got, _ := ctx.Deadline(); !got.Before(deadline) {
 				t.Errorf("follow deadline = %v; want requested wait before %v", got, deadline)
 			}
+			<-ctx.Done()
 			return nil, status.Error(codes.DeadlineExceeded, "test follow open deadline")
 		},
 	}
-	got, err := f.executor.waitForTurn(parent, waitForTurnArgs{Sandbox: sandbox, SessionID: session, ResumeToken: resumeToken(sandbox, session, 2), WaitSeconds: 1})
+	got, err := f.executor.waitForTurn(parent, waitForTurnArgs{Sandbox: sandbox, SessionID: session, ResumeToken: resumeToken(sandbox, session, 2), WaitSeconds: 0.01})
 	if err != nil || got.Completed || got.ResumeToken != resumeToken(sandbox, session, 2) {
 		t.Fatalf("wait = %+v, %v", got, err)
 	}
@@ -303,7 +300,7 @@ func TestWaitDoesNotReopenAfterDeadline(t *testing.T) {
 }
 
 func TestWaitKeepsAuthorizationCallerAndBackendFailures(t *testing.T) {
-	for _, failure := range []string{"authorization_deadline", "caller_cancelled", "backend_unavailable"} {
+	for _, failure := range []string{"authorization_deadline", "caller_cancelled", "backend_unavailable", "backend_deadline"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newFixture(t)
 			sandbox := f.launch(t, "test-wait-failure")
@@ -327,6 +324,9 @@ func TestWaitKeepsAuthorizationCallerAndBackendFailures(t *testing.T) {
 					if failure == "caller_cancelled" {
 						cancel()
 						return nil, status.Error(codes.DeadlineExceeded, "test caller ended")
+					}
+					if failure == "backend_deadline" {
+						return nil, status.Error(codes.DeadlineExceeded, "test internal History timeout")
 					}
 					return nil, status.Error(codes.Unavailable, "test backend failure")
 				},
