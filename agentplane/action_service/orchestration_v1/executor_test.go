@@ -32,7 +32,7 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	launched := resultOf[Launched](f.attempt(t, f.caller, actionLaunchSandbox, `{
 		"name": "test-worker", "template": "test-template", "policy_sets": ["test-extra-policy"],
 		"inbox_tags": ["test-tag"], "bootstrap": "true", "wake_on_send": true, "idle_suspend_after_seconds": 600,
-		"launcher_grants": ["submit_input", "send_message", "open_session"]
+		"launcher_grants": ["submit_input", "send_message", "open_session", "read_turns", "wait_for_turn"]
 	}`))
 	var sandbox sandboxapi.Sandbox
 	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker"}, &sandbox); err != nil {
@@ -41,7 +41,7 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	if launched.Sandbox != (SandboxRef{Name: "test-worker", UID: sandbox.UID}) {
 		t.Errorf("launch answered %v, want the Sandbox %s", launched.Sandbox, sandbox.UID)
 	}
-	if want := []string{"open_session", "send_message", "submit_input"}; !slices.Equal(launched.LauncherGrants, want) {
+	if want := []string{"open_session", "read_turns", "send_message", "submit_input", "wait_for_turn"}; !slices.Equal(launched.LauncherGrants, want) {
 		t.Errorf("launch granted %q, want %q", launched.LauncherGrants, want)
 	}
 	spec := sandbox.Spec
@@ -81,7 +81,7 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	if inbox == nil || !reflect.DeepEqual(inbox.Targets.Sandboxes, []policyapi.SandboxTarget{{Name: "test-worker", UID: sandbox.UID}}) {
 		t.Errorf("the inbox rule is %+v, want send_message to this Sandbox alone", inbox)
 	}
-	if actions == nil || !reflect.DeepEqual(actions.Policy.Actions, map[string]policyapi.ActionNames{testGroup: {"open_session", "submit_input"}}) {
+	if actions == nil || !reflect.DeepEqual(actions.Policy.Actions, map[string]policyapi.ActionNames{testGroup: {"open_session", "read_turns", "submit_input", "wait_for_turn"}}) {
 		t.Fatalf("the Action rule is %+v, want the granted Actions of this group", actions)
 	}
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(actions.Policy.Schema.Raw))
@@ -269,7 +269,7 @@ func TestAnExecutorRefusesAPresetThatCannotFillItsActions(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			binding := catalog.OrchestrationBinding{Description: "d", Namespace: "test", Presets: json.RawMessage(presets)}
-			if _, err := NewExecutor(testGroup, binding, kube, nil, nil); err == nil {
+			if _, err := NewExecutor(testGroup, binding, kube, nil, nil, 30*time.Second); err == nil {
 				t.Error("NewExecutor() accepted the presets")
 			}
 		})

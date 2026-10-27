@@ -53,7 +53,15 @@ def _launcher_grant(sandbox: Body) -> tuple[Body, Body]:
             "type": "action_auto_approve",
             "policy": {
                 "type": "argument_schema",
-                "actions": {actions.ORCHESTRATION_GROUP: ["open_session", "submit_input", "get_session"]},
+                "actions": {
+                    actions.ORCHESTRATION_GROUP: [
+                        "open_session",
+                        "submit_input",
+                        "get_session",
+                        "read_turns",
+                        "wait_for_turn",
+                    ]
+                },
                 "schema": {"type": "object", "required": ["sandbox"], "properties": {"sandbox": {"const": target}}},
             },
         },
@@ -147,6 +155,9 @@ async def test_the_action_service_writes_only_launcher_shaped_grants() -> None:
                 "an inbox rule on an inbox tag": _with(policy_set, (*_INBOX, "targets", "inboxTags"), ["test-tag"]),
                 "an approval of another group's Actions": _with(
                     policy_set, (*_APPROVAL, "actions", "github"), ["create_branch"]
+                ),
+                "an approval of a group Action that does not take a Sandbox": _with(
+                    policy_set, (*_APPROVAL, "actions", actions.ORCHESTRATION_GROUP), ["open_session", "launch_sandbox"]
                 ),
                 "an approval of another Sandbox": _with(policy_set, (*_SANDBOX_SCHEMA, "const"), other),
                 "an approval of any incarnation": _without(policy_set, (*_SANDBOX_SCHEMA, "const", "uid")),

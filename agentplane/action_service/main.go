@@ -223,7 +223,7 @@ func offer(key string, group *catalog.Group, actions map[string]catalog.ActionDe
 // offers. They reach the API server through kube, and call the Session Dispatcher and the History Service.
 func orchestrationExecutors(
 	groups *catalog.Catalog, kube *rest.Config, dispatcher dispatcherpb.SessionDispatcherClient,
-	history historypb.HistoryServiceClient,
+	history historypb.HistoryServiceClient, directWait time.Duration,
 ) (map[string]worker.Executor, error) {
 	scheme := runtime.NewScheme()
 	for _, add := range []func(*runtime.Scheme) error{sandboxapi.AddToScheme, policyapi.AddToScheme} {
@@ -244,7 +244,7 @@ func orchestrationExecutors(
 		if err := offer(key, group, orchestrationv1.Actions()); err != nil {
 			return nil, err
 		}
-		if byGroup[key], err = orchestrationv1.NewExecutor(key, binding, kubeClient, dispatcher, history); err != nil {
+		if byGroup[key], err = orchestrationv1.NewExecutor(key, binding, kubeClient, dispatcher, history, directWait); err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}
 	}
@@ -377,7 +377,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		}
 		defer history.Close()
 		orchestrators, err := orchestrationExecutors(c.ActionGroups, d.Kube,
-			dispatcherpb.NewSessionDispatcherClient(dispatcher), historypb.NewHistoryServiceClient(history))
+			dispatcherpb.NewSessionDispatcherClient(dispatcher), historypb.NewHistoryServiceClient(history), time.Duration(c.DirectWaitSeconds*float64(time.Second)))
 		if err != nil {
 			return err
 		}

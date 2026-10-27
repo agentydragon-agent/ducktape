@@ -10,7 +10,7 @@ leaves room for that replacement. Why it is built this way: the
 An Action group that lets a caller launch Session Sandboxes and drive their Sessions: an MCP client
 such as claude.ai through the MCP edge, or an in-cluster agent with `agentplane actions`. Its
 Actions are `list_launch_presets`, `launch_sandbox`, `open_session`, `submit_input`,
-`interrupt_turn`, `change_model`, `change_reasoning_effort`, `get_session` and `list_sessions`.
+`interrupt_turn`, `change_model`, `change_reasoning_effort`, `get_session`, `list_sessions`, `read_turns` and `wait_for_turn`.
 
 ## The contract
 
@@ -28,8 +28,8 @@ by the Sandbox so that deleting it revokes them. The binding's subject is
 it. Approving a launch approves its grants, and a launch that names none gets none.
 
 **One incarnation.** Every Action on a Sandbox names it by name and UID, and a grant matches only
-that UID. Before each command and `get_session`, the executor rereads the Sandbox and refuses
-another incarnation, since `OpenSession` takes the Sandbox by name alone. `get_session` answers only
+that UID. Before each command and Session read, the executor rereads the Sandbox and refuses
+another incarnation, since `OpenSession` takes the Sandbox by name alone. `get_session`, `read_turns` and `wait_for_turn` answer only
 for a Session that its opening or its history ties to that UID and neither ties to another;
 `list_sessions` finds Sessions by the UID alone, so it still lists them once the Sandbox is deleted.
 
@@ -47,6 +47,35 @@ A launched Sandbox's own account is bound to this deployment's default PolicySet
 launch names. A launch may not name a launcher grant's PolicySet, which would hand another
 Sandbox's launcher grant to the new one.
 
+## Reading and waiting for turns
+
+`read_turns` takes `sandbox` (name and UID), `session_id` and `count` (1–100). It reads
+History's `FollowSession` from the requested number of retained `TURN_STARTED` entries back,
+filtering confirmed user messages, turn starts/completions and item starts/completions. It returns
+`turns` oldest first and an opaque `resume_token` for that Session and Sandbox incarnation.
+Each turn includes `turn_id`, confirmed `input` messages, `tool_calls` (`item_id` and `name`),
+optional terminal `status`/`error`, and optional `final_assistant_message`: the last completed
+assistant-text item. Reasoning and tool output never become that final message. A running turn has
+no terminal status. A removed range makes the read fail rather than return an apparently complete
+transcript.
+
+`wait_for_turn` takes the same Sandbox and Session plus `resume_token` and `wait_seconds`
+(positive, at most 30). It follows only turn completions from that cursor. The executor bounds the
+whole read, including incarnation checks, to the smaller of the requested wait and the deployment's
+`direct_wait_seconds` minus one second for result publication. A deployment with a budget of at most
+one second refuses turn reads. The caller's earlier deadline also applies.
+
+The result is `completed: true` with `turn` (`turn_id`, `status`, optional `error`) for the first
+completion after the token, or `completed: false` when the local wait expires. Both carry a new
+`resume_token`. Repeat with it to continue without missing or repeating completions, then use
+`read_turns` for full messages. A completion token stops at that entry even if its History frame
+contains later completions. Planned History renewal reconnects internally from the latest progress;
+a bare stream EOF or backend failure fails the Action. Tokens encode progress, confer no authority,
+and do not bypass the incarnation check.
+
+Both Actions are launcher-grantable. A launcher grant names the Sandbox incarnation; the executor
+also ties the Session's opening/history to that UID before calling `FollowSession`.
+
 ## Deployment
 
 An environment offers the group with `ActionsProps.orchestration_v1`
@@ -60,3 +89,6 @@ An environment offers the group with `ActionsProps.orchestration_v1`
   Sandbox bound to no launcher grant, and a grant owned by one Sandbox, named for it, whose rules
   name only that incarnation and only this group's Actions. The policy cannot see who called the
   launch, so it bounds what a grant reaches, not who holds it.
+
+Offer new direct tools only after the Action Service and History images implementing them are pinned
+in the environment. Staging's `direct_tools` addition is a separate configuration change.

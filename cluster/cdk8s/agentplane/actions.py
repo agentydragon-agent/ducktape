@@ -74,6 +74,17 @@ ORCHESTRATION_GROUP = "orchestration_v1"
 _PEER_TOKEN_DIR = "/var/run/secrets/actions"
 # The orchestration_v1 executor and its admission policy both name launcher grants `<sandbox>.launcher`.
 _LAUNCHER_SUFFIX = ".launcher"
+_LAUNCHER_ACTIONS = (
+    "open_session",
+    "submit_input",
+    "interrupt_turn",
+    "change_model",
+    "change_reasoning_effort",
+    "get_session",
+    "list_sessions",
+    "read_turns",
+    "wait_for_turn",
+)
 _PEER_TIMEOUT_SECONDS = 15
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
 _DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
@@ -152,6 +163,7 @@ def add_launcher_admission(scope: Construct, namespace: str) -> None:
     schema = "r.policy.schema"
     sandbox = f"{schema}.properties.sandbox"
     const = f"{sandbox}['const']"
+    launcher_actions = ", ".join(f"'{action}'" for action in _LAUNCHER_ACTIONS)
     k8s.KubeValidatingAdmissionPolicy(
         scope,
         "launcher-admission",
@@ -210,7 +222,8 @@ def add_launcher_admission(scope: Construct, namespace: str) -> None:
                         f" && has(r.targets.sandboxes) && size(r.targets.sandboxes) == 1 && has({target}.uid)"
                         f" && {target}.name == {owner}.name && {target}.uid == {owner}.uid)"
                         " || (r.type == 'action_auto_approve' && has(r.policy) && r.policy.type == 'argument_schema'"
-                        f" && r.policy.actions.all(group, group == '{ORCHESTRATION_GROUP}')"
+                        f" && r.policy.actions.all(group, group == '{ORCHESTRATION_GROUP}' &&"
+                        f" r.policy.actions[group].all(action, action in [{launcher_actions}]))"
                         f" && has({schema}) && {schema}.all(key, key in ['type', 'required', 'properties'])"
                         f" && has({schema}.type) && {schema}.type == 'object'"
                         f" && has({schema}.required) && {schema}.required == ['sandbox']"
