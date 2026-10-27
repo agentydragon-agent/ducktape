@@ -41,23 +41,24 @@ type Config struct {
 	RunnerGatewayTokenFile              string                   `mapstructure:"runner_gateway_token_file"`
 	SessionDispatcherTokenFile          string                   `mapstructure:"session_dispatcher_token_file"`
 	SessionDispatcherRequestTimeoutSecs float64                  `mapstructure:"session_dispatcher_request_timeout_s"`
-	SessionDispatcherHTTPURL            string                   `mapstructure:"session_dispatcher_http_url"`
-	HistoryServiceTokenFile             string                   `mapstructure:"history_service_token_file"`
-	HistoryServiceRequestTimeoutSeconds float64                  `mapstructure:"history_service_request_timeout_s"`
-	RunnerGatewayRequestTimeoutSeconds  float64                  `mapstructure:"runner_gateway_request_timeout_s"`
-	RunnerGatewayLifecycleTimeoutSecs   float64                  `mapstructure:"runner_gateway_lifecycle_timeout_s"`
-	LogLevels                           map[string]string        `mapstructure:"log_levels"`
-	Host                                string                   `mapstructure:"host"`
-	Port                                int                      `mapstructure:"port"`
-	Kubeconfig                          string                   `mapstructure:"kubeconfig"`
-	DatabaseURL                         string                   `mapstructure:"database_url"`
-	ElectricURL                         string                   `mapstructure:"electric_url"`
-	EgressAdminTokenFile                string                   `mapstructure:"egress_admin_token_file"`
-	EgressAdminTimeoutSeconds           float64                  `mapstructure:"egress_admin_timeout"`
-	ShutdownTimeoutSeconds              int                      `mapstructure:"shutdown_timeout"`
-	ResyncSeconds                       int                      `mapstructure:"resync_seconds"`
-	TokenAudience                       string                   `mapstructure:"token_audience"`
-	TokenSubjects                       []string                 `mapstructure:"token_subjects"`
+	// CLEANUP(added 2026-10-27): Delete after this image is deployed and cluster/cdk8s/agentplane/app.py drops session_dispatcher_http_url.
+	SessionDispatcherHTTPURL            string            `mapstructure:"session_dispatcher_http_url"`
+	HistoryServiceTokenFile             string            `mapstructure:"history_service_token_file"`
+	HistoryServiceRequestTimeoutSeconds float64           `mapstructure:"history_service_request_timeout_s"`
+	RunnerGatewayRequestTimeoutSeconds  float64           `mapstructure:"runner_gateway_request_timeout_s"`
+	RunnerGatewayLifecycleTimeoutSecs   float64           `mapstructure:"runner_gateway_lifecycle_timeout_s"`
+	LogLevels                           map[string]string `mapstructure:"log_levels"`
+	Host                                string            `mapstructure:"host"`
+	Port                                int               `mapstructure:"port"`
+	Kubeconfig                          string            `mapstructure:"kubeconfig"`
+	DatabaseURL                         string            `mapstructure:"database_url"`
+	ElectricURL                         string            `mapstructure:"electric_url"`
+	EgressAdminTokenFile                string            `mapstructure:"egress_admin_token_file"`
+	EgressAdminTimeoutSeconds           float64           `mapstructure:"egress_admin_timeout"`
+	ShutdownTimeoutSeconds              int               `mapstructure:"shutdown_timeout"`
+	ResyncSeconds                       int               `mapstructure:"resync_seconds"`
+	TokenAudience                       string            `mapstructure:"token_audience"`
+	TokenSubjects                       []string          `mapstructure:"token_subjects"`
 	sandboxPresetOrder                  []string
 }
 
@@ -540,7 +541,6 @@ func (c Config) validate() error {
 		"notifications_token_file":          c.NotificationsTokenFile,
 		"runner_gateway_token_file":         c.RunnerGatewayTokenFile,
 		"session_dispatcher_token_file":     c.SessionDispatcherTokenFile,
-		"session_dispatcher_http_url":       c.SessionDispatcherHTTPURL,
 		"history_service_token_file":        c.HistoryServiceTokenFile,
 		"database_url":                      c.DatabaseURL,
 		"egress_admin_url":                  c.EgressAdminURL,
@@ -576,7 +576,6 @@ func (c Config) validate() error {
 	}
 	for name, raw := range map[string]string{
 		"notifications_url":                 c.NotificationsURL,
-		"session_dispatcher_http_url":       c.SessionDispatcherHTTPURL,
 		"connection_service_url":            c.ConnectionServiceURL,
 		"action_federation.service_url":     c.ActionFederation.ServiceURL,
 		"action_federation.target.issuer":   c.ActionFederation.Target.Issuer,
@@ -584,6 +583,11 @@ func (c Config) validate() error {
 		"egress_admin_url":                  c.EgressAdminURL,
 	} {
 		if err := validateHTTPURL(name, raw); err != nil {
+			return err
+		}
+	}
+	if c.SessionDispatcherHTTPURL != "" {
+		if err := validateHTTPURL("session_dispatcher_http_url", c.SessionDispatcherHTTPURL); err != nil {
 			return err
 		}
 	}

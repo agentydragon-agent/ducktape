@@ -5,18 +5,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/federation"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	"google.golang.org/protobuf/encoding/protojson"
+	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // ActionFederator exchanges the browser login in an app request for a scoped Action Service token.
@@ -24,28 +27,29 @@ type ActionFederator interface {
 	Exchange(context.Context, federation.SessionLoginRow) (string, error)
 }
 
-// ActionPolicyUpstream opens the generated Action Service facade request. *proxy.UpstreamProxy
-// satisfies this interface.
-type ActionPolicyUpstream interface {
-	OpenRequest(context.Context, string, string, string, string, http.Header, io.Reader) (*http.Response, error)
+// ActionPolicyRPC reads policy directly from the Action Service's generated gRPC API.
+type ActionPolicyRPC interface {
+	GetActionPolicy(context.Context, *action_servicepb.GetActionPolicyRequest, ...grpc.CallOption) (*action_servicepb.GetActionPolicyResponse, error)
 }
+
+const actionPolicyRequestTimeout = 10 * time.Second
 
 // ActionPolicyReader asks the Action Service for the effective policy of an explicit subject.
 type ActionPolicyReader struct {
 	federator  ActionFederator
-	upstream   ActionPolicyUpstream
+	actions    ActionPolicyRPC
 	requestURL string
 }
 
-// NewActionPolicyReader creates the federated reader. serviceURL is the configured Action Service
-// URL and is retained only for credential-free failure metadata.
+// NewActionPolicyReader creates the federated reader. serviceURL is retained only for
+// credential-free failure metadata; Action Service calls use the generated gRPC client.
 func NewActionPolicyReader(
 	federator ActionFederator,
-	upstream ActionPolicyUpstream,
+	actions ActionPolicyRPC,
 	serviceURL string,
 ) (*ActionPolicyReader, error) {
-	reader := &ActionPolicyReader{federator: federator, upstream: upstream}
-	if isNilDependency(upstream) {
+	reader := &ActionPolicyReader{federator: federator, actions: actions}
+	if isNilDependency(actions) {
 		return reader, nil
 	}
 	base, err := url.Parse(serviceURL)
@@ -147,6 +151,9 @@ func (r *ActionPolicyReader) ForSubject(
 	if subject == nil || subject.GetNamespace() == "" || subject.GetName() == "" {
 		return nil, nil, errors.New("subject must set both namespace and name")
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	if caller.Kind != auth.CallerOperator {
 		return nil, unavailable("operator_session_required", nil), nil
 	}
@@ -158,8 +165,8 @@ func (r *ActionPolicyReader) ForSubject(
 	}
 	bearer, err := r.federator.Exchange(ctx, session.Row)
 	if err != nil {
-		if errors.Is(ctx.Err(), context.Canceled) {
-			return nil, nil, context.Canceled
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
 		}
 		var federationErr *federation.FederationError
 		if errors.As(err, &federationErr) {
@@ -172,51 +179,35 @@ func (r *ActionPolicyReader) ForSubject(
 				UpstreamStatus: optionalStatus(upstreamErr.UpstreamStatus), ErrorType: upstreamErr.ErrorType,
 			}), nil
 		}
-		return nil, nil, err
+		return nil, unavailable("upstream_request_failed", &ActionUpstreamFailure{
+			Method: http.MethodGet, URL: r.requestURL, ErrorType: safeErrorType(err),
+		}), nil
 	}
-	if isNilDependency(r.upstream) {
+	if isNilDependency(r.actions) {
 		return nil, unavailable("action_facade_not_configured", nil), nil
 	}
-	query := "subject.namespace=" + url.QueryEscape(subject.GetNamespace()) + "&subject.name=" + url.QueryEscape(subject.GetName())
-	response, err := r.upstream.OpenRequest(ctx, http.MethodGet, "v1/action-policy", query, bearer,
-		http.Header{"Accept": []string{"application/json"}}, nil)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	requestContext, cancel := context.WithTimeout(ctx, actionPolicyRequestTimeout)
+	defer cancel()
+	requestContext = metadata.AppendToOutgoingContext(requestContext, "authorization", "Bearer "+bearer)
+	response, err := r.actions.GetActionPolicy(requestContext, &action_servicepb.GetActionPolicyRequest{Subject: subject})
 	if err != nil {
-		if errors.Is(ctx.Err(), context.Canceled) {
-			return nil, nil, context.Canceled
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
 		}
 		return nil, unavailable("upstream_request_failed", &ActionUpstreamFailure{
-			Method: http.MethodGet, URL: r.requestURL, ErrorType: safeErrorType(err),
+			Method: http.MethodGet, URL: r.requestURL,
+			UpstreamStatus: optionalStatus(gatewayruntime.HTTPStatusFromCode(status.Code(err))), ErrorType: "GRPCStatusError",
 		}), nil
 	}
-	if response == nil {
-		return nil, nil, errors.New("Action Service proxy returned no response")
-	}
-	if response.Body == nil {
-		return nil, nil, errors.New("Action Service proxy returned a response without a body")
-	}
-	defer response.Body.Close()
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+	if response == nil || response.GetActionPolicy() == nil {
 		return nil, unavailable("upstream_request_failed", &ActionUpstreamFailure{
-			Method: http.MethodGet, URL: r.requestURL, UpstreamStatus: optionalStatus(response.StatusCode), ErrorType: "HTTPStatusError",
+			Method: http.MethodGet, URL: r.requestURL, UpstreamStatus: optionalStatus(http.StatusBadGateway), ErrorType: "GRPCResponseError",
 		}), nil
 	}
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		if errors.Is(ctx.Err(), context.Canceled) {
-			return nil, nil, context.Canceled
-		}
-		return nil, unavailable("upstream_request_failed", &ActionUpstreamFailure{
-			Method: http.MethodGet, URL: r.requestURL, ErrorType: safeErrorType(err),
-		}), nil
-	}
-	parsed := &action_servicepb.GetActionPolicyResponse{}
-	if err := protojson.Unmarshal(body, parsed); err != nil {
-		return nil, nil, fmt.Errorf("parse Action Service policy response: %w", err)
-	}
-	if parsed.GetActionPolicy() == nil {
-		return nil, nil, errors.New("Action Service returned no action policy")
-	}
-	view, err := actionPolicyView(parsed.GetActionPolicy())
+	view, err := actionPolicyView(response.GetActionPolicy())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -246,16 +237,6 @@ func actionPolicyView(policy *action_servicepb.CallerActionPolicy) (*ActionPolic
 		})
 	}
 	return view, nil
-}
-
-// ActionPolicyViewFromProto projects the generated Action Service response to the app's
-// credential-free browser view. Keep the wire protobuf private: it includes binding diagnostics
-// that the Python /caller-grants response intentionally does not expose.
-func ActionPolicyViewFromProto(policy *action_servicepb.CallerActionPolicy) (*ActionPolicyView, error) {
-	if policy == nil {
-		return nil, errors.New("Action Service returned no action policy")
-	}
-	return actionPolicyView(policy)
 }
 
 func actionPolicyRule(policy *action_servicepb.Policy) (ActionRuleView, error) {

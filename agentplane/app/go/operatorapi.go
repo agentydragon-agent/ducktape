@@ -12,21 +12,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/go/federation"
 	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/danielgtaylor/huma/v2"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 )
-
-type actionPolicyRPC interface {
-	GetActionPolicy(context.Context, *action_servicepb.GetActionPolicyRequest, ...grpc.CallOption) (*action_servicepb.GetActionPolicyResponse, error)
-}
 
 type callbackUpstream interface {
 	OpenRequest(context.Context, string, string, string, string, http.Header, io.Reader) (*http.Response, error)
@@ -35,7 +25,7 @@ type callbackUpstream interface {
 type operatorRoutes struct {
 	policies         *policyaccess.Access
 	federator        policyaccess.ActionFederator
-	actions          actionPolicyRPC
+	actions          policyaccess.ActionPolicyRPC
 	callback         callbackUpstream
 	actionServiceURL string
 }
@@ -65,7 +55,7 @@ func RegisterOperatorRoutes(
 	server *HTTPServer,
 	policies *policyaccess.Access,
 	federator policyaccess.ActionFederator,
-	actions actionPolicyRPC,
+	actions policyaccess.ActionPolicyRPC,
 	callback callbackUpstream,
 	actionServiceURL string,
 ) {
@@ -158,58 +148,17 @@ func (routes *operatorRoutes) actionPolicyFrame(
 	session *auth.RequestSession,
 	subject *sandboxespb.ServiceAccount,
 ) any {
-	if caller.Kind != auth.CallerOperator {
-		return actionPolicyUnavailable("operator_session_required", nil)
-	}
-	if nilDependency(routes.federator) {
-		return actionPolicyUnavailable("operator_federation_not_configured", nil)
-	}
-	if session == nil || session.Login == nil || session.Row == nil {
-		return actionPolicyUnavailable("operator_reauthentication_required", nil)
-	}
-	bearer, err := routes.federator.Exchange(ctx, session.Row)
+	reader, err := policyaccess.NewActionPolicyReader(routes.federator, routes.actions, routes.actionServiceURL)
 	if err != nil {
-		if errors.Is(ctx.Err(), context.Canceled) {
-			return actionPolicyUnavailable("upstream_request_failed", nil)
-		}
-		var federationErr *federation.FederationError
-		if errors.As(err, &federationErr) {
-			return actionPolicyUnavailable(federationErr.Code, nil)
-		}
-		var upstreamErr *federation.UpstreamError
-		if errors.As(err, &upstreamErr) {
-			return actionPolicyUnavailable("upstream_request_failed", &policyaccess.ActionUpstreamFailure{
-				Method: upstreamErr.Method, URL: upstreamErr.URL,
-				UpstreamStatus: optionalActionStatus(upstreamErr.UpstreamStatus), ErrorType: upstreamErr.ErrorType,
-			})
-		}
-		return actionPolicyUnavailable("upstream_request_failed", &policyaccess.ActionUpstreamFailure{
-			Method: http.MethodGet, URL: routes.actionPolicyURL(), ErrorType: safeOperatorErrorType(err),
-		})
-	}
-	if nilDependency(routes.actions) {
 		return actionPolicyUnavailable("action_facade_not_configured", nil)
 	}
-	requestContext := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+bearer)
-	response, err := routes.actions.GetActionPolicy(requestContext, &action_servicepb.GetActionPolicyRequest{Subject: subject})
-	if err != nil {
-		if errors.Is(ctx.Err(), context.Canceled) {
-			return actionPolicyUnavailable("upstream_request_failed", nil)
-		}
-		upstreamStatus := grpcHTTPStatus(err)
-		return actionPolicyUnavailable("upstream_request_failed", &policyaccess.ActionUpstreamFailure{
-			Method: http.MethodGet, URL: routes.actionPolicyURL(), UpstreamStatus: &upstreamStatus, ErrorType: "HTTPStatusError",
-		})
+	view, unavailable, err := reader.ForSubject(ctx, caller, session, subject)
+	if unavailable != nil {
+		return unavailable
 	}
-	if response == nil || response.GetActionPolicy() == nil {
-		return actionPolicyUnavailable("upstream_request_failed", &policyaccess.ActionUpstreamFailure{
-			Method: http.MethodGet, URL: routes.actionPolicyURL(), UpstreamStatus: intPointer(http.StatusBadGateway), ErrorType: "HTTPStatusError",
-		})
-	}
-	view, err := policyaccess.ActionPolicyViewFromProto(response.GetActionPolicy())
 	if err != nil {
 		return actionPolicyUnavailable("upstream_request_failed", &policyaccess.ActionUpstreamFailure{
-			Method: http.MethodGet, URL: routes.actionPolicyURL(), UpstreamStatus: intPointer(http.StatusBadGateway), ErrorType: "HTTPStatusError",
+			Method: http.MethodGet, URL: routes.actionPolicyURL(), UpstreamStatus: intPointer(http.StatusBadGateway), ErrorType: "GRPCResponseError",
 		})
 	}
 	return view
@@ -308,43 +257,7 @@ func actionPolicyUnavailable(code string, upstream *policyaccess.ActionUpstreamF
 	return &policyaccess.ActionPolicyUnavailable{Kind: "unavailable", Code: code, Upstream: upstream}
 }
 
-func optionalActionStatus(value int) *int {
-	if value == 0 {
-		return nil
-	}
-	return &value
-}
-
 func intPointer(value int) *int { return &value }
-
-func grpcHTTPStatus(err error) int {
-	grpcStatus, ok := status.FromError(err)
-	if !ok {
-		return http.StatusBadGateway
-	}
-	switch grpcStatus.Code() {
-	case codes.Canceled:
-		return 499
-	case codes.InvalidArgument, codes.FailedPrecondition, codes.OutOfRange:
-		return http.StatusBadRequest
-	case codes.Unauthenticated:
-		return http.StatusUnauthorized
-	case codes.PermissionDenied:
-		return http.StatusForbidden
-	case codes.NotFound:
-		return http.StatusNotFound
-	case codes.AlreadyExists, codes.Aborted:
-		return http.StatusConflict
-	case codes.ResourceExhausted:
-		return http.StatusTooManyRequests
-	case codes.DeadlineExceeded:
-		return http.StatusGatewayTimeout
-	case codes.Unavailable:
-		return http.StatusServiceUnavailable
-	default:
-		return http.StatusInternalServerError
-	}
-}
 
 func safeOperatorErrorType(err error) string {
 	var networkError net.Error

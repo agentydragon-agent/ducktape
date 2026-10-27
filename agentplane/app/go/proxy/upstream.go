@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"os"
 	"strings"
@@ -16,23 +15,79 @@ import (
 	"unicode/utf8"
 )
 
-// ErrUpstreamRedirect marks a redirect response rejected by a mounted facade proxy.
-var ErrUpstreamRedirect = errors.New("upstream redirect is not accepted")
-
 // UpstreamProxy opens streamed HTTP requests to one configured service.
 //
 // The returned client never follows redirects and has no whole-request timeout. Its default
 // transport bounds connection establishment to five seconds, while the caller's context controls
 // the lifetime of the response stream.
 type UpstreamProxy struct {
-	client    *http.Client
-	baseURL   *url.URL
+	client  *http.Client
+	baseURL *url.URL
+}
+
+// HandlerUpstream relays a request to an in-process generated HTTP facade. Its requests still use
+// the same narrow headers and request context as UpstreamProxy, while the generated handler can
+// carry them to its gRPC target without an HTTP hop.
+type HandlerUpstream struct {
+	handler   http.Handler
 	tokenFile string
 }
 
-// NewUpstreamProxy creates a proxy for baseURL. tokenFile may be empty for request-bound bearer
-// tokens; when set, mounted requests reread it before every request.
-func NewUpstreamProxy(client *http.Client, baseURL, tokenFile string) (*UpstreamProxy, error) {
+// NewHandlerUpstream creates an adapter for a generated HTTP facade handler. If tokenFile is set,
+// it rereads the projected service token for every request to preserve token rotation.
+func NewHandlerUpstream(handler http.Handler, tokenFile string) *HandlerUpstream {
+	return &HandlerUpstream{handler: handler, tokenFile: tokenFile}
+}
+
+// ForwardHTTP adapts the public facade route to the generated handler's /v1/ path and forwards the
+// request-bound bearer as Authorization. The handler receives the caller's context so disconnect,
+// session end and server drain cancel its gRPC call.
+func (p *HandlerUpstream) ForwardHTTP(
+	w http.ResponseWriter,
+	request *http.Request,
+	ctx context.Context,
+	path string,
+	bearer string,
+) error {
+	if p == nil || p.handler == nil {
+		return errors.New("generated facade handler is not configured")
+	}
+	if request == nil || request.URL == nil {
+		return errors.New("generated facade request is not configured")
+	}
+	if p.tokenFile != "" {
+		token, err := os.ReadFile(p.tokenFile)
+		if err != nil {
+			return fmt.Errorf("read projected upstream token: %w", err)
+		}
+		bearer = strings.TrimSpace(string(token))
+	}
+	forwarded := request.Clone(ctx)
+	forwarded.URL.Path = "/" + strings.TrimLeft(path, "/")
+	forwarded.URL.RawPath = ""
+	forwarded.URL.RawQuery = request.URL.RawQuery
+	forwarded.URL.Fragment = ""
+	forwarded.RequestURI = ""
+	forwarded.Header = make(http.Header)
+	for _, name := range []string{"Accept", "Content-Type", "User-Agent"} {
+		value := request.Header.Get(name)
+		if name == "User-Agent" {
+			value = truncateRunes(value, 300)
+		}
+		if value != "" {
+			forwarded.Header.Set(name, value)
+		}
+	}
+	if bearer != "" {
+		forwarded.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	forwarded.Header.Set("Accept-Encoding", "identity")
+	p.handler.ServeHTTP(w, forwarded)
+	return nil
+}
+
+// NewUpstreamProxy creates a streaming client for baseURL.
+func NewUpstreamProxy(client *http.Client, baseURL string) (*UpstreamProxy, error) {
 	base, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse upstream URL: %w", err)
@@ -44,7 +99,7 @@ func NewUpstreamProxy(client *http.Client, baseURL, tokenFile string) (*Upstream
 	base.RawPath = ""
 	base.RawQuery = ""
 	base.Fragment = ""
-	return &UpstreamProxy{client: proxyClient(client), baseURL: base, tokenFile: tokenFile}, nil
+	return &UpstreamProxy{client: proxyClient(client), baseURL: base}, nil
 }
 
 // OpenRequest opens a streamed request. Only Accept, Content-Type, and User-Agent are forwarded
@@ -57,75 +112,6 @@ func (p *UpstreamProxy) OpenRequest(
 	body io.Reader,
 ) (*http.Response, error) {
 	return p.openRequest(ctx, method, path, query, bearer, headers, body, representationHeaders)
-}
-
-// ForwardHTTP streams a mounted HTTP route through net/http's reverse proxy. It preserves the
-// request method, body, query, and cancellation while forwarding only the app-approved headers.
-// A configured token file is reread for each request and takes precedence over bearer.
-func (p *UpstreamProxy) ForwardHTTP(
-	w http.ResponseWriter,
-	request *http.Request,
-	ctx context.Context,
-	path string,
-	bearer string,
-	rejectRedirects bool,
-	onError func(error),
-) error {
-	if p.tokenFile != "" {
-		token, err := os.ReadFile(p.tokenFile)
-		if err != nil {
-			return fmt.Errorf("read projected upstream token: %w", err)
-		}
-		bearer = strings.TrimSpace(string(token))
-	}
-
-	handler := &httputil.ReverseProxy{
-		Transport:     p.client.Transport,
-		FlushInterval: -1,
-		Rewrite: func(proxyRequest *httputil.ProxyRequest) {
-			proxyRequest.SetURL(p.baseURL)
-			proxyRequest.Out.URL.Path = "/" + strings.TrimLeft(path, "/")
-			proxyRequest.Out.URL.RawPath = ""
-			proxyRequest.Out.URL.RawQuery = proxyRequest.In.URL.RawQuery
-			proxyRequest.Out.Header = make(http.Header)
-			proxyRequest.Out.Trailer = nil
-			for _, name := range []string{"Accept", "Content-Type", "User-Agent"} {
-				value := proxyRequest.In.Header.Get(name)
-				if name == "User-Agent" {
-					value = truncateRunes(value, 300)
-				}
-				if value != "" {
-					proxyRequest.Out.Header.Set(name, value)
-				}
-			}
-			if bearer != "" {
-				proxyRequest.Out.Header.Set("Authorization", "Bearer "+bearer)
-			}
-			proxyRequest.Out.Header.Set("Accept-Encoding", "identity")
-		},
-		ModifyResponse: func(response *http.Response) error {
-			if rejectRedirects && response.StatusCode >= 300 && response.StatusCode < 400 {
-				return ErrUpstreamRedirect
-			}
-			contentType := response.Header.Values("Content-Type")
-			response.Header = make(http.Header)
-			if len(contentType) > 0 {
-				response.Header.Set("Content-Type", contentType[0])
-			}
-			response.Header.Set("Cache-Control", "no-store")
-			response.Header.Set("X-Accel-Buffering", "no")
-			return nil
-		},
-		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
-			if onError != nil {
-				onError(err)
-				return
-			}
-			http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
-		},
-	}
-	handler.ServeHTTP(w, request.WithContext(ctx))
-	return nil
 }
 
 var representationHeaders = map[string]struct{}{
@@ -172,8 +158,7 @@ func (p *UpstreamProxy) openRequest(
 	return response, nil
 }
 
-// relayResponse is retained for specialized upstreams such as Electric that transform their
-// request before forwarding. Mounted pass-through routes use net/http/httputil.ReverseProxy.
+// relayResponse writes an upstream response while exposing only the selected headers.
 func relayResponse(w http.ResponseWriter, response *http.Response, allowedHeaders map[string]struct{}, overrides http.Header) error {
 	if response == nil {
 		return errors.New("nil upstream response")

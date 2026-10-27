@@ -59,6 +59,14 @@ func TestConfigValidateAcceptsExistingSettingsContract(t *testing.T) {
 	}
 }
 
+func TestConfigValidateAllowsMissingLegacySessionDispatcherHTTPURL(t *testing.T) {
+	config := validTestConfig()
+	config.SessionDispatcherHTTPURL = ""
+	if err := config.validate(); err != nil {
+		t.Fatalf("config without legacy Session Dispatcher HTTP URL rejected: %v", err)
+	}
+}
+
 func TestConfigValidateRejectsTooShortNewSandboxIdleSuspendDefault(t *testing.T) {
 	seconds := int64(59)
 	config := validTestConfig()

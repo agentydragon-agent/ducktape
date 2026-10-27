@@ -45,7 +45,7 @@ const (
 )
 
 type streamingUpstream interface {
-	ForwardHTTP(http.ResponseWriter, *http.Request, context.Context, string, string, bool, func(error)) error
+	ForwardHTTP(http.ResponseWriter, *http.Request, context.Context, string, string) error
 }
 
 type sandboxNotificationWatcher interface {
@@ -87,7 +87,7 @@ type StreamingDependencies struct {
 	Sandboxes        streamSandboxInventory
 	Threads          streamThreadStore
 	History          streamHistoryStore
-	ActionPolicy     actionPolicyRPC
+	ActionPolicy     policyaccess.ActionPolicyRPC
 	Federator        policyaccess.ActionFederator
 	ActionServiceURL string
 	DispatcherHTTP   streamingUpstream
@@ -710,9 +710,8 @@ func (r *streamingRoutes) dispatcher(w http.ResponseWriter, request *http.Reques
 }
 
 func (r *streamingRoutes) forwardDispatcher(w http.ResponseWriter, request *http.Request, ctx context.Context) {
-	handleError := func(err error) { writeUpstreamOpenError(w, http.MethodGet, request, err) }
-	if err := r.deps.DispatcherHTTP.ForwardHTTP(w, request, ctx, request.PathValue("path"), "", false, handleError); err != nil {
-		handleError(err)
+	if err := r.deps.DispatcherHTTP.ForwardHTTP(w, request, ctx, request.PathValue("path"), ""); err != nil {
+		writeUpstreamOpenError(w, http.MethodGet, request, err)
 	}
 }
 
@@ -755,19 +754,12 @@ func (r *streamingRoutes) operatorFacade(w http.ResponseWriter, request *http.Re
 		writeFederationError(w, err)
 		return
 	}
-	r.forwardFacade(w, request, ctx, upstream, label, path, bearer)
+	r.forwardFacade(w, request, ctx, upstream, path, bearer)
 }
 
-func (r *streamingRoutes) forwardFacade(w http.ResponseWriter, request *http.Request, ctx context.Context, upstream streamingUpstream, label, path, bearer string) {
-	handleError := func(err error) {
-		if errors.Is(err, proxy.ErrUpstreamRedirect) {
-			writeDetailError(w, http.StatusBadGateway, label+" redirects are not accepted")
-			return
-		}
+func (r *streamingRoutes) forwardFacade(w http.ResponseWriter, request *http.Request, ctx context.Context, upstream streamingUpstream, path, bearer string) {
+	if err := upstream.ForwardHTTP(w, request, ctx, path, bearer); err != nil {
 		writeUpstreamOpenError(w, request.Method, request, err)
-	}
-	if err := upstream.ForwardHTTP(w, request, ctx, path, bearer, true, handleError); err != nil {
-		handleError(err)
 	}
 }
 

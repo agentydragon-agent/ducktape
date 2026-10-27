@@ -15,6 +15,8 @@ import (
 	"time"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/bridge"
 	"github.com/agentydragon/ducktape/agentplane/app/go/federation"
@@ -31,12 +33,15 @@ import (
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
+	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -105,17 +110,13 @@ func run(ctx context.Context, config Config) error {
 	}
 
 	baseClient := &http.Client{Timeout: 10 * time.Second, Transport: observability.HTTPTransport(http.DefaultTransport)}
-	actionHTTP, err := proxy.NewUpstreamProxy(baseClient, config.ActionFederation.ServiceURL, "")
+	actionCallbackHTTP, err := proxy.NewUpstreamProxy(baseClient, config.ActionFederation.ServiceURL)
 	if err != nil {
-		return fmt.Errorf("configure Action Service HTTP facade: %w", err)
+		return fmt.Errorf("configure Action Service callback HTTP client: %w", err)
 	}
-	connectionHTTP, err := proxy.NewUpstreamProxy(baseClient, config.ConnectionServiceURL, "")
+	connectionTarget, err := grpcTargetFromHTTPURL(config.ConnectionServiceURL)
 	if err != nil {
-		return fmt.Errorf("configure Connection Service HTTP facade: %w", err)
-	}
-	dispatcherHTTP, err := proxy.NewUpstreamProxy(baseClient, config.SessionDispatcherHTTPURL, config.SessionDispatcherTokenFile)
-	if err != nil {
-		return fmt.Errorf("configure Session Dispatcher HTTP facade: %w", err)
+		return fmt.Errorf("configure Connection Service gRPC client: %w", err)
 	}
 
 	newHistory := func() (*historyclient.Client, error) {
@@ -237,6 +238,33 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure Action Service gRPC client: %w", err)
 	}
 	defer actionConn.Close()
+	actionClient := actionpb.NewActionServiceClient(actionConn)
+	facadeContext, stopFacades := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopFacades()
+	actionFacade, err := facade.NewHandler(
+		facadeContext, actionTarget, 10*time.Second,
+		actionpb.RegisterActionServiceHandlerFromEndpoint,
+		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
+		web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint,
+	)
+	if err != nil {
+		return fmt.Errorf("configure generated Action Service HTTP facade: %w", err)
+	}
+	actionGateway := proxy.NewHandlerUpstream(actionFacade, "")
+	connectionFacade, err := facade.NewHandler(facadeContext, connectionTarget, 10*time.Second, connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint)
+	if err != nil {
+		return fmt.Errorf("configure generated Connection Service HTTP facade: %w", err)
+	}
+	connectionGateway := proxy.NewHandlerUpstream(connectionFacade, "")
+	dispatcherFacade, err := facade.NewHandler(
+		facadeContext, config.SessionDispatcherTarget,
+		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)),
+		session_dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint,
+	)
+	if err != nil {
+		return fmt.Errorf("configure generated Session Dispatcher HTTP facade: %w", err)
+	}
+	dispatcherGateway := proxy.NewHandlerUpstream(dispatcherFacade, config.SessionDispatcherTokenFile)
 	notificationTarget, err := grpcTargetFromHTTPURL(config.NotificationsURL)
 	if err != nil {
 		return fmt.Errorf("configure Notification Service gRPC client: %w", err)
@@ -280,15 +308,15 @@ func run(ctx context.Context, config Config) error {
 	}); err != nil {
 		return fmt.Errorf("register Thread command routes: %w", err)
 	}
-	RegisterOperatorRoutes(server, policies, federator, actionpb.NewActionServiceClient(actionConn), actionHTTP, config.ActionFederation.ServiceURL)
+	RegisterOperatorRoutes(server, policies, federator, actionClient, actionCallbackHTTP, config.ActionFederation.ServiceURL)
 	RegisterStatusRoutes(server, serviceStatus)
 	server.RegisterRawRoute("POST /telemetry/v1/traces", traceRelayHandler(), true)
 	RegisterStreamingRoutes(server, StreamingDependencies{
 		Auth: appAuth, Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected,
 		Live: liveIndex, Sandboxes: inventory, Threads: threadStore, History: history,
-		ActionPolicy: actionpb.NewActionServiceClient(actionConn), Federator: federator,
+		ActionPolicy: actionClient, Federator: federator,
 		ActionServiceURL: config.ActionFederation.ServiceURL,
-		DispatcherHTTP:   dispatcherHTTP, ActionHTTP: actionHTTP, ConnectionHTTP: connectionHTTP,
+		DispatcherHTTP:   dispatcherGateway, ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
 		Notifications:    notifications_operatorpb.NewNotificationsOperatorClient(notificationConn),
 		NotificationWait: time.Duration(config.NotificationsRequestTimeoutSeconds * float64(time.Second)),
 		Egress:           egress_adminpb.NewEgressAdminClient(egressConn),

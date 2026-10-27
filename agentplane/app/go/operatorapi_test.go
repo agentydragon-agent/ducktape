@@ -204,7 +204,7 @@ func TestCallerGrantsMapsActionRPCFailuresWithoutLeakingConfiguredURL(t *testing
 	if !ok || unavailable.Code != "upstream_request_failed" || unavailable.Upstream == nil ||
 		unavailable.Upstream.UpstreamStatus == nil || *unavailable.Upstream.UpstreamStatus != http.StatusForbidden ||
 		unavailable.Upstream.URL != "https://actions.example.test/v1/action-policy" ||
-		unavailable.Upstream.ErrorType != "HTTPStatusError" {
+		unavailable.Upstream.ErrorType != "GRPCStatusError" {
 		t.Fatalf("RPC failure frame = %#v", frame)
 	}
 }

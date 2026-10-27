@@ -16,7 +16,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/liveinventory"
-	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
@@ -506,20 +505,19 @@ func TestThreadEventStreamReplaysHeartbeatsDrainsAndRequiresCaller(t *testing.T)
 }
 
 type streamTestUpstream struct {
-	forward func(http.ResponseWriter, *http.Request, context.Context, string, string, bool, func(error)) error
+	forward func(http.ResponseWriter, *http.Request, context.Context, string, string) error
 }
 
-func (f *streamTestUpstream) ForwardHTTP(w http.ResponseWriter, request *http.Request, ctx context.Context, path, bearer string, rejectRedirects bool, onError func(error)) error {
-	return f.forward(w, request, ctx, path, bearer, rejectRedirects, onError)
+func (f *streamTestUpstream) ForwardHTTP(w http.ResponseWriter, request *http.Request, ctx context.Context, path, bearer string) error {
+	return f.forward(w, request, ctx, path, bearer)
 }
 
 func TestUpstreamRouteForwardersPreserveFacadeAndDispatcherResponses(t *testing.T) {
 	routes := &streamingRoutes{}
 	var bodyText string
 	var gotMethod, gotPath, gotQuery, gotBearer string
-	var gotRejectRedirects bool
-	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, bearer string, rejectRedirects bool, _ func(error)) error {
-		gotMethod, gotPath, gotQuery, gotBearer, gotRejectRedirects = request.Method, path, request.URL.RawQuery, bearer, rejectRedirects
+	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, bearer string) error {
+		gotMethod, gotPath, gotQuery, gotBearer = request.Method, path, request.URL.RawQuery, bearer
 		requestBody, err := io.ReadAll(request.Body)
 		if err != nil {
 			return err
@@ -537,35 +535,42 @@ func TestUpstreamRouteForwardersPreserveFacadeAndDispatcherResponses(t *testing.
 	request.Header.Set("User-Agent", "stream-test")
 	request.Header.Set("Cookie", "must-not-forward")
 	response := httptest.NewRecorder()
-	routes.forwardFacade(response, request, context.Background(), upstream, "Action facade", "v1/items", "federated-token")
+	routes.forwardFacade(response, request, context.Background(), upstream, "v1/items", "federated-token")
 	if response.Code != http.StatusAccepted || response.Body.String() != `{"ok":true}` {
 		t.Fatalf("action facade response = %d %q", response.Code, response.Body.String())
 	}
-	if gotMethod != http.MethodPost || gotPath != "v1/items" || gotQuery != "x=1" || gotBearer != "federated-token" || !gotRejectRedirects || bodyText != "streamed request" {
+	if gotMethod != http.MethodPost || gotPath != "v1/items" || gotQuery != "x=1" || gotBearer != "federated-token" || bodyText != "streamed request" {
 		t.Fatalf("facade request = %s %s?%s bearer=%q body=%q", gotMethod, gotPath, gotQuery, gotBearer, bodyText)
 	}
 	if response.Header().Get("Content-Type") != "application/json" {
 		t.Fatalf("facade response headers = %#v", response.Header())
 	}
 
-	redirect := &streamTestUpstream{forward: func(_ http.ResponseWriter, _ *http.Request, _ context.Context, _, _ string, reject bool, onError func(error)) error {
-		if !reject {
-			t.Error("facade proxy did not reject redirects")
-		}
-		onError(proxy.ErrUpstreamRedirect)
-		return nil
+	failed := &streamTestUpstream{forward: func(http.ResponseWriter, *http.Request, context.Context, string, string) error {
+		return context.DeadlineExceeded
 	}}
-	redirectResponse := httptest.NewRecorder()
-	routes.forwardFacade(redirectResponse, request, context.Background(), redirect, "Connection facade", "v1/items", "token")
-	if redirectResponse.Code != http.StatusBadGateway || !strings.Contains(redirectResponse.Body.String(), "redirects are not accepted") {
-		t.Fatalf("facade redirect = %d %s", redirectResponse.Code, redirectResponse.Body.String())
+	failedResponse := httptest.NewRecorder()
+	routes.forwardFacade(failedResponse, request, context.Background(), failed, "v1/items", "token")
+	var failedBody struct {
+		Detail struct {
+			Method    string `json:"method"`
+			URL       string `json:"url"`
+			ErrorType string `json:"error_type"`
+		} `json:"detail"`
+	}
+	if err := json.Unmarshal(failedResponse.Body.Bytes(), &failedBody); err != nil {
+		t.Fatal(err)
+	}
+	if failedResponse.Code != http.StatusGatewayTimeout || failedBody.Detail.Method != http.MethodPost ||
+		failedBody.Detail.URL != request.URL.Path || failedBody.Detail.ErrorType == "" {
+		t.Fatalf("facade forwarding error = %d %s", failedResponse.Code, failedResponse.Body.String())
 	}
 
 	var dispatcherPath, dispatcherQuery string
-	dispatcher := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, bearer string, reject bool, _ func(error)) error {
+	dispatcher := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, bearer string) error {
 		dispatcherPath, dispatcherQuery = path, request.URL.RawQuery
-		if bearer != "" || reject {
-			t.Errorf("dispatcher forward options = bearer %q, reject redirects %v", bearer, reject)
+		if bearer != "" {
+			t.Errorf("dispatcher forward bearer = %q", bearer)
 		}
 		w.WriteHeader(http.StatusPartialContent)
 		_, err := io.WriteString(w, "dispatcher bytes")
@@ -583,7 +588,7 @@ func TestUpstreamRouteForwardersPreserveFacadeAndDispatcherResponses(t *testing.
 
 func TestUpstreamFacadeForwarderPassesCancellation(t *testing.T) {
 	entered := make(chan struct{})
-	upstream := &streamTestUpstream{forward: func(_ http.ResponseWriter, _ *http.Request, ctx context.Context, _, _ string, _ bool, _ func(error)) error {
+	upstream := &streamTestUpstream{forward: func(_ http.ResponseWriter, _ *http.Request, ctx context.Context, _, _ string) error {
 		close(entered)
 		<-ctx.Done()
 		return ctx.Err()
@@ -593,7 +598,7 @@ func TestUpstreamFacadeForwarderPassesCancellation(t *testing.T) {
 	response := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
-		(&streamingRoutes{}).forwardFacade(response, request, ctx, upstream, "Action facade", "v1/items", "token")
+		(&streamingRoutes{}).forwardFacade(response, request, ctx, upstream, "v1/items", "token")
 		close(done)
 	}()
 	select {

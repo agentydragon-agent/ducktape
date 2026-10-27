@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -15,7 +15,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/go/federation"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -32,33 +35,32 @@ func (f *fakeActionFederator) Exchange(_ context.Context, _ federation.SessionLo
 	return f.token, f.err
 }
 
-type fakeActionProxy struct {
-	response *http.Response
-	err      error
-	method   string
-	path     string
-	query    string
-	bearer   string
-	headers  http.Header
+type fakeActionPolicyRPC struct {
+	response    *action_servicepb.GetActionPolicyResponse
+	err         error
+	request     *action_servicepb.GetActionPolicyRequest
+	bearer      []string
+	hasDeadline bool
+	deadlineIn  time.Duration
+	call        func(context.Context, *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error)
 }
 
-func (f *fakeActionProxy) OpenRequest(
-	_ context.Context,
-	method, path, query, bearer string,
-	headers http.Header,
-	_ io.Reader,
-) (*http.Response, error) {
-	f.method, f.path, f.query, f.bearer, f.headers = method, path, query, bearer, headers.Clone()
-	return f.response, f.err
-}
-
-func actionResponse(t *testing.T, policy *action_servicepb.CallerActionPolicy) *http.Response {
-	t.Helper()
-	body, err := protojson.Marshal(&action_servicepb.GetActionPolicyResponse{ActionPolicy: policy})
-	if err != nil {
-		t.Fatal(err)
+func (f *fakeActionPolicyRPC) GetActionPolicy(
+	ctx context.Context,
+	request *action_servicepb.GetActionPolicyRequest,
+	_ ...grpc.CallOption,
+) (*action_servicepb.GetActionPolicyResponse, error) {
+	f.request = request
+	md, _ := metadata.FromOutgoingContext(ctx)
+	f.bearer = md.Get("authorization")
+	if deadline, ok := ctx.Deadline(); ok {
+		f.hasDeadline = true
+		f.deadlineIn = time.Until(deadline)
 	}
-	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(string(body)))}
+	if f.call != nil {
+		return f.call(ctx, request)
+	}
+	return f.response, f.err
 }
 
 func actionSession() *auth.RequestSession {
@@ -95,8 +97,8 @@ func TestActionPolicyReaderProjectsEveryPolicyKindAndExactRequest(t *testing.T) 
 		},
 	}
 	federator := &fakeActionFederator{token: "short-lived-target-token"}
-	upstream := &fakeActionProxy{response: actionResponse(t, policy)}
-	reader, err := NewActionPolicyReader(federator, upstream, "https://actions.example.test/?api_key=must-not-leak#fragment")
+	actions := &fakeActionPolicyRPC{response: &action_servicepb.GetActionPolicyResponse{ActionPolicy: policy}}
+	reader, err := NewActionPolicyReader(federator, actions, "https://actions.example.test/?api_key=must-not-leak#fragment")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,11 +116,10 @@ func TestActionPolicyReaderProjectsEveryPolicyKindAndExactRequest(t *testing.T) 
 		view.AutoApproveIf[4].Policy.Entities["light.kitchen"][0] != "turn_on" {
 		t.Fatalf("effective policy projection = %#v", view)
 	}
-	if federator.calls != 1 || upstream.method != http.MethodGet || upstream.path != "v1/action-policy" ||
-		upstream.query != "subject.namespace=team-a&subject.name=worker" || upstream.bearer != "short-lived-target-token" ||
-		upstream.headers.Get("Accept") != "application/json" {
-		t.Fatalf("federated request: calls=%d method=%q path=%q query=%q bearer=%q headers=%v",
-			federator.calls, upstream.method, upstream.path, upstream.query, upstream.bearer, upstream.headers)
+	if federator.calls != 1 || actions.request == nil || actions.request.GetSubject().GetNamespace() != "team-a" ||
+		actions.request.GetSubject().GetName() != "worker" || !reflect.DeepEqual(actions.bearer, []string{"Bearer short-lived-target-token"}) ||
+		!actions.hasDeadline || actions.deadlineIn <= 0 || actions.deadlineIn > actionPolicyRequestTimeout {
+		t.Fatalf("federated RPC: calls=%d request=%#v bearer=%v", federator.calls, actions.request, actions.bearer)
 	}
 	encoded, err := json.Marshal(view)
 	if err != nil {
@@ -136,10 +137,45 @@ func TestActionPolicyReaderProjectsEveryPolicyKindAndExactRequest(t *testing.T) 
 	}
 }
 
+func TestActionPolicyReaderPropagatesCancellation(t *testing.T) {
+	started := make(chan struct{})
+	reader, err := NewActionPolicyReader(&fakeActionFederator{token: "token"}, &fakeActionPolicyRPC{
+		call: func(ctx context.Context, _ *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error) {
+			close(started)
+			<-ctx.Done()
+			return nil, status.Error(codes.Canceled, "request cancelled")
+		},
+	}, "https://actions.example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, _, callErr := reader.ForSubject(ctx, auth.Caller{Kind: auth.CallerOperator}, actionSession(),
+			&sandboxespb.ServiceAccount{Namespace: "team", Name: "worker"})
+		done <- callErr
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("ForSubject() did not start the Action Service RPC")
+	}
+	cancel()
+	select {
+	case got := <-done:
+		if !errors.Is(got, context.Canceled) {
+			t.Fatalf("ForSubject() cancellation error = %v, want context.Canceled", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ForSubject() did not stop after cancellation")
+	}
+}
+
 func TestActionPolicyReaderReturnsPythonUnavailableCodesAndSanitizedFailures(t *testing.T) {
-	proxy := &fakeActionProxy{}
+	actions := &fakeActionPolicyRPC{}
 	federator := &fakeActionFederator{token: "token"}
-	reader, err := NewActionPolicyReader(federator, proxy, "https://actions.example.test?secret=hidden")
+	reader, err := NewActionPolicyReader(federator, actions, "https://actions.example.test?secret=hidden")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,11 +193,11 @@ func TestActionPolicyReaderReturnsPythonUnavailableCodesAndSanitizedFailures(t *
 	if err != nil || unavailable.Code != "operator_federation_not_configured" {
 		t.Fatalf("missing federation = %#v, %v", unavailable, err)
 	}
-	noProxy, err := NewActionPolicyReader(federator, nil, "")
+	noActions, err := NewActionPolicyReader(federator, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, unavailable, err = noProxy.ForSubject(context.Background(), auth.Caller{Kind: auth.CallerOperator}, actionSession(), subject)
+	_, unavailable, err = noActions.ForSubject(context.Background(), auth.Caller{Kind: auth.CallerOperator}, actionSession(), subject)
 	if err != nil || unavailable.Code != "action_facade_not_configured" {
 		t.Fatalf("missing proxy = %#v, %v", unavailable, err)
 	}
@@ -180,15 +216,12 @@ func TestActionPolicyReaderReturnsPythonUnavailableCodesAndSanitizedFailures(t *
 		t.Fatalf("federation upstream failure = %#v, %v", unavailable, err)
 	}
 	federator.err = nil
-	proxy.response = &http.Response{
-		StatusCode: http.StatusBadGateway,
-		Body:       io.NopCloser(strings.NewReader("response contains a secret and must not leak")),
-	}
+	actions.err = status.Error(codes.PermissionDenied, "response contains a secret and must not leak")
 	_, unavailable, err = reader.ForSubject(context.Background(), auth.Caller{Kind: auth.CallerOperator}, actionSession(), subject)
 	if err != nil || unavailable.Code != "upstream_request_failed" || unavailable.Upstream == nil ||
-		unavailable.Upstream.UpstreamStatus == nil || *unavailable.Upstream.UpstreamStatus != http.StatusBadGateway ||
+		unavailable.Upstream.UpstreamStatus == nil || *unavailable.Upstream.UpstreamStatus != http.StatusForbidden ||
 		unavailable.Upstream.URL != "https://actions.example.test/v1/action-policy" {
-		t.Fatalf("Action Service failure = %#v, %v", unavailable, err)
+		t.Fatalf("Action Service RPC failure = %#v, %v", unavailable, err)
 	}
 	encoded, err := json.Marshal(unavailable)
 	if err != nil {
@@ -197,6 +230,40 @@ func TestActionPolicyReaderReturnsPythonUnavailableCodesAndSanitizedFailures(t *
 	if strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "hidden") ||
 		strings.Contains(string(encoded), "response contains") {
 		t.Fatalf("failure details leaked private data: %s", encoded)
+	}
+}
+
+func TestActionPolicyReaderCancelsTheGeneratedRPCWithItsRequest(t *testing.T) {
+	entered := make(chan struct{})
+	actions := &fakeActionPolicyRPC{call: func(ctx context.Context, _ *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error) {
+		close(entered)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	reader, err := NewActionPolicyReader(&fakeActionFederator{token: "token"}, actions, "https://actions.example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan *ActionPolicyUnavailable, 1)
+	go func() {
+		_, unavailable, _ := reader.ForSubject(ctx, auth.Caller{Kind: auth.CallerOperator}, actionSession(),
+			&sandboxespb.ServiceAccount{Namespace: "team", Name: "worker"})
+		done <- unavailable
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("Action Service RPC did not start")
+	}
+	cancel()
+	select {
+	case unavailable := <-done:
+		if unavailable == nil || unavailable.Code != "upstream_request_failed" || unavailable.Upstream != nil {
+			t.Fatalf("cancelled RPC frame = %#v", unavailable)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Action Service RPC did not return after request cancellation")
 	}
 }
 
@@ -238,15 +305,16 @@ func TestBindingsForStartsAllKubernetesReadsConcurrently(t *testing.T) {
 }
 
 func TestActionPolicyReaderMapsProxyTransportFailures(t *testing.T) {
-	upstream := &fakeActionProxy{err: errors.New("connection refused")}
-	reader, err := NewActionPolicyReader(&fakeActionFederator{token: "token"}, upstream, "https://actions.example.test")
+	actions := &fakeActionPolicyRPC{err: status.Error(codes.Unavailable, "connection refused")}
+	reader, err := NewActionPolicyReader(&fakeActionFederator{token: "token"}, actions, "https://actions.example.test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, unavailable, err := reader.ForSubject(context.Background(), auth.Caller{Kind: auth.CallerOperator}, actionSession(),
 		&sandboxespb.ServiceAccount{Namespace: "team", Name: "worker"})
 	if err != nil || unavailable.Code != "upstream_request_failed" || unavailable.Upstream == nil ||
-		unavailable.Upstream.ErrorType != "errorString" {
+		unavailable.Upstream.ErrorType != "GRPCStatusError" || unavailable.Upstream.UpstreamStatus == nil ||
+		*unavailable.Upstream.UpstreamStatus != http.StatusServiceUnavailable {
 		t.Fatalf("transport failure = %#v, %v", unavailable, err)
 	}
 }

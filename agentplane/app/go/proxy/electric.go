@@ -89,7 +89,7 @@ func NewElectricProxy(client *http.Client, electricURL string, store ThreadScope
 	if hold < 0 {
 		return nil, errors.New("scope hold must not be negative")
 	}
-	upstream, err := NewUpstreamProxy(client, electricURL, "")
+	upstream, err := NewUpstreamProxy(client, electricURL)
 	if err != nil {
 		return nil, err
 	}
