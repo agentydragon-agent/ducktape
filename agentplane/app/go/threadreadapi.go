@@ -75,7 +75,7 @@ type (
 type threadView struct {
 	ID                  uuid.UUID  `json:"id" format:"uuid"`
 	Sandbox             string     `json:"sandbox"`
-	SandboxUID          *uuid.UUID `json:"sandbox_uid" format:"uuid"`
+	SandboxUID          *uuid.UUID `json:"sandbox_uid" format:"uuid" nullable:"true"`
 	Harness             *string    `json:"harness" enum:"HARNESS_CLAUDE,HARNESS_CODEX"`
 	Model               *string    `json:"model"`
 	CWD                 *string    `json:"cwd"`

@@ -79,6 +79,14 @@ func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
 	if !ok || id["format"] != "uuid" {
 		t.Fatal("ThreadView.id must be documented as a UUID")
 	}
+	sandboxUID, ok := properties["sandbox_uid"].(map[string]any)
+	if !ok || sandboxUID["format"] != "uuid" {
+		t.Fatalf("ThreadView.sandbox_uid = %v, want a nullable UUID", properties["sandbox_uid"])
+	}
+	types, ok := sandboxUID["type"].([]any)
+	if !ok || len(types) != 2 || types[0] != "string" || types[1] != "null" {
+		t.Fatalf("ThreadView.sandbox_uid.type = %v, want string or null", sandboxUID["type"])
+	}
 	lastCursor, ok := properties["last_cursor"].(map[string]any)
 	if !ok || lastCursor["type"] != "integer" || lastCursor["format"] != "int64" {
 		t.Fatal("ThreadView.last_cursor must be documented as an int64")
